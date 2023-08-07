@@ -57,8 +57,8 @@ pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
     serde(untagged)
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
-#[platform_version_path(
-    value = "dpp.state_transition_serialization_versions.contract_update_state_transition"
+#[platform_version_path_bounds(
+    "dpp.state_transition_serialization_versions.contract_update_state_transition"
 )]
 pub enum DataContractUpdateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]

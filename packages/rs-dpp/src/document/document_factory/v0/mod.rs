@@ -176,7 +176,7 @@ impl DocumentFactoryV0 {
             flattened_documents_iter.all(|(document, _)| document.owner_id() == owner_id);
         if !is_the_same_owner {
             return Err(DocumentError::MismatchOwnerIdsError {
-                documents: documents.into_iter().flat_map(|(_, v)| v).collect(),
+                documents: documents.into_iter().map(|(_, v)| v.into_iter().map(|(document, _)| document).collect::<Vec<_>>()).flatten().collect(),
             }
             .into());
         }

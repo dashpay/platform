@@ -47,7 +47,7 @@ pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTran
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path(
-    value = "dpp.state_transition_serialization_versions.identity_credit_withdrawal_state_transition"
+    "dpp.state_transition_serialization_versions.identity_credit_withdrawal_state_transition"
 )]
 pub enum IdentityCreditWithdrawalTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]

@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
-pub trait DocumentJsonMethodsV0: DocumentPlatformValueMethodsV0 {
+pub trait DocumentJsonMethodsV0<'a>: DocumentPlatformValueMethodsV0<'a> {
     fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError>;
     fn to_json(&self) -> Result<JsonValue, ProtocolError>;
     fn from_json_value<S>(

@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
     feature = "identity-serde-conversion",
     derive(Serialize, PlatformSerdeVersionedDeserialize),
     serde(untagged),
-    platform_version_path(value = "dpp.identity_versions.identity_structure_version")
+    platform_version_path("dpp.identity_versions.identity_structure_version")
 )]
 #[cfg_attr(
     feature = "identity-serialization",

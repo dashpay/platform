@@ -8,6 +8,7 @@ use crate::document::Document;
 use crate::document::ExtendedDocument;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
+use crate::document::accessors::v0::DocumentV0Getters;
 
 #[derive(Error, Debug)]
 pub enum DocumentError {
@@ -36,19 +37,15 @@ pub enum DocumentError {
         raw_document: Value,
     },
 
-    #[cfg(feature = "extended-document")]
-    #[error("Invalid Document initial revision '{}'", document.revision().copied().unwrap_or_default())]
+    #[error("Invalid Document initial revision '{}'", document.revision().unwrap_or_default())]
     InvalidInitialRevisionError { document: Box<Document> },
 
-    #[cfg(feature = "extended-document")]
     #[error("Revision absent on mutable document")]
     RevisionAbsentError { document: Box<Document> },
 
-    #[cfg(feature = "extended-document")]
     #[error("Trying To Replace Immutable Document")]
     TryingToReplaceImmutableDocument { document: Box<Document> },
 
-    #[cfg(feature = "extended-document")]
     #[error("Documents have mixed owner ids")]
     MismatchOwnerIdsError { documents: Vec<Document> },
 
