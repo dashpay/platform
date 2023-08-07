@@ -4,7 +4,6 @@ use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::DriveVersion;
 use crate::version::v0::PLATFORM_V1;
 
-
 pub type FeatureVersion = u16;
 pub type OptionalFeatureVersion = Option<u16>; //This is a feature that didn't always exist
 

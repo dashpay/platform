@@ -1,5 +1,3 @@
-
-
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;
 use bincode::{enc, Encode};

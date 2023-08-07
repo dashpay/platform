@@ -3,9 +3,7 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
-use syn::{
-    parse_macro_input, Attribute, Data, DeriveInput, Ident, LitInt, LitStr,
-};
+use syn::{parse_macro_input, Attribute, Data, DeriveInput, Ident, LitInt, LitStr};
 
 /// `#[proc_macro_derive(PlatformSerdeVersionedDeserialize, attributes(versioned, platform_serde_versioned))]`
 ///
@@ -427,7 +425,7 @@ fn parse_path(attrs: &[Attribute]) -> Option<(Vec<Ident>, bool)> {
                 .split('.')
                 .map(|s| Ident::new(s, Span::call_site()))
                 .collect(),
-            is_bounds
+            is_bounds,
         ));
     }
 

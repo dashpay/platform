@@ -1,6 +1,5 @@
 use crate::version::{FeatureVersion, FeatureVersionBounds};
 
-
 #[derive(Clone, Debug, Default)]
 pub struct DPPVersion {
     pub costs: CostVersions,

@@ -241,7 +241,9 @@ impl StateTransition {
         if skip_signature {
             Ok(hash_to_vec(self.signable_bytes()?))
         } else {
-            Ok(hash_to_vec(crate::serialization::PlatformSerializable::serialize(self)?))
+            Ok(hash_to_vec(
+                crate::serialization::PlatformSerializable::serialize(self)?,
+            ))
         }
     }
 

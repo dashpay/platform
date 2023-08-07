@@ -16,8 +16,8 @@ use crate::state_transition::identity_create_transition::v0::IdentityCreateTrans
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::state_transition::StateTransitionValueConvert;
-use crate::{Convertible, ProtocolError};
 use crate::version::PlatformVersionCurrentVersion;
+use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
 use derive_more::From;
 use fields::*;

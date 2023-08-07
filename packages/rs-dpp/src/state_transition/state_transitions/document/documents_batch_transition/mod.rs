@@ -48,7 +48,6 @@ mod v0;
 mod value_conversion;
 mod version;
 
-use crate::version::PlatformVersionCurrentVersion;
 use crate::state_transition::data_contract_update_transition::{
     SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
 };
@@ -56,6 +55,7 @@ use crate::state_transition::documents_batch_transition::document_transition::Do
 use crate::state_transition::documents_batch_transition::fields::{
     property_names, DEFAULT_SECURITY_LEVEL,
 };
+use crate::version::PlatformVersionCurrentVersion;
 
 use crate::state_transition::StateTransitionType::DocumentsBatch;
 use crate::state_transition::StateTransitionValueConvert;

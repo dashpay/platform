@@ -19,13 +19,13 @@ use crate::state_transition::identity_update_transition::v0::IdentityUpdateTrans
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::state_transition::StateTransitionValueConvert;
+use crate::version::PlatformVersionCurrentVersion;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 use serde::Serialize;
-use crate::version::PlatformVersionCurrentVersion;
 
 #[derive(
     Debug,

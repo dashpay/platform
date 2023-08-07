@@ -27,11 +27,11 @@ mod v0;
 mod value_conversion;
 mod version;
 
+use crate::state_transition::StateTransitionValueConvert;
+use crate::version::PlatformVersionCurrentVersion;
 pub use fields::*;
 use platform_version::version::PlatformVersion;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
-use crate::version::PlatformVersionCurrentVersion;
-use crate::state_transition::StateTransitionValueConvert;
 
 use crate::data_contract::DataContract;
 use crate::version::FeatureVersion;

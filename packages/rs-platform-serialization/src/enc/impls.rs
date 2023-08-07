@@ -15,7 +15,6 @@ use core::{
 };
 use platform_version::version::PlatformVersion;
 
-
 impl PlatformVersionEncode for () {
     fn platform_encode<E: Encoder>(
         &self,

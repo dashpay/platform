@@ -16,10 +16,7 @@ use crate::serialize_struct::derive_platform_serialize_struct;
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::quote;
-use syn::{
-    parse_macro_input, Data, DeriveInput, Expr, Lit, LitInt, LitStr, Meta,
-    Path,
-};
+use syn::{parse_macro_input, Data, DeriveInput, Expr, Lit, LitInt, LitStr, Meta, Path};
 
 struct VersionAttributes {
     crate_name: Ident,

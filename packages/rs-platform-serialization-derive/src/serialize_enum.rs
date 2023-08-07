@@ -14,13 +14,10 @@ pub(super) fn derive_platform_serialize_enum(
     name: &Ident,
 ) -> TokenStream {
     let VersionAttributes {
-        
         platform_serialize_limit,
-        
-        
+
         unversioned,
-        
-        
+
         crate_name,
         ..
     } = version_attributes;
