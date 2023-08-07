@@ -58,7 +58,6 @@ use crate::state_transition::documents_batch_transition::fields::{
 use crate::version::PlatformVersionCurrentVersion;
 
 use crate::state_transition::StateTransitionType::DocumentsBatch;
-use crate::state_transition::StateTransitionValueConvert;
 pub use v0::*;
 
 #[derive(

@@ -3,12 +3,12 @@ use thiserror::Error;
 
 use crate::errors::consensus::ConsensusError;
 
+use crate::document::accessors::v0::DocumentV0Getters;
 use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
-use crate::document::accessors::v0::DocumentV0Getters;
 
 #[derive(Error, Debug)]
 pub enum DocumentError {
@@ -45,6 +45,9 @@ pub enum DocumentError {
 
     #[error("Trying To Replace Immutable Document")]
     TryingToReplaceImmutableDocument { document: Box<Document> },
+
+    #[error("Trying To Delete Immutable Document")]
+    TryingToDeleteImmutableDocument { document: Box<Document> },
 
     #[error("Documents have mixed owner ids")]
     MismatchOwnerIdsError { documents: Vec<Document> },

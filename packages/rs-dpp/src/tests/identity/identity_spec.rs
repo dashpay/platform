@@ -127,10 +127,10 @@ mod from_buffer {
 
 mod conversions {
     use crate::prelude::Identity;
+    use crate::serialization::ValueConvertible;
     use crate::tests::fixtures::{identity_fixture_json, identity_fixture_raw_object};
     use platform_value::string_encoding;
     use platform_value::string_encoding::Encoding;
-    use crate::serialization::ValueConvertible;
 
     #[test]
     fn from_json() {

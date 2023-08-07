@@ -15,7 +15,6 @@ mod version;
 use crate::serialization::Signable;
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
-use crate::state_transition::StateTransitionValueConvert;
 use crate::version::PlatformVersionCurrentVersion;
 use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};

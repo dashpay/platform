@@ -2,7 +2,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use crate::document::{DocumentV0Getters};
+use crate::document::DocumentV0Getters;
 use crate::util::hash::hash_to_vec;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;

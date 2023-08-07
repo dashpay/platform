@@ -1,4 +1,5 @@
 mod fields;
+mod from_document;
 pub mod v0;
 mod v0_methods;
 
@@ -10,7 +11,11 @@ pub use fields::*;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, Display, From)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize)
+)]
 pub enum DocumentBaseTransition {
     #[display(fmt = "V0({})", "_0")]
     V0(DocumentBaseTransitionV0),

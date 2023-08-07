@@ -9,13 +9,10 @@ pub mod v0;
 mod value_conversion;
 mod version;
 
-use crate::serialization::PlatformDeserializable;
-use crate::serialization::PlatformSerializable;
 use crate::serialization::Signable;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
-use crate::state_transition::StateTransitionValueConvert;
 use crate::version::PlatformVersionCurrentVersion;
 use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
