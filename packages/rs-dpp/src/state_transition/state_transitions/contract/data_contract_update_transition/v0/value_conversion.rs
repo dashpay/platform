@@ -71,7 +71,6 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractUpdateTransitionV0 {
                 platform_version,
             )?
             .try_into_platform_versioned(platform_version)?,
-            ..Default::default()
         })
     }
 
@@ -97,7 +96,6 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractUpdateTransitionV0 {
                 platform_version,
             )?
             .try_into_platform_versioned(platform_version)?,
-            ..Default::default()
         })
     }
 

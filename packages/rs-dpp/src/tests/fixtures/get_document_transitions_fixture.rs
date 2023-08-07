@@ -58,7 +58,7 @@ pub fn get_document_transitions_fixture(
     let document_factory = DocumentFactory::new(protocol_version, data_contract.clone())
         .expect("expected to get document factory");
 
-    let mut documents_collected: HashMap<DocumentTransitionActionType, Vec<Document>> =
+    let mut documents_collected: HashMap<DocumentTransitionActionType, Vec<(Document, DocumentType)>> =
         documents.into_iter().collect();
     let create_documents = documents_collected
         .remove(&DocumentTransitionActionType::Create)
