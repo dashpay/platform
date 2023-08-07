@@ -127,7 +127,7 @@ impl DocumentFactoryV0 {
             .data_contract
             .document_type_for_name(document_type_name.as_str())?;
 
-        let document = document_type.create_document_from_data(data, owner_id, document_entropy)?;
+        let document = document_type.create_document_from_data(data, owner_id, document_entropy, platform_version)?;
 
         let extended_document = match platform_version
             .dpp
