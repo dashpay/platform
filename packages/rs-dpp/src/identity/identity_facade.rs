@@ -24,7 +24,7 @@ use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError, Protoco
 
 #[derive(Clone)]
 pub struct IdentityFacade<T: BlsModule> {
-    factory: IdentityFactory<T>,
+    factory: IdentityFactory,
 }
 
 impl<T> IdentityFacade<T>
