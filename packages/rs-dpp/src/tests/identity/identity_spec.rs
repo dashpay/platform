@@ -130,6 +130,7 @@ mod conversions {
     use crate::tests::fixtures::{identity_fixture_json, identity_fixture_raw_object};
     use platform_value::string_encoding;
     use platform_value::string_encoding::Encoding;
+    use crate::serialization::ValueConvertible;
 
     #[test]
     fn from_json() {
@@ -174,7 +175,7 @@ mod api {
 
     #[test]
     fn should_get_biggest_public_key_id() {
-        let mut identity = identity_fixture();
+        let mut identity = identity_fixture(0);
 
         let identity_public_key_1 = IdentityPublicKey {
             id: 99,
