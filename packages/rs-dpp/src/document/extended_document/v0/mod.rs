@@ -1,3 +1,8 @@
+mod cbor_conversion;
+mod json_conversion;
+mod platform_value_conversion;
+mod serialize;
+
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
 use crate::document::extended_document::property_names;
@@ -42,21 +47,27 @@ use serde_json::Value as JsonValue;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ExtendedDocumentV0 {
     /// The document type name, stored as a string.
+    #[serde(rename = "$type")]
     pub document_type_name: String,
 
     /// The identifier of the associated data contract.
+    #[serde(rename = "$dataContractId")]
     pub data_contract_id: Identifier,
 
     /// The actual document object containing the data.
+    #[serde(flatten)]
     pub document: Document,
 
     /// The data contract associated with the document.
+    #[serde(rename = "$dataContract")]
     pub data_contract: DataContract,
 
     /// An optional field for metadata associated with the document.
+    #[serde(rename = "$metadata", default)]
     pub metadata: Option<Metadata>,
 
     /// A field representing the entropy, stored as `Bytes32`.
+    #[serde(rename = "$entropy")]
     pub entropy: Bytes32,
 }
 

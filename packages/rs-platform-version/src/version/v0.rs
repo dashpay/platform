@@ -49,7 +49,7 @@ use crate::version::drive_versions::{
     DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions, DriveVersion,
 };
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
-use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
+use crate::version::{AbciStructureVersion, FeatureVersion, PlatformArchitectureVersion};
 
 pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     protocol_version: 1,
@@ -713,11 +713,12 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 max_version: 0,
                 default_current_version: 0,
             },
-            extended_document_structure_version: FeatureVersionBounds {
+            extended_document_structure_version: 0,
+            extended_document_serialization_version: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,
                 default_current_version: 0,
-            }, //todo (probably should be changed)
+            },
             document_method_versions: DocumentMethodVersions {
                 hash: 0,
                 get_raw_for_contract: 0,

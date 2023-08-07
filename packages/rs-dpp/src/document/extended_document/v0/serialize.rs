@@ -1,24 +1,30 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::{DataContractError, StructureError};
 
-use crate::document::property_names;
 use crate::document::property_names::{CREATED_AT, UPDATED_AT};
+use crate::document::{property_names, Document};
 
 use crate::identity::TimestampMillis;
-use crate::prelude::Revision;
+use crate::prelude::{DataContract, Revision};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::{
     DocumentPlatformConversionMethodsV0, DocumentPlatformDeserializationMethodsV0,
     DocumentPlatformSerializationMethodsV0,
 };
 use crate::document::v0::DocumentV0;
+use crate::serialization::{
+    PlatformDeserializableFromVersionedStructure,
+    PlatformDeserializableWithBytesLenFromVersionedStructure,
+};
 use crate::version::PlatformVersion;
 use byteorder::{BigEndian, ReadBytesExt};
+use dashcore::consensus::ReadExt;
 use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Identifier, Value};
@@ -28,7 +34,7 @@ use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::io::{BufReader, Read};
 
-impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
+impl DocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
     /// Serializes the document.
     ///
     /// The serialization of a document follows the pattern:
@@ -202,128 +208,48 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
     }
 }
 
-impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
+impl DocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
     /// Reads a serialized document and creates a Document from it.
     fn from_bytes_v0(
         serialized_document: &[u8],
         document_type: DocumentTypeRef,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let mut buf = BufReader::new(serialized_document);
-        if serialized_document.len() < 64 {
+        // first we deserialize the contract
+        let (data_contract, offset) = DataContract::versioned_deserialize_with_bytes_len(
+            serialized_document,
+            platform_version,
+        )?;
+        let serialized_document = serialized_document.split_at(offset).1;
+        let (document_type_name_len, rest) = serialized_document.split_first().ok_or(|_| {
+            ProtocolError::DecodingError(
+                "error reading document type name len from serialized extended document"
+                    .to_string(),
+            )
+        })?;
+        if serialized_document.len() < *document_type_name_len as usize {
             return Err(ProtocolError::DecodingError(
-                "serialized document is too small, must have id and owner id".to_string(),
+                "serialized extended document isn't big enough for the document type len"
+                    .to_string(),
             ));
         }
-        let mut id = [0; 32];
-        buf.read_exact(&mut id).map_err(|_| {
-            ProtocolError::DecodingError(
-                "error reading from serialized document for id".to_string(),
-            )
-        })?;
+        let (document_type_name_bytes, rest) = rest.split_at(*document_type_name_len as usize);
 
-        let mut owner_id = [0; 32];
-        buf.read_exact(&mut owner_id).map_err(|_| {
-            ProtocolError::DecodingError(
-                "error reading from serialized document for owner id".to_string(),
-            )
-        })?;
+        let document = Document::from_bytes(rest, document_type, platform_version)?;
+        Ok(ExtendedDocumentV0 {
+            document_type_name: document_type_name_bytes.into(),
+            data_contract_id: data_contract.id(),
+            document,
+            data_contract,
+            metadata: None,
 
-        // if the document type is mutable then we should deserialize the revision
-        let revision: Option<Revision> = if document_type.requires_revision() {
-            let revision = buf.read_varint().map_err(|_| {
-                ProtocolError::DecodingError(
-                    "error reading revision from serialized document for revision".to_string(),
-                )
-            })?;
-            Some(revision)
-        } else {
-            None
-        };
-        let mut created_at = None;
-        let mut updated_at = None;
-        let properties = document_type
-            .properties()
-            .iter()
-            .filter_map(|(key, field)| {
-                if key == CREATED_AT {
-                    if !field.required {
-                        let marker_result = buf.read_u8().map_err(|_| {
-                            ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                                "error reading created at optional byte from serialized document",
-                            ))
-                        });
-                        match marker_result {
-                            Ok(marker) => {
-                                if marker == 0 {
-                                    return Some(Ok((key.clone(), Value::Null)));
-                                }
-                            }
-                            Err(e) => return Some(Err(e)),
-                        }
-                    }
-                    let integer_result = buf.read_u64::<BigEndian>().map_err(|_| {
-                        ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                            "error reading created at from serialized document",
-                        ))
-                    });
-                    match integer_result {
-                        Ok(integer) => {
-                            created_at = Some(integer);
-                            None
-                        }
-                        Err(e) => Some(Err(e)),
-                    }
-                } else if key == UPDATED_AT {
-                    if !field.required {
-                        let marker_result = buf.read_u8().map_err(|_| {
-                            ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                                "error reading updated at optional byte from serialized document",
-                            ))
-                        });
-                        match marker_result {
-                            Ok(marker) => {
-                                if marker == 0 {
-                                    return Some(Ok((key.clone(), Value::Null)));
-                                }
-                            }
-                            Err(e) => return Some(Err(e)),
-                        }
-                    }
-                    let integer_result = buf.read_u64::<BigEndian>().map_err(|_| {
-                        ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                            "error reading updated at from serialized document",
-                        ))
-                    });
-                    match integer_result {
-                        Ok(integer) => {
-                            updated_at = Some(integer);
-                            None
-                        }
-                        Err(e) => Some(Err(e)),
-                    }
-                } else {
-                    let read_value = field.document_type.read_from(&mut buf, field.required);
-                    match read_value {
-                        Ok(read_value) => read_value.map(|read_value| Ok((key.clone(), read_value))),
-                        Err(e) => Some(Err(e)),
-                    }
-                }
-            })
-            .collect::<Result<BTreeMap<String, Value>, ProtocolError>>()?;
-        Ok(DocumentV0 {
-            id: Identifier::new(id),
-            properties,
-            owner_id: Identifier::new(owner_id),
-            revision,
-            created_at,
-            updated_at,
+            entropy: Default::default(),
         }
         .into())
     }
 }
 
-impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
+impl DocumentPlatformConversionMethodsV0 for ExtendedDocumentV0 {
     /// Serializes the document.
     ///
     /// The serialization of a document follows the pattern:
@@ -341,7 +267,7 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
         {
             0 => self.serialize_v0(document_type),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DocumentV0::serialize".to_string(),
+                method: "ExtendedDocumentV0::serialize".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
@@ -356,7 +282,7 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
         match feature_version {
             0 => self.serialize_v0(document_type),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DocumentV0::serialize".to_string(),
+                method: "ExtendedDocumentV0::serialize".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
@@ -374,8 +300,8 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
     ) -> Result<Vec<u8>, ProtocolError> {
         match platform_version
             .dpp
-            .document_versions
-            .document_serialization_version
+            .contract_versions
+            .contract_serialization_version
             .default_current_version
         {
             0 => self.serialize_consume_v0(document_type),
@@ -387,7 +313,7 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
         }
     }
 
-    /// Reads a serialized document and creates a DocumentV0 from it.
+    /// Reads a serialized document and creates an ExtendedDocumentV0 from it.
     fn from_bytes(
         mut serialized_document: &[u8],
         document_type: DocumentTypeRef,
@@ -399,9 +325,13 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
             )
         })?;
         match serialized_version {
-            0 => DocumentV0::from_bytes_v0(serialized_document, document_type, platform_version),
+            0 => ExtendedDocumentV0::from_bytes_v0(
+                serialized_document,
+                document_type,
+                platform_version,
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "Document::from_bytes (deserialization)".to_string(),
+                method: "ExtendedDocument::from_bytes (deserialization)".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

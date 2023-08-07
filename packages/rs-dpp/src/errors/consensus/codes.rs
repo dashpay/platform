@@ -1,5 +1,5 @@
 use crate::consensus::signature::SignatureError;
-#[cfg(feature = "state-transitions")]
+#[cfg(feature = "state-transition-validation")]
 use crate::consensus::state::data_trigger::DataTriggerError;
 
 use crate::errors::consensus::{
@@ -175,7 +175,7 @@ impl ErrorWithCode for StateError {
     }
 }
 
-#[cfg(feature = "state-transitions")]
+#[cfg(feature = "state-transition-validation")]
 impl ErrorWithCode for DataTriggerError {
     fn code(&self) -> u32 {
         match self {

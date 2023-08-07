@@ -39,10 +39,11 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreditTransferTransitionV0 
     }
 
     fn from_value_map(
-        mut raw_value_map: BTreeMap<String, Value>,
+        raw_value_map: BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        todo()
+        let value : Value = raw_value_map.into();
+        Self::from_object(value, platform_version)
     }
 
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

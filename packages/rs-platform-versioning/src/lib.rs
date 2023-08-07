@@ -147,7 +147,7 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
 
         quote! {
             #version => {
-                let value = #variant_ident_sub::from_object(map_clone, current_platform_version).map_err(|e|serde::de::Error::custom(e.to_string()))?;
+                let value = #variant_ident_sub::from_object(map_clone).map_err(|e|serde::de::Error::custom(e.to_string()))?;
                 Ok(#ident::#variant_ident(value))
             }
         }
