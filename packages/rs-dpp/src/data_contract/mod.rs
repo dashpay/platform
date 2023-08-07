@@ -41,8 +41,6 @@ pub mod serialized_version;
 pub use data_contract_methods::*;
 pub mod accessors;
 pub mod data_contract_config;
-#[cfg(feature = "validation")]
-mod validation;
 
 pub use v0::*;
 

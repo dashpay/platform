@@ -1,8 +1,8 @@
 use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::DataContract;
-use crate::version::PlatformVersionCurrentVersion;
 use crate::version::PlatformVersion;
+use crate::version::PlatformVersionCurrentVersion;
 use crate::ProtocolError;
 use bincode::{BorrowDecode, Decode, Encode};
 use derive_more::From;
@@ -11,13 +11,13 @@ use platform_version::TryFromPlatformVersioned;
 use platform_versioning::{
     PlatformSerdeVersionedDeserialize, PlatformSerdeVersionedSerialize, PlatformVersioned,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub(in crate::data_contract) mod v0;
 
 pub const CONTRACT_DESERIALIZATION_LIMIT: usize = 15000;
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From)]
 #[cfg_attr(
     feature = "data-contract-serde-conversion",
     derive(Serialize, PlatformSerdeVersionedDeserialize)
@@ -33,13 +33,6 @@ impl DataContractInSerializationFormat {
     pub fn id(&self) -> Identifier {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.id,
-        }
-    }
-
-    /// Returns the version of the data contract.
-    pub fn version(&self) -> u32 {
-        match self {
-            DataContractInSerializationFormat::V0(v0) => v0.version,
         }
     }
 

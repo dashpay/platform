@@ -188,10 +188,10 @@ mod tests {
             DataContractConfigGettersV0, DataContractConfigSettersV0,
         };
         use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
+        use dpp::data_contract::schema::DataContractDocumentSchemaMethodsV0;
         use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::version::TryFromPlatformVersioned;
-        use dpp::data_contract::schema::DataContractDocumentSchemaMethodsV0;
         use serde_json::json;
 
         #[test]
