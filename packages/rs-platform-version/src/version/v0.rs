@@ -421,6 +421,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 init_chain: 0,
                 check_tx: 0,
                 run_block_proposal: 0,
+                finalize_block_proposal: 0,
             },
             initialization: DriveAbciInitializationMethodVersions {
                 initial_core_height: 0,

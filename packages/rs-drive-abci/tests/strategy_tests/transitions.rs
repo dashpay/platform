@@ -326,7 +326,7 @@ pub fn create_identities_state_transitions(
                     platform_version,
                 )
                 .expect("expected to transform identity into identity create transition");
-            identity.set_id(identity_create_transition.owner_id().unwrap());
+            identity.set_id(identity_create_transition.owner_id());
 
             (identity, identity_create_transition.into())
         })

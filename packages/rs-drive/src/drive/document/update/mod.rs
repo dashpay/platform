@@ -618,10 +618,13 @@ mod tests {
         // Create document
 
         let document_values = platform_value!({
-           "$id": "DLRWw2eRbLAW5zDU2c7wwsSFQypTSZPhFYzpY48tnaXN",
+           "$id": Identifier::new(bs58::decode("DLRWw2eRbLAW5zDU2c7wwsSFQypTSZPhFYzpY48tnaXN").into_vec()
+                        .unwrap().try_into().unwrap()),
            "$type": "indexedDocument",
-           "$dataContractId": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
-           "$ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
+           "$dataContractId": Identifier::new(bs58::decode("BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54").into_vec()
+                        .unwrap().try_into().unwrap()),
+           "$ownerId": Identifier::new(bs58::decode("GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5").into_vec()
+                        .unwrap().try_into().unwrap()),
            "$revision": 1,
            "firstName": "myName",
            "lastName": "lastName",
@@ -659,10 +662,13 @@ mod tests {
         // Update document
 
         let document_values = platform_value!({
-           "$id": "DLRWw2eRbLAW5zDU2c7wwsSFQypTSZPhFYzpY48tnaXN",
+           "$id": Identifier::new(bs58::decode("DLRWw2eRbLAW5zDU2c7wwsSFQypTSZPhFYzpY48tnaXN").into_vec()
+                        .unwrap().try_into().unwrap()),
            "$type": "indexedDocument",
-           "$dataContractId": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
-           "$ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
+           "$dataContractId": Identifier::new(bs58::decode("BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54").into_vec()
+                        .unwrap().try_into().unwrap()),
+           "$ownerId": Identifier::new(bs58::decode("GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5").into_vec()
+                        .unwrap().try_into().unwrap()),
            "$revision": 2,
            "firstName": "updatedName",
            "lastName": "lastName",

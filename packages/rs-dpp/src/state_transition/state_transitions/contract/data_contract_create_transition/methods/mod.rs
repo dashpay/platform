@@ -12,6 +12,7 @@ use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
 use platform_version::version::PlatformVersion;
+use crate::state_transition::StateTransition;
 
 impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransition {
     fn new_from_data_contract<S: Signer>(
@@ -22,7 +23,7 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransition {
         signer: &S,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
-    ) -> Result<DataContractCreateTransition, ProtocolError> {
+    ) -> Result<StateTransition, ProtocolError> {
         match feature_version.unwrap_or(
             platform_version
                 .dpp

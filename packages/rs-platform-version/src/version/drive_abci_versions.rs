@@ -88,6 +88,7 @@ pub struct DriveAbciEngineMethodVersions {
     pub init_chain: FeatureVersion,
     pub check_tx: FeatureVersion,
     pub run_block_proposal: FeatureVersion,
+    pub finalize_block_proposal: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

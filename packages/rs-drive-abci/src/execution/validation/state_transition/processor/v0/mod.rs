@@ -245,12 +245,16 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                     .identity_signatures
                 {
                     Some(0) => {
+                        let mut validation_result =
+                            ConsensusValidationResult::<Option<PartialIdentity>>::default();
                         let signable_bytes: Vec<u8> = self.signable_bytes()?;
-                        Ok(st
+                        let mut result = st
                             .validate_identity_create_state_transition_signatures_v0(
                                 signable_bytes,
-                            )?
-                            .map(|_| None))
+                            )?;
+                        validation_result.merge(result);
+                        validation_result.set_data(None);
+                        Ok(validation_result)
                     }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
                         method: "identity create transition: validate_identity_and_signatures"

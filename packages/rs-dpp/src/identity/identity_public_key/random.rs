@@ -269,6 +269,49 @@ impl IdentityPublicKey {
     /// * `(Self, Vec<u8>)`: A tuple where the first element is an instance of the `IdentityPublicKey` struct,
     ///                      and the second element is the corresponding private key.
     ///
+    pub fn random_ecdsa_critical_level_authentication_key_with_rng(
+        id: KeyID,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_key_structure_version
+        {
+            0 => {
+                let (key, private_key) =
+                    IdentityPublicKeyV0::random_ecdsa_critical_level_authentication_key_with_rng(
+                        id,
+                        rng,
+                        platform_version,
+                    )?;
+                Ok((key.into(), private_key))
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "IdentityPublicKey::random_ecdsa_critical_level_authentication_key_with_rng"
+                    .to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Generates a random ECDSA high-level authentication public key along with its corresponding private key.
+    ///
+    /// This method constructs a random ECDSA (using the secp256k1 curve) high-level authentication public key
+    /// and returns both the public key and its corresponding private key.
+    ///
+    /// # Parameters
+    ///
+    /// * `id`: The `KeyID` for the generated key.
+    /// * `rng`: A mutable reference to the random number generator.
+    ///
+    /// # Returns
+    ///
+    /// * `(Self, Vec<u8>)`: A tuple where the first element is an instance of the `IdentityPublicKey` struct,
+    ///                      and the second element is the corresponding private key.
+    ///
     pub fn random_ecdsa_high_level_authentication_key_with_rng(
         id: KeyID,
         rng: &mut StdRng,
@@ -344,14 +387,23 @@ impl IdentityPublicKey {
             ));
         }
         //create a master and a high level key
-        let mut main_keys = vec![
-            Self::random_ecdsa_master_authentication_key_with_rng(0, rng, platform_version)?,
-            Self::random_ecdsa_high_level_authentication_key_with_rng(1, rng, platform_version)?,
-        ];
+        let mut main_keys = if key_count == 2 {
+            vec![
+                Self::random_ecdsa_master_authentication_key_with_rng(0, rng, platform_version)?,
+                Self::random_ecdsa_high_level_authentication_key_with_rng(1, rng, platform_version)?,
+            ]
+        } else {
+            vec![
+                Self::random_ecdsa_master_authentication_key_with_rng(0, rng, platform_version)?,
+                Self::random_ecdsa_critical_level_authentication_key_with_rng(1, rng, platform_version)?,
+                Self::random_ecdsa_high_level_authentication_key_with_rng(2, rng, platform_version)?,
+            ]
+        };
         let mut used_key_matrix = [false; 16].to_vec();
         used_key_matrix[0] = true;
+        used_key_matrix[1] = true;
         used_key_matrix[2] = true;
-        main_keys.extend((2..key_count).map(|i| {
+        main_keys.extend((3..key_count).map(|i| {
             Self::random_authentication_key_with_private_key_with_rng(
                 i,
                 rng,

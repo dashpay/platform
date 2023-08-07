@@ -49,7 +49,10 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
             .set_asset_lock_proof(asset_lock_proof)
             .map_err(ProtocolError::from)?;
 
-        let key_signable_bytes = identity_create_transition.signable_bytes()?;
+        //todo: remove clone
+        let state_transition: StateTransition = identity_create_transition.clone().into();
+
+        let key_signable_bytes = state_transition.signable_bytes()?;
 
         identity_create_transition
             .public_keys

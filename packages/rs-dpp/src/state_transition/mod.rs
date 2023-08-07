@@ -263,8 +263,8 @@ impl StateTransition {
     }
 
     /// returns the signature as a byte-array
-    pub fn owner_id(&self) -> Option<Identifier> {
-        call_getter_method_identity_signed!(self, owner_id)
+    pub fn owner_id(&self) -> Identifier {
+        call_method!(self, owner_id)
     }
 
     /// set a new signature

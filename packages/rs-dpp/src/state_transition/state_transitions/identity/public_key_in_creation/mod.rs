@@ -24,7 +24,7 @@ pub enum IdentityPublicKeyInCreation {
 impl From<&IdentityPublicKeyInCreation> for IdentityPublicKey {
     fn from(val: &IdentityPublicKeyInCreation) -> Self {
         match val {
-            val => val.into(),
+            IdentityPublicKeyInCreation::V0(v0) => v0.into(),
         }
     }
 }
@@ -32,7 +32,7 @@ impl From<&IdentityPublicKeyInCreation> for IdentityPublicKey {
 impl From<IdentityPublicKeyInCreation> for IdentityPublicKey {
     fn from(val: IdentityPublicKeyInCreation) -> Self {
         match val {
-            val => val.into(),
+            IdentityPublicKeyInCreation::V0(v0) => v0.into(),
         }
     }
 }

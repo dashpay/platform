@@ -70,11 +70,7 @@ impl ValidateStateTransitionIdentitySignatureV0 for StateTransition {
                     "state_transition does not have a public key Id to verify".to_string(),
                 ))?;
 
-        let owner_id = self
-            .owner_id()
-            .ok_or(ProtocolError::CorruptedCodeExecution(
-                "state_transition does not have a owner Id to verify".to_string(),
-            ))?;
+        let owner_id = self.owner_id();
 
         let security_levels =
             self.security_level_requirement()
