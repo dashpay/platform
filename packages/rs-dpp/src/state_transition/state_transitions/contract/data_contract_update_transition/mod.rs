@@ -30,6 +30,8 @@ mod version;
 pub use fields::*;
 use platform_version::version::PlatformVersion;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
+use crate::version::PlatformVersionCurrentVersion;
+use crate::state_transition::StateTransitionValueConvert;
 
 use crate::data_contract::DataContract;
 use crate::version::FeatureVersion;

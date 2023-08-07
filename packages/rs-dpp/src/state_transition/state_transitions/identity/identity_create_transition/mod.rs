@@ -15,7 +15,9 @@ use crate::serialization::Signable;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
+use crate::state_transition::StateTransitionValueConvert;
 use crate::{Convertible, ProtocolError};
+use crate::version::PlatformVersionCurrentVersion;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
 use fields::*;
@@ -43,8 +45,8 @@ pub type IdentityCreateTransitionLatest = IdentityCreateTransitionV0;
     serde(untagged)
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
-#[platform_version_path(
-    value = "dpp.state_transition_serialization_versions.identity_create_state_transition"
+#[platform_version_path_bounds(
+    "dpp.state_transition_serialization_versions.identity_create_state_transition"
 )]
 pub enum IdentityCreateTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
