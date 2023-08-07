@@ -4,11 +4,11 @@ use crate::{
 };
 use bincode::{
     config::Config,
-    de::{read::Reader, BorrowDecode, BorrowDecoder, Decode, Decoder, DecoderImpl},
+    de::{read::Reader, BorrowDecoder, Decode, Decoder, DecoderImpl},
     enc::{write::Writer, Encode, Encoder, EncoderImpl},
     error::{DecodeError, EncodeError},
 };
-use core::time::Duration;
+
 use platform_version::version::PlatformVersion;
 use std::{
     collections::{HashMap, HashSet},
@@ -276,7 +276,7 @@ impl PlatformVersionedDecode for PathBuf {
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
-        let string = std::string::String::decode(decoder)?;
+        let _string = std::string::String::decode(decoder)?;
         bincode::Decode::decode(decoder)
     }
 }
@@ -286,7 +286,7 @@ impl PlatformVersionEncode for IpAddr {
     fn platform_encode<E: Encoder>(
         &self,
         encoder: &mut E,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<(), EncodeError> {
         bincode::Encode::encode(self, encoder)
     }
@@ -295,7 +295,7 @@ impl PlatformVersionEncode for IpAddr {
 impl PlatformVersionedDecode for IpAddr {
     fn platform_versioned_decode<D: Decoder>(
         decoder: &mut D,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }
@@ -306,7 +306,7 @@ impl PlatformVersionEncode for Ipv4Addr {
     fn platform_encode<E: Encoder>(
         &self,
         encoder: &mut E,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<(), EncodeError> {
         bincode::Encode::encode(self, encoder)
     }
@@ -315,7 +315,7 @@ impl PlatformVersionEncode for Ipv4Addr {
 impl PlatformVersionedDecode for Ipv4Addr {
     fn platform_versioned_decode<D: Decoder>(
         decoder: &mut D,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
         bincode::Decode::decode(decoder)
     }

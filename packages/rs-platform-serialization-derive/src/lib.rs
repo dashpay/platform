@@ -17,8 +17,8 @@ use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
 use quote::quote;
 use syn::{
-    parse_macro_input, Data, DataEnum, DataStruct, DeriveInput, Expr, Lit, LitInt, LitStr, Meta,
-    Path, Type,
+    parse_macro_input, Data, DeriveInput, Expr, Lit, LitInt, LitStr, Meta,
+    Path,
 };
 
 struct VersionAttributes {
@@ -665,7 +665,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
             let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
             let derive_into_clause = if derive_into {
-                let variant_into = variants.iter().enumerate().map(|(i, variant)| {
+                let variant_into = variants.iter().enumerate().map(|(_i, variant)| {
                     let variant_ident = &variant.ident;
                     let variant_fields = match &variant.fields {
                         syn::Fields::Unnamed(fields) => fields.unnamed.iter().collect::<Vec<_>>(),

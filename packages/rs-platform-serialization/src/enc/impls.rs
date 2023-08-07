@@ -1,5 +1,5 @@
 use crate::PlatformVersionEncode;
-use bincode::enc::write::Writer;
+
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;
 use bincode::Encode;
@@ -14,7 +14,7 @@ use core::{
     time::Duration,
 };
 use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
+
 
 impl PlatformVersionEncode for () {
     fn platform_encode<E: Encoder>(

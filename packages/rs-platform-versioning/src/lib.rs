@@ -4,7 +4,7 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
 use syn::{
-    parse_macro_input, Attribute, Data, DeriveInput, Fields, Ident, Lit, LitInt, LitStr, Meta, Type,
+    parse_macro_input, Attribute, Data, DeriveInput, Ident, LitInt, LitStr,
 };
 
 /// `#[proc_macro_derive(PlatformSerdeVersionedDeserialize, attributes(versioned, platform_serde_versioned))]`
