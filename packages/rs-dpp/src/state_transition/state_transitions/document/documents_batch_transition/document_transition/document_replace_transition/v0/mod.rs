@@ -1,3 +1,4 @@
+mod from_document;
 pub mod v0_methods;
 
 use crate::identity::TimestampMillis;
@@ -19,8 +20,12 @@ pub(self) mod property_names {
     pub const UPDATED_AT: &str = "$updatedAt";
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Display)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 #[display(
     fmt = "Base: {}, Revision: {}, Updated At: {:?}, Data: {:?}",
     "base",
@@ -29,13 +34,19 @@ pub(self) mod property_names {
     "data"
 )]
 pub struct DocumentReplaceTransitionV0 {
-    #[serde(flatten)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,
-    #[serde(rename = "$revision")]
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(rename = "$revision")
+    )]
     pub revision: Revision,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "$updatedAt")]
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(skip_serializing_if = "Option::is_none", rename = "$updatedAt")
+    )]
     pub updated_at: Option<TimestampMillis>,
-    #[serde(flatten)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub data: BTreeMap<String, Value>,
 }
 //

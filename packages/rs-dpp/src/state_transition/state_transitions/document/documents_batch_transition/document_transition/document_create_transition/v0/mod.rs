@@ -1,3 +1,4 @@
+mod from_document;
 pub mod v0_methods;
 
 use bincode::{Decode, Encode};
@@ -37,8 +38,12 @@ pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
 /// The Identifier fields in [`DocumentCreateTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Display)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 #[display(
     fmt = "Base: {}, Entropy: {:?}, Created At: {:?}, Updated At: {:?}, Data: {:?}",
     "base",
@@ -49,19 +54,28 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 )]
 pub struct DocumentCreateTransitionV0 {
     /// Document Base Transition
-    #[serde(flatten)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,
 
     /// Entropy used to create a Document ID.
-    #[serde(rename = "$entropy")]
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(rename = "$entropy")
+    )]
     pub entropy: [u8; 32],
 
-    #[serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")
+    )]
     pub created_at: Option<TimestampMillis>,
-    #[serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")
+    )]
     pub updated_at: Option<TimestampMillis>,
 
-    #[serde(flatten)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub data: BTreeMap<String, Value>,
 }
 //
@@ -168,7 +182,10 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
         Ok(Self {
-            base: DocumentBaseTransitionV0::from_value_map_consume(&mut map, data_contract)?,
+            base: DocumentBaseTransition::V0(DocumentBaseTransitionV0::from_value_map_consume(
+                &mut map,
+                data_contract,
+            )?),
             entropy: map
                 .remove_hash256_bytes(property_names::ENTROPY)
                 .map_err(ProtocolError::ValueError)?,
@@ -206,9 +223,9 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
                 Value::U64(updated_at),
             );
         }
-        if let Some(properties) = self.data.clone() {
-            transition_base_map.extend(properties)
-        }
+
+        transition_base_map.extend(self.data.clone());
+
         Ok(transition_base_map)
     }
 

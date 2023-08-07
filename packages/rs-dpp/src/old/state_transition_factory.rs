@@ -281,7 +281,7 @@ mod test {
             get_extended_documents_fixture_with_owner_id_from_contract(data_contract.clone())
                 .unwrap();
         let document_transitions =
-            get_document_transitions_fixture(vec![(Action::Create, documents)]);
+            get_document_transitions_fixture(vec![(DocumentTransitionActionType::Create, documents)]);
 
         let raw_document_transitions: Vec<Value> = document_transitions
             .iter()

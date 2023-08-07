@@ -30,7 +30,6 @@ where
         block_platform_state: &mut PlatformState,
         core_block_height: u32,
         start_from_scratch: bool,
-        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         if !start_from_scratch && core_block_height == block_platform_state.core_height() {
             tracing::debug!(

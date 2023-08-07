@@ -227,17 +227,18 @@ impl DocumentFactoryWASM {
 
 fn extract_documents_by_action(
     documents: &JsValue,
-) -> Result<HashMap<Action, Vec<ExtendedDocument>>, JsValue> {
+) -> Result<HashMap<DocumentTransitionActionType, Vec<ExtendedDocument>>, JsValue> {
     check_actions(documents)?;
-    let mut documents_by_action: HashMap<Action, Vec<ExtendedDocument>> = Default::default();
+    let mut documents_by_action: HashMap<DocumentTransitionActionType, Vec<ExtendedDocument>> =
+        Default::default();
 
     let documents_create = extract_documents_of_action(documents, "create").with_js_error()?;
     let documents_replace = extract_documents_of_action(documents, "replace").with_js_error()?;
     let documents_delete = extract_documents_of_action(documents, "delete").with_js_error()?;
 
-    documents_by_action.insert(Action::Create, documents_create);
-    documents_by_action.insert(Action::Replace, documents_replace);
-    documents_by_action.insert(Action::Delete, documents_delete);
+    documents_by_action.insert(DocumentTransitionActionType::Create, documents_create);
+    documents_by_action.insert(DocumentTransitionActionType::Replace, documents_replace);
+    documents_by_action.insert(DocumentTransitionActionType::Delete, documents_delete);
 
     Ok(documents_by_action)
 }

@@ -155,6 +155,7 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::identity::core_script::CoreScript;
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
+    use dpp::withdrawal::Pooling;
     use drive::tests::helpers::setup::{setup_document, setup_system_data_contract};
 
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
@@ -305,10 +306,10 @@ mod tests {
         ];
 
         for document in updated_documents {
-            assert_eq!(document.revision, Some(2));
+            assert_eq!(document.revision(), Some(2));
 
             let tx_id: Vec<u8> = document
-                .properties
+                .properties()
                 .get_bytes("transactionId")
                 .expect("to get transactionId");
 

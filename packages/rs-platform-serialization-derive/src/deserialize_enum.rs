@@ -2,7 +2,7 @@ use crate::VersionAttributes;
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
-use syn::{Data, DataEnum, DeriveInput, LitInt, LitStr, Meta, Path, Type};
+use syn::{DataEnum, DeriveInput, Path};
 
 pub(super) fn derive_platform_deserialize_enum(
     token_stream_input: TokenStream,
@@ -120,7 +120,7 @@ pub(super) fn derive_platform_deserialize_enum(
 
                         }).collect();
 
-            let deserialize_block_no_limit = quote! {
+            let _deserialize_block_no_limit = quote! {
                 let sub_version = platform_version.#platform_version_path;
                 match sub_version {
                     #(#match_arms_no_limit)*

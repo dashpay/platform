@@ -174,26 +174,35 @@ mod tests {
     }
 
     mod validate_state {
-        use super::super::StateTransitionValidationV0;
         use super::*;
 
         use dpp::assert_state_consensus_errors;
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
 
+        use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
         use dpp::block::block_info::BlockInfo;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contract::base::DataContractBaseMethodsV0;
+        use dpp::data_contract::data_contract_config::v0::{
+            DataContractConfigGettersV0, DataContractConfigSettersV0,
+        };
+        use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
+        use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+        use dpp::version::TryFromPlatformVersioned;
         use dpp::data_contract::schema::DataContractDocumentSchemaMethodsV0;
         use serde_json::json;
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
+            let platform_version = PlatformVersion::latest();
             let TestData {
                 mut data_contract,
                 platform,
             } = setup_test();
 
-            data_contract.config.readonly = true;
+            data_contract.config_mut().set_readonly(true);
             apply_contract(&platform, &data_contract, Default::default());
 
             let updated_document = json!({
@@ -215,15 +224,17 @@ mod tests {
 
             data_contract.increment_version();
             data_contract
-                .set_document_json_schema("niceDocument".into(), updated_document)
+                .set_document_schema("niceDocument".into(), updated_document, platform_version)
                 .expect("to be able to set document schema");
 
-            let state_transition = DataContractUpdateTransition {
-                protocol_version: LATEST_VERSION,
-                data_contract,
+            let state_transition = DataContractUpdateTransitionV0 {
+                data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
+                    data_contract,
+                    platform_version,
+                )
+                .expect("to be able to convert data contract to serialization format"),
                 signature: BinaryData::new(vec![0; 65]),
                 signature_public_key_id: 0,
-                transition_type: StateTransitionType::DataContractUpdate,
             };
 
             let platform_ref = PlatformRef {
@@ -233,7 +244,7 @@ mod tests {
                 core_rpc: &platform.core_rpc,
             };
 
-            let result = state_transition
+            let result = DataContractUpdateTransition::V0(state_transition)
                 .validate_state(&platform_ref, None)
                 .expect("state transition to be validated");
 
@@ -250,8 +261,8 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            data_contract.config.keeps_history = true;
-            data_contract.config.readonly = false;
+            data_contract.config_mut().set_keeps_history(true);
+            data_contract.config_mut().set_readonly(false);
 
             // TODO: check that keep_history actually works
             apply_contract(
@@ -284,16 +295,18 @@ mod tests {
 
             data_contract.increment_version();
             data_contract
-                .set_document_json_schema("niceDocument".into(), updated_document)
+                .set_document_schema("niceDocument".into(), updated_document, platform_version)
                 .expect("to be able to set document schema");
 
             // TODO: add a data contract stop transition
-            let state_transition = DataContractUpdateTransition {
-                protocol_version: LATEST_VERSION,
-                data_contract: data_contract.clone(),
+            let state_transition = DataContractUpdateTransitionV0 {
+                data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
+                    data_contract.clone(),
+                    platform_version,
+                )
+                .expect("to be able to convert data contract to serialization format"),
                 signature: BinaryData::new(vec![0; 65]),
                 signature_public_key_id: 0,
-                transition_type: StateTransitionType::DataContractUpdate,
             };
 
             let platform_ref = PlatformRef {
@@ -303,7 +316,7 @@ mod tests {
                 core_rpc: &platform.core_rpc,
             };
 
-            let result = state_transition
+            let result = DataContractUpdateTransition::V0(state_transition)
                 .validate_state(&platform_ref, None)
                 .expect("state transition to be validated");
 

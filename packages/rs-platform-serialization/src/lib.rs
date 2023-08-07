@@ -4,7 +4,7 @@ mod features;
 
 use bincode::config::Config;
 use bincode::de::read::Reader;
-use bincode::de::{read, Decoder, DecoderImpl};
+use bincode::de::{read, DecoderImpl};
 use bincode::enc::write::Writer;
 use bincode::enc::{write, EncoderImpl};
 pub use enc::PlatformVersionEncode;

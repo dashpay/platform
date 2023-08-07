@@ -32,7 +32,6 @@ where
         documents: &[Document],
         drive_operation_types: &mut Vec<DriveOperation>,
         transaction: TransactionArg,
-        platform_version: &PlatformVersion,
     ) -> Result<HashMap<Identifier, WithdrawalTransactionIdAndBytes>, Error> {
         let mut withdrawals: HashMap<Identifier, WithdrawalTransactionIdAndBytes> = HashMap::new();
 
@@ -116,7 +115,10 @@ where
 #[cfg(test)]
 mod tests {
 
-    use dpp::{contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture};
+    use dpp::withdrawal::Pooling;
+    use dpp::{
+        data_contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture,
+    };
     use drive::tests::helpers::setup::setup_document;
 
     mod build_withdrawal_transactions_from_documents {
@@ -139,16 +141,18 @@ mod tests {
 
         #[test]
         fn test_build() {
-            let protocol_version = PlatformVersion::latest();
+            let platform_version = PlatformVersion::latest();
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
             let transaction = platform.drive.grove.start_transaction();
 
-            let data_contract =
-                load_system_data_contract(SystemDataContract::Withdrawals, protocol_version.into())
-                    .expect("to load system data contract");
+            let data_contract = load_system_data_contract(
+                SystemDataContract::Withdrawals,
+                platform_version.protocol_version,
+            )
+            .expect("to load system data contract");
 
             setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 
@@ -166,7 +170,7 @@ mod tests {
                     "transactionIndex": 1u64,
                 }),
                 None,
-                protocol_version.into(),
+                platform_version.into(),
             )
             .expect("expected withdrawal document");
 
@@ -194,7 +198,7 @@ mod tests {
                     "transactionIndex": 2u64,
                 }),
                 None,
-                protocol_version.into(),
+                platform_version.into(),
             )
             .expect("expected withdrawal document");
 
@@ -215,7 +219,6 @@ mod tests {
                     &documents,
                     &mut batch,
                     Some(&transaction),
-                    platform_version,
                 )
                 .expect("to build transactions from documents");
 

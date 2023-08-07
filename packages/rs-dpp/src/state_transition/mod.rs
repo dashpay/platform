@@ -44,6 +44,7 @@ use crate::state_transition::data_contract_update_transition::{
 use crate::state_transition::documents_batch_transition::{
     DocumentsBatchTransition, DocumentsBatchTransitionSignable,
 };
+#[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
     StateTransitionIsNotSignedError,
@@ -240,7 +241,9 @@ impl StateTransition {
         if skip_signature {
             Ok(hash_to_vec(self.signable_bytes()?))
         } else {
-            Ok(hash_to_vec(self.serialize()?))
+            Ok(hash_to_vec(
+                crate::serialization::PlatformSerializable::serialize(self)?,
+            ))
         }
     }
 

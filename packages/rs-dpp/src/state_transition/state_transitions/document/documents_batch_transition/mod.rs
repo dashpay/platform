@@ -55,6 +55,7 @@ use crate::state_transition::documents_batch_transition::document_transition::Do
 use crate::state_transition::documents_batch_transition::fields::{
     property_names, DEFAULT_SECURITY_LEVEL,
 };
+use crate::version::PlatformVersionCurrentVersion;
 
 use crate::state_transition::StateTransitionType::DocumentsBatch;
 pub use v0::*;
@@ -77,7 +78,7 @@ pub use v0::*;
     serde(untagged)
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
-#[platform_version_path(
+#[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.documents_batch_state_transition"
 )]
 pub enum DocumentsBatchTransition {
@@ -584,7 +585,7 @@ pub fn get_security_level_requirement(v: &Value, default: SecurityLevel) -> Secu
 //         let mut document = documents.first().unwrap().to_owned();
 //         document.entropy = Bytes32::new(entropy_bytes);
 //
-//         let transitions = get_document_transitions_fixture([(Action::Create, vec![document])]);
+//         let transitions = get_document_transitions_fixture([(DocumentTransitionActionType::Create, vec![document])]);
 //         let mut transition = transitions.first().unwrap().to_owned();
 //         if let DocumentTransition::Create(ref mut t) = transition {
 //             t.created_at = Some(1671718896263);

@@ -386,7 +386,7 @@ where
 impl PlatformVersionedDecode for () {
     fn platform_versioned_decode<D: Decoder>(
         _: &mut D,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
         Ok(())
     }
@@ -396,7 +396,7 @@ impl_platform_versioned_borrow_decode!(());
 impl<T> PlatformVersionedDecode for core::marker::PhantomData<T> {
     fn platform_versioned_decode<D: Decoder>(
         _: &mut D,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
         Ok(core::marker::PhantomData)
     }
@@ -404,7 +404,7 @@ impl<T> PlatformVersionedDecode for core::marker::PhantomData<T> {
 impl<'de, T> PlatformVersionedBorrowDecode<'de> for core::marker::PhantomData<T> {
     fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
         _: &mut D,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
         Ok(core::marker::PhantomData)
     }

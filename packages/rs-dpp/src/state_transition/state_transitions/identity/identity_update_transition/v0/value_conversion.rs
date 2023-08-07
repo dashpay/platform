@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
+use crate::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 use platform_value::btreemap_extensions::{
     BTreeValueMapHelper, BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper,
 };
@@ -25,7 +26,7 @@ use crate::state_transition::StateTransitionValueConvert;
 use bincode::{config, Decode, Encode};
 use platform_version::version::PlatformVersion;
 
-impl StateTransitionValueConvert for IdentityUpdateTransitionV0 {
+impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
     fn from_object(
         mut raw_object: Value,
         platform_version: &PlatformVersion,
@@ -85,7 +86,7 @@ impl StateTransitionValueConvert for IdentityUpdateTransitionV0 {
 
         let mut add_public_keys: Vec<Value> = vec![];
         for key in self.add_public_keys.iter() {
-            add_public_keys.push(key.to_raw_object(skip_signature)?);
+            add_public_keys.push(key.to_object(skip_signature)?);
         }
 
         if !add_public_keys.is_empty() {
@@ -110,7 +111,7 @@ impl StateTransitionValueConvert for IdentityUpdateTransitionV0 {
         if !self.add_public_keys.is_empty() {
             let mut add_public_keys: Vec<Value> = vec![];
             for key in self.add_public_keys.iter() {
-                add_public_keys.push(key.to_raw_cleaned_object(skip_signature)?);
+                add_public_keys.push(key.to_cleaned_object(skip_signature)?);
             }
 
             value.insert(

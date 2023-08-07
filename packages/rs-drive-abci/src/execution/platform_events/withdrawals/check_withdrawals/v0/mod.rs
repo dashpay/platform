@@ -39,7 +39,6 @@ where
         round: u32,
         verify_with_validator_public_key: Option<&bls_signatures::PublicKey>,
         quorum_hash: Option<&[u8]>,
-        platform_version: &PlatformVersion,
     ) -> SimpleValidationResult<AbciError> {
         if received_withdrawals.ne(our_withdrawals) {
             return SimpleValidationResult::new_with_error(

@@ -5,6 +5,7 @@ use crate::serialization::ValueConvertible;
 use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 use crate::util::hash;
 use crate::version::PlatformVersion;
+use crate::version::PlatformVersionCurrentVersion;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use derive_more::From;

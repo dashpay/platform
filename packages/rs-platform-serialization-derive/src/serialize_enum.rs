@@ -2,25 +2,22 @@ use crate::VersionAttributes;
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::quote;
-use std::str::FromStr;
-use syn::{parse_macro_input, Data, DataEnum, DeriveInput, LitInt, LitStr, Meta, Path, Type};
+
+use syn::{DataEnum, DeriveInput, Path};
 
 pub(super) fn derive_platform_serialize_enum(
     token_stream_input: TokenStream,
     input: &DeriveInput,
     version_attributes: VersionAttributes,
-    data_enum: &DataEnum,
+    _data_enum: &DataEnum,
     error_type: Path,
     name: &Ident,
 ) -> TokenStream {
     let VersionAttributes {
-        passthrough,
         platform_serialize_limit,
-        platform_version_path,
-        untagged,
+
         unversioned,
-        allow_prepend_version,
-        force_prepend_version,
+
         crate_name,
         ..
     } = version_attributes;
@@ -226,7 +223,7 @@ pub(super) fn derive_platform_serialize_enum(
     //     bincode_encode_body
     // };
 
-    let mut expanded = quote! {
+    let expanded = quote! {
         #serialization_body
         #bincode_encode_body
     };

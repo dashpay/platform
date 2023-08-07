@@ -1,5 +1,6 @@
 use crate::serialization::{
     PlatformDeserializableFromVersionedStructure,
+    PlatformDeserializableWithBytesLenFromVersionedStructure,
     PlatformLimitDeserializableFromVersionedStructure, PlatformSerializable,
     PlatformSerializableWithPlatformVersion,
 };
@@ -7,6 +8,7 @@ use bincode::{config, Decode, Encode};
 pub use data_contract::*;
 use derive_more::From;
 
+use bincode::config::{BigEndian, Configuration};
 use bincode::enc::Encoder;
 pub use generate_data_contract::*;
 use platform_value::{Identifier, Value, ValueMapHelper};
@@ -39,6 +41,8 @@ pub mod serialized_version;
 pub use data_contract_methods::*;
 pub mod accessors;
 pub mod data_contract_config;
+#[cfg(feature = "validation")]
+mod validation;
 
 pub use v0::*;
 
@@ -159,6 +163,29 @@ impl PlatformDeserializableFromVersionedStructure for DataContract {
                 })?
                 .0;
         data_contract_in_serialization_format.try_into_platform_versioned(platform_version)
+    }
+}
+
+impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
+    fn versioned_deserialize_with_bytes_len(
+        data: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, usize), ProtocolError>
+    where
+        Self: Sized,
+    {
+        let config = config::standard().with_big_endian().with_no_limit();
+        let (data_contract_in_serialization_format, len) = bincode::borrow_decode_from_slice::<
+            DataContractInSerializationFormat,
+            Configuration<BigEndian>,
+        >(data, config)
+        .map_err(|e| {
+            PlatformDeserializationError(format!("unable to deserialize DataContract: {}", e))
+        })?;
+        Ok((
+            data_contract_in_serialization_format.try_into_platform_versioned(platform_version)?,
+            len,
+        ))
     }
 }
 

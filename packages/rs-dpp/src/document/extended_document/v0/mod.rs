@@ -1,3 +1,8 @@
+mod cbor_conversion;
+mod json_conversion;
+mod platform_value_conversion;
+mod serialize;
+
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
 use crate::document::extended_document::property_names;
@@ -16,10 +21,20 @@ use crate::ProtocolError;
 #[cfg(feature = "cbor")]
 use ciborium::Value as CborValue;
 
-use platform_value::btreemap_extensions::{BTreeValueMapPathHelper, BTreeValueRemoveFromMapHelper};
+use platform_value::btreemap_extensions::{
+    BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper,
+};
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
+use std::convert::TryInto;
+
+use crate::data_contract::base::DataContractBaseMethodsV0;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
+#[cfg(feature = "cbor")]
+use crate::document::serialization_traits::DocumentCborMethodsV0;
 
 use crate::document::serialization_traits::{
     DocumentJsonMethodsV0, DocumentPlatformValueMethodsV0,
@@ -29,24 +44,30 @@ use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use serde_json::Value as JsonValue;
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ExtendedDocumentV0 {
     /// The document type name, stored as a string.
+    #[serde(rename = "$type")]
     pub document_type_name: String,
 
     /// The identifier of the associated data contract.
+    #[serde(rename = "$dataContractId")]
     pub data_contract_id: Identifier,
 
     /// The actual document object containing the data.
+    #[serde(flatten)]
     pub document: Document,
 
     /// The data contract associated with the document.
+    #[serde(rename = "$dataContract")]
     pub data_contract: DataContract,
 
     /// An optional field for metadata associated with the document.
+    #[serde(rename = "$metadata", default)]
     pub metadata: Option<Metadata>,
 
     /// A field representing the entropy, stored as `Bytes32`.
+    #[serde(rename = "$entropy")]
     pub entropy: Bytes32,
 }
 
@@ -205,7 +226,7 @@ impl ExtendedDocumentV0 {
         extended_document.data_contract_id = Identifier::new(
             properties
                 .remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)?
-                .unwrap_or(extended_document.data_contract.id.to_buffer()),
+                .unwrap_or(extended_document.data_contract.id().to_buffer()),
         );
         extended_document.document = Document::from_map(properties, None, None)?;
         Ok(extended_document)
@@ -259,11 +280,11 @@ impl ExtendedDocumentV0 {
 
         extended_document
             .document
-            .properties
+            .properties()
             .replace_at_paths(identifiers, ReplacementType::Identifier)?;
         extended_document
             .document
-            .properties
+            .properties()
             .replace_at_paths(binary_paths, ReplacementType::BinaryBytes)?;
         Ok(extended_document)
     }
@@ -482,7 +503,7 @@ impl PlatformDeserializable for ExtendedDocumentV0 {
     }
 }
 
-impl ValueConvertible for ExtendedDocumentV0 {
+impl<'a> ValueConvertible<'a> for ExtendedDocumentV0 {
     fn to_object(&self) -> Result<Value, ProtocolError> {
         todo!()
     }

@@ -176,8 +176,8 @@ mod test {
         let data_contract = get_data_contract_fixture(None).data_contract;
         let documents = get_extended_documents_fixture(data_contract.clone()).unwrap();
         let documents_transitions = get_document_transitions_fixture([
-            (Action::Replace, documents),
-            (Action::Create, vec![]),
+            (DocumentTransitionActionType::Replace, documents),
+            (DocumentTransitionActionType::Create, vec![]),
         ]);
         let raw_document_transitions: Vec<Value> = documents_transitions
             .iter()

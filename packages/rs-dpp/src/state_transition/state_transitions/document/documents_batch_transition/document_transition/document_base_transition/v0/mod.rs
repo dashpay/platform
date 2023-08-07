@@ -1,3 +1,4 @@
+pub mod from_document;
 pub mod v0_methods;
 
 use std::collections::BTreeMap;
@@ -14,8 +15,12 @@ use serde_json::Value as JsonValue;
 use crate::state_transition::documents_batch_transition::document_base_transition::property_names;
 use crate::{data_contract::DataContract, errors::ProtocolError, identifier::Identifier};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, Default, PartialEq, Display)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 #[display(
     fmt = "ID: {}, Type: {}, Contract ID: {}",
     "id",
@@ -24,13 +29,16 @@ use crate::{data_contract::DataContract, errors::ProtocolError, identifier::Iden
 )]
 pub struct DocumentBaseTransitionV0 {
     /// The document ID
-    #[serde(rename = "$id")]
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "$id"))]
     pub id: Identifier,
     /// Name of document type found int the data contract associated with the `data_contract_id`
-    #[serde(rename = "$type")]
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "$type"))]
     pub document_type_name: String,
     /// Data contract ID generated from the data contract's `owner_id` and `entropy`
-    #[serde(rename = "$dataContractId")]
+    #[cfg_attr(
+        feature = "state-transition-serde-conversion",
+        serde(rename = "$dataContractId")
+    )]
     pub data_contract_id: Identifier,
 }
 
@@ -51,7 +59,7 @@ impl DocumentBaseTransitionV0 {
             data_contract_id: Identifier::new(
                 map.remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)
                     .map_err(ProtocolError::ValueError)?
-                    .unwrap_or(data_contract.id.to_buffer()),
+                    .unwrap_or(data_contract.id().to_buffer()),
             ),
         })
     }
@@ -112,10 +120,6 @@ impl DocumentTransitionObjectLike for DocumentBaseTransitionV0 {
         btree_map.insert(
             property_names::DATA_CONTRACT_ID.to_string(),
             Value::Identifier(self.data_contract_id.to_buffer()),
-        );
-        btree_map.insert(
-            property_names::ACTION.to_string(),
-            Value::U8(self.action as u8),
         );
         btree_map.insert(
             property_names::DOCUMENT_TYPE.to_string(),

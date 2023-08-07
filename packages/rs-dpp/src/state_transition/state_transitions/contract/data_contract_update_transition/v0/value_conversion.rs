@@ -13,7 +13,7 @@ use platform_version::version::PlatformVersion;
 use platform_version::TryIntoPlatformVersioned;
 use std::collections::BTreeMap;
 
-impl StateTransitionValueConvert for DataContractUpdateTransitionV0 {
+impl<'a> StateTransitionValueConvert<'a> for DataContractUpdateTransitionV0 {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         let mut object: Value = platform_value::to_value(self)?;
         if skip_signature {
@@ -71,7 +71,6 @@ impl StateTransitionValueConvert for DataContractUpdateTransitionV0 {
                 platform_version,
             )?
             .try_into_platform_versioned(platform_version)?,
-            ..Default::default()
         })
     }
 
@@ -97,7 +96,6 @@ impl StateTransitionValueConvert for DataContractUpdateTransitionV0 {
                 platform_version,
             )?
             .try_into_platform_versioned(platform_version)?,
-            ..Default::default()
         })
     }
 

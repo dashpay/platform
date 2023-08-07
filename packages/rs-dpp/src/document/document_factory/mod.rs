@@ -2,14 +2,17 @@ mod v0;
 
 use crate::data_contract::DataContract;
 
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
+use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use crate::util::entropy_generator::EntropyGenerator;
 pub use v0::DocumentFactoryV0;
 
@@ -100,6 +103,21 @@ impl DocumentFactory {
             DocumentFactory::V0(v0) => {
                 v0.create_extended_document(owner_id, document_type_name, data)
             }
+        }
+    }
+
+    #[cfg(feature = "state-transitions")]
+    pub fn create_state_transition<'a>(
+        &self,
+        documents_iter: impl IntoIterator<
+            Item = (
+                DocumentTransitionActionType,
+                Vec<(Document, &'a DocumentType)>,
+            ),
+        >,
+    ) -> Result<DocumentsBatchTransition, ProtocolError> {
+        match self {
+            DocumentFactory::V0(v0) => v0.create_state_transition(documents_iter),
         }
     }
 }
@@ -200,7 +218,7 @@ impl DocumentFactory {
 //
 //         documents[0].document.owner_id = generate_random_identifier_struct();
 //
-//         let result = factory.create_state_transition(vec![(Action::Create, documents)]);
+//         let result = factory.create_state_transition(vec![(DocumentTransitionActionType::Create, documents)]);
 //         assert_error_contains!(result, "Documents have mixed owner ids")
 //     }
 //
@@ -215,7 +233,7 @@ impl DocumentFactory {
 //             get_document_validator_fixture(),
 //             DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
 //         );
-//         let result = factory.create_state_transition(vec![(Action::Create, documents)]);
+//         let result = factory.create_state_transition(vec![(DocumentTransitionActionType::Create, documents)]);
 //         assert_error_contains!(result, "Invalid Document initial revision '3'")
 //     }
 //
@@ -232,8 +250,8 @@ impl DocumentFactory {
 //         let new_document = documents[0].clone();
 //         let batch_transition = factory
 //             .create_state_transition(vec![
-//                 (Action::Create, documents),
-//                 (Action::Replace, vec![new_document]),
+//                 (DocumentTransitionActionType::Create, documents),
+//                 (DocumentTransitionActionType::Replace, vec![new_document]),
 //             ])
 //             .expect("state transitions should be created");
 //         assert_eq!(11, batch_transition.transitions.len());

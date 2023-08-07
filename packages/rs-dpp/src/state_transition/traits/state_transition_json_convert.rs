@@ -1,4 +1,4 @@
-use crate::state_transition::{StateTransitionValueConvert, ValueConvert};
+use crate::state_transition::StateTransitionValueConvert;
 use crate::ProtocolError;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -11,7 +11,7 @@ pub struct JsonStateTransitionSerializationOptions {
 }
 
 /// The trait contains methods related to conversion of StateTransition into different formats
-pub trait StateTransitionJsonConvert: Serialize + StateTransitionValueConvert {
+pub trait StateTransitionJsonConvert: Serialize + StateTransitionValueConvert<'_> {
     /// Returns the [`serde_json::Value`] instance that encodes:
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64

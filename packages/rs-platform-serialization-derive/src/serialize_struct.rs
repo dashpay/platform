@@ -2,16 +2,13 @@ use crate::VersionAttributes;
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::quote;
-use syn::{
-    parse_macro_input, Data, DataEnum, DataStruct, DeriveInput, Expr, Lit, LitInt, LitStr, Meta,
-    Path, Type,
-};
+use syn::{DataStruct, DeriveInput, Path};
 
 pub(super) fn derive_platform_serialize_struct(
     token_stream_input: TokenStream,
     input: &DeriveInput,
     version_attributes: VersionAttributes,
-    data_struct: &DataStruct,
+    _data_struct: &DataStruct,
     error_type: Path,
     name: &Ident,
 ) -> TokenStream {

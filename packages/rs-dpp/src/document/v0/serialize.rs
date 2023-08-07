@@ -22,6 +22,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Identifier, Value};
+use platform_version::version::FeatureVersion;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
@@ -204,6 +205,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
     fn from_bytes_v0(
         serialized_document: &[u8],
         document_type: DocumentTypeRef,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut buf = BufReader::new(serialized_document);
         if serialized_document.len() < 64 {
@@ -331,10 +333,25 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
     ) -> Result<Vec<u8>, ProtocolError> {
         match platform_version
             .dpp
-            .contract_versions
-            .contract_serialization_version
+            .document_versions
+            .document_serialization_version
             .default_current_version
         {
+            0 => self.serialize_v0(document_type),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentV0::serialize".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    fn serialize_specific_version(
+        &self,
+        document_type: DocumentTypeRef,
+        feature_version: FeatureVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        match feature_version {
             0 => self.serialize_v0(document_type),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentV0::serialize".to_string(),
@@ -355,8 +372,8 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
     ) -> Result<Vec<u8>, ProtocolError> {
         match platform_version
             .dpp
-            .contract_versions
-            .contract_serialization_version
+            .document_versions
+            .document_serialization_version
             .default_current_version
         {
             0 => self.serialize_consume_v0(document_type),
@@ -374,28 +391,15 @@ impl DocumentPlatformConversionMethodsV0 for DocumentV0 {
         document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        match platform_version
-            .dpp
-            .contract_versions
-            .contract_structure_version
-        {
-            0 => {
-                let serialized_version = serialized_document.read_varint().map_err(|_| {
-                    ProtocolError::DecodingError(
-                        "error reading revision from serialized document for revision".to_string(),
-                    )
-                })?;
-                match serialized_version {
-                    0 => DocumentV0::from_bytes_v0(serialized_document, document_type),
-                    version => Err(ProtocolError::UnknownVersionMismatch {
-                        method: "Document::from_bytes (deserialization)".to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    }),
-                }
-            }
+        let serialized_version = serialized_document.read_varint().map_err(|_| {
+            ProtocolError::DecodingError(
+                "error reading revision from serialized document for revision".to_string(),
+            )
+        })?;
+        match serialized_version {
+            0 => DocumentV0::from_bytes_v0(serialized_document, document_type, platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "Document::from_bytes (structure)".to_string(),
+                method: "Document::from_bytes (deserialization)".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

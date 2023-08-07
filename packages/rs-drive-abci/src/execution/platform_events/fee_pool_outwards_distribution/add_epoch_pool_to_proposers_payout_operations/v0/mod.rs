@@ -164,8 +164,6 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
 
-    use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
-
     mod add_epoch_pool_to_proposers_payout_operations {
         use super::*;
         use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0;
@@ -174,6 +172,7 @@ mod tests {
             setup::TestPlatformBuilder,
         };
         use dpp::block::block_info::BlockInfo;
+        use dpp::identity::accessors::IdentityGettersV0;
         use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
         use drive::common::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
         use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -252,6 +251,7 @@ mod tests {
                     &pro_tx_hashes,
                     Some(55),
                     Some(&transaction),
+                    platform_version,
                 );
 
             let mut batch = vec![];
@@ -300,7 +300,7 @@ mod tests {
 
             let shares_percentage_with_precision: u64 = share_identities_and_documents[0]
                 .1
-                .properties
+                .properties()
                 .get_integer("percentage")
                 .expect("should have percentage field");
 
@@ -316,7 +316,7 @@ mod tests {
 
             let share_identities = share_identities_and_documents
                 .iter()
-                .map(|(identity, _)| identity.id.to_buffer())
+                .map(|(identity, _)| identity.id().to_buffer())
                 .collect();
 
             let refetched_share_identities_balances = platform

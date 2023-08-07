@@ -12,6 +12,7 @@ use crate::{
 };
 use document_base_transition::DocumentBaseTransition;
 
+pub mod action_type;
 pub mod document_base_transition;
 pub mod document_create_transition;
 pub mod document_delete_transition;
@@ -63,7 +64,11 @@ pub trait DocumentTransitionV0Methods {
     fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>>;
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From, PartialEq, Display)]
+#[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize)
+)]
 pub enum DocumentTransition {
     #[display(fmt = "CreateDocumentTransition({})", "_0")]
     Create(DocumentCreateTransition),

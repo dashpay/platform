@@ -283,7 +283,8 @@ mod tests {
         let documents =
             get_extended_documents_fixture_with_owner_id_from_contract(data_contract.clone())
                 .unwrap();
-        let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
+        let transitions =
+            get_document_transitions_fixture([(DocumentTransitionActionType::Create, documents)]);
         let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
             owner_id: data_contract.owner_id,
             transitions,

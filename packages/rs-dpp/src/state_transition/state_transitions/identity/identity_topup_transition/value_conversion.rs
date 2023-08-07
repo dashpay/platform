@@ -20,7 +20,7 @@ use bincode::{config, Decode, Encode};
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
-impl StateTransitionValueConvert for IdentityTopUpTransition {
+impl<'a> StateTransitionValueConvert<'a> for IdentityTopUpTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
             IdentityTopUpTransition::V0(transition) => {

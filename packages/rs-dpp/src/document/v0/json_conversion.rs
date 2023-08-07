@@ -6,11 +6,12 @@ use crate::document::DocumentV0;
 use crate::util::json_value::JsonValueExt;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
+use platform_version::version::PlatformVersion;
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use std::convert::TryInto;
 
-impl DocumentJsonMethodsV0 for DocumentV0 {
+impl<'a> DocumentJsonMethodsV0<'a> for DocumentV0 {
     fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError> {
         let mut value = json!({
             property_names::ID: self.id,
@@ -52,7 +53,10 @@ impl DocumentJsonMethodsV0 for DocumentV0 {
             .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
     }
 
-    fn from_json_value<S>(mut document_value: JsonValue) -> Result<Self, ProtocolError>
+    fn from_json_value<S>(
+        document_value: JsonValue,
+        _platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
     where
         for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = ProtocolError>,
     {

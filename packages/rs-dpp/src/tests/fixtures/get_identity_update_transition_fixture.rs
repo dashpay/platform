@@ -1,4 +1,6 @@
+use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::util::deserializer::ProtocolVersion;
 use crate::version::{FeatureVersion, PlatformVersion};
@@ -21,13 +23,11 @@ pub fn get_identity_update_transition_fixture(
         .default_current_version
     {
         0 => IdentityUpdateTransitionV0 {
-            protocol_version: LATEST_VERSION,
-            transition_type: StateTransitionType::IdentityUpdate,
             signature: BinaryData::new(vec![0; 65]),
             signature_public_key_id: 0,
             identity_id: generate_random_identifier_struct(),
             revision: 0,
-            add_public_keys: vec![IdentityPublicKeyInCreation {
+            add_public_keys: vec![IdentityPublicKeyInCreationV0 {
                 id: 3,
                 key_type: KeyType::ECDSA_SECP256K1,
                 purpose: Purpose::AUTHENTICATION,
@@ -39,7 +39,8 @@ pub fn get_identity_update_transition_fixture(
                 .unwrap(),
                 security_level: SecurityLevel::MASTER,
                 signature: BinaryData::new(vec![0; 65]),
-            }],
+            }
+            .into()],
             disable_public_keys: vec![0],
             public_keys_disabled_at: Some(1234567),
             ..Default::default()

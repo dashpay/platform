@@ -23,7 +23,7 @@ use crate::state_transition::StateTransitionValueConvert;
 use bincode::{config, Decode, Encode};
 use platform_version::version::PlatformVersion;
 
-impl StateTransitionValueConvert for IdentityCreditTransferTransitionV0 {
+impl<'a> StateTransitionValueConvert<'a> for IdentityCreditTransferTransitionV0 {
     fn from_object(
         mut raw_object: Value,
         platform_version: &PlatformVersion,
@@ -39,10 +39,11 @@ impl StateTransitionValueConvert for IdentityCreditTransferTransitionV0 {
     }
 
     fn from_value_map(
-        mut raw_value_map: BTreeMap<String, Value>,
+        raw_value_map: BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        todo()
+        let value: Value = raw_value_map.into();
+        Self::from_object(value, platform_version)
     }
 
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

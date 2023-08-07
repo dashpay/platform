@@ -1,5 +1,5 @@
 pub mod data_contract;
-#[cfg(any(feature = "state-transitions", feature = "validation"))]
+#[cfg(feature = "state-transition-validation")]
 pub mod data_trigger;
 pub mod document;
 pub mod identity;

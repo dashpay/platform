@@ -24,7 +24,7 @@ use crate::state_transition::data_contract_create_transition::{DataContractCreat
 use crate::state_transition::data_contract_create_transition::fields::*;
 use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};
 
-impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
+impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
     fn from_object(
         mut raw_object: Value,
         platform_version: &PlatformVersion,
@@ -51,7 +51,6 @@ impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
                 platform_version,
             )?
             .try_into_platform_versioned(platform_version)?,
-            ..Default::default()
         })
     }
 
@@ -81,7 +80,6 @@ impl StateTransitionValueConvert for DataContractCreateTransitionV0 {
                 platform_version,
             )?
             .try_into_platform_versioned(platform_version)?,
-            ..Default::default()
         })
     }
 

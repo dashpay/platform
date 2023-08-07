@@ -3,6 +3,7 @@ use thiserror::Error;
 
 use crate::errors::consensus::ConsensusError;
 
+use crate::document::accessors::v0::DocumentV0Getters;
 use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
@@ -36,21 +37,20 @@ pub enum DocumentError {
         raw_document: Value,
     },
 
-    #[cfg(feature = "extended-document")]
-    #[error("Invalid Document initial revision '{}'", document.revision().copied().unwrap_or_default())]
-    InvalidInitialRevisionError { document: Box<ExtendedDocument> },
+    #[error("Invalid Document initial revision '{}'", document.revision().unwrap_or_default())]
+    InvalidInitialRevisionError { document: Box<Document> },
 
-    #[cfg(feature = "extended-document")]
     #[error("Revision absent on mutable document")]
-    RevisionAbsentError { document: Box<ExtendedDocument> },
+    RevisionAbsentError { document: Box<Document> },
 
-    #[cfg(feature = "extended-document")]
     #[error("Trying To Replace Immutable Document")]
-    TryingToReplaceImmutableDocument { document: Box<ExtendedDocument> },
+    TryingToReplaceImmutableDocument { document: Box<Document> },
 
-    #[cfg(feature = "extended-document")]
+    #[error("Trying To Delete Immutable Document")]
+    TryingToDeleteImmutableDocument { document: Box<Document> },
+
     #[error("Documents have mixed owner ids")]
-    MismatchOwnerIdsError { documents: Vec<ExtendedDocument> },
+    MismatchOwnerIdsError { documents: Vec<Document> },
 
     #[error("No previous revision error")]
     DocumentNoRevisionError { document: Box<Document> },

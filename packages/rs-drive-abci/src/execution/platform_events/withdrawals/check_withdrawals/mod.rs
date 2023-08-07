@@ -63,7 +63,6 @@ where
                 round,
                 verify_with_validator_public_key,
                 quorum_hash,
-                platform_version,
             )),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "check_withdrawals".to_string(),

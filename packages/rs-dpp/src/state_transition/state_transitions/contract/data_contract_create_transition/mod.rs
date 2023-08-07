@@ -37,6 +37,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::data_contract::created_data_contract::CreatedDataContract;
 pub use v0::*;
 
+use crate::version::PlatformVersionCurrentVersion;
+
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 
 #[derive(
@@ -57,7 +59,7 @@ pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
     serde(untagged)
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
-#[platform_version_path(
+#[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.contract_create_state_transition"
 )]
 pub enum DataContractCreateTransition {

@@ -1,12 +1,12 @@
 use crate::state_transition::data_contract_update_transition::{
     SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
 };
+use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::fields::property_names::{
     STATE_TRANSITION_PROTOCOL_VERSION, TRANSITIONS,
 };
 use crate::state_transition::documents_batch_transition::{
-    document_base_transition, document_create_transition, DocumentTransitionExt,
-    DocumentsBatchTransitionV0,
+    document_base_transition, document_create_transition, DocumentsBatchTransitionV0,
 };
 use crate::state_transition::{
     StateTransitionCborConvert, StateTransitionFieldTypes, StateTransitionValueConvert,
@@ -16,6 +16,8 @@ use crate::ProtocolError;
 use anyhow::Context;
 use ciborium::Value as CborValue;
 use std::convert::TryInto;
+
+impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {}
 
 impl StateTransitionCborConvert for DocumentsBatchTransitionV0 {
     fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {

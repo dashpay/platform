@@ -1,20 +1,30 @@
 use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::DataContract;
+use crate::version::PlatformVersionCurrentVersion;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use bincode::{BorrowDecode, Decode, Encode};
 use derive_more::From;
 use platform_value::Identifier;
 use platform_version::TryFromPlatformVersioned;
-use serde::{Deserialize, Serialize};
+use platform_versioning::{
+    PlatformSerdeVersionedDeserialize, PlatformSerdeVersionedSerialize, PlatformVersioned,
+};
+use serde::Serialize;
 
 pub(in crate::data_contract) mod v0;
 
 pub const CONTRACT_DESERIALIZATION_LIMIT: usize = 15000;
 
-#[derive(Debug, Clone, Encode, Decode, PartialEq, From, Serialize, Deserialize)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "data-contract-serde-conversion",
+    derive(Serialize, PlatformSerdeVersionedDeserialize)
+)]
+#[platform_version_path_bounds("dpp.contract_versions.contract_serialization_version")]
 pub enum DataContractInSerializationFormat {
+    #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(DataContractInSerializationFormatV0),
 }
 

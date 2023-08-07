@@ -218,7 +218,6 @@ mod tests {
     use rust_decimal::prelude::ToPrimitive;
 
     use crate::{config::PlatformConfig, test::helpers::setup::TestPlatformBuilder};
-    use drive::common::helpers::identities::create_test_masternode_identities;
     use drive::common::identities::create_test_masternode_identities;
 
     mod helpers {
