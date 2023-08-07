@@ -125,7 +125,7 @@ pub trait ValueConvertible<'a>: Serialize + Deserialize<'a> {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
-    fn from_object(value: Value, platform_version: &PlatformVersion) -> Result<Self, ProtocolError>
+    fn from_object(value: Value) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
