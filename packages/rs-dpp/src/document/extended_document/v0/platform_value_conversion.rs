@@ -7,7 +7,7 @@ use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use std::collections::BTreeMap;
 
-impl DocumentPlatformValueMethodsV0 for ExtendedDocumentV0 {
+impl DocumentPlatformValueMethodsV0<'_> for ExtendedDocumentV0 {
     fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut map: BTreeMap<String, Value> = BTreeMap::new();
         map.insert(property_names::ID.to_string(), self.id().into());
@@ -55,7 +55,7 @@ impl DocumentPlatformValueMethodsV0 for ExtendedDocumentV0 {
             map.insert(property_names::REVISION.to_string(), Value::U64(*revision));
         }
 
-        map.extend(self.properties());
+        map.extend(self.properties().to_owned());
 
         Ok(map)
     }

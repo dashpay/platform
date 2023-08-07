@@ -1,4 +1,5 @@
 use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
+#[cfg(feature = "state-transitions")]
 use crate::data_contract::created_data_contract::v0::CreatedDataContractV0;
 #[cfg(feature = "state-transitions")]
 use crate::data_contract::created_data_contract::CreatedDataContract;

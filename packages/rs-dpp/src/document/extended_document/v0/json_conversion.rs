@@ -7,14 +7,14 @@ use crate::document::serialization_traits::{
 use crate::document::DocumentV0;
 use crate::serialization::ValueConvertible;
 use crate::util::json_value::JsonValueExt;
-use crate::ProtocolError;
+use crate::{ProtocolError, serialization};
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use std::convert::TryInto;
 
-impl DocumentJsonMethodsV0 for ExtendedDocumentV0 {
+impl DocumentJsonMethodsV0<'_> for ExtendedDocumentV0 {
     fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError> {
         let mut json = self.document.to_json_with_identifiers_using_bytes()?;
         let mut value_mut = json.as_object_mut().unwrap();
@@ -28,7 +28,7 @@ impl DocumentJsonMethodsV0 for ExtendedDocumentV0 {
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_object()
+        serialization::ValueConvertible::to_object(self)
             .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
     }
 

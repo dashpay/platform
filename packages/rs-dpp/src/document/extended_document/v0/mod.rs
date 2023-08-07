@@ -160,11 +160,11 @@ impl ExtendedDocumentV0 {
     /// # Errors
     ///
     /// Returns a `ProtocolError` if there is an error decoding the JSON string.
-    pub fn from_json_string(string: &str, contract: DataContract) -> Result<Self, ProtocolError> {
+    pub fn from_json_string(string: &str, contract: DataContract, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
         let json_value: JsonValue = serde_json::from_str(string).map_err(|_| {
             ProtocolError::StringDecodeError("error decoding from json string".to_string())
         })?;
-        Self::from_untrusted_platform_value(json_value.into(), contract)
+        Self::from_untrusted_platform_value(json_value.into(), contract, platform_version)
     }
 
     #[cfg(feature = "json-object")]
@@ -181,8 +181,9 @@ impl ExtendedDocumentV0 {
     pub fn from_raw_json_document(
         raw_document: JsonValue,
         data_contract: DataContract,
+        platform_version: &PlatformVersion
     ) -> Result<Self, ProtocolError> {
-        Self::from_untrusted_platform_value(raw_document.into(), data_contract)
+        Self::from_untrusted_platform_value(raw_document.into(), data_contract, platform_version)
     }
 
     /// Create an extended document from a trusted platform value object where fields are already in
@@ -219,21 +220,11 @@ impl ExtendedDocumentV0 {
             entropy: Default::default(),
         };
 
-        // if the protocol version is not set, use the current protocol version
-        extended_document.feature_version = properties
-            .remove_optional_integer(property_names::FEATURE_VERSION)
-            .map_err(ProtocolError::ValueError)?
-            .unwrap_or(
-                LATEST_PLATFORM_VERSION
-                    .extended_document
-                    .default_current_version,
-            );
         extended_document.data_contract_id = Identifier::new(
             properties
                 .remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)?
                 .unwrap_or(extended_document.data_contract.id().to_buffer()),
         );
-        extended_document.document = Document::from_map(properties, None, None)?;
         Ok(extended_document)
     }
 
@@ -275,19 +266,9 @@ impl ExtendedDocumentV0 {
             entropy: Default::default(),
         };
 
-        // if the protocol version is not set, use the current protocol version
-        extended_document.feature_version = properties
-            .remove_optional_integer(property_names::FEATURE_VERSION)
-            .map_err(ProtocolError::ValueError)?
-            .unwrap_or(
-                LATEST_PLATFORM_VERSION
-                    .extended_document
-                    .default_current_version,
-            );
         extended_document.data_contract_id = properties
             .remove_optional_identifier(property_names::DATA_CONTRACT_ID)?
             .unwrap_or(extended_document.data_contract.id());
-        extended_document.document = Document::from_map(properties, None, None)?;
 
         extended_document
             .document
@@ -310,10 +291,6 @@ impl ExtendedDocumentV0 {
         let mut value = self.document.to_json()?;
         let value_mut = value.as_object_mut().unwrap();
         value_mut.insert(
-            property_names::FEATURE_VERSION.to_string(),
-            JsonValue::Number(self.feature_version.into()),
-        );
-        value_mut.insert(
             property_names::DOCUMENT_TYPE_NAME.to_string(),
             JsonValue::String(self.document_type_name.clone()),
         );
@@ -333,10 +310,6 @@ impl ExtendedDocumentV0 {
     pub fn to_pretty_json(&self) -> Result<JsonValue, ProtocolError> {
         let mut value = self.document.to_json()?;
         let value_mut = value.as_object_mut().unwrap();
-        value_mut.insert(
-            property_names::FEATURE_VERSION.to_string(),
-            JsonValue::Number(self.feature_version.into()),
-        );
         value_mut.insert(
             property_names::DOCUMENT_TYPE_NAME.to_string(),
             JsonValue::String(self.document_type_name.clone()),
@@ -382,10 +355,6 @@ impl ExtendedDocumentV0 {
 
     pub fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut object = self.document.to_map_value()?;
-        object.insert(
-            property_names::FEATURE_VERSION.to_string(),
-            self.feature_version.into(),
-        );
         object.insert(
             property_names::DOCUMENT_TYPE_NAME.to_string(),
             Value::Text(self.document_type_name.clone()),
