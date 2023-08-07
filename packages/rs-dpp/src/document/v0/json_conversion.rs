@@ -54,7 +54,7 @@ impl<'a> DocumentJsonMethodsV0<'a> for DocumentV0 {
     }
 
     fn from_json_value<S>(
-        document_value: JsonValue,
+        mut document_value: JsonValue,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where

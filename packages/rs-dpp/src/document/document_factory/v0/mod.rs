@@ -204,7 +204,8 @@ impl DocumentFactoryV0 {
         let transitions: Vec<_> = documents
             .into_iter()
             .map(|(action, documents)| match action {
-                DocumentTransitionActionType::Create(entropy) => {
+                DocumentTransitionActionType::Create => {
+                    let entropy = self.entropy_generator.generate()?;
                     Self::document_create_transitions(documents, entropy, platform_version)
                 }
                 DocumentTransitionActionType::Delete => {
