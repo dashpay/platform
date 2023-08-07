@@ -24,7 +24,7 @@ impl DocumentJsonMethodsV0 for ExtendedDocumentV0 {
             property_names::DOCUMENT_TYPE_NAME.to_owned(),
             self.document_type_name.into(),
         );
-        Ok(value)
+        Ok(json)
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {

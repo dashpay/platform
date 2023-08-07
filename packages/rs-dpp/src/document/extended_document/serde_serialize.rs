@@ -44,6 +44,7 @@ impl<'de> Visitor<'de> for ExtendedDocumentVisitor {
         let mut document_type_name: Option<String> = None;
         let mut data_contract_id: Option<Identifier> = None;
         let mut document: Option<Document> = None;
+        let mut data_contract: Option<DataContract> = None;
 
         while let Some(key) = map.next_key()? {
             match key {
@@ -56,9 +57,12 @@ impl<'de> Visitor<'de> for ExtendedDocumentVisitor {
                 "$dataContractId" => {
                     data_contract_id = Some(map.next_value()?);
                 }
+                "$dataContract" => {
+                    data_contract = Some(map.next_value()?);
+                }
                 "document" => {
                     document = Some(map.next_value()?);
-                }
+                },
                 _ => {}
             }
         }
@@ -68,6 +72,8 @@ impl<'de> Visitor<'de> for ExtendedDocumentVisitor {
             document_type_name.ok_or_else(|| serde::de::Error::missing_field("$type"))?;
         let data_contract_id =
             data_contract_id.ok_or_else(|| serde::de::Error::missing_field("$dataContractId"))?;
+        let data_contract =
+            data_contract.ok_or_else(|| serde::de::Error::missing_field("$dataContract"))?;
         let document = document.ok_or_else(|| serde::de::Error::missing_field("document"))?;
 
         match version {
@@ -75,7 +81,7 @@ impl<'de> Visitor<'de> for ExtendedDocumentVisitor {
                 document_type_name,
                 data_contract_id,
                 document,
-                data_contract: DataContract::default(),
+                data_contract,
                 metadata: None,
                 entropy: Bytes32::default(),
             })),

@@ -5,8 +5,8 @@ mod serialize;
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
-use crate::document::extended_document::property_names;
-use crate::document::{Document, DocumentV0Getters};
+use crate::document::extended_document::fields::property_names;
+use crate::document::{Document, DocumentV0Getters, ExtendedDocument};
 use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::Revision;
@@ -21,9 +21,7 @@ use crate::ProtocolError;
 #[cfg(feature = "cbor")]
 use ciborium::Value as CborValue;
 
-use platform_value::btreemap_extensions::{
-    BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper,
-};
+use platform_value::btreemap_extensions::{BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -42,6 +40,7 @@ use crate::document::serialization_traits::{
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 #[cfg(feature = "json-object")]
 use serde_json::Value as JsonValue;
+use platform_version::version::PlatformVersion;
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -200,18 +199,24 @@ impl ExtendedDocumentV0 {
     pub fn from_trusted_platform_value(
         document_value: Value,
         data_contract: DataContract,
+        platform_version: &PlatformVersion
     ) -> Result<Self, ProtocolError> {
         let mut properties = document_value
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         let document_type_name = properties
-            .remove_string(property_names::DOCUMENT_TYPE)
+            .remove_string(property_names::DOCUMENT_TYPE_NAME)
             .map_err(ProtocolError::ValueError)?;
+
+        let document = Document::from_platform_value(document_value, platform_version)?;
 
         let mut extended_document = Self {
             data_contract,
             document_type_name,
-            ..Default::default()
+            document,
+            data_contract_id: data_contract.id(),
+            metadata: None,
+            entropy: Default::default(),
         };
 
         // if the protocol version is not set, use the current protocol version
@@ -246,22 +251,28 @@ impl ExtendedDocumentV0 {
     pub fn from_untrusted_platform_value(
         document_value: Value,
         data_contract: DataContract,
+        platform_version: &PlatformVersion
     ) -> Result<Self, ProtocolError> {
         let mut properties = document_value
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         let document_type_name = properties
-            .remove_string(property_names::DOCUMENT_TYPE)
+            .remove_string(property_names::DOCUMENT_TYPE_NAME)
             .map_err(ProtocolError::ValueError)?;
 
         //Because we don't know how the json came in we need to sanitize it
         let (identifiers, binary_paths): (HashSet<_>, HashSet<_>) =
             data_contract.get_identifiers_and_binary_paths_owned(document_type_name.as_str())?;
 
+        let document = Document::from_platform_value(document_value, platform_version)?;
+
         let mut extended_document = Self {
             data_contract,
             document_type_name,
-            ..Default::default()
+            document,
+            data_contract_id: data_contract.id(),
+            metadata: None,
+            entropy: Default::default(),
         };
 
         // if the protocol version is not set, use the current protocol version
@@ -275,17 +286,17 @@ impl ExtendedDocumentV0 {
             );
         extended_document.data_contract_id = properties
             .remove_optional_identifier(property_names::DATA_CONTRACT_ID)?
-            .unwrap_or(extended_document.data_contract.id);
+            .unwrap_or(extended_document.data_contract.id());
         extended_document.document = Document::from_map(properties, None, None)?;
 
         extended_document
             .document
             .properties()
-            .replace_at_paths(identifiers, ReplacementType::Identifier)?;
+            .replace_at_paths(&identifiers, ReplacementType::Identifier)?;
         extended_document
             .document
             .properties()
-            .replace_at_paths(binary_paths, ReplacementType::BinaryBytes)?;
+            .replace_at_paths(&binary_paths, ReplacementType::BinaryBytes)?;
         Ok(extended_document)
     }
 
@@ -303,12 +314,12 @@ impl ExtendedDocumentV0 {
             JsonValue::Number(self.feature_version.into()),
         );
         value_mut.insert(
-            property_names::DOCUMENT_TYPE.to_string(),
+            property_names::DOCUMENT_TYPE_NAME.to_string(),
             JsonValue::String(self.document_type_name.clone()),
         );
         value_mut.insert(
             property_names::DATA_CONTRACT_ID.to_string(),
-            json!(self.data_contract.id),
+            json!(self.data_contract.id()),
         );
         Ok(value)
     }
@@ -327,7 +338,7 @@ impl ExtendedDocumentV0 {
             JsonValue::Number(self.feature_version.into()),
         );
         value_mut.insert(
-            property_names::DOCUMENT_TYPE.to_string(),
+            property_names::DOCUMENT_TYPE_NAME.to_string(),
             JsonValue::String(self.document_type_name.clone()),
         );
         value_mut.insert(
@@ -358,7 +369,7 @@ impl ExtendedDocumentV0 {
                 .map_err(ProtocolError::ValueError)?,
         );
 
-        let document_type_name = document_map.remove_string(property_names::DOCUMENT_TYPE)?;
+        let document_type_name = document_map.remove_string(property_names::DOCUMENT_TYPE_NAME)?;
 
         let document = Document::from_map(document_map, None, None)?;
         Ok(ExtendedDocumentV0 {
@@ -376,7 +387,7 @@ impl ExtendedDocumentV0 {
             self.feature_version.into(),
         );
         object.insert(
-            property_names::DOCUMENT_TYPE.to_string(),
+            property_names::DOCUMENT_TYPE_NAME.to_string(),
             Value::Text(self.document_type_name.clone()),
         );
         object.insert(
@@ -397,7 +408,7 @@ impl ExtendedDocumentV0 {
         let mut object = document.into_map_value()?;
         object.insert(property_names::FEATURE_VERSION.to_string(), Value::U16(0));
         object.insert(
-            property_names::DOCUMENT_TYPE.to_string(),
+            property_names::DOCUMENT_TYPE_NAME.to_string(),
             Value::Text(document_type_name),
         );
         object.insert(
@@ -430,7 +441,7 @@ impl ExtendedDocumentV0 {
         let value_mut = cbor_value.as_map_mut().unwrap();
 
         value_mut.push((
-            CborValue::Text(property_names::DOCUMENT_TYPE.to_string()),
+            CborValue::Text(property_names::DOCUMENT_TYPE_NAME.to_string()),
             CborValue::Text(self.document_type_name.clone()),
         ));
 
@@ -459,7 +470,7 @@ impl ExtendedDocumentV0 {
     /// The path supports syntax from `lodash` JS lib. Example: "root.people[0].name".
     /// If parents are not present they will be automatically created
     pub fn set(&mut self, path: &str, value: Value) -> Result<(), ProtocolError> {
-        Ok(self.document.properties.insert_at_path(path, value)?)
+        Ok(self.document.properties().insert_at_path(path, value)?)
     }
 
     /// Retrieves field specified by path
@@ -491,6 +502,12 @@ impl ExtendedDocumentV0 {
         identifiers_paths.extend(super::IDENTIFIER_FIELDS.map(|str| str.to_string()));
 
         Ok((identifiers_paths, binary_paths))
+    }
+}
+
+impl From<ExtendedDocumentV0> for ExtendedDocument {
+    fn from(value: ExtendedDocumentV0) -> Self {
+        ExtendedDocument::V0(value)
     }
 }
 

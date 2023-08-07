@@ -4,6 +4,8 @@ mod serde_serialize;
 mod serialize;
 pub(crate) mod v0;
 
+pub use fields::{IDENTIFIER_FIELDS, property_names};
+
 use crate::data_contract::DataContract;
 use crate::ProtocolError;
 
