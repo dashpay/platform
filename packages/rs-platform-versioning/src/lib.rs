@@ -429,7 +429,7 @@ fn parse_path(attrs: &[Attribute]) -> Option<(Vec<Ident>, bool)> {
         ));
     }
 
-    return None;
+    None
 }
 
 fn generate_version_arms(variant_idents: &[&Ident]) -> Vec<proc_macro2::TokenStream> {
