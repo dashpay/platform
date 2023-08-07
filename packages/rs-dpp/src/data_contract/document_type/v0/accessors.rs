@@ -5,8 +5,11 @@ use crate::data_contract::document_type::document_field::DocumentProperty;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
+use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::{JsonSchema, PropertyPath};
+use crate::ProtocolError;
 use platform_value::{Identifier, Value};
+use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentTypeV0Getters for DocumentTypeV0 {
@@ -68,7 +71,47 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
 }
 
 impl DocumentTypeV0Setters for DocumentTypeV0 {
-    fn set_schema(&mut self, schema: Value) {
+    fn set_schema(
+        &mut self,
+        schema: Value,
+        schema_defs: &Option<BTreeMap<String, Value>>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        let DocumentTypeV0 {
+            schema,
+            indices,
+            index_structure,
+            flattened_properties,
+            properties,
+            binary_properties,
+            identifier_paths,
+            binary_paths,
+            required_fields,
+            documents_keep_history,
+            documents_mutable,
+            ..
+        } = DocumentTypeV0::from_platform_value(
+            self.data_contract_id,
+            self.name.as_str(),
+            schema,
+            schema_defs,
+            self.documents_keep_history,
+            self.documents_mutable,
+            platform_version,
+        )?;
+
         self.schema = schema;
+        self.indices = indices;
+        self.index_structure = index_structure;
+        self.flattened_properties = flattened_properties;
+        self.properties = properties;
+        self.binary_properties = binary_properties;
+        self.identifier_paths = identifier_paths;
+        self.binary_paths = binary_paths;
+        self.required_fields = required_fields;
+        self.documents_keep_history = documents_keep_history;
+        self.documents_mutable = documents_mutable;
+
+        Ok(())
     }
 }

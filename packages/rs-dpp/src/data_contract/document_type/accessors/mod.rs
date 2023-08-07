@@ -5,7 +5,9 @@ use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, DocumentTypeRef};
 use crate::data_contract::{JsonSchema, PropertyPath};
+use crate::ProtocolError;
 use platform_value::{Identifier, Value};
+use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 pub use v0::*;
 
@@ -268,17 +270,27 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
 }
 
 impl DocumentTypeV0Setters for DocumentType {
-    fn set_schema(&mut self, schema: Value) {
+    fn set_schema(
+        &mut self,
+        schema: Value,
+        schema_defs: &Option<BTreeMap<String, Value>>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
         match self {
-            DocumentType::V0(v0) => v0.set_schema(schema),
+            DocumentType::V0(v0) => v0.set_schema(schema, schema_defs, platform_version),
         }
     }
 }
 
 impl<'a> DocumentTypeV0Setters for DocumentTypeMutRef<'a> {
-    fn set_schema(&mut self, schema: Value) {
+    fn set_schema(
+        &mut self,
+        schema: Value,
+        schema_defs: &Option<BTreeMap<String, Value>>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
         match self {
-            DocumentTypeMutRef::V0(v0) => v0.set_schema(schema),
+            DocumentTypeMutRef::V0(v0) => v0.set_schema(schema, schema_defs, platform_version),
         }
     }
 }

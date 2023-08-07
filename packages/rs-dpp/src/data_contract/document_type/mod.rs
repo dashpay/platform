@@ -15,8 +15,10 @@ pub mod random_document;
 pub mod v0;
 mod validate_data_contract_max_depth;
 
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
+use crate::data_contract::PropertyPath;
 use crate::document::Document;
 use crate::prelude::Revision;
 use crate::version::PlatformVersion;
@@ -71,6 +73,7 @@ impl DocumentType {
         }
     }
 
+    // TODO: Should be moved to document property
     fn string_to_field_type(field_type_name: &str) -> Option<DocumentPropertyType> {
         match field_type_name {
             "integer" => Some(DocumentPropertyType::Integer),

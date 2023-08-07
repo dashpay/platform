@@ -2,18 +2,21 @@ mod v0;
 
 use crate::data_contract::{DefinitionName, DocumentName};
 use crate::prelude::DataContract;
+use crate::ProtocolError;
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 pub use v0::*;
 
 impl DataContractSchemaMethodsV0 for DataContract {
     fn set_document_schemas(
-        &self,
+        &mut self,
         schemas: BTreeMap<DocumentName, Value>,
         defs: Option<BTreeMap<DefinitionName, Value>>,
-    ) {
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.set_document_schemas(schemas, defs),
+            DataContract::V0(v0) => v0.set_document_schemas(schemas, defs, platform_version),
         }
     }
 
@@ -29,9 +32,13 @@ impl DataContractSchemaMethodsV0 for DataContract {
         }
     }
 
-    fn set_schema_defs(&self, defs: Option<BTreeMap<DefinitionName, Value>>) {
+    fn set_schema_defs(
+        &mut self,
+        defs: Option<BTreeMap<DefinitionName, Value>>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.set_schema_defs(defs),
+            DataContract::V0(v0) => v0.set_schema_defs(defs, platform_version),
         }
     }
 }

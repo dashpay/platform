@@ -71,7 +71,7 @@ pub struct DocumentTypeV0 {
     pub(super) required_fields: BTreeSet<String>,
     pub(super) documents_keep_history: bool,
     pub(super) documents_mutable: bool,
-    // TODO: why is this here? do we update it when data contract id is changed
+    // TODO: why is this here? it might be inconsistent with DataContract.id
     pub(super) data_contract_id: Identifier,
 }
 
@@ -351,7 +351,8 @@ impl DocumentTypeV0 {
 
         // TODO: Figure out why do we need this and how it differs from `binary_paths`
         //   and move this function to DocumentType
-        let binary_properties = DataContract::create_binary_properties(&schema, platform_version)?;
+        let binary_properties =
+            DataContract::create_binary_properties(&full_schema, platform_version)?;
 
         Ok(DocumentTypeV0 {
             name: String::from(name),

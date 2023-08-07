@@ -2,7 +2,9 @@ use crate::data_contract::document_type::document_field::DocumentProperty;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::{JsonSchema, PropertyPath};
+use crate::ProtocolError;
 use platform_value::{Identifier, Value};
+use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
 // TODO: Verify we need all of these getters
@@ -49,5 +51,10 @@ pub trait DocumentTypeV0Getters {
 
 pub trait DocumentTypeV0Setters {
     /// Sets document json schema of the document type.
-    fn set_schema(&mut self, schema: Value);
+    fn set_schema(
+        &mut self,
+        schema: Value,
+        schema_defs: &Option<BTreeMap<String, Value>>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError>;
 }
