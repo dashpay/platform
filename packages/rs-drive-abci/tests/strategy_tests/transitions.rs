@@ -252,7 +252,7 @@ pub fn create_identity_withdrawal_transition(
     let identity_public_key = identity
         .get_first_public_key_matching(
             Purpose::AUTHENTICATION,
-            HashSet::from([SecurityLevel::HIGH, SecurityLevel::CRITICAL]),
+            HashSet::from([SecurityLevel::CRITICAL]),
             HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
         )
         .expect("expected to get a signing key");
@@ -286,7 +286,7 @@ pub fn create_identity_credit_transfer_transition(
     let identity_public_key = identity
         .get_first_public_key_matching(
             Purpose::AUTHENTICATION,
-            HashSet::from([SecurityLevel::MASTER]),
+            HashSet::from([SecurityLevel::CRITICAL]),
             HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
         )
         .expect("expected to get a signing key");
