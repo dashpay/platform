@@ -18,7 +18,6 @@
 * **dashmate:** descriptions for all possible ZeroSSL errors ([#1107](https://github.com/dashpay/platform/issues/1107))
 * **dashmate:** handle already configured certificate in obtain command ([#1176](https://github.com/dashpay/platform/issues/1176))
 * **dashmate:** hard reset deletes related files ([#1188](https://github.com/dashpay/platform/issues/1188))
-* **dashmate:** interface binding configuration ([#1220](https://github.com/dashpay/platform/issues/1220))
 * **dashmate:** prebuild services dependencies ([#1169](https://github.com/dashpay/platform/issues/1169))
 * **dashmate:** re-use ZeroSSL private key ([#1180](https://github.com/dashpay/platform/issues/1180))
 * **dashmate:** report pulled images during update ([#1186](https://github.com/dashpay/platform/issues/1186))
@@ -46,7 +45,6 @@
 * **dashmate:** invalid migration ([#1209](https://github.com/dashpay/platform/issues/1209))
 * **dashmate:** invalid variable name ([#1213](https://github.com/dashpay/platform/issues/1213))
 * **dashmate:** platform should be enabled on mainnet ([#1112](https://github.com/dashpay/platform/issues/1112))
-* **dashmate:** service name variable name ([#1225](https://github.com/dashpay/platform/issues/1225))
 * double process proposal from Tenderdash restart ([#1165](https://github.com/dashpay/platform/issues/1165))
 * **drive:** core RPC retry all errors ([#1140](https://github.com/dashpay/platform/issues/1140))
 * **drive:** do not return an error for non existence contract when verifying ([#1241](https://github.com/dashpay/platform/issues/1241))
@@ -58,7 +56,6 @@
 * **wallet-lib:** instant locks not arriving to HD wallets ([#1126](https://github.com/dashpay/platform/issues/1126)) ([#1131](https://github.com/dashpay/platform/issues/1131))
 * **wallet-lib:** not retrying on missing inputs error ([#1133](https://github.com/dashpay/platform/issues/1133))
 * **wallet-lib:** spending immature coinbase transactions ([#1145](https://github.com/dashpay/platform/issues/1145))
-* word wrap audit fail ([#1235](https://github.com/dashpay/platform/issues/1235))
 
 
 ### Code Refactoring
@@ -91,7 +88,6 @@
 * add QuantumExplorer as Code Owner
 * backport deps from master
 * **dashmate:** better port labels for mainnet evolution node setup  ([#1106](https://github.com/dashpay/platform/issues/1106))
-* **dashmate:** update tenderdash genesis for testnet ([#1223](https://github.com/dashpay/platform/issues/1223))
 * empty commit to fix CI
 * **release:** update changelog and bump version to 0.24.10 ([#1193](https://github.com/dashpay/platform/issues/1193))
 * **release:** update changelog and bump version to 0.24.5 ([#1113](https://github.com/dashpay/platform/issues/1113))
