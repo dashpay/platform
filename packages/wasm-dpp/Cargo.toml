@@ -15,7 +15,11 @@ js-sys = "0.3.53"
 web-sys = { version = "0.3.6", features = ["console"] }
 thiserror = { version = "1.0" }
 serde-wasm-bindgen = { git = "https://github.com/QuantumExplorer/serde-wasm-bindgen", branch = "feat/not_human_readable" }
-dpp = { path = "../rs-dpp", default-features = false, features = ["cbor"] }
+dpp = { path = "../rs-dpp", default-features = false, features = [
+    "cbor",
+    "platform-value",
+    "json-object",
+]}
 itertools = { version = "0.10.5" }
 console_error_panic_hook = { version = "0.1.7" }
 log = { version = "0.4.6" }
