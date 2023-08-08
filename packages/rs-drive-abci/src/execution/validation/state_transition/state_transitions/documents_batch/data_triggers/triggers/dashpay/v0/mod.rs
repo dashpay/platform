@@ -123,19 +123,23 @@ pub fn create_contact_request_data_trigger_v0(
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+    use dpp::data_contract::base::DataContractBaseMethodsV0;
+    use dpp::document::{DocumentV0Getters, DocumentV0Setters};
     use dpp::platform_value;
     use dpp::platform_value::platform_value;
     use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
-    use dpp::tests::fixtures::{get_contact_request_extended_document_fixture, get_dashpay_contract_fixture, get_document_transitions_fixture, identity_fixture};
     use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::dashpay::create_contact_request_data_trigger;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use super::*;
     use dpp::errors::consensus::state::data_trigger::DataTriggerError;
+    use dpp::tests::fixtures::{get_contact_request_document_fixture, get_dashpay_contract_fixture, get_document_transitions_fixture, get_identity_fixture};
     use dpp::version::DefaultForPlatformVersion;
+    use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
     #[test]
@@ -149,23 +153,28 @@ mod test {
             state: &state_read_guard,
             config: &platform.config,
         };
+        let protocol_version = state_read_guard.current_protocol_version_in_consensus();
         let platform_version = state_read_guard
             .current_platform_version()
             .expect("should return a platform version");
 
-        let mut contact_request_document = get_contact_request_extended_document_fixture(
+        let mut contact_request_document = get_contact_request_document_fixture(
             None,
             None,
             state_read_guard.current_protocol_version_in_consensus(),
         );
-        contact_request_document
-            .set(CORE_HEIGHT_CREATED_AT, platform_value!(10u32))
-            .expect("expected to set core height created at");
+        contact_request_document.set(CORE_HEIGHT_CREATED_AT, platform_value!(10u32));
         let owner_id = &contact_request_document.owner_id();
+
+        let data_contract =
+            get_dashpay_contract_fixture(None, protocol_version).data_contract_owned();
+        let document_type = data_contract
+            .document_type_for_name("contactRequest")
+            .expect("expected a contact request");
 
         let document_transitions = get_document_transitions_fixture([(
             DocumentTransitionActionType::Create,
-            vec![contact_request_document],
+            vec![(contact_request_document, document_type)],
         )]);
         let document_transition = document_transitions
             .get(0)
@@ -174,11 +183,6 @@ mod test {
         let document_create_transition = document_transition
             .as_transition_create()
             .expect("expected a document create transition");
-
-        let data_contract = get_dashpay_contract_fixture(
-            None,
-            state_read_guard.current_protocol_version_in_consensus(),
-        );
 
         let transition_execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
@@ -194,7 +198,9 @@ mod test {
         // transition_execution_context.enable_dry_run();
 
         let result = create_contact_request_data_trigger(
-            &DocumentCreateTransitionAction::from(document_create_transition).into(),
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, |identifier| {
+                Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
+            }).expect("expected to create action").into(),
             &data_trigger_context,
             platform_version,
         )
@@ -230,28 +236,31 @@ mod test {
             state: &state_write_guard,
             config: &platform.config,
         };
-
+        let protocol_version = state_write_guard.current_protocol_version_in_consensus();
         let platform_version = state_write_guard
             .current_platform_version()
             .expect("should return a platform version");
 
-        let mut contact_request_document = get_contact_request_extended_document_fixture(
+        let mut contact_request_document = get_contact_request_document_fixture(
             None,
             None,
             state_write_guard.current_protocol_version_in_consensus(),
         );
         let owner_id = contact_request_document.owner_id();
-        contact_request_document
-            .set("toUserId", platform_value::to_value(owner_id).unwrap())
-            .expect("expected to set toUserId");
+        contact_request_document.set("toUserId", platform_value::to_value(owner_id).unwrap());
 
         let data_contract = get_dashpay_contract_fixture(
             None,
             state_write_guard.current_protocol_version_in_consensus(),
-        );
+        )
+        .data_contract_owned();
+        let document_type = data_contract
+            .document_type_for_name("contactRequest")
+            .expect("expected a contact request");
+
         let document_transitions = get_document_transitions_fixture([(
             DocumentTransitionActionType::Create,
-            vec![contact_request_document],
+            vec![(contact_request_document, document_type)],
         )]);
         let document_transition = document_transitions
             .get(0)
@@ -265,7 +274,8 @@ mod test {
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
                 .unwrap();
         let identity_fixture =
-            identity_fixture(state_write_guard.current_protocol_version_in_consensus())?;
+            get_identity_fixture(state_write_guard.current_protocol_version_in_consensus())
+                .expect("expected to get identity fixture");
 
         platform
             .drive
@@ -288,7 +298,9 @@ mod test {
         let dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
         let result = create_contact_request_data_trigger(
-            &DocumentCreateTransitionAction::from(document_create_transition).into(),
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, |identifier| {
+                Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
+            }).expect("expected to create action").into(),
             &data_trigger_context,
             platform_version,
         )
@@ -332,11 +344,12 @@ mod test {
             state: &state_write_guard,
             config: &platform.config,
         };
+        let protocol_version = state_write_guard.current_protocol_version_in_consensus();
         let platform_version = state_write_guard
             .current_platform_version()
             .expect("should return a platform version");
 
-        let contact_request_document = get_contact_request_extended_document_fixture(
+        let contact_request_document = get_contact_request_document_fixture(
             None,
             None,
             state_write_guard.current_protocol_version_in_consensus(),
@@ -344,17 +357,20 @@ mod test {
         let data_contract = get_dashpay_contract_fixture(
             None,
             state_write_guard.current_protocol_version_in_consensus(),
-        );
+        )
+        .data_contract_owned();
+        let document_type = data_contract
+            .document_type_for_name("contactRequest")
+            .expect("expected a contact request");
         let owner_id = contact_request_document.owner_id();
         let contract_request_to_user_id = contact_request_document
-            .document
-            .properties
+            .properties()
             .get_identifier("toUserId")
             .expect("expected to get toUserId");
 
         let document_transitions = get_document_transitions_fixture([(
             DocumentTransitionActionType::Create,
-            vec![contact_request_document],
+            vec![(contact_request_document, document_type)],
         )]);
         let document_transition = document_transitions
             .get(0)
@@ -378,7 +394,9 @@ mod test {
         let dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
         let result = create_contact_request_data_trigger(
-            &DocumentCreateTransitionAction::from(document_create_transition).into(),
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, |identifier| {
+                Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
+            }).expect("expected to create action").into(),
             &data_trigger_context,
             platform_version,
         )

@@ -1,7 +1,12 @@
+use std::sync::Arc;
+use dpp::data_contract::DataContract;
+use dpp::identifier::Identifier;
 use dpp::identity::PartialIdentity;
+use dpp::ProtocolError;
 use dpp::state_transition::StateTransition;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::{FeatureVersion, PlatformVersion};
+use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use crate::error::Error;
@@ -11,6 +16,8 @@ use crate::execution::validation::state_transition::common::validate_state_trans
 
 pub mod v0;
 
+pub type GetDataContractFn = fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>;
+
 pub trait ValidateStateTransitionIdentitySignature {
     fn validate_state_transition_identity_signed(
         &self,
@@ -19,6 +26,9 @@ pub trait ValidateStateTransitionIdentitySignature {
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
+        get_data_contract: Option<
+            impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        >,
     ) -> Result<ConsensusValidationResult<PartialIdentity>, Error>;
 }
 
@@ -30,6 +40,9 @@ impl ValidateStateTransitionIdentitySignature for StateTransition {
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
+        get_data_contract: Option<
+            impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        >,
     ) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {
         match platform_version
             .drive_abci
@@ -43,6 +56,7 @@ impl ValidateStateTransitionIdentitySignature for StateTransition {
                 transaction,
                 execution_context,
                 platform_version,
+                get_data_contract,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "StateTransition::validate_state_transition_identity_signature".to_string(),

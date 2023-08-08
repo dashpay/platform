@@ -67,7 +67,7 @@ pub fn identity_fixture_json() -> serde_json::Value {
 }
 
 #[cfg(feature = "identity-value-conversion")]
-pub fn identity_fixture(protocol_version: u32) -> Result<Identity, ProtocolError> {
+pub fn get_identity_fixture(protocol_version: u32) -> Result<Identity, ProtocolError> {
     let raw_object = identity_fixture_raw_object();
     let platform_version = PlatformVersion::get(protocol_version)?;
     match platform_version

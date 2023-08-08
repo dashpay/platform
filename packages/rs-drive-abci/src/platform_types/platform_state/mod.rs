@@ -108,7 +108,7 @@ impl PlatformDeserializableFromVersionedStructure for PlatformState {
 
 impl PlatformState {
     /// Get the current platform version
-    pub fn current_platform_version(&self) -> Result<&PlatformVersion, Error> {
+    pub fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
         Ok(PlatformVersion::get(
             self.current_protocol_version_in_consensus(),
         )?)

@@ -1,3 +1,5 @@
+use dpp::data_contract::errors::DataContractNotPresentError;
+use dpp::identifier::Identifier;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
@@ -6,8 +8,9 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::ProtocolError;
 use dpp::serialization::Signable;
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
 use drive::state_transition_action::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion, TryIntoPlatformVersioned};
@@ -15,7 +18,7 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::ValidateStateTransitionIdentitySignature;
+use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{GetDataContractFn, ValidateStateTransitionIdentitySignature};
 use crate::execution::validation::state_transition::state_transitions::identity_update::identity_and_signatures::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_create::identity_and_signatures::v0::IdentityCreateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_top_up::identity_retrieval::v0::IdentityTopUpStateTransitionIdentityRetrievalV0;
@@ -182,7 +185,6 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::IdentityCreditWithdrawal(_)
-            | StateTransition::DocumentsBatch(_)
             | StateTransition::IdentityCreditTransfer(_) => {
                 //Basic signature verification
                 Ok(self
@@ -192,6 +194,33 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                         tx,
                         execution_context,
                         platform_version,
+                        None::<GetDataContractFn>,
+                    )?
+                    .map(Some))
+            }
+            StateTransition::DocumentsBatch(_) => {
+                //Basic signature verification
+                Ok(self
+                    .validate_state_transition_identity_signed(
+                        drive,
+                        false,
+                        tx,
+                        execution_context,
+                        platform_version,
+                        Some(|contract_identifier: Identifier| {
+                            // All contracts have already been verified to exist in structure validation
+                            drive
+                                .get_contract_with_fetch_info(
+                                    contract_identifier.to_buffer(),
+                                    true,
+                                    tx,
+                                    platform_version,
+                                )
+                                .map_err(|e| ProtocolError::Generic(e.to_string()))?
+                                .ok_or(ProtocolError::DataContractNotPresentError(
+                                    DataContractNotPresentError::new(contract_identifier),
+                                ))
+                        }),
                     )?
                     .map(Some))
             }
@@ -208,10 +237,11 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                         let mut validation_result = self
                             .validate_state_transition_identity_signed(
                                 drive,
-                                false,
+                                true,
                                 tx,
                                 execution_context,
                                 platform_version,
+                                None::<GetDataContractFn>,
                             )?;
                         let partial_identity = validation_result.data_as_borrowed()?;
                         let result = st.validate_identity_update_state_transition_signatures_v0(
@@ -245,12 +275,16 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                     .identity_signatures
                 {
                     Some(0) => {
+                        let mut validation_result =
+                            ConsensusValidationResult::<Option<PartialIdentity>>::default();
                         let signable_bytes: Vec<u8> = self.signable_bytes()?;
-                        Ok(st
+                        let mut result = st
                             .validate_identity_create_state_transition_signatures_v0(
                                 signable_bytes,
-                            )?
-                            .map(|_| None))
+                            )?;
+                        validation_result.merge(result);
+                        validation_result.set_data(None);
+                        Ok(validation_result)
                     }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
                         method: "identity create transition: validate_identity_and_signatures"

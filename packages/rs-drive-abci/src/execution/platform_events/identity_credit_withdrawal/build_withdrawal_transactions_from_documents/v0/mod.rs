@@ -170,7 +170,7 @@ mod tests {
                     "transactionIndex": 1u64,
                 }),
                 None,
-                platform_version.into(),
+                platform_version.protocol_version,
             )
             .expect("expected withdrawal document");
 
@@ -198,7 +198,7 @@ mod tests {
                     "transactionIndex": 2u64,
                 }),
                 None,
-                platform_version.into(),
+                platform_version.protocol_version,
             )
             .expect("expected withdrawal document");
 

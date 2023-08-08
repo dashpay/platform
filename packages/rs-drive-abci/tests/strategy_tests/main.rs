@@ -394,7 +394,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864467880)
+        assert_eq!(balance, 99865075600)
     }
 
     #[test]
@@ -921,7 +921,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "e51e1f015314e8c1f46c37db22a4d29f9ee116cb23e80ce75582ad136ba2c028".to_string()
+            "32ceecd115f386c42e4accba76241d0f0881ccbe3de07d63bfa6deaa9504aa42".to_string()
         )
     }
 
@@ -1461,7 +1461,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "5c01c4a47d4be68d44cec1b0d2cb0cd39d5228b1ad55643aa29f5d29eba3a102".to_string()
+            "e06680551de9a759af948c74e9c96060eda7e2841dad22d3d361432368406963".to_string()
         )
     }
 
@@ -1557,7 +1557,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 449);
+        assert_eq!(outcome.identities.len() as u64, 417);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -1675,7 +1675,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 97);
+        assert_eq!(outcome.identities.len() as u64, 80);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -1981,7 +1981,7 @@ mod tests {
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
         assert_eq!(outcome.identities.len(), 10);
-        assert_eq!(outcome.withdrawals.len(), 14);
+        assert_eq!(outcome.withdrawals.len(), 18);
     }
 
     #[test]

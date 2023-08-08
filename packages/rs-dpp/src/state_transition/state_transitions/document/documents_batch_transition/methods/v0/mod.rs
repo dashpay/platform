@@ -14,9 +14,13 @@ use platform_value::Identifier;
 use std::convert::TryFrom;
 
 pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0 {
-    fn contract_based_security_level_requirement<'a>(
+    fn contract_based_security_level_requirement(
         &self,
-        get_data_contract: impl Fn(Identifier) -> Result<&'a DataContract, ProtocolError>,
+        get_data_contract_security_level_requirement: impl Fn(
+            Identifier,
+            String,
+        )
+            -> Result<SecurityLevel, ProtocolError>,
     ) -> Result<Vec<SecurityLevel>, ProtocolError> {
         // Step 1: Get all document types for the ST
         // Step 2: Get document schema for every type
@@ -28,22 +32,10 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         for transition in self.transitions().iter() {
             let document_type_name = transition.base().document_type_name();
             let data_contract_id = transition.base().data_contract_id();
-            let data_contract = get_data_contract(data_contract_id)?;
-            let document_type =
-                data_contract
-                    .document_type(document_type_name)
-                    .ok_or_else(|| {
-                        ProtocolError::DataContractError(
-                            DataContractError::InvalidContractStructure(
-                                "document type not found in data contract".to_string(),
-                            ),
-                        )
-                    })?;
-
-            let document_schema = document_type.schema();
-
-            let document_security_level =
-                get_security_level_requirement(document_schema, DEFAULT_SECURITY_LEVEL);
+            let document_security_level = get_data_contract_security_level_requirement(
+                data_contract_id,
+                document_type_name.to_owned(),
+            )?;
 
             // lower enum enum representation means higher in security
             if document_security_level < highest_security_level {
@@ -53,7 +45,8 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         Ok(if highest_security_level == SecurityLevel::MASTER {
             vec![SecurityLevel::MASTER]
         } else {
-            (highest_security_level as u8..=SecurityLevel::CRITICAL as u8)
+            // this might seem wrong until you realize that master is 0, critical 1, etc
+            (SecurityLevel::CRITICAL as u8..=highest_security_level as u8)
                 .map(|security_level| SecurityLevel::try_from(security_level).unwrap())
                 .collect()
         })

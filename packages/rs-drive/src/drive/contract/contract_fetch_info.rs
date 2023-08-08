@@ -1,9 +1,14 @@
 use crate::drive::flags::StorageFlags;
 use costs::OperationCost;
 use dpp::data_contract::DataContract;
+use dpp::data_contracts;
 use dpp::fee::fee_result::FeeResult;
-#[cfg(test)]
+use dpp::system_data_contracts::load_system_data_contract;
+#[cfg(feature = "fixtures-and-mocks")]
+use dpp::tests::fixtures::get_dashpay_contract_fixture;
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+use dpp::tests::fixtures::{get_masternode_reward_shares_data_contract_fixture, get_withdrawal_document_fixture};
 
 #[cfg(any(feature = "full", feature = "verify"))]
 ///DataContract and fetch information
@@ -21,7 +26,7 @@ pub struct DataContractFetchInfo {
     pub fee: Option<FeeResult>,
 }
 
-#[cfg(test)]
+#[cfg(feature = "fixtures-and-mocks")]
 impl DataContractFetchInfo {
     /// This should ONLY be used for tests
     pub fn dpns_contract_fixture(protocol_version: u32) -> Self {
@@ -33,4 +38,41 @@ impl DataContractFetchInfo {
             fee: Some(FeeResult::new_from_processing_fee(30000)),
         }
     }
+
+    /// This should ONLY be used for tests
+    pub fn dashpay_contract_fixture(protocol_version: u32) -> Self {
+        let dashpay = get_dashpay_contract_fixture(None, protocol_version);
+        DataContractFetchInfo {
+            contract: dashpay.data_contract_owned(),
+            storage_flags: None,
+            cost: OperationCost::with_seek_count(1), //Just so there's a cost
+            fee: Some(FeeResult::new_from_processing_fee(30000)),
+        }
+    }
+
+    /// This should ONLY be used for tests
+    pub fn masternode_rewards_contract_fixture(protocol_version: u32) -> Self {
+        let masternode_rewards = get_masternode_reward_shares_data_contract_fixture(protocol_version);
+        DataContractFetchInfo {
+            contract: masternode_rewards,
+            storage_flags: None,
+            cost: OperationCost::with_seek_count(1), //Just so there's a cost
+            fee: Some(FeeResult::new_from_processing_fee(30000)),
+        }
+    }
+
+    /// This should ONLY be used for tests
+    pub fn withdrawals_contract_fixture(protocol_version: u32) -> Self {
+        let contract =
+            load_system_data_contract(data_contracts::SystemDataContract::Withdrawals, protocol_version)
+                .expect("to load system data contract");
+        DataContractFetchInfo {
+            contract,
+            storage_flags: None,
+            cost: OperationCost::with_seek_count(1), //Just so there's a cost
+            fee: Some(FeeResult::new_from_processing_fee(30000)),
+        }
+    }
 }
+
+

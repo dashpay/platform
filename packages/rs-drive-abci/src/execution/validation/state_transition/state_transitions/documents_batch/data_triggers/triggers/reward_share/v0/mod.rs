@@ -201,12 +201,12 @@ mod test {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::DataContract;
-    use dpp::document::{Document, DocumentV0Setters, ExtendedDocument};
+    use dpp::document::{Document, DocumentV0Setters};
     use dpp::identity::Identity;
 
     use dpp::platform_value::Value;
     use dpp::tests::fixtures::{
-        get_document_transitions_fixture, get_masternode_reward_shares_extended_documents_fixture,
+        get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
     };
     use dpp::tests::utils::generate_random_identifier_struct;
 
@@ -215,17 +215,21 @@ mod test {
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use std::net::SocketAddr;
     use std::str::FromStr;
+    use std::sync::Arc;
     use dpp::consensus::state::data_trigger::DataTriggerError;
+    use dpp::data_contract::document_type::DocumentTypeRef;
     use dpp::identity::accessors::IdentitySettersV0;
     use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
     use dpp::version::DefaultForPlatformVersion;
+    use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
     struct TestData {
         top_level_identifier: Identifier,
         data_contract: DataContract,
-        extended_documents: Vec<ExtendedDocument>,
+        document_type_name: String,
+        documents: Vec<Document>,
         document_create_transition: DocumentCreateTransitionAction,
     }
 
@@ -290,10 +294,13 @@ mod test {
             },
         });
 
-        let (documents, data_contract) = get_masternode_reward_shares_extended_documents_fixture(1);
+        let (documents, data_contract) = get_masternode_reward_shares_documents_fixture(1);
+        let document_type = data_contract
+            .document_type_for_name("rewards")
+            .expect("expected the rewards document type");
         let document_transitions = get_document_transitions_fixture([(
             DocumentTransitionActionType::Create,
-            vec![documents[0].clone()],
+            vec![(documents[0].clone(), document_type)],
         )]);
 
         let document_create_transition = document_transitions[0]
@@ -301,10 +308,13 @@ mod test {
             .unwrap()
             .clone();
         TestData {
-            extended_documents: documents,
+            documents,
             data_contract,
+            document_type_name: "rewards".to_string(),
             top_level_identifier,
-            document_create_transition: document_create_transition.into(),
+            document_create_transition: DocumentCreateTransitionAction::from_document_create_transition_with_contract_lookup(document_create_transition, |identifier| {
+                Ok(Arc::new(DataContractFetchInfo::masternode_rewards_contract_fixture(platform_state.current_protocol_version_in_consensus)))
+            }).expect("expected to create action"),
         }
     }
 
@@ -331,11 +341,16 @@ mod test {
 
         let TestData {
             mut document_create_transition,
-            extended_documents,
+            documents,
             data_contract,
+            document_type_name,
             top_level_identifier,
             ..
         } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
+
+        let document_type = data_contract
+            .document_type_for_name(document_type_name.as_str())
+            .expect("expected the rewards document type");
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
@@ -343,13 +358,11 @@ mod test {
             config: &platform.config,
         };
 
-        for (i, document) in extended_documents.iter().enumerate() {
-            let document_type = document.document_type().expect("expected a document type");
-
+        for (i, document) in documents.iter().enumerate() {
             platform_ref
                 .drive
                 .apply_contract(
-                    &document.data_contract,
+                    &data_contract,
                     BlockInfo::default(),
                     true,
                     None,
@@ -400,10 +413,10 @@ mod test {
                 .add_document_for_contract(
                     DocumentAndContractInfo {
                         owned_document_info: OwnedDocumentInfo {
-                            document_info: DocumentRefInfo((&document.document, None)),
+                            document_info: DocumentRefInfo((&document, None)),
                             owner_id: None,
                         },
-                        contract: &document.data_contract,
+                        contract: &data_contract,
                         document_type,
                     },
                     false,
@@ -415,14 +428,9 @@ mod test {
                 .expect("expected to add document");
         }
 
-        let _documents: Vec<Document> = extended_documents
-            .into_iter()
-            .map(|dt| dt.document)
-            .collect();
-
         // documentsFixture contains percentage = 500
         document_create_transition
-            .data()
+            .data_mut()
             .insert("percentage".to_string(), Value::U64(90501));
 
         let execution_context =

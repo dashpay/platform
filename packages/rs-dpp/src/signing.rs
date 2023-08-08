@@ -22,12 +22,12 @@ impl PlatformMessageSignable for &[u8] {
                 if let Err(e) =
                     signer::verify_data_signature(signable_data, signature, public_key_data)
                 {
-                    // dbg!(format!(
-                    //     "error with signature {} data {} public key {}",
-                    //     hex::encode(signature),
-                    //     hex::encode(signable_data),
-                    //     hex::encode(public_key_data)
-                    // ));
+                    dbg!(format!(
+                        "error with signature {} data {} public key {}",
+                        hex::encode(signature),
+                        hex::encode(signable_data),
+                        hex::encode(public_key_data)
+                    ));
                     Ok(SimpleConsensusValidationResult::new_with_error(
                         SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
                     ))

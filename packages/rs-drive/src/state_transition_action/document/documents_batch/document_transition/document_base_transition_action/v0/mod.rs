@@ -16,8 +16,6 @@ pub struct DocumentBaseTransitionActionV0 {
     pub id: Identifier,
     /// Name of document type found int the data contract associated with the `data_contract_id`
     pub document_type_name: String,
-    /// Data contract ID generated from the data contract's `owner_id` and `entropy`
-    pub data_contract_id: Identifier,
     /// A potential data contract
     pub data_contract: Arc<DataContractFetchInfo>,
 }

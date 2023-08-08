@@ -37,11 +37,11 @@ use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
 
 pub mod accessors;
 pub mod document_transition;
-mod fields;
+pub mod fields;
 mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
-mod methods;
+pub mod methods;
 mod state_transition_like;
 mod v0;
 #[cfg(feature = "state-transition-value-conversion")]

@@ -421,6 +421,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 init_chain: 0,
                 check_tx: 0,
                 run_block_proposal: 0,
+                finalize_block_proposal: 0,
             },
             initialization: DriveAbciInitializationMethodVersions {
                 initial_core_height: 0,
@@ -503,7 +504,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
                 identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
                     structure: 0,
-                    identity_signatures: None,
+                    identity_signatures: Some(0),
                     state: 0,
                     transform_into_action: 0,
                 },

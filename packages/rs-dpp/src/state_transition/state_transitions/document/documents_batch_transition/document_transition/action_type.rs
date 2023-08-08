@@ -4,7 +4,7 @@ use crate::state_transition::documents_batch_transition::document_transition::Do
 // @append-only
 #[derive(Eq, PartialEq, Debug, Copy, Clone, Hash)]
 pub enum DocumentTransitionActionType {
-    Create([u8; 32]), //the entropy used
+    Create, //the entropy used
     Replace,
     Delete,
 }
@@ -16,9 +16,7 @@ pub trait TransitionActionTypeGetter {
 impl TransitionActionTypeGetter for DocumentTransition {
     fn action_type(&self) -> DocumentTransitionActionType {
         match self {
-            DocumentTransition::Create(create) => {
-                DocumentTransitionActionType::Create(create.entropy())
-            }
+            DocumentTransition::Create(_) => DocumentTransitionActionType::Create,
             DocumentTransition::Delete(_) => DocumentTransitionActionType::Delete,
             DocumentTransition::Replace(_) => DocumentTransitionActionType::Replace,
         }

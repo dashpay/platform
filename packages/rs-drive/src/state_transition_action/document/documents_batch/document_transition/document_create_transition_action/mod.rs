@@ -54,6 +54,12 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
         }
     }
 
+    fn data_mut(&mut self) -> &mut BTreeMap<String, Value> {
+        match self {
+            DocumentCreateTransitionAction::V0(v0) => &mut v0.data,
+        }
+    }
+
     fn data_owned(self) -> BTreeMap<String, Value> {
         match self {
             DocumentCreateTransitionAction::V0(v0) => v0.data,

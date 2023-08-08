@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::document::{Document, DocumentV0Getters};
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
@@ -8,7 +8,7 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 impl DocumentBaseTransition {
     pub fn from_document(
         document: &Document,
-        document_type: &DocumentType,
+        document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
     ) -> Result<Self, ProtocolError> {

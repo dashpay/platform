@@ -1,5 +1,5 @@
 use platform_version::version::{FeatureVersion, PlatformVersion};
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::document::{Document, DocumentV0Getters};
 use crate::document::errors::DocumentError;
 use crate::ProtocolError;
@@ -9,7 +9,7 @@ use crate::state_transition::documents_batch_transition::document_transition::do
 impl DocumentReplaceTransitionV0 {
     pub(crate) fn from_document(
         document: Document,
-        document_type: &DocumentType,
+        document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<Self, ProtocolError> {

@@ -129,14 +129,15 @@ mod test {
             None,
             state_read_guard.current_protocol_version_in_consensus(),
         )
-        .data_contract();
+        .data_contract_owned();
         let owner_id = data_contract.owner_id();
 
         let base_transition: DocumentBaseTransitionAction = DocumentBaseTransitionActionV0 {
             id: Default::default(),
             document_type_name: "".to_string(),
-            data_contract_id: Default::default(),
-            data_contract: Arc::new(DataContractFetchInfo::dpns_contract_fixture(1)),
+            data_contract: Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                platform_version.protocol_version,
+            )),
         }
         .into();
 
@@ -151,7 +152,7 @@ mod test {
         let document_transition = DocumentTransitionAction::CreateAction(create_transition);
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            owner_id: *owner_id,
+            owner_id: &owner_id,
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };

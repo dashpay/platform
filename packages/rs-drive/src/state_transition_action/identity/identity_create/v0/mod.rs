@@ -88,7 +88,7 @@ impl IdentityFromIdentityCreateTransitionActionV0 for Identity {
                 id: identity_id,
                 public_keys: public_keys.into_iter().map(|key| (key.id(), key)).collect(),
                 balance: initial_balance_amount,
-                revision: 1,
+                revision: 0,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -120,7 +120,7 @@ impl IdentityFromIdentityCreateTransitionActionV0 for Identity {
                     .map(|key| (key.id(), key.clone()))
                     .collect(),
                 balance: *initial_balance_amount,
-                revision: 1,
+                revision: 0,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

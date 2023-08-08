@@ -7,7 +7,7 @@ use crate::state_transition::data_contract_update_transition::methods::DataContr
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionV0,
 };
-use crate::state_transition::StateTransitionLike;
+use crate::state_transition::{StateTransition, StateTransitionLike};
 use crate::version::FeatureVersion;
 use crate::{NonConsensusError, ProtocolError};
 use platform_version::version::PlatformVersion;
@@ -21,13 +21,15 @@ impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransitionV0 {
         signer: &S,
         platform_version: &PlatformVersion,
         _feature_version: Option<FeatureVersion>,
-    ) -> Result<DataContractUpdateTransition, ProtocolError> {
+    ) -> Result<StateTransition, ProtocolError> {
         let mut transition = DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
             data_contract: data_contract.try_into_platform_versioned(platform_version)?,
             signature_public_key_id: key_id,
             signature: Default::default(),
         });
-        let value = transition.signable_bytes()?;
+        //todo remove close
+        let mut state_transition: StateTransition = transition.clone().into();
+        let value = state_transition.signable_bytes()?;
         let public_key =
             identity
                 .loaded_public_keys
@@ -37,7 +39,7 @@ impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransitionV0 {
                         "public key did not exist".to_string(),
                     ),
                 ))?;
-        transition.set_signature(signer.sign(public_key, &value)?.into());
-        Ok(transition)
+        state_transition.set_signature(signer.sign(public_key, &value)?.into());
+        Ok(state_transition)
     }
 }

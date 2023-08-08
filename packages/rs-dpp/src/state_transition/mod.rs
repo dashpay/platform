@@ -25,14 +25,13 @@ mod traits;
 
 pub use traits::*;
 
-use crate::consensus::signature::{
-    InvalidStateTransitionSignatureError, PublicKeyIsDisabledError, SignatureError,
-};
+use crate::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError, PublicKeyIsDisabledError, SignatureError};
 use crate::consensus::ConsensusError;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
-use crate::identity::{IdentityPublicKey, KeyID, KeyType, SecurityLevel};
+use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 pub use state_transitions::*;
+use crate::data_contract::DataContract;
 
 use crate::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
 use crate::state_transition::data_contract_create_transition::{
@@ -49,6 +48,7 @@ use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
     StateTransitionIsNotSignedError,
 };
+use crate::state_transition::errors::WrongPublicKeyPurposeError;
 use crate::state_transition::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionSignable,
 };
@@ -64,6 +64,9 @@ use crate::state_transition::identity_topup_transition::{
 use crate::state_transition::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
+use crate::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+
+pub type GetDataContractSecurityLevelRequirementFn = fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>;
 
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
@@ -263,8 +266,8 @@ impl StateTransition {
     }
 
     /// returns the signature as a byte-array
-    pub fn owner_id(&self) -> Option<Identifier> {
-        call_getter_method_identity_signed!(self, owner_id)
+    pub fn owner_id(&self) -> Identifier {
+        call_method!(self, owner_id)
     }
 
     /// set a new signature
@@ -282,17 +285,56 @@ impl StateTransition {
         &mut self,
         identity_public_key: &IdentityPublicKey,
         signer: &S,
+        get_data_contract_security_level_requirement: Option<impl Fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>>,
     ) -> Result<(), ProtocolError> {
-        call_errorable_method_identity_signed!(
-            self,
-            verify_public_key_level_and_purpose,
-            identity_public_key
-        )?;
-        call_errorable_method_identity_signed!(
-            self,
-            verify_public_key_is_enabled,
-            identity_public_key
-        )?;
+        match self {
+            StateTransition::DataContractCreate(st) => {
+                st.verify_public_key_level_and_purpose(identity_public_key)?;
+                st.verify_public_key_is_enabled(identity_public_key)?;
+            }
+            StateTransition::DataContractUpdate(st) => {
+                st.verify_public_key_level_and_purpose(identity_public_key)?;
+                st.verify_public_key_is_enabled(identity_public_key)?;
+            }
+            StateTransition::DocumentsBatch(st) => {
+                if identity_public_key.purpose() != Purpose::AUTHENTICATION {
+                    return Err(ProtocolError::WrongPublicKeyPurposeError(
+                        WrongPublicKeyPurposeError::new(identity_public_key.purpose(), Purpose::AUTHENTICATION),
+                    ));
+                }
+                let get_data_contract_security_level_requirement = get_data_contract_security_level_requirement.ok_or(ProtocolError::CorruptedCodeExecution("must supply get_data_contract when signing a documents batch transition".to_string()))?;
+                let security_level_requirement = st.contract_based_security_level_requirement(get_data_contract_security_level_requirement)?;
+                if !security_level_requirement
+                    .contains(&identity_public_key.security_level())
+                {
+                    return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
+                        InvalidSignaturePublicKeySecurityLevelError::new(
+                            identity_public_key.security_level(),
+                            security_level_requirement,
+                        ),
+                    ));
+                }
+                st.verify_public_key_is_enabled(identity_public_key)?;
+            }
+            StateTransition::IdentityCreditWithdrawal(st) => {
+                st.verify_public_key_level_and_purpose(identity_public_key)?;
+                st.verify_public_key_is_enabled(identity_public_key)?;
+            }
+            StateTransition::IdentityUpdate(st) => {
+                st.verify_public_key_level_and_purpose(identity_public_key)?;
+                st.verify_public_key_is_enabled(identity_public_key)?;
+            }
+            StateTransition::IdentityCreditTransfer(st) => {
+                st.verify_public_key_level_and_purpose(identity_public_key)?;
+                st.verify_public_key_is_enabled(identity_public_key)?;
+            }
+            StateTransition::IdentityCreate(_) => return Err(ProtocolError::CorruptedCodeExecution(
+                "identity create can not be called for identity signing".to_string(),
+            )),
+            StateTransition::IdentityTopUp(_) => return Err(ProtocolError::CorruptedCodeExecution(
+                "identity top up can not be called for identity signing".to_string(),
+            )),
+        }
         let data = self.signable_bytes()?;
         self.set_signature(signer.sign(identity_public_key, data.as_slice())?);
         self.set_signature_public_key_id(identity_public_key.id());
