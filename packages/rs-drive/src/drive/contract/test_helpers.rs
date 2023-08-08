@@ -4,7 +4,8 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+#[cfg(feature = "data-contract-cbor-conversions")]
+use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::Identifier;

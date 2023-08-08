@@ -12,7 +12,7 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
-use dpp::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;

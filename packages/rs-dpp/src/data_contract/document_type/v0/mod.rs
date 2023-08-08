@@ -19,6 +19,7 @@ use crate::data_contract::document_type::validate_data_contract_max_depth::valid
 use crate::data_contract::document_type::{multi_validator, property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{DataContract, PropertyPath};
+#[cfg(feature = "validation")]
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -94,39 +95,42 @@ impl DocumentTypeV0 {
             &[],
         )?;
 
-        // Validate against JSON Schema
-        DOCUMENT_META_SCHEMA_V0
-            .validate(
-                &full_schema
-                    .try_to_validating_json()
-                    .map_err(ProtocolError::ValueError)?,
-            )
-            .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
+        #[cfg(feature = "validation")]
+        {
+            // Validate against JSON Schema
+            DOCUMENT_META_SCHEMA_V0
+                .validate(
+                    &full_schema
+                        .try_to_validating_json()
+                        .map_err(ProtocolError::ValueError)?,
+                )
+                .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
 
-        // Validate document schema depth
-        let mut result = validate_data_contract_max_depth(&full_schema);
+            // Validate document schema depth
+            let mut result = validate_data_contract_max_depth(&full_schema);
 
-        if !result.is_valid() {
-            let error = result.errors.remove(0);
+            if !result.is_valid() {
+                let error = result.errors.remove(0);
 
-            return Err(ProtocolError::ConsensusError(Box::new(error)));
-        }
+                return Err(ProtocolError::ConsensusError(Box::new(error)));
+            }
 
-        // TODO: Are we still aiming to use RE2 with linear time complexity to protect from ReDoS attacks?
-        //  If not we can remove this validation
-        // Validate reg exp compatibility with RE2 and byteArray usage
-        result.merge(multi_validator::validate(
-            &full_schema,
-            &[
-                pattern_is_valid_regex_validator,
-                byte_array_has_no_items_as_parent_validator,
-            ],
-        ));
+            // TODO: Are we still aiming to use RE2 with linear time complexity to protect from ReDoS attacks?
+            //  If not we can remove this validation
+            // Validate reg exp compatibility with RE2 and byteArray usage
+            result.merge(multi_validator::validate(
+                &full_schema,
+                &[
+                    pattern_is_valid_regex_validator,
+                    byte_array_has_no_items_as_parent_validator,
+                ],
+            ));
 
-        if !result.is_valid() {
-            let error = result.errors.remove(0);
+            if !result.is_valid() {
+                let error = result.errors.remove(0);
 
-            return Err(ProtocolError::ConsensusError(Box::new(error)));
+                return Err(ProtocolError::ConsensusError(Box::new(error)));
+            }
         }
 
         let full_schema_map = schema.to_map().map_err(|err| {

@@ -63,7 +63,8 @@ use dpp::data_contract::DataContract;
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
 #[cfg(test)]
-use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
+#[cfg(feature = "data-contract-json-conversions")]
 use dpp::data_contract::extra::common::json_document_to_contract_with_ids;
 use dpp::prelude::Identifier;
 use dpp::version::PlatformVersion;

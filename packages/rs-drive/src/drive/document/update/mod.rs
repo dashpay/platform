@@ -141,7 +141,7 @@ mod tests {
     use crate::query::DriveQuery;
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
-    use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+    use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
     use dpp::data_contract::extra::common::json_document_to_document;
     use dpp::document::serialization_traits::{
         DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,

@@ -8,7 +8,7 @@ use drive::drive::flags::StorageFlags;
 
 use drive::grovedb::TransactionArg;
 
-use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 use dpp::version::PlatformVersion;
 use std::borrow::Cow;
 

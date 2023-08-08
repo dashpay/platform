@@ -188,7 +188,7 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+    use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
     use dpp::document::DocumentV0Getters;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;

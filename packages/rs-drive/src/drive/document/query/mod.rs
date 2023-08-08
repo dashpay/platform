@@ -54,8 +54,11 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "fixtures-and-mocks")]
 use crate::query::DriveQuery;
-#[cfg(feature = "fixtures-and-mocks")]
-use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+#[cfg(all(
+    feature = "fixtures-and-mocks",
+    feature = "data-contract-cbor-conversions"
+))]
+use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "fixtures-and-mocks")]

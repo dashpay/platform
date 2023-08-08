@@ -86,8 +86,11 @@ use dpp::data_contract::DataContract;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::base::DataContractBaseMethodsV0;
-#[cfg(any(feature = "full", feature = "fixtures-and-mocks"))]
-use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+#[cfg(all(
+    feature = "fixtures-and-mocks",
+    feature = "data-contract-cbor-conversions"
+))]
+use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 use dpp::document::serialization_traits::DocumentCborMethodsV0;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
