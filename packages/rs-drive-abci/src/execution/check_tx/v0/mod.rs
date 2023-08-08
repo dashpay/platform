@@ -155,7 +155,7 @@ mod tests {
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
-        let (key, private_key) = IdentityPublicKey::random_authentication_key_with_private_key(
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
             1,
             Some(1),
             platform_version,
@@ -172,7 +172,7 @@ mod tests {
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
             public_keys: BTreeMap::from([(1, key.clone())]),
-            balance: 100000,
+            balance: 1000000000,
             revision: 0,
         }
         .into();

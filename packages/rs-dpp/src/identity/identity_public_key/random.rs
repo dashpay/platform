@@ -147,7 +147,12 @@ impl IdentityPublicKey {
             None => StdRng::from_entropy(),
             Some(seed_value) => StdRng::seed_from_u64(seed_value),
         };
-        Self::random_authentication_key_with_private_key_with_rng(id, &mut rng, None, platform_version)
+        Self::random_authentication_key_with_private_key_with_rng(
+            id,
+            &mut rng,
+            None,
+            platform_version,
+        )
     }
 
     /// Generates a random authentication key and its corresponding private key based on the platform version.
@@ -287,6 +292,37 @@ impl IdentityPublicKey {
         }
     }
 
+    /// Generates a random ECDSA critical-level authentication public key along with its corresponding private key.
+    ///
+    /// This method constructs a random ECDSA (using the secp256k1 curve) high-level authentication public key
+    /// and returns both the public key and its corresponding private key.
+    ///
+    /// # Parameters
+    ///
+    /// * `id`: The `KeyID` for the generated key.
+    /// * `seed`: A seed that will create a random number generator `StdRng`.
+    ///
+    /// # Returns
+    ///
+    /// * `(Self, Vec<u8>)`: A tuple where the first element is an instance of the `IdentityPublicKey` struct,
+    ///                      and the second element is the corresponding private key.
+    ///
+    pub fn random_ecdsa_critical_level_authentication_key(
+        id: KeyID,
+        seed: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        let mut rng = match seed {
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
+        };
+        Self::random_ecdsa_critical_level_authentication_key_with_rng(
+            id,
+            &mut rng,
+            platform_version,
+        )
+    }
+
     /// Generates a random ECDSA high-level authentication public key along with its corresponding private key.
     ///
     /// This method constructs a random ECDSA (using the secp256k1 curve) high-level authentication public key
@@ -329,6 +365,33 @@ impl IdentityPublicKey {
                 received: version,
             }),
         }
+    }
+
+    /// Generates a random ECDSA high-level authentication public key along with its corresponding private key.
+    ///
+    /// This method constructs a random ECDSA (using the secp256k1 curve) high-level authentication public key
+    /// and returns both the public key and its corresponding private key.
+    ///
+    /// # Parameters
+    ///
+    /// * `id`: The `KeyID` for the generated key.
+    /// * `seed`: A seed that will create a random number generator `StdRng`.
+    ///
+    /// # Returns
+    ///
+    /// * `(Self, Vec<u8>)`: A tuple where the first element is an instance of the `IdentityPublicKey` struct,
+    ///                      and the second element is the corresponding private key.
+    ///
+    pub fn random_ecdsa_high_level_authentication_key(
+        id: KeyID,
+        seed: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        let mut rng = match seed {
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
+        };
+        Self::random_ecdsa_high_level_authentication_key_with_rng(id, &mut rng, platform_version)
     }
 
     /// Generates a random ECDSA high-level authentication public key along with its corresponding private key.
