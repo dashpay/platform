@@ -79,6 +79,7 @@ describe('getMasternodeScopeFactory', () => {
         nodeState: {
           dmnState: mockDmnState,
           poSePenalty: mockDmnState.PoSePenalty,
+          enabledCount: 666,
           lastPaidHeight: mockDmnState.lastPaidHeight,
           // ignore these 3
           lastPaidTime: scope.nodeState.lastPaidTime,

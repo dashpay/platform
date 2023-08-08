@@ -1,7 +1,6 @@
 const wrapAnsi = require('wrap-ansi');
 const chalk = require('chalk');
 const BlsSignatures = require('@dashevo/bls');
-
 const generateBlsKeys = require('../../../../../core/generateBlsKeys');
 const validateAddress = require('../../../../prompts/validators/validateAddress');
 const {
@@ -66,6 +65,7 @@ function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
         rewardShare: null,
       },
       ipAndPorts: {
+        ip: null,
         coreP2PPort: null,
         platformHTTPPort: null,
         platformP2PPort: null,
@@ -86,9 +86,9 @@ function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
         {
           type: 'form',
           name: 'collateral',
-          header: `  Dashmate needs to collect your collateral funding transaction hash and index.              
+          header: `  Dashmate needs to collect your collateral funding transaction hash and index.
   The funding value must be exactly ${collateralAmount} ${collateralDenomination}.
-  
+
   Please follow the instructions on how to create a collateral funding transaction in Dash Core Wallet:
   ${instructionsUrl}\n`,
           message: 'Enter collateral funding transaction information:',
