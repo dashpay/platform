@@ -5,7 +5,6 @@
 
 * **dashmate:** helper default port was bound to Windows print port (#1194)
 * **dashmate:** hard reset deletes related files (#1188)
-* **dashmate:** handle already configured certificate in obtain command (#1176)
 * **drive:** core block reward distribution (#1135)
 
 ### Features
@@ -13,15 +12,7 @@
 * abci versioning ([#1172](https://github.com/dashpay/platform/issues/1172))
 * adapt GroveDB's API changes ([#1099](https://github.com/dashpay/platform/issues/1099))
 * build dapi-gprc rust client ([#1182](https://github.com/dashpay/platform/issues/1182))
-* **dashmate:** add homedir to compose project name ([#1141](https://github.com/dashpay/platform/issues/1141))
-* **dashmate:** configure tenderdash pprof ([#1201](https://github.com/dashpay/platform/issues/1201))
-* **dashmate:** descriptions for all possible ZeroSSL errors ([#1107](https://github.com/dashpay/platform/issues/1107))
-* **dashmate:** handle already configured certificate in obtain command ([#1176](https://github.com/dashpay/platform/issues/1176))
-* **dashmate:** hard reset deletes related files ([#1188](https://github.com/dashpay/platform/issues/1188))
-* **dashmate:** prebuild services dependencies ([#1169](https://github.com/dashpay/platform/issues/1169))
-* **dashmate:** re-use ZeroSSL private key ([#1180](https://github.com/dashpay/platform/issues/1180))
 * **dashmate:** report pulled images during update ([#1186](https://github.com/dashpay/platform/issues/1186))
-* **dashmate:** setup masternode with DMT ([#1203](https://github.com/dashpay/platform/issues/1203))
 * **drive:** add block_id_hash, quorum_type and chain_id required to verify proofs to GRPC responses ([#1207](https://github.com/dashpay/platform/issues/1207))
 * **drive:** core block reward distribution ([#1135](https://github.com/dashpay/platform/issues/1135))
 * **drive:** ensure that chain lock height valid ([#1157](https://github.com/dashpay/platform/issues/1157))
@@ -39,19 +30,12 @@
 
 * **dapi:** invalid json response body ([#1150](https://github.com/dashpay/platform/issues/1150))
 * **dashmate:** config.toEnvs is not a function
-* **dashmate:** config/core/rpc/allowIps must be array ([#881](https://github.com/dashpay/platform/issues/881))
-* **dashmate:** download certificate retry logic ([#1187](https://github.com/dashpay/platform/issues/1187))
-* **dashmate:** helper default port was bound to Windows print port ([#1194](https://github.com/dashpay/platform/issues/1194))
-* **dashmate:** invalid migration ([#1209](https://github.com/dashpay/platform/issues/1209))
 * **dashmate:** invalid variable name ([#1213](https://github.com/dashpay/platform/issues/1213))
 * **dashmate:** platform should be enabled on mainnet ([#1112](https://github.com/dashpay/platform/issues/1112))
 * double process proposal from Tenderdash restart ([#1165](https://github.com/dashpay/platform/issues/1165))
 * **drive:** core RPC retry all errors ([#1140](https://github.com/dashpay/platform/issues/1140))
 * **drive:** do not return an error for non existence contract when verifying ([#1241](https://github.com/dashpay/platform/issues/1241))
 * **drive:** wait for core to sync ([#1153](https://github.com/dashpay/platform/issues/1153))
-* merkle root from the diff doesn't match calculated merkle root ([#1189](https://github.com/dashpay/platform/issues/1189))
-* **sdk:** identifier expects buffer with "in" operator in where query ([#1168](https://github.com/dashpay/platform/issues/1168))
-* **sdk:** missing and invalid types ([#1156](https://github.com/dashpay/platform/issues/1156))
 * update abci test state root ([#1144](https://github.com/dashpay/platform/issues/1144))
 * **wallet-lib:** instant locks not arriving to HD wallets ([#1126](https://github.com/dashpay/platform/issues/1126)) ([#1131](https://github.com/dashpay/platform/issues/1131))
 * **wallet-lib:** not retrying on missing inputs error ([#1133](https://github.com/dashpay/platform/issues/1133))
@@ -61,13 +45,11 @@
 ### Code Refactoring
 
 * misc changes during v0.25 review ([#1121](https://github.com/dashpay/platform/issues/1121))
-* unwanted usage of x11-hash-js ([#1191](https://github.com/dashpay/platform/issues/1191))
 * update dapi proto file to use either proofs or result ([#1148](https://github.com/dashpay/platform/issues/1148))
 
 
 ### Tests
 
-* **dashmate:** e2e tests ([#1152](https://github.com/dashpay/platform/issues/1152))
 * **drive:** verify proof signatures in strategy tests ([#1147](https://github.com/dashpay/platform/issues/1147))
 
 
@@ -87,7 +69,6 @@
 
 * add QuantumExplorer as Code Owner
 * backport deps from master
-* **dashmate:** better port labels for mainnet evolution node setup  ([#1106](https://github.com/dashpay/platform/issues/1106))
 * empty commit to fix CI
 * **release:** update changelog and bump version to 0.24.10 ([#1193](https://github.com/dashpay/platform/issues/1193))
 * **release:** update changelog and bump version to 0.24.5 ([#1113](https://github.com/dashpay/platform/issues/1113))
@@ -103,14 +84,12 @@
 
 ### Continuous Integration
 
-* cancel runs for already merged PRs ([#1179](https://github.com/dashpay/platform/issues/1179))
-* fix cancel runs for already merged PRs ([#1185](https://github.com/dashpay/platform/issues/1185))
 * runs not cancelled when PR is closed or merged ([#1234](https://github.com/dashpay/platform/issues/1234))
 * s3 cache ([#1167](https://github.com/dashpay/platform/issues/1167))
 * select workflow_id to cancel based on head_ref ([#1247](https://github.com/dashpay/platform/issues/1247))
 * specify docker mount cache bucket name as variable ([#1252](https://github.com/dashpay/platform/issues/1252))
 * switch to multi-runner stack ([#1268](https://github.com/dashpay/platform/issues/1268))
-* temporary ignore gRPC JS vulnerability ([#1221](https://github.com/dashpay/platform/issues/1221))
+
 
 ### [0.24.14](https://github.com/dashpay/platform/compare/v0.24.13...v0.24.14) (2023-07-05)
 
