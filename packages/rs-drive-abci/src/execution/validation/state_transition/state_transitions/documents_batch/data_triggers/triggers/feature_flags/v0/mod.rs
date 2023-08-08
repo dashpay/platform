@@ -129,7 +129,7 @@ mod test {
             None,
             state_read_guard.current_protocol_version_in_consensus(),
         )
-        .data_contract();
+        .data_contract_owned();
         let owner_id = data_contract.owner_id();
 
         let base_transition: DocumentBaseTransitionAction = DocumentBaseTransitionActionV0 {

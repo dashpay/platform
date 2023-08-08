@@ -33,6 +33,7 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
     fn created_at(&self) -> Option<TimestampMillis>;
     fn updated_at(&self) -> Option<TimestampMillis>;
     fn data(&self) -> &BTreeMap<String, Value>;
+    fn data_mut(&mut self) -> &mut BTreeMap<String, Value>;
     fn data_owned(self) -> BTreeMap<String, Value>;
 }
 

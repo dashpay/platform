@@ -225,10 +225,10 @@ mod test {
     use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
-    struct TestData<'a> {
+    struct TestData {
         top_level_identifier: Identifier,
         data_contract: DataContract,
-        document_type: DocumentTypeRef<'a>,
+        document_type_name: String,
         documents: Vec<Document>,
         document_create_transition: DocumentCreateTransitionAction,
     }
@@ -310,7 +310,7 @@ mod test {
         TestData {
             documents,
             data_contract,
-            document_type,
+            document_type_name: "rewards".to_string(),
             top_level_identifier,
             document_create_transition: DocumentCreateTransitionAction::from_document_create_transition_with_contract_lookup(document_create_transition, |identifier| {
                 Ok(Arc::new(DataContractFetchInfo::masternode_rewards_contract_fixture(platform_state.current_protocol_version_in_consensus)))
@@ -343,10 +343,14 @@ mod test {
             mut document_create_transition,
             documents,
             data_contract,
-            document_type,
+            document_type_name,
             top_level_identifier,
             ..
         } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
+
+        let document_type = data_contract
+            .document_type_for_name(document_type_name.as_str())
+            .expect("expected the rewards document type");
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
@@ -426,7 +430,7 @@ mod test {
 
         // documentsFixture contains percentage = 500
         document_create_transition
-            .data()
+            .data_mut()
             .insert("percentage".to_string(), Value::U64(90501));
 
         let execution_context =
