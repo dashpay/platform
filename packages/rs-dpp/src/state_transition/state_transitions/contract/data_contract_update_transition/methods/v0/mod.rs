@@ -7,6 +7,7 @@ use crate::state_transition::data_contract_update_transition::{
 use crate::version::FeatureVersion;
 use crate::{NonConsensusError, ProtocolError};
 use platform_version::version::PlatformVersion;
+use crate::state_transition::StateTransition;
 
 pub trait DataContractUpdateTransitionMethodsV0 {
     /// Creates a new instance of `DataContractUpdateTransition` from the given `data_contract`.
@@ -29,5 +30,5 @@ pub trait DataContractUpdateTransitionMethodsV0 {
         signer: &S,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
-    ) -> Result<DataContractUpdateTransition, ProtocolError>;
+    ) -> Result<StateTransition, ProtocolError>;
 }

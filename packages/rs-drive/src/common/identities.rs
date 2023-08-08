@@ -118,7 +118,7 @@ pub fn create_test_identity_with_rng(
 
     let identity: Identity = IdentityV0 {
         id: Identifier::new(id),
-        revision: 1,
+        revision: 0,
         balance: 0,
         public_keys,
     }

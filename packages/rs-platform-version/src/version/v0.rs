@@ -504,7 +504,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
                 identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
                     structure: 0,
-                    identity_signatures: None,
+                    identity_signatures: Some(0),
                     state: 0,
                     transform_into_action: 0,
                 },

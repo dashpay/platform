@@ -237,7 +237,7 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                         let mut validation_result = self
                             .validate_state_transition_identity_signed(
                                 drive,
-                                false,
+                                true,
                                 tx,
                                 execution_context,
                                 platform_version,

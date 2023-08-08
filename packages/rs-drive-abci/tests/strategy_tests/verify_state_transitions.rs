@@ -298,7 +298,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                             .map(|key| (key.id(), key.clone()))
                             .collect(),
                         balance: None,
-                        revision: Some(1),
+                        revision: Some(0),
                         not_found_public_keys: Default::default(),
                     }
                 )
