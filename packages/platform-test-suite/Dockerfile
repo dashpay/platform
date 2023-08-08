@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1.5
-FROM strophy/buildbase:0.0.6 as builder
+FROM strophy/buildbase:0.0.9 as builder
 
 # TODO: Probably should be release by default
 ARG CARGO_BUILD_PROFILE=debug
@@ -63,7 +63,7 @@ RUN --mount=type=cache,target=/tmp/unplugged \
 # Remove Rust sources
 RUN rm -rf packages/rs-dpp packages/rs-platform-value
 
-FROM node:16-alpine3.16
+FROM node:16-alpine3.18
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DAPI Node.JS"
