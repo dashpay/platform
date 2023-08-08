@@ -2,7 +2,10 @@ use crate::error::PlatformVersionError;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::DriveVersion;
-use crate::version::v0::PLATFORM_V1;
+use crate::version::mocks::TEST_BYTES;
+use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
+use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
+use crate::version::v1::PLATFORM_V1;
 
 pub type FeatureVersion = u16;
 pub type OptionalFeatureVersion = Option<u16>; //This is a feature that didn't always exist
@@ -46,13 +49,27 @@ pub struct PlatformVersion {
 
 pub const PLATFORM_VERSIONS: &[PlatformVersion] = &[PLATFORM_V1];
 
+#[cfg(feature = "mock-versions")]
+pub const PLATFORM_TEST_VERSIONS: &[PlatformVersion] = &[TEST_PLATFORM_V2, TEST_PLATFORM_V3]; //this starts at 2
+
 pub const LATEST_PLATFORM_VERSION: &PlatformVersion = &PLATFORM_V1;
 
 impl PlatformVersion {
     pub fn get<'a>(version: u32) -> Result<&'a Self, PlatformVersionError> {
         if version > 0 {
-            PLATFORM_VERSIONS.get(version as usize - 1).ok_or(
-                PlatformVersionError::UnknownVersionError(format!("no platform version {version}")),
+            #[cfg(feature = "mock-versions")]
+            {
+                if version >> TEST_BYTES > 0 {
+                    let test_version = version - (1 << TEST_BYTES);
+                    return PLATFORM_TEST_VERSIONS.get(test_version as usize - 2).ok_or(
+                        PlatformVersionError::UnknownVersionError(format!("no test platform version {test_version}")),
+                    )
+                }
+            }
+            PLATFORM_VERSIONS.get(version as usize - 1).ok_or_else(|| {
+                PlatformVersionError::UnknownVersionError(format!("no platform version {version}"))
+            }
+
             )
         } else {
             Err(PlatformVersionError::UnknownVersionError(format!(
@@ -66,6 +83,15 @@ impl PlatformVersion {
     ) -> Result<&'a Self, PlatformVersionError> {
         if let Some(version) = version {
             if version > 0 {
+                #[cfg(feature = "mock-versions")]
+                {
+                    if version >> TEST_BYTES > 0 {
+                        let test_version = version - (1 << TEST_BYTES);
+                        return PLATFORM_TEST_VERSIONS.get(test_version as usize - 2).ok_or(
+                            PlatformVersionError::UnknownVersionError(format!("no test platform version {test_version}")),
+                        )
+                    }
+                }
                 PLATFORM_VERSIONS.get(version as usize - 1).ok_or(
                     PlatformVersionError::UnknownVersionError(format!(
                         "no platform version {version}"
