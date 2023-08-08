@@ -26,7 +26,10 @@ use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTran
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
+use dpp::state_transition::{
+    GetDataContractSecurityLevelRequirementFn, StateTransition, StateTransitionIdentitySigned,
+    StateTransitionType,
+};
 use dpp::util::vec::hex_to_array;
 use dpp::version::{PlatformVersion, LATEST_VERSION};
 use dpp::withdrawal::Pooling;
@@ -255,7 +258,11 @@ pub fn create_identity_withdrawal_transition(
         .expect("expected to get a signing key");
 
     withdrawal
-        .sign_external(identity_public_key, signer)
+        .sign_external(
+            identity_public_key,
+            signer,
+            None::<GetDataContractSecurityLevelRequirementFn>,
+        )
         .expect("expected to sign withdrawal");
 
     withdrawal.into()
@@ -285,7 +292,11 @@ pub fn create_identity_credit_transfer_transition(
         .expect("expected to get a signing key");
 
     transition
-        .sign_external(identity_public_key, signer)
+        .sign_external(
+            identity_public_key,
+            signer,
+            None::<GetDataContractSecurityLevelRequirementFn>,
+        )
         .expect("expected to sign transfer");
 
     transition.into()

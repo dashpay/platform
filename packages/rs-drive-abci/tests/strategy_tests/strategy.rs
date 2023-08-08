@@ -468,7 +468,13 @@ impl Strategy {
                                     .expect("expected to get a signing key");
 
                                 document_batch_transition
-                                    .sign_external(identity_public_key, signer)
+                                    .sign_external(
+                                        identity_public_key,
+                                        signer,
+                                        Some(|data_contract_id, document_type_name| {
+                                            Ok(SecurityLevel::HIGH)
+                                        }),
+                                    )
                                     .expect("expected to sign");
 
                                 operations.push(document_batch_transition.into());
@@ -540,7 +546,13 @@ impl Strategy {
                                 .expect("expected a key");
 
                             document_batch_transition
-                                .sign_external(identity_public_key, signer)
+                                .sign_external(
+                                    identity_public_key,
+                                    signer,
+                                    Some(|data_contract_id, document_type_name| {
+                                        Ok(SecurityLevel::HIGH)
+                                    }),
+                                )
                                 .expect("expected to sign");
 
                             operations.push(document_batch_transition);
@@ -621,7 +633,13 @@ impl Strategy {
                                 .expect("expected a key");
 
                             document_batch_transition
-                                .sign_external(identity_public_key, signer)
+                                .sign_external(
+                                    identity_public_key,
+                                    signer,
+                                    Some(|data_contract_id, document_type_name| {
+                                        Ok(SecurityLevel::HIGH)
+                                    }),
+                                )
                                 .expect("expected to sign");
 
                             operations.push(document_batch_transition);
