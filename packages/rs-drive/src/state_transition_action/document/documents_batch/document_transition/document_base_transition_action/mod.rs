@@ -37,7 +37,7 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
 
     fn data_contract_id(&self) -> Identifier {
         match self {
-            DocumentBaseTransitionAction::V0(v0) => v0.data_contract_id,
+            DocumentBaseTransitionAction::V0(v0) => v0.data_contract.contract.id(),
         }
     }
 

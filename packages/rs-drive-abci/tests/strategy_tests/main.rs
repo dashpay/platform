@@ -394,7 +394,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864467880)
+        assert_eq!(balance, 99865075600)
     }
 
     #[test]
@@ -1675,7 +1675,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 97);
+        assert_eq!(outcome.identities.len() as u64, 80);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances

@@ -7,7 +7,7 @@ use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
@@ -112,7 +112,7 @@ impl DocumentFactory {
         documents_iter: impl IntoIterator<
             Item = (
                 DocumentTransitionActionType,
-                Vec<(Document, &'a DocumentType)>,
+                Vec<(Document, DocumentTypeRef<'a>)>,
             ),
         >,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {

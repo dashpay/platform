@@ -59,7 +59,9 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
             public_keys_disabled_at,
         };
 
-        let key_signable_bytes = identity_update_transition.signable_bytes()?;
+        let state_transition: StateTransition = identity_update_transition.clone().into();
+
+        let key_signable_bytes = state_transition.signable_bytes()?;
 
         // Sign all the keys
         identity_update_transition

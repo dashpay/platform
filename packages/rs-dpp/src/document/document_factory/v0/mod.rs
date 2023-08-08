@@ -2,7 +2,7 @@ use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::base::DataContractBaseMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
 use crate::document::errors::DocumentError;
@@ -169,12 +169,12 @@ impl DocumentFactoryV0 {
         documents_iter: impl IntoIterator<
             Item = (
                 DocumentTransitionActionType,
-                Vec<(Document, &'a DocumentType)>,
+                Vec<(Document, DocumentTypeRef<'a>)>,
             ),
         >,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
-        let documents: Vec<(DocumentTransitionActionType, Vec<(Document, &DocumentType)>)> =
+        let documents: Vec<(DocumentTransitionActionType, Vec<(Document, DocumentTypeRef)>)> =
             documents_iter.into_iter().collect();
         let mut flattened_documents_iter = documents.iter().flat_map(|(_, v)| v).peekable();
 
@@ -319,7 +319,7 @@ impl DocumentFactoryV0 {
     // // }
     //
     fn document_create_transitions(
-        documents: Vec<(Document, &DocumentType)>,
+        documents: Vec<(Document, DocumentTypeRef)>,
         entropy: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
@@ -354,7 +354,7 @@ impl DocumentFactoryV0 {
     }
 
     fn document_replace_transitions(
-        documents: Vec<(Document, &DocumentType)>,
+        documents: Vec<(Document, DocumentTypeRef)>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
@@ -424,7 +424,7 @@ impl DocumentFactoryV0 {
     }
 
     fn document_delete_transitions(
-        documents: Vec<(Document, &DocumentType)>,
+        documents: Vec<(Document, DocumentTypeRef)>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents

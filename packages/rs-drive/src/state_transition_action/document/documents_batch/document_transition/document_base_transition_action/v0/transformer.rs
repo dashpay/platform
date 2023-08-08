@@ -21,7 +21,6 @@ impl DocumentBaseTransitionActionV0 {
         Ok(DocumentBaseTransitionActionV0 {
             id,
             document_type_name,
-            data_contract_id,
             data_contract: get_data_contract(data_contract_id)?,
         })
     }
@@ -39,7 +38,6 @@ impl DocumentBaseTransitionActionV0 {
         Ok(DocumentBaseTransitionActionV0 {
             id: *id,
             document_type_name: document_type_name.clone(),
-            data_contract_id: *data_contract_id,
             data_contract: get_data_contract(*data_contract_id)?,
         })
     }

@@ -911,7 +911,10 @@ mod test {
         };
         use dpp::block::block_info::BlockInfo;
 
+        use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::data_contract_config::v0::DataContractConfigSettersV0;
+        use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
         use dpp::data_contract::DataContract;
         use dpp::serialization::PlatformDeserializableFromVersionedStructure;
         use dpp::tests::fixtures::get_data_contract_fixture;
@@ -934,10 +937,15 @@ mod test {
 
         /// Set up simple contract history with one update
         fn set_up_history(platform: &TempPlatform<MockCoreRPCLike>) -> DataContract {
-            let platform_version = PlatformVersion::latest();
-            let mut data_contract = get_data_contract_fixture(None).data_contract;
-            data_contract.config.keeps_history = true;
-            data_contract.config.readonly = false;
+            let state = platform.platform.state.read().unwrap();
+            let current_protocol_version = state.current_protocol_version_in_consensus();
+            let platform_version = PlatformVersion::get(current_protocol_version)
+                .expect("expected to get platform version");
+            drop(state);
+            let mut data_contract =
+                get_data_contract_fixture(None, current_protocol_version).data_contract_owned();
+            data_contract.config_mut().set_keeps_history(true);
+            data_contract.config_mut().set_readonly(false);
 
             platform
                 .drive
@@ -976,7 +984,11 @@ mod test {
             });
 
             updated_data_contract
-                .set_document_schema("niceDocument".into(), updated_document_schema)
+                .set_document_schema(
+                    "niceDocument".into(),
+                    updated_document_schema,
+                    platform_version,
+                )
                 .expect("to be able to set document schema");
 
             platform

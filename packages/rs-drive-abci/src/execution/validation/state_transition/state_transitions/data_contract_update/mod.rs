@@ -107,9 +107,12 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::base::DataContractBaseMethodsV0;
     use dpp::data_contract::DataContract;
     use dpp::platform_value::{BinaryData, Value};
-    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
+    use dpp::state_transition::data_contract_update_transition::{
+        DataContractUpdateTransition, DataContractUpdateTransitionV0,
+    };
     use dpp::state_transition::{StateTransition, StateTransitionFieldTypes, StateTransitionType};
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::{PlatformVersion, LATEST_VERSION};
@@ -140,20 +143,8 @@ mod tests {
 
     fn setup_test() -> TestData<MockCoreRPCLike> {
         let platform_version = PlatformVersion::latest();
-        let data_contract =
-            get_data_contract_fixture(None, platform_version.protocol_version).data_contract;
-        let mut updated_data_contract = data_contract.clone();
-
-        updated_data_contract.increment_version();
-
-        let state_transition: StateTransition = DataContractUpdateTransitionV0 {
-            data_contract: updated_data_contract,
-            signature: BinaryData::new(vec![0; 65]),
-            signature_public_key_id: 0,
-        }
-        .into();
-
-        let dc = data_contract;
+        let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
+            .data_contract_owned();
 
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -168,7 +159,7 @@ mod tests {
             .build_with_mock_rpc();
 
         TestData {
-            data_contract: dc,
+            data_contract,
             platform: platform.set_initial_state_structure(),
         }
     }

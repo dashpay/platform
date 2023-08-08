@@ -338,11 +338,13 @@ pub fn create_domain_data_trigger_v0(
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
     use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
     use dpp::tests::fixtures::{get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, ParentDocumentOptions};
     use dpp::tests::utils::generate_random_identifier_struct;
     use dpp::version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
+    use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
     use crate::platform_types::platform::PlatformStateRef;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -380,10 +382,14 @@ mod test {
         let data_contract = get_dpns_data_contract_fixture(
             Some(owner_id),
             state_read_guard.current_protocol_version_in_consensus(),
-        );
+        )
+        .data_contract_owned();
+        let document_type = data_contract
+            .document_type_for_name("domain")
+            .expect("expected to get domain document type");
         let transitions = get_document_transitions_fixture([(
             DocumentTransitionActionType::Create,
-            vec![document],
+            vec![(document, document_type)],
         )]);
         let first_transition = transitions.get(0).expect("transition should be present");
 
@@ -401,12 +407,10 @@ mod test {
         };
 
         let result = create_domain_data_trigger_v0(
-            &DocumentCreateTransitionAction::from(
-                document_create_transition
-                    .try_into_platform_versioned(platform_version)
-                    .expect("expected to produce a state transition action"),
-            )
-            .into(),
+            &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(
+                document_create_transition,|identifier| {
+                    Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(platform_version.protocol_version)))
+                }).expect("expected to create action").into(),
             &data_trigger_context,
             platform_version,
         )

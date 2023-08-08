@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::document::document_factory::DocumentFactory;
 use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
@@ -39,7 +39,7 @@ pub fn get_document_transitions_fixture<'a>(
     documents: impl IntoIterator<
         Item = (
             DocumentTransitionActionType,
-            Vec<(Document, &'a DocumentType)>,
+            Vec<(Document, DocumentTypeRef<'a>)>,
         ),
     >,
 ) -> Vec<DocumentTransition> {
@@ -48,23 +48,8 @@ pub fn get_document_transitions_fixture<'a>(
     let document_factory = DocumentFactory::new(protocol_version, data_contract.clone())
         .expect("expected to get document factory");
 
-    let mut documents_collected: HashMap<
-        DocumentTransitionActionType,
-        Vec<(Document, &DocumentType)>,
-    > = documents.into_iter().collect();
-
-    // let replace_documents = documents_collected
-    //     .remove(&DocumentTransitionActionType::Replace)
-    //     .unwrap_or_default();
-    // let delete_documents = documents_collected
-    //     .remove(&DocumentTransitionActionType::Delete)
-    //     .unwrap_or_default();
-    //
-    // //created documents are left
-    // let create_documents = created_documents;
-
     document_factory
-        .create_state_transition(documents_collected)
+        .create_state_transition(documents)
         .expect("the transitions should be created")
         .transitions()
         .to_owned()

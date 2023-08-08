@@ -164,7 +164,6 @@ mod tests {
         let base_transition: DocumentBaseTransitionAction = DocumentBaseTransitionActionV0 {
             id: Default::default(),
             document_type_name: "".to_string(),
-            data_contract_id: Default::default(),
             data_contract: Arc::new(DataContractFetchInfo::dpns_contract_fixture(1)),
         }
         .into();
@@ -308,7 +307,10 @@ mod tests {
             DocumentDeleteTransitionAction::V0(DocumentDeleteTransitionActionV0 {
                 base: DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
                     id: document.id(),
-                    ..Default::default()
+                    document_type_name: "withdrawal".to_string(),
+                    data_contract: Arc::new(DataContractFetchInfo::withdrawals_contract_fixture(
+                        platform_version.protocol_version,
+                    )),
                 }),
             }),
         );
