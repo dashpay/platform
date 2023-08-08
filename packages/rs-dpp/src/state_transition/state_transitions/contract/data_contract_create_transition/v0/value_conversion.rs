@@ -18,7 +18,7 @@ use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use platform_version::TryIntoPlatformVersioned;
 use platform_version::version::PlatformVersion;
-use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
 use crate::state_transition::data_contract_create_transition::{DataContractCreateTransition, DataContractCreateTransitionV0};
 use crate::state_transition::data_contract_create_transition::fields::*;

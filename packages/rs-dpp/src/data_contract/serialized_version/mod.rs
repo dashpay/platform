@@ -20,11 +20,10 @@ pub const CONTRACT_DESERIALIZATION_LIMIT: usize = 15000;
 #[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformVersioned, From)]
 #[cfg_attr(
     feature = "data-contract-serde-conversion",
-    derive(Serialize, PlatformSerdeVersionedDeserialize)
+    derive(Serialize, Deserialize),
+    serde(tag = "version")
 )]
-#[platform_version_path_bounds("dpp.contract_versions.contract_serialization_version")]
 pub enum DataContractInSerializationFormat {
-    #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(DataContractInSerializationFormatV0),
 }
 

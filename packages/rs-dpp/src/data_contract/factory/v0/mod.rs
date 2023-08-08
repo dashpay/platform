@@ -11,7 +11,8 @@ use crate::data_contract::errors::InvalidDataContractError;
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+#[cfg(feature = "data-contract-value-conversions")]
+use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
@@ -106,7 +107,7 @@ impl DataContractFactoryV0 {
         CreatedDataContract::from_contract_and_entropy(data_contract, entropy, platform_version)
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "data-contract-value-conversion")]
     /// Create Data Contract from plain object
     pub fn create_from_object(
         &self,
@@ -208,7 +209,7 @@ impl DataContractFactoryV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+    use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::data_contract::property_names;
     use crate::serialization::PlatformSerializable;
     use crate::state_transition::StateTransitionLike;

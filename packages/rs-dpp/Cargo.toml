@@ -68,10 +68,7 @@ tokio = { version = "1.17", features = ["full"] }
 pretty_assertions = { version = "1.3.0" }
 
 [features]
-default = ["json-object", "platform-value", "validation", "state-transitions", "state-transitions",
-  "state-transition-validation", "state-transition-validation", "validation",
-  "random-public-keys", "identity-serialization", "fee-distribution", "system_contracts",
-  "data-contract-serde-conversion", "state-transition-serde-conversion"]
+default = ["json-object", "platform-value"]
 drive = ["state-transitions", "fee-distribution", "system_contracts"]
 abci = ["state-transitions", "state-transition-validation", "validation", "random-public-keys", "identity-serialization"]
 cbor = ["ciborium"]

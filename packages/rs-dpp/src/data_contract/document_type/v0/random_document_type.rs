@@ -104,7 +104,7 @@ use crate::data_contract::document_type::{
 };
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_value::Identifier;
+use platform_value::{Identifier, Value};
 use rand::rngs::StdRng;
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
@@ -237,12 +237,16 @@ impl DocumentTypeV0 {
                 .contract_versions
                 .document_type_versions,
         )?;
+
+        // TODO: It might not work properly
         Ok(DocumentTypeV0 {
             name,
+            schema: Value::Null,
             indices,
             index_structure,
             flattened_properties: properties.clone(),
             properties,
+            binary_properties: Default::default(),
             identifier_paths,
             binary_paths,
             required_fields,

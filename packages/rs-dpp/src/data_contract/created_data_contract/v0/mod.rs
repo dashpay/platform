@@ -1,7 +1,8 @@
 use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::DataContract;
 
-use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+#[cfg(feature = "data-contract-value-conversions")]
+use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::fields::property_names::{DATA_CONTRACT, ENTROPY};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -17,7 +18,7 @@ pub struct CreatedDataContractV0 {
 }
 
 impl CreatedDataContractV0 {
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "data-contract-value-conversion")]
     pub fn from_object(
         raw_object: Value,
         platform_version: &PlatformVersion,

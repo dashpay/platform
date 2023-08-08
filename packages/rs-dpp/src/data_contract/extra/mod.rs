@@ -1,3 +1,4 @@
+#[cfg(feature = "data-contract-json-conversions")]
 pub mod common;
 
 #[cfg(test)]

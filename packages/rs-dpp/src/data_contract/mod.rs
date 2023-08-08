@@ -45,7 +45,8 @@ pub mod data_contract_config;
 pub use v0::*;
 
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+#[cfg(feature = "data-contract-value-conversions")]
+use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,

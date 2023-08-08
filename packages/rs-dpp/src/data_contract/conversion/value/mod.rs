@@ -1,6 +1,6 @@
 pub mod v0;
 
-use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DataContract;
 use crate::version::PlatformVersion;

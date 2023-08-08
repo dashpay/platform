@@ -125,7 +125,7 @@ pub struct DataContractV0 {
 #[cfg(test)]
 mod test {
     use crate::data_contract::base::DataContractBaseMethodsV0;
-    use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
+    use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use anyhow::Result;
     use integer_encoding::VarInt;
 

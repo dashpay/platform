@@ -1,5 +1,5 @@
-use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
-use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DATA_CONTRACT_BINARY_FIELDS_V0, DATA_CONTRACT_IDENTIFIER_FIELDS_V0};
 use crate::version::PlatformVersion;

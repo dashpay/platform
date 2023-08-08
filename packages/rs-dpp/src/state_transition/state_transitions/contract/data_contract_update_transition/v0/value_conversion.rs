@@ -1,4 +1,4 @@
-use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::DataContract;
 use crate::state_transition::data_contract_update_transition::fields::*;
 use crate::state_transition::data_contract_update_transition::{

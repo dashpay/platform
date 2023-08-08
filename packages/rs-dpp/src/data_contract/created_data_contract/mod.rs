@@ -88,7 +88,7 @@ impl CreatedDataContract {
         }
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "data-contract-value-conversion")]
     pub fn from_object(
         mut raw_object: Value,
         platform_version: &PlatformVersion,

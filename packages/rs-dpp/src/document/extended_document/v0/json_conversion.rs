@@ -1,4 +1,4 @@
-use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
+use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use crate::document::extended_document::fields::property_names;
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::{
