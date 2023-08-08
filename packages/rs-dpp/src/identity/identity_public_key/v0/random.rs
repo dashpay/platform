@@ -189,7 +189,6 @@ impl IdentityPublicKeyV0 {
         ))
     }
 
-
     pub fn random_ecdsa_critical_level_authentication_key_with_rng(
         id: KeyID,
         rng: &mut StdRng,

@@ -38,11 +38,9 @@ pub fn get_masternode_reward_shares_documents_fixture(
     )
 }
 
-pub fn get_masternode_reward_shares_data_contract_fixture(
-    protocol_version: u32,
-) -> DataContract {
+pub fn get_masternode_reward_shares_data_contract_fixture(protocol_version: u32) -> DataContract {
     load_system_data_contract(SystemDataContract::MasternodeRewards, protocol_version)
-            .expect("should load masternode rewards contract")
+        .expect("should load masternode rewards contract")
 }
 
 #[cfg(feature = "extended-document")]

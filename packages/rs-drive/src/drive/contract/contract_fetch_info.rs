@@ -8,7 +8,9 @@ use dpp::system_data_contracts::load_system_data_contract;
 use dpp::tests::fixtures::get_dashpay_contract_fixture;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::tests::fixtures::get_dpns_data_contract_fixture;
-use dpp::tests::fixtures::{get_masternode_reward_shares_data_contract_fixture, get_withdrawal_document_fixture};
+use dpp::tests::fixtures::{
+    get_masternode_reward_shares_data_contract_fixture, get_withdrawal_document_fixture,
+};
 
 #[cfg(any(feature = "full", feature = "verify"))]
 ///DataContract and fetch information
@@ -52,7 +54,8 @@ impl DataContractFetchInfo {
 
     /// This should ONLY be used for tests
     pub fn masternode_rewards_contract_fixture(protocol_version: u32) -> Self {
-        let masternode_rewards = get_masternode_reward_shares_data_contract_fixture(protocol_version);
+        let masternode_rewards =
+            get_masternode_reward_shares_data_contract_fixture(protocol_version);
         DataContractFetchInfo {
             contract: masternode_rewards,
             storage_flags: None,
@@ -63,9 +66,11 @@ impl DataContractFetchInfo {
 
     /// This should ONLY be used for tests
     pub fn withdrawals_contract_fixture(protocol_version: u32) -> Self {
-        let contract =
-            load_system_data_contract(data_contracts::SystemDataContract::Withdrawals, protocol_version)
-                .expect("to load system data contract");
+        let contract = load_system_data_contract(
+            data_contracts::SystemDataContract::Withdrawals,
+            protocol_version,
+        )
+        .expect("to load system data contract");
         DataContractFetchInfo {
             contract,
             storage_flags: None,
@@ -74,5 +79,3 @@ impl DataContractFetchInfo {
         }
     }
 }
-
-

@@ -46,17 +46,7 @@ impl PlatformVersionCurrentVersion for PlatformVersion {
         version: Option<u32>,
     ) -> Result<&'a Self, ProtocolError> {
         if let Some(version) = version {
-            if version > 0 {
-                PLATFORM_VERSIONS.get(version as usize - 1).ok_or(
-                    ProtocolError::UnknownProtocolVersionError(format!(
-                        "no platform version {version}"
-                    )),
-                )
-            } else {
-                Err(ProtocolError::UnknownProtocolVersionError(format!(
-                    "no platform version {version}"
-                )))
-            }
+            Ok(PlatformVersion::get(version)?)
         } else if let Some(current_version) = Self::get_maybe_current() {
             Ok(current_version)
         } else {

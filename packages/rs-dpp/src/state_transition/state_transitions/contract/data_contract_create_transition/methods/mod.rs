@@ -8,11 +8,11 @@ use crate::identity::{KeyID, PartialIdentity};
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionV0,
 };
+use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
 use platform_version::version::PlatformVersion;
-use crate::state_transition::StateTransition;
 
 impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransition {
     fn new_from_data_contract<S: Signer>(

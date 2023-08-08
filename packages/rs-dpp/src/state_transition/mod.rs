@@ -46,6 +46,8 @@ use crate::state_transition::data_contract_update_transition::{
 use crate::state_transition::documents_batch_transition::{
     DocumentsBatchTransition, DocumentsBatchTransitionSignable,
 };
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::errors::WrongPublicKeyPurposeError;
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::WrongPublicKeyPurposeError;
 #[cfg(feature = "state-transition-validation")]

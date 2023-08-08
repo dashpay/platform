@@ -14,6 +14,7 @@ use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
 
+use crate::data_contract::DataContract;
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
@@ -21,7 +22,9 @@ use crate::state_transition::identity_update_transition::methods::IdentityUpdate
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition, StateTransitionIdentitySigned};
+use crate::state_transition::{
+    GetDataContractSecurityLevelRequirementFn, StateTransition, StateTransitionIdentitySigned,
+};
 use crate::version::FeatureVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},
@@ -30,7 +33,6 @@ use crate::{
     version::LATEST_VERSION,
     ProtocolError,
 };
-use crate::data_contract::DataContract;
 
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
@@ -95,7 +97,11 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
             ))
         } else {
             let mut state_transition: StateTransition = identity_update_transition.into();
-            state_transition.sign_external(master_public_key, signer, None::<GetDataContractSecurityLevelRequirementFn>)?;
+            state_transition.sign_external(
+                master_public_key,
+                signer,
+                None::<GetDataContractSecurityLevelRequirementFn>,
+            )?;
             Ok(state_transition)
         }
     }
