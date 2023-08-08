@@ -7,7 +7,7 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
-#[cfg(feature = "state-transitions-validation")]
+#[cfg(feature = "validation")]
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
     PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
