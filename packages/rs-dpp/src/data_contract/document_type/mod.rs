@@ -8,12 +8,11 @@ mod index;
 pub use index::*;
 mod index_level;
 pub use index_level::IndexLevel;
-pub mod enrich_with_base_schema;
-mod multi_validator;
 #[cfg(feature = "random-documents")]
 pub mod random_document;
 pub mod v0;
-mod validate_data_contract_max_depth;
+#[cfg(feature = "validation")]
+mod validation;
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;

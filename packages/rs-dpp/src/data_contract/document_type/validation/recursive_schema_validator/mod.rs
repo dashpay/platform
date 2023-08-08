@@ -1,140 +1,16 @@
-use platform_value::Value;
-use regex::Regex;
-
-use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
-use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
-use crate::consensus::basic::value_error::ValueError;
-use crate::consensus::{basic::BasicError, ConsensusError};
-use crate::validation::SimpleConsensusValidationResult;
-
-pub type SubValidator = fn(
-    path: &str,
-    key: &str,
-    parent: &Value,
-    value: &Value,
-    result: &mut SimpleConsensusValidationResult,
-);
-
-pub fn validate(
-    raw_data_contract: &Value,
-    validators: &[SubValidator],
-) -> SimpleConsensusValidationResult {
-    let mut result = SimpleConsensusValidationResult::default();
-    let mut values_queue: Vec<(&Value, String)> = vec![(raw_data_contract, String::from(""))];
-
-    while let Some((value, path)) = values_queue.pop() {
-        match value {
-            Value::Map(current_map) => {
-                for (key, current_value) in current_map.iter() {
-                    if current_value.is_map() || current_value.is_array() {
-                        let new_path =
-                            format!("{}/{}", path, key.non_qualified_string_representation());
-                        values_queue.push((current_value, new_path))
-                    }
-                    match key
-                        .to_str()
-                        .map_err(|err| BasicError::ValueError(ValueError::new(err)))
-                    {
-                        Ok(key) => {
-                            for validator in validators {
-                                validator(&path, key, value, current_value, &mut result);
-                            }
-                        }
-                        Err(err) => result.add_error(err),
-                    }
-                }
-            }
-            Value::Array(arr) => {
-                for (i, value) in arr.iter().enumerate() {
-                    if value.is_map() {
-                        let new_path = format!("{}/[{}]", path, i);
-                        values_queue.push((value, new_path))
-                    }
-                }
-            }
-            _ => {}
-        };
-    }
-    result
-}
-
-pub fn pattern_is_valid_regex_validator(
-    path: &str,
-    key: &str,
-    _parent: &Value,
-    value: &Value,
-    result: &mut SimpleConsensusValidationResult,
-) {
-    if key == "pattern" {
-        if let Some(pattern) = value.as_str() {
-            if let Err(err) = Regex::new(pattern) {
-                result.add_error(IncompatibleRe2PatternError::new(
-                    String::from(pattern),
-                    path.to_string(),
-                    err.to_string(),
-                ));
-            }
-        } else {
-            result.add_error(IncompatibleRe2PatternError::new(
-                String::new(),
-                path.to_string(),
-                format!("{} is not a string", path),
-            ));
-        }
-    }
-}
-
-fn unwrap_error_to_result<'a>(
-    v: Result<Option<&'a Value>, ConsensusError>,
-    result: &mut SimpleConsensusValidationResult,
-) -> Option<&'a Value> {
-    match v {
-        Ok(v) => v,
-        Err(e) => {
-            result.add_error(e);
-            None
-        }
-    }
-}
-
-pub fn byte_array_has_no_items_as_parent_validator(
-    path: &str,
-    key: &str,
-    parent: &Value,
-    value: &Value,
-    result: &mut SimpleConsensusValidationResult,
-) {
-    if key == "byteArray"
-        && value.is_bool()
-        && (unwrap_error_to_result(
-            parent.get("items").map_err(|e| {
-                ConsensusError::BasicError(BasicError::ValueError(ValueError::new(e)))
-            }),
-            result,
-        )
-        .is_some()
-            || unwrap_error_to_result(
-                parent.get("prefixItems").map_err(|e| {
-                    ConsensusError::BasicError(BasicError::ValueError(ValueError::new(e)))
-                }),
-                result,
-            )
-            .is_some())
-    {
-        let compilation_error = format!(
-            "invalid path: '{}': byteArray cannot be used with 'items' or 'prefixItems",
-            path
-        );
-        result.add_error(BasicError::JsonSchemaCompilationError(
-            JsonSchemaCompilationError::new(compilation_error),
-        ));
-    }
-}
+mod byte_array_has_no_items_as_parent_validator;
+pub use byte_array_has_no_items_as_parent_validator::*;
+mod pattern_is_valid_regex_validator;
+pub use pattern_is_valid_regex_validator::*;
+mod traversal_validator;
+pub use traversal_validator::*;
 
 #[cfg(test)]
 mod test {
+    use crate::consensus::basic::BasicError;
     use crate::consensus::codes::ErrorWithCode;
-    use platform_value::platform_value;
+    use crate::consensus::ConsensusError;
+    use platform_value::{platform_value, Value};
 
     use super::*;
 
@@ -162,7 +38,8 @@ mod test {
                 "additionalProperties": false,
               }
         );
-        let mut result = validate(&schema, &[byte_array_has_no_items_as_parent_validator]);
+        let mut result =
+            recursive_schema_validator(&schema, &[byte_array_has_no_items_as_parent_validator]);
         assert_eq!(2, result.errors.len());
         let first_error = get_basic_error(result.errors.pop().unwrap());
         let second_error = get_basic_error(result.errors.pop().unwrap());
@@ -194,7 +71,7 @@ mod test {
               }
         );
 
-        assert!(validate(&schema, &[pattern_is_valid_regex_validator]).is_valid())
+        assert!(recursive_schema_validator(&schema, &[pattern_is_valid_regex_validator]).is_valid())
     }
 
     #[test]
@@ -212,7 +89,7 @@ mod test {
             "additionalProperties": false,
 
         });
-        let result = validate(&schema, &[pattern_is_valid_regex_validator]);
+        let result = recursive_schema_validator(&schema, &[pattern_is_valid_regex_validator]);
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {
@@ -231,7 +108,7 @@ mod test {
     #[test]
     fn should_be_valid_complex_for_complex_schema() {
         let schema = get_document_schema();
-        assert!(validate(&schema, &[pattern_is_valid_regex_validator]).is_valid())
+        assert!(recursive_schema_validator(&schema, &[pattern_is_valid_regex_validator]).is_valid())
     }
 
     #[test]
@@ -240,7 +117,7 @@ mod test {
         schema["properties"]["arrayOfObject"]["items"]["properties"]["simple"]["pattern"] =
             platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
-        let result = validate(&schema, &[pattern_is_valid_regex_validator]);
+        let result = recursive_schema_validator(&schema, &[pattern_is_valid_regex_validator]);
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {
@@ -265,7 +142,7 @@ mod test {
         schema["properties"]["arrayOfObjects"]["items"][0]["properties"]["simple"]["pattern"] =
             platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
-        let result = validate(&schema, &[pattern_is_valid_regex_validator]);
+        let result = recursive_schema_validator(&schema, &[pattern_is_valid_regex_validator]);
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {

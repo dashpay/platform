@@ -137,6 +137,21 @@ pub struct DocumentTypeVersions {
     pub field_can_be_null: FeatureVersion,
     pub initial_revision: FeatureVersion,
     pub requires_revision: FeatureVersion,
+    pub validation_versions: DocumentTypeValidationVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DocumentTypeValidationVersions {
+    pub enrich_with_base_schema: FeatureVersion,
+    pub validate_data_contract_max_depth: FeatureVersion,
+    pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RecursiveSchemaValidatorVersions {
+    pub traversal_validator: FeatureVersion,
+    pub byte_array_has_no_items_as_parent_validator: FeatureVersion,
+    pub pattern_is_valid_regex_validator: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

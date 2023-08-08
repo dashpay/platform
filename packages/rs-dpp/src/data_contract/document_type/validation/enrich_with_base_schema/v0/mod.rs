@@ -7,9 +7,10 @@ use lazy_static::lazy_static;
 use platform_value::{Value, ValueMap, ValueMapHelper};
 
 lazy_static! {
-    pub static ref BASE_DOCUMENT_SCHEMA: JsonValue =
-        serde_json::from_str(include_str!("../../../schema/document/documentBase.json"))
-            .expect("can't parse documentBase.json");
+    pub static ref BASE_DOCUMENT_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+        "../../../../../../schema/document/documentBase.json"
+    ))
+    .expect("can't parse documentBase.json");
 }
 
 pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =
@@ -19,7 +20,7 @@ pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =
 const PROPERTY_PROPERTIES: &str = "properties";
 const PROPERTY_REQUIRED: &str = "required";
 
-pub fn enrich_with_base_schema(
+pub fn enrich_with_base_schema_v0(
     mut schema: Value,
     schema_defs: Option<Value>,
     exclude_properties: &[&str], // TODO: Do we need this?

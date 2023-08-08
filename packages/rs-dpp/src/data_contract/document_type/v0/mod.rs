@@ -9,14 +9,13 @@ use crate::consensus::basic::data_contract::{
 };
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::document_field::{DocumentProperty, DocumentPropertyType};
-use crate::data_contract::document_type::enrich_with_base_schema::enrich_with_base_schema;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::multi_validator::{
-    byte_array_has_no_items_as_parent_validator, pattern_is_valid_regex_validator,
+use crate::data_contract::document_type::validation::{
+    byte_array_has_no_items_as_parent_validator, enrich_with_base_schema,
+    pattern_is_valid_regex_validator, traversal_validator, validate_data_contract_max_depth,
 };
-use crate::data_contract::document_type::validate_data_contract_max_depth::validate_data_contract_max_depth;
-use crate::data_contract::document_type::{multi_validator, property_names, DocumentType};
+use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{DataContract, PropertyPath};
 #[cfg(feature = "validation")]
@@ -93,6 +92,7 @@ impl DocumentTypeV0 {
             schema.clone(),
             schema_defs.as_ref().map(|defs| Value::from(defs.clone())),
             &[],
+            platform_version,
         )?;
 
         #[cfg(feature = "validation")]
@@ -107,7 +107,7 @@ impl DocumentTypeV0 {
                 .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
 
             // Validate document schema depth
-            let mut result = validate_data_contract_max_depth(&full_schema);
+            let mut result = validate_data_contract_max_depth(&full_schema, platform_version);
 
             if !result.is_valid() {
                 let error = result.errors.remove(0);
@@ -118,12 +118,13 @@ impl DocumentTypeV0 {
             // TODO: Are we still aiming to use RE2 with linear time complexity to protect from ReDoS attacks?
             //  If not we can remove this validation
             // Validate reg exp compatibility with RE2 and byteArray usage
-            result.merge(multi_validator::validate(
+            result.merge(traversal_validator(
                 &full_schema,
                 &[
                     pattern_is_valid_regex_validator,
                     byte_array_has_no_items_as_parent_validator,
                 ],
+                platform_version,
             ));
 
             if !result.is_valid() {
