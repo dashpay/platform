@@ -60,7 +60,7 @@ RUN --mount=type=cache,target=/tmp/unplugged \
 # Remove Rust sources
 RUN rm -rf packages/rs-dpp packages/rs-platform-value
 
-FROM node:16-alpine3.18
+FROM node:16-alpine3.16
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DAPI Node.JS"
