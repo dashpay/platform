@@ -1,4 +1,4 @@
-use crate::state_transition::{StateTransitionValueConvert};
+use crate::state_transition::StateTransitionValueConvert;
 use crate::ProtocolError;
 use serde::Serialize;
 use serde_json::Value as JsonValue;

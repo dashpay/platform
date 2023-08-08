@@ -26,7 +26,10 @@ use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTran
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
+use dpp::state_transition::{
+    GetDataContractSecurityLevelRequirementFn, StateTransition, StateTransitionIdentitySigned,
+    StateTransitionType,
+};
 use dpp::util::vec::hex_to_array;
 use dpp::version::{PlatformVersion, LATEST_VERSION};
 use dpp::withdrawal::Pooling;
@@ -249,13 +252,17 @@ pub fn create_identity_withdrawal_transition(
     let identity_public_key = identity
         .get_first_public_key_matching(
             Purpose::AUTHENTICATION,
-            HashSet::from([SecurityLevel::HIGH, SecurityLevel::CRITICAL]),
+            HashSet::from([SecurityLevel::CRITICAL]),
             HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
         )
         .expect("expected to get a signing key");
 
     withdrawal
-        .sign_external(identity_public_key, signer)
+        .sign_external(
+            identity_public_key,
+            signer,
+            None::<GetDataContractSecurityLevelRequirementFn>,
+        )
         .expect("expected to sign withdrawal");
 
     withdrawal.into()
@@ -279,13 +286,17 @@ pub fn create_identity_credit_transfer_transition(
     let identity_public_key = identity
         .get_first_public_key_matching(
             Purpose::AUTHENTICATION,
-            HashSet::from([SecurityLevel::MASTER]),
+            HashSet::from([SecurityLevel::CRITICAL]),
             HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
         )
         .expect("expected to get a signing key");
 
     transition
-        .sign_external(identity_public_key, signer)
+        .sign_external(
+            identity_public_key,
+            signer,
+            None::<GetDataContractSecurityLevelRequirementFn>,
+        )
         .expect("expected to sign transfer");
 
     transition.into()
@@ -326,7 +337,7 @@ pub fn create_identities_state_transitions(
                     platform_version,
                 )
                 .expect("expected to transform identity into identity create transition");
-            identity.set_id(identity_create_transition.owner_id().unwrap());
+            identity.set_id(identity_create_transition.owner_id());
 
             (identity, identity_create_transition.into())
         })

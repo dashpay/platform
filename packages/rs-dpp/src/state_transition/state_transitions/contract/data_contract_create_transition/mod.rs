@@ -37,7 +37,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::data_contract::created_data_contract::CreatedDataContract;
 pub use v0::*;
 
-use crate::state_transition::StateTransitionValueConvert;
 use crate::version::PlatformVersionCurrentVersion;
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;

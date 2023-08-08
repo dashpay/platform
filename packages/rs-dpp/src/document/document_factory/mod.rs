@@ -2,12 +2,12 @@ mod v0;
 
 use crate::data_contract::DataContract;
 
-use crate::version::{PlatformVersion};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
@@ -107,10 +107,13 @@ impl DocumentFactory {
     }
 
     #[cfg(feature = "state-transitions")]
-    pub fn create_state_transition(
+    pub fn create_state_transition<'a>(
         &self,
         documents_iter: impl IntoIterator<
-            Item = (DocumentTransitionActionType, Vec<(Document, DocumentType)>),
+            Item = (
+                DocumentTransitionActionType,
+                Vec<(Document, DocumentTypeRef<'a>)>,
+            ),
         >,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         match self {

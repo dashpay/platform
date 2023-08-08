@@ -391,7 +391,7 @@ mod tests {
         assert_eq!(documents.len(), 1);
         assert_eq!(
             documents.get(0).unwrap().id().to_vec(),
-            document_2.id.to_vec()
+            document_2.id().to_vec()
         );
 
         let documents = platform
@@ -406,7 +406,7 @@ mod tests {
         assert_eq!(documents.len(), 1);
         assert_eq!(
             documents.get(0).unwrap().id().to_vec(),
-            document_1.id.to_vec()
+            document_1.id().to_vec()
         );
     }
 }

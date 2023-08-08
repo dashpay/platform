@@ -1224,6 +1224,7 @@ dependencies = [
  "mockall",
  "platform-serialization",
  "platform-serialization-derive",
+ "platform-version",
  "prost",
  "rand",
  "regex",

@@ -2,7 +2,7 @@ use crate::identity::identity_public_key::key_type::KEY_TYPE_MAX_SIZE_TYPE;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType::ECDSA_SECP256K1;
 use crate::identity::Purpose::AUTHENTICATION;
-use crate::identity::SecurityLevel::{HIGH, MASTER};
+use crate::identity::SecurityLevel::{CRITICAL, HIGH, MASTER};
 use crate::identity::{KeyCount, KeyID, KeyType, Purpose, SecurityLevel};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -172,6 +172,31 @@ impl IdentityPublicKeyV0 {
         let key_type = ECDSA_SECP256K1;
         let purpose = AUTHENTICATION;
         let security_level = MASTER;
+        let read_only = false;
+        let (data, private_data) =
+            key_type.random_public_and_private_key_data(rng, platform_version)?;
+        Ok((
+            IdentityPublicKeyV0 {
+                id,
+                key_type,
+                purpose,
+                security_level,
+                read_only,
+                disabled_at: None,
+                data: data.into(),
+            },
+            private_data,
+        ))
+    }
+
+    pub fn random_ecdsa_critical_level_authentication_key_with_rng(
+        id: KeyID,
+        rng: &mut StdRng,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        let key_type = ECDSA_SECP256K1;
+        let purpose = AUTHENTICATION;
+        let security_level = CRITICAL;
         let read_only = false;
         let (data, private_data) =
             key_type.random_public_and_private_key_data(rng, platform_version)?;

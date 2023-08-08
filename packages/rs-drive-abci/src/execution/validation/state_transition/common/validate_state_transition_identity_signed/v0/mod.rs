@@ -6,6 +6,7 @@ use dpp::consensus::signature::{
 };
 
 use dpp::identity::PartialIdentity;
+use dpp::state_transition::documents_batch_transition::fields::DEFAULT_SECURITY_LEVEL;
 
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
 use crate::execution::types::execution_operation::ExecutionOperation;
@@ -13,7 +14,12 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use dpp::consensus::ConsensusError;
+use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
+use dpp::data_contract::DataContract;
+use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::state_transition::documents_batch_transition::get_security_level_requirement;
+use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::StateTransition;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -26,11 +32,13 @@ use dpp::{
     NativeBlsModule,
 };
 use drive::dpp::identity::KeyType;
+use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use lazy_static::lazy_static;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 lazy_static! {
     static ref SUPPORTED_KEY_TYPES: HashSet<KeyType> = {
@@ -42,7 +50,7 @@ lazy_static! {
     };
 }
 
-pub trait ValidateStateTransitionIdentitySignatureV0 {
+pub trait ValidateStateTransitionIdentitySignatureV0<'a> {
     fn validate_state_transition_identity_signed_v0(
         &self,
         drive: &Drive,
@@ -50,10 +58,13 @@ pub trait ValidateStateTransitionIdentitySignatureV0 {
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
+        get_data_contract: Option<
+            impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        >,
     ) -> Result<ConsensusValidationResult<PartialIdentity>, Error>;
 }
 
-impl ValidateStateTransitionIdentitySignatureV0 for StateTransition {
+impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
     fn validate_state_transition_identity_signed_v0(
         &self,
         drive: &Drive,
@@ -61,6 +72,9 @@ impl ValidateStateTransitionIdentitySignatureV0 for StateTransition {
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
+        get_data_contract: Option<
+            impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        >,
     ) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {
         let mut validation_result = ConsensusValidationResult::<PartialIdentity>::default();
 
@@ -70,17 +84,32 @@ impl ValidateStateTransitionIdentitySignatureV0 for StateTransition {
                     "state_transition does not have a public key Id to verify".to_string(),
                 ))?;
 
-        let owner_id = self
-            .owner_id()
-            .ok_or(ProtocolError::CorruptedCodeExecution(
-                "state_transition does not have a owner Id to verify".to_string(),
-            ))?;
+        let owner_id = self.owner_id();
 
-        let security_levels =
-            self.security_level_requirement()
+        let security_levels = match self {
+            StateTransition::DocumentsBatch(batch_transition) => {
+                let get_data_contract =
+                    get_data_contract.ok_or(ProtocolError::CorruptedCodeExecution(
+                        "must supply get_data_contract when signing a documents batch transition"
+                            .to_string(),
+                    ))?;
+                batch_transition.contract_based_security_level_requirement(
+                    |identifier, document_type| {
+                        let data_contract = get_data_contract(identifier)?;
+                        let document_schema =
+                            data_contract.contract.get_document_schema(&document_type)?;
+                        let document_security_level =
+                            get_security_level_requirement(document_schema, DEFAULT_SECURITY_LEVEL);
+                        Ok(document_security_level)
+                    },
+                )
+            }
+            _ => self
+                .security_level_requirement()
                 .ok_or(ProtocolError::CorruptedCodeExecution(
                     "state_transition does not have a owner Id to verify".to_string(),
-                ))?;
+                )),
+        }?;
 
         let key_request = IdentityKeysRequest::new_specific_key_query(owner_id.as_bytes(), key_id);
 

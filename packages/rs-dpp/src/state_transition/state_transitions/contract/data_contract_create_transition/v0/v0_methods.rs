@@ -18,6 +18,8 @@ use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use platform_version::TryIntoPlatformVersioned;
 use platform_version::version::PlatformVersion;
+use crate::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, SignatureError};
+use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::PartialIdentity;
 use crate::identity::signer::Signer;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -36,7 +38,7 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
         signer: &S,
         platform_version: &PlatformVersion,
         _feature_version: Option<FeatureVersion>,
-    ) -> Result<DataContractCreateTransition, ProtocolError> {
+    ) -> Result<StateTransition, ProtocolError> {
         data_contract.set_id(DataContract::generate_data_contract_id_v0(
             identity.id,
             entropy,
@@ -48,7 +50,8 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
             signature_public_key_id: key_id,
             signature: Default::default(),
         });
-        let value = transition.signable_bytes()?;
+        let mut state_transition: StateTransition = transition.into();
+        let value = state_transition.signable_bytes()?;
         let public_key =
             identity
                 .loaded_public_keys
@@ -58,7 +61,25 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
                         "public key did not exist".to_string(),
                     ),
                 ))?;
-        transition.set_signature(signer.sign(public_key, &value)?.into());
-        Ok(transition)
+
+        let security_level_requirements = state_transition.security_level_requirement().ok_or(
+            ProtocolError::CorruptedCodeExecution(
+                "expected security level requirements".to_string(),
+            ),
+        )?;
+        if !security_level_requirements.contains(&public_key.security_level()) {
+            return Err(ProtocolError::ConsensusError(Box::new(
+                SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                    InvalidSignaturePublicKeySecurityLevelError::new(
+                        public_key.security_level(),
+                        security_level_requirements,
+                    ),
+                )
+                .into(),
+            )));
+        }
+
+        state_transition.set_signature(signer.sign(public_key, &value)?);
+        Ok(state_transition)
     }
 }

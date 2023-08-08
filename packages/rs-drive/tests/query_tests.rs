@@ -105,7 +105,7 @@ use dpp::util::cbor_serializer;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 #[cfg(feature = "full")]
-use dpp::version::{COMPATIBILITY_MAP, LATEST_VERSION};
+use dpp::version::LATEST_VERSION;
 use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "full")]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;

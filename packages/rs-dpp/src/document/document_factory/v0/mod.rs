@@ -2,7 +2,7 @@ use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::base::DataContractBaseMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
 use crate::document::errors::DocumentError;
@@ -21,8 +21,13 @@ use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
 use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
-use crate::state_transition::StateTransitionValueConvert;
+use crate::state_transition::documents_batch_transition::document_transition::{
+    DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
+    DocumentTransition,
+};
+use crate::state_transition::documents_batch_transition::{
+    DocumentsBatchTransition, DocumentsBatchTransitionV0,
+};
 use itertools::Itertools;
 
 const PROPERTY_FEATURE_VERSION: &str = "$version";
@@ -127,7 +132,12 @@ impl DocumentFactoryV0 {
             .data_contract
             .document_type_for_name(document_type_name.as_str())?;
 
-        let document = document_type.create_document_from_data(data, owner_id, document_entropy, platform_version)?;
+        let document = document_type.create_document_from_data(
+            data,
+            owner_id,
+            document_entropy,
+            platform_version,
+        )?;
 
         let extended_document = match platform_version
             .dpp
@@ -154,16 +164,20 @@ impl DocumentFactoryV0 {
         Ok(extended_document)
     }
     #[cfg(feature = "state-transitions")]
-    pub fn create_state_transition(
+    pub fn create_state_transition<'a>(
         &self,
         documents_iter: impl IntoIterator<
-            Item = (DocumentTransitionActionType, Vec<(Document, DocumentType)>),
+            Item = (
+                DocumentTransitionActionType,
+                Vec<(Document, DocumentTypeRef<'a>)>,
+            ),
         >,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
-        let mut raw_documents_transitions: Vec<Value> = vec![];
-        let documents: Vec<(DocumentTransitionActionType, Vec<(Document, DocumentType)>)> =
-            documents_iter.into_iter().collect();
+        let documents: Vec<(
+            DocumentTransitionActionType,
+            Vec<(Document, DocumentTypeRef)>,
+        )> = documents_iter.into_iter().collect();
         let mut flattened_documents_iter = documents.iter().flat_map(|(_, v)| v).peekable();
 
         let Some((first_document, _)) = flattened_documents_iter.peek() else {
@@ -176,52 +190,49 @@ impl DocumentFactoryV0 {
             flattened_documents_iter.all(|(document, _)| document.owner_id() == owner_id);
         if !is_the_same_owner {
             return Err(DocumentError::MismatchOwnerIdsError {
-                documents: documents.into_iter().map(|(_, v)| v.into_iter().map(|(document, _)| document).collect::<Vec<_>>()).flatten().collect(),
+                documents: documents
+                    .into_iter()
+                    .map(|(_, v)| {
+                        v.into_iter()
+                            .map(|(document, _)| document)
+                            .collect::<Vec<_>>()
+                    })
+                    .flatten()
+                    .collect(),
             }
             .into());
         }
 
-        for (action, documents) in documents {
-            let raw_transitions = match action {
+        let transitions: Vec<_> = documents
+            .into_iter()
+            .map(|(action, documents)| match action {
                 DocumentTransitionActionType::Create => {
-                    Self::raw_document_create_transitions(documents)?
+                    let entropy = self.entropy_generator.generate()?;
+                    Self::document_create_transitions(documents, entropy, platform_version)
                 }
                 DocumentTransitionActionType::Delete => {
-                    Self::raw_document_delete_transitions(documents)?
+                    Self::document_delete_transitions(documents, platform_version)
                 }
                 DocumentTransitionActionType::Replace => {
-                    Self::raw_document_replace_transitions(documents)?
+                    Self::document_replace_transitions(documents, platform_version)
                 }
-            };
+            })
+            .collect::<Result<Vec<_>, ProtocolError>>()?
+            .into_iter()
+            .flatten()
+            .collect();
 
-            raw_documents_transitions.extend(raw_transitions);
-        }
-
-        if raw_documents_transitions.is_empty() {
+        if transitions.is_empty() {
             return Err(DocumentError::NoDocumentsSuppliedError.into());
         }
 
-        let raw_batch_transition = BTreeMap::from([
-            (
-                PROPERTY_FEATURE_VERSION.to_string(),
-                Value::U16(
-                    LATEST_PLATFORM_VERSION
-                        .dpp
-                        .document_versions
-                        .document_structure_version,
-                ),
-            ),
-            (
-                PROPERTY_OWNER_ID.to_string(),
-                Value::Identifier(owner_id.to_buffer()),
-            ),
-            (
-                PROPERTY_TRANSITIONS.to_string(),
-                Value::Array(raw_documents_transitions),
-            ),
-        ]);
-
-        DocumentsBatchTransition::from_value_map(raw_batch_transition, platform_version)
+        Ok(DocumentsBatchTransitionV0 {
+            owner_id,
+            transitions,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into())
     }
     //
     // pub fn create_extended_from_document_buffer(
@@ -309,108 +320,141 @@ impl DocumentFactoryV0 {
     // //     Ok(data_contract)
     // // }
     //
-    fn raw_document_create_transitions(
-        documents: Vec<(Document, DocumentType)>,
-    ) -> Result<Vec<Value>, ProtocolError> {
-        let mut raw_transitions = vec![];
-        for (document, document_type) in documents {
-            if document_type.documents_mutable() {
-                //we need to have revisions
-                let Some(revision) = document.revision() else {
+    fn document_create_transitions(
+        documents: Vec<(Document, DocumentTypeRef)>,
+        entropy: [u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<DocumentTransition>, ProtocolError> {
+        documents
+            .into_iter()
+            .map(|(document, document_type)| {
+                if document_type.documents_mutable() {
+                    //we need to have revisions
+                    let Some(revision) = document.revision() else {
                     return Err(DocumentError::RevisionAbsentError {
                         document: Box::new(document),
                     }.into());
                 };
-                if revision != INITIAL_REVISION {
-                    return Err(DocumentError::InvalidInitialRevisionError {
+                    if revision != INITIAL_REVISION {
+                        return Err(DocumentError::InvalidInitialRevisionError {
+                            document: Box::new(document),
+                        }
+                        .into());
+                    }
+                }
+                Ok(DocumentCreateTransition::from_document(
+                    document,
+                    document_type,
+                    platform_version,
+                    entropy,
+                    None,
+                    None,
+                )?
+                .into())
+            })
+            .collect()
+    }
+
+    fn document_replace_transitions(
+        documents: Vec<(Document, DocumentTypeRef)>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<DocumentTransition>, ProtocolError> {
+        documents
+            .into_iter()
+            .map(|(document, document_type)| {
+                if !document_type.documents_mutable() {
+                    return Err(DocumentError::TryingToReplaceImmutableDocument {
                         document: Box::new(document),
                     }
                     .into());
                 }
-            }
-            let mut map = document.to_map_value()?;
-
-            map.retain(|key, _| {
-                !key.starts_with('$') || DOCUMENT_CREATE_KEYS_TO_STAY.contains(&key.as_str())
-            });
-            map.insert(
-                PROPERTY_ACTION.to_string(),
-                Value::U8(DocumentTransitionActionType::Create as u8),
-            );
-            raw_transitions.push(map.into());
-        }
-
-        Ok(raw_transitions)
+                if document.revision().is_none() {
+                    return Err(DocumentError::RevisionAbsentError {
+                        document: Box::new(document),
+                    }
+                    .into());
+                };
+                Ok(DocumentReplaceTransition::from_document(
+                    document,
+                    document_type,
+                    platform_version,
+                    None,
+                    None,
+                )?
+                .into())
+            })
+            .collect()
+        // let mut raw_transitions = vec![];
+        // for (document, document_type) in documents {
+        //     if !document_type.documents_mutable() {
+        //         return Err(DocumentError::TryingToReplaceImmutableDocument {
+        //             document: Box::new(document),
+        //         }
+        //         .into());
+        //     }
+        //     let Some(document_revision) = document.revision() else {
+        //         return Err(DocumentError::RevisionAbsentError {
+        //             document: Box::new(document),
+        //         }.into());
+        //     };
+        //     let mut map = document.to_map_value()?;
+        //
+        //     map.retain(|key, _| {
+        //         !key.starts_with('$') || DOCUMENT_REPLACE_KEYS_TO_STAY.contains(&key.as_str())
+        //     });
+        //     map.insert(
+        //         PROPERTY_ACTION.to_string(),
+        //         Value::U8(DocumentTransitionActionType::Replace as u8),
+        //     );
+        //     let new_revision = document_revision + 1;
+        //     map.insert(PROPERTY_REVISION.to_string(), Value::U64(new_revision));
+        //
+        //     // If document have an originally set `updatedAt`
+        //     // we should update it then
+        //     let contains_updated_at = document_type
+        //         .required_fields()
+        //         .contains(PROPERTY_UPDATED_AT);
+        //
+        //     if contains_updated_at {
+        //         let now = Utc::now().timestamp_millis() as TimestampMillis;
+        //         map.insert(PROPERTY_UPDATED_AT.to_string(), Value::U64(now));
+        //     }
+        //
+        //     raw_transitions.push(map.into());
+        // }
+        // Ok(raw_transitions)
     }
 
-    fn raw_document_replace_transitions(
-        documents: Vec<(Document, DocumentType)>,
-    ) -> Result<Vec<Value>, ProtocolError> {
-        let mut raw_transitions = vec![];
-        for (document, document_type) in documents {
-            if !document_type.documents_mutable() {
-                return Err(DocumentError::TryingToReplaceImmutableDocument {
-                    document: Box::new(document),
+    fn document_delete_transitions(
+        documents: Vec<(Document, DocumentTypeRef)>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<DocumentTransition>, ProtocolError> {
+        documents
+            .into_iter()
+            .map(|(document, document_type)| {
+                if !document_type.documents_mutable() {
+                    return Err(DocumentError::TryingToDeleteImmutableDocument {
+                        document: Box::new(document),
+                    }
+                    .into());
                 }
-                .into());
-            }
-            let Some(document_revision) = document.revision() else {
+                let Some(document_revision) = document.revision() else {
                 return Err(DocumentError::RevisionAbsentError {
                     document: Box::new(document),
                 }.into());
             };
-            let mut map = document.to_map_value()?;
-
-            map.retain(|key, _| {
-                !key.starts_with('$') || DOCUMENT_REPLACE_KEYS_TO_STAY.contains(&key.as_str())
-            });
-            map.insert(
-                PROPERTY_ACTION.to_string(),
-                Value::U8(DocumentTransitionActionType::Replace as u8),
-            );
-            let new_revision = document_revision + 1;
-            map.insert(PROPERTY_REVISION.to_string(), Value::U64(new_revision));
-
-            // If document have an originally set `updatedAt`
-            // we should update it then
-            let contains_updated_at = document_type
-                .required_fields()
-                .contains(PROPERTY_UPDATED_AT);
-
-            if contains_updated_at {
-                let now = Utc::now().timestamp_millis() as TimestampMillis;
-                map.insert(PROPERTY_UPDATED_AT.to_string(), Value::U64(now));
-            }
-
-            raw_transitions.push(map.into());
-        }
-        Ok(raw_transitions)
-    }
-
-    fn raw_document_delete_transitions(
-        documents: Vec<(Document, DocumentType)>,
-    ) -> Result<Vec<Value>, ProtocolError> {
-        Ok(documents
-            .into_iter()
-            .map(|(document, document_type)| {
-                let mut map: BTreeMap<String, Value> = BTreeMap::new();
-                map.insert(
-                    PROPERTY_ACTION.to_string(),
-                    Value::U8(DocumentTransitionActionType::Delete as u8),
-                );
-                map.insert(PROPERTY_ID.to_string(), document.id().into());
-                map.insert(
-                    PROPERTY_TYPE.to_string(),
-                    Value::Text(document_type.name().to_owned()),
-                );
-                map.insert(
-                    PROPERTY_DATA_CONTRACT_ID.to_string(),
-                    document_type.data_contract_id().into(),
-                );
-                map.into()
+                Ok(DocumentDeleteTransition::from_document(
+                    document,
+                    document_type,
+                    platform_version,
+                    None,
+                    None,
+                )?
+                .into())
             })
-            .collect())
+            .collect()
     }
+
     fn is_ownership_the_same<'a>(ids: impl IntoIterator<Item = &'a Identifier>) -> bool {
         ids.into_iter().all_equal()
     }

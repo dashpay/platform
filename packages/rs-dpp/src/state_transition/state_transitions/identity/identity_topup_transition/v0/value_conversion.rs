@@ -61,7 +61,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityTopUpTransitionV0 {
         raw_value_map: BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let value : Value = raw_value_map.into();
+        let value: Value = raw_value_map.into();
         Self::from_object(value, platform_version)
     }
 

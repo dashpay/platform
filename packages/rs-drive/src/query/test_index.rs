@@ -74,10 +74,7 @@ mod tests {
             Default::default(),
             false,
             false,
-            &platform_version
-                .dpp
-                .contract_versions
-                .document_type_versions,
+            platform_version,
         )
         .expect("expected to create a document type V0")
         .into()

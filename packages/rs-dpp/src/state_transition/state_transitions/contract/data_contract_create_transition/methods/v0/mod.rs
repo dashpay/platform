@@ -4,6 +4,7 @@ use crate::identity::{KeyID, PartialIdentity};
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionV0,
 };
+use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
@@ -25,7 +26,7 @@ pub trait DataContractCreateTransitionMethodsV0 {
     ///
     /// # Returns
     ///
-    /// If successful, returns a `Result<Self, ProtocolError>` containing a `DataContractCreateTransition`
+    /// If successful, returns a `Result<Self, ProtocolError>` containing a `StateTransition`
     /// object. Otherwise, returns `ProtocolError`.
     fn new_from_data_contract<S: Signer>(
         data_contract: DataContract,
@@ -35,5 +36,5 @@ pub trait DataContractCreateTransitionMethodsV0 {
         signer: &S,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
-    ) -> Result<DataContractCreateTransition, ProtocolError>;
+    ) -> Result<StateTransition, ProtocolError>;
 }

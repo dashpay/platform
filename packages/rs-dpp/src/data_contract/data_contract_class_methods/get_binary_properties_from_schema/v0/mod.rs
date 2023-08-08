@@ -103,8 +103,6 @@ mod test {
 
     use serde_json::{json, Value as JsonValue};
 
-    use super::get_binary_properties;
-
     #[test]
     fn test_get_binary_properties() {
         let schema = get_input_data();

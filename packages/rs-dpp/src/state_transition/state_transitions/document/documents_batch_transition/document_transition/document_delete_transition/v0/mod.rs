@@ -1,3 +1,4 @@
+mod from_document;
 pub mod v0_methods;
 
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
@@ -10,10 +11,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq, Display)]
+#[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
 #[display(fmt = "Base: {}", "base")]
 pub struct DocumentDeleteTransitionV0 {
-    #[serde(flatten)]
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,
 }
 //

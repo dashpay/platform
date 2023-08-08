@@ -69,7 +69,9 @@ derive_more = "0.99.17"
 
 [dev-dependencies]
 base64 = "0.20.0"
-dpp = { path = "../rs-dpp" , features = ["abci", "random-documents", "state-transition-signing", "random-identities", "random-public-keys", "random-document-types", "fixtures-and-mocks"] }
+platform-version = { path = "../rs-platform-version", features = ["mock-versions"]}
+dpp = { path = "../rs-dpp" , features = ["abci", "random-documents", "state-transition-signing", "random-identities", "random-public-keys", "random-document-types", "fixtures-and-mocks", "identity-value-conversion"] }
+
 
 [features]
 default = ["server"]

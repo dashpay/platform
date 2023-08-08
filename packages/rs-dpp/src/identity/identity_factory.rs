@@ -149,15 +149,9 @@ impl IdentityFactory {
             revision: 0,
         };
 
-        let identity = IdentityCreateTransitionV0 {
-            public_keys: public_keys.into_iter().map(|(_, values)| values).collect(),
-            asset_lock_proof,
-            signature: Default::default(),
-            identity_id: identifier,
-        };
-
-        let mut identity_create_transition: IdentityCreateTransition = identity.try_into()?;
-        Ok(identity_create_transition)
+        let mut identity_create_transition: IdentityCreateTransition =
+            identity.clone().try_into()?;
+        Ok((identity.into(), identity_create_transition))
     }
 
     #[cfg(all(feature = "state-transitions", feature = "client"))]

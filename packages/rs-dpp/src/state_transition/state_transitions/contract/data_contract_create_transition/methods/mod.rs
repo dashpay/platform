@@ -8,6 +8,7 @@ use crate::identity::{KeyID, PartialIdentity};
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionV0,
 };
+use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
@@ -22,7 +23,7 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransition {
         signer: &S,
         platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
-    ) -> Result<DataContractCreateTransition, ProtocolError> {
+    ) -> Result<StateTransition, ProtocolError> {
         match feature_version.unwrap_or(
             platform_version
                 .dpp

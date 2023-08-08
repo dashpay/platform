@@ -27,7 +27,6 @@ mod v0;
 mod value_conversion;
 mod version;
 
-use crate::state_transition::StateTransitionValueConvert;
 use crate::version::PlatformVersionCurrentVersion;
 pub use fields::*;
 use platform_version::version::PlatformVersion;

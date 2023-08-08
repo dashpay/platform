@@ -177,9 +177,7 @@ mod tests {
 
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::serialization::serialization_traits::{
-        PlatformSerializable, PlatformSerializableWithPlatformVersion,
-    };
+    use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
     use dpp::util::cbor_serializer;
     use rand::Rng;
     use serde_json::json;
