@@ -2,9 +2,12 @@ use crate::error::PlatformVersionError;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::DriveVersion;
-use crate::version::mocks::TEST_BYTES;
+#[cfg(feature = "mock-versions")]
 use crate::version::mocks::v2_test::TEST_PLATFORM_V2;
+#[cfg(feature = "mock-versions")]
 use crate::version::mocks::v3_test::TEST_PLATFORM_V3;
+#[cfg(feature = "mock-versions")]
+use crate::version::mocks::TEST_BYTES;
 use crate::version::v1::PLATFORM_V1;
 
 pub type FeatureVersion = u16;
@@ -62,15 +65,15 @@ impl PlatformVersion {
                 if version >> TEST_BYTES > 0 {
                     let test_version = version - (1 << TEST_BYTES);
                     return PLATFORM_TEST_VERSIONS.get(test_version as usize - 2).ok_or(
-                        PlatformVersionError::UnknownVersionError(format!("no test platform version {test_version}")),
-                    )
+                        PlatformVersionError::UnknownVersionError(format!(
+                            "no test platform version {test_version}"
+                        )),
+                    );
                 }
             }
             PLATFORM_VERSIONS.get(version as usize - 1).ok_or_else(|| {
                 PlatformVersionError::UnknownVersionError(format!("no platform version {version}"))
-            }
-
-            )
+            })
         } else {
             Err(PlatformVersionError::UnknownVersionError(format!(
                 "no platform version {version}"
@@ -88,8 +91,10 @@ impl PlatformVersion {
                     if version >> TEST_BYTES > 0 {
                         let test_version = version - (1 << TEST_BYTES);
                         return PLATFORM_TEST_VERSIONS.get(test_version as usize - 2).ok_or(
-                            PlatformVersionError::UnknownVersionError(format!("no test platform version {test_version}")),
-                        )
+                            PlatformVersionError::UnknownVersionError(format!(
+                                "no test platform version {test_version}"
+                            )),
+                        );
                     }
                 }
                 PLATFORM_VERSIONS.get(version as usize - 1).ok_or(

@@ -16,7 +16,10 @@ mod public_key_security_level_not_met_error;
 mod state_transition_error;
 #[cfg(feature = "state-transition-validation")]
 mod state_transition_is_not_signed_error;
-#[cfg(feature = "state-transition-validation")]
+#[cfg(any(
+    feature = "state-transition-validation",
+    feature = "state-transition-signing"
+))]
 mod wrong_public_key_purpose_error;
 
 #[cfg(any(

@@ -50,7 +50,7 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
             signature_public_key_id: key_id,
             signature: Default::default(),
         });
-        let mut state_transition : StateTransition = transition.into();
+        let mut state_transition: StateTransition = transition.into();
         let value = state_transition.signable_bytes()?;
         let public_key =
             identity
@@ -62,13 +62,21 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
                     ),
                 ))?;
 
-        let security_level_requirements =  state_transition.security_level_requirement().ok_or(ProtocolError::CorruptedCodeExecution("expected security level requirements".to_string()))?;
+        let security_level_requirements = state_transition.security_level_requirement().ok_or(
+            ProtocolError::CorruptedCodeExecution(
+                "expected security level requirements".to_string(),
+            ),
+        )?;
         if !security_level_requirements.contains(&public_key.security_level()) {
-            return Err(ProtocolError::ConsensusError(                Box::new(SignatureError::InvalidSignaturePublicKeySecurityLevelError(
-                InvalidSignaturePublicKeySecurityLevelError::new(
-                    public_key.security_level(),
-                    security_level_requirements,
-                )).into())))
+            return Err(ProtocolError::ConsensusError(Box::new(
+                SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+                    InvalidSignaturePublicKeySecurityLevelError::new(
+                        public_key.security_level(),
+                        security_level_requirements,
+                    ),
+                )
+                .into(),
+            )));
         }
 
         state_transition.set_signature(signer.sign(public_key, &value)?);

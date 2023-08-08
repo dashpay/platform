@@ -174,8 +174,10 @@ impl DocumentFactoryV0 {
         >,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
-        let documents: Vec<(DocumentTransitionActionType, Vec<(Document, DocumentTypeRef)>)> =
-            documents_iter.into_iter().collect();
+        let documents: Vec<(
+            DocumentTransitionActionType,
+            Vec<(Document, DocumentTypeRef)>,
+        )> = documents_iter.into_iter().collect();
         let mut flattened_documents_iter = documents.iter().flat_map(|(_, v)| v).peekable();
 
         let Some((first_document, _)) = flattened_documents_iter.peek() else {

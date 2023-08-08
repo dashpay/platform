@@ -4,10 +4,10 @@ use crate::identity::{KeyID, PartialIdentity};
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionV0,
 };
+use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::{NonConsensusError, ProtocolError};
 use platform_version::version::PlatformVersion;
-use crate::state_transition::StateTransition;
 
 pub trait DataContractUpdateTransitionMethodsV0 {
     /// Creates a new instance of `DataContractUpdateTransition` from the given `data_contract`.

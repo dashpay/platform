@@ -48,9 +48,9 @@ use crate::version::drive_versions::{
     DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
     DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions, DriveVersion,
 };
+use crate::version::mocks::TEST_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{AbciStructureVersion, FeatureVersion, PlatformArchitectureVersion};
-use crate::version::mocks::TEST_BYTES;
 
 pub const TEST_PROTOCOL_VERSION_3: u32 = (1 << TEST_BYTES) + 3;
 
@@ -111,9 +111,9 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     add_update_pending_epoch_refunds_operations: 0,
                 },
                 storage_fee_distribution_pool:
-                DriveCreditPoolStorageFeeDistributionPoolMethodVersions {
-                    get_storage_fees_from_distribution_pool: 0,
-                },
+                    DriveCreditPoolStorageFeeDistributionPoolMethodVersions {
+                        get_storage_fees_from_distribution_pool: 0,
+                    },
             },
             protocol_upgrade: DriveProtocolUpgradeVersions {
                 clear_version_information: 0,
@@ -295,14 +295,14 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                         replace_key_in_storage: 0,
                     },
                     insert_key_hash_identity_reference:
-                    DriveIdentityKeyHashesToIdentityInsertMethodVersions {
-                        add_estimation_costs_for_insert_non_unique_public_key_hash_reference: 0,
-                        add_estimation_costs_for_insert_unique_public_key_hash_reference: 0,
-                        insert_non_unique_public_key_hash_reference_to_identity: 0,
-                        insert_reference_to_non_unique_key: 0,
-                        insert_reference_to_unique_key: 0,
-                        insert_unique_public_key_hash_reference_to_identity: 0,
-                    },
+                        DriveIdentityKeyHashesToIdentityInsertMethodVersions {
+                            add_estimation_costs_for_insert_non_unique_public_key_hash_reference: 0,
+                            add_estimation_costs_for_insert_unique_public_key_hash_reference: 0,
+                            insert_non_unique_public_key_hash_reference_to_identity: 0,
+                            insert_reference_to_non_unique_key: 0,
+                            insert_reference_to_unique_key: 0,
+                            insert_unique_public_key_hash_reference_to_identity: 0,
+                        },
                 },
                 update: DriveIdentityUpdateMethodVersions {
                     update_identity_revision: 0,
@@ -518,19 +518,19 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     transform_into_action: 0,
                 },
                 identity_credit_withdrawal_state_transition:
-                DriveAbciStateTransitionValidationVersion {
-                    structure: 0,
-                    identity_signatures: None,
-                    state: 0,
-                    transform_into_action: 0,
-                },
+                    DriveAbciStateTransitionValidationVersion {
+                        structure: 0,
+                        identity_signatures: None,
+                        state: 0,
+                        transform_into_action: 0,
+                    },
                 identity_credit_transfer_state_transition:
-                DriveAbciStateTransitionValidationVersion {
-                    structure: 0,
-                    identity_signatures: None,
-                    state: 0,
-                    transform_into_action: 0,
-                },
+                    DriveAbciStateTransitionValidationVersion {
+                        structure: 0,
+                        identity_signatures: None,
+                        state: 0,
+                        transform_into_action: 0,
+                    },
                 contract_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     structure: 0,
                     identity_signatures: None,
@@ -544,23 +544,23 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     transform_into_action: 0,
                 },
                 documents_batch_state_transition:
-                DriveAbciDocumentsStateTransitionValidationVersions {
-                    structure: 0,
-                    state: 0,
-                    transform_into_action: 0,
-                    data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
-                        bindings: 0,
-                        triggers: DriveAbciValidationDataTriggerVersions {
-                            create_contact_request_data_trigger: 0,
-                            create_domain_data_trigger: 0,
-                            create_identity_data_trigger: 0,
-                            create_feature_flag_data_trigger: 0,
-                            create_masternode_reward_shares_data_trigger: 0,
-                            delete_withdrawal_data_trigger: 0,
-                            reject_data_trigger: 0,
+                    DriveAbciDocumentsStateTransitionValidationVersions {
+                        structure: 0,
+                        state: 0,
+                        transform_into_action: 0,
+                        data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
+                            bindings: 0,
+                            triggers: DriveAbciValidationDataTriggerVersions {
+                                create_contact_request_data_trigger: 0,
+                                create_domain_data_trigger: 0,
+                                create_identity_data_trigger: 0,
+                                create_feature_flag_data_trigger: 0,
+                                create_masternode_reward_shares_data_trigger: 0,
+                                delete_withdrawal_data_trigger: 0,
+                                reject_data_trigger: 0,
+                            },
                         },
                     },
-                },
             },
             process_state_transition: 0,
         },

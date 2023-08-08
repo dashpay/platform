@@ -149,7 +149,8 @@ impl IdentityFactory {
             revision: 0,
         };
 
-        let mut identity_create_transition: IdentityCreateTransition = identity.clone().try_into()?;
+        let mut identity_create_transition: IdentityCreateTransition =
+            identity.clone().try_into()?;
         Ok((identity.into(), identity_create_transition))
     }
 

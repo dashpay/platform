@@ -13,7 +13,11 @@ use std::convert::TryFrom;
 pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0 {
     fn contract_based_security_level_requirement(
         &self,
-        get_data_contract_security_level_requirement: impl Fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>,
+        get_data_contract_security_level_requirement: impl Fn(
+            Identifier,
+            String,
+        )
+            -> Result<SecurityLevel, ProtocolError>,
     ) -> Result<Vec<SecurityLevel>, ProtocolError> {
         // Step 1: Get all document types for the ST
         // Step 2: Get document schema for every type
@@ -25,7 +29,10 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         for transition in self.transitions().iter() {
             let document_type_name = transition.base().document_type_name();
             let data_contract_id = transition.base().data_contract_id();
-            let document_security_level = get_data_contract_security_level_requirement(data_contract_id, document_type_name.to_owned())?;
+            let document_security_level = get_data_contract_security_level_requirement(
+                data_contract_id,
+                document_type_name.to_owned(),
+            )?;
 
             // lower enum enum representation means higher in security
             if document_security_level < highest_security_level {
