@@ -116,6 +116,7 @@ where
 mod tests {
     use crate::config::PlatformConfig;
     use crate::execution::types::execution_result::ExecutionResult::SuccessfulPaidExecution;
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
@@ -126,42 +127,66 @@ mod tests {
     use dpp::dashcore::secp256k1::Secp256k1;
     use dpp::dashcore::{signer, KeyPair};
     use dpp::data_contracts::dpns_contract;
-    use dpp::identity::{IdentityV0, KeyType, Purpose, SecurityLevel};
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::{Identity, IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization::{PlatformSerializable, Signable};
+    use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
+    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
     use dpp::state_transition::StateTransition;
+    use dpp::tests::fixtures::get_dashpay_contract_fixture;
     use dpp::version::PlatformVersion;
+    use dpp::NativeBlsModule;
+    use drive::drive::contract::DataContractFetchInfo;
+    use platform_version::TryIntoPlatformVersioned;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
 
     #[test]
     fn data_contract_create_check_tx() {
-        let serialized = hex::decode("00010001e2716cafada3bbe565025e4597276424c7a1d2b19bb67d3f44fa111f4e7696e300000000013468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374019e71b47e5b533e2c53366158f0d7548ba79ca6cbde04401fd7c79597bef6fb2c030f696e6465786564446f63756d656e74160512047479706512066f626a6563741207696e64696365731506160312046e616d651206696e64657831120a70726f70657274696573150216011208246f776e6572496412036173631601120966697273744e616d6512036173631206756e697175651301160312046e616d651206696e64657832120a70726f70657274696573150216011208246f776e657249641203617363160112086c6173744e616d6512036173631206756e697175651301160212046e616d651206696e64657833120a70726f706572746965731501160112086c6173744e616d651203617363160212046e616d651206696e64657834120a70726f7065727469657315021601120a2463726561746564417412036173631601120a247570646174656441741203617363160212046e616d651206696e64657835120a70726f7065727469657315011601120a247570646174656441741203617363160212046e616d651206696e64657836120a70726f7065727469657315011601120a246372656174656441741203617363120a70726f706572746965731602120966697273744e616d6516021204747970651206737472696e6712096d61784c656e677468023f12086c6173744e616d6516021204747970651206737472696e6712096d61784c656e677468023f120872657175697265641504120966697273744e616d65120a24637265617465644174120a2475706461746564417412086c6173744e616d6512146164646974696f6e616c50726f7065727469657313000c6e696365446f63756d656e74160412047479706512066f626a656374120a70726f70657274696573160112046e616d6516011204747970651206737472696e67120872657175697265641501120a2463726561746564417412146164646974696f6e616c50726f7065727469657313000e7769746842797465417272617973160512047479706512066f626a6563741207696e64696365731501160212046e616d651206696e64657831120a70726f7065727469657315011601120e6279746541727261794669656c641203617363120a70726f706572746965731602120e6279746541727261794669656c641603120474797065120561727261791209627974654172726179130112086d61784974656d730210120f6964656e7469666965724669656c64160512047479706512056172726179120962797465417272617913011210636f6e74656e744d656469615479706512216170706c69636174696f6e2f782e646173682e6470702e6964656e74696669657212086d696e4974656d73022012086d61784974656d730220120872657175697265641501120e6279746541727261794669656c6412146164646974696f6e616c50726f706572746965731300005e236018181816974c2d73a407a1d4ce4e936cb3431e0ea94e2777fb3e87f9e80141204039fe689533d8bc9137ef298c3e6a5f7c40e8001bb670a370149b1c7f3f4b326e311e3df862f4ea6f146ad858d1ef2b3a02949284cdb3b09f63974d5912b04e").expect("expected to decode");
         let platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
-        let platform_version = PlatformVersion::latest();
+        let state = platform.state.read().unwrap();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
-        let key = IdentityPublicKey::random_authentication_key(1, Some(1), platform_version);
+        let (key, private_key) = IdentityPublicKey::random_authentication_key_with_private_key(
+            1,
+            Some(1),
+            platform_version,
+        )
+        .expect("expected to get key pair");
 
         platform
             .drive
             .create_initial_state_structure(None, platform_version)
             .expect("expected to create state structure");
-        let identity = IdentityV0 {
+        let identity: Identity = IdentityV0 {
             id: Identifier::new([
                 158, 113, 180, 126, 91, 83, 62, 44, 83, 54, 97, 88, 240, 215, 84, 139, 167, 156,
                 166, 203, 222, 4, 64, 31, 215, 199, 149, 151, 190, 246, 251, 44,
             ]),
-            public_keys: BTreeMap::from([(1, key)]),
+            public_keys: BTreeMap::from([(1, key.clone())]),
             balance: 100000,
             revision: 0,
         }
         .into();
+
+        let dashpay = get_dashpay_contract_fixture(Some(identity.id()), protocol_version);
+        let mut create_contract_state_transition: StateTransition = dashpay
+            .try_into_platform_versioned(platform_version)
+            .expect("expected a state transition");
+        create_contract_state_transition
+            .sign(&key, private_key.as_slice(), &NativeBlsModule::default())
+            .expect("expected to sign transition");
+        let serialized = create_contract_state_transition
+            .serialize()
+            .expect("serialized state transition");
         platform
             .drive
             .add_new_identity(
@@ -173,12 +198,11 @@ mod tests {
             )
             .expect("expected to insert identity");
 
-        let _validation_result = platform
+        let validation_result = platform
             .check_tx_v0(serialized.as_slice())
             .expect("expected to check tx");
 
-        //todo fix
-        // assert!(validation_result.errors.is_empty());
+        assert!(validation_result.errors.is_empty());
     }
 
     #[test]

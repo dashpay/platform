@@ -20,9 +20,7 @@ use crate::data_contract::DataContract;
 use crate::identity::KeyID;
 use crate::serialization::PlatformDeserializable;
 use crate::serialization::{PlatformSerializable, Signable};
-use crate::state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
-};
+use crate::state_transition::{StateTransition, StateTransitionFieldTypes, StateTransitionLike, StateTransitionType};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
@@ -91,6 +89,18 @@ impl TryFromPlatformVersioned<CreatedDataContract> for DataContractCreateTransit
                 received: version,
             }),
         }
+    }
+}
+
+impl TryFromPlatformVersioned<CreatedDataContract> for StateTransition {
+    type Error = ProtocolError;
+
+    fn try_from_platform_versioned(
+        value: CreatedDataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        let data_contract_create_transition = DataContractCreateTransition::try_from_platform_versioned(value, platform_version)?;
+        Ok(data_contract_create_transition.into())
     }
 }
 
