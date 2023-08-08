@@ -75,3 +75,4 @@ COPY --from=builder /platform /platform
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 
 EXPOSE 2500 2501 2510
+
