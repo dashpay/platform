@@ -4,7 +4,7 @@ mod serde_serialize;
 mod serialize;
 pub(crate) mod v0;
 
-pub use fields::{IDENTIFIER_FIELDS, property_names};
+pub use fields::{property_names, IDENTIFIER_FIELDS};
 
 use crate::data_contract::DataContract;
 use crate::ProtocolError;
@@ -12,9 +12,9 @@ use crate::ProtocolError;
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, HashSet};
-use platform_version::version::PlatformVersion;
 
 #[derive(Debug, Clone)]
 pub enum ExtendedDocument {
@@ -70,9 +70,15 @@ impl ExtendedDocument {
     /// Create an extended document from a JSON string and a data contract.
     ///
     /// This function is a passthrough to the `from_json_string` method.
-    pub fn from_json_string(string: &str, contract: DataContract, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
+    pub fn from_json_string(
+        string: &str,
+        contract: DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         Ok(ExtendedDocument::V0(ExtendedDocumentV0::from_json_string(
-            string, contract, platform_version
+            string,
+            contract,
+            platform_version,
         )?))
     }
 
@@ -85,7 +91,11 @@ impl ExtendedDocument {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         Ok(ExtendedDocument::V0(
-            ExtendedDocumentV0::from_raw_json_document(raw_document, data_contract, platform_version)?,
+            ExtendedDocumentV0::from_raw_json_document(
+                raw_document,
+                data_contract,
+                platform_version,
+            )?,
         ))
     }
 

@@ -21,7 +21,10 @@ use crate::ProtocolError;
 #[cfg(feature = "cbor")]
 use ciborium::Value as CborValue;
 
-use platform_value::btreemap_extensions::{BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper};
+use platform_value::btreemap_extensions::{
+    BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
+    BTreeValueRemoveFromMapHelper,
+};
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -38,9 +41,9 @@ use crate::document::serialization_traits::{
     DocumentJsonMethodsV0, DocumentPlatformValueMethodsV0,
 };
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "json-object")]
 use serde_json::Value as JsonValue;
-use platform_version::version::PlatformVersion;
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -160,7 +163,11 @@ impl ExtendedDocumentV0 {
     /// # Errors
     ///
     /// Returns a `ProtocolError` if there is an error decoding the JSON string.
-    pub fn from_json_string(string: &str, contract: DataContract, platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
+    pub fn from_json_string(
+        string: &str,
+        contract: DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         let json_value: JsonValue = serde_json::from_str(string).map_err(|_| {
             ProtocolError::StringDecodeError("error decoding from json string".to_string())
         })?;
@@ -181,7 +188,7 @@ impl ExtendedDocumentV0 {
     pub fn from_raw_json_document(
         raw_document: JsonValue,
         data_contract: DataContract,
-        platform_version: &PlatformVersion
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         Self::from_untrusted_platform_value(raw_document.into(), data_contract, platform_version)
     }
@@ -200,7 +207,7 @@ impl ExtendedDocumentV0 {
     pub fn from_trusted_platform_value(
         document_value: Value,
         data_contract: DataContract,
-        platform_version: &PlatformVersion
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut properties = document_value
             .into_btree_string_map()
@@ -242,7 +249,7 @@ impl ExtendedDocumentV0 {
     pub fn from_untrusted_platform_value(
         document_value: Value,
         data_contract: DataContract,
-        platform_version: &PlatformVersion
+        platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut properties = document_value
             .into_btree_string_map()

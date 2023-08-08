@@ -221,12 +221,13 @@ impl DocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
             platform_version,
         )?;
         let serialized_document = serialized_document.split_at(offset).1;
-        let (document_type_name_len, rest) = serialized_document.split_first().ok_or(
-            ProtocolError::DecodingError(
-                "error reading document type name len from serialized extended document"
-                    .to_string(),
-            )
-        )?;
+        let (document_type_name_len, rest) =
+            serialized_document
+                .split_first()
+                .ok_or(ProtocolError::DecodingError(
+                    "error reading document type name len from serialized extended document"
+                        .to_string(),
+                ))?;
         if serialized_document.len() < *document_type_name_len as usize {
             return Err(ProtocolError::DecodingError(
                 "serialized extended document isn't big enough for the document type len"

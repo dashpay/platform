@@ -56,10 +56,10 @@ impl<'de> Visitor<'de> for ExtendedDocumentVisitor {
                 }
                 "$dataContractId" => {
                     data_contract_id = Some(map.next_value()?);
-                },
+                }
                 "document" => {
                     document = Some(map.next_value()?);
-                },
+                }
                 _ => {}
             }
         }
