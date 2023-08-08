@@ -5,7 +5,7 @@ use drive::grovedb::TransactionArg;
 
 /// DataTriggerExecutionContext represents the context in which a data trigger is executed.
 /// It contains references to relevant state and transaction data needed for the trigger to perform its actions.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct DataTriggerExecutionContext<'a> {
     /// A reference to the platform state, which contains information about the current blockchain environment.
     pub platform: &'a PlatformStateRef<'a>,
