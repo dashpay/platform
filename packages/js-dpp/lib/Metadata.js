@@ -15,7 +15,7 @@ class Metadata {
 
   /**
    * Get block height
-   * @return {number}
+   * @returns {number}
    */
   getBlockHeight() {
     return this.blockHeight;
@@ -23,7 +23,7 @@ class Metadata {
 
   /**
    * Get core chain-locked height
-   * @return {number}
+   * @returns {number}
    */
   getCoreChainLockedHeight() {
     return this.coreChainLockedHeight;
