@@ -9,8 +9,8 @@ impl DocumentCreateTransition {
     pub fn from_document(
         document: Document,
         document_type: DocumentTypeRef,
-        platform_version: &PlatformVersion,
         entropy: [u8; 32],
+        platform_version: &PlatformVersion,
         feature_version: Option<FeatureVersion>,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<Self, ProtocolError> {

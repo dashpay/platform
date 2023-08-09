@@ -1,5 +1,6 @@
 pub mod fee_pools;
 pub mod setup;
+pub mod signer;
 
 // TODO: Move tests to appropriate place
 

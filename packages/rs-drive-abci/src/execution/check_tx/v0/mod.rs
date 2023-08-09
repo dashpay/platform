@@ -119,25 +119,36 @@ mod tests {
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use crate::test::helpers::signer::SimpleSigner;
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::signature::SignatureError;
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::dashcore::secp256k1::Secp256k1;
-    use dpp::dashcore::{signer, KeyPair};
+    use dpp::dashcore::{signer, KeyPair, Network, PrivateKey};
+    use dpp::data_contract::base::DataContractBaseMethodsV0;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contracts::dpns_contract;
+    use dpp::document::document_methods::DocumentMethodsV0;
+    use dpp::document::{DocumentV0Getters, DocumentV0Setters};
     use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::state_transition::asset_lock_proof;
+    use dpp::identity::KeyType::ECDSA_SECP256K1;
     use dpp::identity::{Identity, IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization::{PlatformSerializable, Signable};
     use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
     use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+    use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+    use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+    use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
     use dpp::state_transition::StateTransition;
-    use dpp::tests::fixtures::get_dashpay_contract_fixture;
+    use dpp::tests::fixtures::{get_dashpay_contract_fixture, instant_asset_lock_proof_fixture};
     use dpp::version::PlatformVersion;
     use dpp::NativeBlsModule;
     use drive::drive::contract::DataContractFetchInfo;
@@ -199,7 +210,7 @@ mod tests {
             .expect("expected to insert identity");
 
         let validation_result = platform
-            .check_tx_v0(serialized.as_slice())
+            .check_tx(serialized.as_slice())
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
@@ -207,19 +218,124 @@ mod tests {
 
     #[test]
     fn document_update_check_tx() {
-        let identity_create = hex::decode("03020200000000002102b50c44b3a3bd342d620919352097ce39e31bb2b4a485583a933827920ee5aa9d4120e3e3432eba9c7c41c789b2ca4483ef1d5c6657ab83fb4164c6517edd3944c1246461ffe2b1eee25f79fcee2fcebee5e08aa264c8b5cd42cf050eb850874823bb01000002002103f85402738806681a6e6fd14ed8e70899bd831da5bd9302e84edf3caf03bcd744411ff87579b07c9b295c6f18ad0c98986e9f2437918f0fe34047e74ac957c2976edf50788d2b16fcaea9bbbd0aa90569efca11de669d7f08ef3b5c2db1a2bb7ccc470000c601018424a8d386812dfc24fe286915b1a14763c8fb3701d6b8991912b7a54088c30d00000000a9f543365d8345621e724755bcce89f77c374038e9a7d0a0d5c7e3e9481045cb506ebd6bcf46f5db0953dd84386d9942ac4e30372fbc7456b479b65a08b8801695f7078bb338c75272b849661d26e86e40e59a283767d24f361b7172f9256b6bc5ec9d33f1a5742dd3df24f96c45f56e15a781964b9d7cc29087dc8adf4f63b7b4a1cffcf8495a0b13cea819e80355307541a18912e74210fffb367b7b3a13b0de03000000018424a8d386812dfc24fe286915b1a14763c8fb3701d6b8991912b7a54088c30d000000006a47304402201e1f8c93f0ad0b4c43d5e1c03a912e9c8463bd9409b495bb3156638dbc03094102202aaf998d0e533f0aac62fb1ab3bd3885fc96201a6f282a22801df1f9180b6b7e012102e7568866ff0c53561fc0e577b76f3614b38aa548a89adbbfc715c2a85860aaa6ffffffff0240420f0000000000166a14b6c869d709e095182d9c49a347d67632606de3a428230000000000001976a9147d863019b137a7fc55d6399b0ae7c525933fb14388ac0000000000014120f138e7c9cec7ac53f74d141141adb463b57d87599e40bc6251678d8892e7a0c4100f64be98035e46fa2b400bab870069f0f612db3f6c98a85e6dcb15ca56d7b87e27f11ff8d2539a71fea96ffb95ea7226599329fecb7d67c2332b2749d0eca0").expect("expected to decode");
-
-        let data_contract_create = hex::decode("000100014b707b7ffe0c6170dc0b1cce6abcfd3db41480de837b8a4038ec2e044c9ec61300000000013468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374017e27f11ff8d2539a71fea96ffb95ea7226599329fecb7d67c2332b2749d0eca0030f696e6465786564446f63756d656e74160512047479706512066f626a6563741207696e64696365731506160312046e616d651206696e64657831120a70726f70657274696573150216011208246f776e6572496412036173631601120966697273744e616d6512036173631206756e697175651301160312046e616d651206696e64657832120a70726f70657274696573150216011208246f776e657249641203617363160112086c6173744e616d6512036173631206756e697175651301160212046e616d651206696e64657833120a70726f706572746965731501160112086c6173744e616d651203617363160212046e616d651206696e64657834120a70726f7065727469657315021601120a2463726561746564417412036173631601120a247570646174656441741203617363160212046e616d651206696e64657835120a70726f7065727469657315011601120a247570646174656441741203617363160212046e616d651206696e64657836120a70726f7065727469657315011601120a246372656174656441741203617363120a70726f706572746965731602120966697273744e616d6516021204747970651206737472696e6712096d61784c656e677468023f12086c6173744e616d6516021204747970651206737472696e6712096d61784c656e677468023f120872657175697265641504120966697273744e616d65120a24637265617465644174120a2475706461746564417412086c6173744e616d6512146164646974696f6e616c50726f7065727469657313000c6e696365446f63756d656e74160412047479706512066f626a656374120a70726f70657274696573160112046e616d6516011204747970651206737472696e67120872657175697265641501120a2463726561746564417412146164646974696f6e616c50726f7065727469657313000e7769746842797465417272617973160512047479706512066f626a6563741207696e64696365731501160212046e616d651206696e64657831120a70726f7065727469657315011601120e6279746541727261794669656c641203617363120a70726f706572746965731602120e6279746541727261794669656c641603120474797065120561727261791209627974654172726179130112086d61784974656d730210120f6964656e7469666965724669656c64160512047479706512056172726179120962797465417272617913011210636f6e74656e744d656469615479706512216170706c69636174696f6e2f782e646173682e6470702e6964656e74696669657212086d696e4974656d73022012086d61784974656d730220120872657175697265641501120e6279746541727261794669656c6412146164646974696f6e616c50726f70657274696573130000bdb5befd57710c51ecfbc4331d180bc22ded67a208cab00b62f7a0594115b88b01411f7f373da43c0be79b9394245ae0493bcef97fa5ed90e937548a5e565ee51426e742a3da4bf115f59e810e1e7fedeb17689d51fbeccf526c32164cc9d44ecf5c3e").expect("expected to decode");
-
-        let document_create = hex::decode("0201017e27f11ff8d2539a71fea96ffb95ea7226599329fecb7d67c2332b2749d0eca00100bc7ad590a5a0d1bcd29c780d981e9ebcc4f00f39caa3591df870f03723e7aba40f696e6465786564446f63756d656e74004b707b7ffe0c6170dc0b1cce6abcfd3db41480de837b8a4038ec2e044c9ec613014b707b7ffe0c6170dc0b1cce6abcfd3db41480de837b8a4038ec2e044c9ec61300000000013468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374017e27f11ff8d2539a71fea96ffb95ea7226599329fecb7d67c2332b2749d0eca0030f696e6465786564446f63756d656e74160512047479706512066f626a6563741207696e64696365731506160312046e616d651206696e64657831120a70726f70657274696573150216011208246f776e6572496412036173631601120966697273744e616d6512036173631206756e697175651301160312046e616d651206696e64657832120a70726f70657274696573150216011208246f776e657249641203617363160112086c6173744e616d6512036173631206756e697175651301160212046e616d651206696e64657833120a70726f706572746965731501160112086c6173744e616d651203617363160212046e616d651206696e64657834120a70726f7065727469657315021601120a2463726561746564417412036173631601120a247570646174656441741203617363160212046e616d651206696e64657835120a70726f7065727469657315011601120a247570646174656441741203617363160212046e616d651206696e64657836120a70726f7065727469657315011601120a246372656174656441741203617363120a70726f706572746965731602120966697273744e616d6516021204747970651206737472696e6712096d61784c656e677468023f12086c6173744e616d6516021204747970651206737472696e6712096d61784c656e677468023f120872657175697265641504120966697273744e616d65120a24637265617465644174120a2475706461746564417412086c6173744e616d6512146164646974696f6e616c50726f7065727469657313000c6e696365446f63756d656e74160412047479706512066f626a656374120a70726f70657274696573160112046e616d6516011204747970651206737472696e67120872657175697265641501120a2463726561746564417412146164646974696f6e616c50726f7065727469657313000e7769746842797465417272617973160512047479706512066f626a6563741207696e64696365731501160212046e616d651206696e64657831120a70726f7065727469657315011601120e6279746541727261794669656c641203617363120a70726f706572746965731602120e6279746541727261794669656c641603120474797065120561727261791209627974654172726179130112086d61784974656d730210120f6964656e7469666965724669656c64160512047479706512056172726179120962797465417272617913011210636f6e74656e744d656469615479706512216170706c69636174696f6e2f782e646173682e6470702e6964656e74696669657212086d696e4974656d73022012086d61784974656d730220120872657175697265641501120e6279746541727261794669656c6412146164646974696f6e616c50726f70657274696573130000f22bd29939dc6a8a9b892a942e66e8a6c628309887cededb42aadeb29e21458f01fd000001882425a06101fd000001882425a06101020966697273744e616d6512066d794e616d65086c6173744e616d6512086c6173744e616d65010101411faf90e1f9f909b32e2273e88ba3bdd88db3bebfd6dbb47bb61ebfeb19bd27bbe428eb694bfb0ba96460ebcf40b38464a2242b79878a161d0572b90efc09f65817").expect("expected to decode");
-
-        let document_update = hex::decode("0201017e27f11ff8d2539a71fea96ffb95ea7226599329fecb7d67c2332b2749d0eca00101bc7ad590a5a0d1bcd29c780d981e9ebcc4f00f39caa3591df870f03723e7aba40f696e6465786564446f63756d656e74014b707b7ffe0c6170dc0b1cce6abcfd3db41480de837b8a4038ec2e044c9ec613014b707b7ffe0c6170dc0b1cce6abcfd3db41480de837b8a4038ec2e044c9ec61300000000013468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374017e27f11ff8d2539a71fea96ffb95ea7226599329fecb7d67c2332b2749d0eca0030f696e6465786564446f63756d656e74160512047479706512066f626a6563741207696e64696365731506160312046e616d651206696e64657831120a70726f70657274696573150216011208246f776e6572496412036173631601120966697273744e616d6512036173631206756e697175651301160312046e616d651206696e64657832120a70726f70657274696573150216011208246f776e657249641203617363160112086c6173744e616d6512036173631206756e697175651301160212046e616d651206696e64657833120a70726f706572746965731501160112086c6173744e616d651203617363160212046e616d651206696e64657834120a70726f7065727469657315021601120a2463726561746564417412036173631601120a247570646174656441741203617363160212046e616d651206696e64657835120a70726f7065727469657315011601120a247570646174656441741203617363160212046e616d651206696e64657836120a70726f7065727469657315011601120a246372656174656441741203617363120a70726f706572746965731602120966697273744e616d6516021204747970651206737472696e6712096d61784c656e677468023f12086c6173744e616d6516021204747970651206737472696e6712096d61784c656e677468023f120872657175697265641504120966697273744e616d65120a24637265617465644174120a2475706461746564417412086c6173744e616d6512146164646974696f6e616c50726f7065727469657313000c6e696365446f63756d656e74160412047479706512066f626a656374120a70726f70657274696573160112046e616d6516011204747970651206737472696e67120872657175697265641501120a2463726561746564417412146164646974696f6e616c50726f7065727469657313000e7769746842797465417272617973160512047479706512066f626a6563741207696e64696365731501160212046e616d651206696e64657831120a70726f7065727469657315011601120e6279746541727261794669656c641203617363120a70726f706572746965731602120e6279746541727261794669656c641603120474797065120561727261791209627974654172726179130112086d61784974656d730210120f6964656e7469666965724669656c64160512047479706512056172726179120962797465417272617913011210636f6e74656e744d656469615479706512216170706c69636174696f6e2f782e646173682e6470702e6964656e74696669657212086d696e4974656d73022012086d61784974656d730220120872657175697265641501120e6279746541727261794669656c6412146164646974696f6e616c50726f706572746965731300000201fd000001882425afcc01020966697273744e616d65120b757064617465644e616d65086c6173744e616d6512086c6173744e616d65010101411f4f9fc7012bc132a39be07749050795a59fa26598fee49f46deaa597e3f4192aa60f412a7d53a877b80c9469d2ac5797d457f44336b1b655e1ae534ac573ec582").expect("expected to decode");
         let platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
 
         let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
+
+        let mut signer = SimpleSigner::default();
+
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(19),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        signer.add_key(key.clone(), private_key.clone());
+
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(&mut rng, platform_version)
+            .unwrap();
+
+        let asset_lock_proof = instant_asset_lock_proof_fixture(Some(
+            PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap(),
+        ));
+
+        let identifier = asset_lock_proof
+            .create_identifier()
+            .expect("expected an identifier");
+
+        let identity: Identity = IdentityV0 {
+            id: identifier,
+            public_keys: BTreeMap::from([(1, key.clone())]),
+            balance: 1000000000,
+            revision: 0,
+        }
+        .into();
+
+        let identity_create_transition: StateTransition =
+            IdentityCreateTransition::try_from_identity_with_signer(
+                identity.clone(),
+                asset_lock_proof,
+                pk.as_slice(),
+                &signer,
+                &NativeBlsModule::default(),
+                platform_version,
+            )
+            .expect("expected an identity create transition")
+            .into();
+
+        let identity_create_serialized_transition = identity_create_transition
+            .serialize()
+            .expect("serialized state transition");
+
+        let dashpay =
+            get_dashpay_contract_fixture(Some(identity.id()), platform_version.protocol_version);
+        let dashpay_contract = dashpay.data_contract().clone();
+        let mut create_contract_state_transition: StateTransition = dashpay
+            .try_into_platform_versioned(platform_version)
+            .expect("expected a state transition");
+        create_contract_state_transition
+            .sign(&key, private_key.as_slice(), &NativeBlsModule::default())
+            .expect("expected to sign transition");
+        let data_contract_create_serialized_transition = create_contract_state_transition
+            .serialize()
+            .expect("expected data contract create serialized state transition");
+
+        let profile = dashpay_contract
+            .document_type_for_name("profile")
+            .expect("expected a profile document type");
+
+        let mut document = profile
+            .random_document_with_rng(&mut rng, platform_version)
+            .expect("expected a random document");
+
+        document.set_owner_id(identifier);
+
+        let mut altered_document = document.clone();
+
+        altered_document.increment_revision().unwrap();
+        altered_document.set("displayName", "Samuel".into());
+
+        let documents_batch_create_transition =
+            DocumentsBatchTransition::new_document_creation_transition_from_document(
+                document,
+                profile,
+                [1; 32],
+                &key,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize()
+            .expect("expected documents batch serialized state transition");
+
+        let documents_batch_update_transition =
+            DocumentsBatchTransition::new_document_replacement_transition_from_document(
+                altered_document,
+                profile,
+                &key,
+                &signer,
+                platform_version,
+                None,
+                None,
+                None,
+            )
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_update_serialized_transition = documents_batch_update_transition
+            .serialize()
+            .expect("expected documents batch serialized state transition");
 
         platform
             .drive
@@ -229,16 +345,28 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let validation_result = platform
-            .execute_tx(identity_create, &BlockInfo::default(), &transaction)
+            .execute_tx(
+                identity_create_serialized_transition,
+                &BlockInfo::default(),
+                &transaction,
+            )
             .expect("expected to execute identity_create tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
         let validation_result = platform
-            .execute_tx(data_contract_create, &BlockInfo::default(), &transaction)
+            .execute_tx(
+                data_contract_create_serialized_transition,
+                &BlockInfo::default(),
+                &transaction,
+            )
             .expect("expected to execute data_contract_create tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
         let validation_result = platform
-            .execute_tx(document_create, &BlockInfo::default(), &transaction)
+            .execute_tx(
+                documents_batch_create_serialized_transition,
+                &BlockInfo::default(),
+                &transaction,
+            )
             .expect("expected to execute document_create tx");
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
@@ -250,12 +378,10 @@ mod tests {
             .expect("expected to commit transaction");
 
         let validation_result = platform
-            .check_tx_v0(document_update.as_slice())
+            .check_tx(documents_batch_update_serialized_transition.as_slice())
             .expect("expected to check tx");
 
-        dbg!(&validation_result.errors);
-        //todo fix
-        // assert!(validation_result.errors.is_empty());
+        assert!(validation_result.errors.is_empty());
     }
 
     #[test]

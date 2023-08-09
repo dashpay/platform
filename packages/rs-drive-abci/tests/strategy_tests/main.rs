@@ -52,7 +52,6 @@ mod masternode_list_item_helpers;
 mod masternodes;
 mod operations;
 mod query;
-mod signer;
 mod strategy;
 mod transitions;
 mod upgrade_fork_tests;
