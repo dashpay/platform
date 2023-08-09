@@ -276,12 +276,12 @@ impl StateTransition {
     }
 
     /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData) {
+    pub fn set_signature(&mut self, signature: BinaryData) {
         call_method!(self, set_signature, signature)
     }
 
     /// set a new signature
-    fn set_signature_public_key_id(&mut self, public_key_id: KeyID) {
+    pub fn set_signature_public_key_id(&mut self, public_key_id: KeyID) {
         call_method_identity_signed!(self, set_signature_public_key_id, public_key_id)
     }
 

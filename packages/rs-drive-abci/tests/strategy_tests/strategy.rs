@@ -5,7 +5,6 @@ use crate::operations::{
     DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
 };
 use crate::query::QueryStrategy;
-use crate::signer::SimpleSigner;
 use crate::BlockHeight;
 use dashcore_rpc::dashcore;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
@@ -50,6 +49,7 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
+use drive_abci::test::helpers::signer::SimpleSigner;
 
 #[derive(Clone, Debug, Default)]
 pub struct MasternodeListChangesStrategy {

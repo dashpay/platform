@@ -1,4 +1,3 @@
-use crate::signer::SimpleSigner;
 use dashcore_rpc::dashcore::secp256k1::SecretKey;
 use dashcore_rpc::dashcore::{Network, PrivateKey};
 use dpp::dashcore::secp256k1::Secp256k1;
@@ -34,6 +33,7 @@ use dpp::util::vec::hex_to_array;
 use dpp::version::{PlatformVersion, LATEST_VERSION};
 use dpp::withdrawal::Pooling;
 use dpp::NativeBlsModule;
+use drive_abci::test::helpers::signer::SimpleSigner;
 use rand::prelude::{IteratorRandom, StdRng};
 use rand::Rng;
 use std::collections::HashSet;
