@@ -11,6 +11,7 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use dpp::system_data_contracts::dashpay_contract::document_types::contact_request::properties::{CORE_HEIGHT_CREATED_AT, TO_USER_ID};
 use dpp::version::PlatformVersion;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
 const BLOCKS_SIZE_WINDOW: u32 = 8;
@@ -38,7 +39,7 @@ pub fn create_contact_request_data_trigger_v0(
     let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
     let mut result = DataTriggerExecutionResult::default();
-    let is_dry_run = false; //todo (maybe reenable - maybe not)
+    let is_dry_run = context.state_transition_execution_context.in_dry_run();
     let owner_id = context.owner_id;
 
     let document_create_transition = match document_transition {
@@ -140,7 +141,7 @@ mod test {
     use dpp::tests::fixtures::{get_contact_request_document_fixture, get_dashpay_contract_fixture, get_document_transitions_fixture, get_identity_fixture};
     use dpp::version::DefaultForPlatformVersion;
     use drive::drive::contract::DataContractFetchInfo;
-    use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+    use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 
     #[test]
     fn should_successfully_execute_on_dry_run() {
@@ -184,9 +185,11 @@ mod test {
             .as_transition_create()
             .expect("expected a document create transition");
 
-        let transition_execution_context =
+        let mut transition_execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
                 .unwrap();
+
+        transition_execution_context.enable_dry_run();
 
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
@@ -194,8 +197,6 @@ mod test {
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };
-
-        // transition_execution_context.enable_dry_run();
 
         let result = create_contact_request_data_trigger(
             &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, |identifier| {

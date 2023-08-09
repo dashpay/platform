@@ -17,6 +17,7 @@ use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -45,7 +46,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
 
-    let is_dry_run = false; //todo: maybe reenable
+    let is_dry_run = context.state_transition_execution_context.in_dry_run();
     let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
 
@@ -781,10 +782,10 @@ mod test {
             config: &platform.config,
         };
 
-        let execution_context =
+        let mut execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
                 .unwrap();
-        // execution_context.enable_dry_run();
+        execution_context.enable_dry_run();
 
         let context = DataTriggerExecutionContext {
             platform: &platform_ref,

@@ -17,6 +17,10 @@ pub trait StateTransitionExecutionContextMethodsV0 {
     fn add_operations(&mut self, operations: Vec<ExecutionOperation>);
     fn operations_consume(self) -> Vec<ExecutionOperation>;
     fn operations_slice(&self) -> &[ExecutionOperation];
+
+    fn in_dry_run(&self) -> bool;
+    fn enable_dry_run(&mut self);
+    fn disable_dry_run(&mut self);
 }
 
 impl StateTransitionExecutionContextMethodsV0 for StateTransitionExecutionContext {
@@ -41,6 +45,24 @@ impl StateTransitionExecutionContextMethodsV0 for StateTransitionExecutionContex
     fn operations_slice(&self) -> &[ExecutionOperation] {
         match self {
             StateTransitionExecutionContext::V0(v0) => v0.operations.as_slice(),
+        }
+    }
+
+    fn in_dry_run(&self) -> bool {
+        match self {
+            StateTransitionExecutionContext::V0(v0) => v0.dry_run,
+        }
+    }
+
+    fn enable_dry_run(&mut self) {
+        match self {
+            StateTransitionExecutionContext::V0(v0) => v0.dry_run = true,
+        }
+    }
+
+    fn disable_dry_run(&mut self) {
+        match self {
+            StateTransitionExecutionContext::V0(v0) => v0.dry_run = false,
         }
     }
 }

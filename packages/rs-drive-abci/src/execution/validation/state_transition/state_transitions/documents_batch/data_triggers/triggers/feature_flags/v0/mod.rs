@@ -11,6 +11,7 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use dpp::system_data_contracts::feature_flags_contract;
 use dpp::system_data_contracts::feature_flags_contract::document_types::update_consensus_params::properties::PROPERTY_ENABLE_AT_HEIGHT;
 use dpp::version::PlatformVersion;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -37,7 +38,7 @@ pub fn create_feature_flag_data_trigger_v0(
     let mut result = DataTriggerExecutionResult::default();
     let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
-    let is_dry_run = false; //todo (maybe reenable - maybe not)
+    let is_dry_run = context.state_transition_execution_context.in_dry_run();
 
     let document_create_transition = match document_transition {
         DocumentTransitionAction::CreateAction(d) => d,
@@ -103,7 +104,7 @@ mod test {
     use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
     use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionV0};
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
-    use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+    use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 
     #[test]
     fn should_successfully_execute_on_dry_run() {
@@ -122,7 +123,7 @@ mod test {
             .current_platform_version()
             .expect("should return a platform version");
 
-        let transition_execution_context =
+        let mut transition_execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
                 .unwrap();
         let data_contract = get_data_contract_fixture(
@@ -148,6 +149,8 @@ mod test {
             data: Default::default(),
         }
         .into();
+
+        transition_execution_context.enable_dry_run();
 
         let document_transition = DocumentTransitionAction::CreateAction(create_transition);
         let data_trigger_context = DataTriggerExecutionContext {
