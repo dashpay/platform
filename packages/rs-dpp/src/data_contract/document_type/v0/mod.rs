@@ -137,7 +137,7 @@ impl DocumentTypeV0 {
             )))
         })?;
 
-        // TODO: property names should be different
+        // TODO: These properties aren't defined in JSON meta schema
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
             Value::inner_optional_bool_value(schema_map, "documentsKeepHistory")
