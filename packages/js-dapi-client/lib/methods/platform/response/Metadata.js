@@ -1,6 +1,6 @@
 class Metadata {
   /**
-   * @param {object} properties
+   * @param {Object} properties
    * @param {number} properties.height - block height
    * @param {number} properties.coreChainLockedHeight - core chain locked height
    * @param {number} properties.timeMs - block time
@@ -33,7 +33,6 @@ class Metadata {
 
   /**
    * Get block time
-   *
    * @returns {number}
    */
   getTimeMs() {
@@ -42,7 +41,6 @@ class Metadata {
 
   /**
    * Get protocol version
-   *
    * @returns {number}
    */
   getProtocolVersion() {
