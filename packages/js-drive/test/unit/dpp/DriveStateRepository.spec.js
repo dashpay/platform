@@ -159,9 +159,9 @@ describe('DriveStateRepository', () => {
 
       expect(executionContext.getOperations().length).to.be.equal(1);
       expect(
-        executionContext.getOperations()[0].toObject(),
+        executionContext.getOperations()[0].toJSON(),
       ).to.deep.equals(
-        operations[0].toObject(),
+        operations[0].toJSON(),
       );
     });
   });
