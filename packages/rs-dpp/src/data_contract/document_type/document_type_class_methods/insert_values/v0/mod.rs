@@ -14,7 +14,7 @@ impl DocumentType {
         prefix: Option<String>,
         property_key: String,
         property_value: &Value,
-        schema_defs: &Option<BTreeMap<String, Value>>,
+        schema_defs: Option<&BTreeMap<String, Value>>,
     ) -> Result<(), ProtocolError> {
         let mut to_visit: Vec<(Option<String>, String, &Value)> =
             vec![(prefix, property_key, property_value)];

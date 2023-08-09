@@ -56,23 +56,22 @@ const MAX_INDEXED_ARRAY_ITEMS: usize = 1024;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct DocumentTypeV0 {
-    pub(super) name: String,
-    pub(super) schema: Value,
-    pub(super) indices: Vec<Index>,
-    pub(super) index_structure: IndexLevel,
+    pub(in crate::data_contract) name: String,
+    pub(in crate::data_contract) schema: Value,
+    pub(in crate::data_contract) indices: Vec<Index>,
+    pub(in crate::data_contract) index_structure: IndexLevel,
     /// Flattened properties flatten all objects for quick lookups for indexes
     /// Document field should not contain sub objects.
-    pub(super) flattened_properties: BTreeMap<String, DocumentProperty>,
+    pub(in crate::data_contract) flattened_properties: BTreeMap<String, DocumentProperty>,
     /// Document field can contain sub objects.
-    pub(super) properties: BTreeMap<String, DocumentProperty>,
-    pub(super) binary_properties: BTreeMap<PropertyPath, Value>,
-    pub(super) identifier_paths: BTreeSet<String>,
-    pub(super) binary_paths: BTreeSet<String>,
-    pub(super) required_fields: BTreeSet<String>,
-    pub(super) documents_keep_history: bool,
-    pub(super) documents_mutable: bool,
-    // TODO: why is this here? it might be inconsistent with DataContract.id
-    pub(super) data_contract_id: Identifier,
+    pub(in crate::data_contract) properties: BTreeMap<String, DocumentProperty>,
+    pub(in crate::data_contract) binary_properties: BTreeMap<PropertyPath, Value>,
+    pub(in crate::data_contract) identifier_paths: BTreeSet<String>,
+    pub(in crate::data_contract) binary_paths: BTreeSet<String>,
+    pub(in crate::data_contract) required_fields: BTreeSet<String>,
+    pub(in crate::data_contract) documents_keep_history: bool,
+    pub(in crate::data_contract) documents_mutable: bool,
+    pub(in crate::data_contract) data_contract_id: Identifier,
 }
 
 impl DocumentTypeV0 {
@@ -80,17 +79,15 @@ impl DocumentTypeV0 {
         data_contract_id: Identifier,
         name: &str,
         schema: Value,
-        schema_defs: &Option<BTreeMap<String, Value>>,
+        schema_defs: Option<&BTreeMap<String, Value>>,
         default_keeps_history: bool,
         default_mutability: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        // TODO: Do not validate if feature validation is disabled?
-
         // Create a full root JSON Schema from shorten contract document type schema
         let full_schema = enrich_with_base_schema(
             schema.clone(),
-            schema_defs.as_ref().map(|defs| Value::from(defs.clone())),
+            schema_defs.map(|defs| Value::from(defs.clone())),
             &[],
             platform_version,
         )?;

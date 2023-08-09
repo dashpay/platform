@@ -19,7 +19,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         self.document_types = DataContract::create_document_types_from_document_schemas(
             self.id,
             schemas,
-            &defs,
+            defs.as_ref(),
             self.config.documents_keep_history_contract_default(),
             self.config.documents_mutable_contract_default(),
             platform_version,
@@ -35,8 +35,8 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
             .collect()
     }
 
-    fn schema_defs(&self) -> &Option<BTreeMap<DefinitionName, Value>> {
-        &self.schema_defs
+    fn schema_defs(&self) -> Option<&BTreeMap<DefinitionName, Value>> {
+        self.schema_defs.as_ref()
     }
 
     fn set_schema_defs(

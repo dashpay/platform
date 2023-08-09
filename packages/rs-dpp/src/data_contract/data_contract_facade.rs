@@ -99,19 +99,4 @@ impl DataContractFacade {
         self.factory
             .create_data_contract_update_transition(data_contract)
     }
-
-    #[cfg(feature = "validation")]
-    /// Validate Data Contract
-    pub fn validate(
-        &self,
-        protocol_version: u32,
-        data_contract: &Value,
-        allow_non_current_data_contract_versions: bool,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        DataContract::validate_schema(
-            protocol_version,
-            &data_contract,
-            allow_non_current_data_contract_versions,
-        )
-    }
 }

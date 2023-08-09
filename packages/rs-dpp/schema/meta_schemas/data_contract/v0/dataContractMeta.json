@@ -372,7 +372,7 @@
     },
     "$schema": {
       "type": "string",
-      "const": "https://schema.dash.org/dpp-0-4-0/meta/data-contract"
+      "const": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/data_contract/v0/dataContractMeta.json"
     },
     "$defs": {
       "$ref": "#/$defs/documentProperties"

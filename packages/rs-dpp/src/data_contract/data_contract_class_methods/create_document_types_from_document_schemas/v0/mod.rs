@@ -11,7 +11,7 @@ impl DataContract {
     pub(super) fn create_document_types_from_document_schemas_v0(
         data_contract_id: Identifier,
         document_schemas: BTreeMap<DocumentName, Value>,
-        schema_defs: &Option<BTreeMap<String, Value>>,
+        schema_defs: Option<&BTreeMap<String, Value>>,
         documents_keep_history_contract_default: bool,
         documents_mutable_contract_default: bool,
         platform_version: &PlatformVersion,

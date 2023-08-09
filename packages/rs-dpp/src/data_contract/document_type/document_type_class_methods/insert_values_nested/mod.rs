@@ -13,7 +13,7 @@ impl DocumentType {
         known_required: &BTreeSet<String>,
         property_key: String,
         property_value: &Value,
-        schema_defs: &Option<BTreeMap<String, Value>>,
+        schema_defs: Option<&BTreeMap<String, Value>>,
         document_type_version: &DocumentTypeVersions,
     ) -> Result<(), ProtocolError> {
         match document_type_version.insert_values_nested {

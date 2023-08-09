@@ -54,7 +54,7 @@ pub trait DocumentTypeV0Setters {
     fn set_schema(
         &mut self,
         schema: Value,
-        schema_defs: &Option<BTreeMap<String, Value>>,
+        schema_defs: Option<&BTreeMap<String, Value>>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError>;
 }

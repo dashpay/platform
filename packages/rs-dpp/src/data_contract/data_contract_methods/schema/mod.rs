@@ -26,7 +26,7 @@ impl DataContractSchemaMethodsV0 for DataContract {
         }
     }
 
-    fn schema_defs(&self) -> &Option<BTreeMap<DefinitionName, Value>> {
+    fn schema_defs(&self) -> Option<&BTreeMap<DefinitionName, Value>> {
         match self {
             DataContract::V0(v0) => v0.schema_defs(),
         }

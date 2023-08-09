@@ -52,6 +52,7 @@ pub struct DataContractV0 {
     /// A mapping of document names to their corresponding document types.
     pub(crate) document_types: BTreeMap<DocumentName, DocumentType>,
 
+    // TODO: Move metadata from here
     /// Optional metadata associated with the contract.
     pub(crate) metadata: Option<Metadata>,
 

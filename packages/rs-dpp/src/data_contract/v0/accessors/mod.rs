@@ -1,5 +1,6 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::data_contract_config::DataContractConfig;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DocumentName;
@@ -48,6 +49,12 @@ impl DataContractV0Getters for DataContractV0 {
 impl DataContractV0Setters for DataContractV0 {
     fn set_id(&mut self, id: Identifier) {
         self.id = id;
+
+        self.document_types
+            .iter_mut()
+            .for_each(|(_, document_type)| match document_type {
+                DocumentType::V0(v0) => v0.data_contract_id = id,
+            })
     }
 
     fn set_version(&mut self, version: u32) {

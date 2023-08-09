@@ -53,7 +53,7 @@ impl TryFromPlatformVersioned<DataContractInSerializationFormatV0> for DataContr
         let document_types = DataContract::create_document_types_from_document_schemas(
             id,
             document_schemas,
-            &schema_defs,
+            schema_defs.as_ref(),
             config.documents_keep_history_contract_default(),
             config.documents_mutable_contract_default(),
             platform_version,

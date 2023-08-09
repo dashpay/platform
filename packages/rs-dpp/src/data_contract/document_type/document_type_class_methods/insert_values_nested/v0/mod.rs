@@ -13,7 +13,7 @@ impl DocumentType {
         known_required: &BTreeSet<String>,
         property_key: String,
         property_value: &Value,
-        schema_defs: &Option<BTreeMap<String, Value>>,
+        schema_defs: Option<&BTreeMap<String, Value>>,
     ) -> Result<(), ProtocolError> {
         let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
@@ -156,7 +156,7 @@ impl DocumentType {
                             &stripped_required,
                             object_property_string,
                             object_property_value,
-                            &inner_schema_defs,
+                            inner_schema_defs.as_ref(),
                         )?;
                     }
                 }

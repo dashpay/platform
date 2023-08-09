@@ -121,7 +121,7 @@ impl IndexLevel {
             while let Some(index_part) = properties_iter.next() {
                 current_level = current_level
                     .sub_index_levels
-                    .entry(index_part.name.to_string())
+                    .entry(index_part.name.clone())
                     .or_insert_with(|| {
                         counter += 1;
                         IndexLevel {
@@ -141,7 +141,7 @@ impl IndexLevel {
                         return Err(ConsensusError::BasicError(BasicError::DuplicateIndexError(
                             DuplicateIndexError::new(
                                 document_type_name.to_owned(),
-                                index.name.to_owned(),
+                                index.name.clone(),
                             ),
                         ))
                         .into());

@@ -32,13 +32,13 @@ impl DataContract {
     ///
     /// * `Result<BTreeMap<String, DocumentType>, ProtocolError>`: On success, a map of document types.
     ///   On failure, a ProtocolError.
-    pub fn create_document_types_from_document_schemas<'a>(
+    pub fn create_document_types_from_document_schemas(
         data_contract_id: Identifier,
         document_schemas: BTreeMap<DocumentName, Value>,
-        schema_defs: &'a Option<BTreeMap<String, Value>>,
+        schema_defs: Option<&BTreeMap<String, Value>>,
         documents_keep_history_contract_default: bool,
         documents_mutable_contract_default: bool,
-        platform_version: &'a PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
         match platform_version
             .dpp
