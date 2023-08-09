@@ -183,7 +183,12 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operations[0].toJSON(),
+      );
     });
   });
 
@@ -206,7 +211,12 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operations[0].toJSON(),
+      );
     });
   });
 
@@ -232,7 +242,12 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operations[0].toJSON(),
+      );
     });
   });
 
@@ -254,7 +269,12 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operations[0].toJSON(),
+      );
     });
   });
 
@@ -276,7 +296,12 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operations[0].toJSON(),
+      );
     });
   });
 
@@ -302,7 +327,12 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operations[0].toJSON(),
+      );
     });
   });
 
@@ -330,7 +360,12 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operations[0].toJSON(),
+      );
     });
   });
 
@@ -352,7 +387,12 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operations[0].toJSON(),
+      );
     });
   });
 
@@ -373,7 +413,12 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operations[0].toJSON(),
+      );
     });
   });
 
@@ -394,7 +439,12 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operations[0].toJSON(),
+      );
     });
   });
 
@@ -426,7 +476,12 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operations[0].toJSON(),
+      );
     });
   });
 
@@ -449,7 +504,12 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operations[0].toJSON(),
+      );
     });
   });
 
@@ -472,7 +532,12 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operations[0].toJSON(),
+      );
     });
   });
 
@@ -497,7 +562,12 @@ describe('DriveStateRepository', () => {
         },
       );
 
-      expect(executionContext.getOperations()).to.deep.equals(operations);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operations[0].toJSON(),
+      );
     });
   });
 
