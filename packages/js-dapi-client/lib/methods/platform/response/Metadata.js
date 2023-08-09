@@ -33,7 +33,7 @@ class Metadata {
 
   /**
    * Get block time
-   * @returns {number}
+   * @return {number}
    */
   getTimeMs() {
     return this.timeMs;
@@ -41,7 +41,7 @@ class Metadata {
 
   /**
    * Get protocol version
-   * @returns {number}
+   * @return {number}
    */
   getProtocolVersion() {
     return this.protocolVersion;
