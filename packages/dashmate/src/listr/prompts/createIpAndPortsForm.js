@@ -9,7 +9,7 @@ const {
 
 const wait = require('../../util/wait');
 
-function createIpAndPortsFormFactory(systemConfigs) {
+function createIpAndPortsFormFactory(defaultConfigs) {
   /**
    * @typedef {function} createIpAndPortsForm
    * @param {string} network
@@ -22,7 +22,7 @@ function createIpAndPortsFormFactory(systemConfigs) {
    * @returns {Object}
    */
   async function createIpAndPortsForm(network, options = {}) {
-    const mainnetCfg = systemConfigs.get(PRESET_MAINNET);
+    const mainnetCfg = defaultConfigs.get(PRESET_MAINNET);
 
     function validateCoreP2PPort(value) {
       if (!validatePort(value)) {
@@ -59,8 +59,8 @@ function createIpAndPortsFormFactory(systemConfigs) {
       return validatePort(value);
     }
 
-    let initialIp;
-    if (options.initialIp === null || options.initialIp === undefined) {
+    let { initialIp } = options;
+    if (initialIp === null || initialIp === undefined) {
       initialIp = await Promise.race([
         publicIp.v4().catch(() => ''),
         // Resolve in 10 seconds if public IP is not available
@@ -68,11 +68,11 @@ function createIpAndPortsFormFactory(systemConfigs) {
       ]);
     }
 
-    let initialCoreP2PPort;
-    if (options.initialCoreP2PPort === undefined
-      || options.initialCoreP2PPort === null
+    let { initialCoreP2PPort } = options;
+    if (initialCoreP2PPort === undefined
+      || initialCoreP2PPort === null
       || network === PRESET_MAINNET) {
-      initialCoreP2PPort = systemConfigs.get(network).get('core.p2p.port').toString();
+      initialCoreP2PPort = defaultConfigs.get(network).get('core.p2p.port').toString();
     }
 
     const fields = [
@@ -93,11 +93,11 @@ function createIpAndPortsFormFactory(systemConfigs) {
     ];
 
     if (options.isHPMN) {
-      let initialPlatformP2PPort;
-      if (options.initialPlatformP2PPort === null
-        || options.initialPlatformP2PPort === undefined
+      let { initialPlatformP2PPort } = options;
+      if (initialPlatformP2PPort === null
+        || initialPlatformP2PPort === undefined
         || network === PRESET_MAINNET) {
-        initialPlatformP2PPort = systemConfigs.get(network).get('platform.drive.tenderdash.p2p.port').toString();
+        initialPlatformP2PPort = defaultConfigs.get(network).get('platform.drive.tenderdash.p2p.port').toString();
       }
 
       fields.push({
@@ -108,11 +108,11 @@ function createIpAndPortsFormFactory(systemConfigs) {
         disabled: network === PRESET_MAINNET ? '(reserved for mainnet)' : false,
       });
 
-      let initialPlatformHTTPPort;
-      if (options.initialPlatformHTTPPort === null
-        || options.initialPlatformHTTPPort === undefined
+      let { initialPlatformHTTPPort } = options;
+      if (initialPlatformHTTPPort === null
+        || initialPlatformHTTPPort === undefined
         || network === PRESET_MAINNET) {
-        initialPlatformHTTPPort = systemConfigs.get(network).get('platform.dapi.envoy.http.port').toString();
+        initialPlatformHTTPPort = defaultConfigs.get(network).get('platform.dapi.envoy.http.port').toString();
       }
 
       fields.push({

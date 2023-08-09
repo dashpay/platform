@@ -22,15 +22,15 @@ module.exports = {
           type: 'boolean',
         },
         context: {
-          type: 'string',
+          type: ['string', 'null'],
           minLength: 1,
         },
         dockerFile: {
-          type: 'string',
+          type: ['string', 'null'],
           minLength: 1,
         },
         target: {
-          type: 'string',
+          type: ['string', 'null'],
         },
       },
       required: ['enabled', 'context', 'dockerFile', 'target'],
@@ -116,9 +116,19 @@ module.exports = {
           additionalProperties: false,
           required: ['subnet', 'bindIp'],
         },
+        baseImage: {
+          type: 'object',
+          properties: {
+            build: {
+              $ref: '#/definitions/dockerBuild',
+            },
+          },
+          additionalProperties: false,
+          required: ['build'],
+        },
       },
       additionalProperties: false,
-      required: ['network'],
+      required: ['network', 'baseImage'],
     },
     core: {
       type: 'object',

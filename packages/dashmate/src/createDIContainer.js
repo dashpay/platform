@@ -12,9 +12,9 @@ const getServiceListFactory = require('./docker/getServiceListFactory');
 const ensureFileMountExistsFactory = require('./docker/ensureFileMountExistsFactory');
 const getConnectionHostFactory = require('./docker/getConnectionHostFactory');
 const ConfigFileJsonRepository = require('./config/configFile/ConfigFileJsonRepository');
-const createSystemConfigsFactory = require('./config/system/createSystemConfigsFactory');
-const migrateConfigFileFactory = require('./config/configFile/migrations/migrateConfigFileFactory');
-const SystemConfigs = require('./config/system/SystemConfigs');
+const createConfigFileFactory = require('./config/configFile/createConfigFileFactory');
+const migrateConfigFileFactory = require('./config/configFile/migrateConfigFileFactory');
+const DefaultConfigs = require('./config/DefaultConfigs');
 
 const renderTemplateFactory = require('./templates/renderTemplateFactory');
 const renderServiceTemplatesFactory = require('./templates/renderServiceTemplatesFactory');
@@ -97,14 +97,18 @@ const configureSSLCertificateTaskFactory = require('./listr/tasks/setup/regular/
 const createHttpApiServerFactory = require('./helper/api/createHttpApiServerFactory');
 const resolveDockerSocketPath = require('./docker/resolveDockerSocketPath');
 const HomeDir = require('./config/HomeDir');
-const getBaseConfigFactory = require('./config/system/configs/getBaseConfigFactory');
-const getLocalConfigFactory = require('./config/system/configs/getLocalConfigFactory');
-const getTestnetConfigFactory = require('./config/system/configs/getTestnetConfigFactory');
-const getMainnetConfigFactory = require('./config/system/configs/getMainnetConfigFactory');
-const getConfigFileMigrationsFactory = require('./config/configFile/migrations/getConfigFileMigrationsFactory');
+const getBaseConfigFactory = require('../configs/defaults/getBaseConfigFactory');
+const getLocalConfigFactory = require('../configs/defaults/getLocalConfigFactory');
+const getTestnetConfigFactory = require('../configs/defaults/getTestnetConfigFactory');
+const getMainnetConfigFactory = require('../configs/defaults/getMainnetConfigFactory');
+const getConfigFileMigrationsFactory = require('../configs/getConfigFileMigrationsFactory');
 const assertLocalServicesRunningFactory = require('./test/asserts/assertLocalServicesRunningFactory');
 const assertServiceRunningFactory = require('./test/asserts/assertServiceRunningFactory');
 const generateEnvsFactory = require('./config/generateEnvsFactory');
+const getConfigProfilesFactory = require('./config/getConfigProfilesFactory');
+const createIpAndPortsFormFactory = require('./listr/prompts/createIpAndPortsForm');
+const registerMasternodeWithCoreWalletFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet');
+const registerMasternodeWithDMTFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithDMT');
 
 /**
  * @param {Object} [options]
@@ -129,23 +133,24 @@ async function createDIContainer(options = {}) {
     getLocalConfig: asFunction(getLocalConfigFactory).singleton(),
     getTestnetConfig: asFunction(getTestnetConfigFactory).singleton(),
     getMainnetConfig: asFunction(getMainnetConfigFactory).singleton(),
-    systemConfigs: asFunction((
+    defaultConfigs: asFunction((
       getBaseConfig,
       getLocalConfig,
       getTestnetConfig,
       getMainnetConfig,
-    ) => new SystemConfigs([
+    ) => new DefaultConfigs([
       getBaseConfig,
       getLocalConfig,
       getTestnetConfig,
       getMainnetConfig,
     ])).singleton(),
-    createSystemConfigs: asFunction(createSystemConfigsFactory).singleton(),
+    createConfigFile: asFunction(createConfigFileFactory).singleton(),
     getConfigFileMigrations: asFunction(getConfigFileMigrationsFactory).singleton(),
     migrateConfigFile: asFunction(migrateConfigFileFactory).singleton(),
     isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
     getConnectionHost: asFunction(getConnectionHostFactory).singleton(),
     generateEnvs: asFunction(generateEnvsFactory).singleton(),
+    getConfigProfiles: asFunction(getConfigProfilesFactory).singleton(),
     ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
     // `configFile` and `config` are registering on command init
   });
@@ -251,6 +256,13 @@ async function createDIContainer(options = {}) {
   });
 
   /**
+   * Prompts
+   */
+  container.register({
+    createIpAndPortsForm: asFunction(createIpAndPortsFormFactory).singleton(),
+  });
+
+  /**
    * Tasks
    */
   container.register({
@@ -282,6 +294,10 @@ async function createDIContainer(options = {}) {
     getHostScope: asFunction(getHostScopeFactory).singleton(),
     configureNodeTask: asFunction(configureNodeTaskFactory).singleton(),
     configureSSLCertificateTask: asFunction(configureSSLCertificateTaskFactory).singleton(),
+    registerMasternodeWithCoreWallet: asFunction(registerMasternodeWithCoreWalletFactory)
+      .singleton(),
+    registerMasternodeWithDMT: asFunction(registerMasternodeWithDMTFactory)
+      .singleton(),
   });
 
   /**

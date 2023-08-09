@@ -2,9 +2,9 @@ const lodashMerge = require('lodash/merge');
 
 const {
   NETWORK_TESTNET,
-} = require('../../../constants');
+} = require('../../src/constants');
 
-const Config = require('../../Config');
+const Config = require('../../src/config/Config');
 
 /**
  * @param {HomeDir} homeDir
@@ -26,7 +26,7 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:19.2.0',
+          image: 'dashpay/dashd:19.3.0',
         },
         p2p: {
           port: 19999,

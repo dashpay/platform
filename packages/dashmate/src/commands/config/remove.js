@@ -5,7 +5,7 @@ class ConfigRemoveCommand extends BaseCommand {
    * @param {Object} args
    * @param {Object} flags
    * @param {ConfigFile} configFile
-   * @param {SystemConfigs} systemConfigs
+   * @param {DefaultConfigs} defaultConfigs
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -14,10 +14,10 @@ class ConfigRemoveCommand extends BaseCommand {
     },
     flags,
     configFile,
-    systemConfigs,
+    defaultConfigs,
   ) {
-    if (systemConfigs.has(configName)) {
-      throw new Error(`system config ${configName} can't be removed`);
+    if (defaultConfigs.has(configName)) {
+      throw new Error(`system config ${configName} can't be removed.\nPlease use 'dashmate reset --hard --config=${configName}' command to reset the configuration`);
     }
 
     configFile.removeConfig(configName);

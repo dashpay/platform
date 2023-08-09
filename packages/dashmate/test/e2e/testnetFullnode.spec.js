@@ -33,9 +33,9 @@ describe('Testnet Fullnode', function main() {
     // Create config file
     configFileRepository = container.resolve('configFileRepository');
 
-    const createSystemConfigs = container.resolve('createSystemConfigs');
+    const createConfigFile = container.resolve('createConfigFile');
 
-    configFile = createSystemConfigs();
+    configFile = createConfigFile();
 
     container.register({
       configFile: asValue(configFile),

@@ -53,16 +53,23 @@ class DockerCompose {
   #generateEnvs;
 
   /**
+   * @type {function}
+   */
+  #getServiceList;
+
+  /**
    * @param {Docker} docker
    * @param {StartedContainers} startedContainers
    * @param {HomeDir} homeDir
    * @param {generateEnvs} generateEnvs
+   * @param {getServiceList} getServiceList
    */
-  constructor(docker, startedContainers, homeDir, generateEnvs) {
+  constructor(docker, startedContainers, homeDir, generateEnvs, getServiceList) {
     this.#docker = docker;
     this.#startedContainers = startedContainers;
     this.#homeDir = homeDir;
     this.#generateEnvs = generateEnvs;
+    this.#getServiceList = getServiceList;
   }
 
   /**
@@ -112,11 +119,22 @@ class DockerCompose {
    * @param {string[]} [options.profiles] - Filter by profiles
    * @return {Promise<boolean>}
    */
-  async isNodeRunning(config, options) {
+  async isNodeRunning(config, options = { profiles: [] }) {
     await this.throwErrorIfNotInstalled();
+
+    let serviceList = this.#getServiceList(config, options);
+
+    if (options.profiles?.length > 0) {
+      serviceList = serviceList.filter((service) => (
+        service.profiles.some((profile) => options.profiles.includes(profile))
+      ));
+    }
+
+    const filterServiceNames = serviceList.map((service) => service.name);
 
     const serviceContainers = await this.getContainersList(config, {
       formatJson: true,
+      filterServiceNames,
       ...options,
     });
 
@@ -172,12 +190,27 @@ class DockerCompose {
    * Build docker compose images
    *
    * @param {Config} config
-   * @param {string} [serviceName]
-   * @param {Array} [options]
+   * @param {Object} [options]
+   * @param {string} [options.serviceName]
    * @return {Observable<{string}>}
    */
   // eslint-disable-next-line no-unused-vars
-  async build(config, serviceName = undefined, options = []) {
+  async build(config, options = {}) {
+    const envs = this.#generateEnvs(config);
+
+    return this.buildWithEnvs(envs, options);
+  }
+
+  /**
+   * Build docker compose images
+   *
+   * @param {Object} envs
+   * @param {Object} [options]
+   * @param {string} [options.serviceName]
+   * @return {Observable<{string}>}
+   */
+  // eslint-disable-next-line no-unused-vars
+  async buildWithEnvs(envs, options = {}) {
     try {
       return new Observable(async (observer) => {
         await this.throwErrorIfNotInstalled();
@@ -186,17 +219,15 @@ class DockerCompose {
           observer.next(e.toString());
         };
 
-        if (serviceName) {
-          await dockerCompose.buildOne(serviceName, {
-            ...this.#createOptions(config),
+        if (options.serviceName) {
+          await dockerCompose.buildOne(options.serviceName, {
+            ...this.#createOptionsWithEnvs(envs),
             callback,
-            commandOptions: options,
           });
         } else {
           await dockerCompose.buildAll({
-            ...this.#createOptions(config),
+            ...this.#createOptionsWithEnvs(envs),
             callback,
-            commandOptions: options,
           });
         }
 
@@ -236,8 +267,7 @@ class DockerCompose {
     await this.throwErrorIfNotInstalled();
 
     const containerIds = await this.getContainersList(config, {
-      filterServiceNames:
-        serviceName,
+      filterServiceNames: serviceName,
       quiet: true,
     });
 
@@ -499,9 +529,21 @@ class DockerCompose {
    * @return {{cwd: string, env: Object}}
    */
   #createOptions(config, options = {}) {
+    const envs = this.#generateEnvs(config);
+
+    return this.#createOptionsWithEnvs(envs, options);
+  }
+
+  /**
+   * @private
+   * @param {Object} envs
+   * @param {Object} [options]
+   * @return {{cwd: string, env: Object}}
+   */
+  #createOptionsWithEnvs(envs, options = {}) {
     const env = {
       ...process.env,
-      ...this.#generateEnvs(config),
+      ...envs,
     };
 
     if (isWsl) {

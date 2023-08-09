@@ -3,6 +3,8 @@ version: '3.7'
 services:
   dashmate_helper:
     image: ${DASHMATE_HELPER_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "Dashmate Helper"
     restart: unless-stopped
     environment:
       - LOCAL_UID=${LOCAL_UID:?err}
@@ -16,6 +18,8 @@ services:
 
   core:
     image: ${CORE_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "Core"
     restart: unless-stopped
     ports:
       - ${DOCKER_NETWORK_BIND_IP:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P
@@ -38,6 +42,8 @@ services:
 
   sentinel:
     image: ${CORE_SENTINEL_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "Sentinel"
     restart: unless-stopped
     depends_on:
       - core
@@ -55,6 +61,8 @@ services:
 
   drive_abci:
     image: ${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "Drive ABCI"
     restart: unless-stopped
     volumes:
       - drive_abci_data:/platform/packages/js-drive/db
@@ -94,6 +102,8 @@ services:
 
   drive_tenderdash:
     image: ${PLATFORM_DRIVE_TENDERDASH_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "Drive Tenderdash"
     restart: unless-stopped
     depends_on:
       - drive_abci
@@ -110,6 +120,8 @@ services:
 
   dapi_api:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "DAPI API"
     restart: unless-stopped
     depends_on:
       - drive_tenderdash
@@ -136,6 +148,8 @@ services:
 
   dapi_tx_filter_stream:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "DAPI Transactions Filter Stream"
     restart: unless-stopped
     environment:
       - TX_FILTER_STREAM_GRPC_PORT=3006
@@ -158,6 +172,8 @@ services:
 
   dapi_envoy:
     image: ${PLATFORM_DAPI_ENVOY_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "DAPI Envoy"
     restart: unless-stopped
     ports:
       - ${DOCKER_NETWORK_BIND_IP:?err}:${PLATFORM_DAPI_ENVOY_HTTP_PORT:?err}:10000 # JSON RPC and gRPC Web & Native

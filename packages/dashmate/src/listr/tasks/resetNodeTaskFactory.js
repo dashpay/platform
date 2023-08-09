@@ -8,7 +8,7 @@ const wait = require('../../util/wait');
  * @param {Docker} docker
  * @param {startNodeTask} startNodeTask
  * @param {generateToAddressTask} generateToAddressTask
- * @param {SystemConfigs} systemConfigs
+ * @param {DefaultConfigs} defaultConfigs
  * @param {ConfigFile} configFile
  * @param {HomeDir} homeDir
  * @param {generateEnvs} generateEnvs
@@ -19,7 +19,7 @@ function resetNodeTaskFactory(
   docker,
   startNodeTask,
   generateToAddressTask,
-  systemConfigs,
+  defaultConfigs,
   configFile,
   homeDir,
   generateEnvs,
@@ -117,13 +117,13 @@ function resetNodeTaskFactory(
         task: (ctx) => {
           const baseConfigName = config.get('group') || config.getName();
 
-          if (systemConfigs.has(baseConfigName)) {
+          if (defaultConfigs.has(baseConfigName)) {
             // Reset config if the corresponding base config exists
             if (ctx.isPlatformOnlyReset) {
-              const systemPlatformConfig = systemConfigs.get(baseConfigName).get('platform');
-              config.set('platform', systemPlatformConfig);
+              const defaultPlatformConfig = defaultConfigs.get(baseConfigName).get('platform');
+              config.set('platform', defaultPlatformConfig);
             } else {
-              config.setOptions(systemConfigs.get(baseConfigName).getOptions());
+              config.setOptions(defaultConfigs.get(baseConfigName).getOptions());
             }
           } else {
             // Delete config if no base config

@@ -1,14 +1,15 @@
 const nodePath = require('path');
 const os = require('os');
 const convertObjectToEnvs = require('./convertObjectToEnvs');
-const { version } = require('../../package.json');
+const { DASHMATE_HELPER_DOCKER_IMAGE } = require('../constants');
 
 /**
  * @param {ConfigFile} configFile
  * @param {HomeDir} homeDir
+ * @param {getConfigProfiles} getConfigProfiles
  * @return {generateEnvs}
  */
-function generateEnvsFactory(configFile, homeDir) {
+function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
   /**
    * @typedef {function} generateEnvs
    * @param {Config} config
@@ -24,21 +25,14 @@ function generateEnvsFactory(configFile, homeDir) {
    */
   function generateEnvs(config) {
     const dockerComposeFiles = ['docker-compose.yml'];
-    const profiles = [];
 
-    profiles.push('core');
-
-    if (config.get('core.masternode.enable')) {
-      profiles.push('masternode');
-    }
+    const profiles = getConfigProfiles(config);
 
     if (config.get('dashmate.helper.docker.build.enabled')) {
       dockerComposeFiles.push('docker-compose.build.dashmate_helper.yml');
     }
 
     if (config.get('platform.enable')) {
-      profiles.push('platform');
-
       if (config.get('platform.drive.abci.docker.build.enabled')) {
         dockerComposeFiles.push('docker-compose.build.drive_abci.yml');
       }
@@ -68,7 +62,7 @@ function generateEnvsFactory(configFile, homeDir) {
       CORE_LOG_DIRECTORY_PATH: nodePath.dirname(
         config.get('core.log.file.path'),
       ),
-      DASHMATE_HELPER_DOCKER_IMAGE: `dashpay/dashmate-helper:${version}`,
+      DASHMATE_HELPER_DOCKER_IMAGE,
       PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH: nodePath.dirname(
         config.get('platform.drive.abci.log.prettyFile.path'),
       ),

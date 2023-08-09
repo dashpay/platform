@@ -2,8 +2,8 @@ const lodashMerge = require('lodash/merge');
 
 const {
   NETWORK_MAINNET,
-} = require('../../../constants');
-const Config = require('../../Config');
+} = require('../../src/constants');
+const Config = require('../../src/config/Config');
 
 /**
  * @param {HomeDir} homeDir
@@ -25,7 +25,7 @@ function getMainnetConfigFactory(homeDir, getBaseConfig) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:19.2.0',
+          image: 'dashpay/dashd:19.3.0',
         },
         indexes: false,
         log: {

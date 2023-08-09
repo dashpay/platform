@@ -27,11 +27,11 @@ const semver = require('semver');
 const {
   NETWORK_TESTNET,
   PACKAGE_ROOT_DIR,
-} = require('../../../constants');
+} = require('../../src/constants');
 
-const { version } = require('../../../../package.json');
+const { version } = require('../../package.json');
 
-const Config = require('../../Config');
+const Config = require('../../src/config/Config');
 
 /**
  * @param {HomeDir} homeDir
@@ -54,10 +54,18 @@ function getBaseConfigFactory(homeDir) {
           subnet: '0.0.0.0/0',
           bindIp: '0.0.0.0',
         },
+        baseImage: {
+          build: {
+            enabled: false,
+            context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
+            dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
+            target: '',
+          },
+        },
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:19.2.0',
+          image: 'dashpay/dashd:19.3.0',
         },
         p2p: {
           port: 9999,
