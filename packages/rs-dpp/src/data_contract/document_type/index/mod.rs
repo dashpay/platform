@@ -61,15 +61,6 @@ pub struct IndexProperty {
     pub ascending: bool,
 }
 
-//todo: remove this intermediate structure that serves no purpose
-// The intermediate structure that holds the `BTreeMap<String, String>` instead of [`IndexProperty`]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IndexWithRawProperties {
-    pub name: String,
-    pub properties: Vec<BTreeMap<String, String>>,
-    pub unique: bool,
-}
-
 impl TryFrom<BTreeMap<String, String>> for IndexProperty {
     type Error = ProtocolError;
 
@@ -102,24 +93,6 @@ impl TryFrom<BTreeMap<String, String>> for IndexProperty {
         Ok(Self {
             name: raw_property.0,
             ascending,
-        })
-    }
-}
-
-impl TryFrom<IndexWithRawProperties> for Index {
-    type Error = ProtocolError;
-
-    fn try_from(index: IndexWithRawProperties) -> Result<Self, Self::Error> {
-        let properties = index
-            .properties
-            .into_iter()
-            .map(IndexProperty::try_from)
-            .collect::<Result<Vec<IndexProperty>, ProtocolError>>()?;
-
-        Ok(Self {
-            name: index.name,
-            unique: index.unique,
-            properties,
         })
     }
 }
@@ -257,7 +230,11 @@ impl TryFrom<&[(Value, Value)]> for Index {
                         index_properties.push(index_property);
                     }
                 }
-                _ => {} // TODO: Must be an error
+                _ => {
+                    return Err(ProtocolError::StructureError(
+                        StructureError::ValueWrongType("unexpected property name"),
+                    ))
+                }
             }
         }
 
