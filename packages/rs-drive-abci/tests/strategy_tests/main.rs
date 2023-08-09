@@ -273,17 +273,16 @@ mod tests {
             .unwrap()
             .expect("expected root hash");
 
+        let state = abci_app.platform.state.read().unwrap();
+
+        let protocol_version = state.current_protocol_version_in_consensus();
+        drop(state);
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         abci_app
             .platform
-            .recreate_state(
-                abci_app
-                    .platform
-                    .state
-                    .read()
-                    .unwrap()
-                    .current_platform_version()
-                    .unwrap(),
-            )
+            .recreate_state(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -2432,6 +2431,7 @@ mod tests {
 
         let state = abci_app.platform.state.read().unwrap();
         let protocol_version = state.current_protocol_version_in_consensus();
+        drop(state);
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let known_root_hash = abci_app
