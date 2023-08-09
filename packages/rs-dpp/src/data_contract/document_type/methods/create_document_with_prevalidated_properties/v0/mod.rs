@@ -21,13 +21,13 @@ impl DocumentTypeV0 {
         properties: BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
-        let created_at = if self.flattened_properties.contains_key(CREATED_AT) {
+        let created_at = if self.required_fields.contains(CREATED_AT) {
             Some(Utc::now().timestamp_millis() as TimestampMillis)
         } else {
             None
         };
 
-        let updated_at = if self.flattened_properties.contains_key(UPDATED_AT) {
+        let updated_at = if self.required_fields.contains(UPDATED_AT) {
             Some(Utc::now().timestamp_millis() as TimestampMillis)
         } else {
             None

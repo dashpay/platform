@@ -250,6 +250,12 @@ impl DataContract {
             .contract_structure_version
             == data_contract_system_version)
     }
+
+    fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
+        Ok(hash_to_vec(
+            self.serialize_with_platform_version(platform_version)?,
+        ))
+    }
 }
 
 #[cfg(test)]

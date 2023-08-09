@@ -139,8 +139,8 @@ impl DocumentType {
                 }
 
                 _ => {
-                    field_type = Self::string_to_field_type(type_value.as_str())
-                        .ok_or(DataContractError::ValueWrongType("invalid type"))?;
+                    field_type = DocumentPropertyType::try_from_name(type_value.as_str())?;
+
                     document_properties.insert(
                         prefixed_property_key,
                         DocumentProperty {

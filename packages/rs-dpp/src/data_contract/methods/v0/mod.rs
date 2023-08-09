@@ -18,5 +18,4 @@ pub trait DataContractMethodsV0 {
         defs: Option<BTreeMap<DefinitionName, Value>>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError>;
-    fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError>;
 }

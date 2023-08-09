@@ -5,9 +5,9 @@ use std::convert::TryInto;
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::errors::{DataContractError, StructureError};
 
-use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::document_type::index::{Index, IndexProperty};
 use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::document_type::v0::{DocumentTypeV0, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE};
 use crate::document::INITIAL_REVISION;
 use crate::document::{Document, DocumentV0};
@@ -18,7 +18,7 @@ use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveF
 use platform_value::{Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
-// TODO: Verify we need all those methods
+// TODO: Some of those methods are only for tests. Hide under feature
 pub trait DocumentTypeV0Methods {
     fn index_for_types(
         &self,
@@ -35,21 +35,9 @@ pub trait DocumentTypeV0Methods {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError>;
 
-    fn convert_value_to_document(
-        &self,
-        data: Value,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError>;
-
     fn max_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError>;
 
     fn estimated_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError>;
-
-    fn document_field_type_for_property(
-        &self,
-        property: &str,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<DocumentPropertyType>, ProtocolError>;
 
     /// Non versioned
     fn unique_id_for_storage(&self) -> [u8; 32];
@@ -138,26 +126,6 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         }
     }
 
-    fn convert_value_to_document(
-        &self,
-        data: Value,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        match platform_version
-            .dpp
-            .contract_versions
-            .document_type_versions
-            .convert_value_to_document
-        {
-            0 => self.convert_value_to_document_v0(data, platform_version),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "convert_value_to_document".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-        }
-    }
-
     fn max_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
         match platform_version
             .dpp
@@ -184,26 +152,6 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             0 => Ok(self.estimated_size_v0()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "estimated_size".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-        }
-    }
-
-    fn document_field_type_for_property(
-        &self,
-        property: &str,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<DocumentPropertyType>, ProtocolError> {
-        match platform_version
-            .dpp
-            .contract_versions
-            .document_type_versions
-            .document_field_type_for_property
-        {
-            0 => Ok(self.document_field_type_for_property_v0(property)),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "document_field_type_for_property".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

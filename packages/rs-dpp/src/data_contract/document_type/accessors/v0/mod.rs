@@ -7,7 +7,6 @@ use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 
-// TODO: Verify we need all of these getters
 pub trait DocumentTypeV0Getters {
     /// Returns the name of the document type.
     fn name(&self) -> &String;

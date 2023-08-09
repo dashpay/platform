@@ -11,6 +11,7 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
+#[cfg(feature = "validation")]
 use crate::data_contract::document_type::validation::{
     byte_array_has_no_items_as_parent_validator, enrich_with_base_schema,
     pattern_is_valid_regex_validator, traversal_validator, validate_data_contract_max_depth,

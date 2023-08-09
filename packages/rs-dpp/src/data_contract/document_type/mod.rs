@@ -70,17 +70,6 @@ impl DocumentType {
             DocumentType::V0(v0) => DocumentTypeMutRef::V0(v0),
         }
     }
-
-    // TODO: Should be moved to document property
-    fn string_to_field_type(field_type_name: &str) -> Option<DocumentPropertyType> {
-        match field_type_name {
-            "integer" => Some(DocumentPropertyType::Integer),
-            "number" => Some(DocumentPropertyType::Number),
-            "boolean" => Some(DocumentPropertyType::Boolean),
-            "date" => Some(DocumentPropertyType::Date),
-            _ => None,
-        }
-    }
 }
 
 impl<'a> DocumentTypeRef<'a> {
@@ -91,7 +80,6 @@ impl<'a> DocumentTypeRef<'a> {
     }
 }
 
-// TODO: Check if we use those methods anywhere
 impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
     fn index_for_types(
         &self,
@@ -118,16 +106,6 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         }
     }
 
-    fn convert_value_to_document(
-        &self,
-        data: Value,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.convert_value_to_document(data, platform_version),
-        }
-    }
-
     fn max_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => v0.max_size(platform_version),
@@ -137,18 +115,6 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
     fn estimated_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => v0.estimated_size(platform_version),
-        }
-    }
-
-    fn document_field_type_for_property(
-        &self,
-        property: &str,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<DocumentPropertyType>, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => {
-                v0.document_field_type_for_property(property, platform_version)
-            }
         }
     }
 

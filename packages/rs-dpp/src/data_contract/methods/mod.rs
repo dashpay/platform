@@ -43,10 +43,4 @@ impl DataContractMethodsV0 for DataContract {
             DataContract::V0(v0) => v0.set_schema_defs(defs, platform_version),
         }
     }
-
-    fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(
-            self.serialize_with_platform_version(platform_version)?,
-        ))
-    }
 }

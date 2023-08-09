@@ -5,13 +5,13 @@ use crate::data_contract::created_data_contract::v0::CreatedDataContractV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::DocumentTypeRef;
-use crate::document::Document;
+use crate::document::{Document, DocumentV0};
 use crate::prelude::DataContract;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer::serializable_value_to_cbor;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_value::Identifier;
+use platform_value::{Identifier, ReplacementType};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
@@ -124,5 +124,29 @@ pub fn json_document_to_document(
             platform_value::Value::Identifier(owner_id.into_buffer()),
         )?;
     }
-    document_type.convert_value_to_document(value, platform_version)
+
+    let mut document: DocumentV0 = DocumentV0 {
+        id: data.remove_identifier("$id")?,
+        owner_id: data.remove_identifier("$ownerId")?,
+        properties: Default::default(),
+        revision: data.remove_optional_integer("$revision")?,
+        created_at: data.remove_optional_integer("$createdAt")?,
+        updated_at: data.remove_optional_integer("$updatedAt")?,
+    };
+
+    data.replace_at_paths(
+        document_type.identifier_paths().iter().map(|s| s.as_str()),
+        ReplacementType::Identifier,
+    )?;
+
+    data.replace_at_paths(
+        document_type.binary_paths().iter().map(|s| s.as_str()),
+        ReplacementType::BinaryBytes,
+    )?;
+
+    document.properties = data
+        .into_btree_string_map()
+        .map_err(ProtocolError::ValueError)?;
+
+    Ok(document.into())
 }

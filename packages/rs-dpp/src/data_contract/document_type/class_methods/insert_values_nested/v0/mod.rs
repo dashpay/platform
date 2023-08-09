@@ -139,8 +139,7 @@ impl DocumentType {
                 return Ok(());
             }
             _ => {
-                field_type = Self::string_to_field_type(type_value.as_str())
-                    .ok_or(DataContractError::ValueWrongType("invalid type"))?;
+                field_type = DocumentPropertyType::try_from_name(type_value.as_str())?;
             }
         }
 
