@@ -250,29 +250,3 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
         }
     }
 }
-
-impl DocumentTypeV0Setters for DocumentType {
-    fn set_schema(
-        &mut self,
-        schema: Value,
-        schema_defs: Option<&BTreeMap<String, Value>>,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), ProtocolError> {
-        match self {
-            DocumentType::V0(v0) => v0.set_schema(schema, schema_defs, platform_version),
-        }
-    }
-}
-
-impl<'a> DocumentTypeV0Setters for DocumentTypeMutRef<'a> {
-    fn set_schema(
-        &mut self,
-        schema: Value,
-        schema_defs: Option<&BTreeMap<String, Value>>,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), ProtocolError> {
-        match self {
-            DocumentTypeMutRef::V0(v0) => v0.set_schema(schema, schema_defs, platform_version),
-        }
-    }
-}

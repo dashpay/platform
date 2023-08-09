@@ -45,13 +45,3 @@ pub trait DocumentTypeV0Getters {
     /// Returns the data contract id of the document type.
     fn data_contract_id(&self) -> Identifier;
 }
-
-pub trait DocumentTypeV0Setters {
-    /// Sets document json schema of the document type.
-    fn set_schema(
-        &mut self,
-        schema: Value,
-        schema_defs: Option<&BTreeMap<String, Value>>,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), ProtocolError>;
-}

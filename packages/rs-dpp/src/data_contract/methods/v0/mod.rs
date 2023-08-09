@@ -11,6 +11,14 @@ pub trait DataContractMethodsV0 {
         defs: Option<BTreeMap<DefinitionName, Value>>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError>;
+
+    fn set_document_schema(
+        &mut self,
+        name: &str,
+        schema: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError>;
+
     fn document_schemas(&self) -> BTreeMap<DocumentName, &Value>;
     fn schema_defs(&self) -> Option<&BTreeMap<DefinitionName, Value>>;
     fn set_schema_defs(

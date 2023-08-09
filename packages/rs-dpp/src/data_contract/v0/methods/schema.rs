@@ -1,9 +1,9 @@
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContractMethodsV0, DefinitionName, DocumentName};
-use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
@@ -24,6 +24,28 @@ impl DataContractMethodsV0 for DataContractV0 {
             self.config.documents_mutable_contract_default(),
             platform_version,
         )?;
+
+        Ok(())
+    }
+
+    fn set_document_schema(
+        &mut self,
+        name: &str,
+        schema: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        let document_type = DocumentTypeV0::from_platform_value(
+            self.id,
+            name,
+            schema,
+            self.schema_defs.as_ref(),
+            self.config.documents_keep_history_contract_default(),
+            self.config.documents_mutable_contract_default(),
+            platform_version,
+        )?;
+
+        self.document_types
+            .insert(document_type.name.clone(), document_type.into());
 
         Ok(())
     }

@@ -1,5 +1,7 @@
 mod v0;
 
+use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::{DefinitionName, DocumentName};
 use crate::prelude::DataContract;
 use crate::serialization::PlatformSerializableWithPlatformVersion;
@@ -19,6 +21,17 @@ impl DataContractMethodsV0 for DataContract {
     ) -> Result<(), ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.set_document_schemas(schemas, defs, platform_version),
+        }
+    }
+
+    fn set_document_schema(
+        &mut self,
+        name: &str,
+        schema: Value,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        match self {
+            DataContract::V0(v0) => v0.set_document_schema(name, schema, platform_version),
         }
     }
 
