@@ -591,7 +591,12 @@ describe('DriveStateRepository', () => {
 
       const operation = new ReadOperation(Buffer.from(rawTransaction.hex, 'hex').length);
 
-      expect(executionContext.getOperations()).to.deep.equals([operation]);
+      expect(executionContext.getOperations().length).to.be.equal(1);
+      expect(
+        executionContext.getOperations()[0].toJSON(),
+      ).to.deep.equals(
+        operation.toJSON(),
+      );
     });
 
     it('should return null if core throws Invalid address or key error', async () => {
