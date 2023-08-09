@@ -36,7 +36,7 @@ lazy_static! {
     ))
     .expect("Valid schema!");
     static ref DATA_CONTRACT_V0: Value = serde_json::from_str::<Value>(include_str!(
-        "../../../schema/meta_schemas/data_contract/v0/dataContractMeta.json"
+        "../../../schema/meta_schemas/document/v0/document-meta.json"
     ))
     .unwrap();
 

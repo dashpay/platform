@@ -8,13 +8,13 @@ use platform_value::{Value, ValueMap, ValueMapHelper};
 
 lazy_static! {
     pub static ref BASE_DOCUMENT_SCHEMA: JsonValue = serde_json::from_str(include_str!(
-        "../../../../../../schema/document/documentBase.json"
+        "../../../../../../schema/document/document-base.json"
     ))
     .expect("can't parse documentBase.json");
 }
 
 pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =
-    "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/data_contract/v0/dataContractMeta.json";
+    "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v0/document-meta.json";
 
 // TODO: Duplicates packages/rs-dpp/src/data_contract/document_type/mod.rs
 const PROPERTY_PROPERTIES: &str = "properties";
