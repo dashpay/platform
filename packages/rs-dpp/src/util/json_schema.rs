@@ -1,9 +1,10 @@
 use anyhow::{anyhow, bail, Error};
+use platform_value::Value;
 use serde_json::Value as JsonValue;
 use std::convert::TryFrom;
 use std::iter::FromIterator;
 
-use crate::identifier;
+use crate::{identifier, ProtocolError};
 
 pub trait JsonSchemaExt {
     /// returns true if json value contains property 'type`, and it equals 'object'
@@ -24,6 +25,19 @@ pub trait JsonSchemaExt {
     // fn get_indices_map<I: FromIterator<(String, Index)>>(&self) -> Result<I, anyhow::Error>;
     /// returns true if json value contains property `contentMediaType` and it equals to Identifier
     fn is_type_of_identifier(&self) -> bool;
+}
+
+pub fn resolve_uri<'a>(value: &'a Value, uri: &str) -> Result<&'a Value, ProtocolError> {
+    if !uri.starts_with("#/") {
+        return Err(ProtocolError::Generic(
+            "only local references are allowed".to_string(),
+        ));
+    }
+
+    let string_path = uri.strip_prefix("#/").unwrap().replace('/', ".");
+    value
+        .get_value_at_path(&string_path)
+        .map_err(ProtocolError::ValueError)
 }
 
 impl JsonSchemaExt for JsonValue {

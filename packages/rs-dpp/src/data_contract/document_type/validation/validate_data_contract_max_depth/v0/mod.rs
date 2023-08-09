@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
+use crate::util::json_schema::resolve_uri;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{consensus::basic::BasicError, ProtocolError};
 
@@ -90,19 +91,6 @@ fn calc_max_depth(platform_value: &Value) -> Result<usize, BasicError> {
     }
 
     Ok(max_depth)
-}
-
-fn resolve_uri<'a>(value: &'a Value, uri: &str) -> Result<&'a Value, ProtocolError> {
-    if !uri.starts_with("#/") {
-        return Err(ProtocolError::Generic(
-            "only local references are allowed".to_string(),
-        ));
-    }
-
-    let string_path = uri.strip_prefix("#/").unwrap().replace('/', ".");
-    value
-        .get_value_at_path(&string_path)
-        .map_err(ProtocolError::ValueError)
 }
 
 #[cfg(test)]

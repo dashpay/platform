@@ -2,9 +2,10 @@ use crate::data_contract::document_type::property::array::ArrayItemType;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
+use crate::util::json_schema::resolve_uri;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::Value;
+use platform_value::{Value, ValueMapHelper};
 use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentType {
@@ -13,7 +14,7 @@ impl DocumentType {
         known_required: &BTreeSet<String>,
         property_key: String,
         property_value: &Value,
-        schema_defs: Option<&BTreeMap<String, Value>>,
+        root_schema: &Value,
     ) -> Result<(), ProtocolError> {
         let mut inner_properties = property_value.to_btree_ref_string_map()?;
 
@@ -26,25 +27,11 @@ impl DocumentType {
                     .get_str(property_names::REF)
                     .map_err(ProtocolError::ValueError)?;
 
-                // TODO: References may point to other parts of the document no just
-                //  $defs. It must be handled
-                let Some(ref_value) = ref_value.strip_prefix("#/$defs/") else {
-                    return Err(ProtocolError::DataContractError(
-                        DataContractError::InvalidContractStructure("malformed reference".to_string()),
-                    ));
-                };
+                let referenced_sub_schema = resolve_uri(root_schema, ref_value)?.to_map()?;
 
-                let Some(defs) = schema_defs else {
-                    return Err(ProtocolError::DataContractError(
-                        DataContractError::InvalidContractStructure(format!("expected schema definitions with path {ref_value}")),
-                    ));
-                };
-
-                inner_properties = defs
-                    .get_inner_borrowed_str_value_map(ref_value)
-                    .map_err(ProtocolError::ValueError)?;
-
-                inner_properties.get_string(property_names::TYPE)?
+                referenced_sub_schema
+                    .get_key(property_names::TYPE)?
+                    .to_text()?
             }
             Some(type_value) => type_value,
         };
@@ -124,25 +111,6 @@ impl DocumentType {
                         })
                         .collect();
 
-                    // Create a new set with the prefix removed from the keys
-                    let inner_schema_defs: Option<BTreeMap<String, Value>> =
-                        schema_defs.as_ref().map(|defs| {
-                            defs.iter()
-                                .filter_map(|(key, value)| {
-                                    if key.starts_with(&property_key)
-                                        && key.len() > property_key.len()
-                                    {
-                                        Some((
-                                            key[property_key.len() + 1..].to_string(),
-                                            value.clone(),
-                                        ))
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect()
-                        });
-
                     for (object_property_key, object_property_value) in properties.iter() {
                         let object_property_string = object_property_key
                             .as_text()
@@ -156,7 +124,7 @@ impl DocumentType {
                             &stripped_required,
                             object_property_string,
                             object_property_value,
-                            inner_schema_defs.as_ref(),
+                            root_schema,
                         )?;
                     }
                 }

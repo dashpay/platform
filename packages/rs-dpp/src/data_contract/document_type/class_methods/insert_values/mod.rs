@@ -14,7 +14,7 @@ impl DocumentType {
         prefix: Option<String>,
         property_key: String,
         property_value: &Value,
-        schema_defs: Option<&BTreeMap<String, Value>>,
+        root_schema: &Value,
         document_type_version: &DocumentTypeVersions,
     ) -> Result<(), ProtocolError> {
         match document_type_version.insert_values {
@@ -24,7 +24,7 @@ impl DocumentType {
                 prefix,
                 property_key,
                 property_value,
-                schema_defs,
+                root_schema,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "insert_values".to_string(),

@@ -84,7 +84,7 @@ impl DocumentTypeV0 {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // Create a full root JSON Schema from shorten contract document type schema
-        let full_schema = enrich_with_base_schema(
+        let root_schema = enrich_with_base_schema(
             schema.clone(),
             schema_defs.map(|defs| Value::from(defs.clone())),
             &[],
@@ -96,14 +96,14 @@ impl DocumentTypeV0 {
             // Validate against JSON Schema
             DOCUMENT_META_SCHEMA_V0
                 .validate(
-                    &full_schema
+                    &root_schema
                         .try_to_validating_json()
                         .map_err(ProtocolError::ValueError)?,
                 )
                 .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
 
             // Validate document schema depth
-            let mut result = validate_data_contract_max_depth(&full_schema, platform_version);
+            let mut result = validate_data_contract_max_depth(&root_schema, platform_version);
 
             if !result.is_valid() {
                 let error = result.errors.remove(0);
@@ -115,7 +115,7 @@ impl DocumentTypeV0 {
             //  If not we can remove this validation
             // Validate reg exp compatibility with RE2 and byteArray usage
             result.merge(traversal_validator(
-                &full_schema,
+                &root_schema,
                 &[
                     pattern_is_valid_regex_validator,
                     byte_array_has_no_items_as_parent_validator,
@@ -172,7 +172,7 @@ impl DocumentTypeV0 {
                 None,
                 property_key.clone(),
                 property_value,
-                schema_defs,
+                &root_schema,
                 &platform_version
                     .dpp
                     .contract_versions
@@ -184,7 +184,7 @@ impl DocumentTypeV0 {
                 &required_fields,
                 property_key,
                 property_value,
-                schema_defs,
+                &root_schema,
                 &platform_version
                     .dpp
                     .contract_versions
