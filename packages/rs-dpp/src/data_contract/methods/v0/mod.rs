@@ -4,7 +4,7 @@ use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-pub trait DataContractSchemaMethodsV0 {
+pub trait DataContractMethodsV0 {
     fn set_document_schemas(
         &mut self,
         schemas: BTreeMap<DocumentName, Value>,
@@ -18,4 +18,5 @@ pub trait DataContractSchemaMethodsV0 {
         defs: Option<BTreeMap<DefinitionName, Value>>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError>;
+    fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError>;
 }

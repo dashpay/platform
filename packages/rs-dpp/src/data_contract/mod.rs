@@ -219,14 +219,6 @@ impl PlatformLimitDeserializableFromVersionedStructure for DataContract {
 }
 
 impl DataContract {
-    // TODO: Don't we need this method in DataContractV0?
-    // Returns hash from Data Contract
-    pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(
-            self.serialize_with_platform_version(platform_version)?,
-        ))
-    }
-
     pub fn as_v0(&self) -> Option<&DataContractV0> {
         match self {
             DataContract::V0(v0) => Some(v0),
@@ -258,44 +250,6 @@ impl DataContract {
             .contract_structure_version
             == data_contract_system_version)
     }
-
-    // TODO: Remove
-    // #[cfg(feature = "validation")]
-    // pub fn validate(
-    //     protocol_version: u32,
-    //     raw_data_contract: &Value,
-    //     allow_non_current_data_contract_versions: bool,
-    // ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-    //     let data_contract_system_version =
-    //         match raw_data_contract.get_optional_integer::<FeatureVersion>(SYSTEM_VERSION) {
-    //             Ok(Some(data_contract_system_version)) => data_contract_system_version,
-    //             Ok(None) => {
-    //                 return Ok(SimpleConsensusValidationResult::new_with_error(
-    //                     ConsensusError::BasicError(BasicError::VersionError(
-    //                         "no system version found on data contract object".into(),
-    //                     )),
-    //                 ));
-    //             }
-    //             Err(e) => {
-    //                 return Ok(SimpleConsensusValidationResult::new_with_error(
-    //                     ConsensusError::BasicError(BasicError::VersionError(
-    //                         format!("version error: {}", e.to_string()).into(),
-    //                     )),
-    //                 ));
-    //             }
-    //         };
-    //     if !allow_non_current_data_contract_versions {
-    //         Self::check_version_is_active(protocol_version, data_contract_system_version)?;
-    //     }
-    //     match data_contract_system_version {
-    //         0 => DataContractV0::validate(raw_data_contract),
-    //         _ => Ok(SimpleConsensusValidationResult::new_with_error(
-    //             ConsensusError::BasicError(BasicError::VersionError(
-    //                 "system version found on data contract object".into(),
-    //             )),
-    //         )),
-    //     }
-    // }
 }
 
 #[cfg(test)]
