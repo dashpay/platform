@@ -90,7 +90,7 @@ impl DocumentTypeV0Setters for DocumentTypeV0 {
             self.name.as_str(),
             schema,
             schema_defs,
-            self.documents_keep_history,
+            self.documents_keep_history, // TODO: These two should be from config but not from previous schema
             self.documents_mutable,
             platform_version,
         )?;

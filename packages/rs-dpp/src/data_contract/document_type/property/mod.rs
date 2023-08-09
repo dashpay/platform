@@ -27,7 +27,6 @@ pub struct DocumentProperty {
     pub required: bool,
 }
 
-// TODO DocumentPropertyType
 // @append_only
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum DocumentPropertyType {

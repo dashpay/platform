@@ -135,7 +135,8 @@ impl IndexLevel {
                 if properties_iter.peek().is_none() {
                     // This level already has been initialized.
                     // It means there are two indices with the same combination of properties.
-                    // TODO: We should take into account the sorting order of the fields
+
+                    // We might need to take into account the sorting order when we have it
                     if current_level.has_index_with_uniqueness.is_some() {
                         // an index already exists return error
                         return Err(ConsensusError::BasicError(BasicError::DuplicateIndexError(
