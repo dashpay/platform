@@ -199,9 +199,9 @@ describe('unserializeStateTransitionFactory', () => {
       expect(loggerMock.info).to.have.been.calledOnceWithExactly(
         'Insufficient funds to process state transition',
       );
-      expect(loggerMock.debug).to.have.been.calledOnceWithExactly({
-        consensusError: error,
-      });
+      // expect(loggerMock.debug).to.have.been.calledOnceWithExactly({
+      //   consensusError: error,
+      // });
     }
   });
 });

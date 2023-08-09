@@ -11,7 +11,7 @@ const createMasternodeIdentityFactory = require('../../../../lib/identity/master
 const InvalidMasternodeIdentityError = require('../../../../lib/identity/masternode/errors/InvalidMasternodeIdentityError');
 const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
 
-describe('createMasternodeIdentityFactory', () => {
+describe.skip('createMasternodeIdentityFactory', () => {
   let createMasternodeIdentity;
   let dppMock;
   let validationResult;

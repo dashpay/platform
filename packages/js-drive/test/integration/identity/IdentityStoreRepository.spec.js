@@ -296,7 +296,7 @@ describe('IdentityStoreRepository', () => {
         const fetchedIdentity = fetchedIdentities[i];
 
         expect(fetchedIdentity).to.be.instanceOf(Identity);
-        expect(fetchedIdentity).to.deep.equals(identity);
+        expect(fetchedIdentity.toJSON()).to.deep.equals(identity.toJSON());
       }
     });
   });
