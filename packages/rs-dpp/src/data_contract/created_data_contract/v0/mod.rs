@@ -9,10 +9,9 @@ use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Bytes32, Error, Value};
 
-// TODO: Rename to extended and move metadata here
+// TODO: Decide on what we need ExtendedDataContract with metadata or CreatedDataContract or both.
 #[derive(Clone, Debug)]
 pub struct CreatedDataContractV0 {
-    // TODO: Let's rename it to base or something otherwise it looks like data_contract.data_contract
     pub data_contract: DataContract,
     pub entropy_used: Bytes32,
 }
