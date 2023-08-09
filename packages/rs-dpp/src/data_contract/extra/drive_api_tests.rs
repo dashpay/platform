@@ -1,5 +1,5 @@
 mod test {
-    use crate::data_contract::data_contract_config::DataContractConfigV0;
+    use crate::data_contract::config::DataContractConfigV0;
 
     use crate::data_contract::extra::common::json_document_to_contract;
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};

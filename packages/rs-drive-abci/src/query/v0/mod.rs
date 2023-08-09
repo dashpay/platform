@@ -913,7 +913,7 @@ mod test {
 
         use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
-        use dpp::data_contract::data_contract_config::v0::DataContractConfigSettersV0;
+        use dpp::data_contract::config::v0::DataContractConfigSettersV0;
         use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
         use dpp::data_contract::DataContract;
         use dpp::serialization::PlatformDeserializableFromVersionedStructure;

@@ -1,5 +1,5 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-use crate::data_contract::data_contract_config::DataContractConfig;
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::{DocumentName, PropertyPath};
 use crate::metadata::Metadata;
@@ -30,7 +30,7 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
-    fn document_type(&self, name: &DocumentName) -> Option<&DocumentType> {
+    fn document_type(&self, name: &str) -> Option<&DocumentType> {
         match self {
             DataContract::V0(v0) => v0.document_type(name),
         }

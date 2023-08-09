@@ -1,4 +1,4 @@
-use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DataContract;

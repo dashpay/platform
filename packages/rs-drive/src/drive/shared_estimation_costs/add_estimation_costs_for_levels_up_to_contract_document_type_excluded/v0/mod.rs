@@ -12,7 +12,7 @@ use grovedb::EstimatedLayerSizes::AllSubtrees;
 use crate::drive::contract::paths::{all_contracts_global_root_path, contract_root_path};
 use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;

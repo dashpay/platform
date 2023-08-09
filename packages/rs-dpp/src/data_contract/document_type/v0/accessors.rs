@@ -1,9 +1,9 @@
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV0Setters,
 };
-use crate::data_contract::document_type::document_field::DocumentProperty;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::{JsonSchema, PropertyPath};
@@ -49,10 +49,6 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
         &self.binary_paths
     }
 
-    fn binary_properties(&self) -> &BTreeMap<PropertyPath, Value> {
-        &self.binary_properties
-    }
-
     fn required_fields(&self) -> &BTreeSet<String> {
         &self.required_fields
     }
@@ -83,7 +79,6 @@ impl DocumentTypeV0Setters for DocumentTypeV0 {
             index_structure,
             flattened_properties,
             properties,
-            binary_properties,
             identifier_paths,
             binary_paths,
             required_fields,
@@ -105,7 +100,6 @@ impl DocumentTypeV0Setters for DocumentTypeV0 {
         self.index_structure = index_structure;
         self.flattened_properties = flattened_properties;
         self.properties = properties;
-        self.binary_properties = binary_properties;
         self.identifier_paths = identifier_paths;
         self.binary_paths = binary_paths;
         self.required_fields = required_fields;

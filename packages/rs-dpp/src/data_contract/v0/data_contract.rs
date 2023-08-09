@@ -14,7 +14,7 @@ use serde_json::Value as JsonValue;
 
 use crate::data_contract::{DefinitionName, DocumentName};
 
-use crate::data_contract::data_contract_config::DataContractConfig;
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer;
@@ -160,10 +160,6 @@ mod test {
         assert_eq!(data_contract.version, data_contract_restored.version);
         assert_eq!(data_contract.id, data_contract_restored.id);
         assert_eq!(data_contract.owner_id, data_contract_restored.owner_id);
-        assert_eq!(
-            data_contract.binary_properties,
-            data_contract_restored.binary_properties
-        );
         assert_eq!(data_contract.documents, data_contract_restored.documents);
         assert_eq!(
             data_contract.document_types,
@@ -193,10 +189,6 @@ mod test {
         assert_eq!(data_contract.version, data_contract_restored.version);
         assert_eq!(data_contract.id, data_contract_restored.id);
         assert_eq!(data_contract.owner_id, data_contract_restored.owner_id);
-        assert_eq!(
-            data_contract.binary_properties,
-            data_contract_restored.binary_properties
-        );
         assert_eq!(data_contract.documents, data_contract_restored.documents);
         assert_eq!(
             data_contract.document_types,
@@ -235,10 +227,6 @@ mod test {
         assert_eq!(data_contract.version, data_contract_restored.version);
         assert_eq!(data_contract.id, data_contract_restored.id);
         assert_eq!(data_contract.owner_id, data_contract_restored.owner_id);
-        assert_eq!(
-            data_contract.binary_properties,
-            data_contract_restored.binary_properties
-        );
         assert_eq!(data_contract.documents, data_contract_restored.documents);
         assert_eq!(
             data_contract.document_types,

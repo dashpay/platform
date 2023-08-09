@@ -5,7 +5,7 @@ use std::convert::TryInto;
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::errors::{DataContractError, StructureError};
 
-use crate::data_contract::document_type::document_field::{DocumentProperty, DocumentPropertyType};
+use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::document_type::index::{Index, IndexProperty};
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::{DocumentTypeV0, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE};

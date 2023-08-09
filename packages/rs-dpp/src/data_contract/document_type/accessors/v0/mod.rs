@@ -1,6 +1,6 @@
-use crate::data_contract::document_type::document_field::DocumentProperty;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::{JsonSchema, PropertyPath};
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
@@ -33,8 +33,6 @@ pub trait DocumentTypeV0Getters {
 
     /// Returns the binary paths of the document type.
     fn binary_paths(&self) -> &BTreeSet<String>;
-
-    fn binary_properties(&self) -> &BTreeMap<PropertyPath, Value>;
 
     /// Returns the required fields of the document type.
     fn required_fields(&self) -> &BTreeSet<String>;

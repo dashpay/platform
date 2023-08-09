@@ -246,7 +246,6 @@ impl DocumentTypeV0 {
             index_structure,
             flattened_properties: properties.clone(),
             properties,
-            binary_properties: Default::default(),
             identifier_paths,
             binary_paths,
             required_fields,

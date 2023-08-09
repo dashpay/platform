@@ -1,4 +1,4 @@
-use crate::data_contract::data_contract_config::DataContractConfig;
+use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
@@ -16,7 +16,7 @@ pub trait DataContractV0Getters {
     fn owner_id(&self) -> Identifier;
 
     /// Returns the document type for the given document name.
-    fn document_type(&self, name: &DocumentName) -> Option<&DocumentType>;
+    fn document_type(&self, name: &str) -> Option<&DocumentType>;
 
     /// Returns a mapping of document names to their corresponding document types.
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType>;

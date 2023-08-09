@@ -1,8 +1,8 @@
 mod v0;
 
-use crate::data_contract::document_type::document_field::DocumentProperty;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::property::DocumentProperty;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, DocumentTypeRef};
 use crate::data_contract::{JsonSchema, PropertyPath};
 use crate::ProtocolError;
@@ -63,12 +63,6 @@ impl DocumentTypeV0Getters for DocumentType {
     fn binary_paths(&self) -> &BTreeSet<String> {
         match self {
             DocumentType::V0(v0) => v0.binary_paths(),
-        }
-    }
-
-    fn binary_properties(&self) -> &BTreeMap<PropertyPath, Value> {
-        match self {
-            DocumentType::V0(v0) => v0.binary_properties(),
         }
     }
 
@@ -152,12 +146,6 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
-    fn binary_properties(&self) -> &BTreeMap<PropertyPath, Value> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.binary_properties(),
-        }
-    }
-
     fn required_fields(&self) -> &BTreeSet<String> {
         match self {
             DocumentTypeRef::V0(v0) => v0.required_fields(),
@@ -235,12 +223,6 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
     fn binary_paths(&self) -> &BTreeSet<String> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.binary_paths(),
-        }
-    }
-
-    fn binary_properties(&self) -> &BTreeMap<PropertyPath, Value> {
-        match self {
-            DocumentTypeMutRef::V0(v0) => v0.binary_properties(),
         }
     }
 

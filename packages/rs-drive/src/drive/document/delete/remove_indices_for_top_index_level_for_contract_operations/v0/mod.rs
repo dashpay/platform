@@ -44,7 +44,7 @@ use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;

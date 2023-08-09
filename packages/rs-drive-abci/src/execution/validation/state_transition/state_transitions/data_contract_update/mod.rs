@@ -175,7 +175,7 @@ mod tests {
         use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contract::base::DataContractBaseMethodsV0;
-        use dpp::data_contract::data_contract_config::v0::{
+        use dpp::data_contract::config::v0::{
             DataContractConfigGettersV0, DataContractConfigSettersV0,
         };
         use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;

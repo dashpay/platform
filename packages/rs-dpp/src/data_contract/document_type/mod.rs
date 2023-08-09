@@ -1,10 +1,9 @@
 pub mod accessors;
-pub mod array_field;
-mod document_field;
-pub use document_field::*;
-pub mod document_type_class_methods;
-pub mod document_type_methods;
+mod property;
+pub use property::*;
+pub mod class_methods;
 mod index;
+pub mod methods;
 pub use index::*;
 mod index_level;
 pub use index_level::IndexLevel;

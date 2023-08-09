@@ -8,9 +8,9 @@ use crate::consensus::basic::data_contract::{
     UniqueIndicesLimitReachedError,
 };
 use crate::consensus::ConsensusError;
-use crate::data_contract::document_type::document_field::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
+use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 use crate::data_contract::document_type::validation::{
     byte_array_has_no_items_as_parent_validator, enrich_with_base_schema,
     pattern_is_valid_regex_validator, traversal_validator, validate_data_contract_max_depth,
@@ -65,7 +65,6 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) flattened_properties: BTreeMap<String, DocumentProperty>,
     /// Document field can contain sub objects.
     pub(in crate::data_contract) properties: BTreeMap<String, DocumentProperty>,
-    pub(in crate::data_contract) binary_properties: BTreeMap<PropertyPath, Value>,
     pub(in crate::data_contract) identifier_paths: BTreeSet<String>,
     pub(in crate::data_contract) binary_paths: BTreeSet<String>,
     pub(in crate::data_contract) required_fields: BTreeSet<String>,
@@ -351,11 +350,6 @@ impl DocumentTypeV0 {
                 .document_type_versions,
         )?;
 
-        // TODO: Figure out why do we need this and how it differs from `binary_paths`
-        //   and move this function to DocumentType
-        let binary_properties =
-            DataContract::create_binary_properties(&full_schema, platform_version)?;
-
         Ok(DocumentTypeV0 {
             name: String::from(name),
             schema,
@@ -363,7 +357,6 @@ impl DocumentTypeV0 {
             index_structure,
             flattened_properties: flattened_document_properties,
             properties: document_properties,
-            binary_properties,
             identifier_paths,
             binary_paths,
             required_fields,

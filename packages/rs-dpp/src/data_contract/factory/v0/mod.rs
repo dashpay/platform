@@ -11,13 +11,12 @@ use crate::data_contract::errors::InvalidDataContractError;
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::data_contract::config::v0::DataContractConfigGettersV0;
+use crate::data_contract::config::DataContractConfig;
 #[cfg(feature = "data-contract-value-conversions")]
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
-use crate::data_contract::data_contract_config::DataContractConfig;
-use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::DataContract;
@@ -277,7 +276,6 @@ mod tests {
         assert_eq!(data_contract.owner_id, result.owner_id);
         assert_eq!(data_contract.documents, result.documents);
         assert_eq!(data_contract.metadata, result.metadata);
-        assert_eq!(data_contract.binary_properties, result.binary_properties);
     }
 
     #[tokio::test]
@@ -304,7 +302,6 @@ mod tests {
         assert_eq!(data_contract.owner_id, result.owner_id);
         assert_eq!(data_contract.documents, result.documents);
         assert_eq!(data_contract.metadata, result.metadata);
-        assert_eq!(data_contract.binary_properties, result.binary_properties);
         assert_eq!(data_contract.defs, result.defs);
     }
 
@@ -335,7 +332,6 @@ mod tests {
         assert_eq!(data_contract.owner_id, result.owner_id);
         assert_eq!(data_contract.documents, result.documents);
         assert_eq!(data_contract.metadata, result.metadata);
-        assert_eq!(data_contract.binary_properties, result.binary_properties);
         assert_eq!(data_contract.defs, result.defs);
     }
 

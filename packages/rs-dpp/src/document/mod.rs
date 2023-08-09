@@ -1,7 +1,6 @@
 pub use fields::{property_names, IDENTIFIER_FIELDS};
 
 mod accessors;
-mod document_class_methods;
 #[cfg(feature = "client")]
 mod document_facade;
 #[cfg(feature = "factories")]
