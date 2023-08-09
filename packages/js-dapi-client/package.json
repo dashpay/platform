@@ -34,8 +34,8 @@
     "@dashevo/wasm-dpp": "workspace:*",
     "bs58": "^4.0.1",
     "cbor": "^8.0.0",
-    "cross-fetch": "^4.0.0",
     "lodash": "^4.17.21",
+    "node-fetch": "^2.6.7",
     "node-inspect-extracted": "^1.0.8",
     "wasm-x11-hash": "~0.0.2"
   },

@@ -1,7 +1,6 @@
 const https = require('https');
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
-const getFetch = require('./getFetch');
 /**
  * @typedef {requestJsonRpc}
  * @param {string} protocol
@@ -58,7 +57,6 @@ async function requestJsonRpc(protocol, host, port, selfSigned, method, params, 
       rejectUnauthorized: false,
     });
   }
-  const { fetch } = getFetch;
   // eslint-disable-next-line
   const response = await fetch(url, requestOptions);
 
