@@ -130,27 +130,28 @@ impl DocumentTypeV0 {
             }
         }
 
-        let full_schema_map = schema.to_map().map_err(|err| {
+        let schema_map = schema.to_map().map_err(|err| {
             ProtocolError::DataContractError(DataContractError::InvalidContractStructure(format!(
                 "document schema must be an object: {err}"
             )))
         })?;
 
+        // TODO: property names should be different
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
-            Value::inner_optional_bool_value(full_schema_map, "documentsKeepHistory")
+            Value::inner_optional_bool_value(schema_map, "documentsKeepHistory")
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or(default_keeps_history);
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
-            Value::inner_optional_bool_value(full_schema_map, "documentsMutable")
+            Value::inner_optional_bool_value(schema_map, "documentsMutable")
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or(default_mutability);
 
         // Extract the properties
         let property_values =
-            Value::inner_optional_btree_map(full_schema_map, property_names::PROPERTIES)?
+            Value::inner_optional_btree_map(schema_map, property_names::PROPERTIES)?
                 .unwrap_or_default();
 
         // Prepare internal data for efficient querying
@@ -158,7 +159,7 @@ impl DocumentTypeV0 {
         let mut document_properties: BTreeMap<String, DocumentProperty> = BTreeMap::new();
 
         let required_fields = Value::inner_recursive_optional_array_of_strings(
-            full_schema_map,
+            schema_map,
             "".to_string(),
             property_names::PROPERTIES,
             property_names::REQUIRED,
@@ -194,7 +195,7 @@ impl DocumentTypeV0 {
 
         // Initialize indices
         let index_values =
-            Value::inner_optional_array_slice_value(full_schema_map, property_names::INDICES)?;
+            Value::inner_optional_array_slice_value(schema_map, property_names::INDICES)?;
 
         let mut index_names: HashSet<String> = HashSet::new();
         let mut unique_indices_count = 0;

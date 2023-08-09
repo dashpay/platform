@@ -8,7 +8,7 @@ use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
-impl DataContract {
+impl DocumentType {
     /// Retrieve document types from a value array.
     ///
     /// This method takes a data contract ID, an array of contract document types, definition references,

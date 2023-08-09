@@ -31,8 +31,6 @@ mod v0;
 mod factory;
 #[cfg(feature = "factories")]
 pub use factory::*;
-mod class_methods;
-pub use class_methods::*;
 pub mod conversion;
 #[cfg(feature = "client")]
 mod data_contract_facade;

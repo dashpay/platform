@@ -1,4 +1,5 @@
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
+use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DataContract;
@@ -50,7 +51,7 @@ impl TryFromPlatformVersioned<DataContractInSerializationFormatV0> for DataContr
             ..
         } = data_contract_data;
 
-        let document_types = DataContract::create_document_types_from_document_schemas(
+        let document_types = DocumentType::create_document_types_from_document_schemas(
             id,
             document_schemas,
             schema_defs.as_ref(),

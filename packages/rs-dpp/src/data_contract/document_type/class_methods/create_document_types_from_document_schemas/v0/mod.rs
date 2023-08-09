@@ -1,14 +1,13 @@
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DocumentName;
-use crate::prelude::DataContract;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
-impl DataContract {
-    pub(super) fn create_document_types_from_document_schemas_v0(
+impl DocumentType {
+    pub(in crate::data_contract) fn create_document_types_from_document_schemas_v0(
         data_contract_id: Identifier,
         document_schemas: BTreeMap<DocumentName, Value>,
         schema_defs: Option<&BTreeMap<String, Value>>,

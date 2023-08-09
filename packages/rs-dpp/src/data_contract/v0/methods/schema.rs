@@ -1,5 +1,6 @@
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::methods::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DefinitionName, DocumentName};
@@ -16,7 +17,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         defs: Option<BTreeMap<DefinitionName, Value>>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
-        self.document_types = DataContract::create_document_types_from_document_schemas(
+        self.document_types = DocumentType::create_document_types_from_document_schemas(
             self.id,
             schemas,
             defs.as_ref(),
