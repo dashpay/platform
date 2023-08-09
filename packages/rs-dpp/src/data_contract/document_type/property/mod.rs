@@ -18,7 +18,8 @@ use serde::{Deserialize, Serialize};
 
 pub mod array;
 
-// TODO Must be versioned enum
+// This struct will be changed in future to support more validation logic and serialization
+// It will become versioned and it will be introduced by a new document type version
 // @append_only
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct DocumentProperty {
