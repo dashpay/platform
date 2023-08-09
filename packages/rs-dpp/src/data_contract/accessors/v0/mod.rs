@@ -18,6 +18,8 @@ pub trait DataContractV0Getters {
     /// Returns the document type for the given document name.
     fn document_type(&self, name: &str) -> Option<&DocumentType>;
 
+    fn has_document_type(&self, name: &str) -> bool;
+
     /// Returns a mapping of document names to their corresponding document types.
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType>;
 
@@ -40,6 +42,8 @@ pub trait DataContractV0Setters {
 
     /// Sets the version of this data contract.
     fn set_version(&mut self, version: u32);
+
+    fn increment_version(&mut self);
 
     /// Sets the identifier of the contract owner.
     fn set_owner_id(&mut self, owner_id: Identifier);

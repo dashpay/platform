@@ -91,6 +91,7 @@ impl<'a> DocumentTypeRef<'a> {
     }
 }
 
+// TODO: Check if we use those methods anywhere
 impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
     fn index_for_types(
         &self,

@@ -25,6 +25,10 @@ impl DataContractV0Getters for DataContractV0 {
         self.document_types.get(name)
     }
 
+    fn has_document_type(&self, name: &str) -> bool {
+        self.document_types.get(name).is_some()
+    }
+
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType> {
         &self.document_types
     }
@@ -59,6 +63,10 @@ impl DataContractV0Setters for DataContractV0 {
 
     fn set_version(&mut self, version: u32) {
         self.version = version;
+    }
+
+    fn increment_version(&mut self) {
+        self.version += 1;
     }
 
     fn set_owner_id(&mut self, owner_id: Identifier) {

@@ -36,6 +36,12 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
+    fn has_document_type(&self, name: &str) -> bool {
+        match self {
+            DataContract::V0(v0) => v0.has_document_type(name),
+        }
+    }
+
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType> {
         match self {
             DataContract::V0(v0) => v0.document_types(),
@@ -77,6 +83,12 @@ impl DataContractV0Setters for DataContract {
     fn set_version(&mut self, version: u32) {
         match self {
             DataContract::V0(v0) => v0.set_version(version),
+        }
+    }
+
+    fn increment_version(&mut self) {
+        match self {
+            DataContract::V0(v0) => v0.increment_version(),
         }
     }
 

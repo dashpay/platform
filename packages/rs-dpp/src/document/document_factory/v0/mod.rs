@@ -1,9 +1,8 @@
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::base::DataContractBaseMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
-use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
 use crate::document::errors::DocumentError;
@@ -12,6 +11,7 @@ use crate::identity::TimestampMillis;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::version::{PlatformVersion, LATEST_PLATFORM_VERSION};
 use crate::ProtocolError;
+use anyhow::anyhow;
 use chrono::Utc;
 use platform_value::{Bytes32, Identifier, Value};
 use std::collections::BTreeMap;
@@ -96,7 +96,7 @@ impl DocumentFactoryV0 {
         data: Value,
     ) -> Result<Document, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
-        if !self.data_contract.is_document_defined(&document_type_name) {
+        if !self.data_contract.has_document_type(&document_type_name) {
             return Err(DataContractError::InvalidDocumentTypeError(
                 InvalidDocumentTypeError::new(document_type_name, self.data_contract.id()),
             )
@@ -107,7 +107,9 @@ impl DocumentFactoryV0 {
 
         let document_type = self
             .data_contract
-            .document_type_for_name(document_type_name.as_str())?;
+            .document_type(document_type_name.as_str())
+            .ok_or_else(|| ProtocolError::Error(anyhow!("invalid document type")))?
+            .as_ref();
 
         document_type.create_document_from_data(data, owner_id, document_entropy, platform_version)
     }
@@ -120,7 +122,7 @@ impl DocumentFactoryV0 {
         data: Value,
     ) -> Result<ExtendedDocument, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
-        if !self.data_contract.is_document_defined(&document_type_name) {
+        if !self.data_contract.has_document_type(&document_type_name) {
             return Err(DataContractError::InvalidDocumentTypeError(
                 InvalidDocumentTypeError::new(document_type_name, self.data_contract.id()),
             )
@@ -131,7 +133,9 @@ impl DocumentFactoryV0 {
 
         let document_type = self
             .data_contract
-            .document_type_for_name(document_type_name.as_str())?;
+            .document_type(document_type_name.as_str())
+            .ok_or_else(|| ProtocolError::Error(anyhow!("invalid document type")))?
+            .as_ref();
 
         let document = document_type.create_document_from_data(
             data,
