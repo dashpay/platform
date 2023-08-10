@@ -1,4 +1,5 @@
 use crate::data_contract::document_type::property::DocumentProperty;
+use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::version::dpp_versions::DocumentTypeVersions;
 use crate::ProtocolError;
@@ -17,7 +18,7 @@ impl DocumentType {
         document_type_version: &DocumentTypeVersions,
     ) -> Result<(), ProtocolError> {
         match document_type_version.insert_values_nested {
-            0 => Self::insert_values_nested_v0(
+            0 => DocumentTypeV0::insert_values_nested_v0(
                 document_properties,
                 known_required,
                 property_key,

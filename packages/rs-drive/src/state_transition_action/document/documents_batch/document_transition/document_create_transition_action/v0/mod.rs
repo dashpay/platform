@@ -8,7 +8,8 @@ use std::collections::BTreeMap;
 
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
-use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use dpp::version::PlatformVersion;
@@ -107,7 +108,7 @@ impl DocumentFromCreateTransitionV0 for Document {
 
                 let document_type = data_contract
                     .contract
-                    .document_type_for_name(document_type_name.as_str())?;
+                    .document_type(document_type_name.as_str())?;
 
                 match platform_version
                     .dpp
@@ -166,7 +167,7 @@ impl DocumentFromCreateTransitionV0 for Document {
 
                 let document_type = data_contract
                     .contract
-                    .document_type_for_name(document_type_name.as_str())?;
+                    .document_type(document_type_name.as_str())?;
 
                 match platform_version
                     .dpp

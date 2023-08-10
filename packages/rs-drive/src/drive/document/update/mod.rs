@@ -56,8 +56,6 @@ pub use update_document_for_contract_id::*;
 // Module: update_document_with_serialization_for_contract
 // This module contains functionality for updating a document (with serialization) for a contract
 mod internal;
-#[cfg(feature = "fixtures-and-mocks")]
-mod test_helpers;
 mod update_document_with_serialization_for_contract;
 
 pub use update_document_with_serialization_for_contract::*;
@@ -125,7 +123,7 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
 
     use dpp::balances::credits::Creditable;
-    use rand::Rng;
+    use rand::{random, Rng};
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use tempfile::TempDir;
@@ -133,14 +131,17 @@ mod tests {
     use super::*;
     use crate::drive::config::DriveConfig;
     use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo};
     use crate::drive::{defaults, Drive};
 
+    use crate::drive::document::tests::setup_dashpay;
     use crate::query::DriveQuery;
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
     use dpp::document::serialization_traits::{
         DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
     };
@@ -155,43 +156,45 @@ mod tests {
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let (drive, contract) = setup_dashpay("", true);
+
+        let platform_version = PlatformVersion::latest();
 
         let db_transaction = drive.grove.start_transaction();
-        let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
-            .expect("expected to create root tree successfully");
 
-        let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
-
-        drive
-            .apply_contract_cbor(
-                contract_cbor.clone(),
-                None,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                Some(&db_transaction),
-                platform_version,
+        let mut document = contract
+            .document_type("profile")
+            .expect("profile document exists")
+            .create_document_from_data(
+                platform_value!({"displayName": "Alice"}),
+                Identifier::random(),
+                random(),
+                &platform_version,
             )
-            .expect("expected to apply contract successfully");
+            .expect("should create document");
 
         // Create Alice profile
 
-        let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
+        let info = DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((
+                    &document,
+                    StorageFlags::optional_default_as_cow(),
+                )),
+                owner_id: None,
+            },
+            contract: &contract,
+            document_type: contract
+                .document_type("profile")
+                .expect("profile document exists"),
+        };
 
         drive
-            .add_cbor_serialized_document_for_serialized_contract(
-                alice_profile_cbor.as_slice(),
-                contract_cbor.as_slice(),
-                "profile",
-                None,
+            .add_document_for_contract(
+                info,
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
                 platform_version,
             )
@@ -199,17 +202,28 @@ mod tests {
 
         // Update Alice profile
 
-        let updated_alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e026961766174617255726c781a687474703a2f2f746573742e636f6d2f616c696365322e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
+        document.set("displayName", "alice2".into());
+
+        let info = DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((
+                    &document,
+                    StorageFlags::optional_default_as_cow(),
+                )),
+                owner_id: None,
+            },
+            contract: &contract,
+            document_type: contract
+                .document_type("profile")
+                .expect("profile document exists"),
+        };
 
         drive
-            .update_document_for_contract_cbor(
-                updated_alice_profile_cbor.as_slice(),
-                contract_cbor.as_slice(),
-                "profile",
-                None,
+            .add_document_for_contract(
+                info,
+                true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
                 platform_version,
             )
@@ -218,62 +232,49 @@ mod tests {
 
     #[test]
     fn test_create_and_update_document_no_transactions() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let (drive, contract) = setup_dashpay("", true);
 
         let platform_version = PlatformVersion::latest();
-        let db_transaction = drive.grove.start_transaction();
-        drive
-            .create_initial_state_structure(None, &platform_version)
-            .expect("expected to create root tree successfully");
 
-        let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
-
-        let contract = DataContract::from_cbor(contract_cbor.as_slice(), platform_version)
-            .expect("expected to create contract");
-        drive
-            .apply_contract_cbor(
-                contract_cbor.clone(),
-                None,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
+        let mut document = contract
+            .document_type("profile")
+            .expect("profile document exists")
+            .create_document_from_data(
+                platform_value!({"displayName": "Alice"}),
+                Identifier::random(),
+                random(),
+                &platform_version,
             )
-            .expect("expected to apply contract successfully");
+            .expect("should create document");
 
         // Create Alice profile
 
-        let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
-
-        let alice_profile =
-            Document::from_cbor(alice_profile_cbor.as_slice(), None, None, platform_version)
-                .expect("expected to get a document");
-
-        let document_type = contract
-            .document_type_for_name("profile")
-            .expect("expected to get a document type");
-
-        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        let info = DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((
+                    &document,
+                    StorageFlags::optional_default_as_cow(),
+                )),
+                owner_id: None,
+            },
+            contract: &contract,
+            document_type: contract
+                .document_type("profile")
+                .expect("profile document exists"),
+        };
 
         drive
             .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((&alice_profile, storage_flags)),
-                        owner_id: None,
-                    },
-                    contract: &contract,
-                    document_type,
-                },
+                info,
                 true,
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("should create alice profile");
+
+        // Check Alice profile
 
         let sql_string = "select * from profile";
         let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
@@ -287,17 +288,28 @@ mod tests {
 
         // Update Alice profile
 
-        let updated_alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e026961766174617255726c781a687474703a2f2f746573742e636f6d2f616c696365322e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
+        document.set("displayName", "alice2".into());
+
+        let info = DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((
+                    &document,
+                    StorageFlags::optional_default_as_cow(),
+                )),
+                owner_id: None,
+            },
+            contract: &contract,
+            document_type: contract
+                .document_type("profile")
+                .expect("profile document exists"),
+        };
 
         drive
-            .update_document_for_contract_cbor(
-                updated_alice_profile_cbor.as_slice(),
-                contract_cbor.as_slice(),
-                "profile",
-                None,
+            .add_document_for_contract(
+                info,
+                true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 None,
                 platform_version,
             )
@@ -312,56 +324,42 @@ mod tests {
 
     #[test]
     fn test_create_and_update_document_in_different_transactions() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let (drive, contract) = setup_dashpay("", true);
+
+        let platform_version = PlatformVersion::latest();
 
         let db_transaction = drive.grove.start_transaction();
 
-        let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
-            .expect("expected to create root tree successfully");
-
-        let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
-
-        let contract = DataContract::from_cbor(contract_cbor.as_slice(), platform_version)
-            .expect("expected to create contract");
-        drive
-            .apply_contract_cbor(
-                contract_cbor.clone(),
-                None,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                Some(&db_transaction),
-                platform_version,
+        let mut document = contract
+            .document_type("profile")
+            .expect("profile document exists")
+            .create_document_from_data(
+                platform_value!({"displayName": "Alice"}),
+                Identifier::random(),
+                random(),
+                &platform_version,
             )
-            .expect("expected to apply contract successfully");
+            .expect("should create document");
 
         // Create Alice profile
 
-        let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
-
-        let alice_profile =
-            Document::from_cbor(alice_profile_cbor.as_slice(), None, None, platform_version)
-                .expect("expected to get a document");
-
-        let document_type = contract
-            .document_type_for_name("profile")
-            .expect("expected to get a document type");
-
-        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        let info = DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((
+                    &document,
+                    StorageFlags::optional_default_as_cow(),
+                )),
+                owner_id: None,
+            },
+            contract: &contract,
+            document_type: contract
+                .document_type("profile")
+                .expect("profile document exists"),
+        };
 
         drive
             .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((&alice_profile, storage_flags)),
-                        owner_id: None,
-                    },
-                    contract: &contract,
-                    document_type,
-                },
+                info,
                 true,
                 BlockInfo::default(),
                 true,
@@ -376,6 +374,8 @@ mod tests {
             .unwrap()
             .expect("should commit transaction");
 
+        // Check Alice profile
+
         let sql_string = "select * from profile";
         let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
             .expect("should build query");
@@ -386,102 +386,93 @@ mod tests {
 
         assert_eq!(results_no_transaction.len(), 1);
 
-        let db_transaction = drive.grove.start_transaction();
-
-        let (results_on_transaction, _, _) = query
-            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
-            .expect("expected to execute query");
-
-        assert_eq!(results_on_transaction.len(), 1);
-
         // Update Alice profile
 
-        let updated_alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e026961766174617255726c781a687474703a2f2f746573742e636f6d2f616c696365322e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
+        let db_transaction = drive.grove.start_transaction();
+
+        document.set("displayName", "alice2".into());
+
+        let info = DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((
+                    &document,
+                    StorageFlags::optional_default_as_cow(),
+                )),
+                owner_id: None,
+            },
+            contract: &contract,
+            document_type: contract
+                .document_type("profile")
+                .expect("profile document exists"),
+        };
 
         drive
-            .update_document_for_contract_cbor(
-                updated_alice_profile_cbor.as_slice(),
-                contract_cbor.as_slice(),
-                "profile",
-                None,
+            .add_document_for_contract(
+                info,
+                true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
                 platform_version,
             )
             .expect("should update alice profile");
 
-        let (results_on_transaction, _, _) = query
-            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
-            .expect("expected to execute query");
-
-        assert_eq!(results_on_transaction.len(), 1);
-
         drive
             .grove
             .commit_transaction(db_transaction)
             .unwrap()
             .expect("should commit transaction");
+
+        let (results_no_transaction, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query");
+
+        assert_eq!(results_no_transaction.len(), 1);
     }
 
     #[test]
     fn test_create_and_update_document_in_different_transactions_with_delete_rollback() {
-        let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let (drive, contract) = setup_dashpay("", true);
+
+        let platform_version = PlatformVersion::latest();
 
         let db_transaction = drive.grove.start_transaction();
 
-        let platform_version = PlatformVersion::latest();
-        drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
-            .expect("expected to create root tree successfully");
-
-        let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
-
-        let contract = DataContract::from_cbor(contract_cbor.as_slice(), platform_version)
-            .expect("expected to create contract");
-        drive
-            .apply_contract_cbor(
-                contract_cbor.clone(),
-                None,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                Some(&db_transaction),
-                platform_version,
+        let mut document = contract
+            .document_type("profile")
+            .expect("profile document exists")
+            .create_document_from_data(
+                platform_value!({"displayName": "Alice"}),
+                Identifier::random(),
+                random(),
+                &platform_version,
             )
-            .expect("expected to apply contract successfully");
+            .expect("should create document");
 
         // Create Alice profile
 
-        let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
-
-        let alice_profile =
-            Document::from_cbor(alice_profile_cbor.as_slice(), None, None, platform_version)
-                .expect("expected to get a document");
-
-        let document_type = contract
-            .document_type_for_name("profile")
-            .expect("expected to get a document type");
-
-        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        let info = DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((
+                    &document,
+                    StorageFlags::optional_default_as_cow(),
+                )),
+                owner_id: None,
+            },
+            contract: &contract,
+            document_type: contract
+                .document_type("profile")
+                .expect("profile document exists"),
+        };
 
         drive
             .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((&alice_profile, storage_flags)),
-                        owner_id: None,
-                    },
-                    contract: &contract,
-                    document_type,
-                },
+                info,
                 true,
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("should create alice profile");
 
@@ -490,6 +481,8 @@ mod tests {
             .commit_transaction(db_transaction)
             .unwrap()
             .expect("should commit transaction");
+
+        // Check Alice profile
 
         let sql_string = "select * from profile";
         let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
@@ -500,6 +493,8 @@ mod tests {
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
+
+        // Delete and then rollback the deletion of Alice profile
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -511,7 +506,7 @@ mod tests {
 
         drive
             .delete_document_for_contract(
-                alice_profile.id().to_buffer(),
+                document.id().to_buffer(),
                 &contract,
                 "profile",
                 BlockInfo::default(),
@@ -540,21 +535,44 @@ mod tests {
 
         // Update Alice profile
 
-        let updated_alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e026961766174617255726c781a687474703a2f2f746573742e636f6d2f616c696365322e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
+        document.set("displayName", "alice2".into());
+
+        let info = DocumentAndContractInfo {
+            owned_document_info: OwnedDocumentInfo {
+                document_info: DocumentRefInfo((
+                    &document,
+                    StorageFlags::optional_default_as_cow(),
+                )),
+                owner_id: None,
+            },
+            contract: &contract,
+            document_type: contract
+                .document_type("profile")
+                .expect("profile document exists"),
+        };
 
         drive
-            .update_document_for_contract_cbor(
-                updated_alice_profile_cbor.as_slice(),
-                contract_cbor.as_slice(),
-                "profile",
-                None,
+            .add_document_for_contract(
+                info,
+                true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
                 platform_version,
             )
             .expect("should update alice profile");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("should commit transaction");
+
+        let (results_no_transaction, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query");
+
+        assert_eq!(results_no_transaction.len(), 1);
     }
 
     #[test]
@@ -635,7 +653,7 @@ mod tests {
             .expect("expected to make document");
 
         let document_type = contract
-            .document_type_for_name("indexedDocument")
+            .document_type("indexedDocument")
             .expect("expected to get a document type");
         drive
             .add_document_for_contract(
@@ -735,8 +753,7 @@ mod tests {
 
         let document_type = contract
             .document_type("contactRequest")
-            .expect("expected to get document type")
-            .as_ref();
+            .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -825,7 +842,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type_for_name("profile")
+            .document_type("profile")
             .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
@@ -937,7 +954,7 @@ mod tests {
         };
 
         let document_type = contract
-            .document_type_for_name("person")
+            .document_type("person")
             .expect("expected to get document type");
 
         let value = platform_value::to_value(&person_0_original).expect("person into value");
@@ -1646,7 +1663,7 @@ mod tests {
         platform_version: &PlatformVersion,
     ) -> FeeResult {
         let document_type = contract
-            .document_type_for_name("person")
+            .document_type("person")
             .expect("expected to get document type");
 
         let value = platform_value::to_value(person).expect("person into value");
@@ -1916,7 +1933,7 @@ mod tests {
 
         let document_type = document_factory
             .data_contract()
-            .document_type_for_name(document_type_name.as_str())
+            .document_type(document_type_name.as_str())
             .expect("expected document type");
 
         let mut document = document_factory

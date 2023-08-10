@@ -4,7 +4,7 @@ use rand::SeedableRng;
 use platform_value::{platform_value, Value};
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::document::document_factory::DocumentFactory;
 use crate::document::Document;
 use crate::version::PlatformVersion;

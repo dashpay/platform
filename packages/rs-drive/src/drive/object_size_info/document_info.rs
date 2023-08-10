@@ -7,7 +7,7 @@ use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};

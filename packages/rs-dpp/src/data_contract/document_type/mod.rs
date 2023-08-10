@@ -16,7 +16,7 @@ mod validation;
 pub use enrich_with_base_schema::*;
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
 use crate::prelude::Revision;

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::platform_value::Value;
@@ -44,7 +45,7 @@ impl Drive {
 
         let document_type = contract_fetch_info
             .contract
-            .document_type_for_name(withdrawal::NAME)?;
+            .document_type(withdrawal::NAME)?;
 
         let mut where_clauses = BTreeMap::new();
 
@@ -123,7 +124,7 @@ impl Drive {
 
         let document_type = contract_fetch_info
             .contract
-            .document_type_for_name(withdrawal::NAME)?;
+            .document_type(withdrawal::NAME)?;
 
         let mut where_clauses = BTreeMap::new();
 
@@ -190,6 +191,7 @@ mod tests {
 
     mod fetch_withdrawal_documents_by_status {
         use super::*;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
         use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
@@ -242,7 +244,7 @@ mod tests {
             .expect("expected withdrawal document");
 
             let document_type = data_contract
-                .document_type_for_name(withdrawal::NAME)
+                .document_type(withdrawal::NAME)
                 .expect("expected to get document type");
 
             setup_document(
@@ -300,6 +302,7 @@ mod tests {
     }
 
     mod find_document_by_transaction_id {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::document::DocumentV0Getters;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::{platform_value, Bytes32};
@@ -346,7 +349,7 @@ mod tests {
             .expect("expected to get withdrawal document");
 
             let document_type = data_contract
-                .document_type_for_name(withdrawal::NAME)
+                .document_type(withdrawal::NAME)
                 .expect("expected to get document type");
 
             setup_document(

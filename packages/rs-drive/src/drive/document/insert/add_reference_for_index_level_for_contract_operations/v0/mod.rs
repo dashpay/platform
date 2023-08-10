@@ -14,7 +14,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::DocumentV0Getters;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;

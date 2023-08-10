@@ -27,6 +27,10 @@ impl IndexLevel {
         &self.sub_index_levels
     }
 
+    pub fn has_index_with_uniqueness(&self) -> Option<bool> {
+        self.has_index_with_uniqueness
+    }
+
     /// Checks whether the given `rhs` IndexLevel is a subset of the current IndexLevel (`self`).
     ///
     /// A level is considered a subset if:

@@ -6,6 +6,7 @@ use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -51,7 +52,7 @@ impl Drive {
 
         let contract = &contract_fetch_info.contract;
 
-        let document_type = contract.document_type_for_name(document_type)?;
+        let document_type = contract.document_type(document_type)?;
 
         let document = Document::from_bytes(serialized_document, document_type, platform_version)?;
 

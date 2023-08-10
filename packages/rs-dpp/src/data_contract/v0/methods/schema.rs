@@ -34,7 +34,7 @@ impl DataContractMethodsV0 for DataContractV0 {
         schema: Value,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
-        let document_type = DocumentTypeV0::from_platform_value(
+        let document_type = DocumentType::try_from_schema(
             self.id,
             name,
             schema,
@@ -45,7 +45,7 @@ impl DataContractMethodsV0 for DataContractV0 {
         )?;
 
         self.document_types
-            .insert(document_type.name.clone(), document_type.into());
+            .insert(document_type.name().clone(), document_type);
 
         Ok(())
     }

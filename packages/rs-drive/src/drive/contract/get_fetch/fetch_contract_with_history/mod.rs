@@ -88,12 +88,13 @@ mod tests {
     use crate::error::Error;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::config::v0::{
         DataContractConfigGettersV0, DataContractConfigSettersV0,
     };
-    use dpp::data_contract::DataContract;
-    use dpp::platform_value::platform_value;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::{DataContract, DataContractMethodsV0};
+    use dpp::platform_value::{platform_value, ValueMapHelper};
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::PlatformVersion;
     use serde_json::json;
@@ -123,7 +124,7 @@ mod tests {
         n: u64,
         platform_version: &PlatformVersion,
     ) {
-        let updated_document_template = json!({
+        let updated_document_template = platform_value!({
             "type": "object",
             "properties": {
                 "name": {
@@ -144,20 +145,21 @@ mod tests {
         for i in 0..n {
             let mut updated_document = updated_document_template.clone();
             updated_document
-                .as_object_mut()
+                .to_map_mut()
                 .expect("document to be an object")
-                .get_mut("properties")
+                .get_key_mut("properties")
                 .expect("properties to be present")
-                .as_object_mut()
+                .to_map_mut()
                 .expect("properties to be an object")
-                .insert(
+                .insert_string_key_value(
                     format!("newProp{}", i),
-                    json!({"type": "integer", "minimum": 0}),
+                    platform_value!({"type": "integer", "minimum": 0}),
                 );
 
             data_contract
-                .set_document_json_schema("niceDocument".into(), updated_document, platform_version)
+                .set_document_schema("niceDocument", updated_document, platform_version)
                 .expect("to be able to set document schema");
+
             data_contract.increment_version();
 
             apply_contract(
@@ -201,23 +203,26 @@ mod tests {
     }
 
     pub fn assert_property_exists(data_contract: &DataContract, property: &str) {
-        let updated_document = data_contract
-            .document_json_schema("niceDocument")
-            .expect("to get document schema");
-        let updated_document = updated_document.as_object().expect("to be an object");
-        let properties = updated_document
-            .get("properties")
+        let document_schema = data_contract
+            .document_type("niceDocument")
+            .expect("document should exist")
+            .schema_owned();
+
+        let document_schema_map = document_schema.to_map().expect("to be an object");
+
+        let properties = document_schema_map
+            .get_key("properties")
             .expect("to have properties")
-            .as_object()
+            .to_map()
             .expect("properties to be an object");
 
         let property_keys = properties
-            .keys()
-            .map(|key| key.to_string())
+            .iter()
+            .map(|(key, _)| key.to_string())
             .collect::<Vec<String>>();
 
         assert!(
-            properties.contains_key(property),
+            properties.get_optional_key(property).is_some(),
             "expect property {} to exist. Instead found properties {:?}",
             property,
             property_keys
@@ -609,7 +614,7 @@ mod tests {
         let contract_id = if test_case.query_non_existent_contract_id {
             [0u8; 32]
         } else {
-            *data_contract.id().as_bytes()
+            *data_contract.id_ref().as_bytes()
         };
         let original_data_contract = setup_history_test_with_n_updates(
             data_contract,

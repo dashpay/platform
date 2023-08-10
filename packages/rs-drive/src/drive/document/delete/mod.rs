@@ -182,8 +182,7 @@ mod tests {
 
         let document_type = contract
             .document_type("person")
-            .expect("expected to get document type")
-            .as_ref();
+            .expect("expected to get document type");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -379,8 +378,7 @@ mod tests {
 
         let document_type = contract
             .document_type("person")
-            .expect("expected to get a document type")
-            .as_ref();
+            .expect("expected to get a document type");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -601,8 +599,7 @@ mod tests {
 
         let document_type = contract
             .document_type("person")
-            .expect("expected to get document type")
-            .as_ref();
+            .expect("expected to get document type");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
 

@@ -5,6 +5,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
@@ -37,7 +38,7 @@ impl Drive {
             Some(HashMap::new())
         };
 
-        let document_type = contract.document_type_for_name(document_type_name)?;
+        let document_type = contract.document_type(document_type_name)?;
 
         let document_info =
             DocumentRefAndSerialization((document, serialized_document, storage_flags));

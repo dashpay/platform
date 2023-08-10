@@ -1,7 +1,6 @@
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
@@ -16,6 +15,7 @@ use chrono::Utc;
 use platform_value::{Bytes32, Identifier, Value};
 use std::collections::BTreeMap;
 
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 #[cfg(feature = "extended-document")]
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;

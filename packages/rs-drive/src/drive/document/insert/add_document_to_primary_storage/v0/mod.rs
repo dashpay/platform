@@ -51,7 +51,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::fee_result::FeeResult;
@@ -252,7 +252,7 @@ impl Drive {
             {
                 let document_id_in_primary_path =
                     contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
-                        contract.id().as_bytes(),
+                        contract.id_ref().as_bytes(),
                         document_type,
                     );
                 let reference_max_size =

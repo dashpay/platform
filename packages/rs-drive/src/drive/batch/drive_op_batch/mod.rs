@@ -389,8 +389,7 @@ mod tests {
                 contract: &contract,
                 document_type: contract
                     .document_type("contactRequest")
-                    .expect("expected to get document type")
-                    .as_ref(),
+                    .expect("expected to get document type"),
             },
             override_document: false,
         }));
@@ -457,8 +456,7 @@ mod tests {
 
         let document_type = contract
             .document_type("contactRequest")
-            .expect("expected to get document type")
-            .as_ref();
+            .expect("expected to get document type");
 
         drive_operations.push(DataContractOperation(ApplyContract {
             contract: Cow::Borrowed(&contract),

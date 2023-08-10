@@ -1,8 +1,8 @@
 mod v0;
 
+use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DocumentName;
-use crate::prelude::DataContract;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
@@ -46,7 +46,7 @@ impl DocumentType {
             .contract_class_method_versions
             .create_document_types_from_document_schemas
         {
-            0 => Self::create_document_types_from_document_schemas_v0(
+            0 => DocumentTypeV0::create_document_types_from_document_schemas_v0(
                 data_contract_id,
                 document_schemas,
                 schema_defs,

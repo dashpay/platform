@@ -18,6 +18,12 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
+    fn id_ref(&self) -> &Identifier {
+        match self {
+            DataContract::V0(v0) => v0.id_ref(),
+        }
+    }
+
     fn version(&self) -> u32 {
         match self {
             DataContract::V0(v0) => v0.version(),

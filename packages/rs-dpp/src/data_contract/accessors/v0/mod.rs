@@ -10,6 +10,8 @@ pub trait DataContractV0Getters {
     /// Returns the unique identifier for the data contract.
     fn id(&self) -> Identifier;
 
+    fn id_ref(&self) -> &Identifier;
+
     /// Returns the version of this data contract.
     fn version(&self) -> u32;
 

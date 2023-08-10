@@ -41,8 +41,9 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;

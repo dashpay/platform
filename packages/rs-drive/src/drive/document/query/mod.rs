@@ -39,6 +39,7 @@ pub use query_documents::*;
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 #[cfg(feature = "fixtures-and-mocks")]
 #[cfg(feature = "fixtures-and-mocks")]
 use grovedb::TransactionArg;
@@ -133,7 +134,7 @@ impl Drive {
     pub fn query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
         &self,
         query_cbor: &[u8],
-        contract_cbor: &[u8],
+        contract: &DataContract,
         document_type_name: String,
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
@@ -141,12 +142,11 @@ impl Drive {
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let contract = DataContract::from_cbor(contract_cbor, platform_version)?;
         //todo cbor cost
-        let document_type = contract.document_type_for_name(document_type_name.as_str())?;
+        let document_type = contract.document_type(document_type_name.as_str())?;
 
         let (items, skipped) = self.query_documents_for_cbor_query_internal(
-            &contract,
+            contract,
             document_type,
             query_cbor,
             transaction,
@@ -194,9 +194,7 @@ impl Drive {
             .ok_or(Error::Query(QuerySyntaxError::DataContractNotFound(
                 "contract not found",
             )))?;
-        let document_type = contract
-            .contract
-            .document_type_for_name(document_type_name)?;
+        let document_type = contract.contract.document_type(document_type_name)?;
         let items = self.query_proof_of_documents_using_cbor_encoded_query(
             &contract.contract,
             document_type,
@@ -393,9 +391,7 @@ impl Drive {
             .ok_or(Error::Query(QuerySyntaxError::DataContractNotFound(
                 "contract not found",
             )))?;
-        let document_type = contract
-            .contract
-            .document_type_for_name(document_type_name)?;
+        let document_type = contract.contract.document_type(document_type_name)?;
 
         let query =
             DriveQuery::from_cbor(query_cbor, &contract.contract, document_type, &self.config)?;

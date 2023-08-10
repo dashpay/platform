@@ -1,9 +1,10 @@
 use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
+use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use std::collections::{BTreeMap, BTreeSet};
 
-impl DocumentType {
+impl DocumentTypeV0 {
     pub(super) fn find_identifier_and_binary_paths_v0(
         properties: &BTreeMap<String, DocumentProperty>,
     ) -> (BTreeSet<String>, BTreeSet<String>) {

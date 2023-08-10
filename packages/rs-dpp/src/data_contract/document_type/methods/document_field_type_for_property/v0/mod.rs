@@ -1,5 +1,5 @@
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::property::DocumentPropertyType;
-use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::{DocumentTypeV0, DEFAULT_HASH_SIZE};
 
 impl DocumentTypeV0 {

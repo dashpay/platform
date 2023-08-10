@@ -28,7 +28,7 @@ impl Drive {
             drive_version,
         )?;
 
-        let document_type_count = contract.documents()?.len() as u32;
+        let document_type_count = contract.document_types().len() as u32;
 
         // we only store the owner_id storage
         let storage_flags = if contract.config().can_be_deleted() {
@@ -38,7 +38,7 @@ impl Drive {
         };
 
         estimated_costs_only_with_layer_info.insert(
-            KeyInfoPath::from_known_path(contract_root_path(contract.id().as_bytes())),
+            KeyInfoPath::from_known_path(contract_root_path(contract.id_ref().as_bytes())),
             EstimatedLayerInformation {
                 is_sum_tree: false,
                 estimated_layer_count: EstimatedLevel(1, false),
@@ -47,7 +47,7 @@ impl Drive {
         );
 
         estimated_costs_only_with_layer_info.insert(
-            KeyInfoPath::from_known_path(contract_documents_path(contract.id().as_bytes())),
+            KeyInfoPath::from_known_path(contract_documents_path(contract.id_ref().as_bytes())),
             EstimatedLayerInformation {
                 is_sum_tree: false,
                 estimated_layer_count: ApproximateElements(document_type_count),

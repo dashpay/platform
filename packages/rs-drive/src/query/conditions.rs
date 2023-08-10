@@ -42,7 +42,7 @@ use WhereOperator::{
 
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::Document;

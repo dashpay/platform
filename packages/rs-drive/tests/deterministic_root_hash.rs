@@ -66,7 +66,7 @@ use drive::drive::{Drive, RootTree};
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentCborMethodsV0;
 use dpp::version::PlatformVersion;
@@ -153,7 +153,7 @@ pub fn add_domains_to_contract(
         let document = Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
             .expect("document should be properly deserialized");
         let document_type = contract
-            .document_type_for_name("domain")
+            .document_type("domain")
             .expect("expected to get document type");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));

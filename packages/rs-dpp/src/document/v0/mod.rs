@@ -24,7 +24,6 @@ use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
-use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use crate::document::document_methods::{

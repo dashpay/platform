@@ -130,6 +130,7 @@ pub struct DocumentTypeVersions {
     pub create_document_from_data: FeatureVersion,
     pub max_size: FeatureVersion,
     pub estimated_size: FeatureVersion,
+    pub try_from_schema: FeatureVersion,
     pub create_document_with_prevalidated_properties: FeatureVersion,
     pub top_level_indices: FeatureVersion,
     pub document_field_for_property: FeatureVersion,

@@ -1,5 +1,6 @@
 use crate::data_contract::document_type::property::array::ArrayItemType;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
+use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::util::json_schema::resolve_uri;
@@ -8,7 +9,7 @@ use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveF
 use platform_value::{Value, ValueMapHelper};
 use std::collections::{BTreeMap, BTreeSet};
 
-impl DocumentType {
+impl DocumentTypeV0 {
     pub(super) fn insert_values_nested_v0(
         document_properties: &mut BTreeMap<String, DocumentProperty>,
         known_required: &BTreeSet<String>,

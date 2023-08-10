@@ -6,7 +6,7 @@ use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
-impl DocumentType {
+impl DocumentTypeV0 {
     pub(in crate::data_contract) fn create_document_types_from_document_schemas_v0(
         data_contract_id: Identifier,
         document_schemas: BTreeMap<DocumentName, Value>,
@@ -24,7 +24,7 @@ impl DocumentType {
                 .document_type_versions
                 .document_type_structure_version
             {
-                0 => DocumentType::V0(DocumentTypeV0::from_platform_value(
+                0 => DocumentType::try_from_schema(
                     data_contract_id,
                     &name,
                     schema,
@@ -32,7 +32,7 @@ impl DocumentType {
                     documents_keep_history_contract_default,
                     documents_mutable_contract_default,
                     platform_version,
-                )?),
+                )?,
                 version => {
                     return Err(ProtocolError::UnknownVersionMismatch {
                         method: "get_document_types_from_value_array_v0 inner document type"

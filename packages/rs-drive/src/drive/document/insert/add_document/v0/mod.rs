@@ -4,6 +4,7 @@ use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::version::drive_versions::DriveVersion;
@@ -38,7 +39,7 @@ impl Drive {
 
         let contract = &contract_fetch_info.contract;
 
-        let document_type = contract.document_type_for_name(document_type_name)?;
+        let document_type = contract.document_type(document_type_name)?;
 
         let document_and_contract_info = DocumentAndContractInfo {
             owned_document_info,

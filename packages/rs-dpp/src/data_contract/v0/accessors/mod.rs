@@ -15,6 +15,10 @@ impl DataContractV0Getters for DataContractV0 {
         self.id
     }
 
+    fn id_ref(&self) -> &Identifier {
+        &self.id
+    }
+
     fn version(&self) -> u32 {
         self.version
     }

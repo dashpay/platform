@@ -89,7 +89,7 @@ mod tests {
 
     mod get {
         use super::*;
-        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
         use dpp::version::PlatformVersion;
 
         #[test]
