@@ -17,7 +17,7 @@ extern crate core;
 pub mod errors;
 mod identifier;
 mod identity;
-// mod metadata;
+mod metadata;
 // mod state_repository;
 // mod state_transition;
 // mod version;

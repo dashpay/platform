@@ -218,8 +218,8 @@ impl From<IdentityPublicKey> for IdentityPublicKeyWasm {
 //     }
 // }
 //
-// impl From<IdentityPublicKeyWasm> for IdentityPublicKey {
-//     fn from(pk: IdentityPublicKeyWasm) -> Self {
-//         pk.0
-//     }
-// }
+impl From<IdentityPublicKeyWasm> for IdentityPublicKey {
+    fn from(pk: IdentityPublicKeyWasm) -> Self {
+        pk.0
+    }
+}
