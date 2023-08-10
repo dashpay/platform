@@ -85,10 +85,9 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::DataContract;
 
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 #[cfg(all(
     feature = "fixtures-and-mocks",
-    feature = "data-contract-cbor-conversions"
+    feature = "data-contract-cbor-conversion"
 ))]
 use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 use dpp::document::serialization_traits::DocumentCborMethodsV0;
@@ -143,7 +142,6 @@ mod tests {
     use std::option::Option::None;
 
     use super::*;
-    use dpp::data_contract::extra::common::json_document_to_document;
     use rand::Rng;
     use tempfile::TempDir;
 
@@ -154,9 +152,11 @@ mod tests {
     use crate::drive::Drive;
     use crate::fee::op::LowLevelDriveOperation;
     use dpp::block::epoch::Epoch;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::document::serialization_traits::DocumentCborMethodsV0;
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use dpp::tests::json_document::json_document_to_document;
     use dpp::version::PlatformVersion;
 
     #[test]
@@ -168,8 +168,9 @@ mod tests {
         let platform_version = PlatformVersion::first();
 
         let document_type = dashpay
-            .document_type_for_name("contactRequest")
-            .expect("expected to get document type");
+            .document_type("contactRequest")
+            .expect("expected to get document type")
+            .as_ref();
 
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",

@@ -40,7 +40,6 @@ use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::block::epoch::Epoch;
 #[cfg(feature = "fixtures-and-mocks")]
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 #[cfg(feature = "fixtures-and-mocks")]
 use grovedb::TransactionArg;
 
@@ -56,7 +55,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::query::DriveQuery;
 #[cfg(all(
     feature = "fixtures-and-mocks",
-    feature = "data-contract-cbor-conversions"
+    feature = "data-contract-cbor-conversion"
 ))]
 use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 #[cfg(feature = "fixtures-and-mocks")]

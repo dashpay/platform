@@ -7,23 +7,24 @@ pub mod methods;
 pub use index::*;
 mod index_level;
 pub use index_level::IndexLevel;
+mod enrich_with_base_schema;
 #[cfg(feature = "random-documents")]
 pub mod random_document;
 pub mod v0;
 #[cfg(feature = "validation")]
 mod validation;
+pub use enrich_with_base_schema::*;
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
-use crate::data_contract::PropertyPath;
 use crate::document::Document;
 use crate::prelude::Revision;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 pub(self) mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";

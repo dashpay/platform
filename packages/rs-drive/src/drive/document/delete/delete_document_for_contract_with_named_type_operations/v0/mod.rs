@@ -21,7 +21,6 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;

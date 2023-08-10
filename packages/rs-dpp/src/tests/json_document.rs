@@ -1,9 +1,10 @@
-use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
+#[cfg(feature = "data-contract-value-conversion")]
+use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 #[cfg(any(feature = "state-transitions", feature = "factories"))]
 use crate::data_contract::created_data_contract::v0::CreatedDataContractV0;
 #[cfg(any(feature = "state-transitions", feature = "factories"))]
 use crate::data_contract::created_data_contract::CreatedDataContract;
-use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::DataContract;
@@ -59,30 +60,27 @@ pub fn json_document_to_cbor(
 }
 
 /// Reads a JSON file and converts it a contract.
+#[cfg(feature = "data-contract-value-conversion")]
 pub fn json_document_to_contract(
     path: impl AsRef<Path>,
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
-    let file = File::open(path.as_ref()).map_err(|_| {
-        ProtocolError::FileNotFound(format!(
-            "file not found at path {}",
-            path.as_ref().to_str().unwrap()
-        ))
-    })?;
-    let reader = BufReader::new(file);
-    let data_contract_value: serde_json::Value = serde_json::from_reader(reader).map_err(|e| {
-        ProtocolError::DecodingError(format!("error decoding contract from document {e}"))
-    })?;
-    DataContract::from_json_object(data_contract_value, platform_version)
+    let value = json_document_to_platform_value(path)?;
+
+    DataContract::from_object(value, platform_version)
 }
 
-#[cfg(feature = "state-transitions")]
+#[cfg(all(
+    any(feature = "state-transitions", feature = "factories"),
+    feature = "data-contract-value-conversion"
+))]
 /// Reads a JSON file and converts it a contract.
 pub fn json_document_to_created_contract(
     path: impl AsRef<Path>,
     platform_version: &PlatformVersion,
 ) -> Result<CreatedDataContract, ProtocolError> {
     let data_contract = json_document_to_contract(path, platform_version)?;
+
     Ok(CreatedDataContractV0 {
         data_contract,
         entropy_used: Default::default(),
@@ -91,6 +89,7 @@ pub fn json_document_to_created_contract(
 }
 
 /// Reads a JSON file and converts it a document.
+#[cfg(feature = "data-contract-value-conversion")]
 pub fn json_document_to_contract_with_ids(
     path: impl AsRef<Path>,
     id: Option<Identifier>,
@@ -98,15 +97,18 @@ pub fn json_document_to_contract_with_ids(
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
     let mut value = json_document_to_platform_value(path)?;
+
     if let Some(id) = id {
         value.set_value("$id", platform_value::Value::Identifier(id.into_buffer()))?;
     }
+
     if let Some(owner_id) = owner_id {
         value.set_value(
             "$ownerId",
             platform_value::Value::Identifier(owner_id.into_buffer()),
         )?;
     }
+
     DataContract::from_object(value, platform_version)
 }
 
@@ -117,9 +119,10 @@ pub fn json_document_to_document(
     document_type: DocumentTypeRef,
     platform_version: &PlatformVersion,
 ) -> Result<Document, ProtocolError> {
-    let mut value = json_document_to_platform_value(path)?;
+    let mut data = json_document_to_platform_value(path)?;
+
     if let Some(owner_id) = owner_id {
-        value.set_value(
+        data.set_value(
             "$ownerId",
             platform_value::Value::Identifier(owner_id.into_buffer()),
         )?;

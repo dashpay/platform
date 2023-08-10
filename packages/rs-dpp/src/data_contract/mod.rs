@@ -43,7 +43,7 @@ pub mod config;
 pub use v0::*;
 
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-#[cfg(feature = "data-contract-value-conversions")]
+#[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::serialized_version::{

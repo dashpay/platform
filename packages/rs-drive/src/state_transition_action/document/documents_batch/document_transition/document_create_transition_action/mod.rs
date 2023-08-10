@@ -13,7 +13,6 @@ use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 
 pub use v0::*;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
 use dpp::version::{FeatureVersion, PlatformVersion};

@@ -1,10 +1,12 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use crate::data_contract::errors::DataContractError;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
+use crate::ProtocolError;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 
@@ -21,8 +23,18 @@ impl DataContractV0Getters for DataContractV0 {
         self.owner_id
     }
 
-    fn document_type(&self, name: &str) -> Option<&DocumentType> {
-        self.document_types.get(name)
+    fn document_type(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError> {
+        self.document_type_opt(name).ok_or_else(|| {
+            ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
+                "can not get document type from contract",
+            ))
+        })
+    }
+
+    fn document_type_opt(&self, name: &str) -> Option<DocumentTypeRef> {
+        self.document_types
+            .get(name)
+            .map(|document_type| document_type.as_ref())
     }
 
     fn has_document_type(&self, name: &str) -> bool {

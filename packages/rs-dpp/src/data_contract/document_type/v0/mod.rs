@@ -8,13 +8,14 @@ use crate::consensus::basic::data_contract::{
     UniqueIndicesLimitReachedError,
 };
 use crate::consensus::ConsensusError;
+use crate::data_contract::document_type::enrich_with_base_schema::enrich_with_base_schema;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validation::{
-    byte_array_has_no_items_as_parent_validator, enrich_with_base_schema,
-    pattern_is_valid_regex_validator, traversal_validator, validate_data_contract_max_depth,
+    byte_array_has_no_items_as_parent_validator, pattern_is_valid_regex_validator,
+    traversal_validator, validate_data_contract_max_depth,
 };
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;

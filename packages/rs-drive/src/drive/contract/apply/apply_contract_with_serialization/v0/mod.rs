@@ -14,6 +14,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::DataContract;
 
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::serialization::PlatformDeserializableFromVersionedStructure;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;

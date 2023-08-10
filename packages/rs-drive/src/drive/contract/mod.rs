@@ -65,7 +65,6 @@ pub const MAX_CONTRACT_HISTORY_FETCH_LIMIT: u16 = 10;
 #[cfg(test)]
 mod tests {
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
     use rand::Rng;
     use std::borrow::Cow;
     use std::option::Option::None;
@@ -78,9 +77,9 @@ mod tests {
     };
     use crate::drive::Drive;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
-    use dpp::data_contract::extra::common::json_document_to_contract;
     use dpp::data_contract::DataContract;
     use dpp::document::DocumentV0Getters;
+    use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
 

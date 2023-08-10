@@ -1,7 +1,8 @@
 use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
+use crate::ProtocolError;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 
@@ -16,7 +17,9 @@ pub trait DataContractV0Getters {
     fn owner_id(&self) -> Identifier;
 
     /// Returns the document type for the given document name.
-    fn document_type(&self, name: &str) -> Option<&DocumentType>;
+    fn document_type(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError>;
+
+    fn document_type_opt(&self, name: &str) -> Option<DocumentTypeRef>;
 
     fn has_document_type(&self, name: &str) -> bool;
 

@@ -11,5 +11,8 @@ mod data_contract;
 mod document;
 #[cfg(test)]
 mod identity;
+
+pub mod json_document;
+pub mod mocks;
 #[cfg(test)]
 mod version;

@@ -159,7 +159,7 @@ impl Drive {
         )?;
 
         // the documents
-        let contract_root_path = paths::contract_root_path(contract.id_ref().as_bytes());
+        let contract_root_path = paths::contract_root_path(contract.id().as_bytes());
         let key_info = Key(vec![1]);
         self.batch_insert_empty_tree(
             contract_root_path,
@@ -172,7 +172,7 @@ impl Drive {
         // next we should store each document type
         // right now we are referring them by name
         // toDo: change this to be a reference by index
-        let contract_documents_path = contract_documents_path(contract.id_ref().as_bytes());
+        let contract_documents_path = contract_documents_path(contract.id().as_bytes());
 
         for (type_key, document_type) in contract.document_types().iter() {
             self.batch_insert_empty_tree(

@@ -107,9 +107,7 @@ impl DocumentFactoryV0 {
 
         let document_type = self
             .data_contract
-            .document_type(document_type_name.as_str())
-            .ok_or_else(|| ProtocolError::Error(anyhow!("invalid document type")))?
-            .as_ref();
+            .document_type(document_type_name.as_str())?;
 
         document_type.create_document_from_data(data, owner_id, document_entropy, platform_version)
     }

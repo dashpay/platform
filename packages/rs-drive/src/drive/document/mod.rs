@@ -239,8 +239,8 @@ pub(crate) mod tests {
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::extra::common::json_document_to_contract;
     use dpp::prelude::DataContract;
+    use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
 

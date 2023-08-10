@@ -89,11 +89,9 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
     use dpp::data_contract::config::v0::{
         DataContractConfigGettersV0, DataContractConfigSettersV0,
     };
-    use dpp::data_contract::schema::DataContractDocumentSchemaMethodsV0;
     use dpp::data_contract::DataContract;
     use dpp::platform_value::platform_value;
     use dpp::tests::fixtures::get_data_contract_fixture;

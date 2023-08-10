@@ -7,7 +7,7 @@ use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -197,7 +197,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 let contract =
                     DataContract::versioned_deserialize(serialized_contract, platform_version)?;
 
-                let document_type = contract.document_type_for_name(document_type_name)?;
+                let document_type = contract.document_type(document_type_name)?;
 
                 let document =
                     Document::from_bytes(serialized_document, document_type, platform_version)?;
@@ -231,7 +231,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 override_document,
                 storage_flags,
             } => {
-                let document_type = contract.document_type_for_name(document_type_name)?;
+                let document_type = contract.document_type(document_type_name)?;
 
                 let document =
                     Document::from_bytes(serialized_document, document_type, platform_version)?;
@@ -277,7 +277,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
 
                 let contract = &contract_fetch_info.contract;
 
-                let document_type = contract.document_type_for_name(document_type_name.as_str())?;
+                let document_type = contract.document_type(document_type_name.as_str())?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,
@@ -301,7 +301,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
             } => {
                 let contract = &drive.system_contracts.withdrawal_contract;
 
-                let document_type = contract.document_type_for_name(withdrawal::NAME)?;
+                let document_type = contract.document_type(withdrawal::NAME)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,
@@ -377,7 +377,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 owner_id,
                 storage_flags,
             } => {
-                let document_type = contract.document_type_for_name(document_type_name)?;
+                let document_type = contract.document_type(document_type_name)?;
 
                 let document =
                     Document::from_bytes(serialized_document, document_type, platform_version)?;
@@ -413,7 +413,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 let document_info =
                     DocumentRefAndSerialization((document, serialized_document, storage_flags));
 
-                let document_type = contract.document_type_for_name(document_type_name)?;
+                let document_type = contract.document_type(document_type_name)?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
@@ -523,7 +523,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
 
                 let contract = &contract_fetch_info.contract;
 
-                let document_type = contract.document_type_for_name(document_type_name.as_str())?;
+                let document_type = contract.document_type(document_type_name.as_str())?;
 
                 let document_and_contract_info = DocumentAndContractInfo {
                     owned_document_info,

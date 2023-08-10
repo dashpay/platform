@@ -173,11 +173,10 @@ mod tests {
 
     use super::*;
 
-    use dpp::data_contract::extra::common::{json_document_to_contract, json_document_to_document};
-
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::serialization::PlatformSerializableWithPlatformVersion;
+    use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
     use dpp::util::cbor_serializer;
     use rand::Rng;
     use serde_json::json;
@@ -222,7 +221,7 @@ mod tests {
         .expect("expected to get contract");
 
         let _document_type = contract
-            .document_type_for_name("contactRequest")
+            .document_type("contactRequest")
             .expect("expected to get document type");
 
         drive_operations.push(DataContractOperation(ApplyContract {
@@ -233,7 +232,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document_type = contract
-            .document_type_for_name("contactRequest")
+            .document_type("contactRequest")
             .expect("expected to get document type");
 
         let dashpay_cr_document = json_document_to_document(
@@ -340,7 +339,7 @@ mod tests {
         .expect("expected to get contract");
 
         let document_type = contract
-            .document_type_for_name("contactRequest")
+            .document_type("contactRequest")
             .expect("expected to get document type");
 
         drive_operations.push(DataContractOperation(ApplyContract {
@@ -365,7 +364,7 @@ mod tests {
                 },
                 contract: &contract,
                 document_type: contract
-                    .document_type_for_name("contactRequest")
+                    .document_type("contactRequest")
                     .expect("expected to get document type"),
             },
             override_document: false,
@@ -389,8 +388,9 @@ mod tests {
                 },
                 contract: &contract,
                 document_type: contract
-                    .document_type_for_name("contactRequest")
-                    .expect("expected to get document type"),
+                    .document_type("contactRequest")
+                    .expect("expected to get document type")
+                    .as_ref(),
             },
             override_document: false,
         }));
@@ -456,8 +456,9 @@ mod tests {
         .expect("expected to get contract");
 
         let document_type = contract
-            .document_type_for_name("contactRequest")
-            .expect("expected to get document type");
+            .document_type("contactRequest")
+            .expect("expected to get document type")
+            .as_ref();
 
         drive_operations.push(DataContractOperation(ApplyContract {
             contract: Cow::Borrowed(&contract),
@@ -598,7 +599,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type_for_name("person")
+            .document_type("person")
             .expect("expected to get document type");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
@@ -719,7 +720,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type_for_name("person")
+            .document_type("person")
             .expect("expected to get document type");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
@@ -946,7 +947,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type_for_name("person")
+            .document_type("person")
             .expect("expected to get document type");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();

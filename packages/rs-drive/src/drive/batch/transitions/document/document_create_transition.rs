@@ -10,7 +10,6 @@ use dpp::block::epoch::Epoch;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
 use std::borrow::Cow;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0, DocumentFromCreateTransition};
 use dpp::version::PlatformVersion;

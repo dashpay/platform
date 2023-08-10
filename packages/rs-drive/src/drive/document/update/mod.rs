@@ -101,7 +101,6 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::error::document::DocumentError;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 
@@ -141,8 +140,7 @@ mod tests {
     use crate::query::DriveQuery;
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
-    use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
-    use dpp::data_contract::extra::common::json_document_to_document;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::document::serialization_traits::{
         DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
     };
@@ -151,6 +149,7 @@ mod tests {
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::platform_value;
     use dpp::serialization::PlatformSerializable;
+    use dpp::tests::json_document::json_document_to_document;
     use dpp::util::cbor_serializer;
     use dpp::version::drive_versions::DriveVersion;
 
@@ -735,8 +734,9 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type_for_name("contactRequest")
-            .expect("expected to get document type");
+            .document_type("contactRequest")
+            .expect("expected to get document type")
+            .as_ref();
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 

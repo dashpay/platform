@@ -8,7 +8,7 @@ use platform_value::{Value, ValueMap, ValueMapHelper};
 
 lazy_static! {
     pub static ref BASE_DOCUMENT_SCHEMA: JsonValue = serde_json::from_str(include_str!(
-        "../../../../../../schema/document/document-base.json"
+        "../../../../../schema/document/document-base.json"
     ))
     .expect("can't parse documentBase.json");
 }

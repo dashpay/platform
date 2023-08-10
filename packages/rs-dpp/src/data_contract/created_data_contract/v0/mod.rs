@@ -1,7 +1,7 @@
 use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::DataContract;
 
-#[cfg(feature = "data-contract-value-conversions")]
+#[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::fields::property_names::{DATA_CONTRACT, ENTROPY};
 use crate::version::PlatformVersion;

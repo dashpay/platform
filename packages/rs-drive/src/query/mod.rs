@@ -1814,7 +1814,6 @@ mod tests {
     use crate::drive::Drive;
     use crate::query::DriveQuery;
     use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef};
-    use dpp::data_contract::extra::common::json_document_to_contract;
     use dpp::data_contract::DataContract;
 
     use serde_json::Value::Null;
@@ -1822,8 +1821,8 @@ mod tests {
     use crate::drive::config::DriveConfig;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
     use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::tests::json_document::json_document_to_contract;
     use dpp::util::cbor_serializer;
     use dpp::version::PlatformVersion;
 

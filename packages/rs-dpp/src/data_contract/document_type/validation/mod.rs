@@ -1,5 +1,3 @@
-mod enrich_with_base_schema;
-pub use enrich_with_base_schema::*;
 mod recursive_schema_validator;
 pub use recursive_schema_validator::*;
 mod validate_data_contract_max_depth;

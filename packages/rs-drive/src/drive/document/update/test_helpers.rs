@@ -37,8 +37,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::error::document::DocumentError;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
-#[cfg(feature = "data-contract-cbor-conversions")]
+#[cfg(feature = "data-contract-cbor-conversion")]
 use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,

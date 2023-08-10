@@ -137,12 +137,12 @@ pub struct DocumentTypeVersions {
     pub field_can_be_null: FeatureVersion,
     pub initial_revision: FeatureVersion,
     pub requires_revision: FeatureVersion,
+    pub enrich_with_base_schema: FeatureVersion,
     pub validation_versions: DocumentTypeValidationVersions,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DocumentTypeValidationVersions {
-    pub enrich_with_base_schema: FeatureVersion,
     pub validate_data_contract_max_depth: FeatureVersion,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,
 }

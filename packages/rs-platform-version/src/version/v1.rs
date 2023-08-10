@@ -695,8 +695,8 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 field_can_be_null: 0,
                 initial_revision: 0,
                 requires_revision: 0,
+                enrich_with_base_schema: 0,
                 validation_versions: DocumentTypeValidationVersions {
-                    enrich_with_base_schema: 0,
                     validate_data_contract_max_depth: 0,
                     recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
                         traversal_validator: 0,
