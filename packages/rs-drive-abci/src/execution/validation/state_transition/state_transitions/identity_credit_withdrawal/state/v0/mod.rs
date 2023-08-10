@@ -54,6 +54,7 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
                 IdentityInsufficientBalanceError::new(
                     self.identity_id(),
                     existing_identity_balance,
+                    self.amount(),
                 )
                 .into(),
             ));

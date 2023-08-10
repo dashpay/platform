@@ -17,6 +17,7 @@ use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -45,7 +46,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
 
-    let is_dry_run = false; //todo: maybe reenable
+    let is_dry_run = context.state_transition_execution_context.in_dry_run();
     let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
 
@@ -296,7 +297,7 @@ mod test {
 
         let (documents, data_contract) = get_masternode_reward_shares_documents_fixture(1);
         let document_type = data_contract
-            .document_type_for_name("rewards")
+            .document_type_for_name("rewardShare")
             .expect("expected the rewards document type");
         let document_transitions = get_document_transitions_fixture([(
             DocumentTransitionActionType::Create,
@@ -310,7 +311,7 @@ mod test {
         TestData {
             documents,
             data_contract,
-            document_type_name: "rewards".to_string(),
+            document_type_name: "rewardShare".to_string(),
             top_level_identifier,
             document_create_transition: DocumentCreateTransitionAction::from_document_create_transition_with_contract_lookup(document_create_transition, |identifier| {
                 Ok(Arc::new(DataContractFetchInfo::masternode_rewards_contract_fixture(platform_state.current_protocol_version_in_consensus)))
@@ -781,10 +782,10 @@ mod test {
             config: &platform.config,
         };
 
-        let execution_context =
+        let mut execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
                 .unwrap();
-        // execution_context.enable_dry_run();
+        execution_context.enable_dry_run();
 
         let context = DataTriggerExecutionContext {
             platform: &platform_ref,

@@ -1,19 +1,41 @@
-use crate::consensus::basic::BasicError::DataContractHaveNewUniqueIndexError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::errors::DataContractError;
-use crate::identity::SecurityLevel;
-use crate::prelude::DataContract;
+use crate::data_contract::document_type::DocumentTypeRef;
+use crate::document::Document;
+use crate::identity::signer::Signer;
+use crate::identity::{IdentityPublicKey, SecurityLevel};
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
-use crate::state_transition::documents_batch_transition::fields::DEFAULT_SECURITY_LEVEL;
-use crate::state_transition::documents_batch_transition::get_security_level_requirement;
+use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use platform_value::Identifier;
+use platform_version::version::{FeatureVersion, PlatformVersion};
 use std::convert::TryFrom;
 
 pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0 {
+    fn new_document_creation_transition_from_document<S: Signer>(
+        document: Document,
+        document_type: DocumentTypeRef,
+        entropy: [u8; 32],
+        identity_public_key: &IdentityPublicKey,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        batch_feature_version: Option<FeatureVersion>,
+        create_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError>;
+
+    fn new_document_replacement_transition_from_document<S: Signer>(
+        document: Document,
+        document_type: DocumentTypeRef,
+        identity_public_key: &IdentityPublicKey,
+        signer: &S,
+        platform_version: &PlatformVersion,
+        _batch_feature_version: Option<FeatureVersion>,
+        update_feature_version: Option<FeatureVersion>,
+        base_feature_version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError>;
+
     fn contract_based_security_level_requirement(
         &self,
         get_data_contract_security_level_requirement: impl Fn(

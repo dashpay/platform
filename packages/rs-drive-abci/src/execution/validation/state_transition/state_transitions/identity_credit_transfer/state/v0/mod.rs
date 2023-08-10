@@ -50,6 +50,7 @@ impl IdentityCreditTransferStateTransitionStateValidationV0 for IdentityCreditTr
                 IdentityInsufficientBalanceError::new(
                     self.identity_id(),
                     existing_identity_balance,
+                    self.amount(),
                 )
                 .into(),
             ));

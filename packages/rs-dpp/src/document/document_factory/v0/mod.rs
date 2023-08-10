@@ -348,8 +348,8 @@ impl DocumentFactoryV0 {
                 Ok(DocumentCreateTransition::from_document(
                     document,
                     document_type,
-                    platform_version,
                     entropy,
+                    platform_version,
                     None,
                     None,
                 )?

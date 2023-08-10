@@ -21,14 +21,17 @@ pub struct SimpleSigner {
 }
 
 impl SimpleSigner {
+    /// Add a key to the signer
     pub fn add_key(&mut self, public_key: IdentityPublicKey, private_key: Vec<u8>) {
         self.private_keys.insert(public_key, private_key);
     }
 
+    /// Add keys to the signer
     pub fn add_keys<I: IntoIterator<Item = (IdentityPublicKey, Vec<u8>)>>(&mut self, keys: I) {
         self.private_keys.extend(keys)
     }
 
+    /// Commit keys in creation
     pub fn commit_block_keys(&mut self) {
         self.private_keys
             .extend(self.private_keys_in_creation.drain())

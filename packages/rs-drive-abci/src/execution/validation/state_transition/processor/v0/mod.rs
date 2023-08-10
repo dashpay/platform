@@ -243,13 +243,18 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                                 platform_version,
                                 None::<GetDataContractFn>,
                             )?;
-                        let partial_identity = validation_result.data_as_borrowed()?;
-                        let result = st.validate_identity_update_state_transition_signatures_v0(
-                            signable_bytes,
-                            partial_identity,
-                        )?;
-                        validation_result.merge(result);
-                        Ok(validation_result.map(Some))
+                        if !validation_result.is_valid() {
+                            Ok(validation_result.map(Some))
+                        } else {
+                            let partial_identity = validation_result.data_as_borrowed()?;
+                            let result = st
+                                .validate_identity_update_state_transition_signatures_v0(
+                                    signable_bytes,
+                                    partial_identity,
+                                )?;
+                            validation_result.merge(result);
+                            Ok(validation_result.map(Some))
+                        }
                     }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
                         method: "identity update transition: validate_identity_and_signatures"

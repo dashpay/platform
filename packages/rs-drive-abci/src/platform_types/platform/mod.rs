@@ -3,6 +3,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive::drive::Drive;
+use std::fmt::{Debug, Formatter};
 
 use drive::drive::defaults::PROTOCOL_VERSION;
 use std::path::Path;
@@ -60,6 +61,15 @@ pub struct PlatformStateRef<'a> {
     pub state: &'a PlatformState,
     /// Configuration
     pub config: &'a PlatformConfig,
+}
+
+impl<'a> Debug for PlatformStateRef<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("platform_state_ref")
+            .field("state", self.state)
+            .field("config", self.config)
+            .finish()
+    }
 }
 
 impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {

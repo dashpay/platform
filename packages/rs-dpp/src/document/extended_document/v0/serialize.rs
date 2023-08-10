@@ -41,9 +41,9 @@ impl DocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     fn serialize_v0(&self, document_type: DocumentTypeRef) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = 0.encode_var_vec(); //version 0
-        buffer.extend(self.id.as_slice());
-        buffer.extend(self.owner_id.as_slice());
-        if let Some(revision) = self.revision {
+        buffer.extend(self.id().as_slice());
+        buffer.extend(self.owner_id().as_slice());
+        if let Some(revision) = self.revision() {
             buffer.extend(revision.encode_var_vec())
         } else if document_type.requires_revision() {
             buffer.extend((1 as Revision).encode_var_vec())
@@ -53,7 +53,7 @@ impl DocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
             .iter()
             .try_for_each(|(field_name, field)| {
                 if field_name == CREATED_AT {
-                    if let Some(created_at) = self.created_at {
+                    if let Some(created_at) = self.created_at() {
                         if !field.required {
                             buffer.push(1);
                         }
@@ -73,7 +73,7 @@ impl DocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
                         Ok(())
                     }
                 } else if field_name == UPDATED_AT {
-                    if let Some(updated_at) = self.updated_at {
+                    if let Some(updated_at) = self.updated_at() {
                         if !field.required {
                             // dbg!("we added 1", field_name);
                             buffer.push(1);
@@ -93,7 +93,7 @@ impl DocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
                         buffer.push(0);
                         Ok(())
                     }
-                } else if let Some(value) = self.properties.get(field_name) {
+                } else if let Some(value) = self.properties().get(field_name) {
                     if value.is_null() {
                         if field.required {
                             Err(ProtocolError::DataContractError(
@@ -145,10 +145,10 @@ impl DocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
         document_type: DocumentTypeRef,
     ) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = 0.encode_var_vec(); //version 0
-        buffer.extend(self.id.into_buffer());
-        buffer.extend(self.owner_id.into_buffer());
+        buffer.extend(self.id().into_buffer());
+        buffer.extend(self.owner_id().into_buffer());
 
-        if let Some(revision) = self.revision {
+        if let Some(revision) = self.revision() {
             buffer.extend(revision.to_be_bytes())
         }
         document_type
@@ -156,7 +156,7 @@ impl DocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
             .iter()
             .try_for_each(|(field_name, field)| {
                 if field_name == CREATED_AT {
-                    if let Some(created_at) = self.created_at {
+                    if let Some(created_at) = self.created_at() {
                         buffer.extend(created_at.to_be_bytes());
                         Ok(())
                     } else if field.required {
@@ -171,7 +171,7 @@ impl DocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
                         Ok(())
                     }
                 } else if field_name == UPDATED_AT {
-                    if let Some(updated_at) = self.updated_at {
+                    if let Some(updated_at) = self.updated_at() {
                         buffer.extend(updated_at.to_be_bytes());
                         Ok(())
                     } else if field.required {
@@ -185,7 +185,7 @@ impl DocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
                         buffer.push(0);
                         Ok(())
                     }
-                } else if let Some(value) = self.properties.remove(field_name) {
+                } else if let Some(value) = self.properties().remove(field_name) {
                     let value = field
                         .document_type
                         .encode_value_with_size(value, field.required)?;
@@ -221,12 +221,13 @@ impl DocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
             platform_version,
         )?;
         let serialized_document = serialized_document.split_at(offset).1;
-        let (document_type_name_len, rest) = serialized_document.split_first().ok_or(|_| {
-            ProtocolError::DecodingError(
-                "error reading document type name len from serialized extended document"
-                    .to_string(),
-            )
-        })?;
+        let (document_type_name_len, rest) =
+            serialized_document
+                .split_first()
+                .ok_or(ProtocolError::DecodingError(
+                    "error reading document type name len from serialized extended document"
+                        .to_string(),
+                ))?;
         if serialized_document.len() < *document_type_name_len as usize {
             return Err(ProtocolError::DecodingError(
                 "serialized extended document isn't big enough for the document type len"
@@ -236,8 +237,10 @@ impl DocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
         let (document_type_name_bytes, rest) = rest.split_at(*document_type_name_len as usize);
 
         let document = Document::from_bytes(rest, document_type, platform_version)?;
+        let document_type_name = String::from_utf8(document_type_name_bytes.into())
+            .map_err(|e| ProtocolError::DecodingError(e.to_string()))?;
         Ok(ExtendedDocumentV0 {
-            document_type_name: document_type_name_bytes.into(),
+            document_type_name,
             data_contract_id: data_contract.id(),
             document,
             data_contract,

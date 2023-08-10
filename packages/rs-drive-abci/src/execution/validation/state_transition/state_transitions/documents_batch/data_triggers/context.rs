@@ -2,6 +2,7 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::prelude::*;
 use drive::grovedb::TransactionArg;
+use std::fmt::{Debug, Formatter};
 
 /// DataTriggerExecutionContext represents the context in which a data trigger is executed.
 /// It contains references to relevant state and transaction data needed for the trigger to perform its actions.
@@ -15,4 +16,17 @@ pub struct DataTriggerExecutionContext<'a> {
     pub owner_id: &'a Identifier,
     /// A reference to the execution context for the state transition that triggered the data trigger.
     pub state_transition_execution_context: &'a StateTransitionExecutionContext,
+}
+
+impl<'a> Debug for DataTriggerExecutionContext<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("data_trigger_execution_context")
+            .field("platform", self.platform)
+            .field("owner_id", self.owner_id)
+            .field(
+                "state_transition_execution_context",
+                self.state_transition_execution_context,
+            )
+            .finish()
+    }
 }

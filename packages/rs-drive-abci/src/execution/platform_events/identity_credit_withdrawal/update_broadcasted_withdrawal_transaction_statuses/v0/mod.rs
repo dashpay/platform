@@ -192,6 +192,7 @@ mod tests {
     use dpp::document::DocumentV0Getters;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
+    use dpp::serialization::PlatformDeserializableFromVersionedStructure;
     use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
     use dpp::version::PlatformVersion;
     use dpp::withdrawal::Pooling;
@@ -301,15 +302,6 @@ mod tests {
             platform_version.protocol_version,
         )
         .expect("to load system data contract");
-
-        // TODO: figure out the bug in data contract factory
-        let data_contract = DataContract::from_cbor(
-            data_contract
-                .to_cbor()
-                .expect("to convert contract to CBOR"),
-            platform_version,
-        )
-        .expect("to create data contract from CBOR");
 
         setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
 

@@ -22,6 +22,7 @@ use dpp::system_data_contracts::dpns_contract::document_types::domain::propertie
 use dpp::version::PlatformVersion;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 
 pub const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 
@@ -47,7 +48,7 @@ pub fn create_domain_data_trigger_v0(
 ) -> Result<DataTriggerExecutionResult, Error> {
     let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
-    let is_dry_run = false; //todo (maybe reenable - maybe not)
+    let is_dry_run = context.state_transition_execution_context.in_dry_run();
     let document_create_transition = match document_transition {
         DocumentTransitionAction::CreateAction(d) => d,
         _ => {
@@ -345,7 +346,7 @@ mod test {
     use dpp::tests::utils::generate_random_identifier_struct;
     use dpp::version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
     use drive::drive::contract::DataContractFetchInfo;
-    use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+    use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
     use crate::platform_types::platform::PlatformStateRef;
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -368,7 +369,7 @@ mod test {
             .current_platform_version()
             .expect("should return a platform version");
 
-        let transition_execution_context =
+        let mut transition_execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
                 .unwrap();
         let owner_id = generate_random_identifier_struct();
@@ -397,7 +398,7 @@ mod test {
             .as_transition_create()
             .expect("expected a document create transition");
 
-        // transition_execution_context.enable_dry_run();
+        transition_execution_context.enable_dry_run();
 
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
