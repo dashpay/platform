@@ -70,10 +70,10 @@ impl Drive {
         //  * 0 to signify Documents and notDataContract
         let contract_document_type_path = contract_document_type_path_vec(
             document_and_contract_info.contract.id_ref().as_bytes(),
-            document_and_contract_info.document_type.name().as_str(),
+            document_and_contract_info.document_type.name(),
         );
 
-        let sub_level_index_count = index_level.levels().len() as u32;
+        let sub_level_index_count = index_level.sub_levels().len() as u32;
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have a 0 and all the top index paths
@@ -104,7 +104,7 @@ impl Drive {
         };
 
         // next we need to store a reference to the document for each index
-        for (name, sub_level) in index_level.levels() {
+        for (name, sub_level) in index_level.sub_levels() {
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created

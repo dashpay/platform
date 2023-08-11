@@ -88,15 +88,11 @@ impl Drive {
         //  * Document andDataContract root tree
         //  *DataContract ID recovered from document
         //  * 0 to signify Documents and notDataContract
-        let contract_document_type_path = contract_document_type_path(
-            contract.id_ref().as_bytes(),
-            document_type.name().as_str(),
-        );
+        let contract_document_type_path =
+            contract_document_type_path(contract.id_ref().as_bytes(), document_type.name());
 
-        let contract_documents_primary_key_path = contract_documents_primary_key_path(
-            contract.id_ref().as_bytes(),
-            document_type.name().as_str(),
-        );
+        let contract_documents_primary_key_path =
+            contract_documents_primary_key_path(contract.id_ref().as_bytes(), document_type.name());
 
         let document_reference = make_document_reference(
             document,

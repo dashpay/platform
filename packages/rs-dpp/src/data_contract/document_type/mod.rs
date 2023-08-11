@@ -135,12 +135,6 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         }
     }
 
-    fn field_can_be_null(&self, name: &str) -> bool {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.field_can_be_null(name),
-        }
-    }
-
     fn initial_revision(&self) -> Option<Revision> {
         match self {
             DocumentTypeRef::V0(v0) => v0.initial_revision(),
@@ -156,12 +150,6 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
     fn top_level_indices(&self) -> Vec<&IndexProperty> {
         match self {
             DocumentTypeRef::V0(v0) => v0.top_level_indices(),
-        }
-    }
-
-    fn document_field_for_property(&self, property: &str) -> Option<DocumentProperty> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.document_field_for_property(property),
         }
     }
 

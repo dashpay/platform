@@ -23,7 +23,7 @@ impl IndexLevel {
         self.level_identifier
     }
 
-    pub fn levels(&self) -> &BTreeMap<String, IndexLevel> {
+    pub fn sub_levels(&self) -> &BTreeMap<String, IndexLevel> {
         &self.sub_index_levels
     }
 

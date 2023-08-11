@@ -32,6 +32,8 @@ use platform_value::{Identifier, Value, ValueMapHelper};
 const UNIQUE_INDEX_LIMIT_V0: usize = 16;
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
 
+const SYSTEM_PROPERTIES: [&str; 4] = ["$id", "$ownerId", "$createdAt", "$updatedAt"];
+
 const MAX_INDEXED_STRING_PROPERTY_LENGTH: u16 = 63;
 const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH: u16 = 255;
 const MAX_INDEXED_ARRAY_ITEMS: usize = 1024;
@@ -131,29 +133,23 @@ impl DocumentTypeV0 {
 
         // Based on the property name, determine the type
         for (property_key, property_value) in property_values {
-            DocumentType::insert_values(
+            // TODO: It's very inefficient. It must be done in one iteration and flattened properties
+            //  must keep a reference? We even could keep only one collection
+            insert_values(
                 &mut flattened_document_properties,
                 &required_fields,
                 None,
                 property_key.clone(),
                 property_value,
                 &root_schema,
-                &platform_version
-                    .dpp
-                    .contract_versions
-                    .document_type_versions,
             )?;
 
-            DocumentType::insert_values_nested(
+            insert_values_nested(
                 &mut document_properties,
                 &required_fields,
                 property_key,
                 property_value,
                 &root_schema,
-                &platform_version
-                    .dpp
-                    .contract_versions
-                    .document_type_versions,
             )?;
         }
 
@@ -224,77 +220,81 @@ impl DocumentTypeV0 {
                                         .into());
                                     }
 
-                                    // Index property must exist
-                                    let property_definition = flattened_document_properties
-                                        .get(&index_property.name)
-                                        .ok_or_else(|| {
-                                            ProtocolError::ConsensusError(Box::new(
-                                                UndefinedIndexPropertyError::new(
-                                                    name.to_owned(),
-                                                    index.name.to_owned(),
-                                                    index_property.name.to_owned(),
-                                                )
-                                                .into(),
-                                            ))
-                                        })?;
+                                    // Indexed property must be defined in user schema if it's not a system one
+                                    if !SYSTEM_PROPERTIES.contains(&index_property.name.as_str()) {
+                                        let property_definition = flattened_document_properties
+                                            .get(&index_property.name)
+                                            .ok_or_else(|| {
+                                                ProtocolError::ConsensusError(Box::new(
+                                                    UndefinedIndexPropertyError::new(
+                                                        name.to_owned(),
+                                                        index.name.to_owned(),
+                                                        index_property.name.to_owned(),
+                                                    )
+                                                        .into(),
+                                                ))
+                                            })?;
 
-                                    // Validate indexed property type
-                                    match property_definition.r#type {
-                                        // Array and objects aren't supported for indexing yet
-                                        DocumentPropertyType::Array(_)
-                                        | DocumentPropertyType::Object(_)
-                                        | DocumentPropertyType::VariableTypeArray(_) => {
-                                            Err(ProtocolError::ConsensusError(Box::new(
-                                                InvalidIndexPropertyTypeError::new(
-                                                    name.to_owned(),
-                                                    index.name.to_owned(),
-                                                    index_property.name.to_owned(),
-                                                    property_definition.r#type.name(),
-                                                )
-                                                .into(),
-                                            )))
-                                        }
-                                        // Indexed byte array size must be limited
-                                        DocumentPropertyType::ByteArray(_, maybe_max_size)
+                                        // Validate indexed property type
+                                        match property_definition.r#type {
+                                            // Array and objects aren't supported for indexing yet
+                                            DocumentPropertyType::Array(_)
+                                            | DocumentPropertyType::Object(_)
+                                            | DocumentPropertyType::VariableTypeArray(_) => {
+                                                Err(ProtocolError::ConsensusError(Box::new(
+                                                    InvalidIndexPropertyTypeError::new(
+                                                        name.to_owned(),
+                                                        index.name.to_owned(),
+                                                        index_property.name.to_owned(),
+                                                        property_definition.r#type.name(),
+                                                    )
+                                                        .into(),
+                                                )))
+                                            }
+                                            // Indexed byte array size must be limited
+                                            DocumentPropertyType::ByteArray(_, maybe_max_size)
                                             if maybe_max_size.is_none()
                                                 || maybe_max_size.unwrap()
-                                                    > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH =>
-                                        {
-                                            Err(ProtocolError::ConsensusError(Box::new(
-                                                InvalidIndexedPropertyConstraintError::new(
-                                                    name.to_owned(),
-                                                    index.name.to_owned(),
-                                                    index_property.name.to_owned(),
-                                                    "maxItems".to_string(),
-                                                    format!(
-                                                        "should be less or equal {}",
-                                                        MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
-                                                    ),
-                                                )
-                                                .into(),
-                                            )))
-                                        }
-                                        // Indexed string length must be limited
-                                        DocumentPropertyType::String(_, maybe_max_length)
+                                                > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH =>
+                                                {
+                                                    Err(ProtocolError::ConsensusError(Box::new(
+                                                        InvalidIndexedPropertyConstraintError::new(
+                                                            name.to_owned(),
+                                                            index.name.to_owned(),
+                                                            index_property.name.to_owned(),
+                                                            "maxItems".to_string(),
+                                                            format!(
+                                                                "should be less or equal {}",
+                                                                MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
+                                                            ),
+                                                        )
+                                                            .into(),
+                                                    )))
+                                                }
+                                            // Indexed string length must be limited
+                                            DocumentPropertyType::String(_, maybe_max_length)
                                             if maybe_max_length.is_none()
                                                 || maybe_max_length.unwrap()
-                                                    > MAX_INDEXED_STRING_PROPERTY_LENGTH =>
-                                        {
-                                            Err(ProtocolError::ConsensusError(Box::new(
-                                                InvalidIndexedPropertyConstraintError::new(
-                                                    name.to_owned(),
-                                                    index.name.to_owned(),
-                                                    index_property.name.to_owned(),
-                                                    "maxLength".to_string(),
-                                                    format!(
-                                                        "should be less or equal {}",
-                                                        MAX_INDEXED_STRING_PROPERTY_LENGTH
-                                                    ),
-                                                )
-                                                .into(),
-                                            )))
+                                                > MAX_INDEXED_STRING_PROPERTY_LENGTH =>
+                                                {
+                                                    Err(ProtocolError::ConsensusError(Box::new(
+                                                        InvalidIndexedPropertyConstraintError::new(
+                                                            name.to_owned(),
+                                                            index.name.to_owned(),
+                                                            index_property.name.to_owned(),
+                                                            "maxLength".to_string(),
+                                                            format!(
+                                                                "should be less or equal {}",
+                                                                MAX_INDEXED_STRING_PROPERTY_LENGTH
+                                                            ),
+                                                        )
+                                                            .into(),
+                                                    )))
+                                                }
+                                            _ => Ok(()),
                                         }
-                                        _ => Ok(()),
+                                    } else {
+                                        Ok(())
                                     }
                                 })
                                 .collect::<Result<_, ProtocolError>>()?;
@@ -334,4 +334,283 @@ impl DocumentTypeV0 {
             data_contract_id,
         })
     }
+}
+
+fn insert_values(
+    document_properties: &mut BTreeMap<String, DocumentProperty>,
+    known_required: &BTreeSet<String>,
+    prefix: Option<String>,
+    property_key: String,
+    property_value: &Value,
+    root_schema: &Value,
+) -> Result<(), ProtocolError> {
+    let mut to_visit: Vec<(Option<String>, String, &Value)> =
+        vec![(prefix, property_key, property_value)];
+
+    while let Some((prefix, property_key, property_value)) = to_visit.pop() {
+        let prefixed_property_key = match prefix {
+            None => property_key,
+            Some(prefix) => [prefix, property_key].join(".").to_owned(),
+        };
+
+        let mut inner_properties = property_value.to_btree_ref_string_map()?;
+
+        if let Some(schema_ref) = inner_properties
+            .get_optional_str(property_names::REF)
+            .map_err(ProtocolError::ValueError)?
+        {
+            let referenced_sub_schema = resolve_uri(root_schema, schema_ref).map_err(|err| {
+                ProtocolError::Generic(format!("invalid schema reference url: {err}"))
+            })?;
+
+            inner_properties = referenced_sub_schema.to_btree_ref_string_map()?
+        }
+
+        let type_value = inner_properties
+            .get_str(property_names::TYPE)
+            .map_err(ProtocolError::ValueError)?;
+
+        let is_required = known_required.contains(&prefixed_property_key);
+        let field_type: DocumentPropertyType;
+
+        match type_value {
+            "array" => {
+                // Only handling bytearrays for v1
+                // Return an error if it is not a byte array
+                field_type = match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
+                    Some(inner_bool) => {
+                        if inner_bool {
+                            match inner_properties
+                                .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
+                            {
+                                Some(content_media_type)
+                                    if content_media_type
+                                        == "application/x.dash.dpp.identifier" =>
+                                {
+                                    DocumentPropertyType::Identifier
+                                }
+                                Some(_) | None => DocumentPropertyType::ByteArray(
+                                    inner_properties
+                                        .get_optional_integer(property_names::MIN_ITEMS)?,
+                                    inner_properties
+                                        .get_optional_integer(property_names::MAX_ITEMS)?,
+                                ),
+                            }
+                        } else {
+                            return Err(ProtocolError::DataContractError(
+                                DataContractError::InvalidContractStructure(
+                                    "byteArray should always be true if defined".to_string(),
+                                ),
+                            ));
+                        }
+                    }
+                    // TODO: Contract indices and new encoding format don't support arrays
+                    //   but we still can use them as document fields with current cbor encoding
+                    //   This is a temporary workaround to bring back v0.22 behavior and should be
+                    //   replaced with a proper array support in future versions
+                    None => DocumentPropertyType::Array(ArrayItemType::Boolean),
+                };
+
+                document_properties.insert(
+                    prefixed_property_key,
+                    DocumentProperty {
+                        r#type: field_type,
+                        required: is_required,
+                    },
+                );
+            }
+            "object" => {
+                if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES)
+                {
+                    let properties =
+                        properties_as_value
+                            .as_map()
+                            .ok_or(ProtocolError::StructureError(
+                                StructureError::ValueWrongType("properties must be a map"),
+                            ))?;
+
+                    for (object_property_key, object_property_value) in properties.iter() {
+                        let object_property_string = object_property_key
+                            .as_text()
+                            .ok_or(ProtocolError::StructureError(StructureError::KeyWrongType(
+                                "property key must be a string",
+                            )))?
+                            .to_string();
+                        to_visit.push((
+                            Some(prefixed_property_key.clone()),
+                            object_property_string,
+                            object_property_value,
+                        ));
+                    }
+                }
+            }
+
+            "string" => {
+                field_type = DocumentPropertyType::String(
+                    inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
+                    inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
+                );
+                document_properties.insert(
+                    prefixed_property_key,
+                    DocumentProperty {
+                        r#type: field_type,
+                        required: is_required,
+                    },
+                );
+            }
+
+            _ => {
+                field_type = DocumentPropertyType::try_from_name(type_value)?;
+
+                document_properties.insert(
+                    prefixed_property_key,
+                    DocumentProperty {
+                        r#type: field_type,
+                        required: is_required,
+                    },
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+fn insert_values_nested(
+    document_properties: &mut BTreeMap<String, DocumentProperty>,
+    known_required: &BTreeSet<String>,
+    property_key: String,
+    property_value: &Value,
+    root_schema: &Value,
+) -> Result<(), ProtocolError> {
+    let mut inner_properties = property_value.to_btree_ref_string_map()?;
+
+    if let Some(schema_ref) = inner_properties
+        .get_optional_str(property_names::REF)
+        .map_err(ProtocolError::ValueError)?
+    {
+        let referenced_sub_schema = resolve_uri(root_schema, schema_ref).map_err(|err| {
+            ProtocolError::Generic(format!("invalid schema reference url: {err}"))
+        })?;
+
+        inner_properties = referenced_sub_schema.to_btree_ref_string_map()?;
+    }
+
+    let type_value = inner_properties
+        .get_str(property_names::TYPE)
+        .map_err(ProtocolError::ValueError)?;
+
+    let is_required = known_required.contains(&property_key);
+
+    let field_type: DocumentPropertyType;
+
+    match type_value {
+        "integer" => {
+            field_type = DocumentPropertyType::Integer;
+        }
+        "number" => {
+            field_type = DocumentPropertyType::Number;
+        }
+        "string" => {
+            field_type = DocumentPropertyType::String(
+                inner_properties.get_optional_integer(property_names::MIN_LENGTH)?,
+                inner_properties.get_optional_integer(property_names::MAX_LENGTH)?,
+            );
+        }
+        "array" => {
+            // Only handling bytearrays for v1
+            // Return an error if it is not a byte array
+            field_type = match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
+                Some(inner_bool) => {
+                    if inner_bool {
+                        match inner_properties
+                            .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
+                        {
+                            Some(content_media_type)
+                                if content_media_type == "application/x.dash.dpp.identifier" =>
+                            {
+                                DocumentPropertyType::Identifier
+                            }
+                            Some(_) | None => DocumentPropertyType::ByteArray(
+                                inner_properties.get_optional_integer(property_names::MIN_ITEMS)?,
+                                inner_properties.get_optional_integer(property_names::MAX_ITEMS)?,
+                            ),
+                        }
+                    } else {
+                        return Err(ProtocolError::DataContractError(
+                            DataContractError::InvalidContractStructure(
+                                "byteArray should always be true if defined".to_string(),
+                            ),
+                        ));
+                    }
+                }
+                // TODO: Contract indices and new encoding format don't support arrays
+                //   but we still can use them as document fields with current cbor encoding
+                //   This is a temporary workaround to bring back v0.22 behavior and should be
+                //   replaced with a proper array support in future versions
+                None => DocumentPropertyType::Array(ArrayItemType::Boolean),
+            };
+        }
+        "object" => {
+            let mut nested_properties = BTreeMap::new();
+            if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES) {
+                let properties =
+                    properties_as_value
+                        .as_map()
+                        .ok_or(ProtocolError::StructureError(
+                            StructureError::ValueWrongType("properties must be a map"),
+                        ))?;
+
+                // Create a new set with the prefix removed from the keys
+                let stripped_required: BTreeSet<String> = known_required
+                    .iter()
+                    .filter_map(|key| {
+                        if key.starts_with(&property_key) && key.len() > property_key.len() {
+                            Some(key[property_key.len() + 1..].to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                for (object_property_key, object_property_value) in properties.iter() {
+                    let object_property_string = object_property_key
+                        .as_text()
+                        .ok_or(ProtocolError::StructureError(StructureError::KeyWrongType(
+                            "property key must be a string",
+                        )))?
+                        .to_string();
+
+                    insert_values_nested(
+                        &mut nested_properties,
+                        &stripped_required,
+                        object_property_string,
+                        object_property_value,
+                        root_schema,
+                    )?;
+                }
+            }
+            field_type = DocumentPropertyType::Object(nested_properties);
+            document_properties.insert(
+                property_key,
+                DocumentProperty {
+                    r#type: field_type,
+                    required: is_required,
+                },
+            );
+            return Ok(());
+        }
+        _ => {
+            field_type = DocumentPropertyType::try_from_name(type_value)?;
+        }
+    }
+
+    document_properties.insert(
+        property_key,
+        DocumentProperty {
+            r#type: field_type,
+            required: is_required,
+        },
+    );
+
+    Ok(())
 }

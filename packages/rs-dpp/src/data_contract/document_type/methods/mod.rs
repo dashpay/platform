@@ -1,6 +1,5 @@
 mod create_document_from_data;
 mod create_document_with_prevalidated_properties;
-mod document_field_type_for_property;
 mod estimated_size;
 mod index_for_types;
 mod max_size;
@@ -58,9 +57,6 @@ pub trait DocumentTypeV0Methods {
     ) -> Vec<u8>;
 
     /// Non versioned
-    fn field_can_be_null(&self, name: &str) -> bool;
-
-    /// Non versioned
     fn initial_revision(&self) -> Option<Revision>;
 
     /// Non versioned
@@ -69,8 +65,6 @@ pub trait DocumentTypeV0Methods {
     /// Non versioned
     fn top_level_indices(&self) -> Vec<&IndexProperty>;
 
-    /// Non versioned
-    fn document_field_for_property(&self, property: &str) -> Option<DocumentProperty>;
     fn create_document_from_data(
         &self,
         data: Value,
@@ -166,6 +160,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         }
     }
 
+    // TODO: Super wired. Remove from here.
     fn unique_id_for_storage(&self) -> [u8; 32] {
         rand::random::<[u8; 32]>()
     }
@@ -178,10 +173,6 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         let mut bytes = index_level.identifier().to_be_bytes().to_vec();
         bytes.extend_from_slice(&base_event);
         bytes
-    }
-
-    fn field_can_be_null(&self, name: &str) -> bool {
-        !self.required_fields.contains(name)
     }
 
     fn initial_revision(&self) -> Option<Revision> {
@@ -204,10 +195,6 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             }
         }
         index_properties
-    }
-
-    fn document_field_for_property(&self, property: &str) -> Option<DocumentProperty> {
-        self.flattened_properties.get(property).cloned()
     }
 
     fn create_document_from_data(

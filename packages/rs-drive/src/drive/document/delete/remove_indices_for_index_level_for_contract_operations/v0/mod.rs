@@ -65,7 +65,7 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let sub_level_index_count = index_level.levels().len() as u32;
+        let sub_level_index_count = index_level.sub_levels().len() as u32;
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have a 0 and all the top index paths
@@ -102,7 +102,7 @@ impl Drive {
         let document_type = document_and_contract_info.document_type;
 
         // fourth we need to store a reference to the document for each index
-        for (name, sub_level) in index_level.levels() {
+        for (name, sub_level) in index_level.sub_levels() {
             let mut sub_level_index_path_info = index_path_info.clone();
             let index_property_key = KeyRef(name.as_bytes());
 

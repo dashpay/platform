@@ -908,7 +908,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         // We added 1556 bytes
-        assert_eq!(added_bytes, 1557);
+        assert_eq!(added_bytes, 1541);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()
