@@ -1,18 +1,19 @@
-use serde::{Deserialize, Serialize};
+use serde::{Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
-use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyID};
+use dpp::identity::{Identity, IdentityPublicKey, KeyID};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::metadata::Metadata;
 use dpp::serialization::ValueConvertible;
-use dpp::version::PlatformVersion;
 use crate::identifier::IdentifierWrapper;
 use crate::{utils, with_js_error};
 use crate::errors::from_dpp_err;
+use dpp::serialization::PlatformSerializable;
+use dpp::serialization::PlatformDeserializable;
 use crate::utils::{IntoWasm, WithJsError};
+use crate::buffer::Buffer;
 use dpp::platform_value::{ReplacementType, Value};
 use crate::identity::IdentityPublicKeyWasm;
 use crate::metadata::MetadataWasm;
@@ -24,17 +25,20 @@ pub struct IdentityWasm {
     metadata: Option<Metadata>
 }
 
-// impl From<IdentityWasm> for Identity {
-//     fn from(identity: IdentityWasm) -> Self {
-//         identity.0
-//     }
-// }
-//
-// impl From<Identity> for IdentityWasm {
-//     fn from(identity: Identity) -> Self {
-//         Self(identity)
-//     }
-// }
+impl From<IdentityWasm> for Identity {
+    fn from(identity: IdentityWasm) -> Self {
+        identity.inner
+    }
+}
+
+impl From<Identity> for IdentityWasm {
+    fn from(identity: Identity) -> Self {
+        Self {
+            inner: identity,
+            metadata: None
+        }
+    }
+}
 #[wasm_bindgen(js_class=Identity)]
 impl IdentityWasm {
     #[wasm_bindgen(constructor)]
@@ -47,11 +51,11 @@ impl IdentityWasm {
         let mut identity_platform_value: Value = identity_json.into();
         identity_platform_value.replace_at_paths(
             dpp::identity::IDENTIFIER_FIELDS_RAW_OBJECT,
-            ReplacementType::TextBase64
+            ReplacementType::TextBase58
         ).map_err(|e| e.to_string())?;
 
         // Monkey patch public keys data to be deserializable
-        let mut public_keys = identity_platform_value.get_array_mut_ref(dpp::identity::property_names::PUBLIC_KEYS)
+        let public_keys = identity_platform_value.get_array_mut_ref(dpp::identity::property_names::PUBLIC_KEYS)
             .map_err(|e| e.to_string())?;
 
         for key in public_keys.iter_mut() {
@@ -189,51 +193,71 @@ impl IdentityWasm {
             metadata: None
         }
     }
-    //
-    // #[wasm_bindgen(js_name=toJSON)]
-    // pub fn to_json(&self) -> Result<JsValue, JsValue> {
-    //     let json = self.inner.to_json().with_js_error()?;
-    //     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    //     with_js_error!(json.serialize(&serializer))
-    // }
-    //
-    // #[wasm_bindgen(js_name=toObject)]
-    // pub fn to_object(&self) -> Result<JsValue, JsValue> {
-    //     let js_public_keys = js_sys::Array::new();
-    //     for pk in self.inner.public_keys().values() {
-    //         let pk_wasm = IdentityPublicKeyWasm::from(pk.to_owned());
-    //         js_public_keys.push(&pk_wasm.to_object()?);
-    //     }
-    //
-    //     let value = self.inner.to_cleaned_object().with_js_error()?;
-    //
-    //     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    //     let js_object = with_js_error!(value.serialize(&serializer))?;
-    //
-    //     let id = Buffer::from_bytes(self.inner.id.as_slice());
-    //
-    //     js_sys::Reflect::set(&js_object, &"id".to_owned().into(), &id)?;
-    //
-    //     js_sys::Reflect::set(
-    //         &js_object,
-    //         &"publicKeys".to_owned().into(),
-    //         &JsValue::from(&js_public_keys),
-    //     )?;
-    //
-    //     Ok(js_object)
-    // }
-    //
-    // #[wasm_bindgen(js_name=toBuffer)]
-    // pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-    //     let bytes = PlatformSerializable::serialize(&self.inner.clone()).with_js_error()?;
-    //     Ok(Buffer::from_bytes(&bytes))
-    // }
-    //
-    // #[wasm_bindgen]
-    // pub fn hash(&self) -> Result<Vec<u8>, JsValue> {
-    //     self.inner.hash().with_js_error()
-    // }
-    //
+
+    #[wasm_bindgen(js_name=toJSON)]
+    pub fn to_json(&self) -> Result<JsValue, JsValue> {
+        let mut value = self.inner.to_object().with_js_error()?;
+
+        value.replace_at_paths(
+            dpp::identity::IDENTIFIER_FIELDS_RAW_OBJECT,
+            ReplacementType::TextBase58
+        ).map_err(|e| e.to_string())?;
+
+        // Monkey patch public keys data to be deserializable
+        let public_keys = value.get_array_mut_ref(dpp::identity::property_names::PUBLIC_KEYS)
+            .map_err(|e| e.to_string())?;
+
+        for key in public_keys.iter_mut() {
+            key.replace_at_paths(
+                dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
+                ReplacementType::TextBase64
+            ).map_err(|e| e.to_string())?;
+        }
+
+        let json = value.try_into_validating_json()
+            .map_err(|e| e.to_string())?
+            .to_string();
+
+        js_sys::JSON::parse(&json)
+    }
+
+    #[wasm_bindgen(js_name=toObject)]
+    pub fn to_object(&self) -> Result<JsValue, JsValue> {
+        let js_public_keys = js_sys::Array::new();
+        for pk in self.inner.public_keys().values() {
+            let pk_wasm = IdentityPublicKeyWasm::from(pk.to_owned());
+            js_public_keys.push(&pk_wasm.to_object()?);
+        }
+
+        let value = self.inner.to_object().with_js_error()?;
+
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let js_object = with_js_error!(value.serialize(&serializer))?;
+
+        let id = Buffer::from_bytes(self.inner.id().as_slice());
+
+        js_sys::Reflect::set(&js_object, &"id".to_owned().into(), &id)?;
+
+        js_sys::Reflect::set(
+            &js_object,
+            &"publicKeys".to_owned().into(),
+            &JsValue::from(&js_public_keys),
+        )?;
+
+        Ok(js_object)
+    }
+
+    #[wasm_bindgen(js_name=toBuffer)]
+    pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
+        let bytes = PlatformSerializable::serialize(&self.inner.clone()).with_js_error()?;
+        Ok(Buffer::from_bytes(&bytes))
+    }
+
+    #[wasm_bindgen]
+    pub fn hash(&self) -> Result<Vec<u8>, JsValue> {
+        self.inner.hash().with_js_error()
+    }
+
     #[wasm_bindgen(js_name=addPublicKey)]
     pub fn add_public_key(&mut self, public_key: IdentityPublicKeyWasm) {
         self.inner
@@ -268,11 +292,11 @@ impl IdentityWasm {
     pub fn get_public_key_max_id(&self) -> f64 {
         self.inner.get_public_key_max_id() as f64
     }
-    //
-    // #[wasm_bindgen(js_name=fromBuffer)]
-    // pub fn from_buffer(buffer: Vec<u8>) -> Result<IdentityWasm, JsValue> {
-    //     let identity: Identity =
-    //         PlatformDeserializable::deserialize(buffer.as_slice()).with_js_error()?;
-    //     Ok(identity.into())
-    // }
+
+    #[wasm_bindgen(js_name=fromBuffer)]
+    pub fn from_buffer(buffer: Vec<u8>) -> Result<IdentityWasm, JsValue> {
+        let identity: Identity =
+            PlatformDeserializable::deserialize(buffer.as_slice()).with_js_error()?;
+        Ok(identity.into())
+    }
 }

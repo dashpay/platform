@@ -1,18 +1,17 @@
 use dpp::dashcore::anyhow;
 pub use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::convert::{TryFrom, TryInto};
+use std::convert::{TryInto};
 use wasm_bindgen::prelude::*;
 
-use crate::utils::{Inner, WithJsError};
+use crate::utils::{WithJsError};
 use crate::{buffer::Buffer, utils, with_js_error};
 use dpp::serialization::ValueConvertible;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::platform_value::{BinaryData, ReplacementType, Value};
-use dpp::Convertible;
 use dpp::identity::identity_public_key::accessors::v0::{IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0};
 use dpp::identity::identity_public_key::hash::{IdentityPublicKeyHashMethodsV0};
-use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+
 
 mod purpose;
 pub use purpose::*;
@@ -162,7 +161,7 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let mut value = self.0.to_object()
+        let value = self.0.to_object()
             .map_err(from_dpp_err)?;
 
         let data_buffer = Buffer::from_bytes(self.0.data().as_slice());
