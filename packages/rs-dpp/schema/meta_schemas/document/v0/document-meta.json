@@ -430,7 +430,43 @@
       "description": "Public key security level. 0 - Master, 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
     },
     "properties": {
-      "$ref": "#/$defs/documentProperties"
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "allOf": [
+          {
+            "$ref": "#/$defs/documentSchema"
+          }
+        ],
+        "unevaluatedProperties": false
+      },
+      "properties": {
+        "$id": true,
+        "$ownerId": true,
+        "$revision": true,
+        "$createdAt": true,
+        "$updatedAt": true
+      },
+      "propertyNames": {
+        "oneOf": [
+          {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9-_]{1,64}$"
+          },
+          {
+            "type": "string",
+            "enum": [
+              "$id",
+              "$ownerId",
+              "$revision",
+              "$createdAt",
+              "$updatedAt"
+            ]
+          }
+        ]
+      },
+      "minProperties": 1,
+      "maxProperties": 100
     },
     "additionalProperties": {
       "type": "boolean",

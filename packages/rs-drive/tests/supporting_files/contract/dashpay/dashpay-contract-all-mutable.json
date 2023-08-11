@@ -4,6 +4,7 @@
   "version": 1,
   "documentSchemas": {
     "profile": {
+      "type": "object",
       "indices": [
         {
           "properties": [
@@ -46,6 +47,7 @@
       "additionalProperties": false
     },
     "contactInfo": {
+      "type": "object",
       "indices": [
         {
           "properties": [
@@ -104,6 +106,7 @@
       "additionalProperties": false
     },
     "contactRequest": {
+      "type": "object",
       "indices": [
         {
           "properties": [

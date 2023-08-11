@@ -4,6 +4,7 @@
   "version": 1,
   "documentSchemas": {
     "profile": {
+      "type": "object",
       "documentsKeepHistory": true,
       "indices": [
         {
