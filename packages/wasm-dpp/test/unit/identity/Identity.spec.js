@@ -78,7 +78,7 @@ describe('Identity', () => {
     });
   });
 
-  describe.skip('#setPublicKeys', () => {
+  describe('#setPublicKeys', () => {
     it('should reject input which is not array of public keys', () => {
       expect(() => { identity.setPublicKeys(42); })
         .throws("Setting public keys failed. The input ('42') is invalid. You must use array of PublicKeys");
@@ -94,6 +94,7 @@ describe('Identity', () => {
         purpose: KeyPurpose.AUTHENTICATION,
         securityLevel: KeySecurityLevel.MASTER,
         readOnly: false,
+        disabledAt: null,
       };
 
       const ipk = new IdentityPublicKey(rawKey);
@@ -247,7 +248,7 @@ describe('Identity', () => {
     });
   });
 
-  describe.skip('#getPublicKeyMaxId', () => {
+  describe('#getPublicKeyMaxId', () => {
     it('should get the biggest public key ID', () => {
       const key = new IdentityPublicKey({
         $version: '0',

@@ -4,6 +4,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyID};
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::metadata::Metadata;
 use dpp::serialization::ValueConvertible;
@@ -68,25 +69,26 @@ impl IdentityWasm {
     pub fn get_id(&self) -> IdentifierWrapper {
         self.0.id().into()
     }
-    //
-    // #[wasm_bindgen(js_name=setPublicKeys)]
-    // pub fn set_public_keys(&mut self, public_keys: js_sys::Array) -> Result<usize, JsValue> {
-    //     let raw_public_keys = to_vec_of_serde_values(public_keys.iter())?;
-    //     if raw_public_keys.is_empty() {
-    //         return Err(format!("Setting public keys failed. The input ('{}') is invalid. You must use array of PublicKeys", public_keys.to_string()).into());
-    //     }
-    //
-    //     let public_keys = raw_public_keys
-    //         .into_iter()
-    //         .map(|v| IdentityPublicKey::from_json_object(v).map(|key| (key.id, key)))
-    //         .collect::<Result<_, _>>()
-    //         .map_err(|e| format!("converting to collection of IdentityPublicKeys failed: {e:#}"))?;
-    //
-    //     self.0.set_public_keys(public_keys);
-    //
-    //     Ok(self.0.public_keys().len())
-    // }
-    //
+
+    #[wasm_bindgen(js_name=setPublicKeys)]
+    pub fn set_public_keys(&mut self, public_keys: js_sys::Array) -> Result<usize, JsValue> {
+        if public_keys.length() == 0 {
+            return Err(format!("Setting public keys failed. The input ('{}') is invalid. You must use array of PublicKeys", public_keys.to_string()).into());
+        }
+
+        let public_keys = public_keys
+            .into_iter()
+            .map(|key| IdentityPublicKeyWasm::new(key).map(|key| {
+                let key = IdentityPublicKey::from(key);
+                (key.id(), key)
+            }))
+            .collect::<Result<_, _>>()?;
+
+        self.0.set_public_keys(public_keys);
+
+        Ok(self.0.public_keys().len())
+    }
+
     #[wasm_bindgen(js_name=getPublicKeys)]
     pub fn get_public_keys(&self) -> Vec<JsValue> {
         self.0
@@ -231,27 +233,30 @@ impl IdentityWasm {
             .public_keys_mut()
             .insert(public_key.get_id(), public_key.into());
     }
-    //
-    // // The method `addPublicKeys()` takes an variadic array of `IdentityPublicKeyWasm` as an input. But elements of the array
-    // // are available ONLY as `JsValue`. WASM-bindgen uses output from `toJSON()` to store WASM-object as `JsValue`.
-    // // `toJSON()` converts binary data to `base64` or `base58`. Therefore we need to use `from_json_object()` constructor to
-    // // to convert strings back into bytes and get `IdentityPublicKeyWasm`
-    // #[wasm_bindgen(js_name=addPublicKeys, variadic)]
-    // pub fn add_public_keys(&mut self, js_public_keys: JsValue) -> Result<(), JsValue> {
-    //     let js_public_keys_array = Array::from(&js_public_keys);
-    //     let json_objects = to_vec_of_serde_values(js_public_keys_array.iter())?;
-    //
-    //     let public_keys: Vec<IdentityPublicKey> = json_objects
-    //         .into_iter()
-    //         .map(IdentityPublicKey::from_json_object)
-    //         .collect::<Result<Vec<IdentityPublicKey>, ProtocolError>>()
-    //         .with_js_error()?;
-    //
-    //     self.0
-    //         .add_public_keys(public_keys.into_iter().map(Into::into));
-    //     Ok(())
-    // }
-    //
+
+    // The method `addPublicKeys()` takes an variadic array of `IdentityPublicKeyWasm` as an input. But elements of the array
+    // are available ONLY as `JsValue`. WASM-bindgen uses output from `toJSON()` to store WASM-object as `JsValue`.
+    // `toJSON()` converts binary data to `base64` or `base58`. Therefore we need to use `from_json_object()` constructor to
+    // to convert strings back into bytes and get `IdentityPublicKeyWasm`
+    #[wasm_bindgen(js_name=addPublicKeys, variadic)]
+    pub fn add_public_keys(&mut self, public_keys: js_sys::Array) -> Result<(), JsValue> {
+        if public_keys.length() == 0 {
+            return Err(format!("Setting public keys failed. The input ('{}') is invalid. You must use array of PublicKeys", public_keys.to_string()).into());
+        }
+
+        let public_keys: Vec<IdentityPublicKey> = public_keys
+            .into_iter()
+            .map(|key| key
+                .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
+                .map(|key| key.to_owned().into())
+            )
+            .collect::<Result<_, _>>()?;
+
+        self.0.add_public_keys(public_keys);
+
+        Ok(())
+    }
+
     #[wasm_bindgen(js_name=getPublicKeyMaxId)]
     pub fn get_public_key_max_id(&self) -> f64 {
         self.0.get_public_key_max_id() as f64
