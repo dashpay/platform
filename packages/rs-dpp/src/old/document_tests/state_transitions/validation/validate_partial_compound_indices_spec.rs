@@ -3,16 +3,13 @@ use platform_value::Value;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::DataContract,
-    document::{
-        document_transition::{Action, DocumentTransitionObjectLike},
-        state_transition::documents_batch_transition::validation::basic::validate_partial_compound_indices::*,
-    },
     tests::fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,
     },
 };
 use crate::consensus::codes::ErrorWithCode;
 use crate::document::ExtendedDocument;
+use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 use crate::tests::fixtures::get_extended_documents_fixture;
 use crate::validation::ConsensusValidationResult;
 
