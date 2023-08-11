@@ -12,7 +12,7 @@ use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The identity is not stored inside of drive, because of this, the serialization is mainly for
@@ -21,9 +21,9 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone, PartialEq, From)]
 #[cfg_attr(
     feature = "identity-serde-conversion",
-    derive(Serialize, PlatformSerdeVersionedDeserialize),
-    serde(untagged),
-    platform_version_path("dpp.identity_versions.identity_structure_version")
+    derive(Serialize, Deserialize),
+    serde(tag = "$version"),
+    // platform_version_path("dpp.identity_versions.identity_structure_version")
 )]
 #[cfg_attr(
     feature = "identity-serialization",
@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
     platform_serialize(limit = 15000, unversioned)
 )]
 pub enum Identity {
-    #[cfg_attr(feature = "identity-serde-conversion", versioned(0))]
+    #[serde(rename = "0")]
     V0(IdentityV0),
 }
 

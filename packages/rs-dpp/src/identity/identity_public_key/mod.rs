@@ -14,7 +14,7 @@ pub use purpose::Purpose;
 pub use security_level::SecurityLevel;
 pub mod accessors;
 pub(crate) mod conversion;
-mod fields;
+pub mod fields;
 pub mod v0;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -22,6 +22,7 @@ pub use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 pub mod methods;
+pub use methods::*;
 #[cfg(feature = "random-public-keys")]
 mod random;
 
@@ -44,7 +45,9 @@ pub type TimestampMillis = u64;
     Hash,
 )]
 #[platform_serialize(limit = 2000, unversioned)] //This is not platform versioned automatically
+#[serde(tag = "$version")]
 pub enum IdentityPublicKey {
+    #[serde(rename = "0")]
     V0(IdentityPublicKeyV0),
 }
 

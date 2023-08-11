@@ -1,5 +1,5 @@
 use crate::buffer::Buffer;
-use crate::Serialize;
+use serde::{Serialize};
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::signature::PublicKeySecurityLevelNotMetError;
 use dpp::consensus::ConsensusError;
