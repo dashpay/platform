@@ -63,7 +63,7 @@ jobs:
 
   test-suite:
     name: Run Platform Test Suite
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 120
     steps:
       - name: Check out repo
@@ -104,6 +104,7 @@ jobs:
       - name: Load Docker mount cache
         uses: dcginfra/buildkit-cache-dance/inject@main
         with:
+          bucket: multi-runner-linux-x64-platform-cache-gy9micic
           mounts: |
             cargo_registry_index
             cargo_registry_cache
@@ -162,6 +163,7 @@ jobs:
       - name: Store Docker mount cache
         uses: dcginfra/buildkit-cache-dance/extract@main
         with:
+          bucket: multi-runner-linux-x64-platform-cache-gy9micic
           mounts: |
             cargo_registry_index
             cargo_registry_cache
@@ -179,7 +181,7 @@ jobs:
 
   test-suite-browsers:
     name: Run Platform Test Suite in Browsers
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 120
     steps:
       - name: Login to DockerHub
@@ -220,6 +222,7 @@ jobs:
       - name: Load Docker mount cache
         uses: dcginfra/buildkit-cache-dance/inject@main
         with:
+          bucket: multi-runner-linux-x64-platform-cache-gy9micic
           mounts: |
             cargo_registry_index
             cargo_registry_cache
@@ -278,6 +281,7 @@ jobs:
       - name: Store Docker mount cache
         uses: dcginfra/buildkit-cache-dance/extract@main
         with:
+          bucket: multi-runner-linux-x64-platform-cache-gy9micic
           mounts: |
             cargo_registry_index
             cargo_registry_cache
@@ -295,7 +299,7 @@ jobs:
 
   codeql:
     name: Code security audit
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     permissions:
       actions: read
       contents: read

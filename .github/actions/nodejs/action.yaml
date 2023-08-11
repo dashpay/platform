@@ -25,7 +25,7 @@ runs:
     - name: Cache NPM build artifacts
       uses: everpcpc/actions-cache@v1
       with:
-        bucket: platform-runner-cache
+        bucket: multi-runner-linux-x64-platform-cache-gy9micic
         root: actions-cache
         path: |
           .yarn/unplugged

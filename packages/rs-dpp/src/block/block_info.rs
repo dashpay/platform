@@ -10,8 +10,10 @@ pub struct ExtendedBlockInfo {
     pub basic_info: BlockInfo,
     /// App hash
     pub app_hash: [u8; 32],
-    /// Signature
+    /// Quorum hash
     pub quorum_hash: [u8; 32],
+    /// Hash of block ID
+    pub block_id_hash: [u8; 32],
     /// Signature
     #[serde(with = "signature_serializer")]
     pub signature: [u8; 96],
@@ -95,6 +97,7 @@ mod tests {
             basic_info: BlockInfo::default(),
             app_hash: [1; 32],
             quorum_hash: [2; 32],
+            block_id_hash: [3; 32],
             signature: [3; 96],
             round: 1,
         };
