@@ -19,7 +19,10 @@ use crate::metadata::MetadataWasm;
 
 #[wasm_bindgen(js_name=Identity)]
 #[derive(Clone)]
-pub struct IdentityWasm(Identity);
+pub struct IdentityWasm {
+    inner: Identity,
+    metadata: Option<Metadata>
+}
 
 // impl From<IdentityWasm> for Identity {
 //     fn from(identity: IdentityWasm) -> Self {
@@ -62,12 +65,15 @@ impl IdentityWasm {
         let identity: Identity = Identity::from_object(identity_platform_value)
             .map_err(from_dpp_err)?;
 
-        Ok(IdentityWasm(identity))
+        Ok(IdentityWasm {
+            inner: identity,
+            metadata: None
+        })
     }
 
     #[wasm_bindgen(js_name=getId)]
     pub fn get_id(&self) -> IdentifierWrapper {
-        self.0.id().into()
+        self.inner.id().into()
     }
 
     #[wasm_bindgen(js_name=setPublicKeys)]
@@ -84,14 +90,14 @@ impl IdentityWasm {
             }))
             .collect::<Result<_, _>>()?;
 
-        self.0.set_public_keys(public_keys);
+        self.inner.set_public_keys(public_keys);
 
-        Ok(self.0.public_keys().len())
+        Ok(self.inner.public_keys().len())
     }
 
     #[wasm_bindgen(js_name=getPublicKeys)]
     pub fn get_public_keys(&self) -> Vec<JsValue> {
-        self.0
+        self.inner
             .public_keys()
             .iter()
             .map(|(_, k)| k.to_owned())
@@ -103,7 +109,7 @@ impl IdentityWasm {
     #[wasm_bindgen(js_name=getPublicKeyById)]
     pub fn get_public_key_by_id(&self, key_id: u32) -> Option<IdentityPublicKeyWasm> {
         let key_id = key_id as KeyID;
-        self.0
+        self.inner
             .get_public_key_by_id(key_id)
             .map(IdentityPublicKey::to_owned)
             .map(Into::into)
@@ -111,39 +117,39 @@ impl IdentityWasm {
 
     #[wasm_bindgen(getter)]
     pub fn balance(&self) -> f64 {
-        self.0.balance() as f64
+        self.inner.balance() as f64
     }
 
     #[wasm_bindgen(js_name=getBalance)]
     pub fn get_balance(&self) -> f64 {
-        self.0.balance() as f64
+        self.inner.balance() as f64
     }
 
     #[wasm_bindgen(js_name=setBalance)]
     pub fn set_balance(&mut self, balance: f64) {
-        self.0.set_balance(balance as u64);
+        self.inner.set_balance(balance as u64);
     }
 
     #[wasm_bindgen(js_name=increaseBalance)]
     pub fn increase_balance(&mut self, amount: f64) -> f64 {
-        self.0.increase_balance(amount as u64) as f64
+        self.inner.increase_balance(amount as u64) as f64
     }
 
     #[wasm_bindgen(js_name=reduceBalance)]
     pub fn reduce_balance(&mut self, amount: f64) -> f64 {
-        self.0.reduce_balance(amount as u64) as f64
+        self.inner.reduce_balance(amount as u64) as f64
     }
     //
     // #[wasm_bindgen(js_name=setAssetLockProof)]
     // pub fn set_asset_lock_proof(&mut self, lock: JsValue) -> Result<(), JsValue> {
     //     let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&lock)?;
-    //     self.0.set_asset_lock_proof(asset_lock_proof);
+    //     self.inner.set_asset_lock_proof(asset_lock_proof);
     //     Ok(())
     // }
     //
     // #[wasm_bindgen(js_name=getAssetLockProof)]
     // pub fn get_asset_lock_proof(&self) -> Option<AssetLockProofWasm> {
-    //     self.0
+    //     self.inner
     //         .get_asset_lock_proof()
     //         .map(AssetLockProof::to_owned)
     //         .map(Into::into)
@@ -151,41 +157,42 @@ impl IdentityWasm {
     //
     #[wasm_bindgen(js_name=setRevision)]
     pub fn set_revision(&mut self, revision: f64) {
-        self.0.set_revision(revision as u64);
+        self.inner.set_revision(revision as u64);
     }
 
     #[wasm_bindgen(js_name=getRevision)]
     pub fn get_revision(&self) -> f64 {
-        self.0.revision() as f64
+        self.inner.revision() as f64
     }
 
-    // #[wasm_bindgen(js_name=setMetadata)]
-    // pub fn set_metadata(&mut self, metadata: JsValue) -> Result<(), JsValue> {
-    //     if !metadata.is_falsy() {
-    //         let metadata = metadata.to_wasm::<MetadataWasm>("Metadata")?;
-    //         self.0.set_balance(Identity, Metadata, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,metadata.to_owned().into())
-    //     }
-    //
-    //     Ok(())
-    // }
+    #[wasm_bindgen(js_name=setMetadata)]
+    pub fn set_metadata(&mut self, metadata: JsValue) -> Result<(), JsValue> {
+        if !metadata.is_falsy() {
+            let metadata = metadata.to_wasm::<MetadataWasm>("Metadata")?.to_owned();
+            self.metadata = Some(metadata.into());
+        }
 
-    // #[wasm_bindgen(js_name=getMetadata)]
-    // pub fn get_metadata(&self) -> Option<MetadataWasm> {
-    //     self.0
-    //         .get_metadata()
-    //         .map(Metadata::to_owned)
-    //         .map(Into::into)
-    // }
-    //
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name=getMetadata)]
+    pub fn get_metadata(&self) -> Option<MetadataWasm> {
+        self.metadata
+            .map(|metadata| metadata.to_owned().into())
+    }
+
     #[wasm_bindgen(js_name=from)]
     pub fn from(object: JsValue) -> Self {
         let i: Identity = serde_json::from_str(&object.as_string().unwrap()).unwrap();
-        IdentityWasm(i)
+        IdentityWasm {
+            inner: i,
+            metadata: None
+        }
     }
     //
     // #[wasm_bindgen(js_name=toJSON)]
     // pub fn to_json(&self) -> Result<JsValue, JsValue> {
-    //     let json = self.0.to_json().with_js_error()?;
+    //     let json = self.inner.to_json().with_js_error()?;
     //     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     //     with_js_error!(json.serialize(&serializer))
     // }
@@ -193,17 +200,17 @@ impl IdentityWasm {
     // #[wasm_bindgen(js_name=toObject)]
     // pub fn to_object(&self) -> Result<JsValue, JsValue> {
     //     let js_public_keys = js_sys::Array::new();
-    //     for pk in self.0.public_keys().values() {
+    //     for pk in self.inner.public_keys().values() {
     //         let pk_wasm = IdentityPublicKeyWasm::from(pk.to_owned());
     //         js_public_keys.push(&pk_wasm.to_object()?);
     //     }
     //
-    //     let value = self.0.to_cleaned_object().with_js_error()?;
+    //     let value = self.inner.to_cleaned_object().with_js_error()?;
     //
     //     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     //     let js_object = with_js_error!(value.serialize(&serializer))?;
     //
-    //     let id = Buffer::from_bytes(self.0.id.as_slice());
+    //     let id = Buffer::from_bytes(self.inner.id.as_slice());
     //
     //     js_sys::Reflect::set(&js_object, &"id".to_owned().into(), &id)?;
     //
@@ -218,18 +225,18 @@ impl IdentityWasm {
     //
     // #[wasm_bindgen(js_name=toBuffer)]
     // pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-    //     let bytes = PlatformSerializable::serialize(&self.0.clone()).with_js_error()?;
+    //     let bytes = PlatformSerializable::serialize(&self.inner.clone()).with_js_error()?;
     //     Ok(Buffer::from_bytes(&bytes))
     // }
     //
     // #[wasm_bindgen]
     // pub fn hash(&self) -> Result<Vec<u8>, JsValue> {
-    //     self.0.hash().with_js_error()
+    //     self.inner.hash().with_js_error()
     // }
     //
     #[wasm_bindgen(js_name=addPublicKey)]
     pub fn add_public_key(&mut self, public_key: IdentityPublicKeyWasm) {
-        self.0
+        self.inner
             .public_keys_mut()
             .insert(public_key.get_id(), public_key.into());
     }
@@ -252,14 +259,14 @@ impl IdentityWasm {
             )
             .collect::<Result<_, _>>()?;
 
-        self.0.add_public_keys(public_keys);
+        self.inner.add_public_keys(public_keys);
 
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getPublicKeyMaxId)]
     pub fn get_public_key_max_id(&self) -> f64 {
-        self.0.get_public_key_max_id() as f64
+        self.inner.get_public_key_max_id() as f64
     }
     //
     // #[wasm_bindgen(js_name=fromBuffer)]

@@ -41,14 +41,14 @@ describe('Identity', () => {
       protocolVersion: 2,
     });
 
-    // identity.setMetadata(metadataFixture);
-    //
-    // metadataFixture = new Metadata({
-    //   blockHeight: 42,
-    //   coreChainLockedHeight: 0,
-    //   timeMs: 100,
-    //   protocolVersion: 2,
-    // });
+    identity.setMetadata(metadataFixture);
+
+    metadataFixture = new Metadata({
+      blockHeight: 42,
+      coreChainLockedHeight: 0,
+      timeMs: 100,
+      protocolVersion: 2,
+    });
   });
 
   describe('#constructor', () => {
@@ -221,7 +221,7 @@ describe('Identity', () => {
     });
   });
 
-  describe.skip('#setMetadata', () => {
+  describe('#setMetadata', () => {
     it('should set metadata', () => {
       const otherMetadata = new Metadata({
         blockHeight: 43,
@@ -242,7 +242,7 @@ describe('Identity', () => {
     });
   });
 
-  describe.skip('#getMetadata', () => {
+  describe('#getMetadata', () => {
     it('should get metadata', () => {
       expect(identity.getMetadata().toObject()).to.deep.equal(metadataFixture.toObject());
     });
