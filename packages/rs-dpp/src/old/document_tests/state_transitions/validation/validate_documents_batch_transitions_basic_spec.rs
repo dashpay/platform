@@ -27,6 +27,7 @@ use crate::consensus::codes::ErrorWithCode;
 use crate::tests::utils::generate_random_identifier_struct;
 use platform_value::{platform_value, Value};
 use test_case::test_case;
+use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 
 struct TestData {
     data_contract: DataContract,
