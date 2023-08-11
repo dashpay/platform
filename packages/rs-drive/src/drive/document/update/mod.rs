@@ -586,11 +586,11 @@ mod tests {
             .expect("should create root tree");
 
         let contract = platform_value!({
-            "$id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
-            "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
+            "id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
+            "schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
             "version": 1,
             "ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
-            "documents": {
+            "documentSchemas": {
                 "indexedDocument": {
                     "type": "object",
                     "indices": [
@@ -645,8 +645,8 @@ mod tests {
            "$revision": 1,
            "firstName": "myName",
            "lastName": "lastName",
-           "$createdAt":1647535750329_u64,
-           "$updatedAt":1647535750329_u64,
+           "$createdAt": 1647535750329_u64,
+           "$updatedAt": 1647535750329_u64,
         });
 
         let document = Document::from_platform_value(document_values, platform_version)
@@ -966,7 +966,7 @@ mod tests {
             .serialize_consume(document_type, platform_version)
             .expect("expected to serialize document");
 
-        assert_eq!(document_serialized.len(), 116);
+        assert_eq!(document_serialized.len(), 120);
         let original_fees = apply_person(
             &drive,
             &contract,
@@ -984,7 +984,7 @@ mod tests {
             //Explanation for 1236
 
             //todo
-            1236
+            1238
         } else {
             //Explanation for 959
 
@@ -1000,7 +1000,7 @@ mod tests {
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 222
+            // Value -> 224
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
@@ -1019,7 +1019,7 @@ mod tests {
             // Child Heights 2
             // Basic Merk 1
 
-            // Total 65 + 222 + 68 = 355
+            // Total 65 + 224 + 68 = 357
 
             //// Tree 1 / <PersonDataContract> / 1 / person / message
             // Key: My apples are safe
@@ -1117,9 +1117,9 @@ mod tests {
 
             // Total 65 + 145 + 68 = 278
 
-            //// 357 + 179 + 145 + 278
+            //// 359 + 179 + 145 + 278
 
-            960
+            962
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1142,14 +1142,14 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 25855200);
+            assert_eq!(*removed_credits, 25908585);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 957); // we refunded 956 instead of 959
+            assert_eq!(refund_equivalent_bytes, 959); // we refunded 956 instead of 959
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1187,7 +1187,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 311 } else { 1 };
+        let expected_added_bytes = if using_history { 313 } else { 1 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
@@ -1259,7 +1259,7 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        let expected_added_bytes = if using_history { 1236 } else { 960 };
+        let expected_added_bytes = if using_history { 1238 } else { 962 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
             // let's delete it, just to make sure everything is working.
@@ -1279,14 +1279,14 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 25855200);
+            assert_eq!(*removed_credits, 25908585);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 957); // we refunded 1008 instead of 1011
+            assert_eq!(refund_equivalent_bytes, 959); // we refunded 1008 instead of 1011
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1456,26 +1456,26 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
-            //Explanation for 1236
+            //Explanation for 1238
 
             //todo
-            1236
+            1238
         } else {
             //Explanation for 959
 
             // Document Storage
 
             //// Item
-            // = 356 Bytes
+            // = 358 Bytes
 
-            // Explanation for 356 storage_written_bytes
+            // Explanation for 358 storage_written_bytes
 
             // Key -> 65 bytes
             // 32 bytes for the key prefix
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 223
+            // Value -> 225
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
@@ -1592,9 +1592,9 @@ mod tests {
 
             // Total 65 + 145 + 68 = 278
 
-            // 358 + 179 + 145 + 278 = 960
+            // 360 + 179 + 145 + 278 = 960
 
-            960
+            962
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1615,7 +1615,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 1237 } else { 961 };
+        let expected_added_bytes = if using_history { 1239 } else { 963 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 

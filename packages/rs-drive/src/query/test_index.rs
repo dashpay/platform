@@ -24,52 +24,31 @@ mod tests {
                 {
                     "name": "a",
                     "properties": [
-                        {
-                            "name": "a",
-                            "asc": true
-                        }
+                        { "a": "asc" }
                     ],
                     "unique": false
                 },
                 {
                     "name": "b",
                     "properties": [
-                        {
-                            "name": "b",
-                            "asc": false
-                        }
+                        { "b": "asc" }
                     ],
                     "unique": false
                 },
                 {
                     "name": "c",
                     "properties": [
-                        {
-                            "name": "b",
-                            "asc": false
-                        },
-                        {
-                            "name": "a",
-                            "asc": false
-                        }
+                        { "b": "asc" },
+                        { "a": "asc" }
                     ],
                     "unique": false
                 },
                 {
                     "name": "d",
                     "properties": [
-                        {
-                            "name": "b",
-                            "asc": false
-                        },
-                        {
-                            "name": "a",
-                            "asc": false
-                        },
-                        {
-                            "name": "d",
-                            "asc": false
-                        }
+                        { "b": "asc" },
+                        { "a": "asc" },
+                        { "d": "asc" }
                     ],
                     "unique": false
                 }

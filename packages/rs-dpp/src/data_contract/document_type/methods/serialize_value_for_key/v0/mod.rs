@@ -1,4 +1,7 @@
-use crate::data_contract::document_type::v0::{DocumentTypeV0, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE};
+use crate::data_contract::document_type::v0::{
+    DocumentTypeV0, DEFAULT_FLOAT_SIZE, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
+};
+use crate::data_contract::document_type::DocumentPropertyType;
 use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
 use itertools::Itertools;
@@ -27,11 +30,14 @@ impl DocumentTypeV0 {
                     Ok(bytes)
                 }
             }
+            "$createdAt" | "$updatedAt" => DocumentPropertyType::encode_date_timestamp(
+                value.to_integer().map_err(ProtocolError::ValueError)?,
+            ),
             _ => {
-                let field_type = self.flattened_properties.get(key).ok_or_else(|| {
+                let property = self.flattened_properties.get(key).ok_or_else(|| {
                     DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties.keys().join(" | "), self.name))
                 })?;
-                let bytes = field_type.r#type.encode_value_for_tree_keys(value)?;
+                let bytes = property.property_type.encode_value_for_tree_keys(value)?;
                 if bytes.len() > MAX_INDEX_SIZE {
                     Err(ProtocolError::DataContractError(
                         DataContractError::FieldRequirementUnmet(

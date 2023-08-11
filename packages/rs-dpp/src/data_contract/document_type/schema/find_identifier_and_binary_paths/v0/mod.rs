@@ -25,7 +25,7 @@ impl DocumentTypeV0 {
                 format!("{}.{}", current_path, key)
             };
 
-            match &value.r#type {
+            match &value.property_type {
                 DocumentPropertyType::Identifier => {
                     identifier_paths.insert(new_path);
                 }

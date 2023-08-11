@@ -907,8 +907,8 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        // We added 1556 bytes
-        assert_eq!(added_bytes, 1541);
+        // We added 1557 bytes
+        assert_eq!(added_bytes, 1557);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()
@@ -1032,6 +1032,6 @@ mod tests {
 
         assert!(fee_result.fee_refunds.0.is_empty());
         assert_eq!(fee_result.storage_fee, 0);
-        assert_eq!(fee_result.processing_fee, 147665780);
+        assert_eq!(fee_result.processing_fee, 147230580);
     }
 }

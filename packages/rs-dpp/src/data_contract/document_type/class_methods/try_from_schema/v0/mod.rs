@@ -236,7 +236,7 @@ impl DocumentTypeV0 {
                                             })?;
 
                                         // Validate indexed property type
-                                        match property_definition.r#type {
+                                        match property_definition.property_type {
                                             // Array and objects aren't supported for indexing yet
                                             DocumentPropertyType::Array(_)
                                             | DocumentPropertyType::Object(_)
@@ -246,7 +246,7 @@ impl DocumentTypeV0 {
                                                         name.to_owned(),
                                                         index.name.to_owned(),
                                                         index_property.name.to_owned(),
-                                                        property_definition.r#type.name(),
+                                                        property_definition.property_type.name(),
                                                     )
                                                         .into(),
                                                 )))
@@ -414,7 +414,7 @@ fn insert_values(
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
-                        r#type: field_type,
+                        property_type: field_type,
                         required: is_required,
                     },
                 );
@@ -453,7 +453,7 @@ fn insert_values(
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
-                        r#type: field_type,
+                        property_type: field_type,
                         required: is_required,
                     },
                 );
@@ -465,7 +465,7 @@ fn insert_values(
                 document_properties.insert(
                     prefixed_property_key,
                     DocumentProperty {
-                        r#type: field_type,
+                        property_type: field_type,
                         required: is_required,
                     },
                 );
@@ -593,7 +593,7 @@ fn insert_values_nested(
             document_properties.insert(
                 property_key,
                 DocumentProperty {
-                    r#type: field_type,
+                    property_type: field_type,
                     required: is_required,
                 },
             );
@@ -607,7 +607,7 @@ fn insert_values_nested(
     document_properties.insert(
         property_key,
         DocumentProperty {
-            r#type: field_type,
+            property_type: field_type,
             required: is_required,
         },
     );

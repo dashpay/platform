@@ -152,7 +152,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
         let properties = self
             .flattened_properties
             .iter()
-            .map(|(key, document_field)| (key.clone(), document_field.r#type.random_value(rng)))
+            .map(|(key, property)| (key.clone(), property.property_type.random_value(rng)))
             .collect();
 
         let revision = if self.documents_mutable {
@@ -240,9 +240,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
         let properties = self
             .flattened_properties
             .iter()
-            .map(|(key, document_field)| {
-                (key.clone(), document_field.r#type.random_filled_value(rng))
-            })
+            .map(|(key, property)| (key.clone(), property.property_type.random_filled_value(rng)))
             .collect();
 
         let revision = if self.documents_mutable {

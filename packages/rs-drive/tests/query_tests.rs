@@ -97,6 +97,7 @@ use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
 };
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+use dpp::identity::TimestampMillis;
 use dpp::platform_value;
 
 #[cfg(feature = "full")]
@@ -1007,8 +1008,8 @@ fn test_family_basic_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        9, 97, 182, 110, 7, 10, 162, 155, 118, 11, 78, 222, 3, 68, 209, 160, 216, 51, 160, 113,
-        167, 219, 121, 243, 126, 142, 130, 188, 226, 44, 14, 214,
+        156, 223, 95, 40, 112, 123, 13, 6, 72, 151, 200, 222, 132, 64, 192, 25, 51, 202, 242, 59,
+        118, 214, 85, 106, 148, 74, 112, 19, 59, 8, 241, 128,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2213,7 +2214,7 @@ fn test_family_basic_queries() {
         .query_documents_cbor_from_contract(
             &dashpay_contract,
             dashpay_contract
-                .document_type("contact")
+                .document_type("contactRequest")
                 .expect("should have contact document type"),
             &query_cbor,
             None,
@@ -2324,8 +2325,8 @@ fn test_family_basic_queries() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            226, 249, 21, 136, 237, 220, 90, 184, 201, 117, 3, 146, 74, 11, 47, 87, 239, 168, 26,
-            105, 237, 230, 112, 73, 229, 119, 0, 173, 114, 165, 46, 26
+            102, 15, 203, 145, 15, 198, 56, 31, 22, 194, 115, 191, 36, 105, 202, 159, 145, 6, 245,
+            209, 87, 192, 57, 144, 130, 250, 30, 151, 192, 204, 173, 74
         ],
     );
 }
@@ -2477,8 +2478,8 @@ fn test_family_starts_at_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        9, 97, 182, 110, 7, 10, 162, 155, 118, 11, 78, 222, 3, 68, 209, 160, 216, 51, 160, 113,
-        167, 219, 121, 243, 126, 142, 130, 188, 226, 44, 14, 214,
+        156, 223, 95, 40, 112, 123, 13, 6, 72, 151, 200, 222, 132, 64, 192, 25, 51, 202, 242, 59,
+        118, 214, 85, 106, 148, 74, 112, 19, 59, 8, 241, 128,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2919,8 +2920,8 @@ fn test_family_with_nulls_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        131, 120, 173, 203, 218, 209, 217, 10, 244, 114, 212, 89, 89, 85, 34, 60, 98, 98, 49, 127,
-        80, 176, 196, 86, 127, 237, 224, 238, 160, 88, 78, 35,
+        243, 43, 98, 62, 132, 66, 123, 202, 65, 57, 69, 120, 81, 247, 147, 109, 71, 43, 167, 140,
+        3, 233, 108, 203, 229, 240, 53, 93, 240, 24, 124, 129,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3043,8 +3044,8 @@ fn test_query_with_cached_contract() {
 
     // Make sure the state is deterministic
     let expected_app_hash = vec![
-        9, 97, 182, 110, 7, 10, 162, 155, 118, 11, 78, 222, 3, 68, 209, 160, 216, 51, 160, 113,
-        167, 219, 121, 243, 126, 142, 130, 188, 226, 44, 14, 214,
+        156, 223, 95, 40, 112, 123, 13, 6, 72, 151, 200, 222, 132, 64, 192, 25, 51, 202, 242, 59,
+        118, 214, 85, 106, 148, 74, 112, 19, 59, 8, 241, 128,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3190,8 +3191,8 @@ fn test_dpns_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        255, 48, 191, 226, 56, 147, 247, 72, 231, 46, 106, 75, 249, 6, 91, 246, 21, 117, 18, 6,
-        227, 172, 153, 231, 126, 53, 95, 50, 190, 31, 163, 255,
+        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
+        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3742,8 +3743,8 @@ fn test_dpns_query_start_at() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        255, 48, 191, 226, 56, 147, 247, 72, 231, 46, 106, 75, 249, 6, 91, 246, 21, 117, 18, 6,
-        227, 172, 153, 231, 126, 53, 95, 50, 190, 31, 163, 255,
+        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
+        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -3836,8 +3837,8 @@ fn test_dpns_query_start_after() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        255, 48, 191, 226, 56, 147, 247, 72, 231, 46, 106, 75, 249, 6, 91, 246, 21, 117, 18, 6,
-        227, 172, 153, 231, 126, 53, 95, 50, 190, 31, 163, 255,
+        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
+        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3930,8 +3931,8 @@ fn test_dpns_query_start_at_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        255, 48, 191, 226, 56, 147, 247, 72, 231, 46, 106, 75, 249, 6, 91, 246, 21, 117, 18, 6,
-        227, 172, 153, 231, 126, 53, 95, 50, 190, 31, 163, 255,
+        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
+        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4024,8 +4025,8 @@ fn test_dpns_query_start_after_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        255, 48, 191, 226, 56, 147, 247, 72, 231, 46, 106, 75, 249, 6, 91, 246, 21, 117, 18, 6,
-        227, 172, 153, 231, 126, 53, 95, 50, 190, 31, 163, 255,
+        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
+        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4219,8 +4220,8 @@ fn test_dpns_query_start_at_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        188, 113, 4, 81, 245, 170, 117, 63, 94, 159, 78, 41, 31, 228, 74, 201, 78, 244, 233, 24,
-        234, 33, 5, 171, 250, 212, 161, 174, 164, 24, 212, 69,
+        67, 43, 169, 92, 91, 128, 61, 11, 212, 215, 190, 41, 112, 8, 167, 5, 116, 57, 254, 140,
+        167, 216, 164, 29, 46, 190, 133, 2, 73, 119, 253, 248,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4428,8 +4429,8 @@ fn test_dpns_query_start_after_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        188, 113, 4, 81, 245, 170, 117, 63, 94, 159, 78, 41, 31, 228, 74, 201, 78, 244, 233, 24,
-        234, 33, 5, 171, 250, 212, 161, 174, 164, 24, 212, 69,
+        67, 43, 169, 92, 91, 128, 61, 11, 212, 215, 190, 41, 112, 8, 167, 5, 116, 57, 254, 140,
+        167, 216, 164, 29, 46, 190, 133, 2, 73, 119, 253, 248,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4639,8 +4640,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        188, 113, 4, 81, 245, 170, 117, 63, 94, 159, 78, 41, 31, 228, 74, 201, 78, 244, 233, 24,
-        234, 33, 5, 171, 250, 212, 161, 174, 164, 24, 212, 69,
+        67, 43, 169, 92, 91, 128, 61, 11, 212, 215, 190, 41, 112, 8, 167, 5, 116, 57, 254, 140,
+        167, 216, 164, 29, 46, 190, 133, 2, 73, 119, 253, 248,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -4961,12 +4962,10 @@ fn test_query_documents_by_created_at() {
     let platform_version = PlatformVersion::latest();
 
     let contract_value = platform_value!({
-        "protocolVersion": 1,
-        "$id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
-        "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
+        "id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
         "version": 1,
         "ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
-        "documents": {
+        "documentSchemas": {
             "indexedDocument": {
                 "type": "object",
                 "indices": [
@@ -5009,7 +5008,7 @@ fn test_query_documents_by_created_at() {
 
     // Create document
 
-    let created_at = 1647535750329_u64;
+    let created_at: TimestampMillis = 1647535750329;
 
     let document_value = platform_value!({
        "firstName": "myName",

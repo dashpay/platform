@@ -7,7 +7,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use chrono::Utc;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
-use platform_value::{Identifier, ReplacementType, Value};
+use platform_value::{Identifier, ReplacementType, Value, ValueMapHelper};
 use std::collections::HashSet;
 
 impl DocumentTypeV0 {
@@ -31,18 +31,32 @@ impl DocumentTypeV0 {
             None
         };
 
-        let contains_created_at = self.required_fields().contains(CREATED_AT);
-        let contains_updated_at = self.required_fields().contains(UPDATED_AT);
+        // Set timestamps if they are required and not exist
 
-        let (created_at, updated_at) = if contains_created_at || contains_updated_at {
+        let mut created_at: Option<TimestampMillis> = data
+            .get_optional_integer(CREATED_AT)
+            .map_err(ProtocolError::ValueError)?;
+
+        let mut updated_at: Option<TimestampMillis> = data
+            .get_optional_integer(UPDATED_AT)
+            .map_err(ProtocolError::ValueError)?;
+
+        let is_created_at_required = self.required_fields().contains(CREATED_AT);
+        let is_updated_at_required = self.required_fields().contains(UPDATED_AT);
+
+        if (is_created_at_required && created_at.is_none())
+            || (is_updated_at_required && updated_at.is_none())
+        {
             //we want only one call to get current time
             let now = Utc::now().timestamp_millis() as TimestampMillis;
-            let created_at = if contains_created_at { Some(now) } else { None };
 
-            let updated_at = if contains_updated_at { Some(now) } else { None };
-            (created_at, updated_at)
-        } else {
-            (None, None)
+            if is_created_at_required {
+                created_at = created_at.or(Some(now));
+            };
+
+            if is_updated_at_required {
+                updated_at = updated_at.or(Some(now));
+            };
         };
 
         match platform_version

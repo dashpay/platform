@@ -8,8 +8,8 @@ impl DocumentTypeV0 {
         let mut iter = self
             .flattened_properties
             .iter()
-            .filter_map(|(_, document_field_type)| {
-                document_field_type.r#type.middle_byte_size_ceil()
+            .filter_map(|(_, document_property)| {
+                document_property.property_type.middle_byte_size_ceil()
             });
         let first = Some(iter.next().unwrap_or_default());
 

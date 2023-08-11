@@ -294,8 +294,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            241, 114, 190, 196, 99, 216, 96, 243, 239, 150, 213, 98, 189, 115, 79, 34, 29, 153, 57,
-            239, 202, 194, 161, 187, 243, 53, 22, 18, 74, 71, 27, 247
+            34, 197, 127, 221, 72, 148, 33, 137, 251, 54, 100, 104, 82, 72, 225, 123, 111, 75, 26,
+            190, 163, 187, 248, 117, 209, 163, 73, 182, 34, 102, 81, 211
         ]
     );
 
@@ -1582,7 +1582,7 @@ fn test_query_historical() {
         .query_documents_cbor_from_contract(
             &dashpay_contract,
             dashpay_contract
-                .document_type("contact")
+                .document_type("contactRequest")
                 .expect("should have contact document type"),
             &query_cbor,
             None,
@@ -1663,8 +1663,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            213, 9, 21, 87, 130, 117, 152, 99, 239, 137, 99, 140, 167, 228, 48, 210, 24, 209, 179,
-            3, 230, 232, 199, 229, 57, 130, 83, 38, 15, 127, 111, 40
+            127, 57, 119, 151, 15, 17, 142, 200, 87, 162, 137, 229, 239, 70, 200, 225, 117, 140,
+            217, 202, 90, 5, 222, 180, 242, 125, 244, 114, 67, 91, 199, 12
         ]
     );
 }

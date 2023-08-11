@@ -115,13 +115,12 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
             "$ownerId" | "$id" => Ok(DEFAULT_HASH_SIZE_U16),
             "$createdAt" | "$updatedAt" => Ok(DEFAULT_FLOAT_SIZE_U16),
             _ => {
-                let document_field_type =
-                    document_type.flattened_properties().get(key_path).ok_or({
-                        Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
-                            "incorrect key path for document type for estimated sizes",
-                        ))
-                    })?;
-                let estimated_size = document_field_type.r#type.middle_byte_size_ceil().ok_or({
+                let property = document_type.flattened_properties().get(key_path).ok_or({
+                    Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
+                        "incorrect key path for document type for estimated sizes",
+                    ))
+                })?;
+                let estimated_size = property.property_type.middle_byte_size_ceil().ok_or({
                     Error::Drive(DriveError::CorruptedCodeExecution(
                         "document type must have a max size",
                     ))
@@ -185,7 +184,7 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
                         max_size: DEFAULT_FLOAT_SIZE as u8,
                     }))),
                     _ => {
-                        let document_field_type =
+                        let property =
                             document_type.flattened_properties().get(key_path).ok_or({
                                 Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
                                     "incorrect key path for document type",
@@ -193,7 +192,7 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
                             })?;
 
                         let estimated_middle_size =
-                            document_field_type.r#type.middle_byte_size_ceil().ok_or({
+                            property.property_type.middle_byte_size_ceil().ok_or({
                                 Error::Drive(DriveError::CorruptedCodeExecution(
                                     "document type must have a max size",
                                 ))

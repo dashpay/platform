@@ -23,7 +23,7 @@ pub mod array;
 // @append_only
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct DocumentProperty {
-    pub r#type: DocumentPropertyType,
+    pub property_type: DocumentPropertyType,
     pub required: bool,
 }
 
@@ -86,7 +86,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::Date => Some(8),
             DocumentPropertyType::Object(sub_fields) => sub_fields
                 .iter()
-                .map(|(_, sub_field)| sub_field.r#type.min_size())
+                .map(|(_, sub_field)| sub_field.property_type.min_size())
                 .sum(),
             DocumentPropertyType::Array(_) => None,
             DocumentPropertyType::VariableTypeArray(_) => None,
@@ -110,7 +110,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::Date => Some(8),
             DocumentPropertyType::Object(sub_fields) => sub_fields
                 .iter()
-                .map(|(_, sub_field)| sub_field.r#type.min_byte_size())
+                .map(|(_, sub_field)| sub_field.property_type.min_byte_size())
                 .sum(),
             DocumentPropertyType::Array(_) => None,
             DocumentPropertyType::VariableTypeArray(_) => None,
@@ -134,7 +134,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::Date => Some(8),
             DocumentPropertyType::Object(sub_fields) => sub_fields
                 .iter()
-                .map(|(_, sub_field)| sub_field.r#type.max_byte_size())
+                .map(|(_, sub_field)| sub_field.property_type.max_byte_size())
                 .sum(),
             DocumentPropertyType::Array(_) => None,
             DocumentPropertyType::VariableTypeArray(_) => None,
@@ -158,7 +158,7 @@ impl DocumentPropertyType {
             DocumentPropertyType::Date => Some(8),
             DocumentPropertyType::Object(sub_fields) => sub_fields
                 .iter()
-                .map(|(_, sub_field)| sub_field.r#type.max_size())
+                .map(|(_, sub_field)| sub_field.property_type.max_size())
                 .sum(),
             DocumentPropertyType::Array(_) => None,
             DocumentPropertyType::VariableTypeArray(_) => None,
@@ -267,7 +267,7 @@ impl DocumentPropertyType {
                     .map(|(string, field_type)| {
                         (
                             Value::Text(string.clone()),
-                            field_type.r#type.random_value(rng),
+                            field_type.property_type.random_value(rng),
                         )
                     })
                     .collect();
@@ -307,7 +307,7 @@ impl DocumentPropertyType {
                     .map(|(string, field_type)| {
                         (
                             Value::Text(string.clone()),
-                            field_type.r#type.random_filled_value(rng),
+                            field_type.property_type.random_filled_value(rng),
                         )
                     })
                     .collect();
@@ -338,7 +338,7 @@ impl DocumentPropertyType {
         }
     }
 
-    pub fn read_from(
+    pub fn read_optionaly_from(
         &self,
         buf: &mut BufReader<&[u8]>,
         required: bool,
@@ -432,7 +432,8 @@ impl DocumentPropertyType {
                 let values = inner_fields
                     .iter()
                     .filter_map(|(key, field)| {
-                        let read_value = field.r#type.read_from(buf, field.required);
+                        let read_value =
+                            field.property_type.read_optionaly_from(buf, field.required);
                         match read_value {
                             Ok(read_value) => read_value
                                 .map(|read_value| Ok((Value::Text(key.clone()), read_value))),
@@ -542,8 +543,9 @@ impl DocumentPropertyType {
                     let mut r_vec = vec![];
                     inner_fields.iter().try_for_each(|(key, field)| {
                         if let Some(value) = value_map.remove(key) {
-                            let mut serialized_value =
-                                field.r#type.encode_value_with_size(value, field.required)?;
+                            let mut serialized_value = field
+                                .property_type
+                                .encode_value_with_size(value, field.required)?;
                             r_vec.append(&mut serialized_value);
                             Ok(())
                         } else if field.required {
@@ -602,6 +604,8 @@ impl DocumentPropertyType {
                 r_vec.extend(vec);
                 Ok(r_vec)
             }
+            // TODO: Make the same as in https://github.com/dashpay/platform/blob/8d2a9e54d62b77581c44a15a09a2c61864af37d3/packages/rs-dpp/src/document/v0/serialize.rs#L161
+            //  it must be u64 BE. Markers are wrong here as well
             DocumentPropertyType::Date => {
                 let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
@@ -654,7 +658,7 @@ impl DocumentPropertyType {
                             r_vec.push(1);
                         }
                         let value = field
-                            .r#type
+                            .property_type
                             .encode_value_ref_with_size(value, field.required)?;
                         r_vec.extend(value.as_slice());
                         Ok(())

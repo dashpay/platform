@@ -16,14 +16,7 @@ impl DataContractJsonConversionMethodsV0 for DataContractV0 {
         json_value: JsonValue,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let mut value: Value = json_value.into();
-        // TODO: Revisit this. We defo don't have entropy
-        value.replace_at_paths(
-            DATA_CONTRACT_IDENTIFIER_FIELDS_V0,
-            ReplacementType::Identifier,
-        )?;
-        // TODO: We also need to replace the binary fields in document schemas
-        Self::from_value(value, platform_version)
+        Self::from_value(json_value.into(), platform_version)
     }
 
     /// Returns Data Contract as a JSON Value
