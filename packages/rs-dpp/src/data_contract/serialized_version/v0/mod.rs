@@ -1,4 +1,5 @@
 use crate::data_contract::accessors::v0::DataContractV0Getters;
+use crate::data_contract::config::v0::DataContractConfigV0;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::v0::DataContractV0;
@@ -8,6 +9,14 @@ use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub mod property_names {
+    pub const ID: &str = "id";
+    pub const OWNER_ID: &str = "ownerId";
+    pub const VERSION: &str = "version";
+    pub const DOCUMENTS: &str = "documents";
+    pub const DEFINITIONS: &str = "$defs";
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractInSerializationFormatV0 {
@@ -15,6 +24,7 @@ pub struct DataContractInSerializationFormatV0 {
     pub id: Identifier,
 
     /// Internal configuration for the contract.
+    #[serde(default = "DataContractConfigV0::default_with_version")]
     pub config: DataContractConfig,
 
     /// The version of this data contract.

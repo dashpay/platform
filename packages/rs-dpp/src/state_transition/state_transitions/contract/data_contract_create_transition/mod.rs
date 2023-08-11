@@ -14,8 +14,6 @@ mod version;
 use fields::*;
 use std::convert::TryFrom;
 
-use crate::data_contract::property_names::ENTROPY;
-
 use crate::data_contract::DataContract;
 use crate::identity::KeyID;
 use crate::serialization::PlatformDeserializable;
@@ -196,7 +194,7 @@ mod test {
             ),
             (
                 DATA_CONTRACT,
-                created_data_contract.data_contract().to_object().unwrap(),
+                created_data_contract.data_contract().to_value().unwrap(),
             ),
         ]))
         .expect("state transition should be created without errors");

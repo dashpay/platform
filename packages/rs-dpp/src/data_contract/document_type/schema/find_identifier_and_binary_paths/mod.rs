@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 mod v0;
 
 impl DocumentType {
-    pub fn find_identifier_and_binary_paths(
+    pub(in crate::data_contract) fn find_identifier_and_binary_paths(
         properties: &BTreeMap<String, DocumentProperty>,
         document_type_version: &DocumentTypeVersions,
     ) -> Result<(BTreeSet<String>, BTreeSet<String>), ProtocolError> {

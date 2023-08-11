@@ -1,3 +1,5 @@
+use crate::data_contract::accessors::v0::DataContractV0Setters;
+use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 #[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 #[cfg(any(feature = "state-transitions", feature = "factories"))]
@@ -18,6 +20,7 @@ use std::io::BufReader;
 use std::path::Path;
 
 /// Reads a JSON file and converts it to serde_value.
+#[cfg(feature = "data-contract-json-conversion")]
 pub fn json_document_to_json_value(
     path: impl AsRef<Path>,
 ) -> Result<serde_json::Value, ProtocolError> {
@@ -50,7 +53,7 @@ pub fn json_document_to_platform_value(
 }
 
 /// Reads a JSON file and converts it to CBOR.
-#[cfg(feature = "cbor")]
+#[cfg(feature = "data-contract-json-conversion")]
 pub fn json_document_to_cbor(
     path: impl AsRef<Path>,
     protocol_version: Option<u32>,
@@ -60,19 +63,19 @@ pub fn json_document_to_cbor(
 }
 
 /// Reads a JSON file and converts it a contract.
-#[cfg(feature = "data-contract-value-conversion")]
+#[cfg(feature = "data-contract-json-conversion")]
 pub fn json_document_to_contract(
     path: impl AsRef<Path>,
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
-    let value = json_document_to_platform_value(path)?;
+    let value = json_document_to_json_value(path)?;
 
-    DataContract::from_object(value, platform_version)
+    DataContract::from_json(value, platform_version)
 }
 
 #[cfg(all(
     any(feature = "state-transitions", feature = "factories"),
-    feature = "data-contract-value-conversion"
+    feature = "data-contract-json-conversion"
 ))]
 /// Reads a JSON file and converts it a contract.
 pub fn json_document_to_created_contract(
@@ -89,27 +92,26 @@ pub fn json_document_to_created_contract(
 }
 
 /// Reads a JSON file and converts it a document.
-#[cfg(feature = "data-contract-value-conversion")]
+#[cfg(feature = "data-contract-json-conversion")]
 pub fn json_document_to_contract_with_ids(
     path: impl AsRef<Path>,
     id: Option<Identifier>,
     owner_id: Option<Identifier>,
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
-    let mut value = json_document_to_platform_value(path)?;
+    let value = json_document_to_json_value(path)?;
+
+    let mut contract = DataContract::from_json(value, platform_version)?;
 
     if let Some(id) = id {
-        value.set_value("$id", platform_value::Value::Identifier(id.into_buffer()))?;
+        contract.set_id(id);
     }
 
     if let Some(owner_id) = owner_id {
-        value.set_value(
-            "$ownerId",
-            platform_value::Value::Identifier(owner_id.into_buffer()),
-        )?;
+        contract.set_owner_id(owner_id);
     }
 
-    DataContract::from_object(value, platform_version)
+    Ok(contract)
 }
 
 /// Reads a JSON file and converts it a document.

@@ -7,13 +7,13 @@ pub mod methods;
 pub use index::*;
 mod index_level;
 pub use index_level::IndexLevel;
-mod enrich_with_base_schema;
+
 #[cfg(feature = "random-documents")]
 pub mod random_document;
+pub mod schema;
 pub mod v0;
 #[cfg(feature = "validation")]
 mod validation;
-pub use enrich_with_base_schema::*;
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;

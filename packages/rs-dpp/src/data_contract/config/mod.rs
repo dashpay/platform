@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use v0::{DataContractConfigGettersV0, DataContractConfigSettersV0, DataContractConfigV0};
 
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq, From)]
-#[serde(untagged)]
+#[serde(tag = "version")]
 pub enum DataContractConfig {
     V0(DataContractConfigV0),
 }

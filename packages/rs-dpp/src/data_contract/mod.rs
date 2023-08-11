@@ -60,16 +60,6 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 pub use serde_json::Value as JsonValue;
 
-pub mod property_names {
-    pub const ID: &str = "$id";
-    pub const OWNER_ID: &str = "ownerId";
-    pub const VERSION: &str = "version";
-    pub const SCHEMA: &str = "$schema";
-    pub const DOCUMENTS: &str = "documents";
-    pub const DEFINITIONS: &str = "$defs";
-    pub const ENTROPY: &str = "entropy"; // not a data contract field actually but at some point it can be there for some time
-}
-
 type JsonSchema = JsonValue;
 type DefinitionName = String;
 pub type DocumentName = String;

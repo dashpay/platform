@@ -1,6 +1,6 @@
 use crate::data_contract::config;
 use crate::data_contract::config::{
-    DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
+    DataContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
     DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
     DEFAULT_CONTRACT_MUTABILITY,
 };
@@ -81,8 +81,12 @@ impl std::default::Default for DataContractConfigV0 {
 }
 
 impl DataContractConfigV0 {
-    pub fn from_object(value: Value) -> Result<Self, ProtocolError> {
+    pub fn from_value(value: Value) -> Result<Self, ProtocolError> {
         platform_value::from_value(value).map_err(ProtocolError::ValueError)
+    }
+
+    pub fn default_with_version() -> DataContractConfig {
+        Self::default().into()
     }
 }
 

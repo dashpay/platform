@@ -42,7 +42,7 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
                 .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            data_contract: DataContract::from_object(
+            data_contract: DataContract::from_value(
                 raw_object.remove(DATA_CONTRACT).map_err(|_| {
                     ProtocolError::DecodingError(
                         "data contract missing on state transition".to_string(),
@@ -71,7 +71,7 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
                 .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            data_contract: DataContract::from_object(
+            data_contract: DataContract::from_value(
                 raw_value_map
                     .remove(DATA_CONTRACT)
                     .ok_or(ProtocolError::DecodingError(

@@ -48,6 +48,7 @@ use std::sync::Arc;
 
 #[cfg(feature = "full")]
 use dpp::data_contract::DataContractFactory;
+use rand::random;
 #[cfg(feature = "full")]
 use rand::seq::SliceRandom;
 #[cfg(feature = "full")]
@@ -90,6 +91,8 @@ use dpp::platform_value::{platform_value, Bytes32, Identifier};
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
 };
@@ -113,6 +116,7 @@ use drive::drive::defaults;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 #[cfg(feature = "full")]
 use drive::drive::document::query::QuerySerializedDocumentsOutcome;
+use drive::drive::object_size_info::DocumentInfo;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 
 use drive::query::{WhereClause, WhereOperator};
@@ -2178,16 +2182,19 @@ fn test_family_basic_queries() {
 
     // query empty contract with nested path queries
 
-    let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
+    let dashpay_contract = json_document_to_contract(
+        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        platform_version,
+    )
+    .expect("expected to get cbor document");
 
     drive
-        .apply_contract_cbor(
-            contract_cbor.clone(),
-            None,
-            BlockInfo::genesis(),
+        .apply_contract(
+            &dashpay_contract,
+            BlockInfo::default(),
             true,
             StorageFlags::optional_default_as_cow(),
-            Some(&db_transaction),
+            None,
             platform_version,
         )
         .expect("expected to apply contract successfully");
@@ -2203,10 +2210,12 @@ fn test_family_basic_queries() {
         .expect("expected to serialize to cbor");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
-            query_cbor.as_slice(),
-            contract_cbor.as_slice(),
-            String::from("contact"),
+        .query_documents_cbor_from_contract(
+            &dashpay_contract,
+            dashpay_contract
+                .document_type("contact")
+                .expect("should have contact document type"),
+            &query_cbor,
             None,
             Some(&db_transaction),
             Some(platform_version.protocol_version),
@@ -4951,7 +4960,7 @@ fn test_query_documents_by_created_at() {
 
     let platform_version = PlatformVersion::latest();
 
-    let contract = platform_value!({
+    let contract_value = platform_value!({
         "protocolVersion": 1,
         "$id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
         "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
@@ -4984,17 +4993,12 @@ fn test_query_documents_by_created_at() {
         },
     });
 
-    let contract_cbor =
-        cbor_serializer::serializable_value_to_cbor(&contract, Some(defaults::PROTOCOL_VERSION))
-            .expect("expected to serialize to cbor");
-
-    let contract = DataContract::from_object(contract, platform_version)
+    let contract = DataContract::from_value(contract_value, platform_version)
         .expect("should create a contract from cbor");
 
     drive
-        .apply_contract_with_serialization(
+        .apply_contract(
             &contract,
-            contract_cbor.clone(),
             BlockInfo::default(),
             true,
             None,
@@ -5007,33 +5011,41 @@ fn test_query_documents_by_created_at() {
 
     let created_at = 1647535750329_u64;
 
-    let document = platform_value!({
-       "$protocolVersion": 1u32,
-       "$id": "DLRWw2eRbLAW5zDU2c7wwsSFQypTSZPhFYzpY48tnaXN",
-       "$type": "indexedDocument",
-       "$dataContractId": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
-       "$ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
-       "$revision": 1 as Revision,
+    let document_value = platform_value!({
        "firstName": "myName",
        "lastName": "lastName",
        "$createdAt": created_at,
        "$updatedAt": created_at,
     });
 
-    let serialized_document =
-        cbor_serializer::serializable_value_to_cbor(&document, Some(defaults::PROTOCOL_VERSION))
-            .expect("expected to serialize to cbor");
+    let document = contract
+        .document_type("indexedDocument")
+        .expect("should have indexedDocument type")
+        .create_document_from_data(
+            document_value,
+            Identifier::random(),
+            random(),
+            platform_version,
+        )
+        .expect("should create document");
+
+    let info = DocumentAndContractInfo {
+        owned_document_info: OwnedDocumentInfo {
+            document_info: DocumentInfo::DocumentOwnedInfo((document, None)),
+            owner_id: None,
+        },
+        contract: &contract,
+        document_type: contract
+            .document_type("indexedDocument")
+            .expect("should have indexedDocument type"),
+    };
 
     drive
-        .add_cbor_serialized_document_for_serialized_contract(
-            serialized_document.as_slice(),
-            contract_cbor.as_slice(),
-            "indexedDocument",
-            None,
+        .add_document_for_contract(
+            info,
             true,
             BlockInfo::default(),
             true,
-            StorageFlags::optional_default_as_cow(),
             None,
             platform_version,
         )

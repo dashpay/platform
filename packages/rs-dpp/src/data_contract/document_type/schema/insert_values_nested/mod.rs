@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 mod v0;
 
 impl DocumentType {
-    pub fn insert_values_nested(
+    pub(in crate::data_contract) fn insert_values_nested(
         document_properties: &mut BTreeMap<String, DocumentProperty>,
         known_required: &BTreeSet<String>,
         property_key: String,

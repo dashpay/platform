@@ -22,13 +22,6 @@ use crate::Convertible;
 use crate::{errors::ProtocolError, metadata::Metadata};
 use platform_value::string_encoding::Encoding;
 
-use super::super::property_names;
-
-pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =
-    [property_names::ID, property_names::OWNER_ID];
-// TODO: move to ST?
-pub const DATA_CONTRACT_BINARY_FIELDS_V0: [&str; 1] = [property_names::ENTROPY];
-
 /// `DataContractV0` represents a data contract in a decentralized platform.
 ///
 /// It contains information about the contract, such as its protocol version, unique identifier,

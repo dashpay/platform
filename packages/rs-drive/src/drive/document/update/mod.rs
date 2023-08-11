@@ -619,7 +619,7 @@ mod tests {
 
         // first we need to deserialize the contract
         let contract =
-            DataContract::from_object(contract, platform_version).expect("expected data contract");
+            DataContract::from_value(contract, platform_version).expect("expected data contract");
 
         drive
             .apply_contract(

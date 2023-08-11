@@ -1,14 +1,15 @@
-use crate::data_contract::errors::{DataContractError, JsonSchemaError};
-use crate::data_contract::property_names;
+use crate::data_contract::document_type::property_names;
+use crate::data_contract::errors::DataContractError;
+use crate::data_contract::serialized_version::v0::property_names as contract_property_names;
 use crate::data_contract::JsonValue;
 use crate::util::json_schema::JsonSchemaExt;
 use crate::ProtocolError;
 use lazy_static::lazy_static;
-use platform_value::{Value, ValueMap, ValueMapHelper};
+use platform_value::{Value, ValueMapHelper};
 
 lazy_static! {
     pub static ref BASE_DOCUMENT_SCHEMA: JsonValue = serde_json::from_str(include_str!(
-        "../../../../../schema/document/document-base.json"
+        "../../../../../../schema/document/document-base.json"
     ))
     .expect("can't parse documentBase.json");
 }
@@ -19,6 +20,8 @@ pub const DATA_CONTRACT_SCHEMA_URI_V0: &str =
 // TODO: Duplicates packages/rs-dpp/src/data_contract/document_type/mod.rs
 const PROPERTY_PROPERTIES: &str = "properties";
 const PROPERTY_REQUIRED: &str = "required";
+
+pub const PROPERTY_SCHEMA: &str = "$schema";
 
 pub fn enrich_with_base_schema_v0(
     mut schema: Value,
@@ -43,10 +46,7 @@ pub fn enrich_with_base_schema_v0(
     let base_required = BASE_DOCUMENT_SCHEMA.get_schema_required_fields()?;
 
     // Add $schema
-    if schema_map
-        .get_optional_key(property_names::SCHEMA)
-        .is_some()
-    {
+    if schema_map.get_optional_key(PROPERTY_SCHEMA).is_some() {
         return Err(ProtocolError::DataContractError(
             DataContractError::InvalidContractStructure(
                 "document schema shouldn't contain '$schema' property".to_string(),
@@ -55,13 +55,13 @@ pub fn enrich_with_base_schema_v0(
     }
 
     schema_map.insert_string_key_value(
-        property_names::SCHEMA.to_string(),
+        PROPERTY_SCHEMA.to_string(),
         DATA_CONTRACT_SCHEMA_URI_V0.into(),
     );
 
     // Add $defs
     if schema_map
-        .get_optional_key(property_names::DEFINITIONS)
+        .get_optional_key(contract_property_names::DEFINITIONS)
         .is_some()
     {
         return Err(ProtocolError::DataContractError(
@@ -73,7 +73,7 @@ pub fn enrich_with_base_schema_v0(
 
     if let Some(schema_defs) = schema_defs {
         schema_map.insert_string_key_value(
-            property_names::DEFINITIONS.to_string(),
+            contract_property_names::DEFINITIONS.to_string(),
             Value::from(schema_defs),
         )
     }

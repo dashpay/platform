@@ -1,7 +1,6 @@
 {
-    "$id": "8MjTnX7JUbGfYYswyuCtHU7ZqcYU9s1fUaNiqD9s5tEw",
+    "id": "8MjTnX7JUbGfYYswyuCtHU7ZqcYU9s1fUaNiqD9s5tEw",
     "ownerId": "2QjL594djCH2NyDsn45vd6yQjEDHupMKo7CEGVTHtQxU",
-    "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
     "version": 1,
     "documents": {
         "profile": {

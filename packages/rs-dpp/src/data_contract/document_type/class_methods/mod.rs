@@ -1,5 +1,2 @@
 mod create_document_types_from_document_schemas;
-mod find_identifier_and_binary_paths;
-mod insert_values;
-mod insert_values_nested;
 mod try_from_schema;
