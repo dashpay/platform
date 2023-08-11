@@ -52,17 +52,17 @@ impl Drive {
         // To update but not create:
 
         // 1. Override should be allowed
-        let is_update = override_document;
+        let could_be_update = override_document;
 
         // 2. Is not a dry run
-        let is_update = is_update
+        let could_be_update = could_be_update
             && !document_and_contract_info
                 .owned_document_info
                 .document_info
                 .is_document_size();
 
         // 3. Document is exists in the storage
-        let is_update = is_update
+        let is_update = could_be_update
             && self.grove_has_raw(
                 primary_key_path.as_ref().into(),
                 document_and_contract_info
