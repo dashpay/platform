@@ -13,6 +13,7 @@ use dpp::consensus::state::document::document_timestamp_window_violation_error::
 use dpp::consensus::state::document::document_timestamps_mismatch_error::DocumentTimestampsMismatchError;
 use dpp::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
@@ -23,7 +24,7 @@ use dpp::{
     validation::ConsensusValidationResult,
     ProtocolError,
 };
-use dpp::data_contract::base::DataContractBaseMethodsV0;
+
 use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition};
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
@@ -178,7 +179,7 @@ fn validate_document_transitions_within_document_type(
 
     let data_contract = &data_contract_fetch_info.contract;
 
-    let document_type = data_contract.document_type_for_name(document_type_name)?;
+    let document_type = data_contract.document_type(document_type_name)?;
 
     // we fetch all documents needed for the transitions
     // for create they should not exist

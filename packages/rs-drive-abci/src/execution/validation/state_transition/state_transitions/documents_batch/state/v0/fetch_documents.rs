@@ -5,7 +5,8 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
 use dpp::consensus::basic::BasicError;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 
@@ -93,7 +94,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
 
     let contract_fetch_info = contract_fetch_info;
 
-    let Some(document_type) = contract_fetch_info.contract.optional_document_type_for_name(document_type_name) else {
+    let Some(document_type) = contract_fetch_info.contract.document_type_opt(document_type_name) else {
         return Ok(ConsensusValidationResult::new_with_error(BasicError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(document_type_name.to_string(), *contract_id)).into()));
     };
     fetch_documents_for_transitions_knowing_contract_and_document_type(

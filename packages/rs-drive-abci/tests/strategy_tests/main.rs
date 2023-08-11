@@ -73,10 +73,11 @@ mod tests {
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::data_contract::extra::common::json_document_to_created_contract;
+
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
     use drive_abci::config::PlatformTestConfig;
@@ -1115,7 +1116,7 @@ mod tests {
             contract: contract.clone(),
             action: DocumentAction::DocumentActionInsert,
             document_type: contract
-                .document_type_for_name("contactRequest")
+                .document_type("contactRequest")
                 .expect("expected a profile document type")
                 .to_owned_document_type(),
         };
@@ -1186,7 +1187,7 @@ mod tests {
             contract: contract.clone(),
             action: DocumentAction::DocumentActionInsert,
             document_type: contract
-                .document_type_for_name("contactRequest")
+                .document_type("contactRequest")
                 .expect("expected a profile document type")
                 .to_owned_document_type(),
         };
@@ -1267,7 +1268,7 @@ mod tests {
             contract: contract.clone(),
             action: DocumentAction::DocumentActionInsert,
             document_type: contract
-                .document_type_for_name("contactRequest")
+                .document_type("contactRequest")
                 .expect("expected a profile document type")
                 .to_owned_document_type(),
         };
@@ -1276,7 +1277,7 @@ mod tests {
             contract: contract.clone(),
             action: DocumentAction::DocumentActionDelete,
             document_type: contract
-                .document_type_for_name("contactRequest")
+                .document_type("contactRequest")
                 .expect("expected a profile document type")
                 .to_owned_document_type(),
         };
@@ -1366,7 +1367,7 @@ mod tests {
             contract: contract.clone(),
             action: DocumentAction::DocumentActionInsert,
             document_type: contract
-                .document_type_for_name("contactRequest")
+                .document_type("contactRequest")
                 .expect("expected a profile document type")
                 .to_owned_document_type(),
         };
@@ -1375,7 +1376,7 @@ mod tests {
             contract: contract.clone(),
             action: DocumentAction::DocumentActionDelete,
             document_type: contract
-                .document_type_for_name("contactRequest")
+                .document_type("contactRequest")
                 .expect("expected a profile document type")
                 .to_owned_document_type(),
         };
@@ -1479,7 +1480,7 @@ mod tests {
             contract: contract.clone(),
             action: DocumentAction::DocumentActionInsert,
             document_type: contract
-                .document_type_for_name("contactRequest")
+                .document_type("contactRequest")
                 .expect("expected a profile document type")
                 .to_owned_document_type(),
         };
@@ -1488,7 +1489,7 @@ mod tests {
             contract: contract.clone(),
             action: DocumentAction::DocumentActionDelete,
             document_type: contract
-                .document_type_for_name("contactRequest")
+                .document_type("contactRequest")
                 .expect("expected a profile document type")
                 .to_owned_document_type(),
         };
@@ -1581,7 +1582,7 @@ mod tests {
             contract: contract.clone(),
             action: DocumentAction::DocumentActionInsert,
             document_type: contract
-                .document_type_for_name("contactRequest")
+                .document_type("contactRequest")
                 .expect("expected a profile document type")
                 .to_owned_document_type(),
         };
@@ -1590,7 +1591,7 @@ mod tests {
             contract: contract.clone(),
             action: DocumentActionReplace,
             document_type: contract
-                .document_type_for_name("contactRequest")
+                .document_type("contactRequest")
                 .expect("expected a profile document type")
                 .to_owned_document_type(),
         };
@@ -1599,7 +1600,7 @@ mod tests {
             contract: contract.clone(),
             action: DocumentAction::DocumentActionDelete,
             document_type: contract
-                .document_type_for_name("contactRequest")
+                .document_type("contactRequest")
                 .expect("expected a profile document type")
                 .to_owned_document_type(),
         };

@@ -8,9 +8,6 @@ use platform_value::{ReplacementType, Value};
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
-pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =
-    [property_names::ID, property_names::OWNER_ID];
-
 impl DataContractJsonConversionMethodsV0 for DataContractV0 {
     fn from_json(
         json_value: JsonValue,

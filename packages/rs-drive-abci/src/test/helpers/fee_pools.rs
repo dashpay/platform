@@ -42,7 +42,8 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
 use dpp::data_contract::DataContract;
 use dpp::document::{DocumentV0, INITIAL_REVISION};
 use dpp::identity::accessors::IdentityGettersV0;
@@ -87,7 +88,7 @@ fn create_test_mn_share_document(
     .into();
 
     let document_type = contract
-        .document_type_for_name(document_types::reward_share::NAME)
+        .document_type(document_types::reward_share::NAME)
         .expect("expected to get a document type");
 
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));

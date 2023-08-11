@@ -17,10 +17,10 @@ use drive::dpp::document::Document;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::version::PlatformVersion;
 use drive::drive::document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods};
 use std::collections::BTreeMap;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use crate::execution::platform_events::fee_pool_outwards_distribution::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
 
 impl<C> Platform<C> {
@@ -35,7 +35,7 @@ impl<C> Platform<C> {
             .drive
             .system_contracts
             .masternode_rewards
-            .document_type_for_name(MN_REWARD_SHARES_DOCUMENT_TYPE)?;
+            .document_type(MN_REWARD_SHARES_DOCUMENT_TYPE)?;
 
         let drive_query = DriveQuery {
             contract: &self.drive.system_contracts.masternode_rewards,

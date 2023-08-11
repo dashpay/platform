@@ -1,4 +1,5 @@
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 ///! The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
 use dpp::util::hash::hash;
 use std::collections::BTreeMap;
@@ -9,7 +10,6 @@ use crate::error::Error;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::document::DocumentV0Getters;
 use dpp::platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
 use dpp::platform_value::Value;
@@ -177,7 +177,7 @@ pub fn create_domain_data_trigger_v0(
         let parent_domain_label = parent_domain_segments.next().unwrap().to_string();
         let grand_parent_domain_name = parent_domain_segments.collect::<Vec<&str>>().join(".");
 
-        let document_type = data_contract.document_type_for_name(
+        let document_type = data_contract.document_type(
             document_create_transition
                 .base()
                 .document_type_name()
@@ -282,7 +282,7 @@ pub fn create_domain_data_trigger_v0(
 
     let salted_domain_hash = hash(salted_domain_buffer);
 
-    let document_type = data_contract.document_type_for_name("preorder")?;
+    let document_type = data_contract.document_type("preorder")?;
 
     let drive_query = DriveQuery {
         contract: data_contract,
@@ -386,7 +386,7 @@ mod test {
         )
         .data_contract_owned();
         let document_type = data_contract
-            .document_type_for_name("domain")
+            .document_type("domain")
             .expect("expected to get domain document type");
         let transitions = get_document_transitions_fixture([(
             DocumentTransitionActionType::Create,

@@ -14,7 +14,8 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use dpp::consensus::ConsensusError;
-use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -94,12 +95,18 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
                             .to_string(),
                     ))?;
                 batch_transition.contract_based_security_level_requirement(
-                    |identifier, document_type| {
-                        let data_contract = get_data_contract(identifier)?;
-                        let document_schema =
-                            data_contract.contract.get_document_schema(&document_type)?;
-                        let document_security_level =
-                            get_security_level_requirement(document_schema, DEFAULT_SECURITY_LEVEL);
+                    |identifier, document_type_name| {
+                        let data_contract_info = get_data_contract(identifier)?;
+
+                        let document_type = data_contract_info
+                            .contract
+                            .document_type(&document_type_name)?;
+
+                        let document_security_level = get_security_level_requirement(
+                            document_type.schema(),
+                            DEFAULT_SECURITY_LEVEL,
+                        );
+
                         Ok(document_security_level)
                     },
                 )

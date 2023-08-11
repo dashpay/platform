@@ -2,7 +2,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Value;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
@@ -12,6 +11,7 @@ use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::{document, ProtocolError};
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::DocumentV0Getters;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
@@ -49,7 +49,7 @@ pub fn delete_withdrawal_data_trigger_v0(
         ))));
     };
 
-    let document_type = data_contract.document_type_for_name(withdrawal::NAME)?;
+    let document_type = data_contract.document_type(withdrawal::NAME)?;
 
     let drive_query = DriveQuery {
         contract: data_contract,
@@ -208,7 +208,7 @@ mod tests {
         let owner_id = data_contract.owner_id();
 
         let document_type = data_contract
-            .document_type_for_name(withdrawal::NAME)
+            .document_type(withdrawal::NAME)
             .expect("expected to get withdrawal document type");
         let document = get_withdrawal_document_fixture(
             &data_contract,
@@ -263,7 +263,7 @@ mod tests {
         let owner_id = data_contract.owner_id();
 
         let document_type = data_contract
-            .document_type_for_name(withdrawal::NAME)
+            .document_type(withdrawal::NAME)
             .expect("expected to get withdrawal document type");
 
         let document = get_withdrawal_document_fixture(

@@ -9,13 +9,14 @@ use drive_abci::abci::AbciApplication;
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use prost::Message;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
+
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
@@ -153,9 +154,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                                     .base()
                                     .data_contract_fetch_info()
                                     .contract
-                                    .document_type_for_name(
-                                        transition.base().document_type_name().as_str(),
-                                    )
+                                    .document_type(transition.base().document_type_name().as_str())
                                     .expect("get document type")
                                     .documents_keep_history(),
                                 document_id: transition.base().id().to_vec(),
@@ -180,7 +179,7 @@ pub(crate) fn verify_state_transitions_were_executed(
 
                     let document_type = contract_fetch_info
                         .contract
-                        .document_type_for_name(
+                        .document_type(
                             document_transition_action
                                 .base()
                                 .document_type_name()

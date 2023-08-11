@@ -28,18 +28,9 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
         cbor_bytes: impl AsRef<[u8]>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let SplitProtocolVersionOutcome {
-            protocol_version,
-            protocol_version_size,
-            main_message_bytes: contract_cbor_bytes,
-        } = deserializer::split_cbor_protocol_version(cbor_bytes.as_ref())?;
-
-        let data_contract_cbor_value: CborValue = ciborium::de::from_reader(contract_cbor_bytes)
+        let data_contract_cbor_value: CborValue = ciborium::de::from_reader(cbor_bytes.as_ref())
             .map_err(|_| {
-                ProtocolError::DecodingError(format!(
-                    "unable to decode contract with protocol version {} offset {}",
-                    protocol_version, protocol_version_size
-                ))
+                ProtocolError::DecodingError(format!("unable to decode contract from cbor",))
             })?;
 
         let data_contract_value: Value =
@@ -53,7 +44,7 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
 
         let mut buf: Vec<u8> = Vec::new();
 
-        ciborium::ser::into_writer(value.into(), &mut buf)
+        ciborium::ser::into_writer(&value, &mut buf)
             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
 
         Ok(buf)
@@ -79,26 +70,28 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<CborCanonicalMap, ProtocolError> {
-        let mut contract_cbor_map = CborCanonicalMap::new();
+        unimplemented!();
 
-        contract_cbor_map.insert(property_names::ID, self.id.to_buffer().to_vec());
-        contract_cbor_map.insert(property_names::SCHEMA, self.schema.as_str());
-        contract_cbor_map.insert(property_names::VERSION, self.version);
-        contract_cbor_map.insert(property_names::OWNER_ID, self.owner_id.to_buffer().to_vec());
-
-        let docs = CborValue::serialized(&self.documents)
-            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
-
-        contract_cbor_map.insert(property_names::DOCUMENTS, docs);
-
-        if let Some(_defs) = &self.defs {
-            contract_cbor_map.insert(
-                property_names::DEFINITIONS,
-                CborValue::serialized(&self.defs)
-                    .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
-            );
-        };
-
-        Ok(contract_cbor_map)
+        // let mut contract_cbor_map = CborCanonicalMap::new();
+        //
+        // contract_cbor_map.insert(property_names::ID, self.id.to_buffer().to_vec());
+        // contract_cbor_map.insert(property_names::SCHEMA, self.schema.as_str());
+        // contract_cbor_map.insert(property_names::VERSION, self.version);
+        // contract_cbor_map.insert(property_names::OWNER_ID, self.owner_id.to_buffer().to_vec());
+        //
+        // let docs = CborValue::serialized(&self.documents)
+        //     .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+        //
+        // contract_cbor_map.insert(property_names::DOCUMENTS, docs);
+        //
+        // if let Some(_defs) = &self.defs {
+        //     contract_cbor_map.insert(
+        //         property_names::DEFINITIONS,
+        //         CborValue::serialized(&self.defs)
+        //             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
+        //     );
+        // };
+        //
+        // Ok(contract_cbor_map)
     }
 }

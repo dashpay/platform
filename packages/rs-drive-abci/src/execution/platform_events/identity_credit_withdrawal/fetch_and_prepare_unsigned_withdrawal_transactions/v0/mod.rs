@@ -6,7 +6,7 @@ use dashcore_rpc::dashcore::{
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Setters};
 use dpp::version::PlatformVersion;
@@ -146,7 +146,7 @@ where
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
-                .document_type_for_name(withdrawal::NAME)
+                .document_type(withdrawal::NAME)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "could not get document type",

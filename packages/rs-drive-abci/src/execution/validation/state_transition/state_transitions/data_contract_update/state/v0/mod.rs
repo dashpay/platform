@@ -11,7 +11,7 @@ use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
+
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -24,7 +24,6 @@ use dpp::{
     consensus::basic::data_contract::{
         DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
     },
-    data_contract::property_names,
     platform_value::{self, Value},
     Convertible, ProtocolError,
 };
@@ -103,7 +102,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         for (new_contract_document_type_name, new_contract_document_type) in
             new_data_contract.document_types()
         {
-            let Some(old_contract_document_type) = old_data_contract.optional_document_type_for_name(new_contract_document_type_name) else {
+            let Some(old_contract_document_type) = old_data_contract.document_type_opt(new_contract_document_type_name) else {
                 // if it's a new document type (ie the old data contract didn't have it)
                 // then new indices on it are fine
                 continue;

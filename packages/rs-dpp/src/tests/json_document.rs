@@ -1,4 +1,5 @@
 use crate::data_contract::accessors::v0::DataContractV0Setters;
+#[cfg(feature = "data-contract-json-conversion")]
 use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 #[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;

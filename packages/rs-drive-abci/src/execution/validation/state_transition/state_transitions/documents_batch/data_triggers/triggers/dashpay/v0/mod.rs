@@ -3,6 +3,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::ProtocolError;
@@ -124,10 +125,10 @@ pub fn create_contact_request_data_trigger_v0(
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
+    use std::sync::Arc;
+
     use dpp::document::{DocumentV0Getters, DocumentV0Setters};
     use dpp::platform_value;
     use dpp::platform_value::platform_value;
@@ -170,7 +171,7 @@ mod test {
         let data_contract =
             get_dashpay_contract_fixture(None, protocol_version).data_contract_owned();
         let document_type = data_contract
-            .document_type_for_name("contactRequest")
+            .document_type("contactRequest")
             .expect("expected a contact request");
 
         let document_transitions = get_document_transitions_fixture([(
@@ -256,7 +257,7 @@ mod test {
         )
         .data_contract_owned();
         let document_type = data_contract
-            .document_type_for_name("contactRequest")
+            .document_type("contactRequest")
             .expect("expected a contact request");
 
         let document_transitions = get_document_transitions_fixture([(
@@ -361,7 +362,7 @@ mod test {
         )
         .data_contract_owned();
         let document_type = data_contract
-            .document_type_for_name("contactRequest")
+            .document_type("contactRequest")
             .expect("expected a contact request");
         let owner_id = contact_request_document.owner_id();
         let contract_request_to_user_id = contact_request_document

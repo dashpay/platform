@@ -107,7 +107,7 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
+
     use dpp::data_contract::DataContract;
     use dpp::platform_value::{BinaryData, Value};
     use dpp::state_transition::data_contract_update_transition::{
@@ -173,14 +173,15 @@ mod tests {
 
         use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
         use dpp::block::block_info::BlockInfo;
-        use dpp::data_contract::accessors::v0::DataContractV0Getters;
-        use dpp::data_contract::base::DataContractBaseMethodsV0;
+        use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+
         use dpp::data_contract::config::v0::{
             DataContractConfigGettersV0, DataContractConfigSettersV0,
         };
-        use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
-        use dpp::data_contract::schema::DataContractDocumentSchemaMethodsV0;
+
         use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+        use dpp::data_contract::DataContractMethodsV0;
+        use dpp::platform_value::platform_value;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::version::TryFromPlatformVersioned;
         use serde_json::json;
@@ -196,7 +197,7 @@ mod tests {
             data_contract.config_mut().set_readonly(true);
             apply_contract(&platform, &data_contract, Default::default());
 
-            let updated_document = json!({
+            let updated_document = platform_value!({
                 "type": "object",
                 "properties": {
                     "name": {
@@ -267,7 +268,7 @@ mod tests {
                 },
             );
 
-            let updated_document = json!({
+            let updated_document = platform_value!({
                 "type": "object",
                 "properties": {
                     "name": {

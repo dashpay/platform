@@ -40,7 +40,6 @@ use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublic
 use crate::platform_types::system_identity_public_keys::SystemIdentityPublicKeys;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::document::DocumentV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -260,7 +259,7 @@ impl<C> Platform<C> {
         }
         .into();
 
-        let document_type = contract.document_type_for_name("domain")?;
+        let document_type = contract.document_type("domain")?;
 
         let operation =
             DriveOperation::DocumentOperation(DocumentOperationType::AddDocumentForContract {

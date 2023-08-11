@@ -1,12 +1,16 @@
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
+use crate::data_contract::serialized_version::v0::{
+    property_names, DataContractInSerializationFormatV0,
+};
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-use crate::data_contract::v0::conversion::json::DATA_CONTRACT_IDENTIFIER_FIELDS_V0;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{ReplacementType, Value};
 use platform_version::TryFromPlatformVersioned;
+
+pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =
+    [property_names::ID, property_names::OWNER_ID];
 
 impl DataContractValueConversionMethodsV0 for DataContractV0 {
     fn from_value(

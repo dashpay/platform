@@ -188,7 +188,7 @@ impl DocumentTypeV0 {
             };
 
             DocumentProperty {
-                r#type: document_type,
+                property_type: document_type,
                 required,
             }
         };

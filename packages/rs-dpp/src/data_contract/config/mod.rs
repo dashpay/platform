@@ -14,6 +14,7 @@ use v0::{DataContractConfigGettersV0, DataContractConfigSettersV0, DataContractC
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq, From)]
 #[serde(tag = "version")]
 pub enum DataContractConfig {
+    #[serde(rename = "0")]
     V0(DataContractConfigV0),
 }
 

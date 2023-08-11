@@ -63,10 +63,12 @@ use dpp::data_contract::DataContract;
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
 use dpp::prelude::Identifier;
+
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::tests::json_document::json_document_to_contract_with_ids;
 use dpp::version::PlatformVersion;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "fixtures-and-mocks")]
 /// Serializes to CBOR and applies to Drive a JSON contract from the file system.
 pub fn setup_contract(
     drive: &Drive,

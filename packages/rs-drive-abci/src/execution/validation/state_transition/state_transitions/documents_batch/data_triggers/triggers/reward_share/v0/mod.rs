@@ -2,12 +2,12 @@
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::{Identifier, Value};
 
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::version::PlatformVersion;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::DocumentV0Getters;
 use dpp::ProtocolError;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
@@ -110,8 +110,8 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
         return Ok(result);
     }
 
-    let document_type = data_contract
-        .document_type_for_name(&document_create_transition.base().document_type_name())?;
+    let document_type =
+        data_contract.document_type(&document_create_transition.base().document_type_name())?;
 
     let drive_query = DriveQuery {
         contract: data_contract,
@@ -297,7 +297,7 @@ mod test {
 
         let (documents, data_contract) = get_masternode_reward_shares_documents_fixture(1);
         let document_type = data_contract
-            .document_type_for_name("rewardShare")
+            .document_type("rewardShare")
             .expect("expected the rewards document type");
         let document_transitions = get_document_transitions_fixture([(
             DocumentTransitionActionType::Create,
@@ -350,7 +350,7 @@ mod test {
         } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
 
         let document_type = data_contract
-            .document_type_for_name(document_type_name.as_str())
+            .document_type(document_type_name.as_str())
             .expect("expected the rewards document type");
 
         let platform_ref = PlatformStateRef {
@@ -663,7 +663,7 @@ mod test {
             .expect("expected to apply contract");
 
         let document_type = data_contract
-            .document_type_for_name(&document_create_transition.base().document_type_name())
+            .document_type(&document_create_transition.base().document_type_name())
             .expect("expected to get document type");
 
         let mut main_identity = Identity::random_identity(2, Some(1000_u64), platform_version)
