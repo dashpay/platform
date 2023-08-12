@@ -49,7 +49,7 @@ pub fn delete_withdrawal_data_trigger_v0(
         ))));
     };
 
-    let document_type = data_contract.document_type(withdrawal::NAME)?;
+    let document_type = data_contract.document_type_for_name(withdrawal::NAME)?;
 
     let drive_query = DriveQuery {
         contract: data_contract,
@@ -208,7 +208,7 @@ mod tests {
         let owner_id = data_contract.owner_id();
 
         let document_type = data_contract
-            .document_type(withdrawal::NAME)
+            .document_type_for_name(withdrawal::NAME)
             .expect("expected to get withdrawal document type");
         let document = get_withdrawal_document_fixture(
             &data_contract,
@@ -263,7 +263,7 @@ mod tests {
         let owner_id = data_contract.owner_id();
 
         let document_type = data_contract
-            .document_type(withdrawal::NAME)
+            .document_type_for_name(withdrawal::NAME)
             .expect("expected to get withdrawal document type");
 
         let document = get_withdrawal_document_fixture(

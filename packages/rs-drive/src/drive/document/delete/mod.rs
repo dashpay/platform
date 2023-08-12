@@ -181,7 +181,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get document type");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
@@ -276,7 +276,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get a document type");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
@@ -377,7 +377,7 @@ mod tests {
         .expect("expected to get cbor contract");
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get a document type");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
@@ -417,7 +417,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get a document type");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
@@ -451,7 +451,7 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get a document type");
 
         let _random_owner_id1 = rand::thread_rng().gen::<[u8; 32]>();
@@ -598,7 +598,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get document type");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
@@ -793,7 +793,7 @@ mod tests {
         let (drive, dashpay) = setup_dashpay("delete", false);
 
         let document_type = dashpay
-            .document_type("profile")
+            .document_type_for_name("profile")
             .expect("expected to get profile document type");
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -869,7 +869,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document_type = contract
-            .document_type("profile")
+            .document_type_for_name("profile")
             .expect("expected to get profile document type");
 
         let dashpay_profile_document = json_document_to_document(
@@ -967,7 +967,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type("profile")
+            .document_type_for_name("profile")
             .expect("expected to get profile document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();

@@ -191,7 +191,7 @@ mod tests {
         });
 
         contract
-            .set_document_schema("note2", note2_schema, &platform_version)
+            .set_document_schema("note2", note2_schema, true, &platform_version)
             .expect("should set a document schema");
 
         drive
@@ -212,7 +212,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let document_type = contract
-            .document_type("nest")
+            .document_type_for_name("nest")
             .expect("expected to get document type");
 
         let document = document_type
@@ -251,7 +251,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let document_type = contract
-            .document_type("note")
+            .document_type_for_name("note")
             .expect("expected to get document type");
 
         let document = document_type

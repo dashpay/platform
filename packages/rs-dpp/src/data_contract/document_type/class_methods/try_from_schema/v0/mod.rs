@@ -47,6 +47,7 @@ impl DocumentTypeV0 {
         schema_defs: Option<&BTreeMap<String, Value>>,
         default_keeps_history: bool,
         default_mutability: bool,
+        validate: bool, // we don't need to validate if loaded from state
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // Create a full root JSON Schema from shorten contract document type schema
@@ -58,7 +59,7 @@ impl DocumentTypeV0 {
         )?;
 
         #[cfg(feature = "validation")]
-        {
+        if validate {
             // Validate against JSON Schema
             DOCUMENT_META_SCHEMA_V0
                 .validate(

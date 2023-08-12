@@ -61,7 +61,7 @@ impl From<DataContract> for DataContractInSerializationFormatV0 {
                     owner_id,
                     document_schemas: document_types
                         .into_iter()
-                        .map(|(key, r#type)| (key, r#type.schema_owned()))
+                        .map(|(key, document_type)| (key, document_type.schema_owned()))
                         .collect(),
                     schema_defs,
                 }

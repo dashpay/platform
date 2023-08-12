@@ -96,7 +96,7 @@ impl DocumentFactoryV0 {
         data: Value,
     ) -> Result<Document, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
-        if !self.data_contract.has_document_type(&document_type_name) {
+        if !self.data_contract.has_document_type_for_name(&document_type_name) {
             return Err(DataContractError::InvalidDocumentTypeError(
                 InvalidDocumentTypeError::new(document_type_name, self.data_contract.id()),
             )
@@ -107,7 +107,7 @@ impl DocumentFactoryV0 {
 
         let document_type = self
             .data_contract
-            .document_type(document_type_name.as_str())?;
+            .document_type_for_name(document_type_name.as_str())?;
 
         document_type.create_document_from_data(data, owner_id, document_entropy, platform_version)
     }
@@ -120,7 +120,7 @@ impl DocumentFactoryV0 {
         data: Value,
     ) -> Result<ExtendedDocument, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
-        if !self.data_contract.has_document_type(&document_type_name) {
+        if !self.data_contract.has_document_type_for_name(&document_type_name) {
             return Err(DataContractError::InvalidDocumentTypeError(
                 InvalidDocumentTypeError::new(document_type_name, self.data_contract.id()),
             )
@@ -131,7 +131,7 @@ impl DocumentFactoryV0 {
 
         let document_type = self
             .data_contract
-            .document_type(document_type_name.as_str())
+            .document_type_for_name(document_type_name.as_str())
             .ok_or_else(|| ProtocolError::Error(anyhow!("invalid document type")))?
             .as_ref();
 

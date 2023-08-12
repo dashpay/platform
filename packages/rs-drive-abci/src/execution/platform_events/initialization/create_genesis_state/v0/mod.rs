@@ -259,7 +259,7 @@ impl<C> Platform<C> {
         }
         .into();
 
-        let document_type = contract.document_type("domain")?;
+        let document_type = contract.document_type_for_name("domain")?;
 
         let operation =
             DriveOperation::DocumentOperation(DocumentOperationType::AddDocumentForContract {

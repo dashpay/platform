@@ -27,21 +27,21 @@ impl DataContractV0Getters for DataContractV0 {
         self.owner_id
     }
 
-    fn document_type(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError> {
-        self.document_type_opt(name).ok_or_else(|| {
+    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError> {
+        self.document_type_optional_for_name(name).ok_or_else(|| {
             ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
                 "can not get document type from contract",
             ))
         })
     }
 
-    fn document_type_opt(&self, name: &str) -> Option<DocumentTypeRef> {
+    fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef> {
         self.document_types
             .get(name)
             .map(|document_type| document_type.as_ref())
     }
 
-    fn has_document_type(&self, name: &str) -> bool {
+    fn has_document_type_for_name(&self, name: &str) -> bool {
         self.document_types.get(name).is_some()
     }
 

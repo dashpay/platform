@@ -101,6 +101,25 @@ pub trait PlatformDeserializableFromVersionedStructure {
         Self: Sized;
 }
 
+pub trait PlatformDeserializableWithPotentialValidationFromVersionedStructure {
+    /// We will deserialize a versioned structure into a code structure
+    /// For example we have DataContractV0 and DataContractV1
+    /// The system version will tell which version to deserialize into
+    /// This happens by first deserializing the data into a potentially versioned structure
+    /// For example we could have DataContractSerializationFormatV0 and DataContractSerializationFormatV1
+    /// Both of the structures will be valid in perpetuity as they are saved into the state.
+    /// So from the bytes we could get DataContractSerializationFormatV0.
+    /// Then the system_version given will tell to transform DataContractSerializationFormatV0 into
+    /// DataContractV1 (if system version is 1)
+    fn versioned_deserialize(
+        data: &[u8],
+        validate: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+        where
+            Self: Sized;
+}
+
 pub trait PlatformDeserializableWithBytesLenFromVersionedStructure {
     /// We will deserialize a versioned structure into a code structure
     /// For example we have DataContractV0 and DataContractV1
@@ -113,6 +132,7 @@ pub trait PlatformDeserializableWithBytesLenFromVersionedStructure {
     /// DataContractV1 (if system version is 1)
     fn versioned_deserialize_with_bytes_len(
         data: &[u8],
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(Self, usize), ProtocolError>
     where

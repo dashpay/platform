@@ -147,7 +147,7 @@ where
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
-                .document_type(withdrawal::NAME)
+                .document_type_for_name(withdrawal::NAME)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "Can't fetch withdrawal data contract",
@@ -326,7 +326,7 @@ mod tests {
             ).expect("expected withdrawal document");
 
         let document_type = data_contract
-            .document_type(withdrawal::NAME)
+            .document_type_for_name(withdrawal::NAME)
             .expect("expected to get document type");
 
         setup_document(

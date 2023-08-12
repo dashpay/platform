@@ -36,21 +36,21 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
-    fn document_type(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError> {
+    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.document_type(name),
+            DataContract::V0(v0) => v0.document_type_for_name(name),
         }
     }
 
-    fn document_type_opt(&self, name: &str) -> Option<DocumentTypeRef> {
+    fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef> {
         match self {
-            DataContract::V0(v0) => v0.document_type_opt(name),
+            DataContract::V0(v0) => v0.document_type_optional_for_name(name),
         }
     }
 
-    fn has_document_type(&self, name: &str) -> bool {
+    fn has_document_type_for_name(&self, name: &str) -> bool {
         match self {
-            DataContract::V0(v0) => v0.has_document_type(name),
+            DataContract::V0(v0) => v0.has_document_type_for_name(name),
         }
     }
 

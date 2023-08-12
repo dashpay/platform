@@ -292,7 +292,7 @@ mod tests {
             .expect("expected data contract create serialized state transition");
 
         let profile = dashpay_contract
-            .document_type("profile")
+            .document_type_for_name("profile")
             .expect("expected a profile document type");
 
         let mut document = profile

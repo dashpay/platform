@@ -100,7 +100,7 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
 
                         let document_type = data_contract_info
                             .contract
-                            .document_type(&document_type_name)?;
+                            .document_type_for_name(&document_type_name)?;
 
                         let document_security_level = get_security_level_requirement(
                             document_type.schema(),

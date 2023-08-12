@@ -21,7 +21,7 @@ pub const CONTRACT_DESERIALIZATION_LIMIT: usize = 15000;
 #[cfg_attr(
     feature = "data-contract-serde-conversion",
     derive(Serialize, Deserialize),
-    serde(tag = "version")
+    serde(tag = "$format_version")
 )]
 pub enum DataContractInSerializationFormat {
     #[serde(rename = "0")]
@@ -149,13 +149,12 @@ impl TryFromPlatformVersioned<DataContract> for DataContractInSerializationForma
     }
 }
 
-impl TryFromPlatformVersioned<DataContractInSerializationFormat> for DataContract {
-    type Error = ProtocolError;
-
-    fn try_from_platform_versioned(
+impl DataContract {
+    pub fn try_from_platform_versioned(
         value: DataContractInSerializationFormat,
+        validate: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<Self, ProtocolError> {
         match value {
             DataContractInSerializationFormat::V0(serialization_format_v0) => {
                 match platform_version
@@ -164,44 +163,12 @@ impl TryFromPlatformVersioned<DataContractInSerializationFormat> for DataContrac
                     .contract_structure_version
                 {
                     0 => {
-                        let data_contract = DataContractV0::try_from_platform_versioned(
+                        let data_contract = DataContractV0::try_from_platform_versioned_v0(
                             serialization_format_v0,
+                            validate,
                             platform_version,
                         )?;
                         Ok(data_contract.into())
-                    }
-                    version => Err(ProtocolError::UnknownVersionMismatch {
-                        method: "DataContract::from_serialization_format".to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    }),
-                }
-            }
-        }
-    }
-}
-
-impl TryFromPlatformVersioned<DataContractInSerializationFormat> for DataContractV0 {
-    type Error = ProtocolError;
-
-    fn try_from_platform_versioned(
-        value: DataContractInSerializationFormat,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
-        match value {
-            DataContractInSerializationFormat::V0(serialization_format_v0) => {
-                match platform_version
-                    .dpp
-                    .contract_versions
-                    .contract_structure_version
-                {
-                    0 => {
-                        let data_contract = DataContractV0::try_from_platform_versioned(
-                            serialization_format_v0,
-                            platform_version,
-                        )?;
-
-                        Ok(data_contract)
                     }
                     version => Err(ProtocolError::UnknownVersionMismatch {
                         method: "DataContract::from_serialization_format".to_string(),

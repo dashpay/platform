@@ -19,11 +19,11 @@ pub trait DataContractV0Getters {
     fn owner_id(&self) -> Identifier;
 
     /// Returns the document type for the given document name.
-    fn document_type(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError>;
+    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError>;
 
-    fn document_type_opt(&self, name: &str) -> Option<DocumentTypeRef>;
+    fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef>;
 
-    fn has_document_type(&self, name: &str) -> bool;
+    fn has_document_type_for_name(&self, name: &str) -> bool;
 
     /// Returns a mapping of document names to their corresponding document types.
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType>;

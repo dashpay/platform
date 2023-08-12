@@ -38,6 +38,7 @@ impl DocumentType {
         schema_defs: Option<&BTreeMap<String, Value>>,
         documents_keep_history_contract_default: bool,
         documents_mutable_contract_default: bool,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
         match platform_version
@@ -52,6 +53,7 @@ impl DocumentType {
                 schema_defs,
                 documents_keep_history_contract_default,
                 documents_mutable_contract_default,
+                validate,
                 platform_version,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {

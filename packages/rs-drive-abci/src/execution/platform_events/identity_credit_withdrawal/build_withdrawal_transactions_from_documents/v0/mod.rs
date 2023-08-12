@@ -175,7 +175,7 @@ mod tests {
             .expect("expected withdrawal document");
 
             let document_type = data_contract
-                .document_type(withdrawal::NAME)
+                .document_type_for_name(withdrawal::NAME)
                 .expect("expected to get document type");
 
             setup_document(

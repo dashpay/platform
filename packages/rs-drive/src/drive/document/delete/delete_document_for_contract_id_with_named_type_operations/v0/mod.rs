@@ -67,7 +67,7 @@ impl Drive {
         };
 
         let contract = &contract_fetch_info.contract;
-        let document_type = contract.document_type(document_type_name)?;
+        let document_type = contract.document_type_for_name(document_type_name)?;
         self.delete_document_for_contract_operations(
             document_id,
             contract,

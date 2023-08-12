@@ -221,7 +221,7 @@ mod tests {
         .expect("expected to get contract");
 
         let _document_type = contract
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
         drive_operations.push(DataContractOperation(ApplyContract {
@@ -232,7 +232,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document_type = contract
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
         let dashpay_cr_document = json_document_to_document(
@@ -339,7 +339,7 @@ mod tests {
         .expect("expected to get contract");
 
         let document_type = contract
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
         drive_operations.push(DataContractOperation(ApplyContract {
@@ -364,7 +364,7 @@ mod tests {
                 },
                 contract: &contract,
                 document_type: contract
-                    .document_type("contactRequest")
+                    .document_type_for_name("contactRequest")
                     .expect("expected to get document type"),
             },
             override_document: false,
@@ -388,7 +388,7 @@ mod tests {
                 },
                 contract: &contract,
                 document_type: contract
-                    .document_type("contactRequest")
+                    .document_type_for_name("contactRequest")
                     .expect("expected to get document type"),
             },
             override_document: false,
@@ -455,7 +455,7 @@ mod tests {
         .expect("expected to get contract");
 
         let document_type = contract
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
         drive_operations.push(DataContractOperation(ApplyContract {
@@ -597,7 +597,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get document type");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
@@ -718,7 +718,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get document type");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
@@ -945,7 +945,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get document type");
 
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();

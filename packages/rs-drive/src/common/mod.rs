@@ -83,7 +83,7 @@ pub fn setup_contract(
         None,
         platform_version,
     )
-    .expect("expected to get cbor contract");
+    .expect("expected to get json based contract");
 
     drive
         .apply_contract(

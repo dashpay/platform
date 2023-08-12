@@ -81,6 +81,7 @@ mod tests {
             None,
             false,
             false,
+            true,
             platform_version,
         )
         .expect("expected to create a document type")

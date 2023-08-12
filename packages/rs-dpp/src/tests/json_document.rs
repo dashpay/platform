@@ -101,7 +101,7 @@ pub fn json_document_to_contract_with_ids(
     platform_version: &PlatformVersion,
 ) -> Result<DataContract, ProtocolError> {
     let value = json_document_to_json_value(path)?;
-
+dbg!(&value);
     let mut contract = DataContract::from_json(value, platform_version)?;
 
     if let Some(id) = id {

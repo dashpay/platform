@@ -1,20 +1,12 @@
-use crate::serialization::{
-    PlatformDeserializableFromVersionedStructure,
-    PlatformDeserializableWithBytesLenFromVersionedStructure,
-    PlatformLimitDeserializableFromVersionedStructure, PlatformSerializable,
-    PlatformSerializableWithPlatformVersion,
-};
+use crate::serialization::{PlatformDeserializableFromVersionedStructure, PlatformDeserializableWithBytesLenFromVersionedStructure, PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformLimitDeserializableFromVersionedStructure, PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use bincode::{Decode, Encode};
 pub use data_contract::*;
 use derive_more::From;
 
 use bincode::config::{BigEndian, Configuration};
-use bincode::enc::Encoder;
 pub use generate_data_contract::*;
 use platform_value::{Identifier, Value, ValueMapHelper};
-use serde::Serialize;
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 
 pub mod errors;
 pub mod extra;
@@ -65,13 +57,6 @@ type DefinitionName = String;
 pub type DocumentName = String;
 type PropertyPath = String;
 
-pub trait DataContractLike<'a> {
-    fn id() -> Identifier;
-    fn owner_id() -> Identifier;
-    fn contract_version() -> u32;
-    fn document_types() -> BTreeMap<DocumentName, DocumentTypeRef<'a>>;
-}
-
 /// Understanding Data Contract versioning
 /// Data contract versioning is both for the code structure and for serialization.
 ///
@@ -97,11 +82,8 @@ pub trait DataContractLike<'a> {
 ///
 
 /// Here we use PlatformSerialize, because
-#[derive(Debug, Clone, PartialEq, From)] //PlatformSerdeVersionedSerialize, PlatformSerdeVersionedDeserialize,
-                                         // #[serde(untagged)]
-                                         // #[platform_serde_versioned(version_field = "$version")]
+#[derive(Debug, Clone, PartialEq, From)]
 pub enum DataContract {
-    //#[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
     V0(DataContractV0),
 }
 
@@ -135,9 +117,10 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
     }
 }
 
-impl PlatformDeserializableFromVersionedStructure for DataContract {
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for DataContract {
     fn versioned_deserialize(
         data: &[u8],
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
@@ -155,13 +138,14 @@ impl PlatformDeserializableFromVersionedStructure for DataContract {
                     ))
                 })?
                 .0;
-        data_contract_in_serialization_format.try_into_platform_versioned(platform_version)
+        DataContract::try_from_platform_versioned(data_contract_in_serialization_format, validate, platform_version)
     }
 }
 
 impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
     fn versioned_deserialize_with_bytes_len(
         data: &[u8],
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(Self, usize), ProtocolError>
     where
@@ -178,7 +162,7 @@ impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
             PlatformDeserializationError(format!("unable to deserialize DataContract: {}", e))
         })?;
         Ok((
-            data_contract_in_serialization_format.try_into_platform_versioned(platform_version)?,
+            DataContract::try_from_platform_versioned(data_contract_in_serialization_format, validate, platform_version)?,
             len,
         ))
     }
@@ -204,7 +188,8 @@ impl PlatformLimitDeserializableFromVersionedStructure for DataContract {
                     ))
                 })?
                 .0;
-        data_contract_in_serialization_format.try_into_platform_versioned(platform_version)
+        // we always want to validate when we have a limit, because limit means the data isn't coming from Drive
+        DataContract::try_from_platform_versioned(data_contract_in_serialization_format, true, platform_version)
     }
 }
 

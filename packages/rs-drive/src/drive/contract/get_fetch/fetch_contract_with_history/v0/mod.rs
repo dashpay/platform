@@ -9,7 +9,10 @@ use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, Oper
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::DataContract;
 
-use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+use dpp::serialization::{
+    PlatformDeserializableFromVersionedStructure,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+};
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
@@ -87,7 +90,7 @@ impl Drive {
                     match value {
                         Element::Item(item, _flags) => {
                             let contract =
-                                DataContract::versioned_deserialize(item, platform_version)
+                                DataContract::versioned_deserialize(item, false, platform_version)
                                     .map_err(Error::Protocol)?;
                             Ok((contract_time, contract))
                         }

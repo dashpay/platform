@@ -14,6 +14,7 @@ impl DataContractMethodsV0 for DataContractV0 {
         &mut self,
         schemas: BTreeMap<DocumentName, Value>,
         defs: Option<BTreeMap<DefinitionName, Value>>,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         self.document_types = DocumentType::create_document_types_from_document_schemas(
@@ -22,6 +23,7 @@ impl DataContractMethodsV0 for DataContractV0 {
             defs.as_ref(),
             self.config.documents_keep_history_contract_default(),
             self.config.documents_mutable_contract_default(),
+            validate,
             platform_version,
         )?;
 
@@ -32,6 +34,7 @@ impl DataContractMethodsV0 for DataContractV0 {
         &mut self,
         name: &str,
         schema: Value,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         let document_type = DocumentType::try_from_schema(
@@ -41,6 +44,7 @@ impl DataContractMethodsV0 for DataContractV0 {
             self.schema_defs.as_ref(),
             self.config.documents_keep_history_contract_default(),
             self.config.documents_mutable_contract_default(),
+            validate,
             platform_version,
         )?;
 
@@ -64,14 +68,15 @@ impl DataContractMethodsV0 for DataContractV0 {
     fn set_schema_defs(
         &mut self,
         defs: Option<BTreeMap<DefinitionName, Value>>,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         let document_schemas = self
             .document_types
             .iter()
-            .map(|(name, r#type)| (name.to_owned(), r#type.schema().to_owned()))
+            .map(|(name, document_type)| (name.to_owned(), document_type.schema().to_owned()))
             .collect();
 
-        self.set_document_schemas(document_schemas, defs, platform_version)
+        self.set_document_schemas(document_schemas, defs, validate, platform_version)
     }
 }

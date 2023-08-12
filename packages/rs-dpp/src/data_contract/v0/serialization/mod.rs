@@ -7,6 +7,7 @@ use crate::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use crate::ProtocolError;
 use platform_version::TryFromPlatformVersioned;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 
 pub mod bincode;
 
@@ -29,18 +30,49 @@ impl<'de> Deserialize<'de> for DataContractV0 {
         let serialization_format = DataContractInSerializationFormatV0::deserialize(deserializer)?;
         let current_version =
             PlatformVersion::get_current().map_err(|e| serde::de::Error::custom(e.to_string()))?;
-        DataContractV0::try_from_platform_versioned(serialization_format, current_version)
+        // when deserializing from json/platform_value/cbor we always want to validate (as this is not coming from the state)
+        DataContractV0::try_from_platform_versioned_v0(serialization_format, true, current_version)
             .map_err(serde::de::Error::custom)
     }
 }
 
-impl TryFromPlatformVersioned<DataContractInSerializationFormatV0> for DataContractV0 {
-    type Error = ProtocolError;
-
-    fn try_from_platform_versioned(
-        data_contract_data: DataContractInSerializationFormatV0,
+impl DataContractV0 {
+    pub(in crate::data_contract)  fn try_from_platform_versioned(
+        value: DataContractInSerializationFormat,
+        validate: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<Self, ProtocolError> {
+        match value {
+            DataContractInSerializationFormat::V0(serialization_format_v0) => {
+                match platform_version
+                    .dpp
+                    .contract_versions
+                    .contract_structure_version
+                {
+                    0 => {
+                        let data_contract = DataContractV0::try_from_platform_versioned_v0(
+                            serialization_format_v0,
+                            validate,
+                            platform_version,
+                        )?;
+
+                        Ok(data_contract)
+                    }
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "DataContractV0::from_serialization_format".to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    }),
+                }
+            }
+        }
+    }
+
+    pub(in crate::data_contract) fn try_from_platform_versioned_v0(
+        data_contract_data: DataContractInSerializationFormatV0,
+        validate: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         let DataContractInSerializationFormatV0 {
             id,
             config,
@@ -57,6 +89,7 @@ impl TryFromPlatformVersioned<DataContractInSerializationFormatV0> for DataContr
             schema_defs.as_ref(),
             config.documents_keep_history_contract_default(),
             config.documents_mutable_contract_default(),
+            validate,
             platform_version,
         )?;
 

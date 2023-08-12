@@ -108,7 +108,7 @@ impl DocumentFromCreateTransitionV0 for Document {
 
                 let document_type = data_contract
                     .contract
-                    .document_type(document_type_name.as_str())?;
+                    .document_type_for_name(document_type_name.as_str())?;
 
                 match platform_version
                     .dpp
@@ -167,7 +167,7 @@ impl DocumentFromCreateTransitionV0 for Document {
 
                 let document_type = data_contract
                     .contract
-                    .document_type(document_type_name.as_str())?;
+                    .document_type_for_name(document_type_name.as_str())?;
 
                 match platform_version
                     .dpp

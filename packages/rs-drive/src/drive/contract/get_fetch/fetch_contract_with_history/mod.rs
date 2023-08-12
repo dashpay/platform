@@ -157,7 +157,7 @@ mod tests {
                 );
 
             data_contract
-                .set_document_schema("niceDocument", updated_document, platform_version)
+                .set_document_schema("niceDocument", updated_document, true, platform_version)
                 .expect("to be able to set document schema");
 
             data_contract.increment_version();
@@ -204,7 +204,7 @@ mod tests {
 
     pub fn assert_property_exists(data_contract: &DataContract, property: &str) {
         let document_schema = data_contract
-            .document_type("niceDocument")
+            .document_type_for_name("niceDocument")
             .expect("document should exist")
             .schema_owned();
 

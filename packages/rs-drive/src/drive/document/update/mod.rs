@@ -163,7 +163,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let mut document = contract
-            .document_type("profile")
+            .document_type_for_name("profile")
             .expect("profile document exists")
             .create_document_from_data(
                 platform_value!({"displayName": "Alice"}),
@@ -185,7 +185,7 @@ mod tests {
             },
             contract: &contract,
             document_type: contract
-                .document_type("profile")
+                .document_type_for_name("profile")
                 .expect("profile document exists"),
         };
 
@@ -214,7 +214,7 @@ mod tests {
             },
             contract: &contract,
             document_type: contract
-                .document_type("profile")
+                .document_type_for_name("profile")
                 .expect("profile document exists"),
         };
 
@@ -237,7 +237,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let mut document = contract
-            .document_type("profile")
+            .document_type_for_name("profile")
             .expect("profile document exists")
             .create_document_from_data(
                 platform_value!({"displayName": "Alice"}),
@@ -259,7 +259,7 @@ mod tests {
             },
             contract: &contract,
             document_type: contract
-                .document_type("profile")
+                .document_type_for_name("profile")
                 .expect("profile document exists"),
         };
 
@@ -300,7 +300,7 @@ mod tests {
             },
             contract: &contract,
             document_type: contract
-                .document_type("profile")
+                .document_type_for_name("profile")
                 .expect("profile document exists"),
         };
 
@@ -331,7 +331,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let mut document = contract
-            .document_type("profile")
+            .document_type_for_name("profile")
             .expect("profile document exists")
             .create_document_from_data(
                 platform_value!({"displayName": "Alice"}),
@@ -353,7 +353,7 @@ mod tests {
             },
             contract: &contract,
             document_type: contract
-                .document_type("profile")
+                .document_type_for_name("profile")
                 .expect("profile document exists"),
         };
 
@@ -402,7 +402,7 @@ mod tests {
             },
             contract: &contract,
             document_type: contract
-                .document_type("profile")
+                .document_type_for_name("profile")
                 .expect("profile document exists"),
         };
 
@@ -439,7 +439,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let mut document = contract
-            .document_type("profile")
+            .document_type_for_name("profile")
             .expect("profile document exists")
             .create_document_from_data(
                 platform_value!({"displayName": "Alice"}),
@@ -461,7 +461,7 @@ mod tests {
             },
             contract: &contract,
             document_type: contract
-                .document_type("profile")
+                .document_type_for_name("profile")
                 .expect("profile document exists"),
         };
 
@@ -547,7 +547,7 @@ mod tests {
             },
             contract: &contract,
             document_type: contract
-                .document_type("profile")
+                .document_type_for_name("profile")
                 .expect("profile document exists"),
         };
 
@@ -586,6 +586,7 @@ mod tests {
             .expect("should create root tree");
 
         let contract = platform_value!({
+            "$format_version": "0",
             "id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
             "schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
             "version": 1,
@@ -653,7 +654,7 @@ mod tests {
             .expect("expected to make document");
 
         let document_type = contract
-            .document_type("indexedDocument")
+            .document_type_for_name("indexedDocument")
             .expect("expected to get a document type");
         drive
             .add_document_for_contract(
@@ -752,7 +753,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
@@ -842,7 +843,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type("profile")
+            .document_type_for_name("profile")
             .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
@@ -954,7 +955,7 @@ mod tests {
         };
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get document type");
 
         let value = platform_value::to_value(&person_0_original).expect("person into value");
@@ -1663,7 +1664,7 @@ mod tests {
         platform_version: &PlatformVersion,
     ) -> FeeResult {
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get document type");
 
         let value = platform_value::to_value(person).expect("person into value");
@@ -1933,7 +1934,7 @@ mod tests {
 
         let document_type = document_factory
             .data_contract()
-            .document_type(document_type_name.as_str())
+            .document_type_for_name(document_type_name.as_str())
             .expect("expected document type");
 
         let mut document = document_factory

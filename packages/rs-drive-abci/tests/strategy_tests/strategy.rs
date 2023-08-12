@@ -312,7 +312,7 @@ impl Strategy {
                             document_op.contract.set_id(contract.id());
                             document_op.document_type = document_op
                                 .contract
-                                .document_type(document_op.document_type.name())
+                                .document_type_for_name(document_op.document_type.name())
                                 .expect("document type must exist")
                                 .to_owned_document_type();
                         }

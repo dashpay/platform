@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::serialized_version::v0::{
@@ -21,11 +22,20 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
             DATA_CONTRACT_IDENTIFIER_FIELDS_V0,
             ReplacementType::Identifier,
         )?;
+        let format_version = value.get_str("$format_version")?;
+        match format_version { "0" => {
+            let data_contract_data: DataContractInSerializationFormatV0 =
+                platform_value::from_value(value).map_err(ProtocolError::ValueError)?;
 
-        let data_contract_data: DataContractInSerializationFormatV0 =
-            platform_value::from_value(value).map_err(ProtocolError::ValueError)?;
+            DataContractV0::try_from_platform_versioned(data_contract_data.into(), true, platform_version)
+        }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DataContractV0::from_value".to_string(),
+                known_versions: vec![0],
+                received: version.parse().map_err(|_| ProtocolError::Generic("Conversion error".to_string()))?,
+            }),
+        }
 
-        DataContractV0::try_from_platform_versioned(data_contract_data, platform_version)
     }
 
     fn to_value(&self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError> {

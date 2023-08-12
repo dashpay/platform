@@ -94,7 +94,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
 
     let contract_fetch_info = contract_fetch_info;
 
-    let Some(document_type) = contract_fetch_info.contract.document_type_opt(document_type_name) else {
+    let Some(document_type) = contract_fetch_info.contract.document_type_optional_for_name(document_type_name) else {
         return Ok(ConsensusValidationResult::new_with_error(BasicError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(document_type_name.to_string(), *contract_id)).into()));
     };
     fetch_documents_for_transitions_knowing_contract_and_document_type(

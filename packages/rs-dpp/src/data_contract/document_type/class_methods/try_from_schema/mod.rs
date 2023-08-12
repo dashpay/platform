@@ -15,6 +15,7 @@ impl DocumentType {
         schema_defs: Option<&BTreeMap<String, Value>>,
         default_keeps_history: bool,
         default_mutability: bool,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version
@@ -30,6 +31,7 @@ impl DocumentType {
                 schema_defs,
                 default_keeps_history,
                 default_mutability,
+                validate,
                 platform_version,
             )
             .map(|document_type| document_type.into()),
