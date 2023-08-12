@@ -40,10 +40,6 @@ pub struct DataContractInSerializationFormatV0 {
     pub document_schemas: BTreeMap<DocumentName, Value>,
 }
 
-pub trait DataContractDeserializationMethodsV0 {
-
-}
-
 impl From<DataContract> for DataContractInSerializationFormatV0 {
     fn from(value: DataContract) -> Self {
         match value {
