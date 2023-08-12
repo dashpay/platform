@@ -209,6 +209,7 @@ function setupLocalPresetTaskFactory(
 
                   // Disable platform for the seed node
                   config.set('platform.enable', false);
+                  config.set('platform.drive.tenderdash.mode', 'seed');
                 } else {
                   config.set('description', `local node #${nodeIndex}`);
 
@@ -223,6 +224,8 @@ function setupLocalPresetTaskFactory(
                   config.set('platform.drive.tenderdash.rpc.port', config.get('platform.drive.tenderdash.rpc.port') + (i * 100));
                   config.set('platform.drive.tenderdash.pprof.port', config.get('platform.drive.tenderdash.pprof.port') + (i * 100));
                   config.set('platform.drive.tenderdash.moniker', config.name);
+
+                  config.set('platform.drive.tenderdash.mode', 'validator');
 
                   // Setup logs
                   if (ctx.debugLogs) {

@@ -113,6 +113,13 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
           });
         return configFile;
       },
+      '0.24.22': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.mode = 'full';
+          });
+        return configFile;
+      },
     };
   }
 
