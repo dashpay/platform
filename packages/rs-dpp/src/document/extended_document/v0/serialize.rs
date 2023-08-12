@@ -257,6 +257,7 @@ impl DocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
         // first we deserialize the contract
         let (data_contract, offset) = DataContract::versioned_deserialize_with_bytes_len(
             serialized_document,
+            true, //since this would only happen on the client, we should validate
             platform_version,
         )?;
         let serialized_document = serialized_document.split_at(offset).1;

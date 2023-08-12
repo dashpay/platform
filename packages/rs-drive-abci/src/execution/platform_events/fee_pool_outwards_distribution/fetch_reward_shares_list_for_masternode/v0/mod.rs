@@ -35,7 +35,7 @@ impl<C> Platform<C> {
             .drive
             .system_contracts
             .masternode_rewards
-            .document_type(MN_REWARD_SHARES_DOCUMENT_TYPE)?;
+            .document_type_for_name(MN_REWARD_SHARES_DOCUMENT_TYPE)?;
 
         let drive_query = DriveQuery {
             contract: &self.drive.system_contracts.masternode_rewards,

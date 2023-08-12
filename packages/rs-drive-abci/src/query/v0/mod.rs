@@ -615,7 +615,7 @@ impl<C> Platform<C> {
                 ));
                 let contract_ref = &contract.contract;
                 let document_type = check_validation_result_with_data!(
-                    contract_ref.document_type(document_type_name.as_str())
+                    contract_ref.document_type_for_name(document_type_name.as_str())
                 );
 
                 let where_clause = check_validation_result_with_data!(ciborium::de::from_reader(
@@ -919,7 +919,10 @@ mod test {
         use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::data_contract::{DataContract, DataContractMethodsV0};
         use dpp::platform_value::platform_value;
-        use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+        use dpp::serialization::{
+            PlatformDeserializableFromVersionedStructure,
+            PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+        };
         use dpp::tests::fixtures::get_data_contract_fixture;
         use dpp::validation::ValidationResult;
         use dpp::version::PlatformVersion;
@@ -990,6 +993,7 @@ mod test {
                 .set_document_schema(
                     "niceDocument".into(),
                     updated_document_schema,
+                    true,
                     platform_version,
                 )
                 .expect("to be able to set document schema");
@@ -1090,6 +1094,7 @@ mod test {
             let first_entry_data_contract = first_entry.value.expect("To have data contract");
             let first_data_contract_update = DataContract::versioned_deserialize(
                 &first_entry_data_contract.value,
+                true,
                 platform_version,
             )
             .expect("To decode data contract");
@@ -1101,12 +1106,13 @@ mod test {
 
             let second_data_contract_update = DataContract::versioned_deserialize(
                 &second_entry_data_contract.value,
+                true,
                 platform_version,
             )
             .expect("To decode data contract");
 
             let updated_doc = second_data_contract_update
-                .document_type("niceDocument")
+                .document_type_for_name("niceDocument")
                 .expect("should return document type");
 
             assert!(
@@ -1185,7 +1191,7 @@ mod test {
             assert_eq!(first_data_contract_update, original_data_contract);
 
             let updated_doc = second_data_contract_update
-                .document_type("niceDocument")
+                .document_type_for_name("niceDocument")
                 .expect("To have niceDocument document");
 
             assert!(

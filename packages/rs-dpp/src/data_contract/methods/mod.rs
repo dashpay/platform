@@ -17,10 +17,11 @@ impl DataContractMethodsV0 for DataContract {
         &mut self,
         schemas: BTreeMap<DocumentName, Value>,
         defs: Option<BTreeMap<DefinitionName, Value>>,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.set_document_schemas(schemas, defs, platform_version),
+            DataContract::V0(v0) => v0.set_document_schemas(schemas, defs, validate, platform_version),
         }
     }
 
@@ -28,10 +29,11 @@ impl DataContractMethodsV0 for DataContract {
         &mut self,
         name: &str,
         schema: Value,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.set_document_schema(name, schema, platform_version),
+            DataContract::V0(v0) => v0.set_document_schema(name, schema, validate, platform_version),
         }
     }
 
@@ -50,10 +52,11 @@ impl DataContractMethodsV0 for DataContract {
     fn set_schema_defs(
         &mut self,
         defs: Option<BTreeMap<DefinitionName, Value>>,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.set_schema_defs(defs, platform_version),
+            DataContract::V0(v0) => v0.set_schema_defs(defs, validate, platform_version),
         }
     }
 }

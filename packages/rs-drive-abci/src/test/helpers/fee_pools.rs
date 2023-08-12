@@ -88,7 +88,7 @@ fn create_test_mn_share_document(
     .into();
 
     let document_type = contract
-        .document_type(document_types::reward_share::NAME)
+        .document_type_for_name(document_types::reward_share::NAME)
         .expect("expected to get a document type");
 
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));

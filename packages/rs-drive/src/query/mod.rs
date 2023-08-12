@@ -1902,7 +1902,7 @@ mod tests {
         });
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
         let document_type = contract
-            .document_type("niceDocument")
+            .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -1931,7 +1931,7 @@ mod tests {
         });
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
         let document_type = contract
-            .document_type("niceDocument")
+            .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -1961,7 +1961,7 @@ mod tests {
 
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
         let document_type = contract
-            .document_type("niceDocument")
+            .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -1991,7 +1991,7 @@ mod tests {
 
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
         let document_type = contract
-            .document_type("niceDocument")
+            .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -2020,7 +2020,7 @@ mod tests {
         });
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
         let document_type = contract
-            .document_type("niceDocument")
+            .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -2041,7 +2041,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get a document type");
 
         let too_long_string = "t".repeat(256);
@@ -2132,7 +2132,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get a document type");
 
         let query_value = json!({
@@ -2166,7 +2166,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get a document type");
 
         let query_value = json!({
@@ -2201,7 +2201,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get a document type");
 
         let mut array: Vec<String> = Vec::with_capacity(101);
@@ -2240,7 +2240,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         let document_type = contract
-            .document_type("person")
+            .document_type_for_name("person")
             .expect("expected to get a document type");
 
         let query_value = json!({
@@ -2286,7 +2286,7 @@ mod tests {
 
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
         let document_type = contract
-            .document_type("niceDocument")
+            .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -2314,7 +2314,7 @@ mod tests {
 
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
         let document_type = contract
-            .document_type("niceDocument")
+            .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -2342,7 +2342,7 @@ mod tests {
 
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
         let document_type = contract
-            .document_type("niceDocument")
+            .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
@@ -2370,7 +2370,7 @@ mod tests {
 
         let contract = get_data_contract_fixture(None, 1).data_contract_owned();
         let document_type = contract
-            .document_type("niceDocument")
+            .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)

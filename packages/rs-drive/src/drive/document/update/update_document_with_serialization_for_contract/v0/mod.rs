@@ -38,7 +38,7 @@ impl Drive {
             Some(HashMap::new())
         };
 
-        let document_type = contract.document_type(document_type_name)?;
+        let document_type = contract.document_type_for_name(document_type_name)?;
 
         let document_info =
             DocumentRefAndSerialization((document, serialized_document, storage_flags));

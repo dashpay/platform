@@ -39,7 +39,7 @@ impl Drive {
 
         let contract = &contract_fetch_info.contract;
 
-        let document_type = contract.document_type(document_type_name)?;
+        let document_type = contract.document_type_for_name(document_type_name)?;
 
         let document_and_contract_info = DocumentAndContractInfo {
             owned_document_info,

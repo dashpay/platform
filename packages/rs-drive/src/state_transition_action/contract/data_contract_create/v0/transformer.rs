@@ -1,4 +1,5 @@
 use crate::state_transition_action::contract::data_contract_create::v0::DataContractCreateTransitionActionV0;
+use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -16,9 +17,11 @@ impl TryFromPlatformVersioned<DataContractCreateTransitionV0>
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
         Ok(DataContractCreateTransitionActionV0 {
-            data_contract: value
-                .data_contract
-                .try_into_platform_versioned(platform_version)?,
+            data_contract: DataContract::try_from_platform_versioned(
+                value.data_contract,
+                true,
+                platform_version,
+            )?,
         })
     }
 }
@@ -33,10 +36,11 @@ impl TryFromPlatformVersioned<&DataContractCreateTransitionV0>
         platform_version: &PlatformVersion,
     ) -> Result<Self, Self::Error> {
         Ok(DataContractCreateTransitionActionV0 {
-            data_contract: value
-                .clone()
-                .data_contract
-                .try_into_platform_versioned(platform_version)?,
+            data_contract: DataContract::try_from_platform_versioned(
+                value.data_contract.clone(),
+                true,
+                platform_version,
+            )?,
         })
     }
 }

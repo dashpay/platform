@@ -20,7 +20,7 @@ use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::DataContract;
-use crate::serialization::{PlatformDeserializable, PlatformDeserializableFromVersionedStructure};
+use crate::serialization::{PlatformDeserializable, PlatformDeserializableFromVersionedStructure, PlatformDeserializableWithPotentialValidationFromVersionedStructure};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]
@@ -101,7 +101,7 @@ impl DataContractFactoryV0 {
             schema_defs: defs,
         });
 
-        let data_contract = DataContract::try_from_platform_versioned(format, platform_version)?;
+        let data_contract = DataContract::try_from_platform_versioned(format, true, platform_version)?;
 
         CreatedDataContract::from_contract_and_entropy(data_contract, entropy, platform_version)
     }
@@ -143,8 +143,12 @@ impl DataContractFactoryV0 {
         #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
+        #[cfg(not(feature = "validation"))]
+            let skip_validation = true;
+
         let data_contract: DataContract = DataContract::versioned_deserialize(
             buffer.as_slice(),
+            !skip_validation,
             platform_version,
         )
         .map_err(|e| {
@@ -208,8 +212,6 @@ impl DataContractFactoryV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-    use crate::data_contract::property_names;
     use crate::serialization::PlatformSerializable;
     use crate::state_transition::StateTransitionLike;
     use crate::tests::fixtures::get_data_contract_fixture;

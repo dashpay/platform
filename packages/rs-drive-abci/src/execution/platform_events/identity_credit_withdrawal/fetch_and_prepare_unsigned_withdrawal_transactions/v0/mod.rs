@@ -146,7 +146,7 @@ where
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
-                .document_type(withdrawal::NAME)
+                .document_type_for_name(withdrawal::NAME)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "could not get document type",

@@ -45,7 +45,7 @@ impl Drive {
 
         let document_type = contract_fetch_info
             .contract
-            .document_type(withdrawal::NAME)?;
+            .document_type_for_name(withdrawal::NAME)?;
 
         let mut where_clauses = BTreeMap::new();
 
@@ -124,7 +124,7 @@ impl Drive {
 
         let document_type = contract_fetch_info
             .contract
-            .document_type(withdrawal::NAME)?;
+            .document_type_for_name(withdrawal::NAME)?;
 
         let mut where_clauses = BTreeMap::new();
 
@@ -244,7 +244,7 @@ mod tests {
             .expect("expected withdrawal document");
 
             let document_type = data_contract
-                .document_type(withdrawal::NAME)
+                .document_type_for_name(withdrawal::NAME)
                 .expect("expected to get document type");
 
             setup_document(
@@ -349,7 +349,7 @@ mod tests {
             .expect("expected to get withdrawal document");
 
             let document_type = data_contract
-                .document_type(withdrawal::NAME)
+                .document_type_for_name(withdrawal::NAME)
                 .expect("expected to get document type");
 
             setup_document(

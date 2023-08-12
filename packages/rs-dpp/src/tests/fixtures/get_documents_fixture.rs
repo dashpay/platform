@@ -178,7 +178,7 @@ pub fn get_withdrawal_document_fixture(
     };
 
     let document_type = data_contract
-        .document_type(data_contracts::withdrawals_contract::document_types::withdrawal::NAME)?;
+        .document_type_for_name(data_contracts::withdrawals_contract::document_types::withdrawal::NAME)?;
 
     let properties = data
         .into_btree_string_map()

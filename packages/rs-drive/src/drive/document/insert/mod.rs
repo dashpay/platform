@@ -129,7 +129,7 @@ mod tests {
         let platform_version = PlatformVersion::first();
 
         let document_type = dashpay
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
         let dashpay_cr_document = json_document_to_document(
@@ -224,7 +224,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
@@ -321,7 +321,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
@@ -388,7 +388,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type("profile")
+            .document_type_for_name("profile")
             .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
@@ -455,7 +455,7 @@ mod tests {
         );
 
         let document_type = contract
-            .document_type("profile")
+            .document_type_for_name("profile")
             .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
@@ -524,7 +524,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document_type = contract
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
         let dashpay_cr_document = json_document_to_document(
@@ -602,7 +602,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document_type = contract
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
         let dashpay_cr_document = json_document_to_document(
@@ -699,7 +699,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document_type = contract
-            .document_type("domain")
+            .document_type_for_name("domain")
             .expect("expected to get document type");
 
         let dpns_domain_document = json_document_to_document(
@@ -758,7 +758,7 @@ mod tests {
         let platform_version = PlatformVersion::first();
 
         let document_type = dashpay
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
         let dashpay_cr_document_0 = json_document_to_document(
@@ -854,7 +854,7 @@ mod tests {
         let (drive, dashpay) = setup_dashpay("add_conflict", true);
 
         let document_type = dashpay
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
@@ -965,7 +965,7 @@ mod tests {
             contract: created_contract.data_contract(),
             document_type: created_contract
                 .data_contract()
-                .document_type("domain")
+                .document_type_for_name("domain")
                 .expect("expected to get document type"),
         };
 
@@ -1005,7 +1005,7 @@ mod tests {
             contract: created_contract.data_contract(),
             document_type: created_contract
                 .data_contract()
-                .document_type("domain")
+                .document_type_for_name("domain")
                 .expect("expected to get document type"),
         };
 

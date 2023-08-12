@@ -179,7 +179,7 @@ fn validate_document_transitions_within_document_type(
 
     let data_contract = &data_contract_fetch_info.contract;
 
-    let document_type = data_contract.document_type(document_type_name)?;
+    let document_type = data_contract.document_type_for_name(document_type_name)?;
 
     // we fetch all documents needed for the transitions
     // for create they should not exist

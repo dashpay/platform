@@ -154,7 +154,7 @@ pub fn add_domains_to_contract(
         let document = Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
             .expect("document should be properly deserialized");
         let document_type = contract
-            .document_type("domain")
+            .document_type_for_name("domain")
             .expect("expected to get document type");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));

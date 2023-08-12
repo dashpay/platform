@@ -171,7 +171,7 @@ mod test {
         let data_contract =
             get_dashpay_contract_fixture(None, protocol_version).data_contract_owned();
         let document_type = data_contract
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected a contact request");
 
         let document_transitions = get_document_transitions_fixture([(
@@ -257,7 +257,7 @@ mod test {
         )
         .data_contract_owned();
         let document_type = data_contract
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected a contact request");
 
         let document_transitions = get_document_transitions_fixture([(
@@ -362,7 +362,7 @@ mod test {
         )
         .data_contract_owned();
         let document_type = data_contract
-            .document_type("contactRequest")
+            .document_type_for_name("contactRequest")
             .expect("expected a contact request");
         let owner_id = contact_request_document.owner_id();
         let contract_request_to_user_id = contact_request_document

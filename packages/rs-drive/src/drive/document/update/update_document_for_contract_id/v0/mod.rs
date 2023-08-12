@@ -52,7 +52,7 @@ impl Drive {
 
         let contract = &contract_fetch_info.contract;
 
-        let document_type = contract.document_type(document_type)?;
+        let document_type = contract.document_type_for_name(document_type)?;
 
         let document = Document::from_bytes(serialized_document, document_type, platform_version)?;
 

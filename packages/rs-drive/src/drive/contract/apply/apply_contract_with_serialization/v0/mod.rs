@@ -15,7 +15,10 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::DataContract;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+use dpp::serialization::{
+    PlatformDeserializableFromVersionedStructure,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+};
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -180,6 +183,7 @@ impl Drive {
             if !original_contract_stored_data.is_empty() {
                 let original_contract = DataContract::versioned_deserialize(
                     &original_contract_stored_data,
+                    false,
                     platform_version,
                 )?;
                 // if the contract is not mutable update_contract will return an error

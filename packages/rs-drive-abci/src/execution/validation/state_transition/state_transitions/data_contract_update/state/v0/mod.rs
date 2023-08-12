@@ -52,14 +52,24 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let action = self.transform_into_action_v0(platform_version)?;
+
+        if !action.is_valid_with_data() {
+            return Ok(action);
+        }
+
+        let state_transition_action = action.data.as_ref().unwrap();
+
+        let new_data_contract = match state_transition_action {
+            StateTransitionAction::DataContractUpdateAction(action) => {
+                Some(action.data_contract_ref())
+            }
+            _ => None,
+        }
+        .unwrap();
+
         let drive = platform.drive;
         let mut validation_result = ConsensusValidationResult::default();
-
-        let new_data_contract: DataContract = self
-            .data_contract()
-            .clone()
-            .try_into_platform_versioned(platform_version)?;
-
         // Data contract should exist
         let add_to_cache_if_pulled = tx.is_some();
         // Data contract should exist
@@ -102,7 +112,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         for (new_contract_document_type_name, new_contract_document_type) in
             new_data_contract.document_types()
         {
-            let Some(old_contract_document_type) = old_data_contract.document_type_opt(new_contract_document_type_name) else {
+            let Some(old_contract_document_type) = old_data_contract.document_type_optional_for_name(new_contract_document_type_name) else {
                 // if it's a new document type (ie the old data contract didn't have it)
                 // then new indices on it are fine
                 continue;
@@ -217,7 +227,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         //     return Ok(validation_result);
         // }
 
-        self.transform_into_action_v0(platform_version)
+        return Ok(action);
     }
 
     fn transform_into_action_v0(

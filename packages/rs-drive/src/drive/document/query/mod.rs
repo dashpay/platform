@@ -143,7 +143,7 @@ impl Drive {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         //todo cbor cost
-        let document_type = contract.document_type(document_type_name.as_str())?;
+        let document_type = contract.document_type_for_name(document_type_name.as_str())?;
 
         let (items, skipped) = self.query_documents_for_cbor_query_internal(
             contract,
@@ -194,7 +194,9 @@ impl Drive {
             .ok_or(Error::Query(QuerySyntaxError::DataContractNotFound(
                 "contract not found",
             )))?;
-        let document_type = contract.contract.document_type(document_type_name)?;
+        let document_type = contract
+            .contract
+            .document_type_for_name(document_type_name)?;
         let items = self.query_proof_of_documents_using_cbor_encoded_query(
             &contract.contract,
             document_type,
@@ -391,7 +393,9 @@ impl Drive {
             .ok_or(Error::Query(QuerySyntaxError::DataContractNotFound(
                 "contract not found",
             )))?;
-        let document_type = contract.contract.document_type(document_type_name)?;
+        let document_type = contract
+            .contract
+            .document_type_for_name(document_type_name)?;
 
         let query =
             DriveQuery::from_cbor(query_cbor, &contract.contract, document_type, &self.config)?;

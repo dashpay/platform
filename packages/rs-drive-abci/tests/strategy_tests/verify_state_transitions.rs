@@ -154,7 +154,9 @@ pub(crate) fn verify_state_transitions_were_executed(
                                     .base()
                                     .data_contract_fetch_info()
                                     .contract
-                                    .document_type(transition.base().document_type_name().as_str())
+                                    .document_type_for_name(
+                                        transition.base().document_type_name().as_str(),
+                                    )
                                     .expect("get document type")
                                     .documents_keep_history(),
                                 document_id: transition.base().id().to_vec(),
@@ -179,7 +181,7 @@ pub(crate) fn verify_state_transitions_were_executed(
 
                     let document_type = contract_fetch_info
                         .contract
-                        .document_type(
+                        .document_type_for_name(
                             document_transition_action
                                 .base()
                                 .document_type_name()

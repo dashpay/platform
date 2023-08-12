@@ -22,10 +22,10 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
             ReplacementType::Identifier,
         )?;
 
-        let data_contract_data: DataContractInSerializationFormatV0 =
+        let data_contract_data: DataContractInSerializationFormat =
             platform_value::from_value(value).map_err(ProtocolError::ValueError)?;
 
-        DataContractV0::try_from_platform_versioned(data_contract_data, platform_version)
+        DataContractV0::try_from_platform_versioned(data_contract_data, true, platform_version)
     }
 
     fn to_value(&self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError> {

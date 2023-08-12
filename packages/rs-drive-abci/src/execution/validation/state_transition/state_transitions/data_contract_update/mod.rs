@@ -216,7 +216,12 @@ mod tests {
 
             data_contract.increment_version();
             data_contract
-                .set_document_schema("niceDocument".into(), updated_document, platform_version)
+                .set_document_schema(
+                    "niceDocument".into(),
+                    updated_document,
+                    true,
+                    platform_version,
+                )
                 .expect("to be able to set document schema");
 
             let state_transition = DataContractUpdateTransitionV0 {
@@ -287,7 +292,12 @@ mod tests {
 
             data_contract.increment_version();
             data_contract
-                .set_document_schema("niceDocument".into(), updated_document, platform_version)
+                .set_document_schema(
+                    "niceDocument".into(),
+                    updated_document,
+                    true,
+                    platform_version,
+                )
                 .expect("to be able to set document schema");
 
             // TODO: add a data contract stop transition
