@@ -3,6 +3,7 @@ use crate::consensus::signature::{
 };
 use crate::identity::KeyType;
 use crate::serialization::PlatformMessageSignable;
+#[cfg(any(feature = "state-transitions", feature = "validation"))]
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{BlsModule, ProtocolError};

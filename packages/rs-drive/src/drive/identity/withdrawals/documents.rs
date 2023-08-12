@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::platform_value::Value;
@@ -191,7 +191,7 @@ mod tests {
 
     mod fetch_withdrawal_documents_by_status {
         use super::*;
-        use dpp::data_contract::base::DataContractBaseMethodsV0;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
         use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
@@ -302,7 +302,7 @@ mod tests {
     }
 
     mod find_document_by_transaction_id {
-        use dpp::data_contract::base::DataContractBaseMethodsV0;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::document::DocumentV0Getters;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::{platform_value, Bytes32};

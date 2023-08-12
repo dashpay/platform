@@ -4,8 +4,7 @@ use rand::SeedableRng;
 use platform_value::{platform_value, Value};
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::base::DataContractBaseMethodsV0;
-use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::document::document_factory::DocumentFactory;
 use crate::document::Document;
 use crate::version::PlatformVersion;
@@ -178,9 +177,8 @@ pub fn get_withdrawal_document_fixture(
         Some(seed_value) => StdRng::seed_from_u64(seed_value),
     };
 
-    let document_type = data_contract.document_type_for_name(
-        data_contracts::withdrawals_contract::document_types::withdrawal::NAME,
-    )?;
+    let document_type = data_contract
+        .document_type_for_name(data_contracts::withdrawals_contract::document_types::withdrawal::NAME)?;
 
     let properties = data
         .into_btree_string_map()

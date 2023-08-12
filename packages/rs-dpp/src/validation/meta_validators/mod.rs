@@ -36,7 +36,7 @@ lazy_static! {
     ))
     .expect("Valid schema!");
     static ref DATA_CONTRACT_V0: Value = serde_json::from_str::<Value>(include_str!(
-        "../../schema/data_contract/v0/dataContractMeta.json"
+        "../../../schema/meta_schemas/document/v0/document-meta.json"
     ))
     .unwrap();
 
@@ -81,7 +81,7 @@ lazy_static! {
 
 
     // Compiled version of data contract meta schema
-    pub static ref DATA_CONTRACT_META_SCHEMA_V0: JSONSchema = JSONSchema::options()
+    pub static ref DOCUMENT_META_SCHEMA_V0: JSONSchema = JSONSchema::options()
         .add_keyword(
                 "byteArray",
                 KeywordDefinition::Schema(json!({

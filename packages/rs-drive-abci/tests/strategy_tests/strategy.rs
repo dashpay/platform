@@ -26,7 +26,7 @@ use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
@@ -38,7 +38,7 @@ use rand::Rng;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV0Setters};
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::BinaryData;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
@@ -295,10 +295,6 @@ impl Strategy {
                 let old_id = contract.id();
                 let new_id = DataContract::generate_data_contract_id_v0(identity.id, entropy_used);
                 contract.set_id(new_id);
-                contract
-                    .document_types_mut()
-                    .iter_mut()
-                    .for_each(|(_, document_type)| document_type.set_data_contract_id(new_id));
 
                 if let Some(contract_updates) = contract_updates {
                     for (_, updated_contract) in contract_updates.iter_mut() {
@@ -306,13 +302,6 @@ impl Strategy {
                         updated_contract
                             .data_contract_mut()
                             .set_owner_id(contract.owner_id());
-                        updated_contract
-                            .data_contract_mut()
-                            .document_types_mut()
-                            .iter_mut()
-                            .for_each(|(_, document_type)| {
-                                document_type.set_data_contract_id(contract.id())
-                            });
                     }
                 }
 
@@ -321,16 +310,11 @@ impl Strategy {
                     if let OperationType::Document(document_op) = &mut operation.op_type {
                         if document_op.contract.id() == old_id {
                             document_op.contract.set_id(contract.id());
-                            document_op
+                            document_op.document_type = document_op
                                 .contract
-                                .document_types_mut()
-                                .iter_mut()
-                                .for_each(|(_, document_type)| {
-                                    document_type.set_data_contract_id(contract.id())
-                                });
-                            document_op
-                                .document_type
-                                .set_data_contract_id(contract.id());
+                                .document_type_for_name(document_op.document_type.name())
+                                .expect("document type must exist")
+                                .to_owned_document_type();
                         }
                     }
                 });

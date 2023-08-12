@@ -1,4 +1,5 @@
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 ///! The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
 use dpp::util::hash::hash;
 use std::collections::BTreeMap;
@@ -9,7 +10,6 @@ use crate::error::Error;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::document::DocumentV0Getters;
 use dpp::platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
 use dpp::platform_value::Value;

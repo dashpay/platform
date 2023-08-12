@@ -104,7 +104,7 @@ pub struct ContractClassMethodVersions {
     pub get_definitions: FeatureVersion,
     pub get_document_types_from_contract: FeatureVersion,
     pub get_document_types_from_value: FeatureVersion,
-    pub get_document_types_from_value_array: FeatureVersion,
+    pub create_document_types_from_document_schemas: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -130,6 +130,7 @@ pub struct DocumentTypeVersions {
     pub create_document_from_data: FeatureVersion,
     pub max_size: FeatureVersion,
     pub estimated_size: FeatureVersion,
+    pub try_from_schema: FeatureVersion,
     pub create_document_with_prevalidated_properties: FeatureVersion,
     pub top_level_indices: FeatureVersion,
     pub document_field_for_property: FeatureVersion,
@@ -137,6 +138,21 @@ pub struct DocumentTypeVersions {
     pub field_can_be_null: FeatureVersion,
     pub initial_revision: FeatureVersion,
     pub requires_revision: FeatureVersion,
+    pub enrich_with_base_schema: FeatureVersion,
+    pub validation_versions: DocumentTypeValidationVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DocumentTypeValidationVersions {
+    pub validate_data_contract_max_depth: FeatureVersion,
+    pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RecursiveSchemaValidatorVersions {
+    pub traversal_validator: FeatureVersion,
+    pub byte_array_has_no_items_as_parent_validator: FeatureVersion,
+    pub pattern_is_valid_regex_validator: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -450,11 +450,16 @@ impl StateTransitionFieldTypes for DocumentsBatchTransition {
     // }
 }
 
-pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> SecurityLevel {
-    let maybe_security_level = v.get_u64(property_names::SECURITY_LEVEL_REQUIREMENT);
+// TODO: Make a DocumentType method
+pub fn get_security_level_requirement(v: &Value, default: SecurityLevel) -> SecurityLevel {
+    let maybe_security_level: Option<u64> = v
+        .get_optional_integer(property_names::SECURITY_LEVEL_REQUIREMENT)
+        // TODO: Data Contract must already valid so there is no chance that this will fail
+        .expect("document schema must be a map");
+
     match maybe_security_level {
-        Ok(some_level) => (some_level as u8).try_into().unwrap_or(default),
-        Err(_) => default,
+        Some(some_level) => (some_level as u8).try_into().unwrap_or(default),
+        None => default,
     }
 }
 //

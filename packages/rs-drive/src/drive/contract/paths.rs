@@ -1,4 +1,5 @@
 use crate::drive::RootTree;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::data_contract::DataContract;
 

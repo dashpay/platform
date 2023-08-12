@@ -149,26 +149,26 @@ impl CreateRandomDocument for DocumentTypeV0 {
             entropy.as_slice(),
         );
         // dbg!("gen", hex::encode(id), hex::encode(&self.data_contract_id), hex::encode(&owner_id), self.name.as_str(), hex::encode(entropy.as_slice()));
-        let mut created_at = None;
-        let mut updated_at = None;
         let properties = self
             .flattened_properties
             .iter()
-            .filter_map(|(key, document_field)| {
-                if key == CREATED_AT {
-                    created_at = Some(time_ms);
-                    None
-                } else if key == UPDATED_AT {
-                    updated_at = Some(time_ms);
-                    None
-                } else {
-                    Some((key.clone(), document_field.document_type.random_value(rng)))
-                }
-            })
+            .map(|(key, property)| (key.clone(), property.property_type.random_value(rng)))
             .collect();
 
         let revision = if self.documents_mutable {
             Some(1)
+        } else {
+            None
+        };
+
+        let created_at = if self.required_fields.contains(CREATED_AT) {
+            Some(time_ms)
+        } else {
+            None
+        };
+
+        let updated_at = if self.required_fields.contains(UPDATED_AT) {
+            Some(time_ms)
         } else {
             None
         };
@@ -240,12 +240,7 @@ impl CreateRandomDocument for DocumentTypeV0 {
         let properties = self
             .flattened_properties
             .iter()
-            .map(|(key, document_field)| {
-                (
-                    key.clone(),
-                    document_field.document_type.random_filled_value(rng),
-                )
-            })
+            .map(|(key, property)| (key.clone(), property.property_type.random_filled_value(rng)))
             .collect();
 
         let revision = if self.documents_mutable {

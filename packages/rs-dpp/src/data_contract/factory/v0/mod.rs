@@ -11,14 +11,16 @@ use crate::data_contract::errors::InvalidDataContractError;
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use crate::data_contract::config::v0::DataContractConfigGettersV0;
+use crate::data_contract::config::DataContractConfig;
+#[cfg(feature = "data-contract-value-conversion")]
+use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
-use crate::data_contract::data_contract_config::DataContractConfig;
-use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
+use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::DataContract;
-use crate::serialization::{PlatformDeserializable, PlatformDeserializableFromVersionedStructure};
+use crate::serialization::{PlatformDeserializable, PlatformDeserializableFromVersionedStructure, PlatformDeserializableWithPotentialValidationFromVersionedStructure};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]
@@ -74,12 +76,10 @@ impl DataContractFactoryV0 {
         let data_contract_id =
             DataContract::generate_data_contract_id_v0(owner_id.to_buffer(), entropy.to_buffer());
 
-        let definition_references = definitions
-            .as_ref()
-            .map(|defs| defs.to_btree_ref_string_map())
+        let defs = definitions
+            .map(|defs| defs.into_btree_string_map())
             .transpose()
-            .map_err(ProtocolError::ValueError)?
-            .unwrap_or_default();
+            .map_err(ProtocolError::ValueError)?;
 
         // We need to transform the value into a data contract config
         let config = if let Some(config_value) = config {
@@ -88,96 +88,46 @@ impl DataContractFactoryV0 {
             DataContractConfig::default_for_version(platform_version)?
         };
 
-        let document_types = DataContract::get_document_types_from_value(
-            data_contract_id,
-            &documents,
-            &definition_references,
-            config.documents_keep_history_contract_default(),
-            config.documents_mutable_contract_default(),
-            platform_version,
-        )
-        .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
-
-        let document_values = documents
+        let documents_map = documents
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
-        let documents = document_values
-            .into_iter()
-            .map(|(key, value)| Ok((key, value.try_into().map_err(ProtocolError::ValueError)?)))
-            .collect::<Result<BTreeMap<String, JsonValue>, ProtocolError>>()?;
 
-        let json_defs = if !definition_references.is_empty() {
-            Some(
-                definition_references
-                    .into_iter()
-                    .map(|(key, value)| {
-                        Ok((
-                            key,
-                            value
-                                .clone()
-                                .try_into()
-                                .map_err(ProtocolError::ValueError)?,
-                        ))
-                    })
-                    .collect::<Result<BTreeMap<String, JsonValue>, ProtocolError>>()?,
-            )
-        } else {
-            None
-        };
+        let format = DataContractInSerializationFormat::V0(DataContractInSerializationFormatV0 {
+            id: data_contract_id,
+            config,
+            version: 1,
+            owner_id,
+            document_schemas: documents_map,
+            schema_defs: defs,
+        });
 
-        let mut data_contract: DataContract = match platform_version
-            .dpp
-            .contract_versions
-            .contract_structure_version
-        {
-            0 => DataContractV0 {
-                id: data_contract_id,
-                schema: data_contract::DATA_CONTRACT_SCHEMA_URI_V0.to_string(),
-                version: 1,
-                owner_id,
-                document_types,
-                metadata: None,
-                config,
-                documents,
-                defs: json_defs,
-                binary_properties: Default::default(),
-            }
-            .into(),
-            version => {
-                return Err(ProtocolError::UnknownVersionMismatch {
-                    method: "DataContractFactoryV0::create (for data_contract structure version)"
-                        .to_string(),
-                    known_versions: vec![0],
-                    received: version,
-                })
-            }
-        };
-
-        data_contract.generate_binary_properties(platform_version)?;
+        let data_contract = DataContract::try_from_platform_versioned(format, true, platform_version)?;
 
         CreatedDataContract::from_contract_and_entropy(data_contract, entropy, platform_version)
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "data-contract-value-conversion")]
     /// Create Data Contract from plain object
     pub fn create_from_object(
         &self,
         mut data_contract_object: Value,
         #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        #[cfg(feature = "validation")]
-        {
-            if !skip_validation {
-                self.validate_data_contract(&data_contract_object)?;
-            }
-        }
+        // TODO: We validate Data Contract on creation.
+        //   Should we disable it when flag is off?
+        // #[cfg(feature = "validation")]
+        // {
+        //     if !skip_validation {
+        //         self.validate_data_contract(&data_contract_object)?;
+        //     }
+        // }
         let platform_version = PlatformVersion::get(self.protocol_version)?;
         match platform_version
             .dpp
             .contract_versions
             .contract_structure_version
         {
-            0 => Ok(DataContractV0::from_object(data_contract_object, platform_version)?.into()),
+            0 => Ok(DataContractV0::from_value(data_contract_object, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractFactoryV0::create_from_object".to_string(),
                 known_versions: vec![0],
@@ -193,8 +143,12 @@ impl DataContractFactoryV0 {
         #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
+        #[cfg(not(feature = "validation"))]
+            let skip_validation = true;
+
         let data_contract: DataContract = DataContract::versioned_deserialize(
             buffer.as_slice(),
+            !skip_validation,
             platform_version,
         )
         .map_err(|e| {
@@ -203,30 +157,34 @@ impl DataContractFactoryV0 {
             ))
         })?;
 
-        #[cfg(feature = "validation")]
-        {
-            if !skip_validation {
-                self.validate_data_contract(&data_contract.to_cleaned_object()?)?;
-            }
-        }
+        // TODO: We validate Data Contract on creation.
+        //   Should we disable it when flag is off?
+        // #[cfg(feature = "validation")]
+        // {
+        //     if !skip_validation {
+        //         self.validate_data_contract(&data_contract.to_cleaned_object()?)?;
+        //     }
+        // }
 
         Ok(data_contract)
     }
 
-    #[cfg(feature = "validation")]
-    pub fn validate_data_contract(&self, raw_data_contract: &Value) -> Result<(), ProtocolError> {
-        let platform_version = PlatformVersion::get(self.protocol_version)?;
-        let data_contract = DataContract::from_object(raw_data_contract.clone(), platform_version)?;
-        let result = data_contract.validate(platform_version)?;
-
-        if !result.is_valid() {
-            return Err(ProtocolError::InvalidDataContractError(
-                InvalidDataContractError::new(result.errors, raw_data_contract.to_owned()),
-            ));
-        }
-
-        Ok(())
-    }
+    // TODO: We validate Data Contract on creation.
+    //   Should we disable it when flag is off?
+    // #[cfg(feature = "validation")]
+    // pub fn validate_data_contract(&self, raw_data_contract: &Value) -> Result<(), ProtocolError> {
+    //     let platform_version = PlatformVersion::get(self.protocol_version)?;
+    //     let data_contract = DataContract::from_object(raw_data_contract.clone(), platform_version)?;
+    //     let result = data_contract.validate_schema(platform_version)?;
+    //
+    //     if !result.is_valid() {
+    //         return Err(ProtocolError::InvalidDataContractError(
+    //             InvalidDataContractError::new(result.errors, raw_data_contract.to_owned()),
+    //         ));
+    //     }
+    //
+    //     Ok(())
+    // }
 
     #[cfg(feature = "state-transitions")]
     pub fn create_unsigned_data_contract_create_transition(
@@ -254,8 +212,6 @@ impl DataContractFactoryV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
-    use crate::data_contract::property_names;
     use crate::serialization::PlatformSerializable;
     use crate::state_transition::StateTransitionLike;
     use crate::tests::fixtures::get_data_contract_fixture;
@@ -322,7 +278,6 @@ mod tests {
         assert_eq!(data_contract.owner_id, result.owner_id);
         assert_eq!(data_contract.documents, result.documents);
         assert_eq!(data_contract.metadata, result.metadata);
-        assert_eq!(data_contract.binary_properties, result.binary_properties);
     }
 
     #[tokio::test]
@@ -349,7 +304,6 @@ mod tests {
         assert_eq!(data_contract.owner_id, result.owner_id);
         assert_eq!(data_contract.documents, result.documents);
         assert_eq!(data_contract.metadata, result.metadata);
-        assert_eq!(data_contract.binary_properties, result.binary_properties);
         assert_eq!(data_contract.defs, result.defs);
     }
 
@@ -380,7 +334,6 @@ mod tests {
         assert_eq!(data_contract.owner_id, result.owner_id);
         assert_eq!(data_contract.documents, result.documents);
         assert_eq!(data_contract.metadata, result.metadata);
-        assert_eq!(data_contract.binary_properties, result.binary_properties);
         assert_eq!(data_contract.defs, result.defs);
     }
 

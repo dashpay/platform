@@ -11,7 +11,10 @@ use std::collections::BTreeMap;
 
 use crate::common::decode;
 use crate::error::drive::DriveError;
-use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+use dpp::serialization::{
+    PlatformDeserializableFromVersionedStructure,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+};
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 
@@ -71,7 +74,9 @@ impl Drive {
                         .into_item_bytes()
                         .map_err(Error::GroveDB)
                         .and_then(|bytes| {
-                            DataContract::versioned_deserialize(&bytes, platform_version)
+                            // we don't need to validate the contract locally because it was proved to be in platform
+                            // and hence it is valid
+                            DataContract::versioned_deserialize(&bytes, false, platform_version)
                                 .map_err(Error::Protocol)
                         })
                 })

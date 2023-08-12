@@ -62,7 +62,7 @@ impl DocumentsBatchTransitionWasm {
 
         for contract in data_contracts_array_js.iter() {
             let value = contract.with_serde_to_platform_value()?;
-            let data_contract = DataContract::from_object(value).with_js_error()?;
+            let data_contract = DataContract::from_value(value).with_js_error()?;
             data_contracts.push(data_contract);
         }
 

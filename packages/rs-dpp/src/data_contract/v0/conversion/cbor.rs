@@ -1,23 +1,17 @@
-use crate::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
-use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use crate::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
+use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::data_contract::DataContractV0;
-use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
-use crate::data_contract::data_contract_config::DataContractConfig;
-use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
-use crate::data_contract::{data_contract_config, property_names, DataContract};
 use crate::util::cbor_value::CborCanonicalMap;
+use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
-use crate::util::{cbor_serializer, deserializer};
 use crate::version::PlatformVersion;
-use crate::{Convertible, ProtocolError};
+use crate::ProtocolError;
 use ciborium::Value as CborValue;
-use integer_encoding::VarInt;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::{Identifier, Value, ValueMapHelper};
-use serde_json::Value as JsonValue;
-use std::collections::BTreeMap;
+use platform_value::{Identifier, Value};
+use std::convert::TryFrom;
 
 impl DataContractCborConversionMethodsV0 for DataContractV0 {
+    // TODO: Do we need to use this?
     fn from_cbor_with_id(
         cbor_bytes: impl AsRef<[u8]>,
         contract_id: Option<Identifier>,
@@ -34,99 +28,25 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
         cbor_bytes: impl AsRef<[u8]>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let SplitProtocolVersionOutcome {
-            protocol_version,
-            protocol_version_size,
-            main_message_bytes: contract_cbor_bytes,
-        } = deserializer::split_cbor_protocol_version(cbor_bytes.as_ref())?;
-
-        let data_contract_cbor_map: BTreeMap<String, CborValue> =
-            ciborium::de::from_reader(contract_cbor_bytes).map_err(|_| {
-                ProtocolError::DecodingError(format!(
-                    "unable to decode contract with protocol version {} offset {}",
-                    protocol_version, protocol_version_size
-                ))
+        let data_contract_cbor_value: CborValue = ciborium::de::from_reader(cbor_bytes.as_ref())
+            .map_err(|_| {
+                ProtocolError::DecodingError(format!("unable to decode contract from cbor",))
             })?;
 
-        let data_contract_map: BTreeMap<String, Value> =
-            Value::convert_from_cbor_map(data_contract_cbor_map)?;
+        let data_contract_value: Value =
+            Value::try_from(data_contract_cbor_value).map_err(ProtocolError::ValueError)?;
 
-        let contract_id: Identifier = data_contract_map.get_identifier(property_names::ID)?;
-        let owner_id: Identifier = data_contract_map.get_identifier(property_names::OWNER_ID)?;
-        let schema = data_contract_map.get_string(property_names::SCHEMA)?;
-        let version = data_contract_map.get_integer(property_names::VERSION)?;
-
-        // Defs
-        let defs =
-            data_contract_map.get_optional_inner_str_json_value_map::<BTreeMap<_, _>>("$defs")?;
-
-        // Documents
-        let documents: BTreeMap<String, JsonValue> = data_contract_map
-            .get_inner_str_json_value_map("documents")
-            .map_err(ProtocolError::ValueError)?;
-
-        let mutability = DataContractConfig::get_contract_configuration_properties(
-            &data_contract_map,
-            platform_version,
-        )
-        .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
-        let definition_references =
-            DataContract::get_definitions(&data_contract_map, platform_version)?;
-        let document_types = DataContract::get_document_types_from_contract(
-            contract_id,
-            &data_contract_map,
-            &definition_references,
-            mutability.documents_keep_history_contract_default(),
-            mutability.documents_mutable_contract_default(),
-            platform_version,
-        )
-        .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
-
-        let mut data_contract = Self {
-            id: contract_id,
-            schema,
-            version,
-            owner_id,
-            documents,
-            defs,
-            metadata: None,
-            binary_properties: Default::default(),
-            document_types,
-            config: mutability,
-        };
-
-        data_contract.generate_binary_properties(platform_version)?;
-
-        Ok(data_contract)
+        Self::from_value(data_contract_value, platform_version)
     }
 
-    fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
-        let mut buf = 1.encode_var_vec();
+    fn to_cbor(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
+        let value = self.to_value(platform_version)?;
 
-        let mut contract_cbor_map = self.to_cbor_canonical_map()?;
+        let mut buf: Vec<u8> = Vec::new();
 
-        contract_cbor_map.insert(
-            data_contract_config::property::READONLY,
-            self.config.readonly(),
-        );
-        contract_cbor_map.insert(
-            data_contract_config::property::KEEPS_HISTORY,
-            self.config.keeps_history(),
-        );
-        contract_cbor_map.insert(
-            data_contract_config::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT,
-            self.config.documents_keep_history_contract_default(),
-        );
-        contract_cbor_map.insert(
-            data_contract_config::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT,
-            self.config.documents_mutable_contract_default(),
-        );
-
-        let mut contract_buf = contract_cbor_map
-            .to_bytes()
+        ciborium::ser::into_writer(&value, &mut buf)
             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
 
-        buf.append(&mut contract_buf);
         Ok(buf)
     }
 
@@ -145,27 +65,33 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
     //     cbor_serializer::serializable_value_to_cbor(&object, Some(0))
     // }
 
-    fn to_cbor_canonical_map(&self) -> Result<CborCanonicalMap, ProtocolError> {
-        let mut contract_cbor_map = CborCanonicalMap::new();
+    // TODO: Revisit
+    fn to_cbor_canonical_map(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<CborCanonicalMap, ProtocolError> {
+        unimplemented!();
 
-        contract_cbor_map.insert(property_names::ID, self.id.to_buffer().to_vec());
-        contract_cbor_map.insert(property_names::SCHEMA, self.schema.as_str());
-        contract_cbor_map.insert(property_names::VERSION, self.version);
-        contract_cbor_map.insert(property_names::OWNER_ID, self.owner_id.to_buffer().to_vec());
-
-        let docs = CborValue::serialized(&self.documents)
-            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
-
-        contract_cbor_map.insert(property_names::DOCUMENTS, docs);
-
-        if let Some(_defs) = &self.defs {
-            contract_cbor_map.insert(
-                property_names::DEFINITIONS,
-                CborValue::serialized(&self.defs)
-                    .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
-            );
-        };
-
-        Ok(contract_cbor_map)
+        // let mut contract_cbor_map = CborCanonicalMap::new();
+        //
+        // contract_cbor_map.insert(property_names::ID, self.id.to_buffer().to_vec());
+        // contract_cbor_map.insert(property_names::SCHEMA, self.schema.as_str());
+        // contract_cbor_map.insert(property_names::VERSION, self.version);
+        // contract_cbor_map.insert(property_names::OWNER_ID, self.owner_id.to_buffer().to_vec());
+        //
+        // let docs = CborValue::serialized(&self.documents)
+        //     .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+        //
+        // contract_cbor_map.insert(property_names::DOCUMENTS, docs);
+        //
+        // if let Some(_defs) = &self.defs {
+        //     contract_cbor_map.insert(
+        //         property_names::DEFINITIONS,
+        //         CborValue::serialized(&self.defs)
+        //             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?,
+        //     );
+        // };
+        //
+        // Ok(contract_cbor_map)
     }
 }

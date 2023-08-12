@@ -3,6 +3,7 @@ use thiserror::Error;
 use crate::data_contract::DataContract;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
+use crate::data_contract::errors::json_schema_error::JsonSchemaError;
 use crate::errors::consensus::ConsensusError;
 
 // @append_only
@@ -39,7 +40,7 @@ pub enum DataContractError {
     EncodingDataStructureNotSupported(&'static str),
 
     #[error("invalid contract structure: {0}")]
-    InvalidContractStructure(&'static str),
+    InvalidContractStructure(String),
 
     #[error("document type not found: {0}")]
     DocumentTypeNotFound(&'static str),
@@ -64,4 +65,7 @@ pub enum DataContractError {
 
     #[error("Corrupted Code Execution: {0}")]
     CorruptedCodeExecution(&'static str),
+
+    #[error("Corrupted Code Execution: {0}")]
+    JsonSchema(JsonSchemaError),
 }

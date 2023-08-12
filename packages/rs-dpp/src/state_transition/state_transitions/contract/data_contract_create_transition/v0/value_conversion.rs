@@ -18,7 +18,7 @@ use crate::serialization::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 use platform_version::TryIntoPlatformVersioned;
 use platform_version::version::PlatformVersion;
-use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
 use crate::state_transition::data_contract_create_transition::{DataContractCreateTransition, DataContractCreateTransitionV0};
 use crate::state_transition::data_contract_create_transition::fields::*;
@@ -42,7 +42,7 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
                 .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            data_contract: DataContract::from_object(
+            data_contract: DataContract::from_value(
                 raw_object.remove(DATA_CONTRACT).map_err(|_| {
                     ProtocolError::DecodingError(
                         "data contract missing on state transition".to_string(),
@@ -71,7 +71,7 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
                 .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            data_contract: DataContract::from_object(
+            data_contract: DataContract::from_value(
                 raw_value_map
                     .remove(DATA_CONTRACT)
                     .ok_or(ProtocolError::DecodingError(

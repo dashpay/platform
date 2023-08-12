@@ -1,6 +1,7 @@
 mod fields;
 pub mod v0;
 
+use crate::data_contract::accessors::v0::DataContractV0Setters;
 use crate::data_contract::created_data_contract::v0::CreatedDataContractV0;
 use crate::prelude::DataContract;
 use crate::version::{FeatureVersion, PlatformVersion};
@@ -28,12 +29,6 @@ impl From<CreatedDataContract> for DataContract {
 }
 
 impl CreatedDataContract {
-    pub fn set_data_contract_id(&mut self, id: Identifier) {
-        match self {
-            CreatedDataContract::V0(v0) => v0.data_contract.set_id(id),
-        }
-    }
-
     pub fn data_contract_owned(self) -> DataContract {
         match self {
             CreatedDataContract::V0(v0) => v0.data_contract,
@@ -93,7 +88,7 @@ impl CreatedDataContract {
         }
     }
 
-    #[cfg(feature = "platform-value")]
+    #[cfg(feature = "data-contract-value-conversion")]
     pub fn from_object(
         mut raw_object: Value,
         platform_version: &PlatformVersion,

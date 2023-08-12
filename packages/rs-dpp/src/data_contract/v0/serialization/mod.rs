@@ -1,15 +1,13 @@
-use crate::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use crate::data_contract::config::v0::DataContractConfigGettersV0;
+use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::v0::DataContractV0;
-use crate::data_contract::{DataContract, DefinitionName, DocumentName, JsonSchema, PropertyPath};
+use crate::data_contract::DataContract;
 use crate::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use crate::ProtocolError;
-use platform_value::Value;
 use platform_version::TryFromPlatformVersioned;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::Value as JsonValue;
-use std::collections::BTreeMap;
-use std::convert::TryInto;
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 
 pub mod bincode;
 
@@ -32,74 +30,77 @@ impl<'de> Deserialize<'de> for DataContractV0 {
         let serialization_format = DataContractInSerializationFormatV0::deserialize(deserializer)?;
         let current_version =
             PlatformVersion::get_current().map_err(|e| serde::de::Error::custom(e.to_string()))?;
-        DataContractV0::try_from_platform_versioned(serialization_format, current_version)
+        // when deserializing from json/platform_value/cbor we always want to validate (as this is not coming from the state)
+        DataContractV0::try_from_platform_versioned_v0(serialization_format, true, current_version)
             .map_err(serde::de::Error::custom)
     }
 }
 
-impl TryFromPlatformVersioned<DataContractInSerializationFormatV0> for DataContractV0 {
-    type Error = ProtocolError;
-
-    fn try_from_platform_versioned(
-        value: DataContractInSerializationFormatV0,
+impl DataContractV0 {
+    pub(in crate::data_contract)  fn try_from_platform_versioned(
+        value: DataContractInSerializationFormat,
+        validate: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, Self::Error> {
+    ) -> Result<Self, ProtocolError> {
+        match value {
+            DataContractInSerializationFormat::V0(serialization_format_v0) => {
+                match platform_version
+                    .dpp
+                    .contract_versions
+                    .contract_structure_version
+                {
+                    0 => {
+                        let data_contract = DataContractV0::try_from_platform_versioned_v0(
+                            serialization_format_v0,
+                            validate,
+                            platform_version,
+                        )?;
+
+                        Ok(data_contract)
+                    }
+                    version => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "DataContractV0::from_serialization_format".to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    }),
+                }
+            }
+        }
+    }
+
+    pub(in crate::data_contract) fn try_from_platform_versioned_v0(
+        data_contract_data: DataContractInSerializationFormatV0,
+        validate: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
         let DataContractInSerializationFormatV0 {
             id,
             config,
-            schema,
             version,
             owner_id,
-            documents,
-            defs,
+            document_schemas,
+            schema_defs,
             ..
-        } = value;
+        } = data_contract_data;
 
-        let document_types = DataContract::get_document_types_from_value_array(
+        let document_types = DocumentType::create_document_types_from_document_schemas(
             id,
-            &documents
-                .iter()
-                .map(|(key, value)| (key.as_str(), value))
-                .collect(),
-            &defs
-                .as_ref()
-                .map(|defs| {
-                    defs.iter()
-                        .map(|(key, value)| Ok((key.clone(), value)))
-                        .collect::<Result<BTreeMap<String, &Value>, ProtocolError>>()
-                })
-                .transpose()?
-                .unwrap_or_default(),
+            document_schemas,
+            schema_defs.as_ref(),
             config.documents_keep_history_contract_default(),
             config.documents_mutable_contract_default(),
+            validate,
             platform_version,
         )?;
 
-        let binary_properties = documents
-            .iter()
-            .map(|(doc_type, schema)| Ok((String::from(doc_type), DataContract::get_binary_properties(&schema.clone().try_into()?, platform_version)?)))
-            .collect::<Result<BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>>()?;
-
         let data_contract = DataContractV0 {
             id,
-            schema,
             version,
             owner_id,
             document_types,
             metadata: None,
             config,
-            documents: documents
-                .into_iter()
-                .map(|(key, value)| Ok((key, value.try_into()?)))
-                .collect::<Result<BTreeMap<DocumentName, JsonSchema>, ProtocolError>>()?,
-            defs: defs
-                .map(|defs| {
-                    defs.into_iter()
-                        .map(|(key, value)| Ok((key, value.try_into()?)))
-                        .collect::<Result<BTreeMap<DefinitionName, JsonSchema>, ProtocolError>>()
-                })
-                .transpose()?,
-            binary_properties,
+            schema_defs,
         };
 
         Ok(data_contract)

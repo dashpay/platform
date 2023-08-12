@@ -114,7 +114,7 @@ mod test {
     use std::collections::BTreeMap;
     use std::convert::TryInto;
 
-    use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
+    use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use crate::data_contract::DataContract;
     use crate::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
     use crate::state_transition::{

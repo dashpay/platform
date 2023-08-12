@@ -173,11 +173,10 @@ mod tests {
 
     use super::*;
 
-    use dpp::data_contract::extra::common::{json_document_to_contract, json_document_to_document};
-
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::serialization::PlatformSerializableWithPlatformVersion;
+    use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
     use dpp::util::cbor_serializer;
     use rand::Rng;
     use serde_json::json;

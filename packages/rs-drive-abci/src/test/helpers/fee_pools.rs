@@ -42,7 +42,8 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
 use dpp::data_contract::DataContract;
 use dpp::document::{DocumentV0, INITIAL_REVISION};
 use dpp::identity::accessors::IdentityGettersV0;

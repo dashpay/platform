@@ -7,13 +7,16 @@ use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
-use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+use dpp::serialization::{
+    PlatformDeserializableFromVersionedStructure,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+};
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
@@ -50,21 +53,6 @@ pub struct DocumentOperationsForContractDocumentType<'a> {
 /// Operations on Documents
 #[derive(Clone, Debug)]
 pub enum DocumentOperationType<'a> {
-    /// Deserializes a document and a contract and adds the document to the contract.
-    AddSerializedDocumentForSerializedContract {
-        /// The serialized document
-        serialized_document: &'a [u8],
-        /// The serialized contract
-        serialized_contract: &'a [u8],
-        /// The name of the document type
-        document_type_name: &'a str,
-        /// The owner id, if none is specified will try to recover from serialized document
-        owner_id: Option<[u8; 32]>,
-        /// Should we override the document if one already exists?
-        override_document: bool,
-        /// Add storage flags (like epoch, owner id, etc)
-        storage_flags: Option<Cow<'a, StorageFlags>>,
-    },
     /// Deserializes a document and adds it to a contract.
     AddSerializedDocumentForContract {
         /// The serialized document
@@ -186,43 +174,6 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
-            DocumentOperationType::AddSerializedDocumentForSerializedContract {
-                serialized_document,
-                serialized_contract,
-                document_type_name,
-                owner_id,
-                override_document,
-                storage_flags,
-            } => {
-                let contract =
-                    DataContract::versioned_deserialize(serialized_contract, platform_version)?;
-
-                let document_type = contract.document_type_for_name(document_type_name)?;
-
-                let document =
-                    Document::from_bytes(serialized_document, document_type, platform_version)?;
-
-                let document_info =
-                    DocumentRefAndSerialization((&document, serialized_document, storage_flags));
-
-                let document_and_contract_info = DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info,
-                        owner_id,
-                    },
-                    contract: &contract,
-                    document_type,
-                };
-                drive.add_document_for_contract_operations(
-                    document_and_contract_info,
-                    override_document,
-                    block_info,
-                    &mut None,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                    platform_version,
-                )
-            }
             DocumentOperationType::AddSerializedDocumentForContract {
                 serialized_document,
                 contract,

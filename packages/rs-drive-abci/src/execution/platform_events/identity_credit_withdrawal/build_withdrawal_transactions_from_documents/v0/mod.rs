@@ -124,7 +124,7 @@ mod tests {
     mod build_withdrawal_transactions_from_documents {
         use dpp::block::block_info::BlockInfo;
 
-        use dpp::data_contract::base::DataContractBaseMethodsV0;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contracts::withdrawals_contract::document_types::withdrawal;
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;

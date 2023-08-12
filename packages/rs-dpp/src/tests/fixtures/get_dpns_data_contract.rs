@@ -4,8 +4,8 @@ use data_contracts::{DataContractSource, SystemDataContract};
 use platform_value::platform_value;
 use serde_json::json;
 
+use crate::data_contract::config::v0::DataContractConfigV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
-use crate::data_contract::data_contract_config::v0::DataContractConfigV0;
 use crate::data_contract::DataContractFactory;
 use crate::prelude::*;
 use crate::tests::utils::generate_random_identifier_struct;

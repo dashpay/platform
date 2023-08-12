@@ -190,11 +190,10 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
-    use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::data_contract::extra::common::json_document_to_contract;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::fee::fee_result::FeeResult;
     use dpp::prelude::Identifier;
+    use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
     use std::sync::Arc;

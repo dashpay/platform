@@ -27,6 +27,7 @@ impl DocumentsBatchTransitionAccessorsV0 for DocumentsBatchTransitionV0 {
 }
 
 impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
+    #[cfg(feature = "state-transition-signing")]
     fn new_document_creation_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
@@ -63,6 +64,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         Ok(state_transition)
     }
 
+    #[cfg(feature = "state-transition-signing")]
     fn new_document_replacement_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,

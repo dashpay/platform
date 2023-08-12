@@ -48,6 +48,7 @@ use std::sync::Arc;
 
 #[cfg(feature = "full")]
 use dpp::data_contract::DataContractFactory;
+use rand::random;
 #[cfg(feature = "full")]
 use rand::seq::SliceRandom;
 #[cfg(feature = "full")]
@@ -89,17 +90,20 @@ use dpp::platform_value::{platform_value, Bytes32, Identifier};
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
-use dpp::data_contract::extra::common::json_document_to_contract;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
 };
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+use dpp::identity::TimestampMillis;
 use dpp::platform_value;
 
 #[cfg(feature = "full")]
 use dpp::prelude::DataContract;
 use dpp::prelude::Revision;
+use dpp::tests::json_document::json_document_to_contract;
 #[cfg(feature = "full")]
 use dpp::util::cbor_serializer;
 use dpp::version::drive_versions::DriveVersion;
@@ -113,6 +117,7 @@ use drive::drive::defaults;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 #[cfg(feature = "full")]
 use drive::drive::document::query::QuerySerializedDocumentsOutcome;
+use drive::drive::object_size_info::DocumentInfo;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 
 use drive::query::{WhereClause, WhereOperator};
@@ -1003,8 +1008,8 @@ fn test_family_basic_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        9, 97, 182, 110, 7, 10, 162, 155, 118, 11, 78, 222, 3, 68, 209, 160, 216, 51, 160, 113,
-        167, 219, 121, 243, 126, 142, 130, 188, 226, 44, 14, 214,
+        67, 94, 64, 189, 203, 253, 162, 192, 210, 252, 11, 126, 194, 22, 120, 66, 57, 88, 66, 42,
+        85, 168, 217, 167, 183, 106, 73, 231, 21, 208, 27, 143,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2178,16 +2183,19 @@ fn test_family_basic_queries() {
 
     // query empty contract with nested path queries
 
-    let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
+    let dashpay_contract = json_document_to_contract(
+        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        platform_version,
+    )
+    .expect("expected to get cbor document");
 
     drive
-        .apply_contract_cbor(
-            contract_cbor.clone(),
-            None,
-            BlockInfo::genesis(),
+        .apply_contract(
+            &dashpay_contract,
+            BlockInfo::default(),
             true,
             StorageFlags::optional_default_as_cow(),
-            Some(&db_transaction),
+            None,
             platform_version,
         )
         .expect("expected to apply contract successfully");
@@ -2203,10 +2211,12 @@ fn test_family_basic_queries() {
         .expect("expected to serialize to cbor");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
-            query_cbor.as_slice(),
-            contract_cbor.as_slice(),
-            String::from("contact"),
+        .query_documents_cbor_from_contract(
+            &dashpay_contract,
+            dashpay_contract
+                .document_type_for_name("contactRequest")
+                .expect("should have contact document type"),
+            &query_cbor,
             None,
             Some(&db_transaction),
             Some(platform_version.protocol_version),
@@ -2315,8 +2325,8 @@ fn test_family_basic_queries() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            226, 249, 21, 136, 237, 220, 90, 184, 201, 117, 3, 146, 74, 11, 47, 87, 239, 168, 26,
-            105, 237, 230, 112, 73, 229, 119, 0, 173, 114, 165, 46, 26
+            86, 130, 130, 251, 123, 90, 47, 36, 70, 105, 104, 74, 161, 62, 42, 154, 57, 106, 39, 2,
+            65, 111, 215, 164, 243, 224, 132, 63, 164, 124, 251, 39
         ],
     );
 }
@@ -2468,8 +2478,8 @@ fn test_family_starts_at_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        9, 97, 182, 110, 7, 10, 162, 155, 118, 11, 78, 222, 3, 68, 209, 160, 216, 51, 160, 113,
-        167, 219, 121, 243, 126, 142, 130, 188, 226, 44, 14, 214,
+        67, 94, 64, 189, 203, 253, 162, 192, 210, 252, 11, 126, 194, 22, 120, 66, 57, 88, 66, 42,
+        85, 168, 217, 167, 183, 106, 73, 231, 21, 208, 27, 143,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2910,8 +2920,8 @@ fn test_family_with_nulls_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        131, 120, 173, 203, 218, 209, 217, 10, 244, 114, 212, 89, 89, 85, 34, 60, 98, 98, 49, 127,
-        80, 176, 196, 86, 127, 237, 224, 238, 160, 88, 78, 35,
+        219, 116, 111, 145, 18, 129, 110, 72, 107, 162, 143, 84, 75, 73, 222, 200, 6, 207, 196, 15,
+        30, 65, 188, 201, 111, 92, 216, 211, 65, 126, 103, 164,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3034,8 +3044,8 @@ fn test_query_with_cached_contract() {
 
     // Make sure the state is deterministic
     let expected_app_hash = vec![
-        9, 97, 182, 110, 7, 10, 162, 155, 118, 11, 78, 222, 3, 68, 209, 160, 216, 51, 160, 113,
-        167, 219, 121, 243, 126, 142, 130, 188, 226, 44, 14, 214,
+        67, 94, 64, 189, 203, 253, 162, 192, 210, 252, 11, 126, 194, 22, 120, 66, 57, 88, 66, 42,
+        85, 168, 217, 167, 183, 106, 73, 231, 21, 208, 27, 143,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3043,7 +3053,7 @@ fn test_query_with_cached_contract() {
     // Make sure contract is not cached
     let contract_ref = drive
         .get_cached_contract_with_fetch_info(
-            *contract.id().as_bytes(),
+            *contract.id_ref().as_bytes(),
             Some(&db_transaction),
             &platform_version.drive,
         )
@@ -3067,7 +3077,7 @@ fn test_query_with_cached_contract() {
     let QuerySerializedDocumentsOutcome { items, .. } = drive
         .query_documents_cbor_with_document_type_lookup(
             where_cbor.as_slice(),
-            *contract.id().as_bytes(),
+            *contract.id_ref().as_bytes(),
             "person",
             None,
             Some(&db_transaction),
@@ -3080,7 +3090,7 @@ fn test_query_with_cached_contract() {
     // Cache was populated and there only two ref two the cached fetched info (here and cache)
     let contract_ref = drive
         .get_cached_contract_with_fetch_info(
-            *contract.id().as_bytes(),
+            *contract.id_ref().as_bytes(),
             Some(&db_transaction),
             &platform_version.drive,
         )
@@ -3181,8 +3191,8 @@ fn test_dpns_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        255, 48, 191, 226, 56, 147, 247, 72, 231, 46, 106, 75, 249, 6, 91, 246, 21, 117, 18, 6,
-        227, 172, 153, 231, 126, 53, 95, 50, 190, 31, 163, 255,
+        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
+        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3733,8 +3743,8 @@ fn test_dpns_query_start_at() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        255, 48, 191, 226, 56, 147, 247, 72, 231, 46, 106, 75, 249, 6, 91, 246, 21, 117, 18, 6,
-        227, 172, 153, 231, 126, 53, 95, 50, 190, 31, 163, 255,
+        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
+        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -3827,8 +3837,8 @@ fn test_dpns_query_start_after() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        255, 48, 191, 226, 56, 147, 247, 72, 231, 46, 106, 75, 249, 6, 91, 246, 21, 117, 18, 6,
-        227, 172, 153, 231, 126, 53, 95, 50, 190, 31, 163, 255,
+        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
+        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3921,8 +3931,8 @@ fn test_dpns_query_start_at_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        255, 48, 191, 226, 56, 147, 247, 72, 231, 46, 106, 75, 249, 6, 91, 246, 21, 117, 18, 6,
-        227, 172, 153, 231, 126, 53, 95, 50, 190, 31, 163, 255,
+        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
+        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4015,8 +4025,8 @@ fn test_dpns_query_start_after_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        255, 48, 191, 226, 56, 147, 247, 72, 231, 46, 106, 75, 249, 6, 91, 246, 21, 117, 18, 6,
-        227, 172, 153, 231, 126, 53, 95, 50, 190, 31, 163, 255,
+        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
+        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4210,8 +4220,8 @@ fn test_dpns_query_start_at_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        188, 113, 4, 81, 245, 170, 117, 63, 94, 159, 78, 41, 31, 228, 74, 201, 78, 244, 233, 24,
-        234, 33, 5, 171, 250, 212, 161, 174, 164, 24, 212, 69,
+        67, 43, 169, 92, 91, 128, 61, 11, 212, 215, 190, 41, 112, 8, 167, 5, 116, 57, 254, 140,
+        167, 216, 164, 29, 46, 190, 133, 2, 73, 119, 253, 248,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4419,8 +4429,8 @@ fn test_dpns_query_start_after_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        188, 113, 4, 81, 245, 170, 117, 63, 94, 159, 78, 41, 31, 228, 74, 201, 78, 244, 233, 24,
-        234, 33, 5, 171, 250, 212, 161, 174, 164, 24, 212, 69,
+        67, 43, 169, 92, 91, 128, 61, 11, 212, 215, 190, 41, 112, 8, 167, 5, 116, 57, 254, 140,
+        167, 216, 164, 29, 46, 190, 133, 2, 73, 119, 253, 248,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4630,8 +4640,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        188, 113, 4, 81, 245, 170, 117, 63, 94, 159, 78, 41, 31, 228, 74, 201, 78, 244, 233, 24,
-        234, 33, 5, 171, 250, 212, 161, 174, 164, 24, 212, 69,
+        67, 43, 169, 92, 91, 128, 61, 11, 212, 215, 190, 41, 112, 8, 167, 5, 116, 57, 254, 140,
+        167, 216, 164, 29, 46, 190, 133, 2, 73, 119, 253, 248,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -4951,13 +4961,12 @@ fn test_query_documents_by_created_at() {
 
     let platform_version = PlatformVersion::latest();
 
-    let contract = platform_value!({
-        "protocolVersion": 1,
-        "$id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
-        "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
+    let contract_value = platform_value!({
+        "$format_version": "0",
+        "id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
         "version": 1,
         "ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
-        "documents": {
+        "documentSchemas": {
             "indexedDocument": {
                 "type": "object",
                 "indices": [
@@ -4984,17 +4993,12 @@ fn test_query_documents_by_created_at() {
         },
     });
 
-    let contract_cbor =
-        cbor_serializer::serializable_value_to_cbor(&contract, Some(defaults::PROTOCOL_VERSION))
-            .expect("expected to serialize to cbor");
-
-    let contract = DataContract::from_object(contract, platform_version)
+    let contract = DataContract::from_value(contract_value, platform_version)
         .expect("should create a contract from cbor");
 
     drive
-        .apply_contract_with_serialization(
+        .apply_contract(
             &contract,
-            contract_cbor.clone(),
             BlockInfo::default(),
             true,
             None,
@@ -5005,35 +5009,43 @@ fn test_query_documents_by_created_at() {
 
     // Create document
 
-    let created_at = 1647535750329_u64;
+    let created_at: TimestampMillis = 1647535750329;
 
-    let document = platform_value!({
-       "$protocolVersion": 1u32,
-       "$id": "DLRWw2eRbLAW5zDU2c7wwsSFQypTSZPhFYzpY48tnaXN",
-       "$type": "indexedDocument",
-       "$dataContractId": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
-       "$ownerId": "GZVdTnLFAN2yE9rLeCHBDBCr7YQgmXJuoExkY347j7Z5",
-       "$revision": 1 as Revision,
+    let document_value = platform_value!({
        "firstName": "myName",
        "lastName": "lastName",
        "$createdAt": created_at,
        "$updatedAt": created_at,
     });
 
-    let serialized_document =
-        cbor_serializer::serializable_value_to_cbor(&document, Some(defaults::PROTOCOL_VERSION))
-            .expect("expected to serialize to cbor");
+    let document = contract
+        .document_type_for_name("indexedDocument")
+        .expect("should have indexedDocument type")
+        .create_document_from_data(
+            document_value,
+            Identifier::random(),
+            random(),
+            platform_version,
+        )
+        .expect("should create document");
+
+    let info = DocumentAndContractInfo {
+        owned_document_info: OwnedDocumentInfo {
+            document_info: DocumentInfo::DocumentOwnedInfo((document, None)),
+            owner_id: None,
+        },
+        contract: &contract,
+        document_type: contract
+            .document_type_for_name("indexedDocument")
+            .expect("should have indexedDocument type"),
+    };
 
     drive
-        .add_cbor_serialized_document_for_serialized_contract(
-            serialized_document.as_slice(),
-            contract_cbor.as_slice(),
-            "indexedDocument",
-            None,
+        .add_document_for_contract(
+            info,
             true,
             BlockInfo::default(),
             true,
-            StorageFlags::optional_default_as_cow(),
             None,
             platform_version,
         )

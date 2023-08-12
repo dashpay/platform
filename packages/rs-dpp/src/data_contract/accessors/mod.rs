@@ -1,16 +1,16 @@
-use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::data_contract_config::DataContractConfig;
-use crate::data_contract::document_type::DocumentType;
-use crate::data_contract::{DefinitionName, DocumentName, JsonSchema, PropertyPath};
+use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use crate::data_contract::{DocumentName, PropertyPath};
 use crate::metadata::Metadata;
 use crate::prelude::DataContract;
 use crate::ProtocolError;
 use platform_value::Identifier;
-use serde_json::Value;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
 pub mod v0;
+
 impl DataContractV0Getters for DataContract {
     fn id(&self) -> Identifier {
         match self {
@@ -18,9 +18,9 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
-    fn schema(&self) -> &String {
+    fn id_ref(&self) -> &Identifier {
         match self {
-            DataContract::V0(v0) => v0.schema(),
+            DataContract::V0(v0) => v0.id_ref(),
         }
     }
 
@@ -36,15 +36,27 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
-    fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType> {
+    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.document_types(),
+            DataContract::V0(v0) => v0.document_type_for_name(name),
         }
     }
 
-    fn document_types_mut(&mut self) -> &mut BTreeMap<DocumentName, DocumentType> {
+    fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef> {
         match self {
-            DataContract::V0(v0) => v0.document_types_mut(),
+            DataContract::V0(v0) => v0.document_type_optional_for_name(name),
+        }
+    }
+
+    fn has_document_type_for_name(&self, name: &str) -> bool {
+        match self {
+            DataContract::V0(v0) => v0.has_document_type_for_name(name),
+        }
+    }
+
+    fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType> {
+        match self {
+            DataContract::V0(v0) => v0.document_types(),
         }
     }
 
@@ -71,46 +83,42 @@ impl DataContractV0Getters for DataContract {
             DataContract::V0(v0) => v0.config_mut(),
         }
     }
+}
 
-    fn documents(&self) -> Result<&BTreeMap<DocumentName, JsonSchema>, ProtocolError> {
+impl DataContractV0Setters for DataContract {
+    fn set_id(&mut self, id: Identifier) {
         match self {
-            DataContract::V0(v0) => v0.documents(),
+            DataContract::V0(v0) => v0.set_id(id),
         }
     }
 
-    fn documents_mut(&mut self) -> Result<&mut BTreeMap<DocumentName, JsonSchema>, ProtocolError> {
+    fn set_version(&mut self, version: u32) {
         match self {
-            DataContract::V0(v0) => v0.documents_mut(),
+            DataContract::V0(v0) => v0.set_version(version),
         }
     }
 
-    fn defs(&self) -> Result<Option<&BTreeMap<DefinitionName, JsonSchema>>, ProtocolError> {
+    fn increment_version(&mut self) {
         match self {
-            DataContract::V0(v0) => v0.defs(),
+            DataContract::V0(v0) => v0.increment_version(),
         }
     }
 
-    fn defs_mut(
-        &mut self,
-    ) -> Result<Option<&mut BTreeMap<DefinitionName, JsonSchema>>, ProtocolError> {
+    fn set_owner_id(&mut self, owner_id: Identifier) {
         match self {
-            DataContract::V0(v0) => v0.defs_mut(),
+            DataContract::V0(v0) => v0.set_owner_id(owner_id),
         }
     }
 
-    fn binary_properties(
-        &self,
-    ) -> Result<&BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError> {
+    fn set_metadata(&mut self, metadata: Option<Metadata>) {
         match self {
-            DataContract::V0(v0) => v0.binary_properties(),
+            DataContract::V0(v0) => v0.set_metadata(metadata),
         }
     }
 
-    fn binary_properties_mut(
-        &mut self,
-    ) -> Result<&mut BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError> {
+    fn set_config(&mut self, config: DataContractConfig) {
         match self {
-            DataContract::V0(v0) => v0.binary_properties_mut(),
+            DataContract::V0(v0) => v0.set_config(config),
         }
     }
 }

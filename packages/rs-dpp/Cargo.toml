@@ -70,7 +70,8 @@ pretty_assertions = { version = "1.3.0" }
 [features]
 default = ["json-object", "platform-value"]
 drive = ["state-transitions", "fee-distribution", "system_contracts"]
-abci = ["state-transitions", "state-transition-validation", "validation", "random-public-keys", "identity-serialization"]
+abci = ["state-transitions", "state-transition-validation", "validation", "random-public-keys",
+  "identity-serialization"]
 cbor = ["ciborium"]
 validation = ["platform-value"]
 json-object = ["platform-value"]

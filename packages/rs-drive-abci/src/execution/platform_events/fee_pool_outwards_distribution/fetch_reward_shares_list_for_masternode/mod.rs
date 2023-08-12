@@ -12,7 +12,6 @@ pub const MN_REWARD_SHARES_DOCUMENT_TYPE: &str = "rewardShare";
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 

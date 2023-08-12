@@ -33,8 +33,6 @@ pub mod validation;
 #[cfg(feature = "client")]
 mod dash_platform_protocol;
 
-pub mod mocks;
-
 mod bls;
 
 #[cfg(feature = "fixtures-and-mocks")]

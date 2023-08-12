@@ -40,7 +40,6 @@ use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublic
 use crate::platform_types::system_identity_public_keys::SystemIdentityPublicKeys;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::document::DocumentV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -302,8 +301,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    76, 190, 65, 205, 206, 195, 243, 62, 142, 41, 36, 11, 1, 192, 90, 170, 125, 50,
-                    221, 187, 124, 70, 109, 93, 114, 99, 109, 135, 43, 16, 216, 40
+                    44, 248, 65, 88, 33, 68, 26, 12, 33, 190, 23, 22, 203, 42, 28, 213, 25, 197,
+                    240, 163, 65, 101, 101, 190, 226, 164, 97, 107, 89, 11, 15, 234
                 ]
             )
         }

@@ -39,6 +39,8 @@ pub enum StateError {
     #[error(transparent)]
     DataContractAlreadyPresentError(DataContractAlreadyPresentError),
 
+    // TODO: Not sure we can do it.
+    //   The order of variants must be always the same otherwise serialization won't work
     #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     DataTriggerError(DataTriggerError),

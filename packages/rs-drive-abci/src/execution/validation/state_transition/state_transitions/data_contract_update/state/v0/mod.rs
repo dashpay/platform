@@ -11,9 +11,9 @@ use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
-use dpp::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
-use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::prelude::ConsensusValidationResult;
@@ -24,7 +24,6 @@ use dpp::{
     consensus::basic::data_contract::{
         DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
     },
-    data_contract::property_names,
     platform_value::{self, Value},
     Convertible, ProtocolError,
 };
@@ -53,14 +52,24 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let action = self.transform_into_action_v0(platform_version)?;
+
+        if !action.is_valid_with_data() {
+            return Ok(action);
+        }
+
+        let state_transition_action = action.data.as_ref().unwrap();
+
+        let new_data_contract = match state_transition_action {
+            StateTransitionAction::DataContractUpdateAction(action) => {
+                Some(action.data_contract_ref())
+            }
+            _ => None,
+        }
+        .unwrap();
+
         let drive = platform.drive;
         let mut validation_result = ConsensusValidationResult::default();
-
-        let new_data_contract: DataContract = self
-            .data_contract()
-            .clone()
-            .try_into_platform_versioned(platform_version)?;
-
         // Data contract should exist
         let add_to_cache_if_pulled = tx.is_some();
         // Data contract should exist
@@ -103,7 +112,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         for (new_contract_document_type_name, new_contract_document_type) in
             new_data_contract.document_types()
         {
-            let Some(old_contract_document_type) = old_data_contract.optional_document_type_for_name(new_contract_document_type_name) else {
+            let Some(old_contract_document_type) = old_data_contract.document_type_optional_for_name(new_contract_document_type_name) else {
                 // if it's a new document type (ie the old data contract didn't have it)
                 // then new indices on it are fine
                 continue;
@@ -218,7 +227,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         //     return Ok(validation_result);
         // }
 
-        self.transform_into_action_v0(platform_version)
+        return Ok(action);
     }
 
     fn transform_into_action_v0(

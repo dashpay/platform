@@ -73,10 +73,11 @@ mod tests {
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::data_contract::extra::common::json_document_to_created_contract;
+
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
     use drive_abci::config::PlatformTestConfig;
@@ -919,7 +920,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "32ceecd115f386c42e4accba76241d0f0881ccbe3de07d63bfa6deaa9504aa42".to_string()
+            "e955c46f649bc21c529b3ea8f1800d7295141ad68c0b842894c33fd9fa26f2cd".to_string()
         )
     }
 
@@ -1459,7 +1460,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "e06680551de9a759af948c74e9c96060eda7e2841dad22d3d361432368406963".to_string()
+            "667d64ad15fa71c505e54c490814608809d22a66205afe0cc9c4c9745a55f38f".to_string()
         )
     }
 

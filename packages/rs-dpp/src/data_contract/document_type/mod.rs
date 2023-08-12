@@ -1,18 +1,22 @@
 pub mod accessors;
-pub mod array_field;
-mod document_field;
-pub use document_field::*;
-pub mod document_type_class_methods;
-pub mod document_type_methods;
+mod property;
+pub use property::*;
+pub mod class_methods;
 mod index;
+pub mod methods;
 pub use index::*;
 mod index_level;
 pub use index_level::IndexLevel;
+
 #[cfg(feature = "random-documents")]
 pub mod random_document;
+pub mod schema;
 pub mod v0;
+#[cfg(feature = "validation")]
+mod validation;
 
-use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
 use crate::prelude::Revision;
@@ -20,7 +24,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 pub(self) mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
@@ -55,12 +59,6 @@ pub enum DocumentType {
     V0(DocumentTypeV0),
 }
 
-impl Default for DocumentType {
-    fn default() -> Self {
-        DocumentType::V0(DocumentTypeV0::default())
-    }
-}
-
 impl DocumentType {
     pub const fn as_ref(&self) -> DocumentTypeRef {
         match self {
@@ -71,16 +69,6 @@ impl DocumentType {
     pub fn as_mut_ref(&mut self) -> DocumentTypeMutRef {
         match self {
             DocumentType::V0(v0) => DocumentTypeMutRef::V0(v0),
-        }
-    }
-
-    fn string_to_field_type(field_type_name: &str) -> Option<DocumentFieldType> {
-        match field_type_name {
-            "integer" => Some(DocumentFieldType::Integer),
-            "number" => Some(DocumentFieldType::Number),
-            "boolean" => Some(DocumentFieldType::Boolean),
-            "date" => Some(DocumentFieldType::Date),
-            _ => None,
         }
     }
 }
@@ -94,36 +82,6 @@ impl<'a> DocumentTypeRef<'a> {
 }
 
 impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
-    fn unique_id_for_storage(&self) -> [u8; 32] {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.unique_id_for_storage(),
-        }
-    }
-
-    fn document_field_for_property(&self, property: &str) -> Option<DocumentField> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.document_field_for_property(property),
-        }
-    }
-
-    fn field_can_be_null(&self, name: &str) -> bool {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.field_can_be_null(name),
-        }
-    }
-
-    fn initial_revision(&self) -> Option<Revision> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.initial_revision(),
-        }
-    }
-
-    fn requires_revision(&self) -> bool {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.requires_revision(),
-        }
-    }
-
     fn index_for_types(
         &self,
         index_names: &[&str],
@@ -149,13 +107,49 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
         }
     }
 
-    fn convert_value_to_document(
-        &self,
-        data: Value,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
+    fn max_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
         match self {
-            DocumentTypeRef::V0(v0) => v0.convert_value_to_document(data, platform_version),
+            DocumentTypeRef::V0(v0) => v0.max_size(platform_version),
+        }
+    }
+
+    fn estimated_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.estimated_size(platform_version),
+        }
+    }
+
+    fn unique_id_for_storage(&self) -> [u8; 32] {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.unique_id_for_storage(),
+        }
+    }
+
+    fn unique_id_for_document_field(
+        &self,
+        index_level: &IndexLevel,
+        base_event: [u8; 32],
+    ) -> Vec<u8> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.unique_id_for_document_field(index_level, base_event),
+        }
+    }
+
+    fn initial_revision(&self) -> Option<Revision> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.initial_revision(),
+        }
+    }
+
+    fn requires_revision(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.requires_revision(),
+        }
+    }
+
+    fn top_level_indices(&self) -> Vec<&IndexProperty> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.top_level_indices(),
         }
     }
 
@@ -170,46 +164,6 @@ impl<'a> DocumentTypeV0Methods for DocumentTypeRef<'a> {
             DocumentTypeRef::V0(v0) => {
                 v0.create_document_from_data(data, owner_id, document_entropy, platform_version)
             }
-        }
-    }
-
-    fn max_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.max_size(platform_version),
-        }
-    }
-
-    fn estimated_size(&self, platform_version: &PlatformVersion) -> Result<u16, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.estimated_size(platform_version),
-        }
-    }
-
-    fn document_field_type_for_property(
-        &self,
-        property: &str,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<DocumentFieldType>, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => {
-                v0.document_field_type_for_property(property, platform_version)
-            }
-        }
-    }
-
-    fn unique_id_for_document_field(
-        &self,
-        index_level: &IndexLevel,
-        base_event: [u8; 32],
-    ) -> Vec<u8> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.unique_id_for_document_field(index_level, base_event),
-        }
-    }
-
-    fn top_level_indices(&self) -> Vec<&IndexProperty> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.top_level_indices(),
         }
     }
 

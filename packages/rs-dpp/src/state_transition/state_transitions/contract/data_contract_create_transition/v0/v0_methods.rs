@@ -20,6 +20,7 @@ use platform_version::TryIntoPlatformVersioned;
 use platform_version::version::PlatformVersion;
 use crate::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, SignatureError};
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use crate::data_contract::accessors::v0::DataContractV0Setters;
 use crate::identity::PartialIdentity;
 use crate::identity::signer::Signer;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;

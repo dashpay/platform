@@ -62,13 +62,13 @@ use dpp::data_contract::DataContract;
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
-#[cfg(test)]
-use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
-use dpp::data_contract::extra::common::json_document_to_contract_with_ids;
 use dpp::prelude::Identifier;
+
+#[cfg(feature = "fixtures-and-mocks")]
+use dpp::tests::json_document::json_document_to_contract_with_ids;
 use dpp::version::PlatformVersion;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "fixtures-and-mocks")]
 /// Serializes to CBOR and applies to Drive a JSON contract from the file system.
 pub fn setup_contract(
     drive: &Drive,
@@ -83,36 +83,11 @@ pub fn setup_contract(
         None,
         platform_version,
     )
-    .expect("expected to get cbor contract");
+    .expect("expected to get json based contract");
 
     drive
         .apply_contract(
             &contract,
-            BlockInfo::default(),
-            true,
-            None,
-            transaction,
-            platform_version,
-        )
-        .expect("contract should be applied");
-    contract
-}
-
-#[cfg(test)]
-/// Serializes to CBOR and applies to Drive a contract from hex string format.
-pub fn setup_contract_from_cbor_hex(
-    drive: &Drive,
-    hex_string: String,
-    transaction: TransactionArg,
-) -> DataContract {
-    let platform_version = PlatformVersion::latest();
-    let contract_cbor = cbor_from_hex(hex_string);
-    let contract = DataContract::from_cbor(&contract_cbor, platform_version)
-        .expect("contract should be deserialized");
-    drive
-        .apply_contract_cbor(
-            contract_cbor,
-            None,
             BlockInfo::default(),
             true,
             None,

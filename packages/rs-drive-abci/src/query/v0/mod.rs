@@ -31,7 +31,8 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
 use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_response::BalanceAndRevision;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
+
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{
@@ -913,10 +914,15 @@ mod test {
 
         use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
-        use dpp::data_contract::data_contract_config::v0::DataContractConfigSettersV0;
-        use dpp::data_contract::document_schema::DataContractDocumentSchemaMethodsV0;
-        use dpp::data_contract::DataContract;
-        use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+        use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+        use dpp::data_contract::{DataContract, DataContractMethodsV0};
+        use dpp::platform_value::platform_value;
+        use dpp::serialization::{
+            PlatformDeserializableFromVersionedStructure,
+            PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+        };
         use dpp::tests::fixtures::get_data_contract_fixture;
         use dpp::validation::ValidationResult;
         use dpp::version::PlatformVersion;
@@ -966,7 +972,7 @@ mod test {
 
             let mut updated_data_contract = data_contract.clone();
 
-            let updated_document_schema = json!({
+            let updated_document_schema = platform_value!({
                 "type": "object",
                 "properties": {
                     "name": {
@@ -987,6 +993,7 @@ mod test {
                 .set_document_schema(
                     "niceDocument".into(),
                     updated_document_schema,
+                    true,
                     platform_version,
                 )
                 .expect("to be able to set document schema");
@@ -1087,34 +1094,29 @@ mod test {
             let first_entry_data_contract = first_entry.value.expect("To have data contract");
             let first_data_contract_update = DataContract::versioned_deserialize(
                 &first_entry_data_contract.value,
+                true,
                 platform_version,
             )
             .expect("To decode data contract");
             assert_eq!(first_data_contract_update, original_data_contract);
 
             assert_eq!(second_entry.date, 2000);
+
             let second_entry_data_contract = second_entry.value.expect("To have data contract");
+
             let second_data_contract_update = DataContract::versioned_deserialize(
                 &second_entry_data_contract.value,
+                true,
                 platform_version,
             )
             .expect("To decode data contract");
 
             let updated_doc = second_data_contract_update
-                .documents()
-                .unwrap()
-                .get("niceDocument")
-                .expect("To have niceDocument document");
+                .document_type_for_name("niceDocument")
+                .expect("should return document type");
+
             assert!(
-                updated_doc
-                    .as_object()
-                    .unwrap()
-                    .get("properties")
-                    .unwrap()
-                    .as_object()
-                    .unwrap()
-                    .get("newProp")
-                    .is_some(),
+                updated_doc.properties().contains_key("newProp"),
                 "expect data contract to have newProp field",
             );
         }
@@ -1189,20 +1191,11 @@ mod test {
             assert_eq!(first_data_contract_update, original_data_contract);
 
             let updated_doc = second_data_contract_update
-                .documents()
-                .unwrap()
-                .get("niceDocument")
+                .document_type_for_name("niceDocument")
                 .expect("To have niceDocument document");
+
             assert!(
-                updated_doc
-                    .as_object()
-                    .unwrap()
-                    .get("properties")
-                    .unwrap()
-                    .as_object()
-                    .unwrap()
-                    .get("newProp")
-                    .is_some(),
+                updated_doc.properties().contains_key("newProp"),
                 "expect data contract to have newProp field",
             );
         }
