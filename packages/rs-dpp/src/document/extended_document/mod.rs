@@ -73,6 +73,7 @@ impl ExtendedDocument {
     /// Create an extended document from a JSON string and a data contract.
     ///
     /// This function is a passthrough to the `from_json_string` method.
+    #[cfg(feature = "document-json-conversion")]
     pub fn from_json_string(
         string: &str,
         contract: DataContract,
@@ -88,6 +89,7 @@ impl ExtendedDocument {
     /// Create an extended document from a raw JSON document and a data contract.
     ///
     /// This function is a passthrough to the `from_raw_json_document` method.
+    #[cfg(feature = "document-json-conversion")]
     pub fn from_raw_json_document(
         raw_document: JsonValue,
         data_contract: DataContract,
@@ -115,6 +117,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a pretty JSON object.
     ///
     /// This function is a passthrough to the `to_pretty_json` method.
+    #[cfg(feature = "document-json-conversion")]
     pub fn to_pretty_json(&self) -> Result<JsonValue, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.to_pretty_json(),
@@ -124,7 +127,7 @@ impl ExtendedDocument {
     /// Create an extended document from a CBOR buffer.
     ///
     /// This function is a passthrough to the `from_cbor_buffer` method.
-    #[cfg(feature = "cbor")]
+    #[cfg(feature = "document-cbor-conversion")]
     pub fn from_cbor_buffer(cbor_bytes: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
         Ok(ExtendedDocument::V0(ExtendedDocumentV0::from_cbor_buffer(
             cbor_bytes,
@@ -134,6 +137,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a BTreeMap of string keys and Value instances.
     ///
     /// This function is a passthrough to the `to_map_value` method.
+    #[cfg(feature = "document-value-conversion")]
     pub fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.to_map_value(),
@@ -143,6 +147,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a BTreeMap of string keys and Value instances consuming the instance.
     ///
     /// This function is a passthrough to the `into_map_value` method.
+    #[cfg(feature = "document-value-conversion")]
     pub fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.into_map_value(),
@@ -152,6 +157,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a Value instance consuming the instance.
     ///
     /// This function is a passthrough to the `into_value` method.
+    #[cfg(feature = "document-value-conversion")]
     pub fn into_value(self) -> Result<Value, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.into_value(),
@@ -161,6 +167,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a Value instance.
     ///
     /// This function is a passthrough to the `to_value` method.
+    #[cfg(feature = "document-value-conversion")]
     pub fn to_value(&self) -> Result<Value, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.to_value(),
@@ -170,6 +177,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a JSON object for validation.
     ///
     /// This function is a passthrough to the `to_json_object_for_validation` method.
+    #[cfg(feature = "document-json-conversion")]
     pub fn to_json_object_for_validation(&self) -> Result<JsonValue, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.to_json_object_for_validation(),
@@ -179,7 +187,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a CBOR buffer.
     ///
     /// This function is a passthrough to the `to_cbor_buffer` method.
-    #[cfg(feature = "cbor")]
+    #[cfg(feature = "document-cbor-conversion")]
     pub fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.to_cbor_buffer(),
@@ -211,30 +219,6 @@ impl ExtendedDocument {
     pub fn get(&self, path: &str) -> Option<&Value> {
         match self {
             ExtendedDocument::V0(v0) => v0.get(path),
-        }
-    }
-
-    /// Get the identifiers and binary paths.
-    ///
-    /// This function is a passthrough to the `get_identifiers_and_binary_paths` method.
-    pub fn get_identifiers_and_binary_paths(
-        &self,
-    ) -> Result<(HashSet<&str>, HashSet<&str>), ProtocolError> {
-        match self {
-            ExtendedDocument::V0(v0) => v0.get_identifiers_and_binary_paths(),
-        }
-    }
-
-    /// Get the identifiers and binary paths with owned strings.
-    ///
-    /// This function is a passthrough to the `get_identifiers_and_binary_paths_owned` method.
-    pub fn get_identifiers_and_binary_paths_owned<
-        I: IntoIterator<Item = String> + Extend<String> + Default,
-    >(
-        &self,
-    ) -> Result<(I, I), ProtocolError> {
-        match self {
-            ExtendedDocument::V0(v0) => v0.get_identifiers_and_binary_paths_owned(),
         }
     }
 }

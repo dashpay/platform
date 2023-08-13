@@ -51,7 +51,8 @@ pub fn get_contact_request_extended_document_fixture(
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
     let data_contract = get_dashpay_contract_fixture(None, protocol_version).data_contract_owned();
 
-    let factory = DocumentFactory::new(protocol_version, data_contract)?;
+    let factory =
+        DocumentFactory::new(protocol_version, data_contract).expect("expected document factory");
 
     let mut data = platform_value! ({
             "toUserId": Identifier::new([0_u8;32]),

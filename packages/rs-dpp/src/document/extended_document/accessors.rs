@@ -49,21 +49,21 @@ impl ExtendedDocument {
     }
 
     /// Returns an optional reference to the document's revision.
-    pub fn revision(&self) -> Option<&Revision> {
+    pub fn revision(&self) -> Option<Revision> {
         match self {
             ExtendedDocument::V0(v0) => v0.revision(),
         }
     }
 
     /// Returns an optional reference to the document's creation timestamp in milliseconds.
-    pub fn created_at(&self) -> Option<&TimestampMillis> {
+    pub fn created_at(&self) -> Option<TimestampMillis> {
         match self {
             ExtendedDocument::V0(v0) => v0.created_at(),
         }
     }
 
     /// Returns an optional reference to the document's last update timestamp in milliseconds.
-    pub fn updated_at(&self) -> Option<&TimestampMillis> {
+    pub fn updated_at(&self) -> Option<TimestampMillis> {
         match self {
             ExtendedDocument::V0(v0) => v0.updated_at(),
         }

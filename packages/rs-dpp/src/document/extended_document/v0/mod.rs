@@ -12,14 +12,8 @@ use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::Revision;
 use crate::serialization::{PlatformDeserializable, ValueConvertible};
-#[cfg(feature = "cbor")]
-use crate::util::cbor_value::CborCanonicalMap;
-use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
-#[cfg(feature = "cbor")]
-use ciborium::Value as CborValue;
 
 #[cfg(feature = "cbor")]
 use crate::document::serialization_traits::DocumentCborMethodsV0;
@@ -38,6 +32,9 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
 #[cfg(feature = "document-value-conversion")]
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
+use crate::document::serialization_traits::{
+    DocumentPlatformConversionMethodsV0, ExtendedDocumentPlatformConversionMethodsV0,
+};
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "document-json-conversion")]
@@ -96,7 +93,7 @@ impl ExtendedDocumentV0 {
     }
 
     pub fn properties_as_mut(&mut self) -> &mut BTreeMap<String, Value> {
-        &mut self.document.properties()
+        self.document.properties_mut()
     }
 
     pub fn id(&self) -> Identifier {
@@ -123,16 +120,16 @@ impl ExtendedDocumentV0 {
             .map(|document_type| document_type.documents_mutable())
     }
 
-    pub fn revision(&self) -> Option<&Revision> {
-        self.document.revision().as_ref()
+    pub fn revision(&self) -> Option<Revision> {
+        self.document.revision()
     }
 
-    pub fn created_at(&self) -> Option<&TimestampMillis> {
-        self.document.created_at().as_ref()
+    pub fn created_at(&self) -> Option<TimestampMillis> {
+        self.document.created_at()
     }
 
-    pub fn updated_at(&self) -> Option<&TimestampMillis> {
-        self.document.updated_at().as_ref()
+    pub fn updated_at(&self) -> Option<TimestampMillis> {
+        self.document.updated_at()
     }
 
     /// Create an extended document with additional information.
@@ -198,6 +195,7 @@ impl ExtendedDocumentV0 {
         Self::from_untrusted_platform_value(raw_document.into(), data_contract, platform_version)
     }
 
+    #[cfg(feature = "document-json-conversion")]
     /// Create an extended document from a trusted platform value object where fields are already in
     /// the proper format for the contract.
     ///
@@ -240,6 +238,7 @@ impl ExtendedDocumentV0 {
         Ok(extended_document)
     }
 
+    #[cfg(feature = "document-json-conversion")]
     /// Create an extended document from an untrusted platform value object where fields might not
     /// be in the proper format for the contract.
     ///
@@ -313,6 +312,7 @@ impl ExtendedDocumentV0 {
         Ok(value)
     }
 
+    #[cfg(feature = "document-value-conversion")]
     pub fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut object = self.document.to_map_value()?;
         object.insert(
@@ -326,6 +326,7 @@ impl ExtendedDocumentV0 {
         Ok(object)
     }
 
+    #[cfg(feature = "document-value-conversion")]
     pub fn into_map_value(self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let ExtendedDocumentV0 {
             document_type_name,
@@ -347,10 +348,12 @@ impl ExtendedDocumentV0 {
         Ok(object)
     }
 
+    #[cfg(feature = "document-value-conversion")]
     pub fn into_value(self) -> Result<Value, ProtocolError> {
         Ok(self.into_map_value()?.into())
     }
 
+    #[cfg(feature = "document-value-conversion")]
     pub fn to_value(&self) -> Result<Value, ProtocolError> {
         Ok(self.to_map_value()?.into())
     }
@@ -362,47 +365,20 @@ impl ExtendedDocumentV0 {
             .map_err(ProtocolError::ValueError)
     }
 
-    #[cfg(feature = "cbor")]
-    pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(self.to_cbor_buffer()?))
+    pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
+        Ok(hash_to_vec(self.serialize(platform_version)?))
     }
 
     /// Set the value under given path.
     /// The path supports syntax from `lodash` JS lib. Example: "root.people[0].name".
     /// If parents are not present they will be automatically created
     pub fn set(&mut self, path: &str, value: Value) -> Result<(), ProtocolError> {
-        Ok(self.document.properties().insert_at_path(path, value)?)
+        Ok(self.document.properties_mut().insert_at_path(path, value)?)
     }
 
     /// Retrieves field specified by path
     pub fn get(&self, path: &str) -> Option<&Value> {
         self.properties().get_optional_at_path(path).ok().flatten()
-    }
-
-    pub fn get_identifiers_and_binary_paths(
-        &self,
-    ) -> Result<(HashSet<&str>, HashSet<&str>), ProtocolError> {
-        let (mut identifiers_paths, binary_paths) = self
-            .data_contract
-            .get_identifiers_and_binary_paths(&self.document_type_name)?;
-
-        identifiers_paths.extend(super::IDENTIFIER_FIELDS);
-
-        Ok((identifiers_paths, binary_paths))
-    }
-
-    pub fn get_identifiers_and_binary_paths_owned<
-        I: IntoIterator<Item = String> + Extend<String> + Default,
-    >(
-        &self,
-    ) -> Result<(I, I), ProtocolError> {
-        let (mut identifiers_paths, binary_paths): (I, I) = self
-            .data_contract
-            .get_identifiers_and_binary_paths_owned(&self.document_type_name)?;
-
-        identifiers_paths.extend(super::IDENTIFIER_FIELDS.map(|str| str.to_string()));
-
-        Ok((identifiers_paths, binary_paths))
     }
 }
 

@@ -12,3 +12,14 @@ pub(in crate::document) trait DocumentPlatformDeserializationMethodsV0 {
     where
         Self: Sized;
 }
+
+#[cfg(feature = "extended-document")]
+pub(in crate::document) trait ExtendedDocumentPlatformDeserializationMethodsV0 {
+    /// Reads a serialized document and creates a Document from it.
+    fn from_bytes_v0(
+        serialized_document: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
+}
