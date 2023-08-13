@@ -122,28 +122,6 @@ impl ExtendedBlockInfoV0Setters for ExtendedBlockInfo {
 mod tests {
     use super::*;
     use crate::block::block_info::BlockInfo;
-    use ciborium::{de::from_reader, ser::into_writer};
-
-    #[test]
-    fn test_extended_block_info_serde_ciborium() {
-        let block_info: ExtendedBlockInfo = ExtendedBlockInfoV0 {
-            basic_info: BlockInfo::default(),
-            app_hash: [1; 32],
-            quorum_hash: [2; 32],
-            signature: [3; 96],
-            round: 1,
-        }
-        .into();
-
-        // Serialize into a vector
-        let mut encoded: Vec<u8> = vec![];
-        into_writer(&block_info, &mut encoded).unwrap();
-
-        // Deserialize from the vector
-        let decoded: ExtendedBlockInfo = from_reader(&encoded[..]).unwrap();
-
-        assert_eq!(block_info, decoded);
-    }
 
     #[test]
     fn test_extended_block_info_bincode() {

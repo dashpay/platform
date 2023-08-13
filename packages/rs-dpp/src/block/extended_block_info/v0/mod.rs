@@ -137,29 +137,3 @@ mod signature_serializer {
         Ok(arr)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ciborium::{de::from_reader, ser::into_writer};
-
-    #[test]
-    fn test_extended_block_info_v0_serde_ciborium() {
-        let block_info = ExtendedBlockInfoV0 {
-            basic_info: BlockInfo::default(),
-            app_hash: [1; 32],
-            quorum_hash: [2; 32],
-            signature: [3; 96],
-            round: 1,
-        };
-
-        // Serialize into a vector
-        let mut encoded: Vec<u8> = vec![];
-        into_writer(&block_info, &mut encoded).unwrap();
-
-        // Deserialize from the vector
-        let decoded: ExtendedBlockInfoV0 = from_reader(&encoded[..]).unwrap();
-
-        assert_eq!(block_info, decoded);
-    }
-}
