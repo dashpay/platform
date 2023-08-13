@@ -8,7 +8,7 @@ use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
 use crate::ProtocolError;
 use platform_value::Identifier;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl DataContractV0Getters for DataContractV0 {
     fn id(&self) -> Identifier {
@@ -47,6 +47,32 @@ impl DataContractV0Getters for DataContractV0 {
 
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType> {
         &self.document_types
+    }
+
+    fn identifier_paths(&self) -> BTreeSet<String> {
+        self.document_types
+            .iter()
+            .map(|(document_name, document_type)| {
+                document_type
+                    .identifier_paths()
+                    .iter()
+                    .map(|path| format!("{}.{}", document_name, path))
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn binary_paths(&self) -> BTreeSet<String> {
+        self.document_types
+            .iter()
+            .map(|(document_name, document_type)| {
+                document_type
+                    .binary_paths()
+                    .iter()
+                    .map(|path| format!("{}.{}", document_name, path))
+                    .collect()
+            })
+            .collect()
     }
 
     fn metadata(&self) -> Option<&Metadata> {

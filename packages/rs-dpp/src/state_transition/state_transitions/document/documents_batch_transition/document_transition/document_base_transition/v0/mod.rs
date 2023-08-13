@@ -12,6 +12,7 @@ use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::state_transition::documents_batch_transition::document_base_transition::property_names;
 use crate::{data_contract::DataContract, errors::ProtocolError, identifier::Identifier};
 
@@ -62,82 +63,6 @@ impl DocumentBaseTransitionV0 {
                     .unwrap_or(data_contract.id().to_buffer()),
             ),
         })
-    }
-}
-
-impl DocumentTransitionObjectLike for DocumentBaseTransitionV0 {
-    #[cfg(feature = "state-transition-json-conversion")]
-    fn from_json_object(
-        json_value: JsonValue,
-        data_contract: DataContract,
-    ) -> Result<Self, ProtocolError> {
-        let mut document: DocumentBaseTransitionV0 = serde_json::from_value(json_value)?;
-
-        document.data_contract_id = data_contract.id();
-        Ok(document)
-    }
-
-    #[cfg(feature = "state-transition-value-conversion")]
-    fn from_object(
-        raw_transition: Value,
-        data_contract: DataContract,
-    ) -> Result<DocumentBaseTransitionV0, ProtocolError> {
-        let map = raw_transition
-            .into_btree_string_map()
-            .map_err(ProtocolError::ValueError)?;
-        Self::from_value_map(map, data_contract)
-    }
-
-    #[cfg(feature = "state-transition-value-conversion")]
-    fn from_value_map(
-        map: BTreeMap<String, Value>,
-        data_contract: DataContract,
-    ) -> Result<DocumentBaseTransitionV0, ProtocolError> {
-        Ok(DocumentBaseTransitionV0 {
-            id: Identifier::from(
-                map.get_hash256_bytes(property_names::ID)
-                    .map_err(ProtocolError::ValueError)?,
-            ),
-            document_type_name: map
-                .get_string(property_names::DOCUMENT_TYPE)
-                .map_err(ProtocolError::ValueError)?,
-            data_contract_id: data_contract.id(),
-        })
-    }
-
-    #[cfg(feature = "state-transition-value-conversion")]
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        Ok(self.to_value_map()?.into())
-    }
-
-    #[cfg(feature = "state-transition-value-conversion")]
-    fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
-        let mut btree_map = BTreeMap::new();
-        btree_map.insert(
-            property_names::ID.to_string(),
-            Value::Identifier(self.id.to_buffer()),
-        );
-        btree_map.insert(
-            property_names::DATA_CONTRACT_ID.to_string(),
-            Value::Identifier(self.data_contract_id.to_buffer()),
-        );
-        btree_map.insert(
-            property_names::DOCUMENT_TYPE.to_string(),
-            Value::Text(self.document_type_name.clone()),
-        );
-        Ok(btree_map)
-    }
-
-    #[cfg(feature = "state-transition-json-conversion")]
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_object()?
-            .try_into()
-            .map_err(ProtocolError::ValueError)
-    }
-
-    #[cfg(feature = "state-transition-value-conversion")]
-    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        Ok(self.to_value_map()?.into())
     }
 }
 

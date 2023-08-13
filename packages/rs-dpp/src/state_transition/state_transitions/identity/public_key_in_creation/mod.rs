@@ -8,16 +8,27 @@ use platform_serialization_derive::PlatformSignable;
 use serde::{Deserialize, Serialize};
 
 pub mod accessors;
+#[cfg(feature = "state-transition-cbor-conversion")]
+mod cbor_conversion;
 mod fields;
+#[cfg(feature = "state-transition-json-conversion")]
+mod json_conversion;
 mod methods;
+mod types;
 pub mod v0;
+#[cfg(feature = "state-transition-value-conversion")]
+mod value_conversion;
 
-#[derive(
-    Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq, From,
-)]
+#[derive(Debug, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq, From)]
 //here we want to indicate that IdentityPublicKeyInCreation can be transformed into IdentityPublicKeyInCreationSignable
 #[platform_signable(derive_into)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$version")
+)]
 pub enum IdentityPublicKeyInCreation {
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(IdentityPublicKeyInCreationV0),
 }
 

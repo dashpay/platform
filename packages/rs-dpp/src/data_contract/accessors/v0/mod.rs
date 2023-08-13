@@ -4,7 +4,7 @@ use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
 use crate::ProtocolError;
 use platform_value::Identifier;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub trait DataContractV0Getters {
     /// Returns the unique identifier for the data contract.
@@ -27,6 +27,10 @@ pub trait DataContractV0Getters {
 
     /// Returns a mapping of document names to their corresponding document types.
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType>;
+
+    fn identifier_paths(&self) -> BTreeSet<String>;
+
+    fn binary_paths(&self) -> BTreeSet<String>;
 
     /// Returns optional metadata associated with the contract.
     fn metadata(&self) -> Option<&Metadata>;

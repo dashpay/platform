@@ -21,7 +21,7 @@ use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(
     Debug,
@@ -37,15 +37,15 @@ use serde::Serialize;
 )]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
-    derive(Serialize, PlatformSerdeVersionedDeserialize),
-    serde(untagged)
+    derive(Serialize, Deserialize),
+    serde(tag = "$version")
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.identity_top_up_state_transition"
 )]
 pub enum IdentityTopUpTransition {
-    #[cfg_attr(feature = "state-transition-serde-conversion", versioned(0))]
+    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(IdentityTopUpTransitionV0),
 }
 

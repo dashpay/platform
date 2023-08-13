@@ -11,7 +11,7 @@ pub struct JsonStateTransitionSerializationOptions {
 }
 
 /// The trait contains methods related to conversion of StateTransition into different formats
-pub trait StateTransitionJsonConvert: Serialize + StateTransitionValueConvert<'_> {
+pub trait StateTransitionJsonConvert<'a>: Serialize + StateTransitionValueConvert<'a> {
     /// Returns the [`serde_json::Value`] instance that encodes:
     ///  - Identifiers  - with base58
     ///  - Binary data  - with base64

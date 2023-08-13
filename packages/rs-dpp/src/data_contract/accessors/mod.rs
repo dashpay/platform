@@ -7,7 +7,7 @@ use crate::prelude::DataContract;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use serde_json::Value as JsonValue;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub mod v0;
 
@@ -57,6 +57,18 @@ impl DataContractV0Getters for DataContract {
     fn document_types(&self) -> &BTreeMap<DocumentName, DocumentType> {
         match self {
             DataContract::V0(v0) => v0.document_types(),
+        }
+    }
+
+    fn identifier_paths(&self) -> BTreeSet<String> {
+        match self {
+            DataContract::V0(v0) => v0.identifier_paths(),
+        }
+    }
+
+    fn binary_paths(&self) -> BTreeSet<String> {
+        match self {
+            DataContract::V0(v0) => v0.binary_paths(),
         }
     }
 

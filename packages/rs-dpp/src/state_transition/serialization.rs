@@ -98,14 +98,14 @@ mod tests {
                 .expect("expected to get identity");
         let bls = NativeBlsModule::default();
         let add_public_keys_in_creation = identity
-            .public_keys
+            .public_keys()
             .values()
             .map(|public_key| public_key.into())
             .collect();
         let mut identity_update_transition = IdentityUpdateTransitionV0 {
             signature: Default::default(),
             signature_public_key_id: 0,
-            identity_id: identity.id,
+            identity_id: identity.id(),
             revision: 1,
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys: vec![],
@@ -119,7 +119,7 @@ mod tests {
         identity_update_transition
             .add_public_keys
             .iter_mut()
-            .zip(identity.public_keys.into_values())
+            .zip(identity.public_keys().into_values())
             .try_for_each(|(public_key_with_witness, public_key)| {
                 if public_key.key_type.is_unique_key_type() {
                     let private_key = keys
@@ -156,14 +156,14 @@ mod tests {
                 .expect("expected to get identity");
         let bls = NativeBlsModule::default();
         let add_public_keys_in_creation = identity
-            .public_keys
+            .public_keys()
             .values()
             .map(|public_key| public_key.into())
             .collect();
         let mut identity_update_transition = IdentityUpdateTransitionV0 {
             signature: Default::default(),
             signature_public_key_id: 0,
-            identity_id: identity.id,
+            identity_id: identity.id(),
             revision: 1,
             add_public_keys: add_public_keys_in_creation,
             disable_public_keys: vec![3, 4, 5],
@@ -177,7 +177,7 @@ mod tests {
         identity_update_transition
             .add_public_keys
             .iter_mut()
-            .zip(identity.public_keys.into_values())
+            .zip(identity.public_keys().into_values())
             .try_for_each(|(public_key_with_witness, public_key)| {
                 if public_key.key_type.is_unique_key_type() {
                     let private_key = keys

@@ -102,7 +102,6 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
                         .map(|_| ())
                 })?;
         }
-        object.insert(String::from(DATA_CONTRACT), self.data_contract.to_object()?)?;
         Ok(object)
     }
 
@@ -118,10 +117,6 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractCreateTransitionV0 {
                         .map(|_| ())
                 })?;
         }
-        object.insert(
-            String::from(DATA_CONTRACT),
-            self.data_contract.to_cleaned_object()?,
-        )?;
         Ok(object)
     }
 }

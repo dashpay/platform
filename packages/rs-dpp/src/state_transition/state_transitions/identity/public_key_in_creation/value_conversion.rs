@@ -1,36 +1,18 @@
+use crate::state_transition::documents_batch_transition::fields::property_names::STATE_TRANSITION_PROTOCOL_VERSION;
+use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
+use crate::ProtocolError;
+use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+use platform_value::Value;
+use platform_version::version::{FeatureVersion, PlatformVersion};
 use std::collections::BTreeMap;
 
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-
-use platform_value::{BinaryData, Bytes32, Error, IntegerReplacementType, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
-
-use crate::{
-    data_contract::DataContract,
-    identity::KeyID,
-    prelude::Identifier,
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    NonConsensusError, ProtocolError,
-};
-
-use crate::serialization::{PlatformDeserializable, Signable};
-use crate::state_transition::data_contract_create_transition::{
-    DataContractCreateTransition, DataContractCreateTransitionV0,
-};
-use crate::state_transition::documents_batch_transition::{
-    DocumentsBatchTransition, DocumentsBatchTransitionV0,
-};
-use crate::state_transition::state_transitions::documents_batch_transition::fields::*;
-use crate::state_transition::StateTransitionValueConvert;
-use bincode::{config, Decode, Encode};
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_version::version::{FeatureVersion, PlatformVersion};
-
-impl<'a> StateTransitionValueConvert<'a> for DocumentsBatchTransition {
+impl<'a> StateTransitionValueConvert<'a> for IdentityPublicKeyInCreation {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
-            DocumentsBatchTransition::V0(transition) => {
-                let mut value = transition.to_object(skip_signature)?;
+            IdentityPublicKeyInCreation::V0(public_key) => {
+                let mut value = public_key.to_object(skip_signature)?;
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
                 Ok(value)
             }
@@ -39,8 +21,8 @@ impl<'a> StateTransitionValueConvert<'a> for DocumentsBatchTransition {
 
     fn to_canonical_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
-            DocumentsBatchTransition::V0(transition) => {
-                let mut value = transition.to_canonical_object(skip_signature)?;
+            IdentityPublicKeyInCreation::V0(public_key) => {
+                let mut value = public_key.to_canonical_object(skip_signature)?;
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
                 Ok(value)
             }
@@ -49,8 +31,8 @@ impl<'a> StateTransitionValueConvert<'a> for DocumentsBatchTransition {
 
     fn to_canonical_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
-            DocumentsBatchTransition::V0(transition) => {
-                let mut value = transition.to_canonical_cleaned_object(skip_signature)?;
+            IdentityPublicKeyInCreation::V0(public_key) => {
+                let mut value = public_key.to_canonical_cleaned_object(skip_signature)?;
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
                 Ok(value)
             }
@@ -59,8 +41,8 @@ impl<'a> StateTransitionValueConvert<'a> for DocumentsBatchTransition {
 
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
-            DocumentsBatchTransition::V0(transition) => {
-                let mut value = transition.to_cleaned_object(skip_signature)?;
+            IdentityPublicKeyInCreation::V0(public_key) => {
+                let mut value = public_key.to_cleaned_object(skip_signature)?;
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
                 Ok(value)
             }
@@ -83,9 +65,11 @@ impl<'a> StateTransitionValueConvert<'a> for DocumentsBatchTransition {
             });
 
         match version {
-            0 => Ok(DocumentsBatchTransitionV0::from_object(raw_object, platform_version)?.into()),
+            0 => Ok(
+                IdentityPublicKeyInCreationV0::from_object(raw_object, platform_version)?.into(),
+            ),
             n => Err(ProtocolError::UnknownVersionError(format!(
-                "Unknown DataContractCreateTransition version {n}"
+                "Unknown IdentityPublicKeyInCreation version {n}"
             ))),
         }
     }
@@ -101,16 +85,18 @@ impl<'a> StateTransitionValueConvert<'a> for DocumentsBatchTransition {
                 platform_version
                     .dpp
                     .state_transition_serialization_versions
-                    .contract_create_state_transition
+                    .identity_public_key_in_creation
                     .default_current_version
             });
 
         match version {
-            0 => Ok(
-                DocumentsBatchTransitionV0::from_value_map(raw_value_map, platform_version)?.into(),
-            ),
+            0 => Ok(IdentityPublicKeyInCreationV0::from_value_map(
+                raw_value_map,
+                platform_version,
+            )?
+            .into()),
             n => Err(ProtocolError::UnknownVersionError(format!(
-                "Unknown DataContractCreateTransition version {n}"
+                "Unknown IdentityPublicKeyInCreation version {n}"
             ))),
         }
     }
@@ -121,9 +107,9 @@ impl<'a> StateTransitionValueConvert<'a> for DocumentsBatchTransition {
             .map_err(ProtocolError::ValueError)?;
 
         match version {
-            0 => DocumentsBatchTransitionV0::clean_value(value),
+            0 => IdentityPublicKeyInCreationV0::clean_value(value),
             n => Err(ProtocolError::UnknownVersionError(format!(
-                "Unknown DataContractCreateTransition version {n}"
+                "Unknown IdentityPublicKeyInCreation version {n}"
             ))),
         }
     }

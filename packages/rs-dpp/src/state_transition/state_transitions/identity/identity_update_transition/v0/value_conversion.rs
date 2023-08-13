@@ -22,6 +22,7 @@ use crate::state_transition::identity_update_transition::fields::*;
 use crate::state_transition::identity_update_transition::v0::{
     get_list, remove_integer_list_or_default, IdentityUpdateTransitionV0,
 };
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
 use bincode::{config, Decode, Encode};
 use platform_version::version::PlatformVersion;
@@ -44,7 +45,13 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
         let revision = raw_object
             .get_integer(REVISION)
             .map_err(ProtocolError::ValueError)?;
-        let add_public_keys = get_list(&mut raw_object, property_names::ADD_PUBLIC_KEYS)?;
+        let add_public_keys = raw_object
+            .remove_optional_array(property_names::ADD_PUBLIC_KEYS)
+            .map_err(ProtocolError::ValueError)?
+            .unwrap_or_default()
+            .into_iter()
+            .map(|value| IdentityPublicKeyInCreation::from_object(value, platform_version))
+            .collect::<Result<Vec<_>, ProtocolError>>()?;
         let disable_public_keys =
             remove_integer_list_or_default(&mut raw_object, property_names::DISABLE_PUBLIC_KEYS)?;
         let public_keys_disabled_at = raw_object
@@ -67,13 +74,6 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {
         value.replace_at_paths(BINARY_FIELDS, ReplacementType::BinaryBytes)?;
         value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;
         Ok(())
-    }
-
-    fn from_value_map(
-        mut raw_value_map: BTreeMap<String, Value>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        todo()
     }
 
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

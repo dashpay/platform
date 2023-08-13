@@ -41,7 +41,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreateTransitionV0 {
         {
             let keys = keys_value_array
                 .into_iter()
-                .map(|val| val.try_into().map_err(ProtocolError::ValueError))
+                .map(|val| IdentityPublicKeyInCreation::from_object(val, platform_version))
                 .collect::<Result<Vec<IdentityPublicKeyInCreation>, ProtocolError>>()?;
             state_transition.set_public_keys(keys);
         }
@@ -83,7 +83,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreateTransitionV0 {
 
         let mut public_keys: Vec<Value> = vec![];
         for key in self.public_keys.iter() {
-            public_keys.push(key.to_raw_object(skip_signature)?);
+            public_keys.push(key.to_object(skip_signature)?);
         }
 
         value.insert(PUBLIC_KEYS.to_owned(), Value::Array(public_keys))?;
@@ -102,7 +102,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreateTransitionV0 {
 
         let mut public_keys: Vec<Value> = vec![];
         for key in self.public_keys.iter() {
-            public_keys.push(key.to_raw_cleaned_object(skip_signature)?);
+            public_keys.push(key.to_cleaned_object(skip_signature)?);
         }
 
         value.insert(PUBLIC_KEYS.to_owned(), Value::Array(public_keys))?;

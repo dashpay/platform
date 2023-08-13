@@ -1,6 +1,5 @@
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContractMethodsV0, DefinitionName, DocumentName};

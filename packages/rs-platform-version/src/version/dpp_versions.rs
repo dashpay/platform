@@ -65,6 +65,7 @@ pub struct StateTransitionConversionVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct StateTransitionSerializationVersions {
+    pub identity_public_key_in_creation: FeatureVersionBounds,
     pub identity_create_state_transition: FeatureVersionBounds,
     pub identity_update_state_transition: FeatureVersionBounds,
     pub identity_top_up_state_transition: FeatureVersionBounds,
@@ -177,12 +178,6 @@ pub struct DocumentVersions {
     pub extended_document_structure_version: FeatureVersion,
     pub extended_document_serialization_version: FeatureVersionBounds,
     pub document_method_versions: DocumentMethodVersions,
-    pub document_class_method_versions: DocumentClassMethodVersions,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct DocumentClassMethodVersions {
-    pub get_identifiers_and_binary_paths: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

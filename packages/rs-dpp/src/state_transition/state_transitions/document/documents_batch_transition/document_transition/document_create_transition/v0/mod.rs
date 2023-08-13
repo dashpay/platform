@@ -130,53 +130,9 @@ pub struct DocumentCreateTransitionV0 {
 //     }
 // }
 
-impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
-    #[cfg(feature = "state-transition-json-conversion")]
-    fn from_json_object(
-        json_value: JsonValue,
-        data_contract: DataContract,
-    ) -> Result<Self, ProtocolError> {
-        let value: Value = json_value.into();
-        let mut map = value
-            .into_btree_string_map()
-            .map_err(ProtocolError::ValueError)?;
-
-        let document_type = map.get_str("$type")?;
-
-        let (identifiers_paths, binary_paths): (Vec<_>, Vec<_>) =
-            data_contract.get_identifiers_and_binary_paths_owned(document_type)?;
-
-        map.replace_at_paths(
-            binary_paths
-                .into_iter()
-                .chain(BINARY_FIELDS.iter().map(|a| a.to_string())),
-            ReplacementType::BinaryBytes,
-        )?;
-
-        map.replace_at_paths(
-            identifiers_paths
-                .into_iter()
-                .chain(IDENTIFIER_FIELDS.iter().map(|a| a.to_string())),
-            ReplacementType::Identifier,
-        )?;
-        let document = Self::from_value_map(map, data_contract)?;
-
-        Ok(document)
-    }
-
+impl DocumentCreateTransitionV0 {
     #[cfg(feature = "state-transition-value-conversion")]
-    fn from_object(
-        raw_transition: Value,
-        data_contract: DataContract,
-    ) -> Result<Self, ProtocolError> {
-        let map = raw_transition
-            .into_btree_string_map()
-            .map_err(ProtocolError::ValueError)?;
-        Self::from_value_map(map, data_contract)
-    }
-
-    #[cfg(feature = "state-transition-value-conversion")]
-    fn from_value_map(
+    pub(crate) fn from_value_map(
         mut map: BTreeMap<String, Value>,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError> {
@@ -199,12 +155,7 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
     }
 
     #[cfg(feature = "state-transition-value-conversion")]
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        Ok(self.to_value_map()?.into())
-    }
-
-    #[cfg(feature = "state-transition-value-conversion")]
-    fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
+    pub(crate) fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut transition_base_map = self.base.to_value_map()?;
         transition_base_map.insert(
             property_names::ENTROPY.to_string(),
@@ -226,18 +177,6 @@ impl DocumentTransitionObjectLike for DocumentCreateTransitionV0 {
         transition_base_map.extend(self.data.clone());
 
         Ok(transition_base_map)
-    }
-
-    #[cfg(feature = "state-transition-json-conversion")]
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_cleaned_object()?
-            .try_into()
-            .map_err(ProtocolError::ValueError)
-    }
-
-    #[cfg(feature = "state-transition-value-conversion")]
-    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        Ok(self.to_value_map()?.into())
     }
 }
 
