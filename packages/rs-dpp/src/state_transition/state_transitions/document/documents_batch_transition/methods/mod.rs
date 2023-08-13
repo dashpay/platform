@@ -13,6 +13,7 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 pub mod v0;
 
 impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
+    #[cfg(feature = "state-transition-signing")]
     fn new_document_creation_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
@@ -53,6 +54,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
         }
     }
 
+    #[cfg(feature = "state-transition-signing")]
     fn new_document_replacement_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,

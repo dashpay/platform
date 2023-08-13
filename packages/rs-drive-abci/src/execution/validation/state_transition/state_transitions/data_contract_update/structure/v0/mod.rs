@@ -12,14 +12,10 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
 impl DataContractUpdateStateTransitionStructureValidationV0 for DataContractUpdateTransition {
     fn validate_structure_v0(
         &self,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let data_contact: DataContract = self
-            .data_contract()
-            .clone()
-            .try_into_platform_versioned(platform_version)?;
-        data_contact
-            .validate_structure(platform_version)
-            .map_err(Error::Protocol)
+        // It's nothing to do here
+
+        Ok(SimpleConsensusValidationResult::default())
     }
 }

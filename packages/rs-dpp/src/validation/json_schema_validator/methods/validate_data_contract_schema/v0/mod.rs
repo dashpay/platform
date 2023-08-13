@@ -9,7 +9,7 @@ impl JsonSchemaValidator {
         data_contract_schema: &JsonValue,
     ) -> SimpleConsensusValidationResult {
         let mut validation_result = SimpleConsensusValidationResult::default();
-        let res = meta_validators::DATA_CONTRACT_META_SCHEMA_V0.validate(data_contract_schema);
+        let res = meta_validators::DOCUMENT_META_SCHEMA_V0.validate(data_contract_schema);
 
         match res {
             Ok(_) => validation_result,

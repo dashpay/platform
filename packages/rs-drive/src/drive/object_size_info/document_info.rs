@@ -1,4 +1,6 @@
-use crate::drive::defaults::{DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8};
+use crate::drive::defaults::{
+    DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8,
+};
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeySize};
 use crate::drive::object_size_info::KeyValueInfo::{KeyRefRequest, KeyValueMaxSize};
@@ -7,7 +9,7 @@ use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
@@ -113,20 +115,16 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
             "$ownerId" | "$id" => Ok(DEFAULT_HASH_SIZE_U16),
             "$createdAt" | "$updatedAt" => Ok(DEFAULT_FLOAT_SIZE_U16),
             _ => {
-                let document_field_type =
-                    document_type.flattened_properties().get(key_path).ok_or({
-                        Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
-                            "incorrect key path for document type for estimated sizes",
-                        ))
-                    })?;
-                let estimated_size = document_field_type
-                    .document_type
-                    .middle_byte_size_ceil()
-                    .ok_or({
-                        Error::Drive(DriveError::CorruptedCodeExecution(
-                            "document type must have a max size",
-                        ))
-                    })?;
+                let property = document_type.flattened_properties().get(key_path).ok_or({
+                    Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
+                        "incorrect key path for document type for estimated sizes",
+                    ))
+                })?;
+                let estimated_size = property.property_type.middle_byte_size_ceil().ok_or({
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "document type must have a max size",
+                    ))
+                })?;
                 Ok(estimated_size)
             }
         }
@@ -179,18 +177,22 @@ impl<'a> DocumentInfoV0Methods for DocumentInfo<'a> {
                             .to_vec(),
                         max_size: DEFAULT_HASH_SIZE_U8,
                     }))),
+                    "$createdAt" | "$updatedAt" => Ok(Some(KeySize(KeyInfo::MaxKeySize {
+                        unique_id: document_type
+                            .unique_id_for_document_field(index_level, base_event)
+                            .to_vec(),
+                        max_size: DEFAULT_FLOAT_SIZE as u8,
+                    }))),
                     _ => {
-                        let document_field_type =
+                        let property =
                             document_type.flattened_properties().get(key_path).ok_or({
                                 Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
                                     "incorrect key path for document type",
                                 ))
                             })?;
 
-                        let estimated_middle_size = document_field_type
-                            .document_type
-                            .middle_byte_size_ceil()
-                            .ok_or({
+                        let estimated_middle_size =
+                            property.property_type.middle_byte_size_ceil().ok_or({
                                 Error::Drive(DriveError::CorruptedCodeExecution(
                                     "document type must have a max size",
                                 ))

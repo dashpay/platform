@@ -1,10 +1,11 @@
 use crate::version::dpp_versions::{
     ContractClassMethodVersions, ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
     DataContractValidationVersions, DocumentClassMethodVersions, DocumentFeatureVersionBounds,
-    DocumentMethodVersions, DocumentTypeVersions, DocumentVersions, IdentityKeyTypeMethodVersions,
-    IdentityVersions, IndexVersions, JsonSchemaValidatorVersions,
-    PublicKeyInCreationMethodVersions, StateTransitionConversionVersions,
-    StateTransitionMethodVersions, StateTransitionSerializationVersions,
+    DocumentMethodVersions, DocumentTypeValidationVersions, DocumentTypeVersions, DocumentVersions,
+    IdentityKeyTypeMethodVersions, IdentityVersions, IndexVersions, JsonSchemaValidatorVersions,
+    PublicKeyInCreationMethodVersions, RecursiveSchemaValidatorVersions,
+    StateTransitionConversionVersions, StateTransitionMethodVersions,
+    StateTransitionSerializationVersions,
 };
 use crate::version::drive_abci_versions::{
     DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
@@ -690,6 +691,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 create_document_from_data: 0,
                 max_size: 0,
                 estimated_size: 0,
+                try_from_schema: 0,
                 create_document_with_prevalidated_properties: 0,
                 top_level_indices: 0,
                 document_field_for_property: 0,
@@ -697,6 +699,15 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 field_can_be_null: 0,
                 initial_revision: 0,
                 requires_revision: 0,
+                enrich_with_base_schema: 0,
+                validation_versions: DocumentTypeValidationVersions {
+                    validate_data_contract_max_depth: 0,
+                    recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
+                        traversal_validator: 0,
+                        byte_array_has_no_items_as_parent_validator: 0,
+                        pattern_is_valid_regex_validator: 0,
+                    },
+                },
             },
             index_versions: IndexVersions {
                 index_levels_from_indices: 0,
@@ -707,7 +718,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 get_definitions: 0,
                 get_document_types_from_contract: 0,
                 get_document_types_from_value: 0,
-                get_document_types_from_value_array: 0,
+                create_document_types_from_document_schemas: 0,
             },
         },
         document_versions: DocumentVersions {

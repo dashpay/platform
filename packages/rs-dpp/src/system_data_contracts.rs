@@ -3,6 +3,7 @@ use crate::prelude::*;
 use crate::ProtocolError;
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::data_contract::accessors::v0::DataContractV0Setters;
 pub use data_contracts::*;
 
 fn create_data_contract(
@@ -28,7 +29,7 @@ fn create_data_contract(
         definitions.map(|def| def.into()),
     )?;
 
-    data_contract.set_data_contract_id(id);
+    data_contract.data_contract_mut().set_id(id);
 
     Ok(data_contract.data_contract_owned())
 }

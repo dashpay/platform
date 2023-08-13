@@ -2,7 +2,7 @@
 #[cfg(test)]
 mod tests {
     use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef, Index, IndexProperty};
-    use dpp::platform_value::Identifier;
+    use dpp::platform_value::{platform_value, Identifier};
     use dpp::util::cbor_serializer;
     use serde_json::json;
 
@@ -17,67 +17,74 @@ mod tests {
 
     fn construct_indexed_document_type() -> DocumentType {
         let platform_version = PlatformVersion::latest();
-        DocumentTypeV0::new(
-            Identifier::default(),
-            "a".to_string(),
-            vec![
-                Index {
-                    name: "a".to_string(),
-                    properties: vec![IndexProperty {
-                        name: "a".to_string(),
-                        ascending: true,
-                    }],
-                    unique: false,
-                },
-                Index {
-                    name: "b".to_string(),
-                    properties: vec![IndexProperty {
-                        name: "b".to_string(),
-                        ascending: false,
-                    }],
-                    unique: false,
-                },
-                Index {
-                    name: "c".to_string(),
-                    properties: vec![
-                        IndexProperty {
-                            name: "b".to_string(),
-                            ascending: false,
-                        },
-                        IndexProperty {
-                            name: "a".to_string(),
-                            ascending: false,
-                        },
+
+        let schema = platform_value!({
+            "type": "object",
+            "indices": [
+                {
+                    "name": "a",
+                    "properties": [
+                        { "a": "asc" }
                     ],
-                    unique: false,
+                    "unique": false
                 },
-                Index {
-                    name: "d".to_string(),
-                    properties: vec![
-                        IndexProperty {
-                            name: "b".to_string(),
-                            ascending: false,
-                        },
-                        IndexProperty {
-                            name: "a".to_string(),
-                            ascending: false,
-                        },
-                        IndexProperty {
-                            name: "d".to_string(),
-                            ascending: false,
-                        },
+                {
+                    "name": "b",
+                    "properties": [
+                        { "b": "asc" }
                     ],
-                    unique: false,
+                    "unique": false
                 },
+                {
+                    "name": "c",
+                    "properties": [
+                        { "b": "asc" },
+                        { "a": "asc" }
+                    ],
+                    "unique": false
+                },
+                {
+                    "name": "d",
+                    "properties": [
+                        { "b": "asc" },
+                        { "a": "asc" },
+                        { "d": "asc" }
+                    ],
+                    "unique": false
+                }
             ],
-            Default::default(),
-            Default::default(),
+            "properties": {
+                "a": {
+                    "type": "string",
+                    "maxLength": 10,
+                },
+                "b": {
+                    "type": "string",
+                    "maxLength": 10,
+                },
+                "c": {
+                    "type": "string",
+                    "maxLength": 10,
+                },
+                "d": {
+                    "type": "string",
+                    "maxLength": 10,
+                }
+            },
+            "additionalProperties": false,
+        });
+
+        DocumentType::try_from_schema(
+            Identifier::random(),
+            "indexed_type",
+            schema,
+            None,
             false,
             false,
+            true,
             platform_version,
         )
-        .expect("expected to create a document type V0")
-        .into()
+        .expect("expected to create a document type")
     }
 
     #[test]

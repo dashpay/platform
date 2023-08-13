@@ -1,7 +1,4 @@
 mod test {
-    use crate::data_contract::contract_config::DataContractConfigV0;
-
-    use crate::data_contract::extra::common::json_document_to_contract;
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
     use crate::{data_contract::DataContract, util::json_schema::JsonSchemaExt};
 
@@ -140,7 +137,7 @@ mod test {
 
             // document type - JS API
             let document = data_contract
-                .get_document_schema(expect.document_name)
+                .document_json_schema(expect.document_name)
                 .unwrap();
 
             let document_indices = document.get_indices::<Vec<_>>().unwrap_or_default();

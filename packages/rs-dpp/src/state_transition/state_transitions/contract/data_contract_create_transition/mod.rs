@@ -14,8 +14,6 @@ mod version;
 use fields::*;
 use std::convert::TryFrom;
 
-use crate::data_contract::property_names::ENTROPY;
-
 use crate::data_contract::DataContract;
 use crate::identity::KeyID;
 use crate::serialization::PlatformDeserializable;
@@ -163,8 +161,8 @@ mod test {
     use platform_value::Bytes32;
 
     use super::*;
-    use crate::data_contract::conversion::json_conversion::DataContractJsonConversionMethodsV0;
-    use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+    use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+    use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::state_transitions::common_fields::property_names;
     use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
@@ -196,7 +194,7 @@ mod test {
             ),
             (
                 DATA_CONTRACT,
-                created_data_contract.data_contract().to_object().unwrap(),
+                created_data_contract.data_contract().to_value().unwrap(),
             ),
         ]))
         .expect("state transition should be created without errors");

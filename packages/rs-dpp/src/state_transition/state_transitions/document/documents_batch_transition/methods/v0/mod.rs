@@ -1,3 +1,4 @@
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::identity::signer::Signer;
@@ -12,6 +13,7 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 use std::convert::TryFrom;
 
 pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0 {
+    #[cfg(feature = "state-transition-signing")]
     fn new_document_creation_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,
@@ -24,6 +26,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError>;
 
+    #[cfg(feature = "state-transition-signing")]
     fn new_document_replacement_transition_from_document<S: Signer>(
         document: Document,
         document_type: DocumentTypeRef,

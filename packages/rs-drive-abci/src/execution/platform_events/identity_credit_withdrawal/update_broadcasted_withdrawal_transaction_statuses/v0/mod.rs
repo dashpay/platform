@@ -1,6 +1,6 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -187,8 +187,9 @@ mod tests {
     use crate::platform_types::platform_state::v0::PlatformStateV0;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
-    use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
     use dpp::document::DocumentV0Getters;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;

@@ -21,7 +21,7 @@ chrono = "0.4.20"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_with = { version = "2.3.1", features = ["hex"], default-features = false }
-drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
+drive = { path = "../rs-drive" }
 thiserror = "1.0.30"
 rand = "0.8.5"
 tempfile = "3.3.0"
@@ -70,8 +70,10 @@ derive_more = "0.99.17"
 [dev-dependencies]
 base64 = "0.20.0"
 platform-version = { path = "../rs-platform-version", features = ["mock-versions"]}
-dpp = { path = "../rs-dpp" , features = ["abci", "random-documents", "state-transition-signing", "random-identities", "random-public-keys", "random-document-types", "fixtures-and-mocks", "identity-value-conversion"] }
-
+dpp = { path = "../rs-dpp" , features = ["abci", "random-documents", "state-transition-signing", "random-identities",
+  "random-public-keys", "random-document-types", "fixtures-and-mocks", "identity-value-conversion",
+  "data-contract-json-conversion", "data-contract-cbor-conversion"] }
+drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 
 [features]
 default = ["server"]

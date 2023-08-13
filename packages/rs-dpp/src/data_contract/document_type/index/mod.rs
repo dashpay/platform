@@ -11,8 +11,9 @@ pub enum OrderBy {
 use crate::data_contract::errors::{DataContractError, StructureError};
 
 use crate::ProtocolError;
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 
+use crate::consensus::basic::data_contract::SystemPropertyIndexAlreadyPresentError;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
 use std::{collections::BTreeMap, convert::TryFrom};
@@ -20,7 +21,7 @@ use std::{collections::BTreeMap, convert::TryFrom};
 pub mod random_index;
 
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Index {
     pub name: String,
     pub properties: Vec<IndexProperty>,
@@ -45,8 +46,8 @@ impl Index {
         })
     }
 
-    /// The fields of the index
-    pub fn fields(&self) -> Vec<String> {
+    /// The field names of the index
+    pub fn property_names(&self) -> Vec<String> {
         self.properties
             .iter()
             .map(|property| property.name.clone())
@@ -54,34 +55,26 @@ impl Index {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct IndexProperty {
     pub name: String,
     pub ascending: bool,
 }
 
-//todo: remove this intermediate structure that serves no purpose
-// The intermediate structure that holds the `BTreeMap<String, String>` instead of [`IndexProperty`]
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct IndexWithRawProperties {
-    pub name: String,
-    pub properties: Vec<BTreeMap<String, String>>,
-    #[serde(default)]
-    pub unique: bool,
-}
-
 impl TryFrom<BTreeMap<String, String>> for IndexProperty {
-    type Error = anyhow::Error;
+    type Error = ProtocolError;
 
     fn try_from(value: BTreeMap<String, String>) -> Result<Self, Self::Error> {
         if value.is_empty() {
-            bail!("property in the index definition cannot be empty")
+            return Err(ProtocolError::Error(anyhow!(
+                "property in the index definition cannot be empty"
+            )));
         }
         if value.len() > 1 {
-            bail!(
+            return Err(ProtocolError::Error(anyhow!(
                 "property in the index cannot contain more than one item: {:#?}",
                 value
-            )
+            )));
         }
 
         // the unwrap is safe because of the checks above
@@ -89,30 +82,17 @@ impl TryFrom<BTreeMap<String, String>> for IndexProperty {
         let ascending = match raw_property.1.as_str() {
             "asc" => true,
             "desc" => false,
-            sort_order => bail!("invalid sorting order: '{}'", sort_order),
+            sort_order => {
+                return Err(ProtocolError::Error(anyhow!(
+                    "invalid sorting order: '{}'",
+                    sort_order
+                )))
+            }
         };
 
         Ok(Self {
             name: raw_property.0,
             ascending,
-        })
-    }
-}
-
-impl TryFrom<IndexWithRawProperties> for Index {
-    type Error = anyhow::Error;
-
-    fn try_from(index: IndexWithRawProperties) -> Result<Self, Self::Error> {
-        let properties = index
-            .properties
-            .into_iter()
-            .map(IndexProperty::try_from)
-            .collect::<Result<Vec<IndexProperty>, anyhow::Error>>()?;
-
-        Ok(Self {
-            name: index.name,
-            unique: index.unique,
-            properties,
         })
     }
 }
@@ -220,7 +200,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                             .ok_or({
                                 ProtocolError::DataContractError(
                                     DataContractError::InvalidContractStructure(
-                                        "index name should be a string",
+                                        "index name should be a string".to_string(),
                                     ),
                                 )
                             })?
@@ -250,7 +230,11 @@ impl TryFrom<&[(Value, Value)]> for Index {
                         index_properties.push(index_property);
                     }
                 }
-                _ => {}
+                _ => {
+                    return Err(ProtocolError::StructureError(
+                        StructureError::ValueWrongType("unexpected property name"),
+                    ))
+                }
             }
         }
 

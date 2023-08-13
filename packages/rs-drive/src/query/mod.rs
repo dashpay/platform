@@ -89,7 +89,6 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 #[cfg(feature = "full")]
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::DataContract;
 
@@ -130,6 +129,7 @@ mod test_index;
 pub use single_document_drive_query::SingleDocumentDriveQuery;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::DocumentV0Getters;
 
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -1814,7 +1814,6 @@ mod tests {
     use crate::drive::Drive;
     use crate::query::DriveQuery;
     use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef};
-    use dpp::data_contract::extra::common::json_document_to_contract;
     use dpp::data_contract::DataContract;
 
     use serde_json::Value::Null;
@@ -1822,8 +1821,8 @@ mod tests {
     use crate::drive::config::DriveConfig;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::base::DataContractBaseMethodsV0;
     use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::tests::json_document::json_document_to_contract;
     use dpp::util::cbor_serializer;
     use dpp::version::PlatformVersion;
 
@@ -2077,7 +2076,7 @@ mod tests {
     //     let (drive, contract) = setup_family_contract();
     //
     //     let document_type = contract
-    //         .document_type_for_name("person")
+    //         .document_type("person")
     //         .expect("expected to get a document type");
     //
     //     let query_value = json!({
@@ -2105,7 +2104,7 @@ mod tests {
     //     let (drive, contract) = setup_family_birthday_contract();
     //
     //     let document_type = contract
-    //         .document_type_for_name("person")
+    //         .document_type("person")
     //         .expect("expected to get a document type");
     //
     //     let query_value = json!({

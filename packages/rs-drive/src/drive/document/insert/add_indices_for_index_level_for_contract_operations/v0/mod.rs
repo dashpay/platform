@@ -36,7 +36,7 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        if let Some(unique) = index_level.has_index_with_uniqueness {
+        if let Some(unique) = index_level.has_index_with_uniqueness() {
             self.add_reference_for_index_level_for_contract_operations(
                 document_and_contract_info,
                 index_path_info.clone(),
@@ -53,7 +53,7 @@ impl Drive {
 
         let document_type = document_and_contract_info.document_type;
 
-        let sub_level_index_count = index_level.sub_index_levels.len() as u32;
+        let sub_level_index_count = index_level.sub_levels().len() as u32;
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have a 0 and all the top index paths
@@ -84,7 +84,7 @@ impl Drive {
         };
 
         // fourth we need to store a reference to the document for each index
-        for (name, sub_level) in &index_level.sub_index_levels {
+        for (name, sub_level) in index_level.sub_levels() {
             let mut sub_level_index_path_info = index_path_info.clone();
             let index_property_key = KeyRef(name.as_bytes());
 

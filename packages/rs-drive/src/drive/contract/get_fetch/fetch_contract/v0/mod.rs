@@ -9,8 +9,7 @@ use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalcula
 use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::DataContract;
-use dpp::serialization::PlatformDeserializableFromVersionedStructure;
-use dpp::version::drive_versions::DriveVersion;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use std::ops::AddAssign;
@@ -74,8 +73,12 @@ impl Drive {
             Ok(Element::Item(stored_contract_bytes, element_flag)) => {
                 let contract = cost_return_on_error_no_add!(
                     &cost,
-                    DataContract::versioned_deserialize(&stored_contract_bytes, platform_version)
-                        .map_err(Error::Protocol)
+                    DataContract::versioned_deserialize(
+                        &stored_contract_bytes,
+                        false,
+                        platform_version
+                    )
+                    .map_err(Error::Protocol)
                 );
                 let drive_operation = CalculatedCostOperation(cost.clone());
                 let fee = if let Some(epoch) = epoch {
@@ -125,6 +128,7 @@ impl Drive {
                             &cost,
                             DataContract::versioned_deserialize(
                                 &stored_contract_bytes,
+                                false,
                                 platform_version
                             )
                             .map_err(Error::Protocol)

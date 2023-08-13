@@ -5,25 +5,32 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::Index;
 use crate::version::PlatformVersion;
-use crate::{NonConsensusError, ProtocolError};
+use crate::ProtocolError;
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
 
-pub const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
-
-#[derive(Debug, PartialEq, Default, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct IndexLevel {
     /// the lower index levels from this level
-    pub sub_index_levels: BTreeMap<String, IndexLevel>,
+    sub_index_levels: BTreeMap<String, IndexLevel>,
     /// did an index terminate at this level
-    pub has_index_with_uniqueness: Option<bool>,
+    has_index_with_uniqueness: Option<bool>,
     /// unique level identifier
-    pub level_identifier: u64,
+    level_identifier: u64,
 }
 
-const UNIQUE_INDEX_LIMIT_V0: usize = 16;
-
 impl IndexLevel {
+    pub fn identifier(&self) -> u64 {
+        self.level_identifier
+    }
+
+    pub fn sub_levels(&self) -> &BTreeMap<String, IndexLevel> {
+        &self.sub_index_levels
+    }
+
+    pub fn has_index_with_uniqueness(&self) -> Option<bool> {
+        self.has_index_with_uniqueness
+    }
+
     /// Checks whether the given `rhs` IndexLevel is a subset of the current IndexLevel (`self`).
     ///
     /// A level is considered a subset if:
@@ -36,37 +43,6 @@ impl IndexLevel {
     ///
     /// # Returns
     /// Returns `true` if `rhs` is a subset of `self`, otherwise `false`.
-    ///
-    /// # Examples
-    /// ```
-    /// use std::collections::BTreeMap;
-    /// use dpp::data_contract::document_type::IndexLevel;
-    ///
-    /// let level1 = IndexLevel {
-    ///     sub_index_levels: BTreeMap::new(),
-    ///     has_index_with_uniqueness: Some(true),
-    ///     level_identifier: 1,
-    /// };
-    ///
-    /// let level2 = IndexLevel {
-    ///     sub_index_levels: BTreeMap::new(),
-    ///     has_index_with_uniqueness: Some(true),
-    ///     level_identifier: 2,
-    /// };
-    ///
-    /// let mut root_level = IndexLevel::default();
-    /// root_level.sub_index_levels.insert("level1".to_string(), level1.clone());
-    /// root_level.sub_index_levels.insert("level2".to_string(), level2.clone());
-    ///
-    /// // Test if level1 is a subset of root_level
-    /// assert_eq!(root_level.contains_subset(&level1), true);
-    ///
-    /// // Test if level2 is a subset of root_level
-    /// assert_eq!(root_level.contains_subset(&level2), true);
-    ///
-    /// // Test if root_level is a subset of level1 (should be false since the root has more sub-levels)
-    /// assert_eq!(level1.contains_subset(&root_level), false);
-    /// ```
     pub fn contains_subset(&self, rhs: &IndexLevel) -> bool {
         self.contains_subset_first_non_subset_path(rhs).is_none()
     }
@@ -85,33 +61,6 @@ impl IndexLevel {
     /// # Returns
     /// Returns `None` if `rhs` is a subset of `self`, otherwise returns `Some(String)` containing the invalid path.
     /// The invalid path is constructed by joining the keys that lead to the first mismatching sub_index_level.
-    ///
-    /// # Examples
-    /// ```
-    /// use std::collections::BTreeMap;
-    /// use dpp::data_contract::document_type::IndexLevel;
-    ///
-    /// let level1 = IndexLevel {
-    ///     sub_index_levels: BTreeMap::new(),
-    ///     has_index_with_uniqueness: Some(true),
-    ///     level_identifier: 1,
-    /// };
-    ///
-    /// let level2 = IndexLevel {
-    ///     sub_index_levels: BTreeMap::new(),
-    ///     has_index_with_uniqueness: Some(true),
-    ///     level_identifier: 2,
-    /// };
-    ///
-    /// let mut root_level = IndexLevel::default();
-    /// root_level.sub_index_levels.insert("level1".to_string(), level1.clone());
-    /// root_level.sub_index_levels.insert("level2".to_string(), level2.clone());
-    ///
-    /// // Test contains_subset_and_return_invalid_path
-    /// assert_eq!(root_level.contains_subset_first_non_subset_path(&level1), None); // level1 is a subset of root_level.
-    /// assert_eq!(root_level.contains_subset_first_non_subset_path(&level2), None); // level2 is a subset of root_level.
-    /// assert_eq!(level1.contains_subset_first_non_subset_path(&root_level), Some("level1".to_string())); // root_level is NOT a subset of level1. Invalid path: "level1".
-    /// ```
     pub fn contains_subset_first_non_subset_path(&self, rhs: &IndexLevel) -> Option<String> {
         // If the rhs level's identifier doesn't match, it cannot be a subset.
         if self.level_identifier != rhs.level_identifier {
@@ -139,7 +88,7 @@ impl IndexLevel {
 
     pub fn try_from_indices(
         indices: &[Index],
-        document_type_name: &str,
+        document_type_name: &str, // TODO: We shouldn't pass document type, it's only for errors
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version
@@ -161,25 +110,19 @@ impl IndexLevel {
         indices: &[Index],
         document_type_name: &str,
     ) -> Result<Self, ProtocolError> {
-        let mut index_level = IndexLevel::default();
-        let mut unique_index_counter = 0;
+        let mut index_level = IndexLevel {
+            sub_index_levels: Default::default(),
+            has_index_with_uniqueness: None,
+            level_identifier: 0,
+        };
+
         let mut counter: u64 = 0;
+
         for index in indices {
             let mut current_level = &mut index_level;
             let mut properties_iter = index.properties.iter().peekable();
+
             while let Some(index_part) = properties_iter.next() {
-                if NOT_ALLOWED_SYSTEM_PROPERTIES.contains(&index_part.name.as_str()) {
-                    return Err(ConsensusError::BasicError(
-                        BasicError::SystemPropertyIndexAlreadyPresentError(
-                            SystemPropertyIndexAlreadyPresentError::new(
-                                document_type_name.to_owned(),
-                                index.name.to_owned(),
-                                index_part.name.to_owned(),
-                            ),
-                        ),
-                    )
-                    .into());
-                }
                 current_level = current_level
                     .sub_index_levels
                     .entry(index_part.name.clone())
@@ -187,35 +130,29 @@ impl IndexLevel {
                         counter += 1;
                         IndexLevel {
                             level_identifier: counter,
-                            ..Default::default()
+                            sub_index_levels: Default::default(),
+                            has_index_with_uniqueness: None,
                         }
                     });
+
+                // The last property
                 if properties_iter.peek().is_none() {
+                    // This level already has been initialized.
+                    // It means there are two indices with the same combination of properties.
+
+                    // We might need to take into account the sorting order when we have it
                     if current_level.has_index_with_uniqueness.is_some() {
                         // an index already exists return error
                         return Err(ConsensusError::BasicError(BasicError::DuplicateIndexError(
                             DuplicateIndexError::new(
                                 document_type_name.to_owned(),
-                                index.name.to_owned(),
+                                index.name.clone(),
                             ),
                         ))
                         .into());
                     }
+
                     current_level.has_index_with_uniqueness = Some(index.unique);
-                    if index.unique {
-                        unique_index_counter += 1;
-                        if unique_index_counter > UNIQUE_INDEX_LIMIT_V0 {
-                            return Err(ConsensusError::BasicError(
-                                BasicError::UniqueIndicesLimitReachedError(
-                                    UniqueIndicesLimitReachedError::new(
-                                        document_type_name.to_owned(),
-                                        UNIQUE_INDEX_LIMIT_V0,
-                                    ),
-                                ),
-                            )
-                            .into());
-                        }
-                    }
                 }
             }
         }

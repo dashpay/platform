@@ -1,8 +1,8 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::{DataContractError, StructureError};
 
-use crate::document::property_names;
 use crate::document::property_names::{CREATED_AT, UPDATED_AT};
+use crate::document::{property_names, DocumentV0Getters};
 
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
@@ -11,7 +11,7 @@ use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::document::serialization_traits::{
     DocumentPlatformConversionMethodsV0, DocumentPlatformDeserializationMethodsV0,
     DocumentPlatformSerializationMethodsV0,
@@ -35,61 +35,67 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     fn serialize_v0(&self, document_type: DocumentTypeRef) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = 0.encode_var_vec(); //version 0
+
+        // $id
         buffer.extend(self.id.as_slice());
+
+        // $ownerId
         buffer.extend(self.owner_id.as_slice());
+
+        // $revision
         if let Some(revision) = self.revision {
             buffer.extend(revision.encode_var_vec())
         } else if document_type.requires_revision() {
             buffer.extend((1 as Revision).encode_var_vec())
         }
+
+        // $createdAt
+        if let Some(created_at) = &self.created_at {
+            if !document_type.required_fields().contains(CREATED_AT) {
+                buffer.push(1);
+            }
+            // dbg!("we pushed created at {}", hex::encode(created_at.to_be_bytes()));
+            buffer.extend(created_at.to_be_bytes());
+        } else if document_type.required_fields().contains(CREATED_AT) {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "created at field is not present".to_string(),
+                ),
+            ));
+        } else {
+            // dbg!("we pushed created at with 0");
+            // We don't have the created_at that wasn't required
+            buffer.push(0);
+        }
+
+        // $updatedAt
+        if let Some(updated_at) = &self.updated_at {
+            if !document_type.required_fields().contains(UPDATED_AT) {
+                // dbg!("we added 1", field_name);
+                buffer.push(1);
+            }
+            // dbg!("we pushed updated at {}", hex::encode(updated_at.to_be_bytes()));
+            buffer.extend(updated_at.to_be_bytes());
+        } else if document_type.required_fields().contains(UPDATED_AT) {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "updated at field is not present".to_string(),
+                ),
+            ));
+        } else {
+            // dbg!("we pushed updated at with 0");
+            // We don't have the updated_at that wasn't required
+            buffer.push(0);
+        }
+
+        // User defined properties
         document_type
             .properties()
             .iter()
-            .try_for_each(|(field_name, field)| {
-                if field_name == CREATED_AT {
-                    if let Some(created_at) = self.created_at {
-                        if !field.required {
-                            buffer.push(1);
-                        }
-                        // dbg!("we pushed created at {}", hex::encode(created_at.to_be_bytes()));
-                        buffer.extend(created_at.to_be_bytes());
-                        Ok(())
-                    } else if field.required {
-                        Err(ProtocolError::DataContractError(
-                            DataContractError::MissingRequiredKey(
-                                "created at field is not present".to_string(),
-                            ),
-                        ))
-                    } else {
-                        // dbg!("we pushed created at with 0");
-                        // We don't have the created_at that wasn't required
-                        buffer.push(0);
-                        Ok(())
-                    }
-                } else if field_name == UPDATED_AT {
-                    if let Some(updated_at) = self.updated_at {
-                        if !field.required {
-                            // dbg!("we added 1", field_name);
-                            buffer.push(1);
-                        }
-                        // dbg!("we pushed updated at {}", hex::encode(updated_at.to_be_bytes()));
-                        buffer.extend(updated_at.to_be_bytes());
-                        Ok(())
-                    } else if field.required {
-                        Err(ProtocolError::DataContractError(
-                            DataContractError::MissingRequiredKey(
-                                "updated at field is not present".to_string(),
-                            ),
-                        ))
-                    } else {
-                        // dbg!("we pushed updated at with 0");
-                        // We don't have the updated_at that wasn't required
-                        buffer.push(0);
-                        Ok(())
-                    }
-                } else if let Some(value) = self.properties.get(field_name) {
+            .try_for_each(|(field_name, property)| {
+                if let Some(value) = self.properties.get(field_name) {
                     if value.is_null() {
-                        if field.required {
+                        if property.required {
                             Err(ProtocolError::DataContractError(
                                 DataContractError::MissingRequiredKey(
                                     "a required field is not present".to_string(),
@@ -102,18 +108,18 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
                             Ok(())
                         }
                     } else {
-                        if !field.required {
+                        if !property.required {
                             // dbg!("we added 1", field_name);
                             buffer.push(1);
                         }
-                        let value = field
-                            .document_type
-                            .encode_value_ref_with_size(value, field.required)?;
+                        let value = property
+                            .property_type
+                            .encode_value_ref_with_size(value, property.required)?;
                         // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
                         buffer.extend(value.as_slice());
                         Ok(())
                     }
-                } else if field.required {
+                } else if property.required {
                     Err(ProtocolError::DataContractError(
                         DataContractError::MissingRequiredKey(format!(
                             "a required field {field_name} is not present"
@@ -139,59 +145,96 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         document_type: DocumentTypeRef,
     ) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = 0.encode_var_vec(); //version 0
+
+        // $id
         buffer.extend(self.id.into_buffer());
+
+        // $ownerId
         buffer.extend(self.owner_id.into_buffer());
 
+        // $revision
         if let Some(revision) = self.revision {
             buffer.extend(revision.to_be_bytes())
         }
+
+        // $createdAt
+        if let Some(created_at) = self.created_at {
+            if !document_type.required_fields().contains(CREATED_AT) {
+                buffer.push(1);
+            }
+            // dbg!("we pushed created at {}", hex::encode(created_at.to_be_bytes()));
+            buffer.extend(created_at.to_be_bytes());
+        } else if document_type.required_fields().contains(CREATED_AT) {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "created at field is not present".to_string(),
+                ),
+            ));
+        } else {
+            // dbg!("we pushed created at with 0");
+            // We don't have the created_at that wasn't required
+            buffer.push(0);
+        }
+
+        // $updatedAt
+        if let Some(updated_at) = self.updated_at {
+            if !document_type.required_fields().contains(UPDATED_AT) {
+                // dbg!("we added 1", field_name);
+                buffer.push(1);
+            }
+            // dbg!("we pushed updated at {}", hex::encode(updated_at.to_be_bytes()));
+            buffer.extend(updated_at.to_be_bytes());
+        } else if document_type.required_fields().contains(UPDATED_AT) {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::MissingRequiredKey(
+                    "updated at field is not present".to_string(),
+                ),
+            ));
+        } else {
+            // dbg!("we pushed updated at with 0");
+            // We don't have the updated_at that wasn't required
+            buffer.push(0);
+        }
+
+        // User defined properties
         document_type
-            .flattened_properties()
+            .properties()
             .iter()
-            .try_for_each(|(field_name, field)| {
-                if field_name == CREATED_AT {
-                    if let Some(created_at) = self.created_at {
-                        buffer.extend(created_at.to_be_bytes());
-                        Ok(())
-                    } else if field.required {
-                        Err(ProtocolError::DataContractError(
-                            DataContractError::MissingRequiredKey(
-                                "created at field is not present".to_string(),
-                            ),
-                        ))
+            .try_for_each(|(field_name, property)| {
+                if let Some(value) = self.properties.remove(field_name) {
+                    if value.is_null() {
+                        if property.required {
+                            Err(ProtocolError::DataContractError(
+                                DataContractError::MissingRequiredKey(
+                                    "a required field is not present".to_string(),
+                                ),
+                            ))
+                        } else {
+                            // dbg!("we pushed {} with 0", field_name);
+                            // We don't have something that wasn't required
+                            buffer.push(0);
+                            Ok(())
+                        }
                     } else {
-                        // We don't have the created_at that wasn't required
-                        buffer.push(0);
+                        if !property.required {
+                            // dbg!("we added 1", field_name);
+                            buffer.push(1);
+                        }
+                        let value = property
+                            .property_type
+                            .encode_value_with_size(value, property.required)?;
+                        // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
+                        buffer.extend(value.as_slice());
                         Ok(())
                     }
-                } else if field_name == UPDATED_AT {
-                    if let Some(updated_at) = self.updated_at {
-                        buffer.extend(updated_at.to_be_bytes());
-                        Ok(())
-                    } else if field.required {
-                        Err(ProtocolError::DataContractError(
-                            DataContractError::MissingRequiredKey(
-                                "created at field is not present".to_string(),
-                            ),
-                        ))
-                    } else {
-                        // We don't have the updated_at that wasn't required
-                        buffer.push(0);
-                        Ok(())
-                    }
-                } else if let Some(value) = self.properties.remove(field_name) {
-                    let value = field
-                        .document_type
-                        .encode_value_with_size(value, field.required)?;
-                    buffer.extend(value.as_slice());
-                    Ok(())
-                } else if field.required {
+                } else if property.required {
                     Err(ProtocolError::DataContractError(
-                        DataContractError::MissingRequiredKey(
-                            "a required field is not present".to_string(),
-                        ),
+                        DataContractError::MissingRequiredKey(format!(
+                            "a required field {field_name} is not present"
+                        )),
                     ))
                 } else {
+                    // dbg!("we pushed {} with 0", field_name);
                     // We don't have something that wasn't required
                     buffer.push(0);
                     Ok(())
@@ -215,6 +258,8 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                 "serialized document is too small, must have id and owner id".to_string(),
             ));
         }
+
+        // $id
         let mut id = [0; 32];
         buf.read_exact(&mut id).map_err(|_| {
             ProtocolError::DecodingError(
@@ -222,6 +267,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             )
         })?;
 
+        // $ownerId
         let mut owner_id = [0; 32];
         buf.read_exact(&mut owner_id).map_err(|_| {
             ProtocolError::DecodingError(
@@ -229,6 +275,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             )
         })?;
 
+        // $revision
         // if the document type is mutable then we should deserialize the revision
         let revision: Option<Revision> = if document_type.requires_revision() {
             let revision = buf.read_varint().map_err(|_| {
@@ -240,77 +287,26 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
         } else {
             None
         };
-        let mut created_at = None;
-        let mut updated_at = None;
+
+        // $createdAt
+        let created_at = read_timestamp(&mut buf, document_type, CREATED_AT)?;
+        let updated_at = read_timestamp(&mut buf, document_type, UPDATED_AT)?;
+
         let properties = document_type
             .properties()
             .iter()
-            .filter_map(|(key, field)| {
-                if key == CREATED_AT {
-                    if !field.required {
-                        let marker_result = buf.read_u8().map_err(|_| {
-                            ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                                "error reading created at optional byte from serialized document",
-                            ))
-                        });
-                        match marker_result {
-                            Ok(marker) => {
-                                if marker == 0 {
-                                    return Some(Ok((key.clone(), Value::Null)));
-                                }
-                            }
-                            Err(e) => return Some(Err(e)),
-                        }
-                    }
-                    let integer_result = buf.read_u64::<BigEndian>().map_err(|_| {
-                        ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                            "error reading created at from serialized document",
-                        ))
-                    });
-                    match integer_result {
-                        Ok(integer) => {
-                            created_at = Some(integer);
-                            None
-                        }
-                        Err(e) => Some(Err(e)),
-                    }
-                } else if key == UPDATED_AT {
-                    if !field.required {
-                        let marker_result = buf.read_u8().map_err(|_| {
-                            ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                                "error reading updated at optional byte from serialized document",
-                            ))
-                        });
-                        match marker_result {
-                            Ok(marker) => {
-                                if marker == 0 {
-                                    return Some(Ok((key.clone(), Value::Null)));
-                                }
-                            }
-                            Err(e) => return Some(Err(e)),
-                        }
-                    }
-                    let integer_result = buf.read_u64::<BigEndian>().map_err(|_| {
-                        ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                            "error reading updated at from serialized document",
-                        ))
-                    });
-                    match integer_result {
-                        Ok(integer) => {
-                            updated_at = Some(integer);
-                            None
-                        }
-                        Err(e) => Some(Err(e)),
-                    }
-                } else {
-                    let read_value = field.document_type.read_from(&mut buf, field.required);
-                    match read_value {
-                        Ok(read_value) => read_value.map(|read_value| Ok((key.clone(), read_value))),
-                        Err(e) => Some(Err(e)),
-                    }
+            .filter_map(|(key, property)| {
+                let read_value = property
+                    .property_type
+                    .read_optionaly_from(&mut buf, property.required);
+
+                match read_value {
+                    Ok(read_value) => read_value.map(|read_value| Ok((key.clone(), read_value))),
+                    Err(e) => Some(Err(e)),
                 }
             })
             .collect::<Result<BTreeMap<String, Value>, ProtocolError>>()?;
+
         Ok(DocumentV0 {
             id: Identifier::new(id),
             properties,
@@ -321,6 +317,32 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
         }
         .into())
     }
+}
+
+fn read_timestamp(
+    buf: &mut BufReader<&[u8]>,
+    document_type: DocumentTypeRef,
+    property_name: &str,
+) -> Result<Option<u64>, ProtocolError> {
+    if !document_type.required_fields().contains(property_name) {
+        let marker = buf.read_u8().map_err(|_| {
+            ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+                "error reading created at optional byte from serialized document",
+            ))
+        })?;
+
+        if marker == 0 {
+            return Ok(None);
+        }
+    }
+
+    let timestamp = buf.read_u64::<BigEndian>().map_err(|_| {
+        ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+            "error reading created at from serialized document",
+        ))
+    })?;
+
+    Ok(Some(timestamp))
 }
 
 impl DocumentPlatformConversionMethodsV0 for DocumentV0 {

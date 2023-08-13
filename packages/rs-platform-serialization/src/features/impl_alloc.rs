@@ -545,12 +545,12 @@ fn test_cow_round_trip() {
         PlatformVersion::first(),
     )
     .unwrap();
-    let (end, _) =
-        crate::borrow_decode_from_slice::<Cow<str>, _>(&encoded, crate::config::standard())
+    let end =
+        crate::platform_versioned_borrow_decode_from_slice::<Cow<str>, _>(&encoded, bincode::config::standard(), PlatformVersion::first())
             .unwrap();
     assert_eq!(start, end);
-    let (end, _) =
-        crate::decode_from_slice::<Cow<str>, _>(&encoded, crate::config::standard()).unwrap();
+    let end =
+        crate::platform_versioned_decode_from_slice::<Cow<str>, _>(&encoded, bincode::config::standard(), PlatformVersion::first()).unwrap();
     assert_eq!(start, end);
 }
 

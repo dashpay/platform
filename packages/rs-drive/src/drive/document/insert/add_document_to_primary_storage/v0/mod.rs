@@ -1,4 +1,4 @@
-use dpp::data_contract::document_type::{DocumentFieldType, IndexLevel};
+use dpp::data_contract::document_type::{DocumentPropertyType, IndexLevel};
 
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
@@ -49,9 +49,9 @@ use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::data_contract_config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::fee_result::FeeResult;
@@ -154,7 +154,7 @@ impl Drive {
                 drive_operations,
                 drive_version,
             )?;
-            let encoded_time = DocumentFieldType::encode_unsigned_integer(block_info.time_ms)?;
+            let encoded_time = DocumentPropertyType::encode_unsigned_integer(block_info.time_ms)?;
             let path_key_element_info = match &document_and_contract_info
                 .owned_document_info
                 .document_info
@@ -252,7 +252,7 @@ impl Drive {
             {
                 let document_id_in_primary_path =
                     contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
-                        contract.id().as_bytes(),
+                        contract.id_ref().as_bytes(),
                         document_type,
                     );
                 let reference_max_size =

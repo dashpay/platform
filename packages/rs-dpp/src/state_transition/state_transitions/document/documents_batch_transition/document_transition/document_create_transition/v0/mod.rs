@@ -16,7 +16,6 @@ use crate::document::Document;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 
-use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
 use crate::version::LATEST_PLATFORM_VERSION;
 use crate::{data_contract::DataContract, errors::ProtocolError};
 

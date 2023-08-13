@@ -21,6 +21,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
@@ -87,15 +88,11 @@ impl Drive {
         //  * Document andDataContract root tree
         //  *DataContract ID recovered from document
         //  * 0 to signify Documents and notDataContract
-        let contract_document_type_path = contract_document_type_path(
-            contract.id_ref().as_bytes(),
-            document_type.name().as_str(),
-        );
+        let contract_document_type_path =
+            contract_document_type_path(contract.id_ref().as_bytes(), document_type.name());
 
-        let contract_documents_primary_key_path = contract_documents_primary_key_path(
-            contract.id_ref().as_bytes(),
-            document_type.name().as_str(),
-        );
+        let contract_documents_primary_key_path =
+            contract_documents_primary_key_path(contract.id_ref().as_bytes(), document_type.name());
 
         let document_reference = make_document_reference(
             document,

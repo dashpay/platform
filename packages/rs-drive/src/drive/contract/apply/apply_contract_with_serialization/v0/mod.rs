@@ -14,7 +14,11 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::DataContract;
 
-use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::serialization::{
+    PlatformDeserializableFromVersionedStructure,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+};
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -103,7 +107,7 @@ impl Drive {
 
         // We can do a get direct because there are no references involved
         match self.grove_get_raw(
-            (&contract_root_path(contract.id().as_bytes())).into(),
+            (&contract_root_path(contract.id_ref().as_bytes())).into(),
             &[0],
             direct_query_type,
             transaction,
@@ -124,7 +128,9 @@ impl Drive {
                         // we need to get the latest of a contract that keeps history, can't be raw since there is a reference
                         let stored_element = self
                             .grove_get(
-                                (&contract_keeping_history_storage_path(contract.id().as_bytes()))
+                                (&contract_keeping_history_storage_path(
+                                    contract.id_ref().as_bytes(),
+                                ))
                                     .into(),
                                 &[0],
                                 QueryType::StatefulQuery,
@@ -177,6 +183,7 @@ impl Drive {
             if !original_contract_stored_data.is_empty() {
                 let original_contract = DataContract::versioned_deserialize(
                     &original_contract_stored_data,
+                    false,
                     platform_version,
                 )?;
                 // if the contract is not mutable update_contract will return an error

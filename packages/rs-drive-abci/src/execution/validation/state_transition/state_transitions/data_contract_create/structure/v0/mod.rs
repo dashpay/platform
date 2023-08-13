@@ -41,6 +41,7 @@ impl DataContractCreatedStateTransitionStructureValidationV0 for DataContractCre
             self.data_contract().owner_id(),
             self.entropy(),
         );
+
         if generated_id != self.data_contract().id() {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 BasicError::InvalidDataContractIdError(InvalidDataContractIdError::new(
@@ -51,12 +52,6 @@ impl DataContractCreatedStateTransitionStructureValidationV0 for DataContractCre
             ));
         }
 
-        let data_contact: DataContract = self
-            .data_contract()
-            .clone()
-            .try_into_platform_versioned(platform_version)?;
-        data_contact
-            .validate_structure(platform_version)
-            .map_err(Error::Protocol)
+        Ok(SimpleConsensusValidationResult::default())
     }
 }

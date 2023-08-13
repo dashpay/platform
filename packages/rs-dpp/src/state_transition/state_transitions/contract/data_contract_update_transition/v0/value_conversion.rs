@@ -1,4 +1,4 @@
-use crate::data_contract::conversion::platform_value_conversion::v0::DataContractValueConversionMethodsV0;
+use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::DataContract;
 use crate::state_transition::data_contract_update_transition::fields::*;
 use crate::state_transition::data_contract_update_transition::{
@@ -62,7 +62,7 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractUpdateTransitionV0 {
                 .get_optional_integer(SIGNATURE_PUBLIC_KEY_ID)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            data_contract: DataContract::from_object(
+            data_contract: DataContract::from_value(
                 raw_object.remove(DATA_CONTRACT).map_err(|_| {
                     ProtocolError::DecodingError(
                         "data contract missing on state transition".to_string(),
@@ -87,7 +87,7 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractUpdateTransitionV0 {
                 .remove_optional_integer(SIGNATURE_PUBLIC_KEY_ID)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            data_contract: DataContract::from_object(
+            data_contract: DataContract::from_value(
                 raw_value_map
                     .remove(DATA_CONTRACT)
                     .ok_or(ProtocolError::DecodingError(

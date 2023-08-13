@@ -39,8 +39,8 @@ pub use query_documents::*;
 use dpp::block::block_info::BlockInfo;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::block::epoch::Epoch;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 #[cfg(feature = "fixtures-and-mocks")]
-use dpp::data_contract::base::DataContractBaseMethodsV0;
 #[cfg(feature = "fixtures-and-mocks")]
 use grovedb::TransactionArg;
 
@@ -54,8 +54,11 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "fixtures-and-mocks")]
 use crate::query::DriveQuery;
-#[cfg(feature = "fixtures-and-mocks")]
-use dpp::data_contract::conversion::cbor_conversion::DataContractCborConversionMethodsV0;
+#[cfg(all(
+    feature = "fixtures-and-mocks",
+    feature = "data-contract-cbor-conversion"
+))]
+use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "fixtures-and-mocks")]
@@ -131,7 +134,7 @@ impl Drive {
     pub fn query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
         &self,
         query_cbor: &[u8],
-        contract_cbor: &[u8],
+        contract: &DataContract,
         document_type_name: String,
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
@@ -139,12 +142,11 @@ impl Drive {
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let platform_version = PlatformVersion::get_version_or_current_or_latest(protocol_version)?;
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let contract = DataContract::from_cbor(contract_cbor, platform_version)?;
         //todo cbor cost
         let document_type = contract.document_type_for_name(document_type_name.as_str())?;
 
         let (items, skipped) = self.query_documents_for_cbor_query_internal(
-            &contract,
+            contract,
             document_type,
             query_cbor,
             transaction,

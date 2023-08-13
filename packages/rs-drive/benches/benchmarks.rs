@@ -51,7 +51,7 @@ fn test_drive_10_serialization(c: &mut Criterion) {
             .expect("expected to get contract");
 
     let document_type = contract
-        .document_type_for_name("contactRequest")
+        .document_type("contactRequest")
         .expect("expected to get profile document type");
 
     let mut group = c.benchmark_group("Serialization");
@@ -103,7 +103,7 @@ fn test_drive_10_deserialization(c: &mut Criterion) {
             .expect("expected to get contract");
 
     let document_type = contract
-        .document_type_for_name("contactRequest")
+        .document_type("contactRequest")
         .expect("expected to get profile document type");
     let (serialized_documents, cbor_serialized_documents): (Vec<Vec<u8>>, Vec<Vec<u8>>) =
         document_type

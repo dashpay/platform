@@ -1,7 +1,6 @@
 use lazy_static::lazy_static;
 use serde_json::Value as JsonValue;
 
-pub mod data_contract;
 pub mod identity;
 
 lazy_static! {

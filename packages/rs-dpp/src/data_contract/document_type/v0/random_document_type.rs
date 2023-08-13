@@ -100,11 +100,11 @@ impl RandomDocumentTypeParameters {
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::{
-    DocumentField, DocumentFieldType, DocumentType, DocumentTypeRef, Index,
+    DocumentProperty, DocumentPropertyType, DocumentType, DocumentTypeRef, Index,
 };
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_value::Identifier;
+use platform_value::{Identifier, Value};
 use rand::rngs::StdRng;
 use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
@@ -129,7 +129,7 @@ impl DocumentTypeV0 {
             + field_weights.boolean_weight
             + field_weights.byte_array_weight;
 
-        let random_field = |required: bool, rng: &mut StdRng| -> DocumentField {
+        let random_field = |required: bool, rng: &mut StdRng| -> DocumentProperty {
             let random_weight = rng.gen_range(0..total_weight);
             let document_type = if random_weight < field_weights.string_weight {
                 let has_min_len = rng.gen_bool(parameters.field_bounds.string_has_min_len_chance);
@@ -144,22 +144,22 @@ impl DocumentTypeV0 {
                 } else {
                     None
                 };
-                DocumentFieldType::String(min_len, max_len)
+                DocumentPropertyType::String(min_len, max_len)
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
-                DocumentFieldType::Integer
+                DocumentPropertyType::Integer
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
                     + field_weights.float_weight
             {
-                DocumentFieldType::Number
+                DocumentPropertyType::Number
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
                     + field_weights.float_weight
                     + field_weights.date_weight
             {
-                DocumentFieldType::Date
+                DocumentPropertyType::Date
             } else if random_weight
                 < field_weights.string_weight
                     + field_weights.integer_weight
@@ -167,7 +167,7 @@ impl DocumentTypeV0 {
                     + field_weights.date_weight
                     + field_weights.boolean_weight
             {
-                DocumentFieldType::Boolean
+                DocumentPropertyType::Boolean
             } else {
                 let has_min_len =
                     rng.gen_bool(parameters.field_bounds.byte_array_has_min_len_chance);
@@ -184,11 +184,11 @@ impl DocumentTypeV0 {
                     None
                 };
 
-                DocumentFieldType::ByteArray(min_len, max_len)
+                DocumentPropertyType::ByteArray(min_len, max_len)
             };
 
-            DocumentField {
-                document_type,
+            DocumentProperty {
+                property_type: document_type,
                 required,
             }
         };
@@ -237,8 +237,11 @@ impl DocumentTypeV0 {
                 .contract_versions
                 .document_type_versions,
         )?;
+
+        // TODO: It might not work properly
         Ok(DocumentTypeV0 {
             name,
+            schema: Value::Null,
             indices,
             index_structure,
             flattened_properties: properties.clone(),

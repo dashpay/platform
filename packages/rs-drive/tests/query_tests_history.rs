@@ -77,12 +77,13 @@ use drive::query::DriveQuery;
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::base::DataContractBaseMethodsV0;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
 };
 use dpp::document::DocumentV0Getters;
+use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "full")]
@@ -293,8 +294,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            241, 114, 190, 196, 99, 216, 96, 243, 239, 150, 213, 98, 189, 115, 79, 34, 29, 153, 57,
-            239, 202, 194, 161, 187, 243, 53, 22, 18, 74, 71, 27, 247
+            188, 140, 69, 100, 211, 204, 0, 223, 246, 221, 153, 158, 221, 205, 10, 129, 84, 156,
+            29, 163, 29, 145, 186, 229, 52, 86, 27, 120, 163, 94, 107, 41
         ]
     );
 
@@ -1550,13 +1551,16 @@ fn test_query_historical() {
 
     // query empty contract with nested path queries
 
-    let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
+    let dashpay_contract = json_document_to_contract(
+        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        platform_version,
+    )
+    .expect("expected to get cbor document");
 
     drive
-        .apply_contract_cbor(
-            contract_cbor.clone(),
-            None,
-            BlockInfo::genesis(),
+        .apply_contract(
+            &dashpay_contract,
+            BlockInfo::default(),
             true,
             StorageFlags::optional_default_as_cow(),
             Some(&db_transaction),
@@ -1575,10 +1579,12 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let (results, _, _) = drive
-        .query_raw_documents_from_contract_cbor_using_cbor_encoded_query_with_cost(
-            query_cbor.as_slice(),
-            contract_cbor.as_slice(),
-            String::from("contact"),
+        .query_documents_cbor_from_contract(
+            &dashpay_contract,
+            dashpay_contract
+                .document_type_for_name("contactRequest")
+                .expect("should have contact document type"),
+            &query_cbor,
             None,
             Some(&db_transaction),
             Some(platform_version.protocol_version),
@@ -1657,8 +1663,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            213, 9, 21, 87, 130, 117, 152, 99, 239, 137, 99, 140, 167, 228, 48, 210, 24, 209, 179,
-            3, 230, 232, 199, 229, 57, 130, 83, 38, 15, 127, 111, 40
+            179, 136, 130, 190, 15, 125, 20, 162, 168, 57, 34, 147, 87, 106, 155, 93, 138, 183, 37,
+            184, 235, 159, 230, 78, 172, 36, 190, 32, 170, 209, 13, 206
         ]
     );
 }

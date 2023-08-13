@@ -22,7 +22,7 @@ const PROPERTY_DOCUMENT_TYPE: &str = "$type";
 
 lazy_static! {
     pub static ref BASE_DOCUMENT_SCHEMA: JsonValue =
-        serde_json::from_str(include_str!("../../../schema/document/documentBase.json")).unwrap();
+        serde_json::from_str(include_str!("../../../schema/document/document-base.json")).unwrap();
 }
 
 lazy_static! {

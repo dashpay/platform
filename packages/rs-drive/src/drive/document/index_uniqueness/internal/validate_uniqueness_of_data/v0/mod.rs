@@ -126,7 +126,7 @@ impl Drive {
                                         StateError::DuplicateUniqueIndexError(
                                             DuplicateUniqueIndexError::new(
                                                 document_id,
-                                                index.fields(),
+                                                index.property_names(),
                                             ),
                                         )
                                         .into(),

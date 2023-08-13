@@ -40,7 +40,7 @@ use crate::drive::flags::StorageFlags;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::{defaults, RootTree};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::v0::v0_methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "full")]
@@ -239,8 +239,8 @@ pub(crate) mod tests {
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::extra::common::json_document_to_contract;
     use dpp::prelude::DataContract;
+    use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::drive_versions::DriveVersion;
     use dpp::version::PlatformVersion;
 
