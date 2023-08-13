@@ -116,8 +116,8 @@ pub trait PlatformDeserializableWithPotentialValidationFromVersionedStructure {
         validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
-        where
-            Self: Sized;
+    where
+        Self: Sized;
 }
 
 pub trait PlatformDeserializableWithBytesLenFromVersionedStructure {

@@ -10,17 +10,12 @@ use platform_value::Identifier;
 use platform_value::{Value, ValueMapHelper};
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 
 use crate::data_contract::{DefinitionName, DocumentName};
 
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
-#[cfg(feature = "cbor")]
-use crate::util::cbor_serializer;
-use crate::Convertible;
 use crate::{errors::ProtocolError, metadata::Metadata};
-use platform_value::string_encoding::Encoding;
 
 /// `DataContractV0` represents a data contract in a decentralized platform.
 ///
@@ -144,8 +139,8 @@ mod test {
     //     );
     //     assert_eq!(data_contract.schema, data_contract_restored.schema);
     //     assert_eq!(data_contract.version, data_contract_restored.version);
-    //     assert_eq!(data_contract.id, data_contract_restored.id);
-    //     assert_eq!(data_contract.owner_id, data_contract_restored.owner_id);
+    //     assert_eq!(data_contract.id(), data_contract_restored.id);
+    //     assert_eq!(data_contract.owner_id(), data_contract_restored.owner_id);
     //     assert_eq!(
     //         data_contract.binary_properties,
     //         data_contract_restored.binary_properties
@@ -177,8 +172,8 @@ mod test {
     //     );
     //     assert_eq!(data_contract.schema, data_contract_restored.schema);
     //     assert_eq!(data_contract.version, data_contract_restored.version);
-    //     assert_eq!(data_contract.id, data_contract_restored.id);
-    //     assert_eq!(data_contract.owner_id, data_contract_restored.owner_id);
+    //     assert_eq!(data_contract.id(), data_contract_restored.id);
+    //     assert_eq!(data_contract.owner_id(), data_contract_restored.owner_id);
     //     assert_eq!(
     //         data_contract.binary_properties,
     //         data_contract_restored.binary_properties
@@ -219,8 +214,8 @@ mod test {
     //     );
     //     assert_eq!(data_contract.schema, data_contract_restored.schema);
     //     assert_eq!(data_contract.version, data_contract_restored.version);
-    //     assert_eq!(data_contract.id, data_contract_restored.id);
-    //     assert_eq!(data_contract.owner_id, data_contract_restored.owner_id);
+    //     assert_eq!(data_contract.id(), data_contract_restored.id);
+    //     assert_eq!(data_contract.owner_id(), data_contract_restored.owner_id);
     //     assert_eq!(
     //         data_contract.binary_properties,
     //         data_contract_restored.binary_properties
@@ -335,14 +330,14 @@ mod test {
     //         "https://schema.dash.org/dpp-0-4-0/meta/data-contract"
     //     );
     //     assert_eq!(
-    //         data_contract.owner_id,
+    //         data_contract.owner_id(),
     //         Identifier::new([
     //             150, 32, 136, 170, 56, 18, 187, 51, 134, 208, 201, 19, 14, 219, 222, 81, 228, 190,
     //             23, 187, 45, 16, 3, 29, 65, 71, 200, 89, 127, 172, 238, 37
     //         ])
     //     );
     //     assert_eq!(
-    //         data_contract.id,
+    //         data_contract.id(),
     //         Identifier::new([
     //             142, 254, 247, 51, 140, 13, 52, 178, 228, 8, 65, 27, 148, 115, 215, 36, 203, 249,
     //             182, 117, 202, 114, 179, 18, 111, 127, 142, 125, 235, 66, 174, 81

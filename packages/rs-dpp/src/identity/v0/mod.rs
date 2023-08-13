@@ -17,9 +17,7 @@ use crate::identity::{
 use crate::prelude::Revision;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
-use crate::{
-    errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash, Convertible,
-};
+use crate::{errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash};
 use bincode::{Decode, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;

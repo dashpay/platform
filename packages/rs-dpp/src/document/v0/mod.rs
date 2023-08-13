@@ -4,11 +4,11 @@
 //!
 
 mod accessors;
-#[cfg(feature = "cbor")]
+#[cfg(feature = "document-cbor-conversion")]
 pub(super) mod cbor_conversion;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "document-json-conversion")]
 pub(super) mod json_conversion;
-#[cfg(feature = "platform-value")]
+#[cfg(feature = "document-value-conversion")]
 mod platform_value_conversion;
 pub mod serialize;
 
@@ -41,25 +41,35 @@ use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
 
 /// Documents contain the data that goes into data contracts.
-#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Default)]
+#[cfg_attr(feature = "document-serde-conversion", derive(Serialize, Deserialize))]
 pub struct DocumentV0 {
     /// The unique document ID.
-    #[serde(rename = "$id")]
+    #[cfg_attr(feature = "document-serde-conversion", serde(rename = "$id"))]
     pub id: Identifier,
     /// The ID of the document's owner.
-    #[serde(rename = "$ownerId")]
+    #[cfg_attr(feature = "document-serde-conversion", serde(rename = "$ownerId"))]
     pub owner_id: Identifier,
     /// The document's properties (data).
-    #[serde(flatten)]
+    #[cfg_attr(feature = "document-serde-conversion", serde(flatten))]
     pub properties: BTreeMap<String, Value>,
     /// The document revision.
-    #[serde(rename = "$revision", default)]
+    #[cfg_attr(
+        feature = "document-serde-conversion",
+        serde(rename = "$revision", default)
+    )]
     pub revision: Option<Revision>,
     /// The time in milliseconds that the document was created
-    #[serde(rename = "$createdAt", default)]
+    #[cfg_attr(
+        feature = "document-serde-conversion",
+        serde(rename = "$createdAt", default)
+    )]
     pub created_at: Option<TimestampMillis>,
     /// The time in milliseconds that the document was last updated
-    #[serde(rename = "$updatedAt", default)]
+    #[cfg_attr(
+        feature = "document-serde-conversion",
+        serde(rename = "$updatedAt", default)
+    )]
     pub updated_at: Option<TimestampMillis>,
 }
 

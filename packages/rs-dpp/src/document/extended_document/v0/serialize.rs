@@ -10,13 +10,13 @@ use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
 
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::document::extended_document::v0::ExtendedDocumentV0;
-use crate::document::serialization_traits::{
-    DocumentPlatformConversionMethodsV0, DocumentPlatformDeserializationMethodsV0,
-    DocumentPlatformSerializationMethodsV0,
-};
+use crate::document::serialization_traits::deserialize::v0::DocumentPlatformDeserializationMethodsV0;
+use crate::document::serialization_traits::serialize::v0::DocumentPlatformSerializationMethodsV0;
+use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::v0::DocumentV0;
 use crate::serialization::{
     PlatformDeserializableFromVersionedStructure,
@@ -33,7 +33,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::io::{BufReader, Read};
-use crate::data_contract::accessors::v0::DataContractV0Getters;
 
 impl DocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
     /// Serializes the document.
@@ -279,7 +278,7 @@ impl DocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
         let document = Document::from_bytes(rest, document_type, platform_version)?;
         let document_type_name = String::from_utf8(document_type_name_bytes.into())
             .map_err(|e| ProtocolError::DecodingError(e.to_string()))?;
-        
+
         Ok(ExtendedDocumentV0 {
             document_type_name,
             data_contract_id: data_contract.id(),

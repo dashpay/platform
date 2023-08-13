@@ -158,18 +158,14 @@ impl DataContractCreateTransition {
 mod test {
     use crate::data_contract::created_data_contract::CreatedDataContract;
     use integer_encoding::VarInt;
-    use platform_value::Bytes32;
 
     use super::*;
-    use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
-    use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::state_transitions::common_fields::property_names;
     use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
     use crate::tests::fixtures::get_data_contract_fixture;
-    use crate::util::json_value::JsonValueExt;
+    use crate::version;
     use crate::version::LATEST_PLATFORM_VERSION;
-    use crate::{version, Convertible};
 
     pub(crate) struct TestData {
         pub(crate) state_transition: DataContractCreateTransition,
@@ -258,7 +254,7 @@ mod test {
     fn should_return_owner_id() {
         let data = get_test_data();
         assert_eq!(
-            &data.created_data_contract.data_contract.owner_id,
+            &data.created_data_contract.data_contract.owner_id(),
             data.state_transition.owner_id()
         );
     }

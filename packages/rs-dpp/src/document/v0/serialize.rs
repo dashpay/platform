@@ -12,10 +12,9 @@ use crate::ProtocolError;
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
-use crate::document::serialization_traits::{
-    DocumentPlatformConversionMethodsV0, DocumentPlatformDeserializationMethodsV0,
-    DocumentPlatformSerializationMethodsV0,
-};
+use crate::document::serialization_traits::deserialize::v0::DocumentPlatformDeserializationMethodsV0;
+use crate::document::serialization_traits::serialize::v0::DocumentPlatformSerializationMethodsV0;
+use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::v0::DocumentV0;
 use crate::version::PlatformVersion;
 use byteorder::{BigEndian, ReadBytesExt};

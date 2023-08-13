@@ -42,7 +42,7 @@ use crate::state_transition::public_key_in_creation::accessors::{
     IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
 };
 use crate::state_transition::public_key_in_creation::methods::IdentityPublicKeyInCreationMethodsV0;
-use crate::{BlsModule, Convertible, InvalidVectorSizeError, SerdeParsingError};
+use crate::{BlsModule, InvalidVectorSizeError, SerdeParsingError};
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 

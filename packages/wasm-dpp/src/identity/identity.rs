@@ -1,28 +1,28 @@
-use serde::{Serialize};
+use crate::buffer::Buffer;
+use crate::errors::from_dpp_err;
+use crate::identifier::IdentifierWrapper;
+use crate::identity::IdentityPublicKeyWasm;
+use crate::metadata::MetadataWasm;
+use crate::utils::{IntoWasm, WithJsError};
+use crate::{utils, with_js_error};
+use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::{Identity, IdentityPublicKey, KeyID};
+use dpp::metadata::Metadata;
+use dpp::platform_value::{ReplacementType, Value};
+use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformSerializable;
+use dpp::serialization::ValueConvertible;
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
-use dpp::identity::{Identity, IdentityPublicKey, KeyID};
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::metadata::Metadata;
-use dpp::serialization::ValueConvertible;
-use crate::identifier::IdentifierWrapper;
-use crate::{utils, with_js_error};
-use crate::errors::from_dpp_err;
-use dpp::serialization::PlatformSerializable;
-use dpp::serialization::PlatformDeserializable;
-use crate::utils::{IntoWasm, WithJsError};
-use crate::buffer::Buffer;
-use dpp::platform_value::{ReplacementType, Value};
-use crate::identity::IdentityPublicKeyWasm;
-use crate::metadata::MetadataWasm;
 
 #[wasm_bindgen(js_name=Identity)]
 #[derive(Clone)]
 pub struct IdentityWasm {
     inner: Identity,
-    metadata: Option<Metadata>
+    metadata: Option<Metadata>,
 }
 
 impl From<IdentityWasm> for Identity {
@@ -35,7 +35,7 @@ impl From<Identity> for IdentityWasm {
     fn from(identity: Identity) -> Self {
         Self {
             inner: identity,
-            metadata: None
+            metadata: None,
         }
     }
 }
@@ -44,34 +44,37 @@ impl IdentityWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_identity: JsValue) -> Result<IdentityWasm, JsValue> {
         let identity_json_string = utils::stringify(&raw_identity)?;
-        let identity_json: JsonValue = serde_json::from_str(&identity_json_string)
-            .map_err(|e| e.to_string())?;
+        let identity_json: JsonValue =
+            serde_json::from_str(&identity_json_string).map_err(|e| e.to_string())?;
 
         // Monkey patch identifier to be deserializable
         let mut identity_platform_value: Value = identity_json.into();
-        identity_platform_value.replace_at_paths(
-            dpp::identity::IDENTIFIER_FIELDS_RAW_OBJECT,
-            ReplacementType::TextBase58
-        ).map_err(|e| e.to_string())?;
+        identity_platform_value
+            .replace_at_paths(
+                dpp::identity::IDENTIFIER_FIELDS_RAW_OBJECT,
+                ReplacementType::TextBase58,
+            )
+            .map_err(|e| e.to_string())?;
 
         // Monkey patch public keys data to be deserializable
-        let public_keys = identity_platform_value.get_array_mut_ref(dpp::identity::property_names::PUBLIC_KEYS)
+        let public_keys = identity_platform_value
+            .get_array_mut_ref(dpp::identity::property_names::PUBLIC_KEYS)
             .map_err(|e| e.to_string())?;
 
         for key in public_keys.iter_mut() {
             key.replace_at_paths(
                 dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
-                ReplacementType::TextBase64
-            ).map_err(|e| e.to_string())?;
+                ReplacementType::TextBase64,
+            )
+            .map_err(|e| e.to_string())?;
         }
 
-
-        let identity: Identity = Identity::from_object(identity_platform_value)
-            .map_err(from_dpp_err)?;
+        let identity: Identity =
+            Identity::from_object(identity_platform_value).map_err(from_dpp_err)?;
 
         Ok(IdentityWasm {
             inner: identity,
-            metadata: None
+            metadata: None,
         })
     }
 
@@ -88,10 +91,12 @@ impl IdentityWasm {
 
         let public_keys = public_keys
             .into_iter()
-            .map(|key| IdentityPublicKeyWasm::new(key).map(|key| {
-                let key = IdentityPublicKey::from(key);
-                (key.id(), key)
-            }))
+            .map(|key| {
+                IdentityPublicKeyWasm::new(key).map(|key| {
+                    let key = IdentityPublicKey::from(key);
+                    (key.id(), key)
+                })
+            })
             .collect::<Result<_, _>>()?;
 
         self.inner.set_public_keys(public_keys);
@@ -181,8 +186,7 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name=getMetadata)]
     pub fn get_metadata(&self) -> Option<MetadataWasm> {
-        self.metadata
-            .map(|metadata| metadata.to_owned().into())
+        self.metadata.map(|metadata| metadata.to_owned().into())
     }
 
     #[wasm_bindgen(js_name=from)]
@@ -190,7 +194,7 @@ impl IdentityWasm {
         let i: Identity = serde_json::from_str(&object.as_string().unwrap()).unwrap();
         IdentityWasm {
             inner: i,
-            metadata: None
+            metadata: None,
         }
     }
 
@@ -198,23 +202,28 @@ impl IdentityWasm {
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
         let mut value = self.inner.to_object().with_js_error()?;
 
-        value.replace_at_paths(
-            dpp::identity::IDENTIFIER_FIELDS_RAW_OBJECT,
-            ReplacementType::TextBase58
-        ).map_err(|e| e.to_string())?;
+        value
+            .replace_at_paths(
+                dpp::identity::IDENTIFIER_FIELDS_RAW_OBJECT,
+                ReplacementType::TextBase58,
+            )
+            .map_err(|e| e.to_string())?;
 
         // Monkey patch public keys data to be deserializable
-        let public_keys = value.get_array_mut_ref(dpp::identity::property_names::PUBLIC_KEYS)
+        let public_keys = value
+            .get_array_mut_ref(dpp::identity::property_names::PUBLIC_KEYS)
             .map_err(|e| e.to_string())?;
 
         for key in public_keys.iter_mut() {
             key.replace_at_paths(
                 dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
-                ReplacementType::TextBase64
-            ).map_err(|e| e.to_string())?;
+                ReplacementType::TextBase64,
+            )
+            .map_err(|e| e.to_string())?;
         }
 
-        let json = value.try_into_validating_json()
+        let json = value
+            .try_into_validating_json()
             .map_err(|e| e.to_string())?
             .to_string();
 
@@ -277,10 +286,10 @@ impl IdentityWasm {
 
         let public_keys: Vec<IdentityPublicKey> = public_keys
             .into_iter()
-            .map(|key| key
-                .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
-                .map(|key| key.to_owned().into())
-            )
+            .map(|key| {
+                key.to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
+                    .map(|key| key.to_owned().into())
+            })
             .collect::<Result<_, _>>()?;
 
         self.inner.add_public_keys(public_keys);

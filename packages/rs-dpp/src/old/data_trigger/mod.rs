@@ -149,5 +149,5 @@ fn create_error<SR>(
 where
     SR: StateRepositoryLike,
 {
-    DataTriggerConditionError::new(context.data_contract.id, transition_id, msg).into()
+    DataTriggerConditionError::new(context.data_contract.id(), transition_id, msg).into()
 }

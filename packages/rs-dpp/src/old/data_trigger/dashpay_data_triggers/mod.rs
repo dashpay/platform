@@ -70,7 +70,7 @@ where
         if owner_id == &to_user_id {
             result.add_error(
                 DataTriggerConditionError::new(
-                    context.data_contract.id,
+                    context.data_contract.id(),
                     document_create_transition.base.id,
                     format!("Identity {to_user_id} must not be equal to owner id"),
                 )
@@ -96,7 +96,7 @@ where
             {
                 result.add_error(
                     DataTriggerConditionError::new(
-                        context.data_contract.id,
+                        context.data_contract.id(),
                         document_create_transition.base.id,
                         format!(
                             "Core height {} is out of block height window from {} to {}",
@@ -123,7 +123,7 @@ where
     if !is_dry_run && identity.is_none() {
         result.add_error(
             DataTriggerConditionError::new(
-                context.data_contract.id,
+                context.data_contract.id(),
                 document_create_transition.base.id,
                 format!("Identity {to_user_id} doesn't exist"),
             )

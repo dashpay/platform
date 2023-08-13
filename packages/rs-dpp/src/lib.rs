@@ -8,14 +8,11 @@ extern crate core;
 
 pub use dashcore;
 
-pub use convertible::Convertible;
 #[cfg(feature = "client")]
 pub use dash_platform_protocol::DashPlatformProtocol;
 pub use errors::*;
 
 pub mod data_contract;
-
-mod convertible;
 pub mod document;
 pub mod identifier;
 pub mod identity;
@@ -62,8 +59,6 @@ pub mod prelude {
     pub use crate::identity::IdentityPublicKey;
     #[cfg(feature = "validation")]
     pub use crate::validation::ConsensusValidationResult;
-
-    pub use super::convertible::Convertible;
     pub type TimestampMillis = u64;
     pub type Revision = u64;
 }

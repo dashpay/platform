@@ -22,11 +22,12 @@ use crate::identity::errors::UnknownAssetLockProofTypeErrorWasm;
 use crate::utils::generic_of_js_val;
 // use crate::validation::ValidationResultWasm;
 // use crate::{Deserialize, StateTransitionExecutionContextWasm};
-use serde::{Deserialize};
 use dpp::identity::state_transition::asset_lock_proof::{
-    AssetLockProof, AssetLockProofType,
+    AssetLockProof,
+    AssetLockProofType,
     // AssetLockPublicKeyHashFetcher, AssetLockTransactionOutputFetcher, AssetLockTransactionValidator,
 };
+use serde::Deserialize;
 
 #[derive(Deserialize, Clone)]
 #[wasm_bindgen(js_name=AssetLockProof)]

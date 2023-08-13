@@ -21,7 +21,7 @@ use crate::{
     util::json_value::JsonValueExt,
     validation::{JsonSchemaValidator, SimpleConsensusValidationResult},
     version::ProtocolVersionValidator,
-    Convertible, DashPlatformProtocolInitError, ProtocolError,
+     DashPlatformProtocolInitError, ProtocolError,
 };
 use anyhow::anyhow;
 use anyhow::Context;
@@ -256,7 +256,7 @@ where
                         get_operation_and_property_name_json(&diffs[0]);
                     validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
                         IncompatibleDataContractSchemaError::new(
-                            existing_data_contract.id,
+                            existing_data_contract.id(),
                             operation_name.to_owned(),
                             property_name.to_owned(),
                             document_schema.clone(),

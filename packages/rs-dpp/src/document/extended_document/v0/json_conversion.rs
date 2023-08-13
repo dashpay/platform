@@ -1,10 +1,8 @@
-use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use crate::document::extended_document::fields::property_names;
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::{
     DocumentJsonMethodsV0, DocumentPlatformValueMethodsV0,
 };
-use crate::document::DocumentV0;
 use crate::serialization::ValueConvertible;
 use crate::util::json_value::JsonValueExt;
 use crate::{serialization, ProtocolError};

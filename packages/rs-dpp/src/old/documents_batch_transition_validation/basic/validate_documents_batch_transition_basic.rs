@@ -303,7 +303,7 @@ fn validate_raw_transitions<'a>(
                     let entropy = raw_document_transition.get_bytes("$entropy")?;
                     // validate the id  generation
                     let generated_document_id = generate_document_id_v0(
-                        &data_contract.id,
+                        &data_contract.id(),
                         &owner_id,
                         document_type,
                         &entropy,

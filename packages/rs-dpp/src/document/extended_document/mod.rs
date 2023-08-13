@@ -1,5 +1,6 @@
 mod accessors;
 mod fields;
+#[cfg(feature = "document-serde-conversion")]
 mod serde_serialize;
 mod serialize;
 pub(crate) mod v0;
@@ -11,6 +12,8 @@ use crate::ProtocolError;
 
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 
+#[cfg(feature = "document-json-conversion")]
+use crate::document::serialization_traits::DocumentJsonMethodsV0;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use serde_json::Value as JsonValue;
@@ -22,7 +25,7 @@ pub enum ExtendedDocument {
 }
 
 impl ExtendedDocument {
-    #[cfg(feature = "json-object")]
+    #[cfg(feature = "document-json-conversion")]
     /// Returns the properties of the document as a JSON value.
     ///
     /// # Errors
@@ -102,6 +105,7 @@ impl ExtendedDocument {
     /// Convert the extended document to a JSON object.
     ///
     /// This function is a passthrough to the `to_json` method.
+    #[cfg(feature = "document-json-conversion")]
     pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.to_json(),

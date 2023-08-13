@@ -21,7 +21,9 @@ impl DataContractMethodsV0 for DataContract {
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.set_document_schemas(schemas, defs, validate, platform_version),
+            DataContract::V0(v0) => {
+                v0.set_document_schemas(schemas, defs, validate, platform_version)
+            }
         }
     }
 
@@ -33,7 +35,9 @@ impl DataContractMethodsV0 for DataContract {
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.set_document_schema(name, schema, validate, platform_version),
+            DataContract::V0(v0) => {
+                v0.set_document_schema(name, schema, validate, platform_version)
+            }
         }
     }
 

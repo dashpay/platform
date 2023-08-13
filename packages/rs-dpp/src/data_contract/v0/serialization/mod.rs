@@ -1,13 +1,13 @@
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DataContract;
 use crate::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use crate::ProtocolError;
 use platform_version::TryFromPlatformVersioned;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 
 pub mod bincode;
 
@@ -37,7 +37,7 @@ impl<'de> Deserialize<'de> for DataContractV0 {
 }
 
 impl DataContractV0 {
-    pub(in crate::data_contract)  fn try_from_platform_versioned(
+    pub(in crate::data_contract) fn try_from_platform_versioned(
         value: DataContractInSerializationFormat,
         validate: bool,
         platform_version: &PlatformVersion,

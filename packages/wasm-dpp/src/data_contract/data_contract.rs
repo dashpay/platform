@@ -12,7 +12,7 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{Bytes32, Value};
 
 use dpp::serialization::PlatformSerializable;
-use dpp::{platform_value, Convertible, ProtocolError};
+use dpp::{platform_value,  ProtocolError};
 
 use crate::identifier::identifier_from_js_value;
 use crate::metadata::MetadataWasm;

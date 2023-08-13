@@ -24,7 +24,7 @@ pub const CONTRACT_DESERIALIZATION_LIMIT: usize = 15000;
     serde(tag = "$format_version")
 )]
 pub enum DataContractInSerializationFormat {
-    #[serde(rename = "0")]
+    #[cfg_attr(feature = "data-contract-serde-conversion", serde(rename = "0"))]
     V0(DataContractInSerializationFormatV0),
 }
 

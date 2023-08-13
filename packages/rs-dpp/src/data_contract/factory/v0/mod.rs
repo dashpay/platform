@@ -20,7 +20,10 @@ use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::DataContract;
-use crate::serialization::{PlatformDeserializable, PlatformDeserializableFromVersionedStructure, PlatformDeserializableWithPotentialValidationFromVersionedStructure};
+use crate::serialization::{
+    PlatformDeserializable, PlatformDeserializableFromVersionedStructure,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]
@@ -35,7 +38,6 @@ use crate::{
     data_contract::{self},
     errors::ProtocolError,
     prelude::Identifier,
-    Convertible,
 };
 
 /// The version 0 implementation of the data contract factory.
@@ -101,7 +103,8 @@ impl DataContractFactoryV0 {
             schema_defs: defs,
         });
 
-        let data_contract = DataContract::try_from_platform_versioned(format, true, platform_version)?;
+        let data_contract =
+            DataContract::try_from_platform_versioned(format, true, platform_version)?;
 
         CreatedDataContract::from_contract_and_entropy(data_contract, entropy, platform_version)
     }
@@ -144,7 +147,7 @@ impl DataContractFactoryV0 {
     ) -> Result<DataContract, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
         #[cfg(not(feature = "validation"))]
-            let skip_validation = true;
+        let skip_validation = true;
 
         let data_contract: DataContract = DataContract::versioned_deserialize(
             buffer.as_slice(),
@@ -212,10 +215,12 @@ impl DataContractFactoryV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::serialized_version::v0::property_names;
     use crate::serialization::PlatformSerializable;
+    use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::StateTransitionLike;
     use crate::tests::fixtures::get_data_contract_fixture;
-    use crate::Convertible;
 
     pub struct TestData {
         created_data_contract: CreatedDataContract,
@@ -250,7 +255,7 @@ mod tests {
             factory,
         } = get_test_data();
 
-        let data_contract = created_data_contract.data_contract;
+        let data_contract = created_data_contract.data_contract_owned();
 
         let raw_defs = raw_data_contract
             .get_value(property_names::DEFINITIONS)
@@ -263,7 +268,12 @@ mod tests {
             .clone();
 
         let result = factory
-            .create(data_contract.owner_id, raw_documents, None, Some(raw_defs))
+            .create(
+                data_contract.owner_id(),
+                raw_documents,
+                None,
+                Some(raw_defs),
+            )
             .expect("Data Contract should be created")
             .data_contract;
 
@@ -273,9 +283,9 @@ mod tests {
         );
         // id is generated based on entropy which is different every time the `create` call is used
         assert_eq!(data_contract.id.len(), result.id.len());
-        assert_ne!(data_contract.id, result.id);
+        assert_ne!(data_contract.id(), result.id);
         assert_eq!(data_contract.schema, result.schema);
-        assert_eq!(data_contract.owner_id, result.owner_id);
+        assert_eq!(data_contract.owner_id(), result.owner_id);
         assert_eq!(data_contract.documents, result.documents);
         assert_eq!(data_contract.metadata, result.metadata);
     }
@@ -288,23 +298,18 @@ mod tests {
             factory,
         } = get_test_data();
 
-        let data_contract = created_data_contract.data_contract;
+        let data_contract = created_data_contract.data_contract_owned();
 
         let result = factory
             .create_from_object(raw_data_contract.into(), true)
             .await
             .expect("Data Contract should be created");
 
-        assert_eq!(
-            data_contract.data_contract_protocol_version,
-            result.data_contract_protocol_version
-        );
-        assert_eq!(data_contract.id, result.id);
-        assert_eq!(data_contract.schema, result.schema);
-        assert_eq!(data_contract.owner_id, result.owner_id);
-        assert_eq!(data_contract.documents, result.documents);
-        assert_eq!(data_contract.metadata, result.metadata);
-        assert_eq!(data_contract.defs, result.defs);
+        assert_eq!(data_contract.version(), result.version());
+        assert_eq!(data_contract.id(), result.id());
+        assert_eq!(data_contract.owner_id(), result.owner_id());
+        assert_eq!(data_contract.document_types(), result.document_types());
+        assert_eq!(data_contract.metadata(), result.metadata());
     }
 
     #[tokio::test]
@@ -315,7 +320,7 @@ mod tests {
             ..
         } = get_test_data();
 
-        let data_contract = created_data_contract.data_contract;
+        let data_contract = created_data_contract.data_contract_owned();
 
         let serialized_data_contract = data_contract
             .serialize()
@@ -329,12 +334,10 @@ mod tests {
             data_contract.data_contract_protocol_version,
             result.data_contract_protocol_version
         );
-        assert_eq!(data_contract.id, result.id);
-        assert_eq!(data_contract.schema, result.schema);
-        assert_eq!(data_contract.owner_id, result.owner_id);
-        assert_eq!(data_contract.documents, result.documents);
-        assert_eq!(data_contract.metadata, result.metadata);
-        assert_eq!(data_contract.defs, result.defs);
+        assert_eq!(data_contract.id(), result.id());
+        assert_eq!(data_contract.owner_id(), result.owner_id());
+        assert_eq!(data_contract.document_types(), result.document_types());
+        assert_eq!(data_contract.metadata(), result.metadata());
     }
 
     #[test]

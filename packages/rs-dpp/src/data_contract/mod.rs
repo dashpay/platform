@@ -1,4 +1,10 @@
-use crate::serialization::{PlatformDeserializableFromVersionedStructure, PlatformDeserializableWithBytesLenFromVersionedStructure, PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformLimitDeserializableFromVersionedStructure, PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use crate::serialization::{
+    PlatformDeserializableFromVersionedStructure,
+    PlatformDeserializableWithBytesLenFromVersionedStructure,
+    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+    PlatformLimitDeserializableFromVersionedStructure, PlatformSerializable,
+    PlatformSerializableWithPlatformVersion,
+};
 use bincode::{Decode, Encode};
 pub use data_contract::*;
 use derive_more::From;
@@ -138,7 +144,11 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
                     ))
                 })?
                 .0;
-        DataContract::try_from_platform_versioned(data_contract_in_serialization_format, validate, platform_version)
+        DataContract::try_from_platform_versioned(
+            data_contract_in_serialization_format,
+            validate,
+            platform_version,
+        )
     }
 }
 
@@ -162,7 +172,11 @@ impl PlatformDeserializableWithBytesLenFromVersionedStructure for DataContract {
             PlatformDeserializationError(format!("unable to deserialize DataContract: {}", e))
         })?;
         Ok((
-            DataContract::try_from_platform_versioned(data_contract_in_serialization_format, validate, platform_version)?,
+            DataContract::try_from_platform_versioned(
+                data_contract_in_serialization_format,
+                validate,
+                platform_version,
+            )?,
             len,
         ))
     }
@@ -189,7 +203,11 @@ impl PlatformLimitDeserializableFromVersionedStructure for DataContract {
                 })?
                 .0;
         // we always want to validate when we have a limit, because limit means the data isn't coming from Drive
-        DataContract::try_from_platform_versioned(data_contract_in_serialization_format, true, platform_version)
+        DataContract::try_from_platform_versioned(
+            data_contract_in_serialization_format,
+            true,
+            platform_version,
+        )
     }
 }
 
@@ -235,13 +253,11 @@ impl DataContract {
 
 #[cfg(test)]
 mod tests {
-    use crate::data_contract::v0::DataContractV0;
     use crate::data_contract::DataContract;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::system_data_contracts::load_system_data_contract;
     use crate::version::PlatformVersion;
     use data_contracts::SystemDataContract::Dashpay;
-    use serde::Serialize;
 
     #[test]
     fn test_contract_serialization() {

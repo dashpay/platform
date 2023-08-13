@@ -1,9 +1,9 @@
+use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::{IdentityV0, KeyType, Purpose, SecurityLevel};
 use platform_value::platform_value;
 use platform_value::string_encoding::Encoding;
 use platform_value::BinaryData;
 use serde_json::json;
-use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 
 use crate::prelude::{Identifier, Identity};
 use crate::serialization::ValueConvertible;
@@ -41,28 +41,51 @@ pub fn identity_fixture_raw_object() -> platform_value::Value {
 
 pub fn identity_v0_fixture() -> Identity {
     IdentityV0 {
-        id: Identifier::from([198, 23, 40, 120, 58, 93, 0, 165, 27, 49, 4, 117, 107, 204,  67, 46, 164, 216, 230, 135, 201, 92, 31, 155, 62, 131, 211, 177, 139, 175, 163, 237]),
-        public_keys: [(0, IdentityPublicKeyV0 {
-            id: 0,
-            purpose: Purpose::AUTHENTICATION,
-            security_level: SecurityLevel::MASTER,
-            key_type: KeyType::ECDSA_SECP256K1,
-            read_only: false,
-            data: BinaryData::from_string("AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di", Encoding::Base64).unwrap(),
-            disabled_at: None,
-        }.into()),
-            (1, IdentityPublicKeyV0 {
-                              id: 0,
-                              purpose: Purpose::ENCRYPTION,
-                              security_level: SecurityLevel::MEDIUM,
-                              key_type: KeyType::ECDSA_SECP256K1,
-                              read_only: false,
-                              data: BinaryData::from_string("A8AK95PYMVX5VQKzOhcVQRCUbc9pyg3RiL7jttEMDU+L", Encoding::Base64).unwrap(),
-                              disabled_at: None,
-                          }.into())].into(),
+        id: Identifier::from([
+            198, 23, 40, 120, 58, 93, 0, 165, 27, 49, 4, 117, 107, 204, 67, 46, 164, 216, 230, 135,
+            201, 92, 31, 155, 62, 131, 211, 177, 139, 175, 163, 237,
+        ]),
+        public_keys: [
+            (
+                0,
+                IdentityPublicKeyV0 {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::MASTER,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::from_string(
+                        "AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di",
+                        Encoding::Base64,
+                    )
+                    .unwrap(),
+                    disabled_at: None,
+                }
+                .into(),
+            ),
+            (
+                1,
+                IdentityPublicKeyV0 {
+                    id: 0,
+                    purpose: Purpose::ENCRYPTION,
+                    security_level: SecurityLevel::MEDIUM,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::from_string(
+                        "A8AK95PYMVX5VQKzOhcVQRCUbc9pyg3RiL7jttEMDU+L",
+                        Encoding::Base64,
+                    )
+                    .unwrap(),
+                    disabled_at: None,
+                }
+                .into(),
+            ),
+        ]
+        .into(),
         balance: 10,
         revision: 0,
-    }.into()
+    }
+    .into()
 }
 
 pub fn identity_fixture_json() -> serde_json::Value {

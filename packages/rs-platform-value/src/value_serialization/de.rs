@@ -1,8 +1,8 @@
 use core::{fmt, slice};
 use std::iter::Peekable;
 
-use serde::de::{self, Deserializer as _, IntoDeserializer};
 use serde::de::value::SeqDeserializer;
+use serde::de::{self, Deserializer as _, IntoDeserializer};
 
 use crate::{Error, Value};
 
@@ -135,12 +135,15 @@ impl<'de> de::Visitor<'de> for Visitor {
             fn visit_seq<A: de::SeqAccess<'de>>(self, mut acc: A) -> Result<Self::Value, A::Error> {
                 match acc.size_hint() {
                     Some(size) if size == 1 => {
-                        let tag: u8 = acc.next_element()?
+                        let tag: u8 = acc
+                            .next_element()?
                             .ok_or_else(|| de::Error::custom("expected tag"))?;
                         Ok(Value::EnumU8(vec![tag]))
                     }
                     _ => {
-                        let val: Vec<String> = de::Deserialize::deserialize(de::value::SeqAccessDeserializer::new(acc))?;
+                        let val: Vec<String> = de::Deserialize::deserialize(
+                            de::value::SeqAccessDeserializer::new(acc),
+                        )?;
                         Ok(Value::EnumString(val))
                     }
                 }
@@ -150,7 +153,10 @@ impl<'de> de::Visitor<'de> for Visitor {
         if name == "@@TAGGED@@" {
             data.tuple_variant(2, Inner)
         } else {
-            Err(de::Error::custom(format!("Unexpected variant name: {}", name)))
+            Err(de::Error::custom(format!(
+                "Unexpected variant name: {}",
+                name
+            )))
         }
     }
 }
@@ -439,14 +445,19 @@ impl<'de> de::Deserializer<'de> for Deserializer<Value> {
     ) -> Result<V::Value, Self::Error> {
         match self.0 {
             Value::EnumU8(x) => {
-                let enum_variant = x.get(0).ok_or_else(|| de::Error::invalid_length(0, &"at least one variant expected"))?;
+                let enum_variant = x.get(0).ok_or_else(|| {
+                    de::Error::invalid_length(0, &"at least one variant expected")
+                })?;
                 let variant_name = format!("Variant{}", enum_variant);
                 visitor.visit_enum(variant_name.into_deserializer())
-            },
+            }
             Value::EnumString(x) => {
-                let variant_name = x.get(0).ok_or_else(|| de::Error::invalid_length(0, &"at least one variant expected"))?.clone();
+                let variant_name = x
+                    .get(0)
+                    .ok_or_else(|| de::Error::invalid_length(0, &"at least one variant expected"))?
+                    .clone();
                 visitor.visit_enum(variant_name.into_deserializer())
-            },
+            }
             _ => Err(de::Error::invalid_type((&self.0).into(), &"enum")),
         }
     }

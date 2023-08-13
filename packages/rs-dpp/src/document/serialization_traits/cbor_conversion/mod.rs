@@ -43,3 +43,39 @@ impl DocumentCborMethodsV0 for Document {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::random_document::CreateRandomDocument;
+    use crate::document::serialization_traits::{
+        DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
+    };
+    use crate::tests::json_document::json_document_to_contract;
+
+    #[test]
+    fn test_document_cbor_serialization() {
+        let platform_version = PlatformVersion::first();
+        let contract = json_document_to_contract(
+            "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
+            platform_version,
+        )
+        .expect("expected to get cbor contract");
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get profile document type");
+        let document = document_type
+            .random_document(Some(3333), platform_version)
+            .expect("expected to get a random document");
+
+        let document_cbor = document.to_cbor().expect("expected to encode to cbor");
+
+        let recovered_document =
+            Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
+                .expect("expected to get document");
+
+        assert_eq!(recovered_document, document);
+    }
+}

@@ -1,8 +1,6 @@
-use crate::data_contract::document_type::DocumentTypeRef;
-use crate::data_contract::errors::{DataContractError, StructureError};
+use crate::data_contract::errors::StructureError;
 
 use crate::document::property_names;
-use crate::document::property_names::{CREATED_AT, UPDATED_AT};
 
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
@@ -15,15 +13,13 @@ use crate::document::serialization_traits::{
 };
 use crate::document::v0::DocumentV0;
 use crate::version::PlatformVersion;
-use byteorder::{BigEndian, ReadBytesExt};
 use ciborium::Value as CborValue;
-use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
+use integer_encoding::VarIntWriter;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
-use std::io::{BufReader, Read};
 
 #[cfg(feature = "cbor")]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

@@ -11,14 +11,11 @@ use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::version::{PlatformVersion, LATEST_PLATFORM_VERSION};
 use crate::ProtocolError;
 use anyhow::anyhow;
-use chrono::Utc;
 use platform_value::{Bytes32, Identifier, Value};
-use std::collections::BTreeMap;
 
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 #[cfg(feature = "extended-document")]
 use crate::document::extended_document::v0::ExtendedDocumentV0;
-use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
 use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
@@ -96,7 +93,10 @@ impl DocumentFactoryV0 {
         data: Value,
     ) -> Result<Document, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
-        if !self.data_contract.has_document_type_for_name(&document_type_name) {
+        if !self
+            .data_contract
+            .has_document_type_for_name(&document_type_name)
+        {
             return Err(DataContractError::InvalidDocumentTypeError(
                 InvalidDocumentTypeError::new(document_type_name, self.data_contract.id()),
             )
@@ -120,7 +120,10 @@ impl DocumentFactoryV0 {
         data: Value,
     ) -> Result<ExtendedDocument, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
-        if !self.data_contract.has_document_type_for_name(&document_type_name) {
+        if !self
+            .data_contract
+            .has_document_type_for_name(&document_type_name)
+        {
             return Err(DataContractError::InvalidDocumentTypeError(
                 InvalidDocumentTypeError::new(document_type_name, self.data_contract.id()),
             )
@@ -131,9 +134,7 @@ impl DocumentFactoryV0 {
 
         let document_type = self
             .data_contract
-            .document_type_for_name(document_type_name.as_str())
-            .ok_or_else(|| ProtocolError::Error(anyhow!("invalid document type")))?
-            .as_ref();
+            .document_type_for_name(document_type_name.as_str())?;
 
         let document = document_type.create_document_from_data(
             data,
@@ -146,11 +147,10 @@ impl DocumentFactoryV0 {
             .dpp
             .document_versions
             .extended_document_structure_version
-            .default_current_version
         {
             0 => Ok(ExtendedDocumentV0 {
                 document_type_name,
-                data_contract_id: self.data_contract.id,
+                data_contract_id: self.data_contract.id(),
                 document,
                 data_contract: self.data_contract.clone(),
                 metadata: None,
@@ -256,7 +256,7 @@ impl DocumentFactoryV0 {
     //     Ok(ExtendedDocument {
     //         protocol_version: data_contract.protocol_version,
     //         document_type_name: document_type.name.clone(),
-    //         data_contract_id: data_contract.id,
+    //         data_contract_id: data_contract.id(),
     //         document,
     //         data_contract: data_contract.clone(),
     //         metadata: None,

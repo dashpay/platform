@@ -26,7 +26,7 @@ use crate::{
     data_contract::DataContract,
     identity::KeyID,
     state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    Convertible, NonConsensusError, ProtocolError,
+    NonConsensusError, ProtocolError,
 };
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable)]

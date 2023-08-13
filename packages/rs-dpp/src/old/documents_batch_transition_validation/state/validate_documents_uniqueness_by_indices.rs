@@ -60,7 +60,7 @@ where
             .map(|query| {
                 (
                     state_repository.fetch_documents(
-                        &data_contract.id,
+                        &data_contract.id(),
                         query.document_type,
                         platform_value!( { "where": query.where_query}),
                         Some(execution_context),

@@ -1,5 +1,6 @@
-mod cbor_conversion;
+#[cfg(feature = "document-json-conversion")]
 mod json_conversion;
+#[cfg(feature = "document-value-conversion")]
 mod platform_value_conversion;
 mod serialize;
 
@@ -16,65 +17,69 @@ use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::hash::hash_to_vec;
-use crate::version::{FeatureVersion, LATEST_PLATFORM_VERSION};
 use crate::ProtocolError;
 #[cfg(feature = "cbor")]
 use ciborium::Value as CborValue;
 
+#[cfg(feature = "cbor")]
+use crate::document::serialization_traits::DocumentCborMethodsV0;
 use platform_value::btreemap_extensions::{
     BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
     BTreeValueRemoveFromMapHelper,
 };
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::TryInto;
 
-use crate::data_contract::base::DataContractBaseMethodsV0;
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::identifiers_and_binary_paths::DataContractIdentifiersAndBinaryPathsMethodsV0;
-#[cfg(feature = "cbor")]
-use crate::document::serialization_traits::DocumentCborMethodsV0;
-
-use crate::document::serialization_traits::{
-    DocumentJsonMethodsV0, DocumentPlatformValueMethodsV0,
-};
+#[cfg(feature = "document-json-conversion")]
+use crate::document::serialization_traits::DocumentJsonMethodsV0;
+#[cfg(feature = "document-value-conversion")]
+use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_version::version::PlatformVersion;
-#[cfg(feature = "json-object")]
+#[cfg(feature = "document-json-conversion")]
 use serde_json::Value as JsonValue;
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "document-serde-conversion", derive(Serialize, Deserialize))]
 pub struct ExtendedDocumentV0 {
     /// The document type name, stored as a string.
-    #[serde(rename = "$type")]
+    #[cfg_attr(feature = "document-serde-conversion", serde(rename = "$type"))]
     pub document_type_name: String,
 
     /// The identifier of the associated data contract.
-    #[serde(rename = "$dataContractId")]
+    #[cfg_attr(
+        feature = "document-serde-conversion",
+        serde(rename = "$dataContractId")
+    )]
     pub data_contract_id: Identifier,
 
     /// The actual document object containing the data.
-    #[serde(flatten)]
+    #[cfg_attr(feature = "document-serde-conversion", serde(flatten))]
     pub document: Document,
 
     /// The data contract associated with the document.
-    #[serde(rename = "$dataContract")]
+    #[cfg_attr(feature = "document-serde-conversion", serde(rename = "$dataContract"))]
     pub data_contract: DataContract,
 
     /// An optional field for metadata associated with the document.
-    #[serde(rename = "$metadata", default)]
+    #[cfg_attr(
+        feature = "document-serde-conversion",
+        serde(rename = "$metadata", default)
+    )]
     pub metadata: Option<Metadata>,
 
     /// A field representing the entropy, stored as `Bytes32`.
-    #[serde(rename = "$entropy")]
+    #[cfg_attr(feature = "document-serde-conversion", serde(rename = "$entropy"))]
     pub entropy: Bytes32,
 }
 
 impl ExtendedDocumentV0 {
-    #[cfg(feature = "json-object")]
+    #[cfg(feature = "document-json-conversion")]
     pub(super) fn properties_as_json_data(&self) -> Result<JsonValue, ProtocolError> {
         self.document
             .properties()
@@ -152,7 +157,7 @@ impl ExtendedDocumentV0 {
         }
     }
 
-    #[cfg(feature = "json-object")]
+    #[cfg(feature = "document-json-conversion")]
     /// Create an extended document from a JSON string.
     ///
     /// # Arguments
@@ -174,7 +179,7 @@ impl ExtendedDocumentV0 {
         Self::from_untrusted_platform_value(json_value.into(), contract, platform_version)
     }
 
-    #[cfg(feature = "json-object")]
+    #[cfg(feature = "document-json-conversion")]
     /// Create an extended document from a raw JSON document.
     ///
     /// # Arguments
@@ -288,27 +293,7 @@ impl ExtendedDocumentV0 {
         Ok(extended_document)
     }
 
-    #[cfg(feature = "json-object")]
-    /// Convert the extended document to a JSON object.
-    ///
-    /// # Errors
-    ///
-    /// Returns a `ProtocolError` if there is an error converting the document to JSON.
-    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let mut value = self.document.to_json()?;
-        let value_mut = value.as_object_mut().unwrap();
-        value_mut.insert(
-            property_names::DOCUMENT_TYPE_NAME.to_string(),
-            JsonValue::String(self.document_type_name.clone()),
-        );
-        value_mut.insert(
-            property_names::DATA_CONTRACT_ID.to_string(),
-            json!(self.data_contract.id()),
-        );
-        Ok(value)
-    }
-
-    #[cfg(feature = "json-object")]
+    #[cfg(feature = "document-json-conversion")]
     /// Convert the extended document to a pretty JSON object.
     ///
     /// # Errors
@@ -326,38 +311,6 @@ impl ExtendedDocumentV0 {
             JsonValue::String(bs58::encode(self.data_contract_id.to_buffer()).into_string()),
         );
         Ok(value)
-    }
-
-    #[cfg(feature = "cbor")]
-    pub fn from_cbor_buffer(cbor_bytes: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
-        let SplitProtocolVersionOutcome {
-            protocol_version,
-            main_message_bytes: document_cbor_bytes,
-            ..
-        } = deserializer::split_cbor_protocol_version(cbor_bytes.as_ref())?;
-
-        let document_cbor_map: BTreeMap<String, CborValue> =
-            ciborium::de::from_reader(document_cbor_bytes)
-                .map_err(|e| ProtocolError::EncodingError(format!("{}", e)))?;
-
-        let mut document_map: BTreeMap<String, Value> =
-            Value::convert_from_cbor_map(document_cbor_map)?;
-
-        let data_contract_id = Identifier::new(
-            document_map
-                .remove_hash256_bytes(property_names::DATA_CONTRACT_ID)
-                .map_err(ProtocolError::ValueError)?,
-        );
-
-        let document_type_name = document_map.remove_string(property_names::DOCUMENT_TYPE_NAME)?;
-
-        let document = Document::from_map(document_map, None, None)?;
-        Ok(ExtendedDocumentV0 {
-            document_type_name,
-            data_contract_id,
-            document,
-            ..Default::default()
-        })
     }
 
     pub fn to_map_value(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
@@ -402,39 +355,11 @@ impl ExtendedDocumentV0 {
         Ok(self.to_map_value()?.into())
     }
 
-    #[cfg(feature = "json-object")]
+    #[cfg(feature = "document-json-conversion")]
     pub fn to_json_object_for_validation(&self) -> Result<JsonValue, ProtocolError> {
         self.to_value()?
             .try_into_validating_json()
             .map_err(ProtocolError::ValueError)
-    }
-
-    #[cfg(feature = "cbor")]
-    pub fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        let mut result_buf = self.feature_version.encode_var_vec();
-
-        let mut cbor_value = self.document.to_cbor_value()?;
-        let value_mut = cbor_value.as_map_mut().unwrap();
-
-        value_mut.push((
-            CborValue::Text(property_names::DOCUMENT_TYPE_NAME.to_string()),
-            CborValue::Text(self.document_type_name.clone()),
-        ));
-
-        value_mut.push((
-            CborValue::Text(property_names::DATA_CONTRACT_ID.to_string()),
-            CborValue::Bytes(self.data_contract_id.to_vec()),
-        ));
-
-        let canonical_map: CborCanonicalMap = cbor_value.try_into()?;
-
-        let mut document_buffer = canonical_map
-            .to_bytes()
-            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
-
-        result_buf.append(&mut document_buffer);
-
-        Ok(result_buf)
     }
 
     #[cfg(feature = "cbor")]
@@ -484,38 +409,5 @@ impl ExtendedDocumentV0 {
 impl From<ExtendedDocumentV0> for ExtendedDocument {
     fn from(value: ExtendedDocumentV0) -> Self {
         ExtendedDocument::V0(value)
-    }
-}
-
-impl PlatformDeserializable for ExtendedDocumentV0 {
-    fn deserialize(data: &[u8]) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        todo!()
-    }
-}
-
-impl<'a> ValueConvertible<'a> for ExtendedDocumentV0 {
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        todo!()
-    }
-
-    fn into_object(self) -> Result<Value, ProtocolError> {
-        todo!()
-    }
-
-    fn from_object(value: Value) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        todo!()
-    }
-
-    fn from_object_ref(value: &Value) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        todo!()
     }
 }

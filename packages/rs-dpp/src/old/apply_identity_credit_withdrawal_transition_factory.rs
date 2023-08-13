@@ -134,7 +134,7 @@ where
 
         let extended_withdrawal_document = ExtendedDocumentV0 {
             document_type_name: document_type,
-            data_contract_id: withdrawals_data_contract.id,
+            data_contract_id: withdrawals_data_contract.id(),
             document: withdrawal_document,
             data_contract: withdrawals_data_contract,
             metadata: None,

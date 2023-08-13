@@ -104,7 +104,7 @@ where
     let documents_data = context
         .state_repository
         .fetch_documents(
-            &context.data_contract.id,
+            &context.data_contract.id(),
             &transition_base.document_type_name,
             platform_value!({
                 "where" : [ [ "$ownerId", "==", owner_id ]]

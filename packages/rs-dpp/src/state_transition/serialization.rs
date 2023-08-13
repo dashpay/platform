@@ -15,29 +15,26 @@ impl StateTransition {
 
 #[cfg(test)]
 mod tests {
-    use crate::data_contract::state_transition::data_contract_create_transition::{
-        DataContractCreateTransition, DataContractCreateTransitionV0,
-    };
-    use crate::data_contract::state_transition::data_contract_update_transition::{
-        DataContractUpdateTransition, DataContractUpdateTransitionV0,
-    };
-    use crate::document::document_transition::Action;
-    use crate::document::DocumentsBatchTransition;
     use crate::identity::core_script::CoreScript;
-    use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-    use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-    use crate::identity::state_transition::identity_credit_withdrawal_transition::{
-        IdentityCreditWithdrawalTransition, Pooling,
-    };
-
-    use crate::document::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
-    use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
-    use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use crate::identity::Identity;
+    use crate::prelude::AssetLockProof;
     use crate::serialization::PlatformMessageSignable;
     use crate::serialization::Signable;
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+    use crate::state_transition::data_contract_create_transition::{
+        DataContractCreateTransition, DataContractCreateTransitionV0,
+    };
+    use crate::state_transition::data_contract_update_transition::{
+        DataContractUpdateTransition, DataContractUpdateTransitionV0,
+    };
+    use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+    use crate::state_transition::documents_batch_transition::{
+        DocumentsBatchTransition, DocumentsBatchTransitionV0,
+    };
     use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+    use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+    use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+    use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
     use crate::tests::fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,
@@ -45,7 +42,9 @@ mod tests {
         raw_instant_asset_lock_proof_fixture,
     };
     use crate::version::{PlatformVersion, LATEST_VERSION};
+    use crate::withdrawal::Pooling;
     use crate::{NativeBlsModule, ProtocolError};
+    use platform_version::TryIntoPlatformVersioned;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
@@ -77,13 +76,11 @@ mod tests {
         let asset_lock_proof = raw_instant_asset_lock_proof_fixture(None);
         identity.set_asset_lock_proof(AssetLockProof::Instant(asset_lock_proof));
 
-        let identity_topup_transition = IdentityTopUpTransition {
+        let identity_topup_transition = IdentityTopUpTransitionV0 {
             asset_lock_proof: identity
                 .asset_lock_proof
                 .expect("expected an asset lock proof on the identity"),
             identity_id: identity.id,
-            protocol_version: LATEST_VERSION,
-            transition_type: StateTransitionType::IdentityTopUp,
             signature: [1u8; 65].to_vec().into(),
         };
         let state_transition: StateTransition = identity_topup_transition.into();
@@ -105,9 +102,7 @@ mod tests {
             .values()
             .map(|public_key| public_key.into())
             .collect();
-        let mut identity_update_transition = IdentityUpdateTransition {
-            protocol_version: LATEST_VERSION,
-            transition_type: StateTransitionType::IdentityUpdate,
+        let mut identity_update_transition = IdentityUpdateTransitionV0 {
             signature: Default::default(),
             signature_public_key_id: 0,
             identity_id: identity.id,
@@ -165,9 +160,7 @@ mod tests {
             .values()
             .map(|public_key| public_key.into())
             .collect();
-        let mut identity_update_transition = IdentityUpdateTransition {
-            protocol_version: LATEST_VERSION,
-            transition_type: StateTransitionType::IdentityUpdate,
+        let mut identity_update_transition = IdentityUpdateTransitionV0 {
             signature: Default::default(),
             signature_public_key_id: 0,
             identity_id: identity.id,
@@ -218,9 +211,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
-        let identity_credit_withdrawal_transition = IdentityCreditWithdrawalTransition {
-            protocol_version: LATEST_VERSION,
-            transition_type: StateTransitionType::IdentityCreditWithdrawal,
+        let identity_credit_withdrawal_transition = IdentityCreditWithdrawalTransitionV0 {
             identity_id: identity.id,
             amount: 5000000,
             core_fee_per_byte: 34,
@@ -242,14 +233,10 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
-        let data_contract = get_data_contract_fixture(Some(identity.id));
-        let data_contract_create_transition =
-            DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
-                data_contract: data_contract.data_contract,
-                entropy: data_contract.entropy_used,
-                signature_public_key_id: 0,
-                signature: [1u8; 65].to_vec().into(),
-            });
+        let created_data_contract = get_data_contract_fixture(Some(identity.id));
+        let data_contract_create_transition: DataContractCreateTransition = created_data_contract
+            .try_into_platform_versioned(platform_version)
+            .expect("expected to transform into a DataContractCreateTransition");
         let state_transition: StateTransition = data_contract_create_transition.into();
         let bytes = state_transition.serialize().expect("expected to serialize");
         let recovered_state_transition =
@@ -262,11 +249,12 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
-        let mut data_contract = get_data_contract_fixture(Some(identity.id));
-        data_contract.entropy = Default::default();
+        let mut created_data_contract =
+            get_data_contract_fixture(Some(identity.id), platform_version.protocol_version);
+        created_data_contract.set_entropy_used(Default::default());
         let data_contract_update_transition =
             DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
-                data_contract: created_data_contract.data_contract,
+                data_contract: created_data_contract.data_contract_owned().into(),
                 signature_public_key_id: 0,
                 signature: [1u8; 65].to_vec().into(),
             });
@@ -279,14 +267,18 @@ mod tests {
 
     #[test]
     fn document_batch_transition_10_created_documents_ser_de() {
-        let data_contract = get_data_contract_fixture(None).data_contract;
-        let documents =
-            get_extended_documents_fixture_with_owner_id_from_contract(data_contract.clone())
-                .unwrap();
+        let platform_version = PlatformVersion::latest();
+        let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
+            .data_contract_owned();
+        let documents = get_extended_documents_fixture_with_owner_id_from_contract(
+            data_contract.clone(),
+            platform_version.protocol_version,
+        )
+        .unwrap();
         let transitions =
             get_document_transitions_fixture([(DocumentTransitionActionType::Create, documents)]);
         let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
-            owner_id: data_contract.owner_id,
+            owner_id: data_contract.owner_id(),
             transitions,
             ..Default::default()
         }

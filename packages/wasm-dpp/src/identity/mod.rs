@@ -13,7 +13,7 @@ mod identity_public_key;
 // use dpp::identity::{Identity, KeyID};
 // use dpp::metadata::Metadata;
 // use dpp::serialization::serialization_traits::{PlatformDeserializable, PlatformSerializable};
-// use dpp::{Convertible, ProtocolError};
+// use dpp::{ ProtocolError};
 //
 // use crate::identifier::IdentifierWrapper;
 // use crate::utils::{to_vec_of_serde_values, IntoWasm, WithJsError};
@@ -27,8 +27,7 @@ pub use identity_public_key::*;
 //
 // pub mod credits_converter;
 pub mod errors;
-pub mod state_transition;
 mod identity;
+pub mod state_transition;
 
 pub use identity::*;
-

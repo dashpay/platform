@@ -5,8 +5,6 @@ use crate::errors::consensus::ConsensusError;
 
 use crate::document::accessors::v0::DocumentV0Getters;
 use crate::document::Document;
-#[cfg(feature = "extended-document")]
-use crate::document::ExtendedDocument;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 

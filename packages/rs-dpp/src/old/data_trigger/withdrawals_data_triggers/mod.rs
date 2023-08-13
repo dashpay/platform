@@ -34,7 +34,7 @@ where
     let withdrawals_not_converted = context
         .state_repository
         .fetch_documents(
-            &context.data_contract.id,
+            &context.data_contract.id(),
             withdrawals_contract::document_types::WITHDRAWAL,
             platform_value!({
                 "where" : [
@@ -52,7 +52,7 @@ where
 
     let Some(withdrawal) = withdrawals.get(0) else {
         result.add_error(DataTriggerConditionError::new(
-            context.data_contract.id,
+            context.data_contract.id(),
             dt_delete.base.id,
             "Withdrawal document was not found".to_string(),
         ).into());
@@ -67,7 +67,7 @@ where
     {
         result.add_error(
             DataTriggerConditionError::new(
-                context.data_contract.id,
+                context.data_contract.id(),
                 dt_delete.base.id,
                 "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses".to_string(),
             )

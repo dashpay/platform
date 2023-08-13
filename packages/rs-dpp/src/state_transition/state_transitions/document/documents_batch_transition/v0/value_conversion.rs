@@ -14,7 +14,7 @@ use crate::{
     identity::KeyID,
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
-    Convertible, NonConsensusError, ProtocolError,
+    NonConsensusError, ProtocolError,
 };
 
 use crate::serialization::{PlatformDeserializable, Signable};

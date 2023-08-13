@@ -25,7 +25,7 @@ use dpp::{
         DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
     },
     platform_value::{self, Value},
-    Convertible, ProtocolError,
+    ProtocolError,
 };
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;

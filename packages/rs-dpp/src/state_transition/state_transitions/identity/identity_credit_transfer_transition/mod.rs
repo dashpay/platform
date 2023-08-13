@@ -16,7 +16,7 @@ use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCr
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::version::PlatformVersionCurrentVersion;
-use crate::{Convertible, ProtocolError};
+use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
 use fields::*;

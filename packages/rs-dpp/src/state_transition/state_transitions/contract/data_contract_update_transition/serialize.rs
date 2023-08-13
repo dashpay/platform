@@ -7,7 +7,7 @@
 // use crate::state_transition::{
 //     StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
 // };
-// use crate::{Convertible, ProtocolError};
+// use crate::{ ProtocolError};
 // use bincode::{config, Decode, Encode};
 // use derive_more::From;
 // use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};

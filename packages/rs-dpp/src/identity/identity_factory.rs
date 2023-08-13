@@ -3,7 +3,7 @@ use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, Instan
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use crate::prelude::Identifier;
 
-use crate::{BlsModule, Convertible, ProtocolError};
+use crate::{BlsModule, ProtocolError};
 
 use dashcore::{InstantLock, Transaction};
 use std::collections::BTreeMap;

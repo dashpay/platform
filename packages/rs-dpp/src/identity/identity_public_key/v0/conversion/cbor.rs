@@ -4,7 +4,7 @@ use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::util::cbor_serializer;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::version::PlatformVersion;
-use crate::{Convertible, ProtocolError};
+use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use platform_value::{BinaryData, ValueMapHelper};
 use std::convert::TryInto;

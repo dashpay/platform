@@ -8,7 +8,7 @@ use crate::{
     identity::KeyID,
     prelude::Identifier,
     state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    Convertible, NonConsensusError, ProtocolError,
+    NonConsensusError, ProtocolError,
 };
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;

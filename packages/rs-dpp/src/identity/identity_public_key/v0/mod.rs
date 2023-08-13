@@ -8,18 +8,14 @@ use std::convert::{TryFrom, TryInto};
 
 use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 
-use platform_value::{BinaryData, Bytes20, ReplacementType, Value};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::Value as JsonValue;
-
-use crate::errors::{InvalidVectorSizeError, ProtocolError};
 pub use crate::identity::KeyType;
 pub use crate::identity::Purpose;
 pub use crate::identity::SecurityLevel;
 use crate::util::hash::ripemd160_sha256;
-use crate::Convertible;
 use bincode::{config, Decode, Encode};
 use dashcore::hashes::Hash;
+use platform_value::{BinaryData, Bytes20, ReplacementType, Value};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::identity::identity_public_key::key_type::KEY_TYPE_MAX_SIZE_TYPE;
 use crate::identity::Purpose::AUTHENTICATION;
@@ -27,10 +23,6 @@ use crate::identity::SecurityLevel::MASTER;
 use crate::identity::{KeyID, TimestampMillis};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::util::vec;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 #[derive(
     Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq, Eq, Ord, PartialOrd, Hash,

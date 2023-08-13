@@ -16,7 +16,7 @@ use crate::serialization::Signable;
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::version::PlatformVersionCurrentVersion;
-use crate::{Convertible, ProtocolError};
+use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use data_contracts::withdrawals_contract::document_types::withdrawal::properties::OUTPUT_SCRIPT;
 use derive_more::From;

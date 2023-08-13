@@ -12,13 +12,7 @@ pub mod errors;
 pub mod extended_document;
 mod fields;
 pub mod generate_document_id;
-#[cfg(feature = "json-object")]
-mod json_conversion;
-#[cfg(feature = "platform-value")]
-mod platform_value_conversion;
-mod serde_serialize;
 pub mod serialization_traits;
-pub mod serialize;
 mod v0;
 
 pub use accessors::*;
@@ -45,11 +39,32 @@ use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
+#[cfg(feature = "document-serde-conversion")]
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
+use std::fmt;
+use std::fmt::Formatter;
 
 #[derive(Clone, Debug, PartialEq, From)]
+#[cfg_attr(
+    feature = "document-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$version")
+)]
 pub enum Document {
+    #[cfg_attr(feature = "document-serde-conversion", serde(rename = "0"))]
     V0(DocumentV0),
+}
+
+impl fmt::Display for Document {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Document::V0(v0) => {
+                write!(f, "v0 : {} ", v0)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl DocumentMethodsV0 for Document {
@@ -164,74 +179,26 @@ impl DocumentMethodsV0 for Document {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::extra::common::json_document_to_contract;
-    use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::document_type::random_document::CreateRandomDocument;
+    use crate::tests::json_document::json_document_to_contract;
     use regex::Regex;
 
     #[test]
-    fn test_serialization() {
-        let contract = json_document_to_contract(
-            "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
-            0,
-        )
-        .expect("expected to get dashpay contract");
-
-        let document_type = contract
-            .document_type_for_name("contactRequest")
-            .expect("expected to get profile document type");
-        let document = document_type.random_document(Some(3333));
-
-        let document_cbor = document.to_cbor().expect("expected to encode to cbor");
-
-        let serialized_document = document
-            .serialize(document_type)
-            .expect("expected to serialize");
-
-        let document = Document::from_bytes(document_cbor, document_type, platform_version)
-            .expect("expected to deserialize a document");
-        assert_eq!(document, deserialized_document);
-        assert!(serialized_document.len() < document_cbor.len());
-        for _i in 0..10000 {
-            let document = document_type.random_document(Some(3333));
-            let _serialized_document = document
-                .serialize_consume(document_type)
-                .expect("expected to serialize");
-        }
-    }
-
-    #[test]
-    fn test_document_cbor_serialization() {
-        let contract = json_document_to_contract(
-            "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
-            0,
-        )
-        .expect("expected to get cbor contract");
-
-        let document_type = contract
-            .document_type_for_name("profile")
-            .expect("expected to get profile document type");
-        let document = document_type.random_document(Some(3333));
-
-        let document_cbor = document.to_cbor().expect("expected to encode to cbor");
-
-        let recovered_document = DocumentV0::from_cbor(document_cbor.as_slice(), None, None)
-            .expect("expected to get document");
-
-        assert_eq!(recovered_document, document);
-    }
-
-    #[test]
     fn test_document_display() {
+        let platform_version = PlatformVersion::first();
         let contract = json_document_to_contract(
             "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
-            0,
+            platform_version,
         )
         .expect("expected to get contract");
 
         let document_type = contract
             .document_type_for_name("profile")
             .expect("expected to get profile document type");
-        let document = document_type.random_document(Some(3333));
+        let document = document_type
+            .random_document(Some(3333), platform_version)
+            .expect("expected to get a random document");
 
         let document_string = format!("{}", document);
 

@@ -1,8 +1,6 @@
 use crate::data_contract::accessors::v0::DataContractV0Setters;
 #[cfg(feature = "data-contract-json-conversion")]
 use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
-#[cfg(feature = "data-contract-value-conversion")]
-use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 #[cfg(any(feature = "state-transitions", feature = "factories"))]
 use crate::data_contract::created_data_contract::v0::CreatedDataContractV0;
 #[cfg(any(feature = "state-transitions", feature = "factories"))]
@@ -11,7 +9,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::DataContract;
-#[cfg(feature = "cbor")]
+#[cfg(feature = "data-contract-cbor-conversion")]
 use crate::util::cbor_serializer::serializable_value_to_cbor;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -54,7 +52,7 @@ pub fn json_document_to_platform_value(
 }
 
 /// Reads a JSON file and converts it to CBOR.
-#[cfg(feature = "data-contract-json-conversion")]
+#[cfg(feature = "data-contract-cbor-conversion")]
 pub fn json_document_to_cbor(
     path: impl AsRef<Path>,
     protocol_version: Option<u32>,

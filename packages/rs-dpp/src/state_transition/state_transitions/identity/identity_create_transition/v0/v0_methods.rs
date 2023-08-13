@@ -7,7 +7,7 @@ use crate::{
     identity::KeyID,
     prelude::Identifier,
     state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    BlsModule, Convertible, NonConsensusError, ProtocolError,
+    BlsModule, NonConsensusError, ProtocolError,
 };
 
 use crate::identity::accessors::IdentityGettersV0;

@@ -1,8 +1,6 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::extended_document::v0::ExtendedDocumentV0;
-use crate::document::serialization_traits::{
-    DocumentPlatformConversionMethodsV0, DocumentPlatformSerializationMethodsV0,
-};
+use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::{Document, DocumentV0};
 use crate::prelude::ExtendedDocument;
 use crate::version::PlatformVersion;

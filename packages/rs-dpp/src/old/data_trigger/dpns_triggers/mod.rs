@@ -157,7 +157,7 @@ where
         let documents_data = context
             .state_repository
             .fetch_documents(
-                &context.data_contract.id,
+                &context.data_contract.id(),
                 &dt_create.base.document_type_name,
                 platform_value!({
                     "where" : [
@@ -219,7 +219,7 @@ where
     let preorder_documents_data = context
         .state_repository
         .fetch_documents(
-            &context.data_contract.id,
+            &context.data_contract.id(),
             "preorder",
             platform_value!({
                 //? should this be a base64 encoded

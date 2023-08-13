@@ -353,7 +353,7 @@ mod test {
         let transitions = get_document_transitions_fixture([(DocumentTransitionActionType::Create, documents)]);
         let execution_context = execution_context_with_cost(40, 5);
         let documents_batch_transition = DocumentsBatchTransition {
-            owner_id: data_contract.owner_id,
+            owner_id: data_contract.owner_id(),
             transitions,
             ..Default::default()
         };
@@ -385,7 +385,7 @@ mod test {
         let transitions = get_document_transitions_fixture([(DocumentTransitionActionType::Create, documents)]);
         let execution_context = execution_context_with_cost(40, 5);
         let documents_batch_transition = DocumentsBatchTransition {
-            owner_id: data_contract.owner_id,
+            owner_id: data_contract.owner_id(),
             transitions,
             ..Default::default()
         };
@@ -417,7 +417,7 @@ mod test {
         execution_context.enable_dry_run();
 
         let documents_batch_transition = DocumentsBatchTransition {
-            owner_id: data_contract.owner_id,
+            owner_id: data_contract.owner_id(),
             transitions,
             ..Default::default()
         };

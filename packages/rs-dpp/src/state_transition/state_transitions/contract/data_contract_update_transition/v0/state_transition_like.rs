@@ -10,7 +10,7 @@ use crate::{
     identity::KeyID,
     prelude::Identifier,
     state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    Convertible, NonConsensusError, ProtocolError,
+    NonConsensusError, ProtocolError,
 };
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;

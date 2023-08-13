@@ -4,7 +4,7 @@ use crate::serialization::Signable;
 use crate::state_transition::{
     StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
 };
-use crate::{Convertible, ProtocolError};
+use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
@@ -108,22 +108,15 @@ impl StateTransitionFieldTypes for DataContractUpdateTransition {
 
 #[cfg(test)]
 mod test {
+    use crate::data_contract::DataContract;
+    use crate::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
+    use crate::tests::fixtures::get_data_contract_fixture;
     use crate::util::json_value::JsonValueExt;
+    use crate::version::LATEST_PLATFORM_VERSION;
     use integer_encoding::VarInt;
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
     use std::convert::TryInto;
-
-    use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
-    use crate::data_contract::DataContract;
-    use crate::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
-    use crate::state_transition::{
-        JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
-        StateTransitionValueConvert,
-    };
-    use crate::tests::fixtures::get_data_contract_fixture;
-    use crate::version::LATEST_PLATFORM_VERSION;
-    use crate::{version, Convertible};
 
     use super::*;
 
@@ -200,44 +193,6 @@ mod test {
     }
 
     #[test]
-    fn should_return_state_transition_in_json_format() {
-        let data = get_test_data();
-        let mut json_object = data
-            .state_transition
-            .to_json(JsonStateTransitionSerializationOptions {
-                skip_signature: false,
-                into_validating_json: false,
-            })
-            .expect("conversion to JSON shouldn't fail");
-
-        assert_eq!(
-            version::LATEST_VERSION,
-            json_object
-                .get_u64(STATE_TRANSITION_PROTOCOL_VERSION)
-                .expect("the protocol version should be present") as u32
-        );
-
-        assert_eq!(
-            4,
-            json_object
-                .get_u64(TRANSITION_TYPE)
-                .expect("the transition type should be present") as u8
-        );
-        assert_eq!(
-            0,
-            json_object
-                .get_u64(SIGNATURE_PUBLIC_KEY_ID)
-                .expect("default public key id should be defined"),
-        );
-        assert_eq!(
-            "",
-            json_object
-                .remove_into::<String>(SIGNATURE)
-                .expect("default string value for signature should be present")
-        );
-    }
-
-    #[test]
     fn should_return_serialized_state_transition_to_buffer() {
         let data = get_test_data();
         let state_transition_bytes = data
@@ -253,7 +208,7 @@ mod test {
     fn should_return_owner_id() {
         let data = get_test_data();
         assert_eq!(
-            &data.data_contract.owner_id,
+            &data.data_contract.owner_id(),
             data.state_transition.owner_id()
         );
     }

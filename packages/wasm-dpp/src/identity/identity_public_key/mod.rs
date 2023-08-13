@@ -1,17 +1,18 @@
 use dpp::dashcore::anyhow;
 pub use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::convert::{TryInto};
+use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
-use crate::utils::{WithJsError};
+use crate::utils::WithJsError;
 use crate::{buffer::Buffer, utils, with_js_error};
-use dpp::serialization::ValueConvertible;
+use dpp::identity::identity_public_key::accessors::v0::{
+    IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+};
+use dpp::identity::identity_public_key::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::platform_value::{BinaryData, ReplacementType, Value};
-use dpp::identity::identity_public_key::accessors::v0::{IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0};
-use dpp::identity::identity_public_key::hash::{IdentityPublicKeyHashMethodsV0};
-
+use dpp::serialization::ValueConvertible;
 
 mod purpose;
 pub use purpose::*;
@@ -33,18 +34,20 @@ impl IdentityPublicKeyWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyWasm, JsValue> {
         let public_key_json_string = utils::stringify(&raw_public_key)?;
-        let public_key_json: JsonValue = serde_json::from_str(&public_key_json_string)
-            .map_err(|e| e.to_string())?;
+        let public_key_json: JsonValue =
+            serde_json::from_str(&public_key_json_string).map_err(|e| e.to_string())?;
 
         let mut public_key_platform_value: Value = public_key_json.into();
         // Patch the binary data fields to be base64 encoded because of a bug in serde_wasm_bindgen
-        public_key_platform_value.replace_at_paths(
-            dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
-            ReplacementType::TextBase64
-        ).map_err(|e| e.to_string())?;
-
-        let raw_public_key: IdentityPublicKey = IdentityPublicKey::from_object(public_key_platform_value)
+        public_key_platform_value
+            .replace_at_paths(
+                dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
+                ReplacementType::TextBase64,
+            )
             .map_err(|e| e.to_string())?;
+
+        let raw_public_key: IdentityPublicKey =
+            IdentityPublicKey::from_object(public_key_platform_value).map_err(|e| e.to_string())?;
 
         Ok(IdentityPublicKeyWasm(raw_public_key))
     }
@@ -66,9 +69,11 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=setType)]
     pub fn set_type(&mut self, key_type: u8) -> Result<(), JsValue> {
-        self.0.set_key_type(key_type
-            .try_into()
-            .map_err(|e: anyhow::Error| e.to_string())?);
+        self.0.set_key_type(
+            key_type
+                .try_into()
+                .map_err(|e: anyhow::Error| e.to_string())?,
+        );
         Ok(())
     }
 
@@ -85,9 +90,11 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=setPurpose)]
     pub fn set_purpose(&mut self, purpose: u8) -> Result<(), JsValue> {
-        self.0.set_purpose(purpose
-            .try_into()
-            .map_err(|e: anyhow::Error| e.to_string())?);
+        self.0.set_purpose(
+            purpose
+                .try_into()
+                .map_err(|e: anyhow::Error| e.to_string())?,
+        );
         Ok(())
     }
 
@@ -98,9 +105,11 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=setSecurityLevel)]
     pub fn set_security_level(&mut self, security_level: u8) -> Result<(), JsValue> {
-        self.0.set_security_level(security_level
-            .try_into()
-            .map_err(|e: anyhow::Error| e.to_string())?);
+        self.0.set_security_level(
+            security_level
+                .try_into()
+                .map_err(|e: anyhow::Error| e.to_string())?,
+        );
         Ok(())
     }
 
@@ -144,15 +153,17 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let mut value = self.0.to_object()
-            .map_err(from_dpp_err)?;
+        let mut value = self.0.to_object().map_err(from_dpp_err)?;
 
-        value.replace_at_paths(
-            dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
-            ReplacementType::TextBase64
-        ).map_err(|e| e.to_string())?;
+        value
+            .replace_at_paths(
+                dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
+                ReplacementType::TextBase64,
+            )
+            .map_err(|e| e.to_string())?;
 
-        let json = value.try_into_validating_json()
+        let json = value
+            .try_into_validating_json()
             .map_err(|e| e.to_string())?
             .to_string();
 
@@ -161,8 +172,7 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let value = self.0.to_object()
-            .map_err(from_dpp_err)?;
+        let value = self.0.to_object().map_err(from_dpp_err)?;
 
         let data_buffer = Buffer::from_bytes(self.0.data().as_slice());
 

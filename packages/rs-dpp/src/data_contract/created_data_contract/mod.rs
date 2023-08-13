@@ -65,6 +65,13 @@ impl CreatedDataContract {
         }
     }
 
+    #[cfg(test)]
+    pub fn set_entropy_used(&mut self, entropy_used: Bytes32) {
+        match self {
+            CreatedDataContract::V0(v0) => v0.entropy_used = entropy_used,
+        }
+    }
+
     pub fn from_contract_and_entropy(
         data_contract: DataContract,
         entropy: Bytes32,
@@ -90,7 +97,7 @@ impl CreatedDataContract {
 
     #[cfg(feature = "data-contract-value-conversion")]
     pub fn from_object(
-        mut raw_object: Value,
+        raw_object: Value,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version

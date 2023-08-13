@@ -56,10 +56,8 @@ impl Default for IdentityCreditTransferTransitionV0 {
 
 #[cfg(test)]
 mod test {
-    use crate::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransitionV0;
 
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
-    use crate::state_transition::StateTransitionType;
 
     use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
     use platform_value::Identifier;
