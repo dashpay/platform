@@ -23,6 +23,7 @@ use crate::errors::consensus::basic::identity::{
     InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm,
     NotImplementedIdentityCreditWithdrawalTransitionPoolingErrorWasm,
 };
+
 use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
     MissingIdentityPublicKeyIdsErrorWasm,
@@ -48,7 +49,7 @@ use dpp::consensus::basic::BasicError::{
 use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::SignatureError;
 
-// TODO(versioning): restore
+// TODO(versioning): remove
 // use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use dpp::consensus::state::state_error::StateError;
 
@@ -72,9 +73,9 @@ use crate::errors::consensus::signature::{
     BasicBLSErrorWasm, BasicECDSAErrorWasm, IdentityNotFoundErrorWasm,
     SignatureShouldNotBePresentErrorWasm,
 };
-use crate::errors::consensus::state::data_contract::data_trigger::{
-    DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
-};
+// use crate::errors::consensus::state::data_contract::data_trigger::{
+//     DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
+// };
 use crate::errors::consensus::state::data_contract::{
     DataContractAlreadyPresentErrorWasm, DataContractIsReadonlyErrorWasm,
 };
@@ -115,7 +116,8 @@ use crate::errors::consensus::basic::{
     PublicKeySecurityLevelNotMetErrorWasm, WrongPublicKeyPurposeErrorWasm,
 };
 use crate::errors::consensus::fee::BalanceIsNotEnoughErrorWasm;
-use crate::errors::consensus::state::data_contract::data_trigger::DataTriggerInvalidResultErrorWasm;
+
+// use crate::errors::consensus::state::data_contract::data_trigger::DataTriggerInvalidResultErrorWasm;
 use crate::errors::consensus::value_error::ValueErrorWasm;
 
 use super::state::document::DocumentTimestampsAreEqualErrorWasm;

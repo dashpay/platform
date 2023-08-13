@@ -26,8 +26,8 @@ pub use identity_public_key::*;
 // pub use state_transition::*;
 //
 // pub mod credits_converter;
-// pub mod errors;
-// pub mod state_transition;
+pub mod errors;
+pub mod state_transition;
 mod identity;
 
 pub use identity::*;

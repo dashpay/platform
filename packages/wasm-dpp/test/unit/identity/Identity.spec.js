@@ -1,5 +1,3 @@
-const varint = require('varint');
-
 const { hash: hashFunction } = require('@dashevo/dpp/lib/util/hash');
 const { expect } = require('chai');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
@@ -41,14 +39,14 @@ describe('Identity', () => {
       protocolVersion: 2,
     });
 
-    // identity.setMetadata(metadataFixture);
-    //
-    // metadataFixture = new Metadata({
-    //   blockHeight: 42,
-    //   coreChainLockedHeight: 0,
-    //   timeMs: 100,
-    //   protocolVersion: 2,
-    // });
+    identity.setMetadata(metadataFixture);
+
+    metadataFixture = new Metadata({
+      blockHeight: 42,
+      coreChainLockedHeight: 0,
+      timeMs: 100,
+      protocolVersion: 2,
+    });
   });
 
   describe('#constructor', () => {
@@ -78,7 +76,7 @@ describe('Identity', () => {
     });
   });
 
-  describe.skip('#setPublicKeys', () => {
+  describe('#setPublicKeys', () => {
     it('should reject input which is not array of public keys', () => {
       expect(() => { identity.setPublicKeys(42); })
         .throws("Setting public keys failed. The input ('42') is invalid. You must use array of PublicKeys");
@@ -94,6 +92,7 @@ describe('Identity', () => {
         purpose: KeyPurpose.AUTHENTICATION,
         securityLevel: KeySecurityLevel.MASTER,
         readOnly: false,
+        disabledAt: null,
       };
 
       const ipk = new IdentityPublicKey(rawKey);
@@ -121,15 +120,15 @@ describe('Identity', () => {
     });
   });
 
-  describe.skip('#toBuffer', () => {
+  describe('#toBuffer', () => {
     it('should return buffer', () => {
       const result = identity.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.length(87);
+      expect(result).to.have.length(81);
     });
   });
 
-  describe.skip('#fromBuffer', () => {
+  describe('#fromBuffer', () => {
     it('should re-create identity from buffer', () => {
       const buffer = identity.toBuffer();
       const recoveredIdentity = Identity.fromBuffer(buffer);
@@ -138,46 +137,38 @@ describe('Identity', () => {
     });
   });
 
-  describe.skip('#hash', () => {
+  describe('#hash', () => {
     it('should return the same has as JS Identity', () => {
       const expectedHash = hashFunction(identity.toBuffer());
       const result = identity.hash();
-
-      const identityDataToEncode = identity.toObject();
-      delete identityDataToEncode.protocolVersion;
-
-      varint.encode(identity.getProtocolVersion());
-
       expect(result).to.deep.equal(expectedHash);
     });
   });
 
-  describe.skip('#toObject', () => {
+  describe('#toObject', () => {
     it('should return plain object representation', () => {
       const identityObject = identity.toObject();
-
-      // We can't compare Identifier directly - it needs to be converted into a Buffer
-      rawIdentity.id = rawIdentity.id.toBuffer();
-
       expect(identityObject).to.deep.equal(rawIdentity);
     });
   });
 
-  describe.skip('#toJSON', () => {
+  describe('#toJSON', () => {
     it('should return json representation', () => {
       const jsonIdentity = identity.toJSON();
 
       expect(jsonIdentity).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         id: rawIdentity.id.toString(),
         publicKeys: [
           {
+            $version: '0',
             id: 0,
             type: KeyType.ECDSA_SECP256K1,
             data: rawIdentity.publicKeys[0].data.toString('base64'),
             purpose: KeyPurpose.AUTHENTICATION,
             securityLevel: KeySecurityLevel.MASTER,
             readOnly: false,
+            disabledAt: null,
           },
         ],
         balance: 0,
@@ -220,7 +211,7 @@ describe('Identity', () => {
     });
   });
 
-  describe.skip('#setMetadata', () => {
+  describe('#setMetadata', () => {
     it('should set metadata', () => {
       const otherMetadata = new Metadata({
         blockHeight: 43,
@@ -241,13 +232,13 @@ describe('Identity', () => {
     });
   });
 
-  describe.skip('#getMetadata', () => {
+  describe('#getMetadata', () => {
     it('should get metadata', () => {
       expect(identity.getMetadata().toObject()).to.deep.equal(metadataFixture.toObject());
     });
   });
 
-  describe.skip('#getPublicKeyMaxId', () => {
+  describe('#getPublicKeyMaxId', () => {
     it('should get the biggest public key ID', () => {
       const key = new IdentityPublicKey({
         $version: '0',
