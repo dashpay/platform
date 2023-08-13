@@ -15,6 +15,7 @@ impl StateTransition {
 
 #[cfg(test)]
 mod tests {
+    use crate::identity::accessors::IdentityGettersV0;
     use crate::identity::core_script::CoreScript;
     use crate::identity::Identity;
     use crate::prelude::AssetLockProof;
