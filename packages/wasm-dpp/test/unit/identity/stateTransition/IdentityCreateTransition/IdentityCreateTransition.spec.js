@@ -1,20 +1,19 @@
 const getIdentityCreateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
 const getChainAssetLockProofFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
 
-const { default: loadWasmDpp } = require('../../../../..');
-const { getLatestProtocolVersion, StateTransitionTypes } = require('../../../../..');
+const {
+  IdentityCreateTransition,
+  IdentityPublicKeyWithWitness,
+  KeyType,
+  KeyPurpose,
+  KeySecurityLevel,
+  InstantAssetLockProof, Identifier,
+  getLatestProtocolVersion, StateTransitionTypes,
+} = require('../../../../..');
 
 describe('IdentityCreateTransition', () => {
   let rawStateTransition;
   let stateTransition;
-
-  let IdentityCreateTransition;
-  let InstantAssetLockProof;
-  let KeyType;
-  let KeyPurpose;
-  let KeySecurityLevel;
-  let Identifier;
-  let IdentityPublicKeyWithWitness;
 
   const mockRawPublicKey = (params = {}) => ({
     id: 0,
@@ -27,22 +26,15 @@ describe('IdentityCreateTransition', () => {
     ...params,
   });
 
-  before(async () => {
-    ({
-      IdentityCreateTransition,
-      IdentityPublicKeyWithWitness,
-      KeyType,
-      KeyPurpose,
-      KeySecurityLevel,
-      InstantAssetLockProof, Identifier,
-    } = await loadWasmDpp());
-  });
-
   beforeEach(async () => {
-    rawStateTransition = (await getIdentityCreateTransitionFixture()).toObject();
-    stateTransition = new IdentityCreateTransition(
-      rawStateTransition,
-    );
+    stateTransition = await getIdentityCreateTransitionFixture();
+    // console.log(st);
+    // console.log(st.toObject());
+    // rawStateTransition = (await getIdentityCreateTransitionFixture()).toObject();
+    // console.log(rawStateTransition);
+    // stateTransition = new IdentityCreateTransition(
+    //   rawStateTransition,
+    // );
   });
 
   describe('#constructor', () => {
@@ -65,7 +57,7 @@ describe('IdentityCreateTransition', () => {
     });
   });
 
-  describe('#getType', () => {
+  describe.only('#getType', () => {
     it('should return IDENTITY_CREATE type', () => {
       expect(stateTransition.getType()).to.equal(StateTransitionTypes.IdentityCreate);
     });

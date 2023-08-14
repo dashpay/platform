@@ -20,6 +20,9 @@ web-sys = { version = "0.3.6", features = ["console"] }
 thiserror = { version = "1.0" }
 serde-wasm-bindgen = { git = "https://github.com/QuantumExplorer/serde-wasm-bindgen", branch = "feat/not_human_readable" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
+    "state-transition-serde-conversion",
+    "state-transition-value-conversion",
+    "state-transitions",
     "cbor",
     "platform-value",
     "json-object",
