@@ -53,7 +53,7 @@ RUN apk add --no-cache \
         libc-dev \
         linux-headers \
         llvm-static llvm-dev  \
-        nodejs \
+        'nodejs~=18' \
         npm \
         openssl-dev \
         perl \
