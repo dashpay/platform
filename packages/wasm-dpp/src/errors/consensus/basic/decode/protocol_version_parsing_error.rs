@@ -38,7 +38,9 @@ impl ProtocolVersionParsingErrorWasm {
 
     #[wasm_bindgen(js_name = serialize)]
     pub fn serialize(&self) -> Result<Buffer, JsError> {
-        let bytes = ConsensusError::from(self.inner.clone()).map_err(JsError::from)?;
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(JsError::from)?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }

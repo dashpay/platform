@@ -53,3 +53,11 @@ impl From<TestConsensusError> for ConsensusError {
         Self::TestConsensusError(error)
     }
 }
+
+impl ConsensusError {
+    // TODO(versioning): remove this method
+    // and figure out why real one does not work anymore
+    pub fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
+        todo!();
+    }
+}
