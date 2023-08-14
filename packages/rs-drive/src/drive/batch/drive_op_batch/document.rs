@@ -13,12 +13,9 @@ use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
-use dpp::serialization::{
-    PlatformDeserializableFromVersionedStructure,
-    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
-};
+
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};

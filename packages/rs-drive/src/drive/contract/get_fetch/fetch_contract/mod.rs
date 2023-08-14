@@ -1,17 +1,17 @@
 mod v0;
 
-use crate::drive::contract::{paths, DataContractFetchInfo};
+use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
-use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
+
+use costs::{CostResult, CostsExt, OperationCost};
 use dpp::block::epoch::Epoch;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
-use grovedb::{Element, TransactionArg};
-use std::ops::AddAssign;
+use grovedb::TransactionArg;
+
 use std::sync::Arc;
 
 /// Drive contract fetching methods.

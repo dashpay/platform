@@ -5,7 +5,6 @@ use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
-use std::convert::TryInto;
 
 impl Drive {
     /// Fetches identity ids from storage based on a non-unique public key hash.

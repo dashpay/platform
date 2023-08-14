@@ -2,7 +2,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 
 use dpp::version::drive_versions::DriveVersion;
-use dpp::version::PlatformVersion;
+
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -109,6 +109,7 @@ mod tests {
         use super::*;
         use dpp::fee::Credits;
         use dpp::identity::accessors::IdentityGettersV0;
+        use platform_version::version::PlatformVersion;
         use std::collections::BTreeMap;
 
         #[test]

@@ -36,19 +36,7 @@ mod get_epoch_start_block_core_height;
 mod get_epoch_start_block_height;
 mod get_first_epoch_start_block_info_between_epochs;
 
-use crate::drive::credit_pools::paths::pools_vec_path;
-use crate::drive::Drive;
-use crate::error::drive::DriveError;
-use crate::error::Error;
-use crate::fee_pools::epochs::paths;
-use dpp::block::epoch::{Epoch, EpochIndex};
-use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
-use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
-
-use crate::fee_pools::epochs::epoch_key_constants::{
-    KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT,
-};
-use crate::fee_pools::epochs::paths::EpochProposers;
+use dpp::block::epoch::EpochIndex;
 
 /// `StartBlockInfo` contains information about the starting block of an epoch.
 #[derive(Debug, PartialEq, Eq)]
@@ -71,7 +59,15 @@ mod tests {
 
     mod get_epoch_start_block_height {
         use super::*;
+        use crate::error::drive::DriveError;
+        use crate::error::Error;
+        use crate::fee_pools::epochs::epoch_key_constants::{
+            KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT,
+        };
+        use crate::fee_pools::epochs::paths::EpochProposers;
+        use dpp::block::epoch::Epoch;
         use dpp::version::PlatformVersion;
+        use grovedb::Element;
 
         #[test]
         fn test_error_if_epoch_tree_is_not_initiated() {
@@ -241,6 +237,7 @@ mod tests {
         use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use crate::drive::batch::GroveDbOpBatch;
         use crate::fee_pools::epochs::operations_factory::EpochOperations;
+        use dpp::block::epoch::Epoch;
         use dpp::version::PlatformVersion;
 
         #[test]

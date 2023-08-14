@@ -1,23 +1,17 @@
 mod v0;
 
-use crate::drive::document::contract_documents_keeping_history_primary_key_path_for_document_id;
-use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::{BatchDeleteUpTreeApplyType, IsSubTree, IsSumSubTree};
 
-use crate::drive::object_size_info::DocumentAndContractInfo;
 use crate::drive::Drive;
-use crate::error::fee::FeeError;
+
 use crate::error::Error;
 
 use crate::error::drive::DriveError;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
-use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
-use grovedb::EstimatedSumTrees::NoSumTrees;
+
 use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes};
-use intmap::IntMap;
-use itertools::Itertools;
+
 use std::collections::HashMap;
 
 impl Drive {

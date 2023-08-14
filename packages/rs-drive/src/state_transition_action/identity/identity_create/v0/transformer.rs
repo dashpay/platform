@@ -2,7 +2,7 @@ use crate::state_transition_action::identity::identity_create::v0::IdentityCreat
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
-use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+
 use dpp::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
 
 impl IdentityCreateTransitionActionV0 {

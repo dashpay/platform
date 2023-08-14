@@ -131,42 +131,17 @@ pub mod grove_apply_partial_batch_with_add_costs;
 /// Get cost of grove batch operations
 pub mod grove_batch_operations_costs;
 
-use crate::drive::batch::GroveDbOpBatch;
-use costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
-use costs::storage_cost::transition::OperationStorageTransitionType;
-use costs::{CostContext, OperationCost};
-use grovedb::batch::estimated_costs::EstimatedCostsType::AverageCaseCostsType;
-use grovedb::batch::{
-    key_info::KeyInfo, BatchApplyOptions, GroveDbOp, KeyInfoPath, Op, OpsByLevelPath,
-};
-use grovedb::{Element, EstimatedLayerInformation, GroveDb, PathQuery, TransactionArg};
-use path::SubtreePath;
+use costs::CostContext;
 
-use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
-use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize, PathKeyRefElement,
-    PathKeyUnknownElementSize,
-};
-use crate::drive::object_size_info::PathKeyInfo::{
-    PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize,
-};
-use crate::drive::object_size_info::{DriveKeyInfo, PathKeyElementInfo, PathKeyInfo};
-use crate::drive::Drive;
-use crate::error::drive::DriveError;
+use grovedb::EstimatedLayerInformation;
+
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, GroveOperation};
-use grovedb::operations::delete::{DeleteOptions, DeleteUpTreeOptions};
-use grovedb::operations::insert::InsertOptions;
-use grovedb::query_result_type::{
-    PathKeyOptionalElementTrio, QueryResultElements, QueryResultType,
-};
+use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
+
 use grovedb::Error as GroveError;
-use integer_encoding::VarInt;
+
 use intmap::IntMap;
-use std::collections::HashMap;
-use storage::rocksdb_storage::RocksDbStorage;
 
 /// Pushes an operation's `OperationCost` to `drive_operations` given its `CostContext`
 /// and returns the operation's return value.

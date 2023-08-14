@@ -41,7 +41,7 @@ use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo}
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use tempfile::TempDir;

@@ -1,26 +1,14 @@
-use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
-use grovedb::Element;
-use std::borrow::Cow;
-use std::collections::HashSet;
 
-use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
 use storage::worst_case_costs::WorstKeyLength;
 
 use DriveKeyInfo::{Key, KeyRef, KeySize};
 use PathInfo::{PathFixedSizeIterator, PathIterator, PathWithSizes};
 
-use crate::drive::defaults::{DEFAULT_FLOAT_SIZE_U16, DEFAULT_HASH_SIZE_U16, DEFAULT_HASH_SIZE_U8};
-use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::drive_key_info::DriveKeyInfo;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::data_contract::DataContract;
-use dpp::document::Document;
-
-use crate::drive::object_size_info::PathKeyElementInfo::PathKeyUnknownElementSize;
-use crate::error::fee::FeeError;
 
 /// Info about a path.
 #[derive(Clone)]

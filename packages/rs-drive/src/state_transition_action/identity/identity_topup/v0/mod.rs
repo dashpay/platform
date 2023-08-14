@@ -1,8 +1,5 @@
 mod transformer;
 
-use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
 use dpp::identifier::Identifier;
 
 use dpp::platform_value::Bytes36;

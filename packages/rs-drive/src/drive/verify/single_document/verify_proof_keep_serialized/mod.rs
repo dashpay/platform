@@ -2,13 +2,11 @@ mod v0;
 
 use crate::drive::verify::RootHash;
 use crate::error::drive::DriveError;
-use crate::error::proof::ProofError;
+
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
-use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::document::Document;
+
 use dpp::version::PlatformVersion;
-use grovedb::GroveDb;
 
 impl SingleDocumentDriveQuery {
     /// Verifies the proof of a document while keeping it serialized.

@@ -65,7 +65,6 @@ pub use conditions::WhereOperator;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
-use dpp::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -109,7 +108,7 @@ use dpp::platform_value::Value;
 use crate::common::encode::encode_u64;
 use crate::drive::config::DriveConfig;
 use crate::error::Error::GroveDB;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::ProtocolError;
@@ -1813,7 +1812,7 @@ mod tests {
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use crate::query::DriveQuery;
-    use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef};
+
     use dpp::data_contract::DataContract;
 
     use serde_json::Value::Null;

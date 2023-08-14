@@ -2,9 +2,8 @@ use crate::drive::Drive;
 
 use crate::error::Error;
 
-use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
-use grovedb::{PathQuery, TransactionArg};
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Fetches an identity with all its information from storage.
@@ -54,7 +53,6 @@ mod tests {
     use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::identity::Identity;
     use dpp::version::PlatformVersion;
-    use std::collections::BTreeMap;
 
     #[test]
     fn should_prove_a_single_identity() {

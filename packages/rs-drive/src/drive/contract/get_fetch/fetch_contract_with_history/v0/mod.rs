@@ -1,25 +1,20 @@
 use crate::common::decode::decode_u64;
-use crate::drive::contract::paths;
+
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
-use costs::{cost_return_on_error_no_add, CostContext, CostResult, CostsExt, OperationCost};
-use dpp::block::epoch::Epoch;
+
 use dpp::data_contract::DataContract;
 
 use dpp::serialization::{
     PlatformDeserializableFromVersionedStructure,
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
 };
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 use grovedb::{Element, TransactionArg};
 use std::collections::BTreeMap;
-use std::ops::AddAssign;
-use std::sync::Arc;
 
 impl Drive {
     /// Fetches a contract along with its history.

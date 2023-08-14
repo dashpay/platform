@@ -8,8 +8,7 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::document_type::IndexLevel;
-use dpp::platform_value::platform_value;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};

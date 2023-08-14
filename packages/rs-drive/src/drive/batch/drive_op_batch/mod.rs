@@ -40,7 +40,6 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
-use dpp::fee::fee_result::FeeResult;
 
 pub use contract::DataContractOperationType;
 pub use document::DocumentOperation;
@@ -54,10 +53,10 @@ pub use withdrawals::WithdrawalOperationType;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 use crate::fee::op::LowLevelDriveOperation::GroveOperation;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
-use itertools::Itertools;
+
 use std::collections::{BTreeMap, HashMap};
 
 /// A converter that will get Drive Operations from High Level Operations

@@ -1,9 +1,6 @@
 mod v0;
 
-use crate::drive::batch::drive_op_batch::{
-    DocumentOperation, DocumentOperationsForContractDocumentType, UpdateOperationInfo,
-};
-use crate::drive::batch::{DocumentOperationType, DriveOperation};
+use crate::drive::batch::DriveOperation;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;

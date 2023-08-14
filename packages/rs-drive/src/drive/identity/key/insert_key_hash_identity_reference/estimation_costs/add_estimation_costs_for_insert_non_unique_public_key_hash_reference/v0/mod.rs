@@ -1,26 +1,16 @@
 use crate::drive::defaults::{
-    DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U32, DEFAULT_HASH_SIZE_U8,
-    ESTIMATED_NON_UNIQUE_KEY_DUPLICATES,
+    DEFAULT_HASH_160_SIZE_U8, DEFAULT_HASH_SIZE_U8, ESTIMATED_NON_UNIQUE_KEY_DUPLICATES,
 };
-
-use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 
 use crate::drive::{
-    non_unique_key_hashes_sub_tree_path_vec, non_unique_key_hashes_tree_path,
-    non_unique_key_hashes_tree_path_vec, unique_key_hashes_tree_path_vec, Drive,
+    non_unique_key_hashes_sub_tree_path_vec, non_unique_key_hashes_tree_path_vec, Drive,
 };
-use crate::error::drive::DriveError;
-use crate::error::identity::IdentityError;
-use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation::FunctionOperation;
-use crate::fee::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
-use dpp::identity::IdentityPublicKey;
+
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
+use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {

@@ -59,7 +59,6 @@ pub use calculate_total_credits_balance::*;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::RootTree;
-use dpp::fee::Credits;
 
 /// Storage fee pool key
 #[cfg(feature = "full")]
@@ -87,7 +86,7 @@ pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use crate::drive::Drive;
-    use dpp::version::drive_versions::DriveVersion;
+
     use dpp::version::PlatformVersion;
     use tempfile::TempDir;
 

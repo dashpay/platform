@@ -1,7 +1,7 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::identity::{Purpose, SecurityLevel};
+use dpp::identity::SecurityLevel;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;

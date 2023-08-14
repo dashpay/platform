@@ -16,8 +16,7 @@ use crate::drive::identity::key::fetch::KeyKindRequestType::{
 };
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::identity::key::fetch::KeyRequestType::{AllKeys, SearchKey, SpecificKeys};
-#[cfg(feature = "full")]
-use crate::drive::Drive;
+
 #[cfg(feature = "full")]
 use crate::error::drive::DriveError;
 #[cfg(feature = "full")]
@@ -26,8 +25,7 @@ use crate::error::fee::FeeError;
 use crate::error::identity::IdentityError;
 #[cfg(feature = "full")]
 use crate::error::Error;
-#[cfg(feature = "full")]
-use crate::fee::op::LowLevelDriveOperation;
+
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::query::{Query, QueryItem};
 #[cfg(feature = "full")]
@@ -41,23 +39,22 @@ use dpp::fee::Credits;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::KeyID;
-use dpp::identity::IDENTITY_MAX_KEYS;
+
 #[cfg(feature = "full")]
 use dpp::identity::{Purpose, SecurityLevel};
 #[cfg(feature = "full")]
 use dpp::prelude::IdentityPublicKey;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
-#[cfg(feature = "full")]
-use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
+
 #[cfg(feature = "full")]
 use grovedb::query_result_type::{
     Key, Path, PathKeyOptionalElementTrio, QueryResultElement, QueryResultElements,
 };
 #[cfg(feature = "full")]
-use grovedb::Element::Item;
+use grovedb::Element;
 #[cfg(feature = "full")]
-use grovedb::{Element, TransactionArg};
+use grovedb::Element::Item;
 #[cfg(any(feature = "full", feature = "verify"))]
 use grovedb::{PathQuery, SizedQuery};
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -276,7 +273,7 @@ fn supported_query_result_element_to_identity_public_key_id_and_object_pair(
 impl IdentityPublicKeyResult for SingleIdentityPublicKeyOutcome {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         // We do not care about non existence
         let mut keys = value
@@ -302,7 +299,7 @@ impl IdentityPublicKeyResult for SingleIdentityPublicKeyOutcome {
 
     fn try_from_query_results(
         value: QueryResultElements,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         let mut keys = value
             .elements
@@ -330,7 +327,7 @@ impl IdentityPublicKeyResult for SingleIdentityPublicKeyOutcome {
 impl IdentityPublicKeyResult for OptionalSingleIdentityPublicKeyOutcome {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         // We do not care about non existence
         let mut keys = value
@@ -354,7 +351,7 @@ impl IdentityPublicKeyResult for OptionalSingleIdentityPublicKeyOutcome {
 
     fn try_from_query_results(
         value: QueryResultElements,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         let mut keys = value
             .elements
@@ -380,7 +377,7 @@ impl IdentityPublicKeyResult for OptionalSingleIdentityPublicKeyOutcome {
 impl IdentityPublicKeyResult for KeyIDHashSet {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         // We do not care about non existence
         value
@@ -392,7 +389,7 @@ impl IdentityPublicKeyResult for KeyIDHashSet {
 
     fn try_from_query_results(
         value: QueryResultElements,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         value
             .elements
@@ -406,7 +403,7 @@ impl IdentityPublicKeyResult for KeyIDHashSet {
 impl IdentityPublicKeyResult for KeyIDVec {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         // We do not care about non existence
         value
@@ -418,7 +415,7 @@ impl IdentityPublicKeyResult for KeyIDVec {
 
     fn try_from_query_results(
         value: QueryResultElements,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         value
             .elements
@@ -432,7 +429,7 @@ impl IdentityPublicKeyResult for KeyIDVec {
 impl IdentityPublicKeyResult for KeyVec {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         // We do not care about non existence
         value
@@ -444,7 +441,7 @@ impl IdentityPublicKeyResult for KeyVec {
 
     fn try_from_query_results(
         value: QueryResultElements,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         value
             .elements
@@ -458,7 +455,7 @@ impl IdentityPublicKeyResult for KeyVec {
 impl IdentityPublicKeyResult for SerializedKeyVec {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         // We do not care about non existence
         value
@@ -470,7 +467,7 @@ impl IdentityPublicKeyResult for SerializedKeyVec {
 
     fn try_from_query_results(
         value: QueryResultElements,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         value
             .elements
@@ -484,7 +481,7 @@ impl IdentityPublicKeyResult for SerializedKeyVec {
 impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairVec {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         // We do not care about non existence
         value
@@ -496,7 +493,7 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairVec {
 
     fn try_from_query_results(
         value: QueryResultElements,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         value
             .elements
@@ -510,7 +507,7 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairVec {
 impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairVec {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         value
             .into_iter()
@@ -520,7 +517,7 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairVec {
 
     fn try_from_query_results(
         _value: QueryResultElements,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "KeyIDOptionalIdentityPublicKeyPairVec try from QueryResultElements",
@@ -532,7 +529,7 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairVec {
 impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioVec {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         value
             .into_iter()
@@ -550,7 +547,7 @@ impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioVec {
 
     fn try_from_query_results(
         _value: QueryResultElements,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "QueryKeyPathOptionalIdentityPublicKeyTrioVec try from QueryResultElements",
@@ -562,7 +559,7 @@ impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioVec {
 impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairBTreeMap {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         // We do not care about non existence
         value
@@ -574,7 +571,7 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairBTreeMap {
 
     fn try_from_query_results(
         value: QueryResultElements,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         value
             .elements
@@ -588,7 +585,7 @@ impl IdentityPublicKeyResult for KeyIDIdentityPublicKeyPairBTreeMap {
 impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairBTreeMap {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         value
             .into_iter()
@@ -598,7 +595,7 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairBTreeMap {
 
     fn try_from_query_results(
         _value: QueryResultElements,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "KeyIDOptionalIdentityPublicKeyPairVec try from QueryResultElements",
@@ -610,7 +607,7 @@ impl IdentityPublicKeyResult for KeyIDOptionalIdentityPublicKeyPairBTreeMap {
 impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioBTreeMap {
     fn try_from_path_key_optional(
         value: Vec<PathKeyOptionalElementTrio>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         value
             .into_iter()
@@ -628,7 +625,7 @@ impl IdentityPublicKeyResult for QueryKeyPathOptionalIdentityPublicKeyTrioBTreeM
 
     fn try_from_query_results(
         _value: QueryResultElements,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, Error> {
         Err(Error::Drive(DriveError::NotSupported(
             "QueryKeyPathOptionalIdentityPublicKeyTrioVec try from QueryResultElements",
@@ -901,7 +898,7 @@ mod tests {
     #[test]
     fn test_fetch_single_identity_key() {
         let drive = setup_drive(None);
-        let drive_version = DriveVersion::latest();
+        let _drive_version = DriveVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 
@@ -941,7 +938,7 @@ mod tests {
     #[test]
     fn test_fetch_multiple_identity_key() {
         let drive = setup_drive(None);
-        let drive_version = DriveVersion::latest();
+        let _drive_version = DriveVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 
@@ -981,7 +978,7 @@ mod tests {
     #[test]
     fn test_fetch_unknown_identity_key_returns_not_found() {
         let drive = setup_drive(None);
-        let drive_version = DriveVersion::latest();
+        let _drive_version = DriveVersion::latest();
 
         let transaction = drive.grove.start_transaction();
 

@@ -1,22 +1,17 @@
 mod v0;
 
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
-use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
-use crate::drive::{contract_documents_path, Drive};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
-use dpp::serialization::PlatformSerializable;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 impl Drive {
     /// Updates a data contract.

@@ -5,7 +5,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::Revision;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -82,7 +82,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        let drive_version = &platform_version.drive;
+        let _drive_version = &platform_version.drive;
         match self {
             IdentityOperationType::AddNewIdentity { identity } => drive
                 .add_new_identity_operations(

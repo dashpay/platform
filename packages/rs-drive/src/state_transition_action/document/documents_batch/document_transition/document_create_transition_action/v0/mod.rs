@@ -1,17 +1,16 @@
 pub mod transformer;
 
-use bincode::{Decode, Encode};
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
 use dpp::ProtocolError;
-use serde::{Deserialize, Serialize};
+
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
-use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
+
 use dpp::version::PlatformVersion;
 
 #[derive(Debug, Clone)]

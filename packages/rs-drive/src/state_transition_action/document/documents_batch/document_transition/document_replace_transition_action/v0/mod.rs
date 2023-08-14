@@ -2,12 +2,12 @@ pub mod transformer;
 
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::TimestampMillis;
+use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::Revision;
 use dpp::ProtocolError;
-use dpp::platform_value::{Identifier, Value};
-use serde::{Deserialize, Serialize};
+
 use std::collections::BTreeMap;
-use bincode::{Decode, Encode};
+
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 

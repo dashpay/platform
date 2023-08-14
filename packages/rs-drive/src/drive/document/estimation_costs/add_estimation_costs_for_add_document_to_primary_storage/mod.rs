@@ -2,7 +2,7 @@ use crate::drive::object_size_info::DocumentAndContractInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use dpp::version::{FeatureVersion, PlatformVersion};
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;

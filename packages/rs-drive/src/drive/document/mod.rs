@@ -241,7 +241,7 @@ pub(crate) mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::prelude::DataContract;
     use dpp::tests::json_document::json_document_to_contract;
-    use dpp::version::drive_versions::DriveVersion;
+
     use dpp::version::PlatformVersion;
 
     /// Setup Dashpay

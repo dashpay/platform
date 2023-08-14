@@ -1,18 +1,15 @@
 mod v0;
 
-use crate::drive::identity::key::fetch::{
-    IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
-};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::identity::{IdentityPublicKey, KeyID};
-use dpp::version::drive_versions::DriveVersion;
+use dpp::identity::KeyID;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use integer_encoding::VarInt;
+
 use std::collections::HashMap;
 
 impl Drive {

@@ -1,6 +1,5 @@
 use crate::drive::verify::RootHash;
 
-use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -8,7 +7,6 @@ use dpp::document::Document;
 
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::version::PlatformVersion;
-use grovedb::GroveDb;
 
 impl SingleDocumentDriveQuery {
     /// Verifies the proof of a single document query.

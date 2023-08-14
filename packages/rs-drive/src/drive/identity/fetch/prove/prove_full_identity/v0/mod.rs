@@ -32,13 +32,12 @@ mod tests {
     use crate::drive::Drive;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
-    use dpp::version::drive_versions::DriveVersion;
+
     use dpp::version::PlatformVersion;
     use grovedb::query_result_type::QueryResultType;
     use grovedb::GroveDb;
     use grovedb::QueryItem;
-    use std::borrow::Borrow;
-    use std::collections::BTreeMap;
+
     use std::ops::RangeFull;
 
     #[test]

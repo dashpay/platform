@@ -7,8 +7,7 @@ pub mod document_replace_transition_action;
 pub use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 
 use derive_more::From;
-use serde::{Deserialize, Serialize};
-use dpp::identity::state_transition::asset_lock_proof::{Decode, Encode};
+
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
 use crate::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;

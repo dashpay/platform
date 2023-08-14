@@ -1,20 +1,13 @@
 mod v0;
 
-use crate::drive::credit_pools::paths::pools_vec_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee_pools::epochs::paths;
+
 use dpp::block::epoch::Epoch;
 
-use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
-use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::TransactionArg;
 
-use crate::fee_pools::epochs::epoch_key_constants::{
-    KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT,
-};
-use crate::fee_pools::epochs::paths::EpochProposers;
-use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 
 impl Drive {

@@ -1,12 +1,9 @@
 pub mod transformer;
 
 use std::sync::Arc;
-use bincode::{Decode, Encode};
-use dpp::data_contract::DataContract;
+
 use dpp::identifier::Identifier;
-use serde::{Deserialize, Serialize};
-use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
-use dpp::ProtocolError;
+
 use crate::drive::contract::DataContractFetchInfo;
 
 #[derive(Debug, Clone)]

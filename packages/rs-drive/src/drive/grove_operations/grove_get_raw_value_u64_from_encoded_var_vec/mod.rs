@@ -6,8 +6,8 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::{Element, TransactionArg};
-use integer_encoding::VarInt;
+use grovedb::TransactionArg;
+
 use path::SubtreePath;
 
 impl Drive {

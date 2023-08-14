@@ -1,6 +1,5 @@
 mod v0;
 
-use crate::drive::cache::DataContractCache;
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use dpp::version::drive_versions::DriveVersion;

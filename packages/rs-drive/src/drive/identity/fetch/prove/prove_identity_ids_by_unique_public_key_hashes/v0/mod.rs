@@ -2,7 +2,6 @@ use crate::drive::Drive;
 
 use crate::error::Error;
 
-use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
@@ -34,7 +33,7 @@ mod tests {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::identity::Identity;
-    use dpp::version::drive_versions::DriveVersion;
+
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
 

@@ -1,20 +1,17 @@
 pub mod transformer;
 mod v0;
 
-use bincode::{Decode, Encode};
 use derive_more::From;
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
-use dpp::document::{Document, DocumentV0};
+use dpp::document::Document;
 use dpp::ProtocolError;
 
-use serde::{Deserialize, Serialize};
-
 pub use v0::*;
-use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
-use dpp::version::{FeatureVersion, PlatformVersion};
+use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction};
+use dpp::version::{PlatformVersion};
 
 #[derive(Debug, Clone, From)]
 pub enum DocumentCreateTransitionAction {

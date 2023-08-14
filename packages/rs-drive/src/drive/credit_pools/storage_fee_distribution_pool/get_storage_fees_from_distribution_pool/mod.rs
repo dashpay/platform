@@ -1,16 +1,13 @@
 mod v0;
 
-use crate::drive::credit_pools::paths::pools_path;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
-use dpp::balances::credits::Creditable;
+
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
-use grovedb::{Element, TransactionArg};
+use grovedb::TransactionArg;
 
 use crate::error::Error;
-
-use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
 
 impl Drive {
     /// Returns the amount of credits in the storage fee distribution pool based on the provided platform version.

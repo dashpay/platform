@@ -1,18 +1,16 @@
 mod v0;
 
-use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+
 use dpp::block::block_info::BlockInfo;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
-use grovedb::batch::GroveDbOp;
+
 use grovedb::TransactionArg;
-use itertools::Itertools;
 
 impl Drive {
     /// Convert a batch of drive operations to a batch of grove database operations.

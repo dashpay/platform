@@ -70,7 +70,6 @@ mod tests {
     use std::option::Option::None;
     use tempfile::TempDir;
 
-    use super::*;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::{
         DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
@@ -82,10 +81,8 @@ mod tests {
     use dpp::document::DocumentV0Getters;
     use dpp::platform_value::platform_value;
     use dpp::tests::json_document::json_document_to_contract;
-    use dpp::version::drive_versions::DriveVersion;
-    use dpp::version::PlatformVersion;
 
-    use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::version::PlatformVersion;
 
     fn setup_deep_nested_50_contract() -> (Drive, DataContract) {
         // Todo: make TempDir based on _prefix

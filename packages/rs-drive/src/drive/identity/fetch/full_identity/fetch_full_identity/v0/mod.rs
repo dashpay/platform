@@ -1,5 +1,3 @@
-use crate::drive::defaults::PROTOCOL_VERSION;
-
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -8,10 +6,9 @@ use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::identity::{Identity, IdentityV0};
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
-use std::collections::BTreeMap;
 
 impl Drive {
     /// Fetches an identity with all its information and
