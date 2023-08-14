@@ -1,6 +1,6 @@
 use crate::version::dpp_versions::{
     ContractClassMethodVersions, ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
-    DataContractValidationVersions, DocumentClassMethodVersions, DocumentFeatureVersionBounds,
+    DataContractValidationVersions, DocumentFeatureVersionBounds,
     DocumentMethodVersions, DocumentTypeValidationVersions, DocumentTypeVersions, DocumentVersions,
     IdentityKeyTypeMethodVersions, IdentityVersions, IndexVersions, JsonSchemaValidatorVersions,
     PublicKeyInCreationMethodVersions, RecursiveSchemaValidatorVersions,

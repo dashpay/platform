@@ -217,7 +217,8 @@ mod tests {
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::serialized_version::v0::property_names;
-    use crate::serialization::PlatformSerializable;
+    use crate::data_contract::DataContractMethodsV0;
+    use crate::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::StateTransitionLike;
     use crate::tests::fixtures::get_data_contract_fixture;
@@ -233,10 +234,10 @@ mod tests {
         let created_data_contract =
             get_data_contract_fixture(None, platform_version.protocol_version);
         let raw_data_contract = created_data_contract
-            .into_data_contract()
+            .data_contract_owned()
             .as_v0()
             .unwrap()
-            .to_object()
+            .to_value(&platform_version)
             .unwrap();
 
         let factory = DataContractFactoryV0::new(platform_version.protocol_version, None);
@@ -275,23 +276,22 @@ mod tests {
                 Some(raw_defs),
             )
             .expect("Data Contract should be created")
-            .data_contract;
+            .data_contract_owned();
 
-        assert_eq!(
-            data_contract.data_contract_protocol_version,
-            result.data_contract_protocol_version
-        );
+        assert_eq!(data_contract.version(), result.version());
         // id is generated based on entropy which is different every time the `create` call is used
-        assert_eq!(data_contract.id.len(), result.id.len());
-        assert_ne!(data_contract.id(), result.id);
-        assert_eq!(data_contract.schema, result.schema);
-        assert_eq!(data_contract.owner_id(), result.owner_id);
-        assert_eq!(data_contract.documents, result.documents);
-        assert_eq!(data_contract.metadata, result.metadata);
+        assert_eq!(data_contract.id().len(), result.id().len());
+        assert_ne!(data_contract.id(), result.id());
+        assert_eq!(data_contract.document_schemas(), result.document_schemas());
+        assert_eq!(data_contract.owner_id(), result.owner_id());
+        assert_eq!(data_contract.document_types(), result.document_types());
+        assert_eq!(data_contract.metadata(), result.metadata());
     }
 
     #[tokio::test]
     async fn should_crate_data_contract_from_object() {
+        let platform_version = PlatformVersion::latest();
+
         let TestData {
             created_data_contract,
             raw_data_contract,
@@ -301,8 +301,7 @@ mod tests {
         let data_contract = created_data_contract.data_contract_owned();
 
         let result = factory
-            .create_from_object(raw_data_contract.into(), true)
-            .await
+            .create_from_object(raw_data_contract.into())
             .expect("Data Contract should be created");
 
         assert_eq!(data_contract.version(), result.version());
@@ -314,6 +313,8 @@ mod tests {
 
     #[tokio::test]
     async fn should_create_data_contract_from_buffer() {
+        let platform_version = PlatformVersion::latest();
+
         let TestData {
             created_data_contract,
             factory,
@@ -323,17 +324,13 @@ mod tests {
         let data_contract = created_data_contract.data_contract_owned();
 
         let serialized_data_contract = data_contract
-            .serialize()
+            .serialize_with_platform_version(&platform_version)
             .expect("should be serialized to buffer");
         let result = factory
-            .create_from_buffer(serialized_data_contract, false)
-            .await
+            .create_from_buffer(serialized_data_contract)
             .expect("Data Contract should be created from the buffer");
 
-        assert_eq!(
-            data_contract.data_contract_protocol_version,
-            result.data_contract_protocol_version
-        );
+        assert_eq!(data_contract.version(), result.version());
         assert_eq!(data_contract.id(), result.id());
         assert_eq!(data_contract.owner_id(), result.owner_id());
         assert_eq!(data_contract.document_types(), result.document_types());
@@ -342,6 +339,8 @@ mod tests {
 
     #[test]
     fn should_create_data_contract_create_transition_from_data_contract() {
+        let platform_version = PlatformVersion::latest();
+
         let TestData {
             created_data_contract,
             factory,
@@ -353,10 +352,17 @@ mod tests {
             .expect("Data Contract Transition should be created");
 
         assert_eq!(1, result.state_transition_protocol_version());
-        assert_eq!(&created_data_contract.entropy_used, &result.entropy);
-        assert_eq!(
-            raw_data_contract,
-            result.data_contract().to_object().unwrap()
-        );
+        assert_eq!(&created_data_contract.entropy_used(), &result.entropy());
+
+        let contract_value = DataContract::try_from_platform_versioned(
+            result.data_contract().to_owned(),
+            false,
+            &platform_version,
+        )
+        .unwrap()
+        .to_value(&platform_version)
+        .unwrap();
+
+        assert_eq!(raw_data_contract, contract_value);
     }
 }
