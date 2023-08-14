@@ -26,7 +26,7 @@ on:
 jobs:
   lint:
     name: Linting
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
     steps:
       - name: Check out repo
@@ -55,7 +55,7 @@ jobs:
 
   test:
     name: Tests
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 120
     if: ${{ !inputs.skip-tests }}
     steps:
@@ -117,7 +117,7 @@ jobs:
         if: ${{ inputs.start-local-network }}
         uses: dcginfra/buildkit-cache-dance/inject@main
         with:
-          bucket: platform-runner-cache
+          bucket: multi-runner-linux-x64-platform-cache-gy9micic
           mounts: |
             cargo_registry_index
             cargo_registry_cache
@@ -179,7 +179,7 @@ jobs:
         if: ${{ inputs.start-local-network }}
         uses: dcginfra/buildkit-cache-dance/extract@main
         with:
-          bucket: platform-runner-cache
+          bucket: multi-runner-linux-x64-platform-cache-gy9micic
           mounts: |
             cargo_registry_index
             cargo_registry_cache
