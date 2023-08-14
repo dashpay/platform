@@ -1,9 +1,9 @@
 use crate::error::execution::ExecutionError;
-use crate::error::Error;
+
 use crate::execution::types::execution_operation::ExecutionOperation;
 use crate::execution::types::state_transition_execution_context::v0::StateTransitionExecutionContextV0;
 use derive_more::From;
-use dpp::version::{DefaultForPlatformVersion, FeatureVersion, PlatformVersion};
+use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 
 pub mod v0;
 

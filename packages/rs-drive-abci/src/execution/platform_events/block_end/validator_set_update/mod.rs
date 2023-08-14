@@ -2,15 +2,13 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::block_execution_context::v0::{
-    BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
-};
+
 use crate::execution::types::block_execution_context::BlockExecutionContext;
-use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
+
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+
 use crate::platform_types::platform_state::PlatformState;
-use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
+
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;

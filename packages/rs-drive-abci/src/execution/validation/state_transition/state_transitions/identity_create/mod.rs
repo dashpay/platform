@@ -5,22 +5,20 @@ mod structure;
 use crate::error::Error;
 
 use crate::error::execution::ExecutionError;
-use crate::execution::validation::state_transition::identity_create::identity_and_signatures::v0::IdentityCreateStateTransitionIdentityAndSignaturesValidationV0;
+
 use crate::execution::validation::state_transition::identity_create::state::v0::IdentityCreateStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::identity_create::structure::v0::IdentityCreateStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionSignatureValidationV0, StateTransitionStateValidationV0,
-    StateTransitionStructureValidationV0,
+    StateTransitionStateValidationV0, StateTransitionStructureValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::platform_types::platform::PlatformRef;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+
 use crate::rpc::core::CoreRPCLike;
-use dpp::identity::PartialIdentity;
+
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;

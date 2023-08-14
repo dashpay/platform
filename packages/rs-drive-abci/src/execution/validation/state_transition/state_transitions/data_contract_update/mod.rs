@@ -1,8 +1,6 @@
 mod state;
 mod structure;
 
-use dpp::identity::PartialIdentity;
-
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use drive::drive::Drive;
@@ -11,7 +9,6 @@ use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
 
@@ -109,13 +106,11 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
 
     use dpp::data_contract::DataContract;
-    use dpp::platform_value::{BinaryData, Value};
-    use dpp::state_transition::data_contract_update_transition::{
-        DataContractUpdateTransition, DataContractUpdateTransitionV0,
-    };
-    use dpp::state_transition::{StateTransition, StateTransitionFieldTypes, StateTransitionType};
+    use dpp::platform_value::BinaryData;
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
+
     use dpp::tests::fixtures::get_data_contract_fixture;
-    use dpp::version::{PlatformVersion, LATEST_VERSION};
+    use dpp::version::PlatformVersion;
 
     struct TestData<T> {
         data_contract: DataContract,
@@ -175,16 +170,13 @@ mod tests {
         use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 
-        use dpp::data_contract::config::v0::{
-            DataContractConfigGettersV0, DataContractConfigSettersV0,
-        };
+        use dpp::data_contract::config::v0::DataContractConfigSettersV0;
 
         use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
         use dpp::data_contract::DataContractMethodsV0;
         use dpp::platform_value::platform_value;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::version::TryFromPlatformVersioned;
-        use serde_json::json;
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {

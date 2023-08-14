@@ -4,7 +4,7 @@
 //! information about the current epoch.
 //!
 
-use crate::platform_types::epochInfo::v0::{
+use crate::platform_types::epoch_info::v0::{
     EpochInfoV0, EpochInfoV0Getters, EpochInfoV0Methods, EpochInfoV0Setters,
 };
 use derive_more::From;

@@ -6,14 +6,10 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::block::block_info::BlockInfo;
-use dpp::identity::Purpose::WITHDRAW;
+
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
-use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::DisableIdentityKeys;
-use drive::drive::identity::key::fetch::{
-    IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec, KeyRequestType,
-};
+
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>

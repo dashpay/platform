@@ -123,7 +123,7 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::signature::SignatureError;
-    use dpp::consensus::state::state_error::StateError;
+
     use dpp::consensus::ConsensusError;
     use dpp::dashcore::secp256k1::Secp256k1;
     use dpp::dashcore::{signer, KeyPair, Network, PrivateKey};
@@ -132,15 +132,14 @@ mod tests {
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contracts::dpns_contract;
     use dpp::document::document_methods::DocumentMethodsV0;
-    use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+    use dpp::document::DocumentV0Setters;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::state_transition::asset_lock_proof;
+
     use dpp::identity::KeyType::ECDSA_SECP256K1;
     use dpp::identity::{Identity, IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
     use dpp::serialization::{PlatformSerializable, Signable};
-    use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
-    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+
     use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
     use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
     use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
@@ -155,7 +154,7 @@ mod tests {
     use dpp::tests::fixtures::{get_dashpay_contract_fixture, instant_asset_lock_proof_fixture};
     use dpp::version::PlatformVersion;
     use dpp::NativeBlsModule;
-    use drive::drive::contract::DataContractFetchInfo;
+
     use platform_version::TryIntoPlatformVersioned;
     use rand::rngs::StdRng;
     use rand::SeedableRng;

@@ -16,15 +16,14 @@ use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::serialization::{
     PlatformDeserializable, PlatformDeserializableFromVersionedStructure, PlatformSerializable,
-    PlatformSerializableWithPlatformVersion,
 };
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use dpp::ProtocolError;
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use indexmap::IndexMap;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+
 use std::collections::{BTreeMap, HashMap};
 
 /// Platform state

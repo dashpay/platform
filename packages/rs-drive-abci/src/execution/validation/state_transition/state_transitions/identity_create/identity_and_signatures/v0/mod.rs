@@ -3,9 +3,9 @@ use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundE
 use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
-use dpp::identity::PartialIdentity;
+
 use dpp::prelude::ConsensusValidationResult;
-use dpp::serialization::{PlatformMessageSignable, Signable};
+use dpp::serialization::PlatformMessageSignable;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;

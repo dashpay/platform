@@ -5,8 +5,6 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::version::PlatformVersion;
-use sha2::{Digest, Sha256};
-use std::convert::TryInto;
 
 impl<C> Platform<C>
 where

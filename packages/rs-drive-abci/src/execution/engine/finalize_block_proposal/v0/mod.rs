@@ -1,7 +1,6 @@
 use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
 
 use dpp::block::epoch::Epoch;
-use dpp::block::extended_block_info::ExtendedBlockInfo;
 
 use dpp::validation::SimpleValidationResult;
 
@@ -26,7 +25,7 @@ use crate::platform_types::cleaned_abci_messages::cleaned_block::v0::CleanedBloc
 use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
 
 use crate::platform_types::commit;
-use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
+use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;

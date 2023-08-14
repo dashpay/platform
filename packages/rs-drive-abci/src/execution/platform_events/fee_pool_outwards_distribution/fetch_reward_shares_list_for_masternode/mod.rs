@@ -12,16 +12,13 @@ pub const MN_REWARD_SHARES_DOCUMENT_TYPE: &str = "rewardShare";
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 
-use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 
 use drive::dpp::document::Document;
-use drive::drive::document::query::QueryDocumentsOutcome;
+
 use drive::grovedb::TransactionArg;
-use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
 use crate::error::execution::ExecutionError;
-use std::collections::BTreeMap;
 
 impl<C> Platform<C> {
     /// Fetches the reward shares list for a masternode based on the platform version.

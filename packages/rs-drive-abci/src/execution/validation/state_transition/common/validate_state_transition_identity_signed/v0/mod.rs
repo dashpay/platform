@@ -16,7 +16,7 @@ use crate::execution::types::state_transition_execution_context::{
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::DataContract;
+
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::state_transition::documents_batch_transition::get_security_level_requirement;

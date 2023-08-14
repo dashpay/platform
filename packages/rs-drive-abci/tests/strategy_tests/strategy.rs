@@ -12,16 +12,16 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use dpp::document::{Document, DocumentV0Getters};
+
+use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
-use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition::{StateTransition, StateTransitionType};
+use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::{PlatformVersion, LATEST_VERSION};
+use dpp::version::PlatformVersion;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
@@ -455,7 +455,7 @@ impl Strategy {
                                     .sign_external(
                                         identity_public_key,
                                         signer,
-                                        Some(|data_contract_id, document_type_name| {
+                                        Some(|_data_contract_id, _document_type_name| {
                                             Ok(SecurityLevel::HIGH)
                                         }),
                                     )
@@ -533,7 +533,7 @@ impl Strategy {
                                 .sign_external(
                                     identity_public_key,
                                     signer,
-                                    Some(|data_contract_id, document_type_name| {
+                                    Some(|_data_contract_id, _document_type_name| {
                                         Ok(SecurityLevel::HIGH)
                                     }),
                                 )
@@ -620,7 +620,7 @@ impl Strategy {
                                 .sign_external(
                                     identity_public_key,
                                     signer,
-                                    Some(|data_contract_id, document_type_name| {
+                                    Some(|_data_contract_id, _document_type_name| {
                                         Ok(SecurityLevel::HIGH)
                                     }),
                                 )

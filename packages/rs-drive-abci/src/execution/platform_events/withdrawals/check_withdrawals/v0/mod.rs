@@ -4,7 +4,6 @@ use crate::platform_types::withdrawal::withdrawal_txs;
 use crate::rpc::core::CoreRPCLike;
 use dpp::bls_signatures;
 use dpp::validation::SimpleValidationResult;
-use dpp::version::PlatformVersion;
 
 impl<C> Platform<C>
 where
