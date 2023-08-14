@@ -118,6 +118,8 @@ mod test {
     use std::collections::BTreeMap;
     use std::convert::TryInto;
 
+    use crate::state_transition::traits::StateTransitionValueConvert;
+
     use super::*;
 
     struct TestData {
