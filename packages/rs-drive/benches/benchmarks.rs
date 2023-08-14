@@ -33,11 +33,12 @@
 //!
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use dpp::data_contract::extra::common::json_document_to_contract;
 
 use dpp::document::Document;
+use dpp::document::serialization_traits::{DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0};
+use dpp::tests::json_document::json_document_to_contract;
 
-use drive::contract::CreateRandomDocument;
+use platform_version::version::PlatformVersion;
 
 criterion_main!(serialization, deserialization);
 criterion_group!(serialization, test_drive_10_serialization);
@@ -119,20 +120,20 @@ fn test_drive_10_deserialization(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("Deserialization");
 
-    group.bench_function("DDSR 10", |b| {
+    group.bench_function("DDSR 10 (v0)", |b| {
         b.iter(|| {
             serialized_documents.iter().for_each(|serialized_document| {
-                Document::from_bytes(serialized_document, document_type)
+                Document::from_bytes(serialized_document, document_type, PlatformVersion::first())
                     .expect("expected to deserialize");
             })
         })
     });
-    group.bench_function("CBOR 10", |b| {
+    group.bench_function("CBOR 10 (v0)", |b| {
         b.iter(|| {
             cbor_serialized_documents
                 .iter()
                 .for_each(|serialized_document| {
-                    Document::from_cbor(serialized_document, None, None)
+                    Document::from_cbor(serialized_document, None, None, PlatformVersion::first())
                         .expect("expected to deserialize");
                 })
         })

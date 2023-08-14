@@ -80,7 +80,7 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    use super::*;
+    
     use crate::drive::config::DriveConfig;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
