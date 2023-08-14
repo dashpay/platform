@@ -1832,7 +1832,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/family/family-contract.json";
@@ -1862,7 +1862,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_path =

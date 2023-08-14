@@ -121,7 +121,7 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
-                &platform_version,
+                platform_version,
             )
             .expect("should create document");
 
@@ -195,7 +195,7 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
-                &platform_version,
+                platform_version,
             )
             .expect("should create document");
 
@@ -289,7 +289,7 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
-                &platform_version,
+                platform_version,
             )
             .expect("should create document");
 
@@ -397,7 +397,7 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
-                &platform_version,
+                platform_version,
             )
             .expect("should create document");
 
@@ -464,7 +464,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to delete document");
 
@@ -534,7 +534,7 @@ mod tests {
         let _db_transaction = drive.grove.start_transaction();
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("should create root tree");
 
         let contract = platform_value!({
@@ -680,7 +680,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("should delete document");
     }
@@ -694,7 +694,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -735,7 +735,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -770,7 +770,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect_err("expected not to be able to override a non mutable document");
     }
@@ -784,7 +784,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -833,7 +833,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -1833,7 +1833,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
         // Create a contract

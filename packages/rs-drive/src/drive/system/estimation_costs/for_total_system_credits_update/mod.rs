@@ -33,11 +33,14 @@ impl Drive {
             .estimation_costs
             .for_total_system_credits_update
         {
-            0 => Ok(
+            0 => {
                 Self::add_estimation_costs_for_total_system_credits_update_v0(
                     estimated_costs_only_with_layer_info,
-                ),
-            ),
+                );
+                Ok(
+                    (),
+                )
+            },
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_total_system_credits_update".to_string(),
                 known_versions: vec![0],

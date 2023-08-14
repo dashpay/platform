@@ -39,10 +39,13 @@ impl Drive {
             .cost_estimation
             .for_update_revision
         {
-            0 => Ok(Self::add_estimation_costs_for_update_revision_v0(
-                identity_id,
-                estimated_costs_only_with_layer_info,
-            )),
+            0 => {
+                Self::add_estimation_costs_for_update_revision_v0(
+                    identity_id,
+                    estimated_costs_only_with_layer_info,
+                );
+                Ok(())
+            },
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_cached_contract_with_fetch_info".to_string(),
                 known_versions: vec![0],

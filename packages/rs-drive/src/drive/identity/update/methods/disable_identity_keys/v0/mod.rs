@@ -63,7 +63,7 @@ impl Drive {
             None,
             Some(drive_operations),
             &block_info.epoch,
-            &platform_version,
+            platform_version,
         )?;
 
         Ok(fees)

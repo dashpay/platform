@@ -917,7 +917,7 @@ mod tests {
                 &BlockInfo::default(),
                 true,
                 Some(&transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert identity");
 

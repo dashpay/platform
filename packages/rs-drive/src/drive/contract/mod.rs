@@ -91,7 +91,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
@@ -105,7 +105,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to apply contract successfully");
 
@@ -119,7 +119,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
@@ -133,7 +133,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to apply contract successfully");
 
@@ -146,7 +146,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
@@ -161,7 +161,7 @@ mod tests {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to apply contract successfully");
 
@@ -188,7 +188,7 @@ mod tests {
         });
 
         contract
-            .set_document_schema("note2", note2_schema, true, &platform_version)
+            .set_document_schema("note2", note2_schema, true, platform_version)
             .expect("should set a document schema");
 
         drive
@@ -237,7 +237,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
     }
@@ -276,7 +276,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
     }
@@ -288,7 +288,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
@@ -303,7 +303,7 @@ mod tests {
                 false,
                 StorageFlags::optional_default_as_cow(),
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to apply contract successfully");
     }
@@ -315,7 +315,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_path =
@@ -331,7 +331,7 @@ mod tests {
                 false,
                 StorageFlags::optional_default_as_cow(),
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to apply contract successfully");
     }
@@ -343,7 +343,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
@@ -371,7 +371,7 @@ mod tests {
                 BlockInfo::default(),
                 false,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to apply contract successfully");
     }

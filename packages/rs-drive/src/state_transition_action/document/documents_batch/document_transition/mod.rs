@@ -25,9 +25,9 @@ pub enum DocumentTransitionAction {
 impl DocumentTransitionAction {
     pub fn base(&self) -> &DocumentBaseTransitionAction {
         match self {
-            DocumentTransitionAction::CreateAction(d) => &d.base(),
-            DocumentTransitionAction::DeleteAction(d) => &d.base(),
-            DocumentTransitionAction::ReplaceAction(d) => &d.base(),
+            DocumentTransitionAction::CreateAction(d) => d.base(),
+            DocumentTransitionAction::DeleteAction(d) => d.base(),
+            DocumentTransitionAction::ReplaceAction(d) => d.base(),
         }
     }
 }

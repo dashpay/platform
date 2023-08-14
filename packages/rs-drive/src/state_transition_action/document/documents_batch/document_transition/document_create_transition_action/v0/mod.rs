@@ -119,8 +119,8 @@ impl DocumentFromCreateTransitionV0 for Document {
                         owner_id,
                         properties: data.clone(),
                         revision: document_type.initial_revision(),
-                        created_at: created_at.clone(),
-                        updated_at: updated_at.clone(),
+                        created_at: *created_at,
+                        updated_at: *updated_at,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {

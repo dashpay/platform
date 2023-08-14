@@ -35,10 +35,13 @@ impl Drive {
             .cost_estimation
             .for_root_key_reference_tree
         {
-            0 => Ok(Self::add_estimation_costs_for_root_key_reference_tree_v0(
-                identity_id,
-                estimated_costs_only_with_layer_info,
-            )),
+            0 => {
+                Self::add_estimation_costs_for_root_key_reference_tree_v0(
+                    identity_id,
+                    estimated_costs_only_with_layer_info,
+                );
+                Ok(())
+            },
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_root_key_reference_tree".to_string(),
                 known_versions: vec![0],

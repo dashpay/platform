@@ -209,7 +209,7 @@ mod tests {
         let _db_transaction = drive.grove.start_transaction();
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create structure");
         let mut query = Query::new();
         query.insert_all();
@@ -241,7 +241,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let drive_version = &platform_version.drive;
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create structure");
 
         // Merk Level 0
@@ -262,7 +262,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 110); //it + left + right
@@ -285,7 +285,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 179); //it + left + right + parent + parent other
@@ -307,7 +307,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 180); //it + left + right + parent + parent other
@@ -330,7 +330,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 247);
@@ -353,7 +353,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 183); //it + parent + sibling + parent sibling + grandparent
@@ -375,7 +375,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 215); //it + left + parent + sibling + parent sibling + grandparent
@@ -397,7 +397,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 215); //it + right + parent + sibling + parent sibling + grandparent
@@ -421,7 +421,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 247);
@@ -445,7 +445,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 247);
@@ -467,7 +467,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 213);
@@ -489,7 +489,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 215);

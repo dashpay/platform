@@ -210,7 +210,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
@@ -263,7 +263,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert contract and document");
 
@@ -328,7 +328,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
@@ -399,7 +399,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to be able to insert documents");
 
@@ -444,7 +444,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = json_document_to_contract(
@@ -585,7 +585,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -706,7 +706,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -840,7 +840,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to be able to update documents");
 
@@ -933,7 +933,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -1007,7 +1007,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to be able to insert documents");
 
@@ -1063,7 +1063,7 @@ mod tests {
                 true,
                 &BlockInfo::default(),
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to be able to update documents");
 
