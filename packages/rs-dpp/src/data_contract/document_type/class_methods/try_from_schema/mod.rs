@@ -22,6 +22,7 @@ impl DocumentType {
             .dpp
             .contract_versions
             .document_type_versions
+            .class_method_versions
             .try_from_schema
         {
             0 => DocumentTypeV0::try_from_schema_v0(

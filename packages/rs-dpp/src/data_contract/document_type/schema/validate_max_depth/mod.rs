@@ -4,8 +4,8 @@ use platform_version::version::PlatformVersion;
 
 mod v0;
 
-pub fn validate_data_contract_max_depth(
-    data_contract_object: &Value,
+pub fn validate_max_depth(
+    value: &Value,
     platform_version: &PlatformVersion,
 ) -> SimpleConsensusValidationResult {
     match platform_version
@@ -13,9 +13,9 @@ pub fn validate_data_contract_max_depth(
         .contract_versions
         .document_type_versions
         .validation_versions
-        .validate_data_contract_max_depth
+        .validate_max_depth
     {
-        0 => v0::validate_data_contract_max_depth_v0(data_contract_object),
+        0 => v0::validate_max_depth_v0(value),
         version => unimplemented!("validate_data_contract_max_depth_v{}", version),
     }
 }

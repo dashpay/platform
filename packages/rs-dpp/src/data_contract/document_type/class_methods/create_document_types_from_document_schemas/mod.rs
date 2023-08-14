@@ -44,7 +44,8 @@ impl DocumentType {
         match platform_version
             .dpp
             .contract_versions
-            .contract_class_method_versions
+            .document_type_versions
+            .class_method_versions
             .create_document_types_from_document_schemas
         {
             0 => DocumentTypeV0::create_document_types_from_document_schemas_v0(

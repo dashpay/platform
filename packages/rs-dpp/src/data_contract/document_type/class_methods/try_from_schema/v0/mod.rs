@@ -17,7 +17,7 @@ use crate::data_contract::document_type::schema::enrich_with_base_schema;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validation::{
     byte_array_has_no_items_as_parent_validator, pattern_is_valid_regex_validator,
-    traversal_validator, validate_data_contract_max_depth,
+    traversal_validator, validate_max_depth,
 };
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};

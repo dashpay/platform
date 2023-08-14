@@ -1,8 +1,9 @@
 use crate::version::dpp_versions::{
-    ContractClassMethodVersions, ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
+    ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
     DataContractValidationVersions, DocumentClassMethodVersions, DocumentFeatureVersionBounds,
-    DocumentMethodVersions, DocumentTypeValidationVersions, DocumentTypeVersions, DocumentVersions,
-    IdentityKeyTypeMethodVersions, IdentityVersions, IndexVersions, JsonSchemaValidatorVersions,
+    DocumentMethodVersions, DocumentTypeClassMethodVersions, DocumentTypeIndexVersions,
+    DocumentTypeValidationVersions, DocumentTypeVersions, DocumentVersions,
+    IdentityKeyTypeMethodVersions, IdentityVersions, JsonSchemaValidatorVersions,
     PublicKeyInCreationMethodVersions, RecursiveSchemaValidatorVersions,
     StateTransitionConversionVersions, StateTransitionMethodVersions,
     StateTransitionSerializationVersions,
@@ -679,7 +680,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             created_data_contract_structure_version: 0,
             config_version: 0,
             document_type_versions: DocumentTypeVersions {
-                document_type_structure_version: 0,
+                structure_version: 0,
                 find_identifier_and_binary_paths: 0,
                 insert_values: 0,
                 insert_values_nested: 0,
@@ -701,7 +702,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 requires_revision: 0,
                 enrich_with_base_schema: 0,
                 validation_versions: DocumentTypeValidationVersions {
-                    validate_data_contract_max_depth: 0,
+                    validate_max_depth: 0,
                     recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
                         traversal_validator: 0,
                         byte_array_has_no_items_as_parent_validator: 0,
@@ -709,10 +710,10 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     },
                 },
             },
-            index_versions: IndexVersions {
+            index_versions: DocumentTypeIndexVersions {
                 index_levels_from_indices: 0,
             },
-            contract_class_method_versions: ContractClassMethodVersions {
+            contract_class_method_versions: DocumentTypeClassMethodVersions {
                 get_property_definition_by_path: 0,
                 get_binary_properties_from_schema: 0,
                 get_definitions: 0,

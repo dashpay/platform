@@ -12,7 +12,10 @@ impl DocumentType {
         properties: &BTreeMap<String, DocumentProperty>,
         document_type_version: &DocumentTypeVersions,
     ) -> Result<(BTreeSet<String>, BTreeSet<String>), ProtocolError> {
-        match document_type_version.find_identifier_and_binary_paths {
+        match document_type_version
+            .schema
+            .find_identifier_and_binary_paths
+        {
             0 => Ok(DocumentTypeV0::find_identifier_and_binary_paths_v0(
                 properties,
             )),

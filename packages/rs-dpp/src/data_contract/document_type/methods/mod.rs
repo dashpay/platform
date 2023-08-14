@@ -96,6 +96,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             .dpp
             .contract_versions
             .document_type_versions
+            .methods
             .index_for_types
         {
             0 => Ok(self.index_for_types_v0(index_names, in_field_name, order_by)),
@@ -117,6 +118,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             .dpp
             .contract_versions
             .document_type_versions
+            .methods
             .serialize_value_for_key
         {
             0 => self.serialize_value_for_key_v0(key, value),
@@ -133,6 +135,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             .dpp
             .contract_versions
             .document_type_versions
+            .methods
             .max_size
         {
             0 => Ok(self.max_size_v0()),
@@ -149,6 +152,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             .dpp
             .contract_versions
             .document_type_versions
+            .methods
             .estimated_size
         {
             0 => Ok(self.estimated_size_v0()),
@@ -208,6 +212,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             .dpp
             .contract_versions
             .document_type_versions
+            .methods
             .create_document_from_data
         {
             0 => self.create_document_from_data_v0(
@@ -235,6 +240,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
             .dpp
             .contract_versions
             .document_type_versions
+            .methods
             .create_document_with_prevalidated_properties
         {
             0 => self.create_document_with_prevalidated_properties_v0(

@@ -23,7 +23,7 @@ impl DocumentTypeV0 {
                 .dpp
                 .contract_versions
                 .document_type_versions
-                .document_type_structure_version
+                .structure_version
             {
                 0 => DocumentType::try_from_schema(
                     data_contract_id,

@@ -94,6 +94,7 @@ impl IndexLevel {
         match platform_version
             .dpp
             .contract_versions
+            .document_type_versions
             .index_versions
             .index_levels_from_indices
         {
