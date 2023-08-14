@@ -116,7 +116,11 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
       '0.24.22': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.drive.tenderdash.mode = 'full';
+            if (options.core.masternode.enable) {
+              options.platform.drive.tenderdash.mode = 'validator';
+            } else {
+              options.platform.drive.tenderdash.mode = 'full';
+            }
           });
         return configFile;
       },
