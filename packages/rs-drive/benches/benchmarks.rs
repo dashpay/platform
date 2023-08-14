@@ -48,7 +48,7 @@ criterion_group!(deserialization, test_drive_10_deserialization);
 /// using 10 Dashpay `contactRequest` documents with random data.
 fn test_drive_10_serialization(c: &mut Criterion) {
     let contract =
-        json_document_to_contract("tests/supporting_files/contract/dashpay/dashpay-contract.json")
+        json_document_to_contract("tests/supporting_files/contract/dashpay/dashpay-contract.json", PlatformVersion::first())
             .expect("expected to get contract");
 
     let document_type = contract
@@ -100,7 +100,7 @@ fn test_drive_10_serialization(c: &mut Criterion) {
 /// using 10 serialized Dashpay `contactRequest` documents with random data.
 fn test_drive_10_deserialization(c: &mut Criterion) {
     let contract =
-        json_document_to_contract("tests/supporting_files/contract/dashpay/dashpay-contract.json")
+        json_document_to_contract("tests/supporting_files/contract/dashpay/dashpay-contract.json", PlatformVersion::first())
             .expect("expected to get contract");
 
     let document_type = contract
