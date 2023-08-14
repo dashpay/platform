@@ -52,20 +52,26 @@ impl EpochInfoV0Getters for EpochInfo {
 
 impl EpochInfoV0Setters for EpochInfo {
     fn set_current_epoch_index(&mut self, index: u16) {
-        if let EpochInfo::V0(v0) = self {
-            v0.set_current_epoch_index(index);
+        match self {
+            EpochInfo::V0(v0) => {
+                v0.set_current_epoch_index(index);
+            }
         }
     }
 
     fn set_previous_epoch_index(&mut self, index: Option<u16>) {
-        if let EpochInfo::V0(v0) = self {
-            v0.set_previous_epoch_index(index);
+        match self {
+            EpochInfo::V0(v0) => {
+                v0.set_previous_epoch_index(index);
+            }
         }
     }
 
     fn set_is_epoch_change(&mut self, is_epoch_change: bool) {
-        if let EpochInfo::V0(v0) = self {
-            v0.set_is_epoch_change(is_epoch_change);
+        match self {
+            EpochInfo::V0(v0) => {
+                v0.set_is_epoch_change(is_epoch_change);
+            }
         }
     }
 }
