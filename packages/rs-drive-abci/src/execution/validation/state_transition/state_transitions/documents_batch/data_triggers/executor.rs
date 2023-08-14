@@ -11,10 +11,10 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
 use crate::error::Error;
 
 pub trait DataTriggerExecutor {
-    fn validate_with_data_triggers<'a>(
+    fn validate_with_data_triggers(
         &self,
         data_trigger_bindings: &Vec<DataTriggerBinding>,
-        context: &DataTriggerExecutionContext<'a>,
+        context: &DataTriggerExecutionContext<'_>,
         platform_version: &PlatformVersion,
     ) -> Result<DataTriggerExecutionResult, Error>;
 }

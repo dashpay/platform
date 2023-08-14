@@ -219,7 +219,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         //     return Ok(validation_result);
         // }
 
-        return Ok(action);
+        Ok(action)
     }
 
     fn transform_into_action_v0(

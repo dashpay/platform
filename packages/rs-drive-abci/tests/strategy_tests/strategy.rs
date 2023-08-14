@@ -329,7 +329,7 @@ impl Strategy {
                     None,
                 )
                 .expect("expected to create a create state transition from a data contract");
-                state_transition.into()
+                state_transition
             })
             .collect()
     }
@@ -366,7 +366,7 @@ impl Strategy {
                     None,
                 )
                 .expect("expected to create a create state transition from a data contract");
-                Some(state_transition.into())
+                Some(state_transition)
             })
             .collect()
     }
@@ -461,7 +461,7 @@ impl Strategy {
                                     )
                                     .expect("expected to sign");
 
-                                operations.push(document_batch_transition.into());
+                                operations.push(document_batch_transition);
                             });
                     }
                     OperationType::Document(DocumentOp {

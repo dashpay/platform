@@ -987,7 +987,7 @@ mod test {
 
             updated_data_contract
                 .set_document_schema(
-                    "niceDocument".into(),
+                    "niceDocument",
                     updated_document_schema,
                     true,
                     platform_version,

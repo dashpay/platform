@@ -94,7 +94,7 @@ where
             execution_event.and_then_borrowed_validation(|execution_event| {
                 self.validate_fees_of_event(
                     execution_event,
-                    &block_info.basic_info(),
+                    block_info.basic_info(),
                     None,
                     platform_version,
                 )
@@ -196,7 +196,7 @@ mod tests {
             .try_into_platform_versioned(platform_version)
             .expect("expected a state transition");
         create_contract_state_transition
-            .sign(&key, private_key.as_slice(), &NativeBlsModule::default())
+            .sign(&key, private_key.as_slice(), &NativeBlsModule)
             .expect("expected to sign transition");
         let serialized = create_contract_state_transition
             .serialize()
@@ -267,11 +267,10 @@ mod tests {
                 asset_lock_proof,
                 pk.as_slice(),
                 &signer,
-                &NativeBlsModule::default(),
+                &NativeBlsModule,
                 platform_version,
             )
-            .expect("expected an identity create transition")
-            .into();
+            .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
             .serialize()
@@ -284,7 +283,7 @@ mod tests {
             .try_into_platform_versioned(platform_version)
             .expect("expected a state transition");
         create_contract_state_transition
-            .sign(&key, private_key.as_slice(), &NativeBlsModule::default())
+            .sign(&key, private_key.as_slice(), &NativeBlsModule)
             .expect("expected to sign transition");
         let data_contract_create_serialized_transition = create_contract_state_transition
             .serialize()
@@ -435,11 +434,10 @@ mod tests {
                 asset_lock_proof,
                 pk.as_slice(),
                 &signer,
-                &NativeBlsModule::default(),
+                &NativeBlsModule,
                 platform_version,
             )
-            .expect("expected an identity create transition")
-            .into();
+            .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
             .serialize()
@@ -481,12 +479,11 @@ mod tests {
                 identity.clone(),
                 asset_lock_proof_top_up,
                 pk.as_slice(),
-                &NativeBlsModule::default(),
+                &NativeBlsModule,
                 platform_version,
                 None,
             )
-            .expect("expected an identity create transition")
-            .into();
+            .expect("expected an identity create transition");
 
         let identity_top_up_serialized_transition = identity_top_up_transition
             .serialize()
@@ -565,11 +562,10 @@ mod tests {
                 asset_lock_proof,
                 pk.as_slice(),
                 &signer,
-                &NativeBlsModule::default(),
+                &NativeBlsModule,
                 platform_version,
             )
-            .expect("expected an identity create transition")
-            .into();
+            .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
             .serialize()
@@ -611,12 +607,11 @@ mod tests {
                 identity.clone(),
                 asset_lock_proof_top_up,
                 pk.as_slice(),
-                &NativeBlsModule::default(),
+                &NativeBlsModule,
                 platform_version,
                 None,
             )
-            .expect("expected an identity create transition")
-            .into();
+            .expect("expected an identity create transition");
 
         let identity_top_up_serialized_transition = identity_top_up_transition
             .serialize()
@@ -718,12 +713,11 @@ mod tests {
                 identity.clone(),
                 asset_lock_proof_top_up,
                 pk.as_slice(),
-                &NativeBlsModule::default(),
+                &NativeBlsModule,
                 platform_version,
                 None,
             )
-            .expect("expected an identity create transition")
-            .into();
+            .expect("expected an identity create transition");
 
         let identity_top_up_serialized_transition = identity_top_up_transition
             .serialize()
@@ -789,11 +783,10 @@ mod tests {
                 asset_lock_proof,
                 pk.as_slice(),
                 &signer,
-                &NativeBlsModule::default(),
+                &NativeBlsModule,
                 platform_version,
             )
-            .expect("expected an identity create transition")
-            .into();
+            .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
             .serialize()
@@ -835,12 +828,11 @@ mod tests {
                 identity.clone(),
                 asset_lock_proof_top_up.clone(),
                 pk.as_slice(),
-                &NativeBlsModule::default(),
+                &NativeBlsModule,
                 platform_version,
                 None,
             )
-            .expect("expected an identity create transition")
-            .into();
+            .expect("expected an identity create transition");
 
         let identity_top_up_serialized_transition = identity_top_up_transition
             .serialize()
@@ -901,11 +893,10 @@ mod tests {
                 asset_lock_proof_top_up,
                 pk.as_slice(),
                 &signer,
-                &NativeBlsModule::default(),
+                &NativeBlsModule,
                 platform_version,
             )
-            .expect("expected an identity create transition")
-            .into();
+            .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
             .serialize()

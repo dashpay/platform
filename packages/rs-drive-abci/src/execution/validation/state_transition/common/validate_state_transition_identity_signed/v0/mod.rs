@@ -188,7 +188,7 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
         //     return Ok(validation_result);
         // }
 
-        let signature_is_valid = self.verify_signature(public_key, &NativeBlsModule::default());
+        let signature_is_valid = self.verify_signature(public_key, &NativeBlsModule);
 
         if let Err(err) = signature_is_valid {
             let consensus_error = convert_to_consensus_signature_error(err)?;

@@ -51,7 +51,7 @@ impl IdentityUpdateStateTransitionStructureValidationV0 for IdentityUpdateTransi
             for key_id in self.public_key_ids_to_disable() {
                 if ids.contains(key_id) {
                     result.add_error(ConsensusError::from(
-                        DuplicatedIdentityPublicKeyIdBasicError::new(vec![key_id.clone()]),
+                        DuplicatedIdentityPublicKeyIdBasicError::new(vec![*key_id]),
                     ));
                     break;
                 }

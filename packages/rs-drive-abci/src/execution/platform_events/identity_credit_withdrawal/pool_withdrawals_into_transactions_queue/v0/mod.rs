@@ -293,7 +293,7 @@ mod tests {
             .fetch_withdrawal_documents_by_status(
                 withdrawals_contract::WithdrawalStatus::POOLED.into(),
                 Some(&transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("to fetch withdrawal documents");
 

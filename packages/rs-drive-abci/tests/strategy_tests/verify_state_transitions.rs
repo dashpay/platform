@@ -224,7 +224,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                             assert_eq!(
                                 document,
                                 Document::try_from_create_transition(
-                                    &creation_action,
+                                    creation_action,
                                     documents_batch_transition.owner_id(),
                                     platform_version,
                                 )
@@ -237,7 +237,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                                 assert_eq!(
                                     document,
                                     Document::try_from_replace_transition(
-                                        &replace_action,
+                                        replace_action,
                                         documents_batch_transition.owner_id(),
                                         platform_version,
                                     )

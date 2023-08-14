@@ -14,6 +14,7 @@ use syn::{parse_macro_input, Attribute, Data, DeriveInput, Fields, Ident, LitInt
 /// The attribute should contain an integer value that corresponds to the version of that variant.
 /// For example:
 /// ```rust
+/// use platform_versioning::PlatformSerdeVersionedDeserialize;
 /// #[derive(PlatformSerdeVersionedDeserialize)]
 /// pub enum MyEnum {
 ///     #[versioned(1)]
@@ -217,7 +218,6 @@ pub fn derive_platform_versions(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     let name = &input.ident;
-    let name_str = name.to_string();
     let data_enum = match &input.data {
         Data::Enum(data_enum) => data_enum,
         _ => panic!("PlatformSerdeVersionedSerialize can only be used with enums"),
@@ -245,7 +245,7 @@ pub fn derive_platform_versions(input: TokenStream) -> TokenStream {
         variant_idents
             .iter()
             .zip(variant_types.iter())
-            .map(|(variant_ident, variant_type)| {
+            .map(|(variant_ident, _variant_type)| {
                 let variant_index = variant_ident
                     .to_string()
                     .trim_start_matches('V')
@@ -385,17 +385,6 @@ fn generate_version_arms(variant_idents: &[&Ident]) -> Vec<proc_macro2::TokenStr
             let index_feature = index as u16;
             quote! {
                 Self::#ident(_) => #index_feature
-            }
-        })
-        .collect()
-}
-
-fn generate_verify_arms(variant_idents: &[&Ident], path: &LitStr) -> Vec<proc_macro2::TokenStream> {
-    variant_idents
-        .iter()
-        .map(|ident| {
-            quote! {
-                Self::#ident(_) => protocol_version.#path.check_version(self.version())
             }
         })
         .collect()

@@ -118,7 +118,7 @@ pub fn create_identity_top_up_transition(
         identity.clone(),
         asset_lock_proof,
         secret_key.as_ref(),
-        &NativeBlsModule::default(),
+        &NativeBlsModule,
         platform_version,
         None,
     )
@@ -262,7 +262,7 @@ pub fn create_identity_withdrawal_transition(
         )
         .expect("expected to sign withdrawal");
 
-    withdrawal.into()
+    withdrawal
 }
 
 pub fn create_identity_credit_transfer_transition(
@@ -296,7 +296,7 @@ pub fn create_identity_credit_transfer_transition(
         )
         .expect("expected to sign transfer");
 
-    transition.into()
+    transition
 }
 
 pub fn create_identities_state_transitions(
@@ -330,13 +330,13 @@ pub fn create_identities_state_transitions(
                     asset_lock_proof,
                     pk.as_slice(),
                     signer,
-                    &NativeBlsModule::default(),
+                    &NativeBlsModule,
                     platform_version,
                 )
                 .expect("expected to transform identity into identity create transition");
             identity.set_id(identity_create_transition.owner_id());
 
-            (identity, identity_create_transition.into())
+            (identity, identity_create_transition)
         })
         .collect()
 }

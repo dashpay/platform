@@ -111,7 +111,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     }
 
     let document_type = data_contract
-        .document_type_for_name(&document_create_transition.base().document_type_name())?;
+        .document_type_for_name(document_create_transition.base().document_type_name())?;
 
     let drive_query = DriveQuery {
         contract: data_contract,
@@ -414,7 +414,7 @@ mod test {
                 .add_document_for_contract(
                     DocumentAndContractInfo {
                         owned_document_info: OwnedDocumentInfo {
-                            document_info: DocumentRefInfo((&document, None)),
+                            document_info: DocumentRefInfo((document, None)),
                             owner_id: None,
                         },
                         contract: &data_contract,
@@ -661,7 +661,7 @@ mod test {
             .expect("expected to apply contract");
 
         let document_type = data_contract
-            .document_type_for_name(&document_create_transition.base().document_type_name())
+            .document_type_for_name(document_create_transition.base().document_type_name())
             .expect("expected to get document type");
 
         let mut main_identity = Identity::random_identity(2, Some(1000_u64), platform_version)

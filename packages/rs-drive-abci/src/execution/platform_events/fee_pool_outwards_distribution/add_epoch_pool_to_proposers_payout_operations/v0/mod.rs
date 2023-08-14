@@ -38,7 +38,7 @@ impl<C> Platform<C> {
             .get_epoch_total_credits_for_distribution(
                 &unpaid_epoch_tree,
                 Some(transaction),
-                &platform_version,
+                platform_version,
             )
             .map_err(Error::Drive)?;
 

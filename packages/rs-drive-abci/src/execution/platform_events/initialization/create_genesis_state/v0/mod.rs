@@ -203,14 +203,15 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let serialization = data_contract.serialize_with_platform_version(platform_version)?;
-        Ok(operations.push(DriveOperation::DataContractOperation(
+        operations.push(DriveOperation::DataContractOperation(
             //todo: remove cbor
             DataContractOperationType::ApplyContractWithSerialization {
                 contract: Cow::Owned(data_contract),
                 serialized_contract: serialization,
                 storage_flags: None,
             },
-        )))
+        ));
+        Ok(())
     }
 
     fn register_system_identity_operations(
