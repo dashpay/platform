@@ -33,6 +33,8 @@
 //!
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 
 use dpp::document::Document;
 use dpp::document::serialization_traits::{DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0};
@@ -104,15 +106,15 @@ fn test_drive_10_deserialization(c: &mut Criterion) {
             .expect("expected to get contract");
 
     let document_type = contract
-        .document_type("contactRequest")
+        .document_type_for_name("contactRequest")
         .expect("expected to get profile document type");
     let (serialized_documents, cbor_serialized_documents): (Vec<Vec<u8>>, Vec<Vec<u8>>) =
         document_type
-            .random_documents(10, Some(3333))
+            .random_documents(10, Some(3333), PlatformVersion::first()).expect("expected random documents")
             .iter()
             .map(|a| {
                 (
-                    a.serialize(document_type).unwrap(),
+                    a.serialize(document_type, PlatformVersion::first()).unwrap(),
                     a.to_cbor().expect("expected to encode to cbor"),
                 )
             })
