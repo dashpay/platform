@@ -29,7 +29,7 @@
 # 3. Github Actions have shared networking configured, so we need to set a random
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 
-ARG ALPINE_VERSION=3.16
+ARG ALPINE_VERSION=3.18
 
 # Set RUSTC_WRAPPER to `sccache` to enable sccache caching
 ARG RUSTC_WRAPPER
@@ -53,7 +53,7 @@ RUN apk add --no-cache \
         libc-dev \
         linux-headers \
         llvm-static llvm-dev  \
-        'nodejs~=16' \
+        nodejs \
         npm \
         openssl-dev \
         perl \
