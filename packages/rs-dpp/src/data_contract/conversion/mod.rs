@@ -4,3 +4,5 @@ pub mod cbor;
 pub mod json;
 #[cfg(feature = "data-contract-value-conversion")]
 pub mod value;
+#[cfg(feature = "data-contract-serde-conversion")]
+pub mod serde;

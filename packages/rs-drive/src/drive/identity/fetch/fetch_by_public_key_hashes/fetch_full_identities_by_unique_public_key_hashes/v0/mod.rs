@@ -9,9 +9,6 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::{QueryItem, QueryResultEncoding};
 use dpp::identity::Identity;
-use dpp::platform_value::Value;
-use dpp::Convertible;
-use grovedb::query_result_type::QueryResultType;
 
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
