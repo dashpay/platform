@@ -95,7 +95,6 @@ mod tests {
     use std::option::Option::None;
     use tempfile::TempDir;
 
-    
     use crate::common::setup_contract;
     use crate::drive::config::DriveConfig;
     use crate::drive::document::tests::setup_dashpay;
@@ -108,7 +107,7 @@ mod tests {
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::document::{Document, DocumentV0Getters};
+    use dpp::document::Document;
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};

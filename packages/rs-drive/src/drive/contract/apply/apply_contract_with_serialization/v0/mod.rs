@@ -15,10 +15,7 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::DataContract;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::serialization::{
-    PlatformDeserializableFromVersionedStructure,
-    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
-};
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;

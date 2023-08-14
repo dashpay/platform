@@ -77,6 +77,7 @@ pub trait DriveLowLevelOperationConverter {
 /// The drive operation context keeps track of changes that might affect other operations
 /// Notably Identity balance changes are kept track of
 pub struct DriveOperationContext {
+    //todo: why is this not being used?
     identity_balance_changes: BTreeMap<[u8; 32], i64>,
 }
 

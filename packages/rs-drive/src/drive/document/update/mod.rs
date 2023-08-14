@@ -80,7 +80,6 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    
     use crate::drive::config::DriveConfig;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
@@ -102,7 +101,6 @@ mod tests {
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::fee_result::FeeResult;
     use dpp::platform_value;
-    use dpp::serialization::PlatformSerializable;
     use dpp::tests::json_document::json_document_to_document;
     use platform_version::version::PlatformVersion;
 

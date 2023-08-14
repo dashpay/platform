@@ -194,7 +194,7 @@ impl Drive {
     }
 
     /// operations for updating a contract.
-    pub(super) fn update_contract_operations_v0(
+    fn update_contract_operations_v0(
         &self,
         contract_element: Element,
         contract: &DataContract,

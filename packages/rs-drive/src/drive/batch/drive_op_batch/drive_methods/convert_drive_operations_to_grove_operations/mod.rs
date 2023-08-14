@@ -1,6 +1,4 @@
 mod v0;
-
-use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;

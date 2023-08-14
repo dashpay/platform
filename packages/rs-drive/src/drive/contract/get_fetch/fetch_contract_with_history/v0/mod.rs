@@ -6,10 +6,7 @@ use crate::error::Error;
 
 use dpp::data_contract::DataContract;
 
-use dpp::serialization::{
-    PlatformDeserializableFromVersionedStructure,
-    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
-};
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};

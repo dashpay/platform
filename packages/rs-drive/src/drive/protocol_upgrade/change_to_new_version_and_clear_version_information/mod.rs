@@ -18,8 +18,8 @@ impl Drive {
         next_version: ProtocolVersion,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
-        let platform_version = PlatformVersion::get(current_version)
-            .map_err(ProtocolError::PlatformVersionError)?;
+        let platform_version =
+            PlatformVersion::get(current_version).map_err(ProtocolError::PlatformVersionError)?;
         match platform_version
             .drive
             .methods

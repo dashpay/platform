@@ -44,7 +44,7 @@ mod get_fetch;
 mod insert;
 /// Various paths for contract operations
 #[cfg(any(feature = "full", feature = "verify"))]
-pub(crate) mod paths;
+pub mod paths;
 #[cfg(feature = "full")]
 pub(crate) mod prove;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -112,6 +112,7 @@ mod tests {
         (drive, contract)
     }
 
+    #[allow(dead_code)]
     fn setup_deep_nested_10_contract() -> (Drive, DataContract) {
         // Todo: make TempDir based on _prefix
         let tmp_dir = TempDir::new().unwrap();

@@ -32,7 +32,7 @@ impl Drive {
                     estimated_costs_only_with_layer_info,
                 );
                 Ok(())
-            },
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_levels_up_to_contract".to_string(),
                 known_versions: vec![0],

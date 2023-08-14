@@ -3,7 +3,6 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::SignedCredits;
@@ -90,52 +89,6 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_balance_include_debt_with_costs".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
-    }
-
-    /// Fetches the Identity's balance from the backing store.
-    /// If the balance is 0, then also provide debt.
-    /// Operations are created based on the 'apply' flag (stateful vs stateless).
-    ///
-    /// # Arguments
-    ///
-    /// * `identity_id` - The ID of the Identity whose balance is to be fetched.
-    /// * `apply` - Whether to create stateful or stateless operations.
-    /// * `transaction` - The current transaction.
-    /// * `drive_operations` - The drive operations to be updated.
-    /// * `drive_version` - The drive version.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Option<SignedCredits>, Error>` - The balance of the Identity if successful, or an error.
-    pub(crate) fn fetch_identity_balance_include_debt_operations(
-        &self,
-        identity_id: [u8; 32],
-        apply: bool,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Option<SignedCredits>, Error> {
-        match platform_version
-            .drive
-            .methods
-            .identity
-            .fetch
-            .attributes
-            .balance
-        {
-            0 => self.fetch_identity_balance_include_debt_operations_v0(
-                identity_id,
-                apply,
-                transaction,
-                drive_operations,
-                platform_version,
-            ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "fetch_identity_balance_include_debt_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

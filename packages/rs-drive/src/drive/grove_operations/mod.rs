@@ -166,9 +166,6 @@ fn push_drive_operation_result_optional<T>(
     }
     value.map_err(Error::GroveDB)
 }
-
-pub type EstimatedIntermediateFlagSizes = IntMap<u32>;
-pub type EstimatedValueSize = u32;
 pub type IsSubTree = bool;
 pub type IsSumSubTree = bool;
 pub type IsSumTree = bool;
@@ -272,9 +269,9 @@ pub enum DirectQueryType {
     StatefulDirectQuery,
 }
 
-impl DirectQueryType {
-    pub(crate) fn into_query_type(self) -> QueryType {
-        match self {
+impl From<DirectQueryType> for QueryType {
+    fn from(value: DirectQueryType) -> Self {
+        match value {
             DirectQueryType::StatelessDirectQuery {
                 in_tree_using_sums,
                 query_target,
@@ -286,7 +283,10 @@ impl DirectQueryType {
             DirectQueryType::StatefulDirectQuery => QueryType::StatefulQuery,
         }
     }
+}
 
+impl DirectQueryType {
+    #[allow(dead_code)]
     pub(crate) fn add_reference_sizes(self, reference_sizes: Vec<u32>) -> QueryType {
         match self {
             DirectQueryType::StatelessDirectQuery {

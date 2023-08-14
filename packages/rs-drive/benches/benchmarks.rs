@@ -36,8 +36,10 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 
+use dpp::document::serialization_traits::{
+    DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
+};
 use dpp::document::Document;
-use dpp::document::serialization_traits::{DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0};
 use dpp::tests::json_document::json_document_to_contract;
 
 use platform_version::version::PlatformVersion;
@@ -50,9 +52,11 @@ criterion_group!(deserialization, test_drive_10_deserialization);
 /// using 10 Dashpay `contactRequest` documents with random data.
 fn test_drive_10_serialization(c: &mut Criterion) {
     let platform_version = PlatformVersion::first();
-    let contract =
-        json_document_to_contract("tests/supporting_files/contract/dashpay/dashpay-contract.json", platform_version)
-            .expect("expected to get contract");
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        platform_version,
+    )
+    .expect("expected to get contract");
 
     let document_type = contract
         .document_type_for_name("contactRequest")
@@ -62,7 +66,11 @@ fn test_drive_10_serialization(c: &mut Criterion) {
 
     group.bench_function("DDSR 10", |b| {
         b.iter_batched(
-            || document_type.random_documents(10, Some(3333), platform_version).expect("expected random documents"),
+            || {
+                document_type
+                    .random_documents(10, Some(3333), platform_version)
+                    .expect("expected random documents")
+            },
             |documents| {
                 documents.iter().for_each(|document| {
                     document
@@ -75,7 +83,11 @@ fn test_drive_10_serialization(c: &mut Criterion) {
     });
     group.bench_function("CBOR 10", |b| {
         b.iter_batched(
-            || document_type.random_documents(10, Some(3333), platform_version).expect("expected random documents"),
+            || {
+                document_type
+                    .random_documents(10, Some(3333), platform_version)
+                    .expect("expected random documents")
+            },
             |documents| {
                 documents.iter().for_each(|document| {
                     document.to_cbor().expect("expected to encode to cbor");
@@ -86,7 +98,11 @@ fn test_drive_10_serialization(c: &mut Criterion) {
     });
     group.bench_function("DDSR Consume 10", |b| {
         b.iter_batched(
-            || document_type.random_documents(10, Some(3333), platform_version).expect("expected random documents"),
+            || {
+                document_type
+                    .random_documents(10, Some(3333), platform_version)
+                    .expect("expected random documents")
+            },
             |documents| {
                 documents.into_iter().for_each(|document| {
                     document
@@ -103,16 +119,19 @@ fn test_drive_10_serialization(c: &mut Criterion) {
 /// using 10 serialized Dashpay `contactRequest` documents with random data.
 fn test_drive_10_deserialization(c: &mut Criterion) {
     let platform_version = PlatformVersion::first();
-    let contract =
-        json_document_to_contract("tests/supporting_files/contract/dashpay/dashpay-contract.json", platform_version)
-            .expect("expected to get contract");
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        platform_version,
+    )
+    .expect("expected to get contract");
 
     let document_type = contract
         .document_type_for_name("contactRequest")
         .expect("expected to get profile document type");
     let (serialized_documents, cbor_serialized_documents): (Vec<Vec<u8>>, Vec<Vec<u8>>) =
         document_type
-            .random_documents(10, Some(3333), platform_version).expect("expected random documents")
+            .random_documents(10, Some(3333), platform_version)
+            .expect("expected random documents")
             .iter()
             .map(|a| {
                 (

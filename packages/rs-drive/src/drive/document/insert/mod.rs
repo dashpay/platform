@@ -83,7 +83,6 @@ mod tests {
     use std::borrow::Cow;
     use std::option::Option::None;
 
-    
     use dpp::block::block_info::BlockInfo;
     use rand::Rng;
     use tempfile::TempDir;

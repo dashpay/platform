@@ -64,8 +64,9 @@ use crate::drive::RootTree;
 #[cfg(feature = "full")]
 pub const TOTAL_SYSTEM_CREDITS_STORAGE_KEY: &[u8; 1] = b"D";
 
+/// The path for all the credits in the system
 #[cfg(feature = "full")]
-pub(crate) fn total_credits_path() -> [&'static [u8]; 2] {
+pub fn total_credits_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::Misc),
         TOTAL_SYSTEM_CREDITS_STORAGE_KEY,

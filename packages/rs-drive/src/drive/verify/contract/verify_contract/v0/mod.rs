@@ -6,10 +6,7 @@ use crate::error::Error;
 use crate::error::Error::GroveDB;
 use dpp::prelude::DataContract;
 
-use dpp::serialization::{
-    PlatformDeserializableFromVersionedStructure,
-    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
-};
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 

@@ -41,7 +41,7 @@ impl Drive {
                     estimated_costs_only_with_layer_info,
                 );
                 Ok(())
-            },
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_negative_credit".to_string(),
                 known_versions: vec![0],

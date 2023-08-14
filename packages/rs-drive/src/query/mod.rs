@@ -1113,7 +1113,7 @@ impl<'a> DriveQuery<'a> {
 
     #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a `QueryItem` given a start key and query direction.
-    fn query_item_for_starts_at_key(starts_at_key: Vec<u8>, left_to_right: bool) -> QueryItem {
+    pub fn query_item_for_starts_at_key(starts_at_key: Vec<u8>, left_to_right: bool) -> QueryItem {
         if left_to_right {
             QueryItem::RangeAfter(starts_at_key..)
         } else {

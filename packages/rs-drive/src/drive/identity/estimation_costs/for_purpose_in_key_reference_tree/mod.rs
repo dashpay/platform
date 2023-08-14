@@ -44,10 +44,8 @@ impl Drive {
                     estimated_costs_only_with_layer_info,
                     purpose,
                 );
-                Ok(
-                    (),
-                )
-            },
+                Ok(())
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_purpose_in_key_reference_tree".to_string(),
                 known_versions: vec![0],

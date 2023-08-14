@@ -31,6 +31,7 @@ impl Drive {
     ///
     /// * `Result<(), Error>` - On success, returns `Ok(())`. On error, returns an `Error`.
     ///
+    #[allow(dead_code)]
     pub(crate) fn apply_partial_batch_grovedb_operations(
         &self,
         estimated_costs_only_with_layer_info: Option<

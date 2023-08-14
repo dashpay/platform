@@ -30,11 +30,9 @@ impl Drive {
     ) -> Result<(), Error> {
         match drive_version.methods.identity.cost_estimation.for_balances {
             0 => {
-                Self::add_estimation_costs_for_balances_v0(
-                    estimated_costs_only_with_layer_info,
-                );
+                Self::add_estimation_costs_for_balances_v0(estimated_costs_only_with_layer_info);
                 Ok(())
-            },
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_balances".to_string(),
                 known_versions: vec![0],

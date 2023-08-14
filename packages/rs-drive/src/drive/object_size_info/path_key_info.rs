@@ -132,6 +132,7 @@ impl<'a, const N: usize> PathKeyInfo<'a, N> {
     }
 
     /// Get the KeyInfoPath for grovedb estimated costs
+    #[allow(dead_code)]
     pub(crate) fn convert_to_key_info_path(self) -> Result<KeyInfoPath, Error> {
         match self {
             PathKey((path, key)) => {

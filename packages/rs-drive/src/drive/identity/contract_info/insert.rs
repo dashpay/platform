@@ -12,12 +12,13 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-
+#[allow(dead_code)]
 pub enum DataContractApplyInfo {
     Keys(Vec<IdentityPublicKey>),
 }
 
 impl Drive {
+    #[allow(dead_code)]
     pub(crate) fn add_contract_info_operations(
         &self,
         identity_id: [u8; 32],

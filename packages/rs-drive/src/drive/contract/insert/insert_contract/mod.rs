@@ -59,59 +59,6 @@ impl Drive {
         }
     }
 
-    /// Adds a contract to storage using `add_contract_to_storage` and inserts the empty trees which will be necessary to later insert documents.
-    ///
-    /// # Arguments
-    ///
-    /// * `contract_element` - The contract data encapsulated in an `Element`.
-    /// * `contract` - A reference to the `DataContract` to be inserted.
-    /// * `block_info` - A reference to information about the current block.
-    /// * `apply` - A boolean indicating whether the operation should be applied.
-    /// * `transaction` - A `TransactionArg` object representing the transaction for the insertion.
-    /// * `drive_operations` - A mutable reference to a `Vec` of `LowLevelDriveOperation` objects to perform.
-    /// * `drive_version` - The version of the drive.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<(), Error>` - If successful, returns `Ok(())`. If an error occurs during the operation, returns an `Error`.
-    ///
-    /// # Errors
-    ///
-    /// This function may return an `Error` if the insertion process fails or if the drive version does not match any of the implemented method versions.
-    pub(in crate::drive::contract) fn insert_contract_element(
-        &self,
-        contract_element: Element,
-        contract: &DataContract,
-        block_info: &BlockInfo,
-        apply: bool,
-        transaction: TransactionArg,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-        platform_version: &PlatformVersion,
-    ) -> Result<(), Error> {
-        match platform_version
-            .drive
-            .methods
-            .contract
-            .insert
-            .insert_contract
-        {
-            0 => self.insert_contract_element_v0(
-                contract_element,
-                contract,
-                block_info,
-                apply,
-                transaction,
-                drive_operations,
-                platform_version,
-            ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "insert_contract_element".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
-    }
-
     /// Adds the operations for inserting a contract to the `drive_operations` vector.
     ///
     /// # Arguments
@@ -158,55 +105,6 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_contract_add_operations".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
-    }
-
-    /// Returns a vector of operations for adding a contract to storage using `add_contract_to_storage` and inserting the empty trees necessary for later document insertion.
-    ///
-    /// # Arguments
-    ///
-    /// * `contract_element` - The contract data encapsulated in an `Element`.
-    /// * `contract` - A reference to the `DataContract` to be inserted.
-    /// * `block_info` - A reference to information about the current block.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` for estimated layer information.
-    /// * `platform_version` - The version of Platform.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Vec<LowLevelDriveOperation>, Error>` - If successful, returns a vector of `LowLevelDriveOperation` objects. If an error occurs during the operation, returns an `Error`.
-    ///
-    /// # Errors
-    ///
-    /// This function may return an `Error` if the operation creation process fails or if the drive version does not match any of the implemented method versions.
-    pub(crate) fn insert_contract_operations(
-        &self,
-        contract_element: Element,
-        contract: &DataContract,
-        block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match platform_version
-            .drive
-            .methods
-            .contract
-            .insert
-            .insert_contract
-        {
-            0 => self.insert_contract_operations_v0(
-                contract_element,
-                contract,
-                block_info,
-                estimated_costs_only_with_layer_info,
-                platform_version,
-            ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "insert_contract_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
