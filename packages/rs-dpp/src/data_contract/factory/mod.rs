@@ -11,6 +11,7 @@ use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::config::DataContractConfig;
 pub use v0::DataContractFactoryV0;
 
 #[cfg(feature = "state-transitions")]
@@ -60,12 +61,14 @@ impl DataContractFactory {
     pub fn create(
         &self,
         owner_id: Identifier,
-        documents: Value,
-        config: Option<Value>,
-        definitions: Option<Value>,
+        document_schemas: Value,
+        config: Option<DataContractConfig>,
+        schema_defs: Option<Value>,
     ) -> Result<CreatedDataContract, ProtocolError> {
         match self {
-            DataContractFactory::V0(v0) => v0.create(owner_id, documents, config, definitions),
+            DataContractFactory::V0(v0) => {
+                v0.create(owner_id, document_schemas, config, schema_defs)
+            }
         }
     }
 

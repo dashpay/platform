@@ -31,7 +31,7 @@ impl Drive {
         let document_type_count = contract.document_types().len() as u32;
 
         // we only store the owner_id storage
-        let storage_flags = if contract.config().can_be_deleted() {
+        let storage_flags = if contract.config().is_contract_deletion_allowed() {
             Some(StorageFlags::approximate_size(true, None))
         } else {
             None

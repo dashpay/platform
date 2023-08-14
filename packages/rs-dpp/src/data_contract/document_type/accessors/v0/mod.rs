@@ -37,10 +37,10 @@ pub trait DocumentTypeV0Getters {
     fn required_fields(&self) -> &BTreeSet<String>;
 
     /// Returns the documents keep history flag of the document type.
-    fn documents_keep_history(&self) -> bool;
+    fn document_revisions(&self) -> bool;
 
     /// Returns the documents mutable flag of the document type.
-    fn documents_mutable(&self) -> bool;
+    fn documents_read_only(&self) -> bool;
 
     /// Returns the data contract id of the document type.
     fn data_contract_id(&self) -> Identifier;

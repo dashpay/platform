@@ -65,13 +65,13 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        if !document_type.documents_mutable() {
+        if !document_type.documents_read_only() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "this document type is not mutable and can not be deleted",
             )));
         }
 
-        if document_type.documents_keep_history() {
+        if document_type.document_revisions() {
             return Err(Error::Drive(
                 DriveError::InvalidDeletionOfDocumentThatKeepsHistory(
                     "this document type keeps history and therefore can not be deleted",

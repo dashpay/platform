@@ -15,7 +15,7 @@ use crate::serialization::{PlatformDeserializable, ValueConvertible};
 use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
 
-#[cfg(feature = "cbor")]
+#[cfg(feature = "document-cbor-conversion")]
 use crate::document::serialization_traits::DocumentCborMethodsV0;
 use platform_value::btreemap_extensions::{
     BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
@@ -112,12 +112,12 @@ impl ExtendedDocumentV0 {
 
     pub fn can_be_modified(&self) -> Result<bool, ProtocolError> {
         self.document_type()
-            .map(|document_type| document_type.documents_mutable())
+            .map(|document_type| document_type.documents_read_only())
     }
 
     pub fn needs_revision(&self) -> Result<bool, ProtocolError> {
         self.document_type()
-            .map(|document_type| document_type.documents_mutable())
+            .map(|document_type| document_type.documents_read_only())
     }
 
     pub fn revision(&self) -> Option<Revision> {

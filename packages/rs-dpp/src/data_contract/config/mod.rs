@@ -1,11 +1,9 @@
-mod fields;
 pub mod v0;
 
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
-pub use fields::*;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -48,107 +46,73 @@ impl DataContractConfig {
             }),
         }
     }
-
-    /// Retrieve contract configuration properties.
-    ///
-    /// This method takes a BTreeMap representing a contract and retrieves
-    /// the configuration properties based on the values found in the map.
-    ///
-    /// The process of retrieving contract configuration properties is versioned,
-    /// and the version is determined by the platform version parameter.
-    /// If the version is not supported, an error is returned.
-    ///
-    /// # Parameters
-    ///
-    /// * `contract`: BTreeMap representing the contract.
-    /// * `platform_version`: The platform version being used.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<ContractConfig, ProtocolError>`: On success, a ContractConfig.
-    ///   On failure, a ProtocolError.
-    pub(in crate::data_contract) fn get_contract_configuration_properties(
-        contract: &BTreeMap<String, Value>,
-        platform_version: &PlatformVersion,
-    ) -> Result<DataContractConfig, ProtocolError> {
-        match platform_version.dpp.contract_versions.config_version {
-            0 => Ok(
-                DataContractConfigV0::get_contract_configuration_properties_v0(contract)?.into(),
-            ),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DataContractConfig::get_contract_configuration_properties".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-        }
-    }
 }
 
 impl DataContractConfigGettersV0 for DataContractConfig {
-    fn can_be_deleted(&self) -> bool {
+    fn is_contract_deletion_allowed(&self) -> bool {
         match self {
-            DataContractConfig::V0(v0) => v0.can_be_deleted,
+            DataContractConfig::V0(v0) => v0.allow_contract_deletion,
         }
     }
 
-    fn readonly(&self) -> bool {
+    fn is_contract_update_allowed(&self) -> bool {
         match self {
-            DataContractConfig::V0(v0) => v0.readonly,
+            DataContractConfig::V0(v0) => v0.allowe_contract_update,
         }
     }
 
-    fn keeps_history(&self) -> bool {
+    fn keep_previous_contract_versions(&self) -> bool {
         match self {
-            DataContractConfig::V0(v0) => v0.keeps_history,
+            DataContractConfig::V0(v0) => v0.keep_previous_contract_versions,
         }
     }
 
-    fn documents_keep_history_contract_default(&self) -> bool {
+    fn document_revisions(&self) -> bool {
         match self {
-            DataContractConfig::V0(v0) => v0.documents_keep_history_contract_default,
+            DataContractConfig::V0(v0) => v0.document_revisions_default,
         }
     }
 
-    fn documents_mutable_contract_default(&self) -> bool {
+    fn documents_read_only(&self) -> bool {
         match self {
-            DataContractConfig::V0(v0) => v0.documents_mutable_contract_default,
+            DataContractConfig::V0(v0) => v0.documents_read_only_default,
         }
     }
 }
 
 impl DataContractConfigSettersV0 for DataContractConfig {
-    fn set_can_be_deleted(&mut self, value: bool) {
+    fn set_allow_contract_deletion(&mut self, value: bool) {
         match self {
-            DataContractConfig::V0(v0) => v0.can_be_deleted = value,
+            DataContractConfig::V0(v0) => v0.allow_contract_deletion = value,
             // If there are other enum variants, you might want to handle them here
             // _ => {} // For example, do nothing or panic
         }
     }
 
-    fn set_readonly(&mut self, value: bool) {
+    fn set_allow_contract_update(&mut self, value: bool) {
         match self {
-            DataContractConfig::V0(v0) => v0.readonly = value,
+            DataContractConfig::V0(v0) => v0.allowe_contract_update = value,
             // _ => {}
         }
     }
 
-    fn set_keeps_history(&mut self, value: bool) {
+    fn set_keep_previous_contract_versions(&mut self, value: bool) {
         match self {
-            DataContractConfig::V0(v0) => v0.keeps_history = value,
+            DataContractConfig::V0(v0) => v0.keep_previous_contract_versions = value,
             // _ => {}
         }
     }
 
-    fn set_documents_keep_history_contract_default(&mut self, value: bool) {
+    fn set_document_revisions_default(&mut self, value: bool) {
         match self {
-            DataContractConfig::V0(v0) => v0.documents_keep_history_contract_default = value,
+            DataContractConfig::V0(v0) => v0.document_revisions_default = value,
             // _ => {}
         }
     }
 
-    fn set_documents_mutable_contract_default(&mut self, value: bool) {
+    fn set_documents_read_only_default(&mut self, value: bool) {
         match self {
-            DataContractConfig::V0(v0) => v0.documents_mutable_contract_default = value,
+            DataContractConfig::V0(v0) => v0.documents_read_only_default = value,
             // _ => {}
         }
     }

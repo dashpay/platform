@@ -92,7 +92,7 @@ impl Drive {
             )?;
         }
 
-        if document_type.documents_keep_history() {
+        if document_type.document_revisions() {
             let (path_key_info, storage_flags) = if document_and_contract_info
                 .owned_document_info
                 .document_info
@@ -109,7 +109,7 @@ impl Drive {
                     StorageFlags::optional_default_as_ref(),
                 )
             } else {
-                let inserted_storage_flags = if contract.config().can_be_deleted() {
+                let inserted_storage_flags = if contract.config().is_contract_deletion_allowed() {
                     document_and_contract_info
                         .owned_document_info
                         .document_info

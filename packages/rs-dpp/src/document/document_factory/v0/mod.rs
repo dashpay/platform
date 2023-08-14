@@ -331,7 +331,7 @@ impl DocumentFactoryV0 {
         documents
             .into_iter()
             .map(|(document, document_type)| {
-                if document_type.documents_mutable() {
+                if document_type.documents_read_only() {
                     //we need to have revisions
                     let Some(revision) = document.revision() else {
                     return Err(DocumentError::RevisionAbsentError {
@@ -365,7 +365,7 @@ impl DocumentFactoryV0 {
         documents
             .into_iter()
             .map(|(document, document_type)| {
-                if !document_type.documents_mutable() {
+                if !document_type.documents_read_only() {
                     return Err(DocumentError::TryingToReplaceImmutableDocument {
                         document: Box::new(document),
                     }
@@ -435,7 +435,7 @@ impl DocumentFactoryV0 {
         documents
             .into_iter()
             .map(|(document, document_type)| {
-                if !document_type.documents_mutable() {
+                if !document_type.documents_read_only() {
                     return Err(DocumentError::TryingToDeleteImmutableDocument {
                         document: Box::new(document),
                     }

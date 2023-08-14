@@ -72,15 +72,15 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 
-    fn documents_keep_history(&self) -> bool {
+    fn document_revisions(&self) -> bool {
         match self {
-            DocumentType::V0(v0) => v0.documents_keep_history(),
+            DocumentType::V0(v0) => v0.document_revisions(),
         }
     }
 
-    fn documents_mutable(&self) -> bool {
+    fn documents_read_only(&self) -> bool {
         match self {
-            DocumentType::V0(v0) => v0.documents_mutable(),
+            DocumentType::V0(v0) => v0.documents_read_only(),
         }
     }
 
@@ -152,15 +152,15 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
-    fn documents_keep_history(&self) -> bool {
+    fn document_revisions(&self) -> bool {
         match self {
-            DocumentTypeRef::V0(v0) => v0.documents_keep_history(),
+            DocumentTypeRef::V0(v0) => v0.document_revisions(),
         }
     }
 
-    fn documents_mutable(&self) -> bool {
+    fn documents_read_only(&self) -> bool {
         match self {
-            DocumentTypeRef::V0(v0) => v0.documents_mutable(),
+            DocumentTypeRef::V0(v0) => v0.documents_read_only(),
         }
     }
 
@@ -232,15 +232,15 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
         }
     }
 
-    fn documents_keep_history(&self) -> bool {
+    fn document_revisions(&self) -> bool {
         match self {
-            DocumentTypeMutRef::V0(v0) => v0.documents_keep_history(),
+            DocumentTypeMutRef::V0(v0) => v0.document_revisions(),
         }
     }
 
-    fn documents_mutable(&self) -> bool {
+    fn documents_read_only(&self) -> bool {
         match self {
-            DocumentTypeMutRef::V0(v0) => v0.documents_mutable(),
+            DocumentTypeMutRef::V0(v0) => v0.documents_read_only(),
         }
     }
 

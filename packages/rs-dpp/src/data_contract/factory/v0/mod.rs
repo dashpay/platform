@@ -67,9 +67,9 @@ impl DataContractFactoryV0 {
     pub fn create(
         &self,
         owner_id: Identifier,
-        documents: Value,
-        config: Option<Value>,
-        definitions: Option<Value>,
+        document_schemas: Value,
+        config: Option<DataContractConfig>,
+        schema_defs: Option<Value>,
     ) -> Result<CreatedDataContract, ProtocolError> {
         let entropy = Bytes32::new(self.entropy_generator.generate()?);
 
@@ -78,19 +78,12 @@ impl DataContractFactoryV0 {
         let data_contract_id =
             DataContract::generate_data_contract_id_v0(owner_id.to_buffer(), entropy.to_buffer());
 
-        let defs = definitions
-            .map(|defs| defs.into_btree_string_map())
-            .transpose()
-            .map_err(ProtocolError::ValueError)?;
+        // Data Contract config
+        let config = config
+            .map(|c| Ok(c))
+            .unwrap_or_else(|| DataContractConfig::default_for_version(platform_version))?;
 
-        // We need to transform the value into a data contract config
-        let config = if let Some(config_value) = config {
-            DataContractConfig::from_value(config_value, platform_version)?
-        } else {
-            DataContractConfig::default_for_version(platform_version)?
-        };
-
-        let documents_map = documents
+        let documents_map = document_schemas
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
 
@@ -100,7 +93,7 @@ impl DataContractFactoryV0 {
             version: 1,
             owner_id,
             document_schemas: documents_map,
-            schema_defs: defs,
+            schema_defs,
         });
 
         let data_contract =

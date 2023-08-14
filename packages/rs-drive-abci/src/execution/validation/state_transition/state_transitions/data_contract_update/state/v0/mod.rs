@@ -101,7 +101,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             ))
         }
 
-        if old_data_contract.config().readonly() {
+        if old_data_contract.config().is_contract_update_allowed() {
             validation_result.add_error(DataContractIsReadonlyError::new(new_data_contract.id()));
             return Ok(validation_result);
         }

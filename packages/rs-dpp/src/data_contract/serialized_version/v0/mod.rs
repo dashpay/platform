@@ -34,7 +34,7 @@ pub struct DataContractInSerializationFormatV0 {
     pub owner_id: Identifier,
 
     /// Shared subschemas to reuse across documents as $defs object
-    pub schema_defs: Option<BTreeMap<DefinitionName, Value>>,
+    pub schema_defs: Option<Value>,
 
     /// Document JSON Schemas per type
     pub document_schemas: BTreeMap<DocumentName, Value>,

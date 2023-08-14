@@ -48,7 +48,7 @@ pub struct DataContractV0 {
     pub(crate) config: DataContractConfig,
 
     /// Shared subschemas to reuse across documents (see $defs)
-    pub(crate) schema_defs: Option<BTreeMap<DefinitionName, Value>>,
+    pub(crate) schema_defs: Option<Value>,
 }
 
 //

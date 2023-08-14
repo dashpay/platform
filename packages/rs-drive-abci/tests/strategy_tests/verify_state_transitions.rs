@@ -158,7 +158,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                                         transition.base().document_type_name().as_str(),
                                     )
                                     .expect("get document type")
-                                    .documents_keep_history(),
+                                    .document_revisions(),
                                 document_id: transition.base().id().to_vec(),
                             });
                     });
@@ -197,7 +197,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                             .base()
                             .document_type_name()
                             .clone(),
-                        document_type_keeps_history: document_type.documents_keep_history(),
+                        document_type_keeps_history: document_type.document_revisions(),
                         document_id: document_transition_action.base().id().into_buffer(),
                         block_time_ms: None, //None because we want latest
                     };

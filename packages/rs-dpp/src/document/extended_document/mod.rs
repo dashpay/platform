@@ -197,7 +197,7 @@ impl ExtendedDocument {
     /// Calculate the hash of the extended document.
     ///
     /// This function is a passthrough to the `hash` method.
-    #[cfg(feature = "cbor")]
+    #[cfg(feature = "document-cbor-conversion")]
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.hash(),

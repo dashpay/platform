@@ -194,7 +194,7 @@ mod tests {
                 platform,
             } = setup_test();
 
-            data_contract.config_mut().set_readonly(true);
+            data_contract.config_mut().set_allow_contract_update(true);
             apply_contract(&platform, &data_contract, Default::default());
 
             let updated_document = platform_value!({
@@ -258,8 +258,10 @@ mod tests {
 
             let platform_version = PlatformVersion::latest();
 
-            data_contract.config_mut().set_keeps_history(true);
-            data_contract.config_mut().set_readonly(false);
+            data_contract
+                .config_mut()
+                .set_keep_previous_contract_versions(true);
+            data_contract.config_mut().set_allow_contract_update(false);
 
             // TODO: check that keep_history actually works
             apply_contract(

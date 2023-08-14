@@ -80,16 +80,12 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::Drive;
-use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::data_contract::DataContract;
 
 use dpp::block::block_info::BlockInfo;
-#[cfg(all(
-    feature = "fixtures-and-mocks",
-    feature = "data-contract-cbor-conversion"
-))]
+#[cfg(test)]
 use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
+#[cfg(test)]
 use dpp::document::serialization_traits::DocumentCborMethodsV0;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;

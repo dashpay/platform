@@ -181,8 +181,10 @@ mod tests {
         n: u64,
         platform_version: &PlatformVersion,
     ) -> DataContract {
-        data_contract.config_mut().set_keeps_history(true);
-        data_contract.config_mut().set_readonly(false);
+        data_contract
+            .config_mut()
+            .set_keep_previous_contract_versions(true);
+        data_contract.config_mut().set_allow_contract_update(false);
 
         let original_data_contract = data_contract.clone();
 

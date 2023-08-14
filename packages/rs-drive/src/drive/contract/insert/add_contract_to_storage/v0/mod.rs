@@ -38,7 +38,7 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         let contract_root_path = paths::contract_root_path(contract.id_ref().as_bytes());
-        if contract.config().keeps_history() {
+        if contract.config().keep_previous_contract_versions() {
             let element_flags = contract_element.get_flags().clone();
             let storage_flags =
                 StorageFlags::map_cow_some_element_flags_ref(contract_element.get_flags())?;

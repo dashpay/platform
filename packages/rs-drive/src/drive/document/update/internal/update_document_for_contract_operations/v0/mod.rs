@@ -53,7 +53,10 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let drive_version = &platform_version.drive;
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        if !document_and_contract_info.document_type.documents_mutable() {
+        if !document_and_contract_info
+            .document_type
+            .documents_read_only()
+        {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
                 "documents for this contract are not mutable",
             )));
@@ -101,7 +104,7 @@ impl Drive {
         );
 
         // next we need to get the old document from storage
-        let old_document_element = if document_type.documents_keep_history() {
+        let old_document_element = if document_type.document_revisions() {
             let contract_documents_keeping_history_primary_key_path_for_document_id =
                 contract_documents_keeping_history_primary_key_path_for_document_id(
                     contract.id_ref().as_bytes(),

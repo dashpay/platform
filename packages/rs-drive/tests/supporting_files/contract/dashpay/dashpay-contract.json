@@ -108,7 +108,7 @@
         },
         "contactRequest": {
             "type": "object",
-            "documentsMutable": false,
+            "readOnly": true,
             "indices": [
                 {
                     "properties": [

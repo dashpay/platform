@@ -727,7 +727,7 @@ impl<'a> DriveQuery<'a> {
     #[cfg(any(feature = "full", feature = "verify"))]
     /// Operations to construct a path query.
     pub fn start_at_document_path_and_key(&self, starts_at: &[u8; 32]) -> (Vec<Vec<u8>>, Vec<u8>) {
-        if self.document_type.documents_keep_history() {
+        if self.document_type.document_revisions() {
             let document_holding_path = self.contract.documents_with_history_primary_key_path(
                 self.document_type.name().as_str(),
                 starts_at,
@@ -905,7 +905,7 @@ impl<'a> DriveQuery<'a> {
             )?;
             query.insert_key(key);
 
-            if self.document_type.documents_keep_history() {
+            if self.document_type.document_revisions() {
                 // if the documents keep history then we should insert a subquery
                 if let Some(block_time) = self.block_time_ms {
                     let encoded_block_time = encode_u64(block_time);
@@ -984,7 +984,7 @@ impl<'a> DriveQuery<'a> {
                     }
                 }
 
-                if self.document_type.documents_keep_history() {
+                if self.document_type.document_revisions() {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time_ms {
                         //todo
@@ -1025,7 +1025,7 @@ impl<'a> DriveQuery<'a> {
                     },
                 }
 
-                if self.document_type.documents_keep_history() {
+                if self.document_type.document_revisions() {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time_ms {
                         return Err(Error::Query(QuerySyntaxError::Unsupported(

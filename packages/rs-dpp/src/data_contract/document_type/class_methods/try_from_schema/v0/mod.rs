@@ -44,9 +44,9 @@ impl DocumentTypeV0 {
         data_contract_id: Identifier,
         name: &str,
         schema: Value,
-        schema_defs: Option<&BTreeMap<String, Value>>,
-        default_keeps_history: bool,
-        default_mutability: bool,
+        schema_defs: Option<&Value>,
+        default_revisions: bool,
+        default_read_only: bool,
         validate: bool, // we don't need to validate if loaded from state
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -103,18 +103,17 @@ impl DocumentTypeV0 {
             )))
         })?;
 
-        // TODO: These properties aren't defined in JSON meta schema
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
-            Value::inner_optional_bool_value(schema_map, "documentsKeepHistory")
+            Value::inner_optional_bool_value(schema_map, property_names::REVISIONS)
                 .map_err(ProtocolError::ValueError)?
-                .unwrap_or(default_keeps_history);
+                .unwrap_or(default_revisions);
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
-            Value::inner_optional_bool_value(schema_map, "documentsMutable")
+            Value::inner_optional_bool_value(schema_map, property_names::READ_ONLY)
                 .map_err(ProtocolError::ValueError)?
-                .unwrap_or(default_mutability);
+                .map_or(default_read_only, |v| !v);
 
         // Extract the properties
         let property_values =

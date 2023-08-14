@@ -54,7 +54,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         // we just have the elements
-        let approximate_size = if document_type.documents_mutable() {
+        let approximate_size = if document_type.documents_read_only() {
             //todo: have the contract say how often we expect documents to mutate
             Some((
                 AVERAGE_NUMBER_OF_UPDATES as u16,

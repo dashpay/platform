@@ -12,7 +12,7 @@ impl DataContractMethodsV0 for DataContractV0 {
     fn set_document_schemas(
         &mut self,
         schemas: BTreeMap<DocumentName, Value>,
-        defs: Option<BTreeMap<DefinitionName, Value>>,
+        defs: Option<Value>,
         validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
@@ -20,8 +20,8 @@ impl DataContractMethodsV0 for DataContractV0 {
             self.id,
             schemas,
             defs.as_ref(),
-            self.config.documents_keep_history_contract_default(),
-            self.config.documents_mutable_contract_default(),
+            self.config.document_revisions(),
+            self.config.documents_read_only(),
             validate,
             platform_version,
         )?;
@@ -41,8 +41,8 @@ impl DataContractMethodsV0 for DataContractV0 {
             name,
             schema,
             self.schema_defs.as_ref(),
-            self.config.documents_keep_history_contract_default(),
-            self.config.documents_mutable_contract_default(),
+            self.config.document_revisions(),
+            self.config.documents_read_only(),
             validate,
             platform_version,
         )?;
@@ -60,13 +60,13 @@ impl DataContractMethodsV0 for DataContractV0 {
             .collect()
     }
 
-    fn schema_defs(&self) -> Option<&BTreeMap<DefinitionName, Value>> {
+    fn schema_defs(&self) -> Option<&Value> {
         self.schema_defs.as_ref()
     }
 
     fn set_schema_defs(
         &mut self,
-        defs: Option<BTreeMap<DefinitionName, Value>>,
+        defs: Option<Value>,
         validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {

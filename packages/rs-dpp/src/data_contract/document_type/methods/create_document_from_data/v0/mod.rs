@@ -25,7 +25,7 @@ impl DocumentTypeV0 {
             &document_entropy,
         );
 
-        let revision = if self.documents_mutable() {
+        let revision = if self.documents_read_only() {
             Some(INITIAL_REVISION)
         } else {
             None
