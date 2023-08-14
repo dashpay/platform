@@ -270,10 +270,12 @@ mod tests {
             .expect("expected to serialize data contract");
         assert_eq!(
             serialized[0],
-            platform_version.contract.default_current_version
+            platform_version.dpp.contract_versions.contract_serialization_version.default_current_version as u8
         );
 
-        let unserialized = DataContract::deserialize_with_platform_version(platform_version);
+        let unserialized = DataContract::versioned_deserialize(&serialized, true, &platform_version)
+            .expect("expected to deserialize data contract");
+        // let unserialized = DataContract::deserialize_with_platform_version(platform_version);
         assert_eq!(data_contract, unserialized);
     }
 }
