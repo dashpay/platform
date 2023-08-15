@@ -1,5 +1,4 @@
 use crate::data_contract::document_type::v0::DocumentTypeV0;
-use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::TryInto;
 

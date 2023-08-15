@@ -46,7 +46,7 @@ use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 
-use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
+use platform_version::TryIntoPlatformVersioned;
 use platform_versioning::PlatformVersioned;
 pub use serde_json::Value as JsonValue;
 
@@ -209,14 +209,12 @@ impl DataContract {
     pub fn as_v0(&self) -> Option<&DataContractV0> {
         match self {
             DataContract::V0(v0) => Some(v0),
-            _ => None,
         }
     }
 
     pub fn as_v0_mut(&mut self) -> Option<&mut DataContractV0> {
         match self {
             DataContract::V0(v0) => Some(v0),
-            _ => None,
         }
     }
 

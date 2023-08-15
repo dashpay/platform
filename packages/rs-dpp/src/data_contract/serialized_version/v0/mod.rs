@@ -1,4 +1,3 @@
-use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::config::v0::DataContractConfigV0;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;

@@ -1,6 +1,3 @@
-use bincode::de::Decoder;
-use bincode::enc::Encoder;
-
 use std::collections::BTreeMap;
 
 use platform_value::Identifier;
