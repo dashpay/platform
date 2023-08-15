@@ -3,16 +3,13 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **dashmate:** helper default port was bound to Windows print port (#1194)
-* **dashmate:** hard reset deletes related files (#1188)
-* **drive:** core block reward distribution (#1135)
+* Platform state is modified so previous data won't be valid
 
 ### Features
 
 * abci versioning ([#1172](https://github.com/dashpay/platform/issues/1172))
 * adapt GroveDB's API changes ([#1099](https://github.com/dashpay/platform/issues/1099))
 * build dapi-gprc rust client ([#1182](https://github.com/dashpay/platform/issues/1182))
-* **dashmate:** report pulled images during update ([#1186](https://github.com/dashpay/platform/issues/1186))
 * **drive:** add block_id_hash, quorum_type and chain_id required to verify proofs to GRPC responses ([#1207](https://github.com/dashpay/platform/issues/1207))
 * **drive:** core block reward distribution ([#1135](https://github.com/dashpay/platform/issues/1135))
 * **drive:** ensure that chain lock height valid ([#1157](https://github.com/dashpay/platform/issues/1157))
@@ -29,17 +26,11 @@
 ### Bug Fixes
 
 * **dapi:** invalid json response body ([#1150](https://github.com/dashpay/platform/issues/1150))
-* **dashmate:** config.toEnvs is not a function
-* **dashmate:** invalid variable name ([#1213](https://github.com/dashpay/platform/issues/1213))
-* **dashmate:** platform should be enabled on mainnet ([#1112](https://github.com/dashpay/platform/issues/1112))
 * double process proposal from Tenderdash restart ([#1165](https://github.com/dashpay/platform/issues/1165))
 * **drive:** core RPC retry all errors ([#1140](https://github.com/dashpay/platform/issues/1140))
 * **drive:** do not return an error for non existence contract when verifying ([#1241](https://github.com/dashpay/platform/issues/1241))
 * **drive:** wait for core to sync ([#1153](https://github.com/dashpay/platform/issues/1153))
 * update abci test state root ([#1144](https://github.com/dashpay/platform/issues/1144))
-* **wallet-lib:** instant locks not arriving to HD wallets ([#1126](https://github.com/dashpay/platform/issues/1126)) ([#1131](https://github.com/dashpay/platform/issues/1131))
-* **wallet-lib:** not retrying on missing inputs error ([#1133](https://github.com/dashpay/platform/issues/1133))
-* **wallet-lib:** spending immature coinbase transactions ([#1145](https://github.com/dashpay/platform/issues/1145))
 
 
 ### Code Refactoring
@@ -69,13 +60,6 @@
 
 * add QuantumExplorer as Code Owner
 * backport deps from master
-* empty commit to fix CI
-* **release:** update changelog and bump version to 0.24.10 ([#1193](https://github.com/dashpay/platform/issues/1193))
-* **release:** update changelog and bump version to 0.24.5 ([#1113](https://github.com/dashpay/platform/issues/1113))
-* **release:** update changelog and bump version to 0.24.6 ([#1173](https://github.com/dashpay/platform/issues/1173))
-* **release:** update changelog and bump version to 0.24.7 ([#1178](https://github.com/dashpay/platform/issues/1178))
-* **release:** update changelog and bump version to 0.24.8 ([#1184](https://github.com/dashpay/platform/issues/1184))
-* **release:** update changelog and bump version to 0.24.9 ([#1190](https://github.com/dashpay/platform/issues/1190))
 * temp fix rust-dashcore-dependency
 * update grovedb version
 * update lock file
