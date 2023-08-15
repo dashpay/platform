@@ -78,7 +78,7 @@ describe('fetchDocumentsFactory', () => {
 
     const [actualDocument] = foundDocuments;
 
-    expect(actualDocument).to.deep.equals(document);
+    expect(actualDocument.toJSON()).to.deep.equals(document.toJSON());
   });
 
   it('should fetch Documents for specified contract id, document type and name', async () => {

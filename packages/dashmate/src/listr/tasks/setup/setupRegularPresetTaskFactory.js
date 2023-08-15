@@ -60,9 +60,9 @@ function setupRegularPresetTaskFactory(
                 // Keep this order, because each item references the text in the previous item
                 header: `  The Dash network consists of several different node types:
       Fullnode             - Host the full Dash blockchain (no collateral)
-      Masternode           - Fullnode features, plus Core services such as ChainLocks 
+      Masternode           - Fullnode features, plus Core services such as ChainLocks
                             and InstantSend (1000 DASH collateral)
-      Evolution fullnode   - Fullnode features, plus host a full copy of the Platform 
+      Evolution fullnode   - Fullnode features, plus host a full copy of the Platform
                             blockchain (no collateral)
       Evolution masternode - Masternode features, plus Platform services such as DAPI
                             and Drive (4000 DASH collateral)\n`,
@@ -87,6 +87,12 @@ function setupRegularPresetTaskFactory(
 
           ctx.config.set('platform.enable', ctx.isHP && ctx.config.get('network') !== PRESET_MAINNET);
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);
+
+          if (ctx.config.get('core.masternode.enable')) {
+            ctx.config.set('platform.drive.tenderdash.mode', 'validator');
+          } else {
+            ctx.config.set('platform.drive.tenderdash.mode', 'full');
+          }
 
           ctx.config.set('core.rpc.user', generateRandomString(8));
           ctx.config.set('core.rpc.password', generateRandomString(12));

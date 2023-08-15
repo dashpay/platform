@@ -183,6 +183,7 @@ function getBaseConfigFactory(homeDir) {
             },
           },
           tenderdash: {
+            mode: 'full',
             docker: {
               image: 'dashpay/tenderdash:0.11.2',
             },
