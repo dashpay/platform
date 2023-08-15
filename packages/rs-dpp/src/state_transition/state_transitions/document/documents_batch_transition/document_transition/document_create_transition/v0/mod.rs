@@ -250,6 +250,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "state-transition-json-conversion")]
     fn convert_to_json_with_dynamic_binary_paths() {
         let data_contract = data_contract_with_dynamic_properties();
         let alpha_binary = BinaryData::new(vec![10_u8; 32]);

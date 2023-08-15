@@ -147,8 +147,15 @@ impl JsonSchemaExt for JsonValue {
 
 #[cfg(test)]
 mod test {
+    use std::collections::BTreeMap;
     use super::*;
     use serde_json::json;
+    use platform_value::Identifier;
+    use platform_version::version::LATEST_PLATFORM_VERSION;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::DataContract;
+    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::document_type::DocumentType;
 
     #[test]
     fn test_extract_indices() {
@@ -180,8 +187,20 @@ mod test {
              ]
         });
 
-        let indices_result = input.get_indices::<Vec<_>>();
-        let indices = indices_result.unwrap();
+        let platform_value = platform_value::to_value(input).unwrap();
+
+        let document_type = DocumentType::try_from_schema(
+            Identifier::random(),
+            "doc",
+            platform_value,
+            None,
+            false,
+            false,
+            false,
+            LATEST_PLATFORM_VERSION
+        ).unwrap();
+
+        let indices = document_type.indices();
 
         assert_eq!(indices.len(), 2);
         assert_eq!(indices[0].name, "first_index");

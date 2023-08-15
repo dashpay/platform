@@ -221,7 +221,7 @@ mod test {
     use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
     use platform_value::string_encoding::Encoding;
     use platform_value::Value;
-    use platform_version::version::PlatformVersion;
+    use platform_version::version::{LATEST_PLATFORM_VERSION, PlatformVersion};
     use pretty_assertions::assert_eq;
 
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -351,7 +351,7 @@ mod test {
     fn test_buffer_serialize_deserialize() {
         init();
         let init_doc = new_example_document();
-        let buffer_document = init_doc.to_cbor_value().expect("no errors");
+        let buffer_document = init_doc.to_value().expect("no errors");
 
         let doc = ExtendedDocument::from_cbor_buffer(buffer_document)
             .expect("document should be created from buffer");
@@ -366,9 +366,9 @@ mod test {
     #[test]
     fn test_to_object() {
         init();
-        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS).unwrap();
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, LATEST_PLATFORM_VERSION.protocol_version).unwrap();
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
-        let document = ExtendedDocument::from_json_string(&document_json, dpns_contract).unwrap();
+        let document = ExtendedDocument::from_json_string(&document_json, dpns_contract, LATEST_PLATFORM_VERSION).unwrap();
         let document_object = document.to_json_object_for_validation().unwrap();
 
         for property in IDENTIFIER_FIELDS {

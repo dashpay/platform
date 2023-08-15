@@ -50,8 +50,10 @@ mod tests {
     use rand::SeedableRng;
     use std::collections::BTreeMap;
     use std::convert::TryInto;
+    use platform_version::version::LATEST_PLATFORM_VERSION;
 
     #[test]
+    #[cfg(feature = "random-identities")]
     fn identity_create_transition_ser_de() {
         let platform_version = PlatformVersion::latest();
         let mut identity = Identity::random_identity(5, Some(5), platform_version)
@@ -70,6 +72,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "random-identities")]
     fn identity_topup_transition_ser_de() {
         let platform_version = PlatformVersion::latest();
         let mut identity = Identity::random_identity(5, Some(5), platform_version)
@@ -92,6 +95,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "random-identities")]
     fn identity_update_transition_add_keys_ser_de() {
         let mut rng = StdRng::seed_from_u64(5);
         let (identity, mut keys): (Identity, BTreeMap<_, _>) =
@@ -150,10 +154,11 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "state-transition-signing")]
     fn identity_update_transition_disable_keys_ser_de() {
         let mut rng = StdRng::seed_from_u64(5);
         let (identity, mut keys): (Identity, BTreeMap<_, _>) =
-            Identity::random_identity_with_main_keys_with_private_key(None, 5, &mut rng)
+            Identity::random_identity_with_main_keys_with_private_key(5, &mut rng, LATEST_PLATFORM_VERSION)
                 .expect("expected to get identity");
         let bls = NativeBlsModule::default();
         let add_public_keys_in_creation = identity
@@ -186,7 +191,7 @@ mod tests {
                         .expect("expected to have the private key");
                     let signature = key_signable_bytes
                         .as_slice()
-                        .sign_by_private_key(private_key, public_key.key_type, &bls)?
+                        .sign_by_private_key(private_key, public_key.key_type(), &bls)?
                         .into();
                     public_key_with_witness.signature = signature;
                 }
