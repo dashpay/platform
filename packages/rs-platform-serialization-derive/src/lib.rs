@@ -722,7 +722,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
         Data::Union(_) => panic!("PlatformSignable cannot be derived for unions"),
     };
 
-    eprintln!("Signable variant: {}", &expanded);
+    // eprintln!("Signable variant: {}", &expanded);
 
     TokenStream::from(expanded)
 }

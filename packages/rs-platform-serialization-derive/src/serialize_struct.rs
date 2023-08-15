@@ -180,7 +180,7 @@ pub(super) fn derive_platform_serialize_struct(
         }
     };
 
-    eprintln!("Processing serialize struct: {}", &expanded);
+    // eprintln!("Processing serialize struct: {}", &expanded);
 
     TokenStream::from(expanded)
 }

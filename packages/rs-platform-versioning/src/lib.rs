@@ -205,10 +205,10 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
         }
     };
 
-    eprintln!(
-        "Processing variant for platform version deserialize: {}",
-        &output
-    );
+    // eprintln!(
+    //     "Processing variant for platform version deserialize: {}",
+    //     &output
+    // );
 
     TokenStream::from(output)
 }
@@ -331,7 +331,7 @@ pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
         }
     };
 
-    eprintln!("Processing versioning : {}", &output);
+    // eprintln!("Processing versioning : {}", &output);
 
     TokenStream::from(output)
 }
