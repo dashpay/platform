@@ -29,6 +29,7 @@ pub trait PlatformSerializable {
 }
 
 pub trait PlatformSerializableWithPlatformVersion {
+    type Error;
     /// Version based serialization is done based on the desired structure version.
     /// For example we have DataContractV0 and DataContractV1 for code based Contracts
     /// This means objects that will execute code
@@ -39,13 +40,13 @@ pub trait PlatformSerializableWithPlatformVersion {
     fn serialize_with_platform_version(
         &self,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, ProtocolError>;
+    ) -> Result<Vec<u8>, Self::Error>;
 
     /// If the trait is not used just do a simple serialize
     fn serialize_consume_with_platform_version(
         self,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, ProtocolError>
+    ) -> Result<Vec<u8>, Self::Error>
     where
         Self: Sized,
     {

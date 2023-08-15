@@ -156,10 +156,12 @@ impl DataContractCreateTransition {
 
 #[cfg(test)]
 mod test {
+    use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use crate::data_contract::created_data_contract::CreatedDataContract;
     use integer_encoding::VarInt;
 
     use super::*;
+    use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::state_transitions::common_fields::property_names;
     use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
@@ -179,10 +181,10 @@ mod test {
             (
                 STATE_TRANSITION_PROTOCOL_VERSION,
                 LATEST_PLATFORM_VERSION
+                    .drive_abci
+                    .validation_and_processing
                     .state_transitions
-                    .contract_create_state_transition
-                    .default_current_version
-                    .into(),
+                    .contract_create_state_transition as u8,
             ),
             (
                 property_names::ENTROPY,
@@ -190,7 +192,10 @@ mod test {
             ),
             (
                 DATA_CONTRACT,
-                created_data_contract.data_contract().to_value().unwrap(),
+                created_data_contract
+                    .data_contract()
+                    .to_value(LATEST_PLATFORM_VERSION)
+                    .unwrap(),
             ),
         ]))
         .expect("state transition should be created without errors");
@@ -206,9 +211,9 @@ mod test {
         let data = get_test_data();
         assert_eq!(
             LATEST_PLATFORM_VERSION
-                .state_transitions
-                .contract_create_state_transition
-                .default_current_version,
+                .drive_abci
+                .validation_and_processing
+                .state_transitions,
             data.state_transition.state_transition_protocol_version()
         )
     }
@@ -226,14 +231,22 @@ mod test {
     fn should_return_data_contract() {
         let data = get_test_data();
 
-        assert_eq!(
+        let data_contract = DataContract::try_from_platform_versioned(
             data.state_transition
                 .data_contract()
-                .to_json_object()
+                .to_owned()
+                .expect("conversion to object shouldn't fail"),
+            false,
+        )
+        .expect("to get data contract");
+
+        assert_eq!(
+            data_contract
+                .to_json(LATEST_PLATFORM_VERSION)
                 .expect("conversion to object shouldn't fail"),
             data.created_data_contract
-                .data_contract
-                .to_json_object()
+                .data_contract()
+                .to_json(LATEST_PLATFORM_VERSION)
                 .expect("conversion to object shouldn't fail")
         );
     }
@@ -254,7 +267,7 @@ mod test {
     fn should_return_owner_id() {
         let data = get_test_data();
         assert_eq!(
-            &data.created_data_contract.data_contract.owner_id(),
+            &data.created_data_contract.data_contract().owner_id(),
             data.state_transition.owner_id()
         );
     }

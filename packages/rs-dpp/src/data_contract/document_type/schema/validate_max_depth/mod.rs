@@ -1,25 +1,24 @@
-mod v0;
-
+use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 
-pub fn enrich_with_base_schema(
-    schema: Value,
-    schema_defs: Option<Value>,
-    exclude_properties: &[&str], // TODO: Do we need this?
+mod v0;
+
+pub fn validate_max_depth(
+    value: &Value,
     platform_version: &PlatformVersion,
-) -> Result<Value, ProtocolError> {
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
     match platform_version
         .dpp
         .contract_versions
         .document_type_versions
         .schema
-        .enrich_with_base_schema
+        .validate_max_depth
     {
-        0 => v0::enrich_with_base_schema_v0(schema, schema_defs, exclude_properties),
+        0 => Ok(v0::validate_max_depth_v0(value)),
         version => Err(ProtocolError::UnknownVersionMismatch {
-            method: "enrich_with_base_schema".to_string(),
+            method: "validate_max_depth".to_string(),
             known_versions: vec![0],
             received: version,
         }),

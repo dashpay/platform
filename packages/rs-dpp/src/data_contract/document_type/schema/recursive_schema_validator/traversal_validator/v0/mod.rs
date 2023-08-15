@@ -7,6 +7,7 @@ use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilatio
 use crate::consensus::basic::value_error::ValueError;
 use crate::consensus::{basic::BasicError, ConsensusError};
 use crate::validation::SimpleConsensusValidationResult;
+use crate::ProtocolError;
 
 pub type SubValidator = fn(
     path: &str,
@@ -15,13 +16,13 @@ pub type SubValidator = fn(
     value: &Value,
     result: &mut SimpleConsensusValidationResult,
     platform_version: &PlatformVersion,
-);
+) -> Result<(), ProtocolError>;
 
 pub fn traversal_validator_v0(
     raw_data_contract: &Value,
     validators: &[SubValidator],
     platform_version: &PlatformVersion,
-) -> SimpleConsensusValidationResult {
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
     let mut result = SimpleConsensusValidationResult::default();
     let mut values_queue: Vec<(&Value, String)> = vec![(raw_data_contract, String::from(""))];
 
@@ -47,7 +48,7 @@ pub fn traversal_validator_v0(
                                     current_value,
                                     &mut result,
                                     platform_version,
-                                );
+                                )?;
                             }
                         }
                         Err(err) => result.add_error(err),
@@ -65,5 +66,5 @@ pub fn traversal_validator_v0(
             _ => {}
         };
     }
-    result
+    Ok(result)
 }

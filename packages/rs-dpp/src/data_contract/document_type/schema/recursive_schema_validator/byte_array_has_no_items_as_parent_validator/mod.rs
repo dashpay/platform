@@ -1,4 +1,5 @@
 use crate::validation::SimpleConsensusValidationResult;
+use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 
@@ -11,16 +12,22 @@ pub fn byte_array_has_no_items_as_parent_validator(
     value: &Value,
     result: &mut SimpleConsensusValidationResult,
     platform_version: &PlatformVersion,
-) {
+) -> Result<(), ProtocolError> {
     match platform_version
         .dpp
         .contract_versions
         .document_type_versions
-        .validation_versions
+        .schema
         .recursive_schema_validator_versions
         .byte_array_has_no_items_as_parent_validator
     {
-        0 => v0::byte_array_has_no_items_as_parent_validator_v0(path, key, parent, value, result),
-        version => unimplemented!("byte_array_has_no_items_as_parent_validator_v{}", version),
+        0 => Ok(v0::byte_array_has_no_items_as_parent_validator_v0(
+            path, key, parent, value, result,
+        )),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "byte_array_has_no_items_as_parent_validator".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
     }
 }

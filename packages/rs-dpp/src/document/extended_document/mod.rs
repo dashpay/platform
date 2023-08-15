@@ -221,7 +221,10 @@ mod test {
     use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
     use platform_value::string_encoding::Encoding;
     use platform_value::Value;
+    use platform_version::version::PlatformVersion;
     use pretty_assertions::assert_eq;
+
+    use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 
     fn init() {
         let _ = env_logger::builder()
@@ -229,6 +232,7 @@ mod test {
             .try_init();
     }
     pub(crate) fn data_contract_with_dynamic_properties() -> DataContract {
+        let platform_version = PlatformVersion::latest();
         // The following is equivalent to the data contract
         // {
         //     "protocolVersion" :0,
@@ -270,24 +274,31 @@ mod test {
         ]);
         let test_document = Value::from([("properties", test_document_properties)]);
         let documents = Value::from([("test", test_document)]);
-        Value::from([
-            ("protocolVersion", Value::U32(1)),
-            ("$id", Value::Identifier([0_u8; 32])),
-            ("$schema", Value::Text("schema".to_string())),
-            ("version", Value::U32(0)),
-            ("ownerId", Value::Identifier([0_u8; 32])),
-            ("documents", documents),
-        ])
-        .try_into()
+
+        DataContract::from_value(
+            Value::from([
+                ("protocolVersion", Value::U32(1)),
+                ("$id", Value::Identifier([0_u8; 32])),
+                ("$schema", Value::Text("schema".to_string())),
+                ("version", Value::U32(0)),
+                ("ownerId", Value::Identifier([0_u8; 32])),
+                ("documents", documents),
+            ]),
+            &platform_version,
+        )
         .unwrap()
     }
 
     #[test]
+    #[cfg(feature = "document-json-conversion")]
     fn test_document_deserialize() -> Result<()> {
         init();
-        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS)?;
+        let platform_version = PlatformVersion::latest();
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        let doc = ExtendedDocument::from_json_string(&document_json, dpns_contract)?;
+        let doc =
+            ExtendedDocument::from_json_string(&document_json, dpns_contract, &platform_version)?;
         assert_eq!(doc.document_type_name, "domain");
         assert_eq!(doc.feature_version, 0);
         assert_eq!(
@@ -340,7 +351,7 @@ mod test {
     fn test_buffer_serialize_deserialize() {
         init();
         let init_doc = new_example_document();
-        let buffer_document = init_doc.to_cbor_buffer().expect("no errors");
+        let buffer_document = init_doc.to_cbor_value().expect("no errors");
 
         let doc = ExtendedDocument::from_cbor_buffer(buffer_document)
             .expect("document should be created from buffer");
