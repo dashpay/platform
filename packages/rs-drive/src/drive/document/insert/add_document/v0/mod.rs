@@ -7,7 +7,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 

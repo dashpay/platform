@@ -1,22 +1,15 @@
 mod v0;
 
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
-use crate::drive::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize, PathKeyRefElement,
-    PathKeyUnknownElementSize,
-};
-use crate::drive::object_size_info::PathKeyInfo::{
-    PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize,
-};
-use crate::drive::object_size_info::{PathKeyElementInfo, PathKeyInfo};
+use crate::drive::grove_operations::BatchInsertApplyType;
+
+use crate::drive::object_size_info::PathKeyElementInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, GroveOperation};
+
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::{GroveDb, TransactionArg};
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Pushes an "insert element if the path key does not yet exist" operation to `drive_operations`.

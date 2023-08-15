@@ -1,14 +1,10 @@
 mod v0;
 
-use crate::drive::identity::{
-    identity_query_keys_purpose_tree_path, identity_query_keys_tree_path,
-};
-
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::identity::{Purpose, SecurityLevel};
+
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;

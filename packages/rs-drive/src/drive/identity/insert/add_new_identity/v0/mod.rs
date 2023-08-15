@@ -9,7 +9,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -169,7 +169,7 @@ mod tests {
 
     use dpp::block::block_info::BlockInfo;
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::version::drive_versions::DriveVersion;
+
     use dpp::version::PlatformVersion;
     use tempfile::TempDir;
 

@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
+
     use dpp::prelude::*;
 
     use crate::common::identities::create_test_identity;

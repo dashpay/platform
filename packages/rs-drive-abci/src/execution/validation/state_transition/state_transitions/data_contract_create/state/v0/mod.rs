@@ -8,7 +8,7 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 
-use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
+use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;

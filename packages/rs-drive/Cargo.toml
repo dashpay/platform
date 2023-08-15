@@ -67,7 +67,7 @@ rev = "fb887722c14432a18fbab82afb2f245bceb7fca0"
 [dev-dependencies]
 criterion = "0.3.5"
 platform-version = { path = "../rs-platform-version", features = ["mock-versions"]}
-dpp = { path = "../rs-dpp", features = ["drive", "cbor", "random-documents", "random-identities",
+dpp = { path = "../rs-dpp", features = ["drive", "document-cbor-conversion", "random-documents", "random-identities",
   "random-public-keys", "fixtures-and-mocks", "system_contracts", "factories", "data-contract-json-conversion"]}
 
 [[bench]]

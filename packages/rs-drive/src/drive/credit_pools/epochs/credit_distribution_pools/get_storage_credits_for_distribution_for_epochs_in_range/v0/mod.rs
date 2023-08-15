@@ -1,16 +1,11 @@
-use grovedb::{Element, TransactionArg};
+use grovedb::TransactionArg;
 use std::ops::Range;
 
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
-use crate::error::Error;
 
 use dpp::block::epoch::Epoch;
-use dpp::fee::Credits;
-use dpp::version::PlatformVersion;
 
-use crate::fee_pools::epochs::epoch_key_constants;
-use crate::fee_pools::epochs::paths::EpochProposers;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Returns a list of storage credits to be distributed to proposers from a range of epochs.

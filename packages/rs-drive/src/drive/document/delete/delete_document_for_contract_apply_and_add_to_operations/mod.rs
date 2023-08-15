@@ -5,7 +5,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::DataContract;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -32,7 +32,7 @@ impl Drive {
         document_id: [u8; 32],
         contract: &DataContract,
         document_type_name: &str,
-        mut estimated_costs_only_with_layer_info: Option<
+        estimated_costs_only_with_layer_info: Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,

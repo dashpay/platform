@@ -1,12 +1,11 @@
 mod v0;
 
-use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
-use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::TransactionArg;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee_pools::epochs::paths::EpochProposers;
+
 use dpp::block::epoch::Epoch;
 use dpp::version::drive_versions::DriveVersion;
 

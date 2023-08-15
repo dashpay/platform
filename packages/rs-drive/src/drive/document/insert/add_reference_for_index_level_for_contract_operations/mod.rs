@@ -1,28 +1,17 @@
 mod v0;
 
-use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
-use crate::drive::document::{document_reference_size, make_document_reference};
 use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
-use crate::drive::object_size_info::DocumentInfo::{
-    DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,
-    DocumentRefAndSerialization, DocumentRefInfo,
-};
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
-use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
-use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
+
+use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::key_info::KeyInfo;
+
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerSizes::AllSubtrees;
-use grovedb::EstimatedSumTrees::NoSumTrees;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+
+use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
@@ -30,7 +19,7 @@ impl Drive {
     pub fn add_reference_for_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        mut index_path_info: PathInfo<0>,
+        index_path_info: PathInfo<0>,
         unique: bool,
         any_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,

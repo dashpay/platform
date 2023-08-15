@@ -2,8 +2,6 @@ pub(crate) mod identity_retrieval;
 mod state;
 mod structure;
 
-use dpp::identity::PartialIdentity;
-
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -17,7 +15,6 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
-use crate::execution::validation::state_transition::identity_top_up::identity_retrieval::v0::IdentityTopUpStateTransitionIdentityRetrievalV0;
 use crate::execution::validation::state_transition::identity_top_up::state::v0::IdentityTopUpStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::identity_top_up::structure::v0::IdentityTopUpStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::processor::v0::{

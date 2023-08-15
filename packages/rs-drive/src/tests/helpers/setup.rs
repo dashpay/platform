@@ -41,7 +41,7 @@ use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo}
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use tempfile::TempDir;
@@ -78,7 +78,7 @@ pub fn setup_drive_with_initial_state_structure() -> Drive {
 
     let platform_version = PlatformVersion::latest();
     drive
-        .create_initial_state_structure(None, &platform_version)
+        .create_initial_state_structure(None, platform_version)
         .expect("should create root tree successfully");
 
     drive
@@ -98,7 +98,7 @@ pub fn setup_system_data_contract(
             true,
             None,
             transaction,
-            &platform_version,
+            platform_version,
         )
         .unwrap();
 }

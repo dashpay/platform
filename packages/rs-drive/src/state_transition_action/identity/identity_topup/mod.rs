@@ -3,7 +3,7 @@ pub mod v0;
 
 use crate::state_transition_action::identity::identity_topup::v0::IdentityTopUpTransitionActionV0;
 use derive_more::From;
-use dpp::identity::IdentityPublicKey;
+
 use dpp::platform_value::{Bytes36, Identifier};
 
 #[derive(Debug, Clone, From)]

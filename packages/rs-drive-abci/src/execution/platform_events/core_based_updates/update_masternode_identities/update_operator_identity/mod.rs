@@ -8,20 +8,11 @@ use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::ProTxHash;
 use dashcore_rpc::json::DMNStateDiff;
 use dpp::block::block_info::BlockInfo;
-use dpp::identity::Purpose::WITHDRAW;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use dpp::platform_value::BinaryData;
+
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
-use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::{
-    AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys,
-};
-use drive::drive::identity::key::fetch::{
-    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
-};
+
 use drive::grovedb::Transaction;
-use std::collections::BTreeMap;
 
 impl<C> Platform<C>
 where

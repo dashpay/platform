@@ -60,62 +60,14 @@ mod update_document_with_serialization_for_contract;
 
 pub use update_document_with_serialization_for_contract::*;
 
-use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
-
-use dpp::data_contract::document_type::DocumentTypeRef;
-
-use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::key_info::KeyInfo::KnownKey;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-
-use crate::drive::batch::drive_op_batch::{
-    DocumentOperation, DocumentOperationsForContractDocumentType, UpdateOperationInfo,
-};
-use crate::drive::batch::{DocumentOperationType, DriveOperation};
-use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
-use crate::drive::document::{
-    contract_document_type_path,
-    contract_documents_keeping_history_primary_key_path_for_document_id,
-    contract_documents_primary_key_path, make_document_reference,
-};
-use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DocumentInfo::{
-    DocumentOwnedInfo, DocumentRefAndSerialization, DocumentRefInfo,
-};
-use dpp::data_contract::DataContract;
-use dpp::document::Document;
-
-use crate::drive::object_size_info::PathKeyElementInfo::PathKeyRefElement;
-use crate::drive::object_size_info::{
-    DocumentAndContractInfo, DriveKeyInfo, OwnedDocumentInfo, PathKeyInfo,
-};
-use crate::drive::Drive;
-use crate::error::drive::DriveError;
-use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
-use crate::error::document::DocumentError;
-use dpp::block::block_info::BlockInfo;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::PlatformVersion;
-
-use crate::drive::grove_operations::{
-    BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
-    QueryType,
-};
-
-#[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
     use grovedb::TransactionArg;
+    use std::borrow::Cow;
     use std::default::Default;
     use std::option::Option::None;
-    use std::sync::Arc;
 
-    use dpp::data_contract::DataContractFactory;
+    use dpp::data_contract::{DataContract, DataContractFactory};
     use dpp::document::document_factory::DocumentFactory;
 
     use dpp::platform_value::{platform_value, Identifier, Value};
@@ -128,12 +80,11 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    use super::*;
     use crate::drive::config::DriveConfig;
     use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
-    use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo};
-    use crate::drive::{defaults, Drive};
+    use crate::drive::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
+    use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::drive::Drive;
 
     use crate::drive::document::tests::setup_dashpay;
     use crate::query::DriveQuery;
@@ -143,16 +94,15 @@ mod tests {
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
     use dpp::document::serialization_traits::{
-        DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
+        DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
     };
-    use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+    use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use dpp::fee::fee_result::FeeResult;
     use dpp::platform_value;
-    use dpp::serialization::PlatformSerializable;
     use dpp::tests::json_document::json_document_to_document;
-    use dpp::util::cbor_serializer;
-    use dpp::version::drive_versions::DriveVersion;
+    use platform_version::version::PlatformVersion;
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
@@ -169,7 +119,7 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
-                &platform_version,
+                platform_version,
             )
             .expect("should create document");
 
@@ -243,7 +193,7 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
-                &platform_version,
+                platform_version,
             )
             .expect("should create document");
 
@@ -337,7 +287,7 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
-                &platform_version,
+                platform_version,
             )
             .expect("should create document");
 
@@ -445,7 +395,7 @@ mod tests {
                 platform_value!({"displayName": "Alice"}),
                 Identifier::random(),
                 random(),
-                &platform_version,
+                platform_version,
             )
             .expect("should create document");
 
@@ -512,7 +462,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to delete document");
 
@@ -579,10 +529,10 @@ mod tests {
     fn test_create_update_and_delete_document() {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
-        let db_transaction = drive.grove.start_transaction();
+        let _db_transaction = drive.grove.start_transaction();
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("should create root tree");
 
         let contract = platform_value!({
@@ -728,7 +678,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("should delete document");
     }
@@ -742,7 +692,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -783,7 +733,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -818,7 +768,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect_err("expected not to be able to override a non mutable document");
     }
@@ -832,7 +782,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -881,7 +831,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -1881,7 +1831,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
         // Create a contract

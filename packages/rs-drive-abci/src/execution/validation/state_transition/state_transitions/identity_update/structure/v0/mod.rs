@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashSet};
 use dpp::consensus::basic::identity::{DuplicatedIdentityPublicKeyIdBasicError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError};
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
@@ -51,7 +51,7 @@ impl IdentityUpdateStateTransitionStructureValidationV0 for IdentityUpdateTransi
             for key_id in self.public_key_ids_to_disable() {
                 if ids.contains(key_id) {
                     result.add_error(ConsensusError::from(
-                        DuplicatedIdentityPublicKeyIdBasicError::new(vec![key_id.clone()]),
+                        DuplicatedIdentityPublicKeyIdBasicError::new(vec![*key_id]),
                     ));
                     break;
                 }

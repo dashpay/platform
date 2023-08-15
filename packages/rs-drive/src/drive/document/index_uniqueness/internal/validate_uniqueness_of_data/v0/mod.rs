@@ -8,7 +8,7 @@ use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniq
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::DocumentV0Getters;
-use dpp::platform_value::{platform_value, Value};
+use dpp::platform_value::platform_value;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;

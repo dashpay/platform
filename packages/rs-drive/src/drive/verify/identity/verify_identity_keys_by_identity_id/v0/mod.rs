@@ -1,12 +1,8 @@
-use crate::drive::balances::balance_path;
-use crate::drive::defaults::PROTOCOL_VERSION;
-use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
-use crate::drive::identity::{identity_key_tree_path, identity_path};
-use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
+use crate::drive::identity::identity_key_tree_path;
+use crate::drive::Drive;
 
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use dpp::fee::Credits;
 
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::verify::RootHash;
@@ -46,7 +42,7 @@ impl Drive {
         proof: &[u8],
         is_proof_subset: bool,
         identity_id: [u8; 32],
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<PartialIdentity>), Error> {
         let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id, None);
         let path_query = key_request.into_path_query();

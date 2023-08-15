@@ -50,32 +50,42 @@ impl SystemIdentityPublicKeysV0Getters for SystemIdentityPublicKeys {
 
 impl SystemIdentityPublicKeysV0Setters for SystemIdentityPublicKeys {
     fn set_masternode_reward_shares_contract_owner(&mut self, keys: RequiredIdentityPublicKeysSet) {
-        if let SystemIdentityPublicKeys::V0(v0) = self {
-            v0.masternode_reward_shares_contract_owner = keys;
+        match self {
+            SystemIdentityPublicKeys::V0(v0) => {
+                v0.masternode_reward_shares_contract_owner = keys;
+            }
         }
     }
 
     fn set_feature_flags_contract_owner(&mut self, keys: RequiredIdentityPublicKeysSet) {
-        if let SystemIdentityPublicKeys::V0(v0) = self {
-            v0.feature_flags_contract_owner = keys;
+        match self {
+            SystemIdentityPublicKeys::V0(v0) => {
+                v0.feature_flags_contract_owner = keys;
+            }
         }
     }
 
     fn set_dpns_contract_owner(&mut self, keys: RequiredIdentityPublicKeysSet) {
-        if let SystemIdentityPublicKeys::V0(v0) = self {
-            v0.dpns_contract_owner = keys;
+        match self {
+            SystemIdentityPublicKeys::V0(v0) => {
+                v0.dpns_contract_owner = keys;
+            }
         }
     }
 
     fn set_withdrawals_contract_owner(&mut self, keys: RequiredIdentityPublicKeysSet) {
-        if let SystemIdentityPublicKeys::V0(v0) = self {
-            v0.withdrawals_contract_owner = keys;
+        match self {
+            SystemIdentityPublicKeys::V0(v0) => {
+                v0.withdrawals_contract_owner = keys;
+            }
         }
     }
 
     fn set_dashpay_contract_owner(&mut self, keys: RequiredIdentityPublicKeysSet) {
-        if let SystemIdentityPublicKeys::V0(v0) = self {
-            v0.dashpay_contract_owner = keys;
+        match self {
+            SystemIdentityPublicKeys::V0(v0) => {
+                v0.dashpay_contract_owner = keys;
+            }
         }
     }
 }

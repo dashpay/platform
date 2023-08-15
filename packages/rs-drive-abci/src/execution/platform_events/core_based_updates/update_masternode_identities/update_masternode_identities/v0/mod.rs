@@ -1,30 +1,19 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::hashes::Hash;
+
 use dashcore_rpc::dashcore::ProTxHash;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
-use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem};
+use dashcore_rpc::json::MasternodeListItem;
 use dpp::block::block_info::BlockInfo;
-use dpp::identifier::Identifier;
-use dpp::identity::identity_factory::IDENTITY_PROTOCOL_VERSION;
-use dpp::identity::Purpose::WITHDRAW;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use dpp::platform_value::BinaryData;
+
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
+
 use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::{
-    AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
-};
-use drive::drive::identity::key::fetch::{
-    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyIDIdentityPublicKeyPairVec,
-    KeyIDVec, KeyRequestType,
-};
+use drive::drive::batch::IdentityOperationType::AddNewIdentity;
+
 use drive::grovedb::Transaction;
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
 impl<C> Platform<C>

@@ -4,11 +4,11 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::identity::{IdentityPublicKey, Purpose};
+use dpp::identity::IdentityPublicKey;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
-use integer_encoding::VarInt;
+
 use std::collections::HashMap;
 
 impl Drive {

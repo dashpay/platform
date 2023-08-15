@@ -1,19 +1,12 @@
 mod v0;
 
-use grovedb::{Element, TransactionArg};
+use grovedb::TransactionArg;
 use std::ops::Range;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use dpp::block::epoch::Epoch;
-use dpp::fee::Credits;
-
-use crate::fee_pools::epochs::epoch_key_constants;
-use crate::fee_pools::epochs::paths::EpochProposers;
-
-use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 
 impl Drive {

@@ -4,12 +4,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
-use grovedb::{Element, TransactionArg};
+use grovedb::TransactionArg;
 
-use crate::fee_pools::epochs::epoch_key_constants::KEY_START_TIME;
-use crate::fee_pools::epochs::paths::EpochProposers;
-
-use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
 
 impl Drive {

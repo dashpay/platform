@@ -1,6 +1,5 @@
 mod v0;
 
-use crate::drive::cache::DataContractCache;
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use dpp::version::drive_versions::DriveVersion;
@@ -19,7 +18,7 @@ impl Drive {
     ///
     /// * `Result<(), Error>` - On success, returns `Ok(())`. On error, returns an `Error`.
     ///
-    pub(crate) fn drop_cache(&self, drive_version: &DriveVersion) -> Result<(), Error> {
+    pub fn drop_cache(&self, drive_version: &DriveVersion) -> Result<(), Error> {
         match drive_version.methods.operations.drop_cache {
             0 => {
                 self.drop_cache_v0();

@@ -1,5 +1,3 @@
-use crate::drive::balances::balance_path_vec;
-
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::identity::IdentityError;
@@ -9,10 +7,10 @@ use dpp::balances::credits::MAX_CREDITS;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {

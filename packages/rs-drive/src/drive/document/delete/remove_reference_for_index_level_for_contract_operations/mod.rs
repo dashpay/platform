@@ -1,19 +1,16 @@
 mod v0;
 
-use crate::drive::defaults::{CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8};
-use crate::drive::document::document_reference_size;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
-use grovedb::batch::key_info::KeyInfo::KnownKey;
+
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
-use grovedb::EstimatedLayerSizes::{AllReference, AllSubtrees};
+
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 

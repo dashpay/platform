@@ -1,17 +1,14 @@
 mod v0;
 
-use crate::drive::balances::balance_path;
-use crate::drive::grove_operations::DirectQueryType;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
-use grovedb::Element::SumItem;
+
 use grovedb::TransactionArg;
 
 impl Drive {

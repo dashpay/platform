@@ -10,7 +10,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
 use crate::rpc::core::CoreRPCLike;
-use dpp::version::PlatformVersion;
+
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 
 impl<C> Platform<C>

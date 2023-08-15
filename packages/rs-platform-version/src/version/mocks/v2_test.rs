@@ -1,9 +1,8 @@
 use crate::version::dpp_versions::{
-    ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
-    DataContractValidationVersions, DocumentClassMethodVersions, DocumentFeatureVersionBounds,
-    DocumentMethodVersions, DocumentTypeClassMethodVersions, DocumentTypeIndexVersions,
+    ContractClassMethodVersions, ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
+    DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions,
     DocumentTypeValidationVersions, DocumentTypeVersions, DocumentVersions,
-    IdentityKeyTypeMethodVersions, IdentityVersions, JsonSchemaValidatorVersions,
+    IdentityKeyTypeMethodVersions, IdentityVersions, IndexVersions, JsonSchemaValidatorVersions,
     PublicKeyInCreationMethodVersions, RecursiveSchemaValidatorVersions,
     StateTransitionConversionVersions, StateTransitionMethodVersions,
     StateTransitionSerializationVersions,
@@ -420,6 +419,8 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             platform_state_structure: 0,
             platform_state_for_saving_structure: 0,
             state_transition_execution_context: 0,
+            commit: 0,
+            masternode: 0,
         },
         methods: DriveAbciMethodVersions {
             engine: DriveAbciEngineMethodVersions {
@@ -590,6 +591,11 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             },
         },
         state_transition_serialization_versions: StateTransitionSerializationVersions {
+            identity_public_key_in_creation: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
             identity_create_state_transition: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,
@@ -739,9 +745,6 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 hash: 0,
                 get_raw_for_contract: 0,
                 get_raw_for_document_type: 0,
-            },
-            document_class_method_versions: DocumentClassMethodVersions {
-                get_identifiers_and_binary_paths: 0,
             },
         },
         identity_versions: IdentityVersions {

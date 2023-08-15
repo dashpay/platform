@@ -4,7 +4,7 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
     DataTriggerExecutor,
 };
 use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
+
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 
 pub(super) fn execute_data_triggers(

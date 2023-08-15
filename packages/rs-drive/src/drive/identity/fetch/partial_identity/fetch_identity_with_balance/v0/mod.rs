@@ -1,7 +1,3 @@
-use crate::drive::identity::key::fetch::{
-    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap,
-    KeyIDOptionalIdentityPublicKeyPairBTreeMap,
-};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
@@ -13,9 +9,8 @@ use dpp::identity::PartialIdentity;
 use grovedb::TransactionArg;
 
 use dpp::fee::default_costs::EpochCosts;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
-use std::collections::{BTreeMap, BTreeSet};
 
 impl Drive {
     /// Fetches the Identity's balance as PartialIdentityInfo from the backing store

@@ -7,7 +7,7 @@ use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0OwnedGetters, BlockExecutionContextV0Setters,
 };
 use crate::execution::types::block_state_info::BlockStateInfo;
-use crate::platform_types::epochInfo::EpochInfo;
+use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform_state::PlatformState;
 use derive_more::From;
 use dpp::dashcore::Txid;

@@ -1,6 +1,6 @@
 ///! The `reward_share_data_triggers` module contains data triggers related to reward sharing.
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::platform_value::{Identifier, Value};
+use dpp::platform_value::Value;
 
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::version::PlatformVersion;
@@ -111,7 +111,7 @@ pub fn create_masternode_reward_shares_data_trigger_v0(
     }
 
     let document_type = data_contract
-        .document_type_for_name(&document_create_transition.base().document_type_name())?;
+        .document_type_for_name(document_create_transition.base().document_type_name())?;
 
     let drive_query = DriveQuery {
         contract: data_contract,
@@ -205,20 +205,20 @@ mod test {
     use dpp::document::{Document, DocumentV0Setters};
     use dpp::identity::Identity;
 
-    use dpp::platform_value::Value;
+    use dpp::platform_value::{Identifier, Value};
     use dpp::tests::fixtures::{
         get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
     };
     use dpp::tests::utils::generate_random_identifier_struct;
 
     use crate::platform_types::platform_state::v0::PlatformStateV0;
+    use dpp::consensus::state::data_trigger::DataTriggerError;
     use drive::drive::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use std::net::SocketAddr;
     use std::str::FromStr;
     use std::sync::Arc;
-    use dpp::consensus::state::data_trigger::DataTriggerError;
-    use dpp::data_contract::document_type::DocumentTypeRef;
+
     use dpp::identity::accessors::IdentitySettersV0;
     use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
@@ -313,7 +313,7 @@ mod test {
             data_contract,
             document_type_name: "rewardShare".to_string(),
             top_level_identifier,
-            document_create_transition: DocumentCreateTransitionAction::from_document_create_transition_with_contract_lookup(document_create_transition, |identifier| {
+            document_create_transition: DocumentCreateTransitionAction::from_document_create_transition_with_contract_lookup(document_create_transition, |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::masternode_rewards_contract_fixture(platform_state.current_protocol_version_in_consensus)))
             }).expect("expected to create action"),
         }
@@ -414,7 +414,7 @@ mod test {
                 .add_document_for_contract(
                     DocumentAndContractInfo {
                         owned_document_info: OwnedDocumentInfo {
-                            document_info: DocumentRefInfo((&document, None)),
+                            document_info: DocumentRefInfo((document, None)),
                             owner_id: None,
                         },
                         contract: &data_contract,
@@ -471,7 +471,7 @@ mod test {
 
         let TestData {
             document_create_transition,
-            data_contract,
+
             top_level_identifier,
             ..
         } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
@@ -525,8 +525,6 @@ mod test {
 
         let TestData {
             document_create_transition,
-
-            data_contract,
             ..
         } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
 
@@ -572,7 +570,7 @@ mod test {
 
         let TestData {
             document_create_transition,
-            data_contract,
+
             top_level_identifier,
             ..
         } = setup_test(state_write_guard.v0_mut().expect("expected v0"));
@@ -663,7 +661,7 @@ mod test {
             .expect("expected to apply contract");
 
         let document_type = data_contract
-            .document_type_for_name(&document_create_transition.base().document_type_name())
+            .document_type_for_name(document_create_transition.base().document_type_name())
             .expect("expected to get document type");
 
         let mut main_identity = Identity::random_identity(2, Some(1000_u64), platform_version)
@@ -771,7 +769,7 @@ mod test {
 
         let TestData {
             document_create_transition,
-            data_contract,
+
             top_level_identifier,
             ..
         } = setup_test(state_write_guard.v0_mut().expect("expected v0"));

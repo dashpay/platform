@@ -7,7 +7,7 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
 use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
-use dpp::version::PlatformVersion;
+
 use std::cmp::Ordering;
 
 impl<C> Platform<C>

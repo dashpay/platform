@@ -36,7 +36,7 @@ pub mod cleaned_abci_messages;
 /// The commit
 pub mod commit;
 /// Epoch
-pub mod epochInfo;
+pub mod epoch_info;
 /// Masternode
 pub mod masternode;
 /// Main platform structs, not versioned

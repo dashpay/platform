@@ -4,17 +4,13 @@ use crate::error::Error;
 use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use dpp::consensus::state::state_error::StateError;
 
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::identity::PartialIdentity;
-use dpp::prelude::ConsensusValidationResult;
-use dpp::serialization::{PlatformMessageSignable, Signable};
+
+use dpp::serialization::PlatformMessageSignable;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::validation::SimpleConsensusValidationResult;
-use dpp::version::PlatformVersion;
-use drive::drive::Drive;
-use drive::grovedb::TransactionArg;
 
 pub(in crate::execution::validation::state_transition) trait IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0
 {

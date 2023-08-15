@@ -27,41 +27,17 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-use costs::storage_cost::StorageCost;
-use costs::OperationCost;
-#[cfg(feature = "full")]
-use std::collections::HashMap;
-#[cfg(feature = "full")]
-use std::path::Path;
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::sync::RwLock;
 
-#[cfg(feature = "full")]
-use grovedb::batch::KeyInfoPath;
-#[cfg(feature = "full")]
-use grovedb::batch::{GroveDbOp, OpsByLevelPath};
 #[cfg(any(feature = "full", feature = "verify"))]
 use grovedb::GroveDb;
-#[cfg(feature = "full")]
-use grovedb::{EstimatedLayerInformation, Transaction, TransactionArg};
 
-#[cfg(feature = "full")]
-use object_size_info::DocumentAndContractInfo;
-#[cfg(feature = "full")]
-use object_size_info::DocumentInfo::DocumentEstimatedAverageSize;
-
-#[cfg(feature = "full")]
-use crate::drive::batch::GroveDbOpBatch;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::config::DriveConfig;
-#[cfg(feature = "full")]
-use crate::error::Error;
+
 #[cfg(feature = "full")]
 use crate::fee::op::LowLevelDriveOperation;
-#[cfg(feature = "full")]
-use crate::fee::op::LowLevelDriveOperation::GroveOperation;
-#[cfg(feature = "full")]
-use dpp::data_contract::DataContract;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod balances;
@@ -119,21 +95,10 @@ mod system_contracts_cache;
 pub mod verify;
 
 #[cfg(feature = "full")]
-use crate::drive::cache::DataContractCache;
-#[cfg(feature = "full")]
 use crate::drive::cache::DriveCache;
-#[cfg(feature = "full")]
-use crate::drive::object_size_info::OwnedDocumentInfo;
+
 #[cfg(feature = "full")]
 use crate::drive::system_contracts_cache::SystemContracts;
-#[cfg(feature = "full")]
-use crate::query::GroveError;
-#[cfg(feature = "full")]
-use dpp::block::block_info::BlockInfo;
-#[cfg(feature = "full")]
-use dpp::block::epoch::Epoch;
-#[cfg(feature = "full")]
-use dpp::fee::fee_result::FeeResult;
 
 /// Drive struct
 #[cfg(any(feature = "full", feature = "verify"))]

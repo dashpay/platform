@@ -50,8 +50,8 @@ use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::execution::types::block_state_info::BlockStateInfo;
 use crate::execution::types::storage_fee_distribution_outcome;
 
-use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
-use crate::platform_types::epochInfo::EpochInfo;
+use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
+use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
 use drive::fee_pools::epochs::operations_factory::EpochOperations;
 
@@ -150,7 +150,7 @@ mod tests {
         use super::*;
         use crate::execution::types::block_fees::v0::{BlockFeesV0, BlockFeesV0Methods};
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
-        use crate::platform_types::epochInfo::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
+        use crate::platform_types::epoch_info::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
         use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::CreditsPerEpoch;
 

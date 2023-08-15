@@ -1,16 +1,15 @@
 use crate::drive::asset_lock::asset_lock_storage_path;
-use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+
 use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
-use crate::drive::{Drive, RootTree};
+use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::platform_value::Bytes36;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::Element::Item;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;
 
 impl Drive {
