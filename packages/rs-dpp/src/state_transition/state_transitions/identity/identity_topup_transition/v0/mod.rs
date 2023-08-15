@@ -18,8 +18,6 @@ use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 
 use crate::prelude::Identifier;
 
-use crate::state_transition::StateTransitionLike;
-
 use crate::ProtocolError;
 
 mod property_names {

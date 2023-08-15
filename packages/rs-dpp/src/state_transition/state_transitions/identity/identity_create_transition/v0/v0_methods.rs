@@ -1,7 +1,6 @@
 use crate::{
-    prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionType},
-    BlsModule, NonConsensusError, ProtocolError,
+    prelude::Identifier, state_transition::StateTransitionType, BlsModule, NonConsensusError,
+    ProtocolError,
 };
 
 use crate::identity::accessors::IdentityGettersV0;

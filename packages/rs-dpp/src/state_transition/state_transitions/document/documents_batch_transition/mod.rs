@@ -1,11 +1,8 @@
-use crate::serialization::Signable;
 use bincode::{Decode, Encode};
 
 use std::convert::TryInto;
 
 use derive_more::From;
-
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use platform_value::Value;
 use serde::{Deserialize, Serialize};

@@ -2,7 +2,6 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 
 use crate::document::property_names::{CREATED_AT, UPDATED_AT};
-use crate::document::DocumentV0Getters;
 
 use crate::prelude::Revision;
 

@@ -92,7 +92,6 @@ impl ExtendedBlockInfoV0Setters for ExtendedBlockInfo {
                 v0.set_basic_info(info);
             }
         }
-        if let ExtendedBlockInfo::V0(_v0) = self {}
     }
 
     fn set_app_hash(&mut self, hash: [u8; 32]) {

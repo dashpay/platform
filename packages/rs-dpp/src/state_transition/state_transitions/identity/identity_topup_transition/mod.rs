@@ -11,7 +11,6 @@ mod version;
 
 use fields::*;
 
-use crate::serialization::Signable;
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;

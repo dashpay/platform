@@ -15,7 +15,6 @@ use serde::{Deserialize, Serialize};
 use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::{Identifier, Revision},
-    state_transition::StateTransitionLike,
     ProtocolError,
 };
 

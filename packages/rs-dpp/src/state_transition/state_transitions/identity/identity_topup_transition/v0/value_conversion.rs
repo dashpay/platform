@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
 use crate::{prelude::Identifier, state_transition::StateTransitionFieldTypes, ProtocolError};

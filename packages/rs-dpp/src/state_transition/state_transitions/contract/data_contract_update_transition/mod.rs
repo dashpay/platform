@@ -1,4 +1,3 @@
-use crate::serialization::Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};

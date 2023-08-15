@@ -23,7 +23,6 @@ use crate::identity::accessors::IdentityGettersV0;
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
-use crate::state_transition::StateTransitionLike;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 

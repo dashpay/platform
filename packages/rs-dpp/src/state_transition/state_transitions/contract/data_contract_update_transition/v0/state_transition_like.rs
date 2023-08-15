@@ -5,8 +5,6 @@ use crate::{
     state_transition::{StateTransitionLike, StateTransitionType},
 };
 
-use crate::data_contract::accessors::v0::DataContractV0Getters;
-
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
 
 use crate::state_transition::StateTransitionType::DataContractUpdate;

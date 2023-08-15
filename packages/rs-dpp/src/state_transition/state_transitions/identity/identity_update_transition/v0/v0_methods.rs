@@ -21,7 +21,6 @@ use crate::version::FeatureVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
-    state_transition::StateTransitionLike,
     ProtocolError,
 };
 

@@ -1,5 +1,3 @@
-use crate::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
 use crate::{state_transition::StateTransitionFieldTypes, ProtocolError};

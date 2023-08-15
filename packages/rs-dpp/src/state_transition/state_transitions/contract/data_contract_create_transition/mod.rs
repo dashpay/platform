@@ -14,8 +14,6 @@ mod version;
 use fields::*;
 
 use crate::data_contract::DataContract;
-
-use crate::serialization::Signable;
 use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;

@@ -12,7 +12,6 @@ pub mod v0;
 mod value_conversion;
 mod version;
 
-use crate::serialization::Signable;
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 

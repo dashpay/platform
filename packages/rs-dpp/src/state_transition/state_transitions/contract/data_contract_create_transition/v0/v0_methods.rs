@@ -2,10 +2,7 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 
 use platform_value::Bytes32;
 
-use crate::{
-    data_contract::DataContract, identity::KeyID, state_transition::StateTransitionLike,
-    NonConsensusError, ProtocolError,
-};
+use crate::{data_contract::DataContract, identity::KeyID, NonConsensusError, ProtocolError};
 
 use crate::serialization::Signable;
 

@@ -13,10 +13,7 @@ use platform_serialization_derive::PlatformSignable;
 use platform_value::{BinaryData, Bytes32};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    data_contract::DataContract, identity::KeyID, state_transition::StateTransitionLike,
-    ProtocolError,
-};
+use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;

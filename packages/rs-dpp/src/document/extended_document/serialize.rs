@@ -1,7 +1,5 @@
 use crate::document::extended_document::v0::ExtendedDocumentV0;
-use crate::document::serialization_traits::{
-    DocumentPlatformConversionMethodsV0, ExtendedDocumentPlatformConversionMethodsV0,
-};
+use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 
 use crate::prelude::ExtendedDocument;
 use crate::version::PlatformVersion;

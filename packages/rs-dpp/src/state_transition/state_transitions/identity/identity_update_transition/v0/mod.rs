@@ -21,7 +21,6 @@ use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation
 use crate::{
     identity::KeyID,
     prelude::{Identifier, Revision, TimestampMillis},
-    state_transition::StateTransitionLike,
     ProtocolError,
 };
 
@@ -105,39 +104,3 @@ where
         .map(|value| value.to_integer().map_err(ProtocolError::ValueError))
         .collect()
 }
-
-// #[cfg(test)]
-// mod test {
-//     use crate::state_transition::{
-//         JsonSerializationOptions, StateTransitionJsonConvert, StateTransitionValueConvert,
-//     };
-//     use crate::tests::{fixtures::identity_fixture, utils::generate_random_identifier_struct};
-//     use getrandom::getrandom;
-//
-//     use super::*;
-//
-//     #[test]
-//     fn conversion_to_raw_object() {
-//         let public_key = identity_fixture().public_keys()[&0].to_owned();
-//         let mut buffer = [0u8; 33];
-//         let _ = getrandom(&mut buffer);
-//         let transition = IdentityUpdateTransitionV0 {
-//             identity_id: generate_random_identifier_struct(),
-//             add_public_keys: vec![(&public_key).into()],
-//             signature: BinaryData::new(buffer.to_vec()),
-//
-//             ..Default::default()
-//         };
-//
-//         let result = transition
-//             .to_object(false)
-//             .expect("conversion to raw object shouldn't fail");
-//
-//         assert!(matches!(result[IDENTITY_ID], Value::Identifier(_)));
-//         assert!(matches!(result[SIGNATURE], Value::Bytes(_)));
-//         assert!(matches!(
-//             result[ADD_PUBLIC_KEYS][0]["data"],
-//             Value::Bytes(_)
-//         ));
-//     }
-// }

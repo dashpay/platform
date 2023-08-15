@@ -38,7 +38,7 @@ mod tests {
     use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
     use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
-    use crate::state_transition::{StateTransition, StateTransitionLike};
+    use crate::state_transition::StateTransition;
     use crate::tests::fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,
         get_extended_documents_fixture_with_owner_id_from_contract,

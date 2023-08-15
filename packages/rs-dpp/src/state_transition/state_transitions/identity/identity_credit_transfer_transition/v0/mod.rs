@@ -12,8 +12,6 @@ use crate::identity::KeyID;
 
 use crate::prelude::Identifier;
 
-use crate::state_transition::StateTransitionLike;
-
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
