@@ -361,7 +361,7 @@ RUN yarn workspaces focus --production @dashevo/dapi
 #
 # STAGE: FINAL DAPI IMAGE
 #
-FROM node:18-alpine3.18 AS dapi
+FROM node:18-alpine${ALPINE_VERSION} AS dapi
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DAPI Node.JS"
