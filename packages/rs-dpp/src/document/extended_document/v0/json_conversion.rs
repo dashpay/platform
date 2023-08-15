@@ -11,23 +11,31 @@ use platform_version::version::PlatformVersion;
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use std::convert::TryInto;
+use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 
 impl DocumentJsonMethodsV0<'_> for ExtendedDocumentV0 {
-    fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError> {
-        let mut json = self.document.to_json_with_identifiers_using_bytes()?;
+    fn to_json_with_identifiers_using_bytes(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
+        let mut json = self.document.to_json_with_identifiers_using_bytes(platform_version)?;
         let mut value_mut = json.as_object_mut().unwrap();
-        let contract = self.data_contract.to_json_object()?;
+        let contract = self.data_contract.to_validating_json(platform_version)?;
         value_mut.insert(property_names::DATA_CONTRACT.to_owned(), contract);
         value_mut.insert(
             property_names::DOCUMENT_TYPE_NAME.to_owned(),
-            self.document_type_name.into(),
+            self.document_type_name.clone().into(),
         );
         Ok(json)
     }
 
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        serialization::ValueConvertible::to_object(self)
-            .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
+    fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
+        let mut json = self.document.to_json(platform_version)?;
+        let mut value_mut = json.as_object_mut().unwrap();
+        let contract = self.data_contract.to_json(platform_version)?;
+        value_mut.insert(property_names::DATA_CONTRACT.to_owned(), contract);
+        value_mut.insert(
+            property_names::DOCUMENT_TYPE_NAME.to_owned(),
+            self.document_type_name.clone().into(),
+        );
+        Ok(json)
     }
 
     fn from_json_value<S>(

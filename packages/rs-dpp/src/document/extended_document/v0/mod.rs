@@ -248,7 +248,7 @@ impl ExtendedDocumentV0 {
         data_contract: DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let mut properties = document_value
+        let mut properties = document_value.clone()
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         let document_type_name = properties
@@ -257,11 +257,12 @@ impl ExtendedDocumentV0 {
 
         let document = Document::from_platform_value(document_value, platform_version)?;
 
+        let data_contract_id = data_contract.id();
         let mut extended_document = Self {
             data_contract,
             document_type_name,
             document,
-            data_contract_id: data_contract.id(),
+            data_contract_id,
             metadata: None,
             entropy: Default::default(),
         };
@@ -291,24 +292,23 @@ impl ExtendedDocumentV0 {
         data_contract: DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let mut properties = document_value
+        let mut properties = document_value.clone()
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         let document_type_name = properties
             .remove_string(property_names::DOCUMENT_TYPE_NAME)
             .map_err(ProtocolError::ValueError)?;
 
-        //Because we don't know how the json came in we need to sanitize it
-        let (identifiers, binary_paths): (HashSet<_>, HashSet<_>) =
-            data_contract.get_identifiers_and_binary_paths_owned(document_type_name.as_str())?;
+        let identifiers = data_contract.identifier_paths();
+        let binary_paths = data_contract.binary_paths();
 
         let document = Document::from_platform_value(document_value, platform_version)?;
-
+        let data_contract_id = data_contract.id();
         let mut extended_document = Self {
             data_contract,
             document_type_name,
             document,
-            data_contract_id: data_contract.id(),
+            data_contract_id,
             metadata: None,
             entropy: Default::default(),
         };
@@ -319,11 +319,11 @@ impl ExtendedDocumentV0 {
 
         extended_document
             .document
-            .properties()
+            .properties_mut()
             .replace_at_paths(&identifiers, ReplacementType::Identifier)?;
         extended_document
             .document
-            .properties()
+            .properties_mut()
             .replace_at_paths(&binary_paths, ReplacementType::BinaryBytes)?;
         Ok(extended_document)
     }
@@ -334,8 +334,8 @@ impl ExtendedDocumentV0 {
     /// # Errors
     ///
     /// Returns a `ProtocolError` if there is an error converting the document to pretty JSON.
-    pub fn to_pretty_json(&self) -> Result<JsonValue, ProtocolError> {
-        let mut value = self.document.to_json()?;
+    pub fn to_pretty_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
+        let mut value = self.document.to_json(platform_version)?;
         let value_mut = value.as_object_mut().unwrap();
         value_mut.insert(
             property_names::DOCUMENT_TYPE_NAME.to_string(),

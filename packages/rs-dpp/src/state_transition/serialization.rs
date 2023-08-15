@@ -145,11 +145,12 @@ mod tests {
             .expect("expected to update keys");
 
         let (public_key, private_key) = keys.pop_first().unwrap();
-        identity_update_transition
+
+        let mut state_transition: StateTransition = identity_update_transition.into();
+
+        state_transition
             .sign_by_private_key(private_key.as_slice(), public_key.key_type(), &bls)
             .expect("expected to sign IdentityUpdateTransition");
-
-        let state_transition: StateTransition = identity_update_transition.into();
         let bytes = state_transition.serialize().expect("expected to serialize");
         let recovered_state_transition =
             StateTransition::deserialize(&bytes).expect("expected to deserialize state transition");

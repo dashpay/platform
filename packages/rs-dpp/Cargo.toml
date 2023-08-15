@@ -66,10 +66,12 @@ rust_decimal_macros = "1.29.1"
 test-case = { version = "2.0" }
 tokio = { version = "1.17", features = ["full"] }
 pretty_assertions = { version = "1.3.0" }
-dpp = { path = ".", features = ["fixtures-and-mocks", "data-contract-json-conversion", "random-public-keys", "random-documents", "random-document-types", "state-transition-value-conversion"] }
+dpp = { path = ".", features = ["all_features_without_client"] }
 
 [features]
 default = ["json-object", "platform-value", "system_contracts", "state-transitions", "extended-document"]
+all_features = ["json-object", "platform-value", "system_contracts", "state-transitions", "extended-document", "cbor", "validation", "identity-hashing", "identity-serialization", "ciborium", "document-serde-conversion", "document-value-conversion", "document-json-conversion", "document-cbor-conversion", "data-contract-serde-conversion", "data-contract-value-conversion", "data-contract-json-conversion", "data-contract-cbor-conversion", "identity-serde-conversion", "identity-value-conversion", "identity-json-conversion", "identity-cbor-conversion", "state-transition-serde-conversion", "state-transition-value-conversion", "state-transition-json-conversion", "state-transition-cbor-conversion", "state-transition-validation", "state-transition-signing", "state-transitions", "factories", "fixtures-and-mocks", "mockall", "random-public-keys", "random-identities", "random-documents", "random-document-types", "fee-distribution", "client"]
+all_features_without_client = ["json-object", "platform-value", "system_contracts", "state-transitions", "extended-document", "cbor", "validation", "identity-hashing", "identity-serialization", "ciborium", "document-serde-conversion", "document-value-conversion", "document-json-conversion", "document-cbor-conversion", "data-contract-serde-conversion", "data-contract-value-conversion", "data-contract-json-conversion", "data-contract-cbor-conversion", "identity-serde-conversion", "identity-value-conversion", "identity-json-conversion", "identity-cbor-conversion", "state-transition-serde-conversion", "state-transition-value-conversion", "state-transition-json-conversion", "state-transition-cbor-conversion", "state-transition-validation", "state-transition-signing", "state-transitions", "factories", "fixtures-and-mocks", "mockall", "random-public-keys", "random-identities", "random-documents", "random-document-types", "fee-distribution"]
 drive = ["state-transitions", "fee-distribution", "system_contracts"]
 abci = ["state-transitions", "state-transition-validation", "validation", "random-public-keys",
   "identity-serialization"]
@@ -105,6 +107,6 @@ random-identities = ["random-public-keys"]
 random-documents = []
 random-document-types = []
 fee-distribution = []
-extended-document = ["document-serde-conversion", "data-contract-serde-conversion"]
+extended-document = ["document-serde-conversion", "data-contract-serde-conversion",  "data-contract-json-conversion"]
 client = []
 factories = []

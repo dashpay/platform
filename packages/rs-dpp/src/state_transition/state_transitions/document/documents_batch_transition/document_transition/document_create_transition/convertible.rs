@@ -30,21 +30,21 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
 
         let document_type = data_contract.document_type_for_name(document_type)?;
 
-        let identifiers_paths = document_type.identifier_paths();
+        let mut identifiers_paths = document_type.identifier_paths().to_owned();
 
-        let binary_paths = document_type.binary_paths();
+        identifiers_paths.extend(IDENTIFIER_FIELDS.iter().map(|s| s.to_string()));
+
+        let mut binary_paths = document_type.binary_paths().to_owned();
+
+        binary_paths.extend(BINARY_FIELDS.iter().map(|s| s.to_string()));
 
         map.replace_at_paths(
-            binary_paths
-                .into_iter()
-                .chain(BINARY_FIELDS.iter().map(|a| a.to_string())),
+            binary_paths.iter(),
             ReplacementType::BinaryBytes,
         )?;
 
         map.replace_at_paths(
-            identifiers_paths
-                .into_iter()
-                .chain(IDENTIFIER_FIELDS.iter().map(|a| a.to_string())),
+            identifiers_paths.iter(),
             ReplacementType::Identifier,
         )?;
         let document = Self::from_value_map(map, data_contract)?;

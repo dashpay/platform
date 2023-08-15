@@ -7,7 +7,7 @@ use crate::ProtocolError;
 use serde_json::Number;
 use serde_json::Value as JsonValue;
 
-impl StateTransitionJsonConvert for DataContractCreateTransition {
+impl<'a> StateTransitionJsonConvert<'a> for DataContractCreateTransition {
     fn to_json(
         &self,
         options: JsonStateTransitionSerializationOptions,
@@ -19,7 +19,7 @@ impl StateTransitionJsonConvert for DataContractCreateTransition {
                 map_value.insert(
                     STATE_TRANSITION_PROTOCOL_VERSION.to_string(),
                     JsonValue::Number(Number::from(0)),
-                )?;
+                );
                 Ok(value)
             }
         }

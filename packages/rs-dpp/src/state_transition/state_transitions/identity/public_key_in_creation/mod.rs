@@ -6,6 +6,7 @@ use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::PlatformSignable;
 use serde::{Deserialize, Serialize};
+use platform_versioning::PlatformVersioned;
 
 pub mod accessors;
 #[cfg(feature = "state-transition-cbor-conversion")]
@@ -18,6 +19,7 @@ mod types;
 pub mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 #[derive(Debug, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq, From)]
 //here we want to indicate that IdentityPublicKeyInCreation can be transformed into IdentityPublicKeyInCreationSignable

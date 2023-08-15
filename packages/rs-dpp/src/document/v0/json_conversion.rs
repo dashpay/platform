@@ -12,7 +12,7 @@ use serde_json::{json, Value as JsonValue};
 use std::convert::TryInto;
 
 impl<'a> DocumentJsonMethodsV0<'a> for DocumentV0 {
-    fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json_with_identifiers_using_bytes(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
         let mut value = json!({
             property_names::ID: self.id,
             property_names::OWNER_ID: self.owner_id,
@@ -48,7 +48,7 @@ impl<'a> DocumentJsonMethodsV0<'a> for DocumentV0 {
         Ok(value)
     }
 
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
         self.to_object()
             .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
     }

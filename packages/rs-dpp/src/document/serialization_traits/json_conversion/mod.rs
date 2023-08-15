@@ -12,22 +12,22 @@ use std::convert::TryInto;
 
 impl<'a> DocumentJsonMethodsV0<'a> for Document {
     /// Convert the document to JSON with identifiers using bytes.
-    fn to_json_with_identifiers_using_bytes(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json_with_identifiers_using_bytes(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
         match self {
-            Document::V0(v0) => v0.to_json_with_identifiers_using_bytes(),
+            Document::V0(v0) => v0.to_json_with_identifiers_using_bytes(platform_version),
         }
     }
 
     /// Convert the document to a JSON value.
-    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
         match self {
-            Document::V0(v0) => v0.to_json(),
+            Document::V0(v0) => v0.to_json(platform_version),
         }
     }
 
     /// Create a document from a JSON value.
     fn from_json_value<S>(
-        mut document_value: JsonValue,
+        document_value: JsonValue,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where

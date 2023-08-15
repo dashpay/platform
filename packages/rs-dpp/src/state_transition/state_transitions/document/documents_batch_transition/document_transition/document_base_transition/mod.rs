@@ -42,7 +42,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
     where
         Self: Sized,
     {
-        let value: Value = json_str.into()?;
+        let value: Value = json_str.into();
         Self::from_object(value, data_contract)
     }
     #[cfg(feature = "state-transition-value-conversion")]

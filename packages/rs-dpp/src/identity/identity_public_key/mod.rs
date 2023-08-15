@@ -104,7 +104,7 @@ mod tests {
     #[test]
     fn test_identity_key_serialization_deserialization() {
         let mut rng = rand::rngs::StdRng::from_entropy();
-        let key: IdentityPublicKey = IdentityPublicKeyV0::random_ecdsa_master_authentication_key_with_rng(1, &mut rng, LATEST_PLATFORM_VERSION).into();
+        let key: IdentityPublicKey = IdentityPublicKeyV0::random_ecdsa_master_authentication_key_with_rng(1, &mut rng, LATEST_PLATFORM_VERSION).expect("expected a random key").0.into();
         let serialized = key.serialize().expect("expected to serialize key");
         let unserialized: IdentityPublicKey = PlatformDeserializable::deserialize(serialized.as_slice())
             .expect("expected to deserialize key");

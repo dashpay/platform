@@ -34,4 +34,13 @@ impl DataContractJsonConversionMethodsV0 for DataContract {
             DataContract::V0(v0) => v0.to_json(platform_version),
         }
     }
+
+    fn to_validating_json(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<JsonValue, ProtocolError> {
+        match self {
+            DataContract::V0(v0) => v0.to_validating_json(platform_version),
+        }
+    }
 }

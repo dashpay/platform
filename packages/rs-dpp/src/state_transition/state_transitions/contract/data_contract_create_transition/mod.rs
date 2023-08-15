@@ -180,13 +180,13 @@ mod test {
         let state_transition = DataContractCreateTransition::from_object(Value::from([
             (
                 STATE_TRANSITION_PROTOCOL_VERSION,
-                Value::U16(LATEST_PLATFORM_VERSION
+                LATEST_PLATFORM_VERSION
                     .drive_abci
                     .validation_and_processing
                     .state_transitions
                     .contract_create_state_transition
                     .structure
-                ),
+                ,
             ),
             (
                 property_names::ENTROPY,
@@ -236,7 +236,7 @@ mod test {
         let data_contract = DataContract::try_from_platform_versioned(
             data.state_transition
                 .data_contract()
-                .to_owned(),
+                .clone(),
             false,
             LATEST_PLATFORM_VERSION,
         )
