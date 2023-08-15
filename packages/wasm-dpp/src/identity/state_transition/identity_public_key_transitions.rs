@@ -3,7 +3,7 @@ use dpp::dashcore::anyhow;
 use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::platform_value::BinaryData;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use dpp::Convertible;
+
 pub use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;

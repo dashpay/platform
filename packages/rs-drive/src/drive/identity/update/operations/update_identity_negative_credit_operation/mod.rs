@@ -1,13 +1,11 @@
 mod v0;
 
-use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
-use grovedb::Element;
 
 impl Drive {
     /// We can set an identities negative credit balance

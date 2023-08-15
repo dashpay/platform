@@ -2,11 +2,11 @@ mod v0;
 
 use crate::drive::verify::RootHash;
 use crate::error::drive::DriveError;
-use crate::error::proof::ProofError;
+
 use crate::error::Error;
 use crate::query::DriveQuery;
 use dpp::document::Document;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 
 impl<'a> DriveQuery<'a> {

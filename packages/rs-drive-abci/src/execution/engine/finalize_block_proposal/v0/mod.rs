@@ -1,7 +1,6 @@
 use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
 
 use dpp::block::epoch::Epoch;
-use dpp::block::extended_block_info::ExtendedBlockInfo;
 
 use dpp::validation::SimpleValidationResult;
 
@@ -26,7 +25,8 @@ use crate::platform_types::cleaned_abci_messages::cleaned_block::v0::CleanedBloc
 use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
 
 use crate::platform_types::commit;
-use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
+use crate::platform_types::commit::Commit;
+use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
@@ -57,6 +57,7 @@ where
         &self,
         request_finalize_block: FinalizeBlockCleanedRequest,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
         let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
 
@@ -143,13 +144,14 @@ where
             // Verify commit
 
             let quorum_type = self.config.quorum_type();
-            let commit = commit::v0::Commit::new_from_cleaned(
+            let commit = Commit::new_from_cleaned(
                 commit_info.clone(),
                 block_id,
                 height,
                 quorum_type,
                 &block_header.chain_id,
-            );
+                platform_version,
+            )?;
             let validation_result =
                 commit.verify_signature(&commit_info.block_signature, quorum_public_key);
 

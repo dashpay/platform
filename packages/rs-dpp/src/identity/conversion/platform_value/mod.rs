@@ -6,7 +6,6 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::TryFromPlatformVersioned;
-use serde::{Deserialize, Deserializer};
 pub use v0::*;
 
 impl<'a> ValueConvertible<'a> for Identity {}

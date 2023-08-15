@@ -16,7 +16,6 @@ use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyI
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
 
 const MAX_PUBLIC_KEYS: usize = 10;
 

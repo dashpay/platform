@@ -8,7 +8,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::GroveOperation;
+
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 

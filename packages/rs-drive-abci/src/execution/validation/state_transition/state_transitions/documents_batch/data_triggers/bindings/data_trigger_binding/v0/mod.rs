@@ -1,11 +1,12 @@
+use crate::error::Error;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::{
     DataTrigger, DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
 use dpp::identifier::Identifier;
-use drive::state_transition_action::document::documents_batch::document_transition::{DocumentTransitionAction, DocumentTransitionActionType};
 use dpp::version::PlatformVersion;
-use crate::error::Error;
-use crate::execution::validation::state_transition::documents_batch::data_triggers::bindings::data_trigger_binding::DataTriggerBinding;
+use drive::state_transition_action::document::documents_batch::document_transition::{
+    DocumentTransitionAction, DocumentTransitionActionType,
+};
 
 /// A struct representing a data trigger on the blockchain.
 ///

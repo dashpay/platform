@@ -2,7 +2,7 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::block_fees::v0::BlockFeesV0Getters;
+
 use crate::execution::types::block_fees::BlockFees;
 use crate::execution::types::fees_in_pools::v0::FeesInPoolsV0;
 use crate::platform_types::platform::Platform;
@@ -11,10 +11,7 @@ use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 
-use drive::fee_pools::epochs::operations_factory::EpochOperations;
-use drive::fee_pools::update_storage_fee_distribution_pool_operation;
 use drive::grovedb::TransactionArg;
-use drive::{error, grovedb};
 
 impl<C> Platform<C> {
     /// This function is a versioned method that adds operations to a batch that update total storage fees

@@ -2,7 +2,6 @@ mod data_triggers;
 mod state;
 mod structure;
 
-use dpp::identity::PartialIdentity;
 use dpp::prelude::*;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -14,7 +13,7 @@ use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 

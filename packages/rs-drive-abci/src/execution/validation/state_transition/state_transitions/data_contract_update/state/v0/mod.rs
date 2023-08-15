@@ -2,8 +2,6 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
-use serde_json::Value as JsonValue;
-
 use dpp::consensus::basic::data_contract::{
     DataContractInvalidIndexDefinitionUpdateError, InvalidDataContractVersionError,
 };
@@ -13,20 +11,14 @@ use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataC
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::DataContract;
+
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
+
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
-use dpp::{
-    consensus::basic::data_contract::{
-        DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
-    },
-    platform_value::{self, Value},
-    ProtocolError,
-};
+
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -227,7 +219,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         //     return Ok(validation_result);
         // }
 
-        return Ok(action);
+        Ok(action)
     }
 
     fn transform_into_action_v0(

@@ -48,9 +48,9 @@ impl QueryDocumentsOutcomeV0Methods for QueryDocumentsOutcomeV0 {
     }
 }
 
-impl Into<QueryDocumentsOutcome> for QueryDocumentsOutcomeV0 {
-    fn into(self) -> QueryDocumentsOutcome {
-        QueryDocumentsOutcome::V0(self)
+impl From<QueryDocumentsOutcomeV0> for QueryDocumentsOutcome {
+    fn from(val: QueryDocumentsOutcomeV0) -> Self {
+        QueryDocumentsOutcome::V0(val)
     }
 }
 

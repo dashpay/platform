@@ -4,7 +4,7 @@ use crate::drive::identity::key::fetch::{
 };
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
+
 use dpp::block::epoch::Epoch;
 use dpp::fee::default_costs::KnownCostItem::FetchIdentityBalanceProcessingCost;
 use dpp::fee::fee_result::FeeResult;
@@ -13,7 +13,7 @@ use dpp::identity::PartialIdentity;
 use grovedb::TransactionArg;
 
 use dpp::fee::default_costs::EpochCosts;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet};
 

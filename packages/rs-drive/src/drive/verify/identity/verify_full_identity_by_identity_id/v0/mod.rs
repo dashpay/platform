@@ -1,18 +1,16 @@
 use crate::drive::balances::balance_path;
-use crate::drive::defaults::PROTOCOL_VERSION;
+
 use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 use crate::drive::identity::{identity_key_tree_path, identity_path};
-use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
+use crate::drive::Drive;
 
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use dpp::fee::Credits;
 
-use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::verify::RootHash;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::{IdentityPublicKey, IdentityV0, KeyID, PartialIdentity};
+use dpp::identity::{IdentityPublicKey, IdentityV0, KeyID};
 pub use dpp::prelude::{Identity, Revision};
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
@@ -46,7 +44,7 @@ impl Drive {
         proof: &[u8],
         is_proof_subset: bool,
         identity_id: [u8; 32],
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Identity>), Error> {
         let path_query = Self::full_identity_query(&identity_id)?;
         let (root_hash, proved_key_values) = if is_proof_subset {

@@ -7,7 +7,7 @@ use crate::rpc::core::CoreRPCLike;
 
 use crate::error::execution::ExecutionError;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-use dpp::version::{FeatureVersion, PlatformVersion};
+use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain};
 

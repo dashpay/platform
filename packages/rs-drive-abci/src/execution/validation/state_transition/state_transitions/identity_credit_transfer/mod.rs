@@ -1,7 +1,6 @@
 mod state;
 mod structure;
 
-use dpp::identity::PartialIdentity;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;

@@ -3,9 +3,9 @@ use crate::drive::verify::RootHash;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::DriveQuery;
-use dpp::document::Document;
+
 use dpp::version::PlatformVersion;
-use grovedb::{GroveDb, PathQuery};
+use grovedb::GroveDb;
 
 impl<'a> DriveQuery<'a> {
     /// Verifies the given proof and returns the root hash of the GroveDB tree and a vector

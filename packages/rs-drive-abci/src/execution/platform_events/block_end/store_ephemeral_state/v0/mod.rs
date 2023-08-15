@@ -3,8 +3,8 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::platform_types::platform_state::PlatformState;
-use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
-use dpp::version::PlatformVersion;
+use dpp::serialization::PlatformSerializable;
+
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 

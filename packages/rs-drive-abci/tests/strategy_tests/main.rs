@@ -1911,7 +1911,7 @@ mod tests {
             identity
                 .expect("expected identity")
                 .public_keys()
-                .into_iter()
+                .iter()
                 .any(|(_, public_key)| public_key.is_disabled())
         }));
     }

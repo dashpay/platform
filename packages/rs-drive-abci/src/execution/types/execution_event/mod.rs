@@ -10,7 +10,7 @@ use dpp::fee::Credits;
 
 use dpp::identity::PartialIdentity;
 
-use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
+use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
 
 use drive::drive::batch::transitions::DriveHighLevelOperationConverter;

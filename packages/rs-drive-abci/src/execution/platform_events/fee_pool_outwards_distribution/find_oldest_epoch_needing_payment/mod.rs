@@ -4,9 +4,8 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::unpaid_epoch;
 use crate::platform_types::platform::Platform;
-use dpp::block::epoch::Epoch;
+
 use dpp::version::PlatformVersion;
-use drive::drive::credit_pools::epochs::start_block::StartBlockInfo;
 
 use drive::grovedb::TransactionArg;
 

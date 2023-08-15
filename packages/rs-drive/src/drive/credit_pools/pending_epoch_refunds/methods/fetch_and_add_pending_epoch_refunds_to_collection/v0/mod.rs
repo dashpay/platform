@@ -1,11 +1,10 @@
-use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
 use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
-use crate::drive::{Drive, RootTree};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use crate::drive::fee::get_overflow_error;
-use crate::fee_pools::epochs_root_tree_key_constants::KEY_PENDING_EPOCH_REFUNDS;
+
 use dpp::balances::credits::Creditable;
 use dpp::fee::epoch::CreditsPerEpoch;
 use grovedb::query_result_type::QueryResultType;
@@ -78,7 +77,7 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::fee::epoch::CreditsPerEpoch;
-    use dpp::version::drive_versions::DriveVersion;
+
     use dpp::version::PlatformVersion;
 
     #[test]

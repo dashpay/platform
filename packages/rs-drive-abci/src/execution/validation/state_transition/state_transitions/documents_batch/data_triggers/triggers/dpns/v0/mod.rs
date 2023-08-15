@@ -344,7 +344,7 @@ mod test {
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
     use dpp::tests::fixtures::{get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, ParentDocumentOptions};
     use dpp::tests::utils::generate_random_identifier_struct;
-    use dpp::version::{DefaultForPlatformVersion, TryIntoPlatformVersioned};
+    use dpp::version::{DefaultForPlatformVersion};
     use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
     use crate::platform_types::platform::PlatformStateRef;
@@ -409,7 +409,7 @@ mod test {
 
         let result = create_domain_data_trigger_v0(
             &DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(
-                document_create_transition,|identifier| {
+                document_create_transition,|_identifier| {
                     Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(platform_version.protocol_version)))
                 }).expect("expected to create action").into(),
             &data_trigger_context,

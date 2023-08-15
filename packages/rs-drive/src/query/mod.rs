@@ -65,7 +65,6 @@ pub use conditions::WhereOperator;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
-use dpp::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -109,7 +108,7 @@ use dpp::platform_value::Value;
 use crate::common::encode::encode_u64;
 use crate::drive::config::DriveConfig;
 use crate::error::Error::GroveDB;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::ProtocolError;
@@ -1114,7 +1113,7 @@ impl<'a> DriveQuery<'a> {
 
     #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a `QueryItem` given a start key and query direction.
-    fn query_item_for_starts_at_key(starts_at_key: Vec<u8>, left_to_right: bool) -> QueryItem {
+    pub fn query_item_for_starts_at_key(starts_at_key: Vec<u8>, left_to_right: bool) -> QueryItem {
         if left_to_right {
             QueryItem::RangeAfter(starts_at_key..)
         } else {
@@ -1813,7 +1812,7 @@ mod tests {
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use crate::query::DriveQuery;
-    use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef};
+
     use dpp::data_contract::DataContract;
 
     use serde_json::Value::Null;
@@ -1833,7 +1832,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
 
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_path = "tests/supporting_files/contract/family/family-contract.json";
@@ -1863,7 +1862,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
         let contract_path =

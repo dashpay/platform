@@ -1,16 +1,12 @@
 mod v0;
 
-use crate::drive::identity::identity_key_tree_path;
-use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;
-
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::IdentityPublicKey;
-use dpp::serialization::PlatformSerializable;
+
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::Element;
 
 impl Drive {
     /// Generates a vector of operations for inserting key to storage.

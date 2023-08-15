@@ -3,7 +3,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::serialization::SerializationError;
 use crate::logging;
 use dashcore_rpc::Error as CoreRpcError;
-use dpp::version::{PlatformVersion, PlatformVersionError};
+use dpp::version::PlatformVersionError;
 use drive::dpp::ProtocolError;
 use drive::error::Error as DriveError;
 use tenderdash_abci::proto::abci::ResponseException;

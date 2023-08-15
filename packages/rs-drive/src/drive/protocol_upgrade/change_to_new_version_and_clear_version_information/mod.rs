@@ -2,7 +2,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use grovedb::TransactionArg;
@@ -18,8 +18,8 @@ impl Drive {
         next_version: ProtocolVersion,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
-        let platform_version = PlatformVersion::get(current_version)
-            .map_err(|a| ProtocolError::PlatformVersionError(a))?;
+        let platform_version =
+            PlatformVersion::get(current_version).map_err(ProtocolError::PlatformVersionError)?;
         match platform_version
             .drive
             .methods

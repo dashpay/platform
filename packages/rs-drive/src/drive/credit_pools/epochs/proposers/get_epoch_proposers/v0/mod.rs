@@ -67,7 +67,7 @@ mod tests {
     use crate::fee_pools::epochs::operations_factory::EpochOperations;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
-    use dpp::version::drive_versions::DriveVersion;
+
     use dpp::version::PlatformVersion;
 
     #[test]

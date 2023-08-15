@@ -1,22 +1,17 @@
 mod v0;
 
-use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
+use crate::drive::batch::DriveOperation;
 
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
-use crate::fee::op::LowLevelDriveOperation;
+
 use dpp::block::block_info::BlockInfo;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::TransactionArg;
 
-use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
-use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
-use grovedb::batch::{GroveDbOp, KeyInfoPath};
-use itertools::Itertools;
-use std::collections::{BTreeMap, HashMap};
 
 impl Drive {
     /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.

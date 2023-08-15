@@ -71,47 +71,37 @@ pub use add_indices_for_top_index_level_for_contract_operations::*;
 // This module contains functionality for adding a reference for an index level for contract operations
 mod add_reference_for_index_level_for_contract_operations;
 pub use add_reference_for_index_level_for_contract_operations::*;
-
-use grovedb::TransactionArg;
-use std::borrow::Cow;
-use std::option::Option::None;
-
-use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
-use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-use crate::drive::Drive;
-use crate::fee::op::LowLevelDriveOperation;
-
-use dpp::block::block_info::BlockInfo;
-#[cfg(test)]
+#[cfg(all(
+    feature = "fixtures-and-mocks",
+    feature = "data-contract-cbor-conversion"
+))]
 use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
-#[cfg(test)]
-use dpp::document::serialization_traits::DocumentCborMethodsV0;
-use dpp::document::Document;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::PlatformVersion;
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
     use std::option::Option::None;
 
-    use super::*;
+    use dpp::block::block_info::BlockInfo;
     use rand::Rng;
     use tempfile::TempDir;
 
     use crate::common::setup_contract;
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::DocumentAndContractInfo;
+    use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
     use crate::fee::op::LowLevelDriveOperation;
-    use crate::tests::helpers::setup::setup_system_data_contract;
+
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::created_data_contract::CreatedDataContract;
+    use dpp::document::Document;
+
+    use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use dpp::document::serialization_traits::DocumentCborMethodsV0;
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
+    use dpp::fee::fee_result::FeeResult;
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::PlatformVersion;
@@ -153,7 +143,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -174,7 +164,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect_err("expected not to be able to insert same document twice");
 
@@ -195,7 +185,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to override a document successfully");
     }
@@ -209,7 +199,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -250,7 +240,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -271,7 +261,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect_err("expected not to be able to insert same document twice");
 
@@ -292,7 +282,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to override a document successfully");
     }
@@ -306,7 +296,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -347,7 +337,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -373,7 +363,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -414,7 +404,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -440,7 +430,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -507,7 +497,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -569,7 +559,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -585,7 +575,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -682,7 +672,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -722,7 +712,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -798,7 +788,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -819,7 +809,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -840,7 +830,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
     }
@@ -890,7 +880,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -911,7 +901,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect_err(
                 "expected not to be able to insert document with already existing unique index",
@@ -927,7 +917,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let created_contract =
@@ -947,7 +937,7 @@ mod tests {
         // Create dash TLD
 
         let dash_tld_cbor = hex::decode("01ac632469645820d7f2c53f46a917ab6e5b39a2d7bc260b649289453744d1e0d4f26a8d8eff37cf65247479706566646f6d61696e656c6162656c6464617368677265636f726473a17364617368416c6961734964656e74697479496458203012c19b98ec0033addb36cd64b7f510670f2a351a4304b5f6994144286efdac68246f776e6572496458203012c19b98ec0033addb36cd64b7f510670f2a351a4304b5f6994144286efdac69247265766973696f6e016a246372656174656441741b0000017f07c861586c7072656f7264657253616c745820e0b508c5a36825a206693a1f414aa13edbecf43c41e3c799ea9e737b4f9aa2266e737562646f6d61696e52756c6573a16f616c6c6f77537562646f6d61696e73f56f2464617461436f6e747261637449645820e668c659af66aee1e72c186dde7b5b7e0a1d712a09c40d5721f622bf53c531556f6e6f726d616c697a65644c6162656c6464617368781a6e6f726d616c697a6564506172656e74446f6d61696e4e616d6560").unwrap();
-        let dash_tld = Document::from_cbor(&dash_tld_cbor, None, None, &platform_version)
+        let dash_tld = Document::from_cbor(&dash_tld_cbor, None, None, platform_version)
             .expect("expected to get document");
 
         let info = DocumentAndContractInfo {
@@ -987,7 +977,7 @@ mod tests {
         // add random TLD
 
         let random_tld_cbor = hex::decode("01ab632469645820655c9b5606f4ad53daea90de9c540aad656ed5fbe5fb14b40700f6f56dc793ac65247479706566646f6d61696e656c6162656c746433653966343532373963343865306261363561677265636f726473a17364617368416c6961734964656e74697479496458203012c19b98ec0033addb36cd64b7f510670f2a351a4304b5f6994144286efdac68246f776e6572496458203012c19b98ec0033addb36cd64b7f510670f2a351a4304b5f6994144286efdac69247265766973696f6e016c7072656f7264657253616c745820219353a923a29cd02c521b141f326ac0d12c362a84f1979a5de89b8dba12891b6e737562646f6d61696e52756c6573a16f616c6c6f77537562646f6d61696e73f56f2464617461436f6e747261637449645820e668c659af66aee1e72c186dde7b5b7e0a1d712a09c40d5721f622bf53c531556f6e6f726d616c697a65644c6162656c746433653966343532373963343865306261363561781a6e6f726d616c697a6564506172656e74446f6d61696e4e616d6560").unwrap();
-        let random_tld = Document::from_cbor(&random_tld_cbor, None, None, &platform_version)
+        let _random_tld = Document::from_cbor(&random_tld_cbor, None, None, platform_version)
             .expect("expected to get document");
 
         let info = DocumentAndContractInfo {

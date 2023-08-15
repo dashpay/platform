@@ -13,7 +13,7 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::DataContract;
 
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};

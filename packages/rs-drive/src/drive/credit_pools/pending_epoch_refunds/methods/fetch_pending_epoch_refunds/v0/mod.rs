@@ -1,10 +1,8 @@
-use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
 use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
-use crate::drive::{Drive, RootTree};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 
-use crate::fee_pools::epochs_root_tree_key_constants::KEY_PENDING_EPOCH_REFUNDS;
 use dpp::balances::credits::Creditable;
 use dpp::fee::epoch::CreditsPerEpoch;
 use grovedb::query_result_type::QueryResultType;

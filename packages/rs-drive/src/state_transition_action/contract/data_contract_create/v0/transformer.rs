@@ -3,9 +3,7 @@ use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 use dpp::ProtocolError;
 use platform_version::version::PlatformVersion;
-use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
-use serde::{Deserialize, Serialize};
-use std::convert::TryInto;
+use platform_version::TryFromPlatformVersioned;
 
 impl TryFromPlatformVersioned<DataContractCreateTransitionV0>
     for DataContractCreateTransitionActionV0

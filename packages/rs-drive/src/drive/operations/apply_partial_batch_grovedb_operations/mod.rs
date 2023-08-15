@@ -5,7 +5,7 @@ use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::GroveError;
-use costs::storage_cost::StorageCost;
+
 use costs::OperationCost;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath, OpsByLevelPath};
@@ -31,6 +31,7 @@ impl Drive {
     ///
     /// * `Result<(), Error>` - On success, returns `Ok(())`. On error, returns an `Error`.
     ///
+    #[allow(dead_code)]
     pub(crate) fn apply_partial_batch_grovedb_operations(
         &self,
         estimated_costs_only_with_layer_info: Option<

@@ -1,24 +1,19 @@
 mod v0;
 
-use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
-use drive::drive::batch::DriveOperation;
+
 use drive::grovedb::Transaction;
-use std::option::Option::None;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::block_fees::v0::BlockFeesV0Getters;
+
 use crate::execution::types::block_fees::BlockFees;
-use crate::execution::types::block_state_info::v0::{
-    BlockStateInfoV0Getters, BlockStateInfoV0Methods,
-};
+
 use crate::execution::types::block_state_info::BlockStateInfo;
 use crate::execution::types::processed_block_fees_outcome;
-use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
-use crate::platform_types::epochInfo::EpochInfo;
+
+use crate::platform_types::epoch_info::EpochInfo;
 use crate::platform_types::platform::Platform;
-use drive::fee_pools::epochs::operations_factory::EpochOperations;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Adds operations to GroveDB op batch related to processing

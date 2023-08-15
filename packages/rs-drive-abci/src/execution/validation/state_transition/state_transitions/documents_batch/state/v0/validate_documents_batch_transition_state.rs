@@ -15,7 +15,7 @@ use dpp::consensus::state::document::invalid_document_revision_error::InvalidDoc
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::data_contract::DataContract;
+
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{
@@ -37,13 +37,13 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
 use drive::state_transition_action::document::documents_batch::v0::DocumentsBatchTransitionActionV0;
 use dpp::validation::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
-use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
+use dpp::version::{PlatformVersion};
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use drive::drive::contract::DataContractFetchInfo;
-use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
+use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext};
 
 pub(crate) fn validate_document_batch_transition_state(
     bypass_validation: bool,
@@ -164,7 +164,7 @@ fn validate_document_transitions_within_document_type(
     document_type_name: &str,
     owner_id: Identifier,
     document_transitions: &[&DocumentTransition],
-    execution_context: &mut StateTransitionExecutionContext,
+    _execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error> {
@@ -305,7 +305,7 @@ fn validate_transition<'a>(
                 }
             }
 
-            let document_create_action = DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, |identifier| {
+            let document_create_action = DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, |_identifier| {
                 Ok(data_contract_fetch_info.clone())
             })?;
 
@@ -377,7 +377,7 @@ fn validate_transition<'a>(
                     DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
                         document_replace_transition,
                         original_document.created_at(),
-                        |identifier| Ok(data_contract_fetch_info.clone()),
+                        |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
 
                 let validation_result = platform
@@ -406,7 +406,7 @@ fn validate_transition<'a>(
                 DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
                     document_replace_transition,
                     original_document_created_at,
-                    |identifier| Ok(data_contract_fetch_info.clone()),
+                    |_identifier| Ok(data_contract_fetch_info.clone()),
                 )?
             };
 
@@ -438,7 +438,7 @@ fn validate_transition<'a>(
             }
 
             if result.is_valid() {
-                let action = DocumentDeleteTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_delete_transition,                      |identifier| {
+                let action = DocumentDeleteTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_delete_transition,                      |_identifier| {
                     Ok(data_contract_fetch_info.clone())
                 })?;
                 Ok(DocumentTransitionAction::DeleteAction(action).into())

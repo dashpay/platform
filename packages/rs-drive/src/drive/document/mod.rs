@@ -146,6 +146,7 @@ fn contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
 }
 
 #[cfg(any(feature = "full", feature = "verify"))]
+#[allow(dead_code)]
 /// Returns the size of the path to a contract document.
 fn contract_documents_keeping_history_primary_key_path_for_document_id_size(
     document_type_name_len: u32,
@@ -241,7 +242,7 @@ pub(crate) mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::prelude::DataContract;
     use dpp::tests::json_document::json_document_to_contract;
-    use dpp::version::drive_versions::DriveVersion;
+
     use dpp::version::PlatformVersion;
 
     /// Setup Dashpay

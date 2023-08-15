@@ -50,9 +50,6 @@ use std::option::Option::None;
 use std::path::Path;
 
 #[cfg(feature = "full")]
-use ciborium::value::Value;
-
-#[cfg(feature = "full")]
 use grovedb::TransactionArg;
 
 #[cfg(feature = "full")]
@@ -67,6 +64,9 @@ use dpp::prelude::Identifier;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::tests::json_document::json_document_to_contract_with_ids;
 use dpp::version::PlatformVersion;
+
+#[cfg(test)]
+use ciborium::value::Value;
 
 #[cfg(feature = "fixtures-and-mocks")]
 /// Serializes to CBOR and applies to Drive a JSON contract from the file system.

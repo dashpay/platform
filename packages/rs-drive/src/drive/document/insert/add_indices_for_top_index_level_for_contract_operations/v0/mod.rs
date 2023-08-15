@@ -1,36 +1,25 @@
-use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, STORAGE_FLAGS_SIZE};
-use crate::drive::document::{
-    contract_document_type_path_vec, document_reference_size, make_document_reference,
-    unique_event_id,
-};
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
-use crate::drive::object_size_info::DocumentInfo::{
-    DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,
-    DocumentRefAndSerialization, DocumentRefInfo,
-};
-use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
-use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
-use crate::drive::object_size_info::{
-    DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo, PathKeyElementInfo,
-};
+use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
+use crate::drive::document::{contract_document_type_path_vec, unique_event_id};
+
+use crate::drive::grove_operations::BatchInsertTreeApplyType;
+
+use crate::drive::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
+
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
-use grovedb::batch::key_info::KeyInfo;
+
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::NoSumTrees;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {

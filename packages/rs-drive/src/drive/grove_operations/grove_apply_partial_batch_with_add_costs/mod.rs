@@ -1,18 +1,16 @@
 mod v0;
 
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::push_drive_operation_result;
+
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::GroveError;
-use costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
-use costs::storage_cost::transition::OperationStorageTransitionType;
+
 use costs::OperationCost;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::{BatchApplyOptions, GroveDbOp, OpsByLevelPath};
+use grovedb::batch::{GroveDbOp, OpsByLevelPath};
 use grovedb::TransactionArg;
 
 impl Drive {

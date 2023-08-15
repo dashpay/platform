@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -17,7 +15,7 @@ use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
-use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
+use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
@@ -159,7 +157,7 @@ mod tests {
 
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
     use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
-    use crate::platform_types::epochInfo::v0::EpochInfoV0;
+    use crate::platform_types::epoch_info::v0::EpochInfoV0;
     use crate::platform_types::platform_state::v0::PlatformStateV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -295,7 +293,7 @@ mod tests {
             .fetch_withdrawal_documents_by_status(
                 withdrawals_contract::WithdrawalStatus::POOLED.into(),
                 Some(&transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("to fetch withdrawal documents");
 

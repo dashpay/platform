@@ -6,7 +6,7 @@ pub use structs::*;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+
     use dpp::prelude::*;
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
