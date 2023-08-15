@@ -22,7 +22,7 @@ impl DataContractConfig {
     pub fn default_for_version(
         platform_version: &PlatformVersion,
     ) -> Result<DataContractConfig, ProtocolError> {
-        match platform_version.dpp.contract_versions.config_version {
+        match platform_version.dpp.contract_versions.config {
             0 => Ok(DataContractConfigV0::default().into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractConfig::default_for_version".to_string(),
@@ -36,7 +36,7 @@ impl DataContractConfig {
         value: Value,
         platform_version: &PlatformVersion,
     ) -> Result<DataContractConfig, ProtocolError> {
-        match platform_version.dpp.contract_versions.config_version {
+        match platform_version.dpp.contract_versions.config {
             0 => {
                 let config: DataContractConfigV0 = platform_value::from_value(value)?;
                 Ok(config.into())
@@ -71,7 +71,7 @@ impl DataContractConfig {
         contract: &BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<DataContractConfig, ProtocolError> {
-        match platform_version.dpp.contract_versions.config_version {
+        match platform_version.dpp.contract_versions.config {
             0 => Ok(
                 DataContractConfigV0::get_contract_configuration_properties_v0(contract)?.into(),
             ),

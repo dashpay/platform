@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use jsonschema::JSONSchema;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::{TryFrom, TryInto};
 
@@ -46,4 +47,6 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) documents_keep_history: bool,
     pub(in crate::data_contract) documents_mutable: bool,
     pub(in crate::data_contract) data_contract_id: Identifier,
+    #[cfg(feature = "validation")]
+    pub(in crate::data_contract) json_schema_validator: Option<JSONSchema>,
 }

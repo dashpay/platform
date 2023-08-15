@@ -47,7 +47,7 @@ impl DataContractV0 {
                 match platform_version
                     .dpp
                     .contract_versions
-                    .contract_structure_version
+                    .contract_structure
                 {
                     0 => {
                         let data_contract = DataContractV0::try_from_platform_versioned_v0(

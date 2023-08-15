@@ -19,7 +19,7 @@ use crate::data_contract::document_type::schema::{
     traversal_validator, validate_max_depth,
 };
 
-use crate::data_contract::document_type::schema::enrich_with_base_schema;
+use crate::data_contract::document_type::schema::{create_validator, enrich_with_base_schema};
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::util::json_schema::resolve_uri;
@@ -60,7 +60,13 @@ impl DocumentTypeV0 {
         )?;
 
         #[cfg(feature = "validation")]
+        let mut json_schema_validator = None;
+
+        #[cfg(feature = "validation")]
         if validate {
+            // Make sure JSON Schema is compilable
+            json_schema_validator = Some(create_validator(&root_schema, platform_version)?);
+
             // Validate against JSON Schema
             DOCUMENT_META_SCHEMA_V0
                 .validate(
@@ -315,10 +321,7 @@ impl DocumentTypeV0 {
         // Collect binary and identifier properties
         let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
             &document_properties,
-            &platform_version
-                .dpp
-                .contract_versions
-                .document_type_versions,
+            &platform_version.dpp.contract_versions.document_type,
         )?;
 
         Ok(DocumentTypeV0 {
@@ -334,6 +337,8 @@ impl DocumentTypeV0 {
             documents_keep_history,
             documents_mutable,
             data_contract_id,
+            #[cfg(feature = "validation")]
+            json_schema_validator,
         })
     }
 }

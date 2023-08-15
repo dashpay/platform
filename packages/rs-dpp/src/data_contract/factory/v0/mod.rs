@@ -128,7 +128,7 @@ impl DataContractFactoryV0 {
         match platform_version
             .dpp
             .contract_versions
-            .contract_structure_version
+            .contract_structure
         {
             0 => Ok(DataContractV0::from_value(data_contract_object, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

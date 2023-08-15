@@ -17,7 +17,7 @@ impl DataContractCborConversionMethodsV0 for DataContract {
         match platform_version
             .dpp
             .contract_versions
-            .contract_structure_version
+            .contract_structure
         {
             0 => Ok(
                 DataContractV0::from_cbor_with_id(cbor_bytes, contract_id, platform_version)?
@@ -38,7 +38,7 @@ impl DataContractCborConversionMethodsV0 for DataContract {
         match platform_version
             .dpp
             .contract_versions
-            .contract_structure_version
+            .contract_structure
         {
             0 => Ok(DataContractV0::from_cbor(cbor_bytes, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

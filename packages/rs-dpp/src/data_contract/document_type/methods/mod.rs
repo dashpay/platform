@@ -95,7 +95,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         match platform_version
             .dpp
             .contract_versions
-            .document_type_versions
+            .document_type
             .methods
             .index_for_types
         {
@@ -117,7 +117,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         match platform_version
             .dpp
             .contract_versions
-            .document_type_versions
+            .document_type
             .methods
             .serialize_value_for_key
         {
@@ -134,7 +134,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         match platform_version
             .dpp
             .contract_versions
-            .document_type_versions
+            .document_type
             .methods
             .max_size
         {
@@ -151,7 +151,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         match platform_version
             .dpp
             .contract_versions
-            .document_type_versions
+            .document_type
             .methods
             .estimated_size
         {
@@ -211,7 +211,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         match platform_version
             .dpp
             .contract_versions
-            .document_type_versions
+            .document_type
             .methods
             .create_document_from_data
         {
@@ -239,7 +239,7 @@ impl DocumentTypeV0Methods for DocumentTypeV0 {
         match platform_version
             .dpp
             .contract_versions
-            .document_type_versions
+            .document_type
             .methods
             .create_document_with_prevalidated_properties
         {

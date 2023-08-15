@@ -235,7 +235,7 @@ impl DocumentTypeV0 {
             &PlatformVersion::latest()
                 .dpp
                 .contract_versions
-                .document_type_versions,
+                .document_type,
         )?;
 
         // TODO: It might not work properly

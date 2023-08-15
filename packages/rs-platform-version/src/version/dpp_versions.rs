@@ -88,12 +88,19 @@ pub struct DocumentFeatureVersionBounds {
 #[derive(Clone, Debug, Default)]
 pub struct ContractVersions {
     /// This is how we serialize and deserialize a contract
-    pub contract_serialization_version: FeatureVersionBounds,
+    pub contract_serialization: FeatureVersionBounds,
     /// This is the structure of the Contract as it is defined for code paths
-    pub contract_structure_version: FeatureVersion,
-    pub created_data_contract_structure_version: FeatureVersion,
-    pub config_version: FeatureVersion,
-    pub document_type_versions: DocumentTypeVersions,
+    pub contract_structure: FeatureVersion,
+    pub created_data_contract_structure: FeatureVersion,
+    pub config: FeatureVersion,
+    pub methods: DataContractMethodVersions,
+    pub document_type: DocumentTypeVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DataContractMethodVersions {
+    pub validation: FeatureVersion,
+    pub schema: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -133,6 +140,7 @@ pub struct DocumentTypeSchemaVersions {
     pub find_identifier_and_binary_paths: FeatureVersion,
     pub validate_max_depth: FeatureVersion,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,
+    pub create_validator: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

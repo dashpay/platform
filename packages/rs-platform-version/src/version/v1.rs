@@ -675,15 +675,15 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             },
         },
         contract_versions: ContractVersions {
-            contract_serialization_version: FeatureVersionBounds {
+            contract_serialization: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,
                 default_current_version: 0,
             },
-            contract_structure_version: 0,
-            created_data_contract_structure_version: 0,
-            config_version: 0,
-            document_type_versions: DocumentTypeVersions {
+            contract_structure: 0,
+            created_data_contract_structure: 0,
+            config: 0,
+            document_type: DocumentTypeVersions {
                 index_versions: DocumentTypeIndexVersions {
                     index_levels_from_indices: 0,
                 },

@@ -10,5 +10,11 @@ pub mod recursive_schema_validator;
 pub use recursive_schema_validator::*;
 #[cfg(feature = "validation")]
 pub mod validate_max_depth;
+
+#[cfg(feature = "validation")]
+mod create_validator;
+#[cfg(feature = "validation")]
+pub use create_validator::*;
+
 #[cfg(feature = "validation")]
 pub use validate_max_depth::*;
