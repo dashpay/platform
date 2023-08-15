@@ -94,58 +94,44 @@ pub struct ContractVersions {
     pub created_data_contract_structure_version: FeatureVersion,
     pub config_version: FeatureVersion,
     pub document_type_versions: DocumentTypeVersions,
-    pub index_versions: IndexVersions,
-    pub contract_class_method_versions: ContractClassMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct ContractClassMethodVersions {
-    pub get_property_definition_by_path: FeatureVersion,
-    pub get_binary_properties_from_schema: FeatureVersion,
-    pub get_definitions: FeatureVersion,
-    pub get_document_types_from_contract: FeatureVersion,
-    pub get_document_types_from_value: FeatureVersion,
+pub struct DocumentTypeClassMethodVersions {
+    pub try_from_schema: FeatureVersion,
     pub create_document_types_from_document_schemas: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct IndexVersions {
+pub struct DocumentTypeIndexVersions {
     pub index_levels_from_indices: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DocumentTypeVersions {
+    pub index_versions: DocumentTypeIndexVersions,
+    pub class_method_versions: DocumentTypeClassMethodVersions,
     /// This is for the overall structure of the document type, like DocumentTypeV0
-    pub document_type_structure_version: FeatureVersion,
-    /// Class based method
-    pub find_identifier_and_binary_paths: FeatureVersion,
-    /// Class based method
-    pub insert_values: FeatureVersion,
-    /// Class based method
-    pub insert_values_nested: FeatureVersion,
-    pub index_for_types: FeatureVersion,
-    pub unique_id_for_storage: FeatureVersion,
-    pub unique_id_for_document_field: FeatureVersion,
-    pub serialize_value_for_key: FeatureVersion,
-    pub convert_value_to_document: FeatureVersion,
-    pub create_document_from_data: FeatureVersion,
-    pub max_size: FeatureVersion,
-    pub estimated_size: FeatureVersion,
-    pub try_from_schema: FeatureVersion,
-    pub create_document_with_prevalidated_properties: FeatureVersion,
-    pub top_level_indices: FeatureVersion,
-    pub document_field_for_property: FeatureVersion,
-    pub document_field_type_for_property: FeatureVersion,
-    pub field_can_be_null: FeatureVersion,
-    pub initial_revision: FeatureVersion,
-    pub requires_revision: FeatureVersion,
-    pub enrich_with_base_schema: FeatureVersion,
-    pub validation_versions: DocumentTypeValidationVersions,
+    pub structure_version: FeatureVersion,
+    pub schema: DocumentTypeSchemaVersions,
+    pub methods: DocumentTypeMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct DocumentTypeValidationVersions {
-    pub validate_data_contract_max_depth: FeatureVersion,
+pub struct DocumentTypeMethodVersions {
+    pub create_document_from_data: FeatureVersion,
+    pub create_document_with_prevalidated_properties: FeatureVersion,
+    pub estimated_size: FeatureVersion,
+    pub index_for_types: FeatureVersion,
+    pub max_size: FeatureVersion,
+    pub serialize_value_for_key: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DocumentTypeSchemaVersions {
+    pub enrich_with_base_schema: FeatureVersion,
+    pub find_identifier_and_binary_paths: FeatureVersion,
+    pub validate_max_depth: FeatureVersion,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,
 }
 

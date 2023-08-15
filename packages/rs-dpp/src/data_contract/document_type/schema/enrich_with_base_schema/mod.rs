@@ -14,17 +14,14 @@ pub fn enrich_with_base_schema(
         .dpp
         .contract_versions
         .document_type_versions
+        .schema
         .enrich_with_base_schema
     {
         0 => v0::enrich_with_base_schema_v0(schema, schema_defs, exclude_properties),
-        _ => Err(ProtocolError::UnknownVersionMismatch {
+        version => Err(ProtocolError::UnknownVersionMismatch {
             method: "enrich_with_base_schema".to_string(),
             known_versions: vec![0],
-            received: platform_version
-                .dpp
-                .contract_versions
-                .document_type_versions
-                .enrich_with_base_schema,
+            received: version,
         }),
     }
 }

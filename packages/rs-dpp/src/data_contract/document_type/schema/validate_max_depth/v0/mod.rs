@@ -9,11 +9,9 @@ use crate::{consensus::basic::BasicError, ProtocolError};
 
 const MAX_DEPTH: usize = 500;
 
-pub fn validate_data_contract_max_depth_v0(
-    data_contract_object: &Value,
-) -> SimpleConsensusValidationResult {
+pub fn validate_max_depth_v0(value: &Value) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
-    let schema_depth = match calc_max_depth(data_contract_object) {
+    let schema_depth = match calculate_max_depth(value) {
         Ok(depth) => depth,
         Err(err) => {
             result.add_error(err);
@@ -29,7 +27,7 @@ pub fn validate_data_contract_max_depth_v0(
     result
 }
 
-fn calc_max_depth(platform_value: &Value) -> Result<usize, BasicError> {
+fn calculate_max_depth(platform_value: &Value) -> Result<usize, BasicError> {
     let mut values_depth_queue: Vec<(&Value, usize)> = vec![(platform_value, 0)];
     let mut max_depth: usize = 0;
     let mut visited: BTreeSet<*const Value> = BTreeSet::new();
@@ -127,7 +125,7 @@ mod test {
               }
         )
         .into();
-        let result = calc_max_depth(&schema);
+        let result = calculate_max_depth(&schema);
 
         let err = get_ref_error(result);
         assert_eq!(
@@ -163,7 +161,7 @@ mod test {
               }
         )
         .into();
-        let result = calc_max_depth(&schema);
+        let result = calculate_max_depth(&schema);
         assert!(matches!(result, Ok(5)));
     }
 
@@ -187,7 +185,7 @@ mod test {
               }
         )
         .into();
-        let result = calc_max_depth(&schema);
+        let result = calculate_max_depth(&schema);
 
         let err = get_ref_error(result);
         assert_eq!(
@@ -217,7 +215,7 @@ mod test {
               }
         )
         .into();
-        let result = calc_max_depth(&schema);
+        let result = calculate_max_depth(&schema);
 
         let err = get_ref_error(result);
         assert_eq!(
@@ -247,7 +245,7 @@ mod test {
               }
         )
         .into();
-        let result = calc_max_depth(&schema);
+        let result = calculate_max_depth(&schema);
 
         let err = get_ref_error(result);
         assert_eq!(
@@ -274,13 +272,13 @@ mod test {
               }
         )
         .into();
-        assert!(matches!(calc_max_depth(&schema), Ok(3)));
+        assert!(matches!(calculate_max_depth(&schema), Ok(3)));
     }
 
     #[test]
     fn should_calculate_valid_depth_for_empty_json() {
         let schema: Value = json!({}).into();
-        assert!(matches!(calc_max_depth(&schema), Ok(1)));
+        assert!(matches!(calculate_max_depth(&schema), Ok(1)));
     }
 
     #[test]
@@ -298,7 +296,7 @@ mod test {
 
         })
         .into();
-        assert!(matches!(calc_max_depth(&schema), Ok(4)));
+        assert!(matches!(calculate_max_depth(&schema), Ok(4)));
     }
 
     pub fn get_ref_error<T>(result: Result<T, BasicError>) -> InvalidJsonSchemaRefError {

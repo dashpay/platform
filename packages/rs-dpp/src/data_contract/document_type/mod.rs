@@ -12,8 +12,6 @@ pub use index_level::IndexLevel;
 pub mod random_document;
 pub mod schema;
 pub mod v0;
-#[cfg(feature = "validation")]
-mod validation;
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;

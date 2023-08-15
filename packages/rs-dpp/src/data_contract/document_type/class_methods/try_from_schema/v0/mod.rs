@@ -13,12 +13,13 @@ use crate::data_contract::document_type::array::ArrayItemType;
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
-use crate::data_contract::document_type::schema::enrich_with_base_schema;
 #[cfg(feature = "validation")]
-use crate::data_contract::document_type::validation::{
+use crate::data_contract::document_type::schema::{
     byte_array_has_no_items_as_parent_validator, pattern_is_valid_regex_validator,
-    traversal_validator, validate_data_contract_max_depth,
+    traversal_validator, validate_max_depth,
 };
+
+use crate::data_contract::document_type::schema::{enrich_with_base_schema};
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::util::json_schema::resolve_uri;
@@ -26,8 +27,8 @@ use crate::util::json_schema::resolve_uri;
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::{Identifier, Value, ValueMapHelper};
+use platform_value::btreemap_extensions::{BTreeValueMapHelper};
+use platform_value::{Identifier, Value};
 
 const UNIQUE_INDEX_LIMIT_V0: usize = 16;
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
@@ -70,7 +71,7 @@ impl DocumentTypeV0 {
                 .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
 
             // Validate document schema depth
-            let mut result = validate_data_contract_max_depth(&root_schema, platform_version);
+            let mut result = validate_max_depth(&root_schema, platform_version)?;
 
             if !result.is_valid() {
                 let error = result.errors.remove(0);
@@ -88,7 +89,7 @@ impl DocumentTypeV0 {
                     byte_array_has_no_items_as_parent_validator,
                 ],
                 platform_version,
-            ));
+            )?);
 
             if !result.is_valid() {
                 let error = result.errors.remove(0);
