@@ -56,9 +56,9 @@ pub struct IdentityCreateTransitionV0 {
 }
 
 #[cfg_attr(
-feature = "state-transition-serde-conversion",
-derive(Deserialize),
-serde(rename_all = "camelCase"),
+    feature = "state-transition-serde-conversion",
+    derive(Deserialize),
+    serde(rename_all = "camelCase")
 )]
 struct IdentityCreateTransitionV0Inner {
     // Own ST fields

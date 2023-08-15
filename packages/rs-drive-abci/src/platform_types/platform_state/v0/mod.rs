@@ -15,13 +15,10 @@ use dpp::platform_value::Bytes32;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use indexmap::IndexMap;
 
-use crate::platform_types::masternode;
-
 use crate::platform_types::masternode::Masternode;
 use crate::platform_types::validator_set::ValidatorSet;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-use platform_version::version::PlatformVersion;
-use platform_version::TryIntoPlatformVersioned;
+use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 use std::collections::{BTreeMap, HashMap};
 
 /// Platform state

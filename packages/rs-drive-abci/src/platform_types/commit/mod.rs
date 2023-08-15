@@ -6,14 +6,18 @@ use crate::platform_types::commit::v0::CommitV0;
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::bls_signatures;
 use dpp::validation::SimpleValidationResult;
-use platform_version::version::PlatformVersion;
+use dpp::version::PlatformVersion;
 use tenderdash_abci::proto::abci::CommitInfo;
 use tenderdash_abci::proto::types::BlockId;
 
+/// Accessors for the commit
 pub mod accessors;
 pub(crate) mod v0;
 
+/// Represents block commit
+#[derive(Clone, Debug)]
 pub enum Commit {
+    /// Version 0
     V0(CommitV0),
 }
 

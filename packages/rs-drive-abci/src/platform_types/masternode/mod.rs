@@ -3,15 +3,16 @@ use crate::error::Error;
 use crate::platform_types::masternode::v0::MasternodeV0;
 use bincode::{Decode, Encode};
 use dashcore_rpc::json::MasternodeListItem;
-use platform_version::version::PlatformVersion;
-use platform_version::TryFromPlatformVersioned;
+use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 
 mod accessors;
 /// Version 0
 pub mod v0;
 
+/// `Masternode` represents a masternode on the network.
 #[derive(Clone, PartialEq, Eq, Debug, Encode, Decode)]
 pub enum Masternode {
+    /// Version 0
     V0(MasternodeV0),
 }
 

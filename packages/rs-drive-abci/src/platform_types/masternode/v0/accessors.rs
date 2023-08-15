@@ -1,7 +1,9 @@
 use dashcore_rpc::json::MasternodeType;
 use dpp::dashcore::{ProTxHash, Txid};
 
+/// The masternode accessors for version 0
 pub trait MasternodeAccessorsV0 {
+    /// The node type, for now either a masternode or an evonode
     fn node_type(&self) -> MasternodeType;
     /// A unique hash representing the masternode's registration transaction.
     fn pro_tx_hash(&self) -> ProTxHash;
