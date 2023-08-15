@@ -3,7 +3,7 @@
 
 ### Features
 
-* **dashmate:** tenderdash mode configuration ([#1311](https://github.com/dashevo/platform/issues/1311))
+* **dashmate:** render tenderdash node mode in the service config ([#1311](https://github.com/dashevo/platform/issues/1311))
 
 ### [0.24.21](https://github.com/dashpay/platform/compare/v0.24.20...v0.24.21) (2023-08-09)
 
