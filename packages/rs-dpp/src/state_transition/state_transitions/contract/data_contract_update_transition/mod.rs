@@ -105,15 +105,10 @@ mod test {
     use crate::data_contract::DataContract;
     use crate::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
     use crate::tests::fixtures::get_data_contract_fixture;
-    use crate::util::json_value::JsonValueExt;
-    use crate::version::LATEST_PLATFORM_VERSION;
-    use integer_encoding::VarInt;
-    use platform_version::version::PlatformVersion;
-    use serde_cbor::value::to_value;
-    use std::collections::BTreeMap;
-    use std::convert::TryInto;
 
-    use crate::state_transition::traits::StateTransitionValueConvert;
+    use crate::version::LATEST_PLATFORM_VERSION;
+
+    use platform_version::version::PlatformVersion;
 
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;

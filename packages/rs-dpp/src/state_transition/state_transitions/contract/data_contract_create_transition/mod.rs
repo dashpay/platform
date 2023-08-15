@@ -152,7 +152,6 @@ impl DataContractCreateTransition {
 mod test {
     use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use crate::data_contract::created_data_contract::CreatedDataContract;
-    use integer_encoding::VarInt;
 
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
@@ -162,7 +161,7 @@ mod test {
     use crate::state_transition::traits::StateTransitionLike;
     use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
     use crate::tests::fixtures::get_data_contract_fixture;
-    use crate::version;
+
     use crate::version::LATEST_PLATFORM_VERSION;
     use platform_value::Value;
 

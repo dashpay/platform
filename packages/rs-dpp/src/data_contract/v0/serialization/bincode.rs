@@ -4,7 +4,7 @@ mod tests {
     use crate::identity::accessors::IdentityGettersV0;
     use crate::identity::Identity;
     use crate::serialization::{
-        PlatformDeserializableWithPotentialValidationFromVersionedStructure, PlatformSerializable,
+        PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
     };
     use crate::tests::fixtures::get_data_contract_fixture;

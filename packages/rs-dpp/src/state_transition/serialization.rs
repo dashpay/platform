@@ -24,9 +24,7 @@ mod tests {
     use crate::serialization::PlatformMessageSignable;
     use crate::serialization::Signable;
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
-    use crate::state_transition::data_contract_create_transition::{
-        DataContractCreateTransition, DataContractCreateTransitionV0,
-    };
+    use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
     use crate::state_transition::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
     };
@@ -40,13 +38,13 @@ mod tests {
     use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
     use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
-    use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
+    use crate::state_transition::{StateTransition, StateTransitionLike};
     use crate::tests::fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,
         get_extended_documents_fixture_with_owner_id_from_contract,
         raw_instant_asset_lock_proof_fixture,
     };
-    use crate::version::{PlatformVersion, LATEST_VERSION};
+    use crate::version::PlatformVersion;
     use crate::withdrawal::Pooling;
     use crate::{NativeBlsModule, ProtocolError};
     use platform_version::version::LATEST_PLATFORM_VERSION;
@@ -54,7 +52,6 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
-    use std::convert::TryInto;
 
     #[test]
     #[cfg(feature = "random-identities")]
@@ -84,7 +81,7 @@ mod tests {
     #[cfg(feature = "random-identities")]
     fn identity_topup_transition_ser_de() {
         let platform_version = PlatformVersion::latest();
-        let mut identity = Identity::random_identity(5, Some(5), platform_version)
+        let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
         let asset_lock_proof = raw_instant_asset_lock_proof_fixture(None);
 

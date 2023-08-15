@@ -11,9 +11,9 @@ mod test {
     use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
     use crate::state_transition::{
-        JsonStateTransitionSerializationOptions, StateTransition, StateTransitionJsonConvert,
+        JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
     };
-    use crate::tests::fixtures::{identity_fixture_json, identity_v0_fixture};
+    use crate::tests::fixtures::identity_v0_fixture;
     use crate::tests::utils::generate_random_identifier_struct;
     use platform_value::BinaryData;
     use serde_json::Value as JsonValue;
@@ -21,7 +21,7 @@ mod test {
     #[test]
     fn conversion_to_json_object() {
         let public_key = identity_v0_fixture().public_keys()[&0].to_owned();
-        let mut buffer = [0u8; 33];
+        let buffer = [0u8; 33];
         let transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: generate_random_identifier_struct(),
             revision: 0,

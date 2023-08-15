@@ -108,7 +108,6 @@ pub struct DataContractV0 {
 
 #[cfg(test)]
 mod test {
-    use super::*;
 
     fn init() {
         let _ = env_logger::builder()

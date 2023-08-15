@@ -99,7 +99,6 @@ mod tests {
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
     use platform_version::version::LATEST_PLATFORM_VERSION;
     use rand::SeedableRng;
-    use serde::Deserialize;
 
     #[test]
     fn test_identity_key_serialization_deserialization() {

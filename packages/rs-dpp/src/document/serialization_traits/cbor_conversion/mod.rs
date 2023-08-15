@@ -49,9 +49,7 @@ mod tests {
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
-    use crate::document::serialization_traits::{
-        DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
-    };
+    use crate::document::serialization_traits::DocumentCborMethodsV0;
     use crate::tests::json_document::json_document_to_contract;
 
     #[test]

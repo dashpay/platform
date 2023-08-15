@@ -217,12 +217,12 @@ mod test {
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::DataContract;
     use crate::document::extended_document::v0::ExtendedDocumentV0;
-    use crate::document::{Document, DocumentV0};
+
     use crate::prelude::Identifier;
     use crate::system_data_contracts::load_system_data_contract;
     use crate::tests::utils::*;
     use data_contracts::SystemDataContract;
-    use platform_value::btreemap_extensions::BTreeValueMapHelper;
+
     use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
     use platform_value::string_encoding::Encoding;
     use platform_value::Value;

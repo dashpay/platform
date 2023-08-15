@@ -204,7 +204,7 @@ mod tests {
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::serialized_version::v0::property_names;
     use crate::data_contract::DataContractMethodsV0;
-    use crate::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+    use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::StateTransitionLike;
     use crate::tests::fixtures::get_data_contract_fixture;
@@ -274,7 +274,7 @@ mod tests {
 
     #[tokio::test]
     async fn should_crate_data_contract_from_object() {
-        let platform_version = PlatformVersion::latest();
+        let _platform_version = PlatformVersion::latest();
 
         let TestData {
             created_data_contract,

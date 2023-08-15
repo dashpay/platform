@@ -65,7 +65,7 @@ mod test {
     use crate::state_transition::identity_credit_withdrawal_transition::v0::Pooling;
     use crate::state_transition::StateTransitionType;
     use crate::ProtocolError;
-    use bincode::{config, Decode, Encode};
+    use bincode::{Decode, Encode};
     use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
     use platform_value::{BinaryData, Identifier};
     use rand::Rng;

@@ -68,7 +68,7 @@ mod tests {
 
         let consensus_error: ConsensusError = error.clone().into();
 
-        let cbor = consensus_error
+        let _cbor = consensus_error
             .serialize_with_platform_version(LATEST_PLATFORM_VERSION)
             .expect("expected to serialize");
 

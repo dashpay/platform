@@ -9,7 +9,7 @@ mod test {
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use crate::data_contract::DataContract;
     use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
-    use crate::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+    use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::tests::json_document::json_document_to_contract;
     use platform_version::version::PlatformVersion;
 

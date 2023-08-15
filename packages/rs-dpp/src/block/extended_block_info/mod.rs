@@ -87,32 +87,43 @@ impl ExtendedBlockInfoV0Getters for ExtendedBlockInfo {
 
 impl ExtendedBlockInfoV0Setters for ExtendedBlockInfo {
     fn set_basic_info(&mut self, info: BlockInfo) {
-        if let ExtendedBlockInfo::V0(v0) = self {
-            v0.set_basic_info(info);
+        match self {
+            ExtendedBlockInfo::V0(v0) => {
+                v0.set_basic_info(info);
+            }
         }
+        if let ExtendedBlockInfo::V0(v0) = self {}
     }
 
     fn set_app_hash(&mut self, hash: [u8; 32]) {
-        if let ExtendedBlockInfo::V0(v0) = self {
-            v0.set_app_hash(hash);
+        match self {
+            ExtendedBlockInfo::V0(v0) => {
+                v0.set_app_hash(hash);
+            }
         }
     }
 
     fn set_quorum_hash(&mut self, hash: [u8; 32]) {
-        if let ExtendedBlockInfo::V0(v0) = self {
-            v0.set_quorum_hash(hash);
+        match self {
+            ExtendedBlockInfo::V0(v0) => {
+                v0.set_quorum_hash(hash);
+            }
         }
     }
 
     fn set_signature(&mut self, signature: [u8; 96]) {
-        if let ExtendedBlockInfo::V0(v0) = self {
-            v0.set_signature(signature);
+        match self {
+            ExtendedBlockInfo::V0(v0) => {
+                v0.set_signature(signature);
+            }
         }
     }
 
     fn set_round(&mut self, round: u32) {
-        if let ExtendedBlockInfo::V0(v0) = self {
-            v0.set_round(round);
+        match self {
+            ExtendedBlockInfo::V0(v0) => {
+                v0.set_round(round);
+            }
         }
     }
 }
