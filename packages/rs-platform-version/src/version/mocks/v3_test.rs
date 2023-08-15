@@ -1,4 +1,13 @@
-use crate::version::dpp_versions::{ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions, DocumentTypeVersions, DocumentVersions, IdentityKeyTypeMethodVersions, IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions, StateTransitionConversionVersions, StateTransitionMethodVersions, StateTransitionSerializationVersions, DocumentTypeIndexVersions, DocumentTypeClassMethodVersions, DocumentTypeSchemaVersions, DocumentTypeMethodVersions, RecursiveSchemaValidatorVersions};
+use crate::version::dpp_versions::{
+    ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
+    DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions,
+    DocumentTypeClassMethodVersions, DocumentTypeIndexVersions, DocumentTypeMethodVersions,
+    DocumentTypeSchemaVersions, DocumentTypeVersions, DocumentVersions,
+    IdentityKeyTypeMethodVersions, IdentityVersions, JsonSchemaValidatorVersions,
+    PublicKeyInCreationMethodVersions, RecursiveSchemaValidatorVersions,
+    StateTransitionConversionVersions, StateTransitionMethodVersions,
+    StateTransitionSerializationVersions,
+};
 use crate::version::drive_abci_versions::{
     DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
     DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreSubsidyMethodVersions,
@@ -678,8 +687,13 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             created_data_contract_structure_version: 0,
             config_version: 0,
             document_type_versions: DocumentTypeVersions {
-                index_versions: DocumentTypeIndexVersions { index_levels_from_indices: 0 },
-                class_method_versions: DocumentTypeClassMethodVersions{ try_from_schema: 0, create_document_types_from_document_schemas: 0 },
+                index_versions: DocumentTypeIndexVersions {
+                    index_levels_from_indices: 0,
+                },
+                class_method_versions: DocumentTypeClassMethodVersions {
+                    try_from_schema: 0,
+                    create_document_types_from_document_schemas: 0,
+                },
                 structure_version: 0,
                 schema: DocumentTypeSchemaVersions {
                     enrich_with_base_schema: 0,
@@ -689,7 +703,6 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                         traversal_validator: 0,
                         byte_array_has_no_items_as_parent_validator: 0,
                         pattern_is_valid_regex_validator: 0,
-
                     },
                 },
                 methods: DocumentTypeMethodVersions {

@@ -156,18 +156,18 @@ impl DataContractCreateTransition {
 
 #[cfg(test)]
 mod test {
+    use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use crate::data_contract::created_data_contract::CreatedDataContract;
     use integer_encoding::VarInt;
-    use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 
     use super::*;
+    use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::state_transitions::common_fields::property_names;
     use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::version;
     use crate::version::LATEST_PLATFORM_VERSION;
-    use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 
     pub(crate) struct TestData {
         pub(crate) state_transition: DataContractCreateTransition,
@@ -184,7 +184,7 @@ mod test {
                     .drive_abci
                     .validation_and_processing
                     .state_transitions
-                    .contract_create_state_transition as u8
+                    .contract_create_state_transition as u8,
             ),
             (
                 property_names::ENTROPY,
@@ -192,7 +192,10 @@ mod test {
             ),
             (
                 DATA_CONTRACT,
-                created_data_contract.data_contract().to_value(LATEST_PLATFORM_VERSION).unwrap(),
+                created_data_contract
+                    .data_contract()
+                    .to_value(LATEST_PLATFORM_VERSION)
+                    .unwrap(),
             ),
         ]))
         .expect("state transition should be created without errors");
@@ -229,12 +232,18 @@ mod test {
         let data = get_test_data();
 
         let data_contract = DataContract::try_from_platform_versioned(
-            data.state_transition.data_contract().to_owned().expect("conversion to object shouldn't fail"),
+            data.state_transition
+                .data_contract()
+                .to_owned()
+                .expect("conversion to object shouldn't fail"),
             false,
-        ).expect("to get data contract");
+        )
+        .expect("to get data contract");
 
         assert_eq!(
-            data_contract.to_json(LATEST_PLATFORM_VERSION).expect("conversion to object shouldn't fail"),
+            data_contract
+                .to_json(LATEST_PLATFORM_VERSION)
+                .expect("conversion to object shouldn't fail"),
             data.created_data_contract
                 .data_contract()
                 .to_json(LATEST_PLATFORM_VERSION)

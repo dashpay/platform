@@ -6,8 +6,8 @@ use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
 use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
 use crate::consensus::basic::value_error::ValueError;
 use crate::consensus::{basic::BasicError, ConsensusError};
-use crate::ProtocolError;
 use crate::validation::SimpleConsensusValidationResult;
+use crate::ProtocolError;
 
 pub type SubValidator = fn(
     path: &str,

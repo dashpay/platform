@@ -19,7 +19,7 @@ use crate::data_contract::document_type::schema::{
     traversal_validator, validate_max_depth,
 };
 
-use crate::data_contract::document_type::schema::{enrich_with_base_schema};
+use crate::data_contract::document_type::schema::enrich_with_base_schema;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::util::json_schema::resolve_uri;
@@ -27,7 +27,7 @@ use crate::util::json_schema::resolve_uri;
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_value::btreemap_extensions::{BTreeValueMapHelper};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Identifier, Value};
 
 const UNIQUE_INDEX_LIMIT_V0: usize = 16;

@@ -1,7 +1,7 @@
 use crate::validation::SimpleConsensusValidationResult;
+use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
-use crate::ProtocolError;
 
 mod v0;
 

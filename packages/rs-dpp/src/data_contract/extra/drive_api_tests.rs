@@ -1,15 +1,17 @@
 mod test {
-    use platform_version::version::PlatformVersion;
-    use crate::data_contract::config::v0::{DataContractConfigGettersV0, DataContractConfigSettersV0, DataContractConfigV0};
-    use crate::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
-    use crate::tests::json_document::json_document_to_contract;
-    use crate::{data_contract::DataContract};
     use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::config::v0::{
+        DataContractConfigGettersV0, DataContractConfigSettersV0, DataContractConfigV0,
+    };
     use crate::data_contract::config::DataContractConfig;
-    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
     #[cfg(feature = "state-transition-cbor-conversion")]
     use crate::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
+    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::DataContract;
     use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+    use crate::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+    use crate::tests::json_document::json_document_to_contract;
+    use platform_version::version::PlatformVersion;
 
     type IndexName = &'static str;
     type IsIndexUnique = bool;
@@ -112,8 +114,8 @@ mod test {
 
         let platform_version = PlatformVersion::latest();
 
-        let data_contract =
-            DataContract::from_cbor(cbor_bytes, &platform_version).expect("contract should be deserialized");
+        let data_contract = DataContract::from_cbor(cbor_bytes, &platform_version)
+            .expect("contract should be deserialized");
 
         assert_eq!(1, data_contract.version());
         assert_eq!(expect_id, data_contract.id.as_bytes());
@@ -161,11 +163,13 @@ mod test {
     fn should_drive_api_methods_contain_contract_data_v0() {
         let platform_version = PlatformVersion::latest();
 
-        let contract =
-            json_document_to_contract("src/tests/payloads/contract/dashpay-contract.json", &platform_version)
-                .expect("expected to get a contract")
-                .into_v0()
-                .unwrap();
+        let contract = json_document_to_contract(
+            "src/tests/payloads/contract/dashpay-contract.json",
+            &platform_version,
+        )
+        .expect("expected to get a contract")
+        .into_v0()
+        .unwrap();
 
         assert!(contract.config.documents_mutable_contract_default());
         assert!(!contract.config.keeps_history());
@@ -173,32 +177,30 @@ mod test {
         assert!(!contract.config.documents_keep_history_contract_default());
         assert_eq!(contract.document_types.len(), 3);
         assert!(contract.document_types.get("profile").is_some());
-        assert!(
-            contract
-                .document_types
-                .get("profile")
-                .unwrap()
-                .documents_mutable()
-        );
+        assert!(contract
+            .document_types
+            .get("profile")
+            .unwrap()
+            .documents_mutable());
         assert!(contract.document_types.get("contactInfo").is_some());
-        assert!(
-            contract
-                .document_types
-                .get("contactInfo")
-                .unwrap()
-                .documents_mutable()
-        );
+        assert!(contract
+            .document_types
+            .get("contactInfo")
+            .unwrap()
+            .documents_mutable());
         assert!(contract.document_types.get("contactRequest").is_some());
-        assert!(
-            !contract
-                .document_types
-                .get("contactRequest")
-                .unwrap()
-                .documents_mutable()
-        );
+        assert!(!contract
+            .document_types
+            .get("contactRequest")
+            .unwrap()
+            .documents_mutable());
         assert!(contract.document_types.get("non_existent_key").is_none());
 
-        let contact_info_indices = &contract.document_types.get("contactInfo").unwrap().indices();
+        let contact_info_indices = &contract
+            .document_types
+            .get("contactInfo")
+            .unwrap()
+            .indices();
         assert_eq!(contact_info_indices.len(), 2);
         assert!(contact_info_indices[0].unique);
         assert!(!contact_info_indices[1].unique);
@@ -222,11 +224,13 @@ mod test {
     fn mutability_properties_should_be_stored_and_restored_during_cbor_serialization() {
         let platform_version = PlatformVersion::latest();
 
-        let mut contract =
-            json_document_to_contract("src/tests/payloads/contract/dashpay-contract.json", &platform_version)
-                .expect("expected to get a cbor document")
-                .into_v0()
-                .unwrap();
+        let mut contract = json_document_to_contract(
+            "src/tests/payloads/contract/dashpay-contract.json",
+            &platform_version,
+        )
+        .expect("expected to get a cbor document")
+        .into_v0()
+        .unwrap();
 
         assert!(!contract.config().readonly());
         assert!(!contract.config.keeps_history());
@@ -235,12 +239,18 @@ mod test {
 
         contract.config.set_readonly(true);
         contract.config.set_keeps_history(true);
-        contract.config.set_documents_mutable_contract_default(false);
-        contract.config.set_documents_keep_history_contract_default(true);
+        contract
+            .config
+            .set_documents_mutable_contract_default(false);
+        contract
+            .config
+            .set_documents_keep_history_contract_default(true);
 
-        let contract_cbor = contract.to_cbor(&platform_version).expect("serialization shouldn't fail");
-        let deserialized_contract =
-            DataContract::from_cbor(contract_cbor, &platform_version).expect("deserialization shouldn't fail");
+        let contract_cbor = contract
+            .to_cbor(&platform_version)
+            .expect("serialization shouldn't fail");
+        let deserialized_contract = DataContract::from_cbor(contract_cbor, &platform_version)
+            .expect("deserialization shouldn't fail");
 
         assert!(matches!(
             deserialized_contract.config(),
@@ -258,9 +268,11 @@ mod test {
     fn mutability_properties_should_be_stored_and_restored_during_serialization() {
         let platform_version = PlatformVersion::latest();
 
-        let mut contract =
-            json_document_to_contract("src/tests/payloads/contract/dashpay-contract.json", &platform_version)
-                .expect("expected to decode a contract");
+        let mut contract = json_document_to_contract(
+            "src/tests/payloads/contract/dashpay-contract.json",
+            &platform_version,
+        )
+        .expect("expected to decode a contract");
 
         let contract_v0 = contract.as_v0_mut().unwrap();
 
@@ -271,12 +283,19 @@ mod test {
 
         contract_v0.config.set_readonly(true);
         contract_v0.config.set_keeps_history(true);
-        contract_v0.config.set_documents_mutable_contract_default(false);
-        contract_v0.config.set_documents_keep_history_contract_default(true);
+        contract_v0
+            .config
+            .set_documents_mutable_contract_default(false);
+        contract_v0
+            .config
+            .set_documents_keep_history_contract_default(true);
 
-        let contract = contract.serialize_with_platform_version(&platform_version).expect("serialization shouldn't fail");
+        let contract = contract
+            .serialize_with_platform_version(&platform_version)
+            .expect("serialization shouldn't fail");
         let deserialized_contract =
-            DataContract::versioned_deserialize(contract.as_slice(), false, &platform_version).expect("deserialization shouldn't fail");
+            DataContract::versioned_deserialize(contract.as_slice(), false, &platform_version)
+                .expect("deserialization shouldn't fail");
 
         assert_eq!(
             deserialized_contract.as_v0().unwrap().config,

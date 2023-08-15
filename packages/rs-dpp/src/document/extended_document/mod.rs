@@ -221,8 +221,8 @@ mod test {
     use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
     use platform_value::string_encoding::Encoding;
     use platform_value::Value;
-    use pretty_assertions::assert_eq;
     use platform_version::version::PlatformVersion;
+    use pretty_assertions::assert_eq;
 
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 
@@ -275,14 +275,18 @@ mod test {
         let test_document = Value::from([("properties", test_document_properties)]);
         let documents = Value::from([("test", test_document)]);
 
-        DataContract::from_value(Value::from([
-            ("protocolVersion", Value::U32(1)),
-            ("$id", Value::Identifier([0_u8; 32])),
-            ("$schema", Value::Text("schema".to_string())),
-            ("version", Value::U32(0)),
-            ("ownerId", Value::Identifier([0_u8; 32])),
-            ("documents", documents),
-        ]), &platform_version).unwrap()
+        DataContract::from_value(
+            Value::from([
+                ("protocolVersion", Value::U32(1)),
+                ("$id", Value::Identifier([0_u8; 32])),
+                ("$schema", Value::Text("schema".to_string())),
+                ("version", Value::U32(0)),
+                ("ownerId", Value::Identifier([0_u8; 32])),
+                ("documents", documents),
+            ]),
+            &platform_version,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -290,9 +294,11 @@ mod test {
     fn test_document_deserialize() -> Result<()> {
         init();
         let platform_version = PlatformVersion::latest();
-        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        let doc = ExtendedDocument::from_json_string(&document_json, dpns_contract, &platform_version)?;
+        let doc =
+            ExtendedDocument::from_json_string(&document_json, dpns_contract, &platform_version)?;
         assert_eq!(doc.document_type_name, "domain");
         assert_eq!(doc.feature_version, 0);
         assert_eq!(

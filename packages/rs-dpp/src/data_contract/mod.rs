@@ -94,6 +94,8 @@ pub enum DataContract {
 }
 
 impl PlatformSerializableWithPlatformVersion for DataContract {
+    type Error = ProtocolError;
+
     fn serialize_with_platform_version(
         &self,
         platform_version: &PlatformVersion,
@@ -254,11 +256,11 @@ impl DataContract {
 #[cfg(test)]
 mod tests {
     use crate::data_contract::DataContract;
+    use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::system_data_contracts::load_system_data_contract;
     use crate::version::PlatformVersion;
     use data_contracts::SystemDataContract::Dashpay;
-    use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
     #[test]
     fn test_contract_serialization() {
@@ -271,11 +273,16 @@ mod tests {
             .expect("expected to serialize data contract");
         assert_eq!(
             serialized[0],
-            platform_version.dpp.contract_versions.contract_serialization_version.default_current_version as u8
+            platform_version
+                .dpp
+                .contract_versions
+                .contract_serialization_version
+                .default_current_version as u8
         );
 
-        let unserialized = DataContract::versioned_deserialize(&serialized, true, &platform_version)
-            .expect("expected to deserialize data contract");
+        let unserialized =
+            DataContract::versioned_deserialize(&serialized, true, &platform_version)
+                .expect("expected to deserialize data contract");
 
         assert_eq!(data_contract, unserialized);
     }
