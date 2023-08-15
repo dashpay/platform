@@ -258,6 +258,7 @@ mod tests {
     use crate::system_data_contracts::load_system_data_contract;
     use crate::version::PlatformVersion;
     use data_contracts::SystemDataContract::Dashpay;
+    use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 
     #[test]
     fn test_contract_serialization() {
@@ -270,10 +271,12 @@ mod tests {
             .expect("expected to serialize data contract");
         assert_eq!(
             serialized[0],
-            platform_version.contract.default_current_version
+            platform_version.dpp.contract_versions.contract_serialization_version.default_current_version as u8
         );
 
-        let unserialized = DataContract::deserialize_with_platform_version(platform_version);
+        let unserialized = DataContract::versioned_deserialize(&serialized, true, &platform_version)
+            .expect("expected to deserialize data contract");
+
         assert_eq!(data_contract, unserialized);
     }
 }

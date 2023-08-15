@@ -118,6 +118,8 @@ mod test {
     use std::collections::BTreeMap;
     use std::convert::TryInto;
 
+    use crate::state_transition::traits::StateTransitionValueConvert;
+
     use super::*;
 
     struct TestData {
@@ -201,7 +203,7 @@ mod test {
             .expect("state transition should be converted to buffer");
         let (protocol_version, _) =
             u32::decode_var(state_transition_bytes.as_ref()).expect("expected to decode");
-        assert_eq!(version::LATEST_VERSION, protocol_version)
+        assert_eq!(LATEST_PLATFORM_VERSION, protocol_version)
     }
 
     #[test]
