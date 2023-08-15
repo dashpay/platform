@@ -459,6 +459,10 @@ module.exports = {
             tenderdash: {
               type: 'object',
               properties: {
+                mode: {
+                  type: 'string',
+                  enum: ['full', 'validator', 'seed'],
+                },
                 docker: {
                   $ref: '#/definitions/docker',
                 },
@@ -555,7 +559,7 @@ module.exports = {
                   type: 'object',
                 },
               },
-              required: ['docker', 'p2p', 'rpc', 'pprof', 'consensus', 'node', 'moniker', 'genesis'],
+              required: ['mode', 'docker', 'p2p', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis'],
               additionalProperties: false,
             },
           },
