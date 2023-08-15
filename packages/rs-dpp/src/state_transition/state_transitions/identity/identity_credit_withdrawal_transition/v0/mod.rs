@@ -84,14 +84,14 @@ mod test {
 
     // Structure with 1 property
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV01 {
         pub protocol_version: u32,
     }
 
     // Structure with 2 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV02 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -99,6 +99,7 @@ mod test {
 
     // Structure with 3 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV03 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -107,6 +108,7 @@ mod test {
 
     // Structure with 4 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV04 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -116,7 +118,7 @@ mod test {
 
     // Structure with 5 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV05 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -127,7 +129,7 @@ mod test {
 
     // Structure with 6 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV06 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -139,7 +141,7 @@ mod test {
 
     // Structure with 7 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV07 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -152,7 +154,7 @@ mod test {
 
     // Structure with 8 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV08 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -166,7 +168,7 @@ mod test {
 
     // Structure with 9 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV09 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -181,7 +183,7 @@ mod test {
 
     // Structure with 10 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV010 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -199,7 +201,9 @@ mod test {
         T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
     >(
         transition: T,
-    ) {
+    ) where
+        <T as PlatformSerializable>::Error: std::fmt::Debug,
+    {
         let serialized = T::serialize(&transition).expect("expected to serialize");
         let deserialized = T::deserialize(serialized.as_slice()).expect("expected to deserialize");
         assert_eq!(transition, deserialized);

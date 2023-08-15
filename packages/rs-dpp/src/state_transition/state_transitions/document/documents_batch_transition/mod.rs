@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::convert::{TryFrom, TryInto};
 
 use anyhow::{anyhow, Context};
-#[cfg(feature = "state-transition-cbor-conversion")]
 use ciborium::value::Value as CborValue;
 use derive_more::From;
 use integer_encoding::VarInt;
@@ -16,9 +15,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::data_contract::DataContract;
-
-#[cfg(feature = "state-transition-cbor-conversion")]
-use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::util::json_value::JsonValueExt;
 use crate::version::{
     FeatureVersion, FeatureVersionBounds, LATEST_PLATFORM_VERSION, LATEST_VERSION,

@@ -13,5 +13,8 @@ pub trait DataContractJsonConversionMethodsV0 {
     /// Returns Data Contract as a JSON Value
     fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError>;
     /// Returns Data Contract as a JSON Value
-    fn to_validating_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError>;
+    fn to_validating_json(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<JsonValue, ProtocolError>;
 }

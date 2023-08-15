@@ -7,7 +7,7 @@ use crate::block::epoch::{Epoch, EpochIndex};
 use crate::fee::default_costs::EpochCosts;
 use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
 use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
-use crate::fee::epoch::CreditsPerEpoch;
+use crate::fee::epoch::{BytesPerEpoch, CreditsPerEpoch};
 use crate::fee::Credits;
 use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
@@ -26,6 +26,9 @@ const MIN_REFUND_LIMIT_BYTES: u32 = 32;
 /// Credits per Epoch by Identifier
 pub type CreditsPerEpochByIdentifier = BTreeMap<[u8; 32], CreditsPerEpoch>;
 
+/// Bytes per Epoch by Identifier
+pub type BytesPerEpochByIdentifier = BTreeMap<[u8; 32], BytesPerEpoch>;
+
 /// Fee refunds to identities based on removed data from specific epochs
 #[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize, Encode, Decode)]
 pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
@@ -38,7 +41,7 @@ impl FeeRefunds {
     ) -> Result<Self, ProtocolError>
     where
         I: IntoIterator<Item = ([u8; 32], C)>,
-        C: IntoIterator<Item = (u64, u32)>,
+        C: IntoIterator<Item = (u16, u32)>,
     {
         let refunds_per_epoch_by_identifier = storage_removal
             .into_iter()
@@ -187,7 +190,7 @@ mod tests {
 
             let bytes_per_epoch = IntMap::from_iter([(0, 31), (1, 100)]);
             let storage_removal =
-                StorageRemovalPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
+                BytesPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
 
             let fee_refunds = FeeRefunds::from_storage_removal(storage_removal, 3)
                 .expect("should create fee refunds");

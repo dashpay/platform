@@ -310,14 +310,14 @@ impl DocumentTransitionV0Methods for DocumentTransition {
     fn insert_dynamic_property(&mut self, property_name: String, value: Value) {
         match self {
             DocumentTransition::Create(document_create_transition) => {
-                if let Some(data) = document_create_transition.data_mut() {
-                    let _ = data.insert(property_name, value);
-                }
+                document_create_transition
+                    .data_mut()
+                    .insert(property_name, value);
             }
             DocumentTransition::Replace(document_replace_transition) => {
-                if let Some(data) = document_replace_transition.data_mut() {
-                    let _ = data.insert(property_name, value);
-                }
+                document_replace_transition
+                    .data_mut()
+                    .insert(property_name, value);
             }
             DocumentTransition::Delete(_) => {}
         }

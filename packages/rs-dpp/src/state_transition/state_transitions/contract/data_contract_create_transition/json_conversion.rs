@@ -33,6 +33,7 @@ mod test {
         JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
     };
     use crate::version;
+    use dpp::util::json_value::JsonValueExt;
     use platform_value::Bytes32;
 
     #[test]
@@ -73,7 +74,7 @@ mod test {
         );
 
         assert_eq!(
-            <Bytes32 as Into<String>>::into(data.created_data_contract.entropy_used),
+            <Bytes32 as Into<String>>::into(data.created_data_contract.entropy_used_owned()),
             json_object
                 .remove_into::<String>(ENTROPY)
                 .expect("the entropy should be present")

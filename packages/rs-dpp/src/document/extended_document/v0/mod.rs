@@ -248,7 +248,8 @@ impl ExtendedDocumentV0 {
         data_contract: DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let mut properties = document_value.clone()
+        let mut properties = document_value
+            .clone()
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         let document_type_name = properties
@@ -292,7 +293,8 @@ impl ExtendedDocumentV0 {
         data_contract: DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let mut properties = document_value.clone()
+        let mut properties = document_value
+            .clone()
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         let document_type_name = properties
@@ -334,7 +336,10 @@ impl ExtendedDocumentV0 {
     /// # Errors
     ///
     /// Returns a `ProtocolError` if there is an error converting the document to pretty JSON.
-    pub fn to_pretty_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
+    pub fn to_pretty_json(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<JsonValue, ProtocolError> {
         let mut value = self.document.to_json(platform_version)?;
         let value_mut = value.as_object_mut().unwrap();
         value_mut.insert(

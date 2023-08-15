@@ -1,5 +1,3 @@
-#[cfg(feature = "state-transition-cbor-conversion")]
-mod cbor_conversion;
 mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;

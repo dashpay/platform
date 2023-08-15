@@ -5,12 +5,10 @@ use crate::ProtocolError;
 use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::PlatformSignable;
-use serde::{Deserialize, Serialize};
 use platform_versioning::PlatformVersioned;
+use serde::{Deserialize, Serialize};
 
 pub mod accessors;
-#[cfg(feature = "state-transition-cbor-conversion")]
-mod cbor_conversion;
 mod fields;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;

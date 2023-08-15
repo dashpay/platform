@@ -1,5 +1,5 @@
-use crate::state_transition::FeatureVersioned;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::FeatureVersioned;
 use crate::version::FeatureVersion;
 
 impl FeatureVersioned for IdentityPublicKeyInCreation {

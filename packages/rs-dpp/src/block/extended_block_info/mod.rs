@@ -138,7 +138,8 @@ mod tests {
         let encoded = PlatformSerializable::serialize(&block_info).expect("expected to serialize");
 
         // Deserialize from the vector
-        let decoded: ExtendedBlockInfo = PlatformDeserializable::deserialize(&encoded).expect("expected to deserialize");
+        let decoded: ExtendedBlockInfo =
+            PlatformDeserializable::deserialize(&encoded).expect("expected to deserialize");
 
         assert_eq!(block_info, decoded);
     }

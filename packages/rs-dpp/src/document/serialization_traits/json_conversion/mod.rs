@@ -12,7 +12,10 @@ use std::convert::TryInto;
 
 impl<'a> DocumentJsonMethodsV0<'a> for Document {
     /// Convert the document to JSON with identifiers using bytes.
-    fn to_json_with_identifiers_using_bytes(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
+    fn to_json_with_identifiers_using_bytes(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<JsonValue, ProtocolError> {
         match self {
             Document::V0(v0) => v0.to_json_with_identifiers_using_bytes(platform_version),
         }

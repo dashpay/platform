@@ -56,6 +56,7 @@ use crate::ProtocolError;
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
+use platform_versioning::PlatformVersioned;
 pub use serde_json::Value as JsonValue;
 
 type JsonSchema = JsonValue;
@@ -88,7 +89,7 @@ type PropertyPath = String;
 ///
 
 /// Here we use PlatformSerialize, because
-#[derive(Debug, Clone, PartialEq, From)]
+#[derive(Debug, Clone, PartialEq, From, PlatformVersioned)]
 pub enum DataContract {
     V0(DataContractV0),
 }

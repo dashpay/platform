@@ -19,7 +19,7 @@ impl<'a> StateTransitionJsonConvert<'a> for IdentityCreditWithdrawalTransition {
                 map_value.insert(
                     STATE_TRANSITION_PROTOCOL_VERSION.to_string(),
                     JsonValue::Number(Number::from(0)),
-                )?;
+                );
                 Ok(value)
             }
         }

@@ -115,13 +115,14 @@ mod test {
     use crate::version::LATEST_PLATFORM_VERSION;
     use integer_encoding::VarInt;
     use platform_version::version::PlatformVersion;
+    use serde_cbor::value::to_value;
     use std::collections::BTreeMap;
     use std::convert::TryInto;
-    use serde_cbor::value::to_value;
 
     use crate::state_transition::traits::StateTransitionValueConvert;
 
     use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
 
     struct TestData {
         state_transition: DataContractUpdateTransition,
@@ -133,27 +134,10 @@ mod test {
         let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
             .data_contract_owned();
 
-        let value_map = BTreeMap::from([
-            (
-                STATE_TRANSITION_PROTOCOL_VERSION.to_string(),
-                Value::U16(
-                    LATEST_PLATFORM_VERSION
-                        .drive_abci
-                        .validation_and_processing
-                        .state_transitions
-                        .contract_create_state_transition
-                        .structure
-                ),
-            ),
-            (
-                DATA_CONTRACT.to_string(),
-                data_contract.clone().try_into().unwrap(),
-            ),
-        ]);
-
-        let state_transition =
-            DataContractUpdateTransition::from_value_map(value_map, platform_version)
-                .expect("state transition should be created without errors");
+        let state_transition: DataContractUpdateTransition = data_contract
+            .clone()
+            .try_into_platform_versioned(platform_version)
+            .expect("expected to get transition");
 
         TestData {
             data_contract,
@@ -166,7 +150,8 @@ mod test {
         let data = get_test_data();
         assert_eq!(
             LATEST_PLATFORM_VERSION
-                .state_transitions
+                .dpp
+                .state_transition_serialization_versions
                 .contract_update_state_transition
                 .default_current_version,
             data.state_transition.state_transition_protocol_version()
@@ -188,34 +173,18 @@ mod test {
         let data = get_test_data();
 
         assert_eq!(
-            data.state_transition
-                .data_contract()
-                .to_json_object()
-                .expect("conversion to object shouldn't fail"),
+            data.state_transition.data_contract().clone(),
             data.data_contract
-                .to_json_object()
-                .expect("conversion to object shouldn't fail")
+                .try_into_platform_versioned(PlatformVersion::first())
+                .unwrap()
         );
-    }
-
-    #[test]
-    #[cfg(feature = "state-transition-cbor-conversion")]
-    fn should_return_serialized_state_transition_to_buffer() {
-        let data = get_test_data();
-        let state_transition_bytes = data
-            .state_transition
-            .to_value(false)
-            .expect("state transition should be converted to buffer");
-        let (protocol_version, _) =
-            u32::decode_var(state_transition_bytes.as_ref()).expect("expected to decode");
-        assert_eq!(LATEST_PLATFORM_VERSION, protocol_version)
     }
 
     #[test]
     fn should_return_owner_id() {
         let data = get_test_data();
         assert_eq!(
-            &data.data_contract.owner_id(),
+            data.data_contract.owner_id(),
             data.state_transition.owner_id()
         );
     }

@@ -1,3 +1,4 @@
+use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use crate::document::extended_document::fields::property_names;
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::{
@@ -11,11 +12,15 @@ use platform_version::version::PlatformVersion;
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use std::convert::TryInto;
-use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 
 impl DocumentJsonMethodsV0<'_> for ExtendedDocumentV0 {
-    fn to_json_with_identifiers_using_bytes(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
-        let mut json = self.document.to_json_with_identifiers_using_bytes(platform_version)?;
+    fn to_json_with_identifiers_using_bytes(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<JsonValue, ProtocolError> {
+        let mut json = self
+            .document
+            .to_json_with_identifiers_using_bytes(platform_version)?;
         let mut value_mut = json.as_object_mut().unwrap();
         let contract = self.data_contract.to_validating_json(platform_version)?;
         value_mut.insert(property_names::DATA_CONTRACT.to_owned(), contract);

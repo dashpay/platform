@@ -1,6 +1,4 @@
 mod accessors;
-#[cfg(feature = "state-transition-cbor-conversion")]
-mod cbor_conversion;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod types;
@@ -9,8 +7,6 @@ mod value_conversion;
 mod version;
 
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-#[cfg(feature = "state-transition-cbor-conversion")]
-use ciborium::value::Value as CborValue;
 
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
@@ -27,12 +23,6 @@ use serde_json::Value as JsonValue;
 use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
 use platform_serialization_derive::PlatformSignable;
-
-#[cfg(feature = "state-transition-cbor-conversion")]
-use crate::util::cbor_serializer;
-#[cfg(feature = "state-transition-cbor-conversion")]
-use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
-use crate::util::vec;
 
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;

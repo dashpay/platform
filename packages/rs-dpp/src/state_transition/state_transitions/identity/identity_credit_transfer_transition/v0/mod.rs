@@ -24,13 +24,22 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
-#[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    PlatformSignable,
+    PartialEq,
+)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-
+#[platform_serialize(unversioned)]
 pub struct IdentityCreditTransferTransitionV0 {
     // Own ST fields
     pub identity_id: Identifier,
@@ -68,7 +77,9 @@ mod test {
         T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
     >(
         transition: T,
-    ) {
+    ) where
+        <T as PlatformSerializable>::Error: std::fmt::Debug,
+    {
         let serialized = T::serialize(&transition).expect("expected to serialize");
         let deserialized = T::deserialize(serialized.as_slice()).expect("expected to deserialize");
         assert_eq!(transition, deserialized);

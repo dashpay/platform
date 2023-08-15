@@ -234,10 +234,8 @@ mod tests {
         let created_data_contract =
             get_data_contract_fixture(None, platform_version.protocol_version);
         let raw_data_contract = created_data_contract
-            .data_contract_owned()
-            .as_v0()
-            .unwrap()
-            .to_value(&platform_version)
+            .data_contract()
+            .to_value(platform_version)
             .unwrap();
 
         let factory = DataContractFactoryV0::new(platform_version.protocol_version, None);
@@ -301,7 +299,7 @@ mod tests {
         let data_contract = created_data_contract.data_contract_owned();
 
         let result = factory
-            .create_from_object(raw_data_contract.into())
+            .create_from_object(raw_data_contract.into(), false)
             .expect("Data Contract should be created");
 
         assert_eq!(data_contract.version(), result.version());
@@ -327,7 +325,7 @@ mod tests {
             .serialize_with_platform_version(&platform_version)
             .expect("should be serialized to buffer");
         let result = factory
-            .create_from_buffer(serialized_data_contract)
+            .create_from_buffer(serialized_data_contract, false)
             .expect("Data Contract should be created from the buffer");
 
         assert_eq!(data_contract.version(), result.version());

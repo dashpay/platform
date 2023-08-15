@@ -38,15 +38,9 @@ impl DocumentTransitionObjectLike for DocumentCreateTransition {
 
         binary_paths.extend(BINARY_FIELDS.iter().map(|s| s.to_string()));
 
-        map.replace_at_paths(
-            binary_paths.iter(),
-            ReplacementType::BinaryBytes,
-        )?;
+        map.replace_at_paths(binary_paths.iter(), ReplacementType::BinaryBytes)?;
 
-        map.replace_at_paths(
-            identifiers_paths.iter(),
-            ReplacementType::Identifier,
-        )?;
+        map.replace_at_paths(identifiers_paths.iter(), ReplacementType::Identifier)?;
         let document = Self::from_value_map(map, data_contract)?;
 
         Ok(document)

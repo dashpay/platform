@@ -58,9 +58,9 @@ impl TryFrom<Value> for UnsupportedVersionError {
 
 #[cfg(test)]
 mod tests {
-    use platform_version::version::LATEST_PLATFORM_VERSION;
-    use crate::serialization::PlatformSerializableWithPlatformVersion;
     use super::*;
+    use crate::serialization::PlatformSerializableWithPlatformVersion;
+    use platform_version::version::LATEST_PLATFORM_VERSION;
 
     #[test]
     fn test_try_from() {
@@ -68,7 +68,9 @@ mod tests {
 
         let consensus_error: ConsensusError = error.clone().into();
 
-        let cbor = consensus_error.serialize_with_platform_version(LATEST_PLATFORM_VERSION).expect("expected to serialize");
+        let cbor = consensus_error
+            .serialize_with_platform_version(LATEST_PLATFORM_VERSION)
+            .expect("expected to serialize");
 
         // let value = Value::try_from(&consensus_error).expect("should convert to value");
 
