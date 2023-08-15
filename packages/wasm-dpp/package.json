@@ -46,7 +46,7 @@
     "@dashevo/dashcore-lib": "~0.20.9",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/dpp": "workspace:*",
-    "@dashevo/wasm-re2": "~1.0.2",
+    "@dashevo/wasm-re2": "~2.0.4",
     "@types/bs58": "^4.0.1",
     "@types/node": "^14.6.0",
     "@yarnpkg/pnpify": "^4.0.0-rc.42",
