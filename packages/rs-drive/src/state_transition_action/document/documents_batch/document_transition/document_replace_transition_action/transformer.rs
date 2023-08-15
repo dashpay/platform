@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use dpp::platform_value::Identifier;
-use dpp::data_contract::DataContract;
+use std::sync::Arc;
+
 use dpp::identity::TimestampMillis;
 use dpp::ProtocolError;
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentReplaceTransition;

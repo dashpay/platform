@@ -36,7 +36,7 @@ pub enum ProofError {
         actual: Path,
     },
 }
-
+#[allow(dead_code)]
 fn get_error_code(error: &ProofError) -> u32 {
     match error {
         ProofError::TooManyElements(_) => 6000,

@@ -7,7 +7,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
-use dpp::version::{FeatureVersion, PlatformVersion};
+
 use drive::grovedb::TransactionArg;
 
 /// There are 3 stages in a state transition processing:

@@ -3,17 +3,6 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore_rpc_json::Bip9SoftforkStatus;
-use dpp::block::block_info::BlockInfo;
-use drive::error::Error::GroveDB;
-use drive::grovedb::Transaction;
-
-use crate::platform_types::cleaned_abci_messages::request_init_chain_cleaned_params;
-use crate::platform_types::platform_state::v0::{
-    PlatformInitializationState, PlatformStateV0Methods,
-};
-use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
-use dpp::version::PlatformVersion;
-use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 
 impl<C> Platform<C>
 where

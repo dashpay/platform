@@ -55,8 +55,11 @@ pub struct IdentityCreateTransitionV0 {
     pub identity_id: Identifier,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Deserialize),
+    serde(rename_all = "camelCase")
+)]
 struct IdentityCreateTransitionV0Inner {
     // Own ST fields
     public_keys: Vec<IdentityPublicKeyInCreation>,

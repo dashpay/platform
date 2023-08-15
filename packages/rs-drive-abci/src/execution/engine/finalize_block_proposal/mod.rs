@@ -46,7 +46,11 @@ where
             .engine
             .finalize_block_proposal
         {
-            0 => self.finalize_block_proposal_v0(request_finalize_block, transaction),
+            0 => self.finalize_block_proposal_v0(
+                request_finalize_block,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "finalize_block_proposal".to_string(),
                 known_versions: vec![0],

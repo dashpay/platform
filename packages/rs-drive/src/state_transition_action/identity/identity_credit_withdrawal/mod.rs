@@ -4,8 +4,8 @@ pub mod v0;
 use crate::state_transition_action::identity::identity_credit_withdrawal::v0::IdentityCreditWithdrawalTransitionActionV0;
 use derive_more::From;
 use dpp::document::Document;
-use dpp::fee::Credits;
-use dpp::platform_value::{Bytes36, Identifier};
+
+use dpp::platform_value::Identifier;
 use dpp::prelude::Revision;
 
 #[derive(Debug, Clone, From)]

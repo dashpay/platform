@@ -3,11 +3,9 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::identity::Identity;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
-use std::convert::TryInto;
 
 impl Drive {
     /// Fetches an identity id with all its information from storage based on a unique public key hash.

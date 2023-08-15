@@ -31,10 +31,8 @@ use crate::platform_types::platform::Platform;
 
 use dpp::platform_value::{platform_value, BinaryData};
 use dpp::ProtocolError;
-use drive::dpp::document::Document;
-use drive::dpp::identity::{
-    Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
-};
+
+use drive::dpp::identity::{Identity, KeyType, Purpose, SecurityLevel, TimestampMillis};
 
 use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0Getters;
 use crate::platform_types::system_identity_public_keys::SystemIdentityPublicKeys;
@@ -44,13 +42,13 @@ use dpp::data_contract::DataContract;
 use dpp::document::DocumentV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::IdentityV0;
-use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use drive::drive::batch::{
     DataContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
-use drive::drive::defaults::PROTOCOL_VERSION;
+
 use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use drive::query::TransactionArg;
 use std::borrow::Cow;
@@ -205,14 +203,15 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let serialization = data_contract.serialize_with_platform_version(platform_version)?;
-        Ok(operations.push(DriveOperation::DataContractOperation(
+        operations.push(DriveOperation::DataContractOperation(
             //todo: remove cbor
             DataContractOperationType::ApplyContractWithSerialization {
                 contract: Cow::Owned(data_contract),
                 serialized_contract: serialization,
                 storage_flags: None,
             },
-        )))
+        ));
+        Ok(())
     }
 
     fn register_system_identity_operations(

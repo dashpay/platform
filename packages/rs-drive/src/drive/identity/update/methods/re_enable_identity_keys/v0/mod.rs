@@ -9,7 +9,7 @@ use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
 use dpp::identity::{IdentityPublicKey, KeyID};
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;

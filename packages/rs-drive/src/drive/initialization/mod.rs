@@ -31,22 +31,12 @@
 
 mod v0;
 
-use path::SubtreePath;
-
-use crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY;
-use crate::drive::batch::GroveDbOpBatch;
-
-use crate::drive::protocol_upgrade::add_initial_fork_update_structure_operations;
-use crate::drive::{Drive, RootTree};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee_pools::add_create_fee_pool_trees_operations;
-use dpp::version::drive_versions::DriveVersion;
-use dpp::version::PlatformVersion;
-use grovedb::{Element, TransactionArg};
-use integer_encoding::VarInt;
 
-use super::identity::add_initial_withdrawal_state_structure_operations;
+use dpp::version::PlatformVersion;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Creates the initial state structure.

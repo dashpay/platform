@@ -1,8 +1,5 @@
 use dpp::consensus::basic::identity::InvalidIdentityCreditTransferAmountError;
-use dpp::consensus::basic::value_error::ValueError;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
-use dpp::ProtocolError;
+
 // use dpp::platform_value::
 use crate::error::Error;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
@@ -19,7 +16,7 @@ impl IdentityCreditTransferStateTransitionStructureValidationV0
     for IdentityCreditTransferTransition
 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
-        let mut result = SimpleConsensusValidationResult::new();
+        let result = SimpleConsensusValidationResult::new();
 
         if self.amount() < MIN_TRANSFER_AMOUNT {
             return Ok(SimpleConsensusValidationResult::new_with_error(

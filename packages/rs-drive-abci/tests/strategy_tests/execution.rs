@@ -19,12 +19,12 @@ use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::version::PlatformVersion;
+
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
-use drive_abci::platform_types::epochInfo::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
+use drive_abci::platform_types::epoch_info::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;

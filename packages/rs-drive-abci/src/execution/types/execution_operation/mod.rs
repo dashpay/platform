@@ -1,4 +1,3 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
 use dpp::fee::Credits;

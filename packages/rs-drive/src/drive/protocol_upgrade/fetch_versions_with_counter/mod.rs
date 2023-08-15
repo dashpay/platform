@@ -1,25 +1,15 @@
 mod v0;
 
-use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::grove_operations::BatchDeleteApplyType::StatefulBatchDelete;
-use crate::drive::grove_operations::BatchInsertApplyType;
-use crate::drive::object_size_info::PathKeyElementInfo;
-use std::collections::BTreeMap;
-
-use crate::drive::protocol_upgrade::versions_counter_path_vec;
-use crate::drive::{Drive, RootTree};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::error::Error::GroveDB;
-use crate::fee::op::LowLevelDriveOperation;
-use crate::query::QueryItem;
+
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::query_result_type::QueryResultType;
-use grovedb::{Element, PathQuery, Query, TransactionArg};
-use integer_encoding::VarInt;
+
+use grovedb::TransactionArg;
+
 use nohash_hasher::IntMap;
-use std::ops::RangeFull;
 
 impl Drive {
     /// Fetch versions by count for the upgrade window

@@ -119,12 +119,14 @@ pub(super) fn derive_platform_serialize_enum(
         quote! {
             impl #impl_generics #crate_name::serialization::PlatformSerializable for #name #ty_generics #where_clause
             {
-                fn serialize(&self) -> Result<Vec<u8>, #error_type> {
+                type Error = #error_type;
+
+                fn serialize(&self) -> Result<Vec<u8>, Self::Error> {
                     #config
                     bincode::encode_to_vec(self, config)#limit_err
                 }
 
-                fn serialize_consume(self) -> Result<Vec<u8>, #error_type> {
+                fn serialize_consume(self) -> Result<Vec<u8>, Self::Error> {
                     #config
                     bincode::encode_to_vec(self, config)#limit_err
                 }

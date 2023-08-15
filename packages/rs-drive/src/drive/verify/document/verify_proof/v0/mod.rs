@@ -1,13 +1,11 @@
 use crate::drive::verify::RootHash;
 
-use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::DriveQuery;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::Document;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
-use grovedb::{GroveDb, PathQuery};
 
 impl<'a> DriveQuery<'a> {
     /// Verifies a proof for a collection of documents.

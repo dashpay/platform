@@ -1,16 +1,14 @@
 mod v0;
 
-use crate::drive::grove_operations::{DirectQueryType, QueryTarget};
+use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
-use costs::CostContext;
+
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::key_info::KeyInfo;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, GroveDb, TransactionArg};
+
+use grovedb::{Element, TransactionArg};
 use path::SubtreePath;
 
 impl Drive {

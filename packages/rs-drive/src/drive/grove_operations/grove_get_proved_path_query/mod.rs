@@ -4,12 +4,10 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
-use costs::CostContext;
+
 use dpp::version::drive_versions::DriveVersion;
-use dpp::version::PlatformVersion;
+
 use grovedb::{PathQuery, TransactionArg};
-use path::SubtreePath;
 
 impl Drive {
     /// Retrieves a proof of the specified path query in groveDB.

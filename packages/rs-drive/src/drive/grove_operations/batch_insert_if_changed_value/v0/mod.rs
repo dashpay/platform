@@ -1,18 +1,15 @@
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
+use crate::drive::grove_operations::BatchInsertApplyType;
 use crate::drive::object_size_info::PathKeyElementInfo::{
     PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize, PathKeyRefElement,
     PathKeyUnknownElementSize,
 };
-use crate::drive::object_size_info::PathKeyInfo::{
-    PathFixedSizeKey, PathFixedSizeKeyRef, PathKey, PathKeyRef, PathKeySize,
-};
-use crate::drive::object_size_info::{PathKeyElementInfo, PathKeyInfo};
+
+use crate::drive::object_size_info::PathKeyElementInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, GroveOperation};
+use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::{Element, GroveDb, TransactionArg};
 

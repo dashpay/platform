@@ -4,9 +4,6 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use crate::error::Error;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionResult;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
-use dpp::version::PlatformVersion;
-
-use super::DataTriggerExecutionContext;
 
 /// Creates a data trigger for handling document rejections.
 ///

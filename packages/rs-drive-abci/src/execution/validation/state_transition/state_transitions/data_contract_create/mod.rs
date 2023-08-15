@@ -1,20 +1,18 @@
 mod state;
 mod structure;
 
-use dpp::identity::PartialIdentity;
-
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
-use dpp::version::{FeatureVersion, PlatformVersion};
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use drive::error::drive::DriveError;
+
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+
 use crate::execution::validation::state_transition::data_contract_create::state::v0::DataContractCreateStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::data_contract_create::structure::v0::DataContractCreatedStateTransitionStructureValidationV0;
 use crate::platform_types::platform::PlatformRef;

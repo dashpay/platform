@@ -1,15 +1,12 @@
 mod v0;
 
-use crate::drive::document::contract_documents_primary_key_path;
-use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::object_size_info::DocumentAndContractInfo;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};

@@ -10,7 +10,7 @@ use dashcore_rpc::dashcore::{
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
-use dpp::version::PlatformVersion;
+
 use drive::dpp::identifier::Identifier;
 use drive::dpp::identity::convert_credits_to_duffs;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;

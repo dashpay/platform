@@ -76,8 +76,7 @@ where
                         )
                         .map_err(Error::Drive)?;
 
-                    let balance_change =
-                        individual_fee_result.into_balance_change(identity.id.clone());
+                    let balance_change = individual_fee_result.into_balance_change(identity.id);
 
                     let outcome = self.drive.apply_balance_change_from_fee_to_identity(
                         balance_change,

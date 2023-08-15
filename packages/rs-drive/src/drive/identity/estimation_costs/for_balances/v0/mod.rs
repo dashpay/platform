@@ -1,20 +1,15 @@
 use crate::drive::defaults::{AVERAGE_BALANCE_SIZE, DEFAULT_HASH_SIZE_U8};
 
-use crate::drive::{identity_tree_path, Drive};
+use crate::drive::Drive;
 
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
+use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerInformation;
-use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees, Mix};
-
-use crate::drive::identity::{
-    identity_key_tree_path_vec, identity_path_vec, identity_query_keys_purpose_tree_path_vec,
-    identity_query_keys_security_level_tree_path_vec, identity_query_keys_tree_path_vec,
-};
+use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 
 use crate::drive::balances::balance_path_vec;
-use dpp::identity::{Purpose, SecurityLevel};
-use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
+
+use grovedb::EstimatedSumTrees::SomeSumTrees;
 use std::collections::HashMap;
 
 // we need to construct the reference from the split height of the key

@@ -2,16 +2,11 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::platform_events::core_subsidy::{
-    CORE_GENESIS_BLOCK_SUBSIDY, CORE_SUBSIDY_HALVING_INTERVAL,
-};
+
 use crate::platform_types::platform::Platform;
-use dpp::block::epoch::EpochIndex;
+
 use dpp::fee::Credits;
 use dpp::version::PlatformVersion;
-
-use lazy_static::lazy_static;
-use std::collections::HashMap;
 
 impl<C> Platform<C> {
     /// Gets the amount of core reward fees to be distributed for the Epoch.

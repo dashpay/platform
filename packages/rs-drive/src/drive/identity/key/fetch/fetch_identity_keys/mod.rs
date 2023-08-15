@@ -1,14 +1,13 @@
 mod v0;
 
-use crate::drive::identity::key::fetch::KeyRequestType::{AllKeys, SearchKey, SpecificKeys};
 use crate::drive::identity::key::fetch::{IdentityKeysRequest, IdentityPublicKeyResult};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
-use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
+
 use grovedb::TransactionArg;
 
 impl Drive {

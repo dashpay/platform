@@ -102,18 +102,17 @@ use dpp::platform_value;
 
 #[cfg(feature = "full")]
 use dpp::prelude::DataContract;
-use dpp::prelude::Revision;
+
 use dpp::tests::json_document::json_document_to_contract;
 #[cfg(feature = "full")]
 use dpp::util::cbor_serializer;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
-#[cfg(feature = "full")]
-use dpp::version::LATEST_VERSION;
+
 use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "full")]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
-use drive::drive::defaults;
+
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 #[cfg(feature = "full")]
 use drive::drive::document::query::QuerySerializedDocumentsOutcome;

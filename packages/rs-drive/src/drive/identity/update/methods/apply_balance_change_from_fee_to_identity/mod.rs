@@ -3,15 +3,14 @@ mod v0;
 use crate::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcome;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
-use crate::error::identity::IdentityError;
+
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::fee::fee_result::{BalanceChangeForIdentity, FeeResult};
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Applies balance changes to an identity.

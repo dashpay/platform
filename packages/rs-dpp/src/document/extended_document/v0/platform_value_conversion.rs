@@ -16,17 +16,17 @@ impl DocumentPlatformValueMethodsV0<'_> for ExtendedDocumentV0 {
         if let Some(created_at) = self.created_at() {
             map.insert(
                 property_names::CREATED_AT.to_string(),
-                Value::U64(*created_at),
+                Value::U64(created_at),
             );
         }
         if let Some(updated_at) = self.updated_at() {
             map.insert(
                 property_names::UPDATED_AT.to_string(),
-                Value::U64(*updated_at),
+                Value::U64(updated_at),
             );
         }
         if let Some(revision) = self.revision() {
-            map.insert(property_names::REVISION.to_string(), Value::U64(*revision));
+            map.insert(property_names::REVISION.to_string(), Value::U64(revision));
         }
 
         map.extend(self.properties().clone());
@@ -42,17 +42,17 @@ impl DocumentPlatformValueMethodsV0<'_> for ExtendedDocumentV0 {
         if let Some(created_at) = self.created_at() {
             map.insert(
                 property_names::CREATED_AT.to_string(),
-                Value::U64(*created_at),
+                Value::U64(created_at),
             );
         }
         if let Some(updated_at) = self.updated_at() {
             map.insert(
                 property_names::UPDATED_AT.to_string(),
-                Value::U64(*updated_at),
+                Value::U64(updated_at),
             );
         }
         if let Some(revision) = self.revision() {
-            map.insert(property_names::REVISION.to_string(), Value::U64(*revision));
+            map.insert(property_names::REVISION.to_string(), Value::U64(revision));
         }
 
         map.extend(self.properties().to_owned());

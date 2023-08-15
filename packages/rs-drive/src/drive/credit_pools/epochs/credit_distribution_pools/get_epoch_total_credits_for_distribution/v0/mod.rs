@@ -1,17 +1,13 @@
-use grovedb::{Element, TransactionArg};
-use std::ops::Range;
+use grovedb::TransactionArg;
 
 use crate::drive::fee::get_overflow_error;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
+
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
-use dpp::version::drive_versions::DriveVersion;
-use dpp::version::PlatformVersion;
 
-use crate::fee_pools::epochs::epoch_key_constants;
-use crate::fee_pools::epochs::paths::EpochProposers;
+use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Gets the total credits to be distributed for the Epoch.
@@ -47,7 +43,7 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
     use dpp::fee::Credits;
-    use dpp::version::drive_versions::DriveVersion;
+
     use dpp::version::PlatformVersion;
 
     #[test]

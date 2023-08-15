@@ -16,10 +16,11 @@ pub trait Signable {
 }
 
 pub trait PlatformSerializable {
-    fn serialize(&self) -> Result<Vec<u8>, ProtocolError>;
+    type Error;
+    fn serialize(&self) -> Result<Vec<u8>, Self::Error>;
 
     /// If the trait is not used just do a simple serialize
-    fn serialize_consume(self) -> Result<Vec<u8>, ProtocolError>
+    fn serialize_consume(self) -> Result<Vec<u8>, Self::Error>
     where
         Self: Sized,
     {

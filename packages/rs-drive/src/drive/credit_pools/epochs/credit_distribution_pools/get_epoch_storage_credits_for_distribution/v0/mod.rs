@@ -1,12 +1,10 @@
 use dpp::balances::credits::Creditable;
 use grovedb::{Element, TransactionArg};
-use std::ops::Range;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
-use dpp::fee::Credits;
 
 use crate::fee_pools::epochs::epoch_key_constants;
 use crate::fee_pools::epochs::paths::EpochProposers;
@@ -40,10 +38,10 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::drive::batch::GroveDbOpBatch;
+
     use crate::error::drive::DriveError;
     use crate::error::Error;
-    use crate::fee_pools::epochs::operations_factory::EpochOperations;
+
     use crate::fee_pools::epochs::paths::EpochProposers;
     use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;

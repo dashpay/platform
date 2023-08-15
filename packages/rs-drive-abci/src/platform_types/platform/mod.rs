@@ -16,7 +16,7 @@ use dashcore_rpc::dashcore::BlockHash;
 
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform_state::PlatformState;
-use dpp::serialization::{PlatformDeserializable, PlatformDeserializableFromVersionedStructure};
+use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
 use drive::error::Error::GroveDB;
 use serde_json::json;
@@ -140,7 +140,7 @@ impl Platform<MockCoreRPCLike> {
     }
 
     /// Recreate the state from the backing store
-    pub fn recreate_state(&self, platform_version: &PlatformVersion) -> Result<bool, Error> {
+    pub fn recreate_state(&self, _platform_version: &PlatformVersion) -> Result<bool, Error> {
         let Some(serialized_platform_state) = self.drive
             .grove
             .get_aux(b"saved_state", None)

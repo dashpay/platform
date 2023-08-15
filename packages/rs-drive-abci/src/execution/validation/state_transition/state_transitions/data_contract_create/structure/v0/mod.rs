@@ -5,7 +5,7 @@ use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
-use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
+use dpp::version::PlatformVersion;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_create) trait DataContractCreatedStateTransitionStructureValidationV0 {
     fn validate_structure_v0(&self, platform_version: &PlatformVersion) -> Result<SimpleConsensusValidationResult, Error>;
@@ -14,7 +14,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
 impl DataContractCreatedStateTransitionStructureValidationV0 for DataContractCreateTransition {
     fn validate_structure_v0(
         &self,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         //todo: re-enable version validation
         // // Validate protocol version

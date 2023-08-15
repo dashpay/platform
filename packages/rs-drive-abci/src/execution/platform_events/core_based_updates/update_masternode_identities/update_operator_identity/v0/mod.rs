@@ -4,14 +4,14 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::hashes::Hash;
+
 use dashcore_rpc::dashcore::ProTxHash;
-use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
-use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem};
+
+use dashcore_rpc::json::DMNStateDiff;
 use dpp::block::block_info::BlockInfo;
-use dpp::identifier::Identifier;
+
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_factory::IDENTITY_PROTOCOL_VERSION;
+
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::Purpose::WITHDRAW;
@@ -21,15 +21,12 @@ use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::{
-    AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
+    AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys,
 };
 use drive::drive::identity::key::fetch::{
-    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyIDIdentityPublicKeyPairVec,
-    KeyIDVec, KeyRequestType,
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
 use drive::grovedb::Transaction;
-use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
 
 impl<C> Platform<C>
 where

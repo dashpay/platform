@@ -1,13 +1,11 @@
 mod v0;
 
-use crate::drive::identity::identity_path;
-use crate::drive::identity::IdentityRootStructure::{IdentityTreeKeyReferences, IdentityTreeKeys};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::IdentityPublicKey;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};

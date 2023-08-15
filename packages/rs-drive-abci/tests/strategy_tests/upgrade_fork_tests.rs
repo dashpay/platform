@@ -15,7 +15,6 @@ mod tests {
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
     use platform_version::version::mocks::v3_test::TEST_PROTOCOL_VERSION_3;
-    use platform_version::version::PLATFORM_TEST_VERSIONS;
 
     #[test]
     fn run_chain_version_upgrade() {

@@ -1,6 +1,5 @@
-use bincode::{Decode, Encode};
 use derive_more::From;
-use serde::{Deserialize, Serialize};
+
 use crate::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::{DocumentDeleteTransitionActionAccessorsV0, DocumentDeleteTransitionActionV0};
 
 pub mod transformer;

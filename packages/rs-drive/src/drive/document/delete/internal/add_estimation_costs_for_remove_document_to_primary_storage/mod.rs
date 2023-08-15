@@ -1,18 +1,13 @@
 mod v0;
 
-use crate::drive::defaults::{
-    AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE, DEFAULT_HASH_SIZE_U8,
-};
-use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::data_contract::DataContract;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;
 
 impl Drive {

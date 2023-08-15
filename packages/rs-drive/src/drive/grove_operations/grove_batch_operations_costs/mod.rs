@@ -1,16 +1,16 @@
 mod v0;
 
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::grove_operations::push_drive_operation_result;
+
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::query::GroveError;
+
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::estimated_costs::EstimatedCostsType::AverageCaseCostsType;
-use grovedb::batch::{BatchApplyOptions, KeyInfoPath};
-use grovedb::{EstimatedLayerInformation, GroveDb};
+
+use grovedb::batch::KeyInfoPath;
+use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;
 
 impl Drive {

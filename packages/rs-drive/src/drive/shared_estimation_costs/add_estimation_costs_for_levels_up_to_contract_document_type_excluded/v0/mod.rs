@@ -1,15 +1,15 @@
-use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE};
+use crate::drive::defaults::ESTIMATED_AVERAGE_DOCUMENT_TYPE_NAME_SIZE;
 
 use crate::drive::flags::StorageFlags;
 use crate::drive::{contract_documents_path, Drive};
 
 use dpp::data_contract::DataContract;
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
+use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 
-use crate::drive::contract::paths::{all_contracts_global_root_path, contract_root_path};
+use crate::drive::contract::paths::contract_root_path;
 use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;

@@ -1,15 +1,14 @@
-use bincode::{Decode, Encode};
 use derive_more::From;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::platform_value::Identifier;
-use serde::{Deserialize, Serialize};
+
 use std::sync::Arc;
 
 pub mod transformer;
 mod v0;
 
 use crate::drive::contract::DataContractFetchInfo;
-use dpp::data_contract::DataContract;
+
 pub use v0::*;
 
 #[derive(Debug, Clone, From)]
