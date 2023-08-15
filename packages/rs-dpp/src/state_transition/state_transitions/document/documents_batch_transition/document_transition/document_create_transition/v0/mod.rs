@@ -186,6 +186,7 @@ mod test {
     use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
     use platform_value::{platform_value, BinaryData, Identifier};
     use serde_json::json;
+    use crate::data_contract::data_contract::DataContractV0;
 
     use super::*;
 
@@ -237,19 +238,21 @@ mod test {
         ]);
         let test_document = Value::from([("properties", test_document_properties)]);
         let documents = Value::from([("test", test_document)]);
-        Value::from([
-            ("protocolVersion", Value::U32(1)),
-            ("$id", Value::Identifier([0_u8; 32])),
-            ("$schema", Value::Text("schema".to_string())),
-            ("version", Value::U32(0)),
-            ("ownerId", Value::Identifier([0_u8; 32])),
-            ("documents", documents),
-        ])
-        .try_into()
-        .unwrap()
+        DataContract::V0(DataContractV0::from_value(
+            Value::from([
+                ("protocolVersion", Value::U32(1)),
+                ("$id", Value::Identifier([0_u8; 32])),
+                ("$schema", Value::Text("schema".to_string())),
+                ("version", Value::U32(0)),
+                ("ownerId", Value::Identifier([0_u8; 32])),
+                ("documents", documents),
+            ]),
+            LATEST_PLATFORM_VERSION
+        ).unwrap())
     }
 
     #[test]
+    #[cfg(feature = "state-transition-json-conversion")]
     fn convert_to_json_with_dynamic_binary_paths() {
         let data_contract = data_contract_with_dynamic_properties();
         let alpha_binary = BinaryData::new(vec![10_u8; 32]);

@@ -117,6 +117,7 @@ mod test {
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
     use std::convert::TryInto;
+    use serde_cbor::value::to_value;
 
     use crate::state_transition::traits::StateTransitionValueConvert;
 
@@ -180,6 +181,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "state-transition-json-conversion")]
     fn should_return_data_contract() {
         let data = get_test_data();
 
@@ -195,11 +197,12 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "state-transition-cbor-conversion")]
     fn should_return_serialized_state_transition_to_buffer() {
         let data = get_test_data();
         let state_transition_bytes = data
             .state_transition
-            .to_cbor_buffer(false)
+            .to_value(false)
             .expect("state transition should be converted to buffer");
         let (protocol_version, _) =
             u32::decode_var(state_transition_bytes.as_ref()).expect("expected to decode");

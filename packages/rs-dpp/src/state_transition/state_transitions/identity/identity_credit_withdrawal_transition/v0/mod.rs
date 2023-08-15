@@ -99,7 +99,6 @@ mod test {
 
     // Structure with 3 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
     struct IdentityCreditWithdrawalTransitionV03 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -108,7 +107,6 @@ mod test {
 
     // Structure with 4 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
     struct IdentityCreditWithdrawalTransitionV04 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,

@@ -16,8 +16,10 @@ impl StateTransition {
 #[cfg(test)]
 mod tests {
     use crate::identity::accessors::IdentityGettersV0;
+    use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use crate::identity::core_script::CoreScript;
     use crate::identity::Identity;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::prelude::AssetLockProof;
     use crate::serialization::PlatformMessageSignable;
     use crate::serialization::Signable;
@@ -50,18 +52,24 @@ mod tests {
     use rand::SeedableRng;
     use std::collections::BTreeMap;
     use std::convert::TryInto;
+    use platform_version::version::LATEST_PLATFORM_VERSION;
+    use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+    use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 
     #[test]
+    #[cfg(feature = "random-identities")]
     fn identity_create_transition_ser_de() {
-        let platform_version = PlatformVersion::latest();
-        let mut identity = Identity::random_identity(5, Some(5), platform_version)
+        let platform_version = LATEST_PLATFORM_VERSION;
+        let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
         let asset_lock_proof = raw_instant_asset_lock_proof_fixture(None);
-        identity.set_asset_lock_proof(AssetLockProof::Instant(asset_lock_proof));
 
-        let identity_create_transition: IdentityCreateTransition = identity
-            .try_into()
-            .expect("expected to make an identity create transition");
+        let identity_create_transition = IdentityCreateTransition::V0(IdentityCreateTransitionV0::try_from_identity(
+            identity,
+            AssetLockProof::Instant(asset_lock_proof),
+            platform_version
+        ).expect("expected to make an identity create transition"));
+
         let state_transition: StateTransition = identity_create_transition.into();
         let bytes = state_transition.serialize().expect("expected to serialize");
         let recovered_state_transition =
@@ -70,18 +78,16 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "random-identities")]
     fn identity_topup_transition_ser_de() {
         let platform_version = PlatformVersion::latest();
         let mut identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
         let asset_lock_proof = raw_instant_asset_lock_proof_fixture(None);
-        identity.set_asset_lock_proof(AssetLockProof::Instant(asset_lock_proof));
 
         let identity_topup_transition = IdentityTopUpTransitionV0 {
-            asset_lock_proof: identity
-                .asset_lock_proof
-                .expect("expected an asset lock proof on the identity"),
-            identity_id: identity.id,
+            asset_lock_proof: AssetLockProof::Instant(asset_lock_proof),
+            identity_id: identity.id(),
             signature: [1u8; 65].to_vec().into(),
         };
         let state_transition: StateTransition = identity_topup_transition.into();
@@ -92,10 +98,11 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "random-identities")]
     fn identity_update_transition_add_keys_ser_de() {
         let mut rng = StdRng::seed_from_u64(5);
         let (identity, mut keys): (Identity, BTreeMap<_, _>) =
-            Identity::random_identity_with_main_keys_with_private_key(None, 5, &mut rng)
+            Identity::random_identity_with_main_keys_with_private_key(5, &mut rng, LATEST_PLATFORM_VERSION)
                 .expect("expected to get identity");
         let bls = NativeBlsModule::default();
         let add_public_keys_in_creation = identity
@@ -122,15 +129,15 @@ mod tests {
             .iter_mut()
             .zip(identity.public_keys().into_values())
             .try_for_each(|(public_key_with_witness, public_key)| {
-                if public_key.key_type.is_unique_key_type() {
+                if public_key.key_type().is_unique_key_type() {
                     let private_key = keys
                         .get(&public_key)
                         .expect("expected to have the private key");
                     let signature = key_signable_bytes
                         .as_slice()
-                        .sign_by_private_key(private_key, public_key.key_type, &bls)?
+                        .sign_by_private_key(private_key, public_key.key_type(), &bls)?
                         .into();
-                    public_key_with_witness.signature = signature;
+                    public_key_with_witness.set_signature(signature);
                 }
 
                 Ok::<(), ProtocolError>(())
@@ -139,7 +146,7 @@ mod tests {
 
         let (public_key, private_key) = keys.pop_first().unwrap();
         identity_update_transition
-            .sign_by_private_key(private_key.as_slice(), public_key.key_type, &bls)
+            .sign_by_private_key(private_key.as_slice(), public_key.key_type(), &bls)
             .expect("expected to sign IdentityUpdateTransition");
 
         let state_transition: StateTransition = identity_update_transition.into();
@@ -150,10 +157,11 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "state-transition-signing")]
     fn identity_update_transition_disable_keys_ser_de() {
         let mut rng = StdRng::seed_from_u64(5);
         let (identity, mut keys): (Identity, BTreeMap<_, _>) =
-            Identity::random_identity_with_main_keys_with_private_key(None, 5, &mut rng)
+            Identity::random_identity_with_main_keys_with_private_key(5, &mut rng, LATEST_PLATFORM_VERSION)
                 .expect("expected to get identity");
         let bls = NativeBlsModule::default();
         let add_public_keys_in_creation = identity
@@ -186,7 +194,7 @@ mod tests {
                         .expect("expected to have the private key");
                     let signature = key_signable_bytes
                         .as_slice()
-                        .sign_by_private_key(private_key, public_key.key_type, &bls)?
+                        .sign_by_private_key(private_key, public_key.key_type(), &bls)?
                         .into();
                     public_key_with_witness.signature = signature;
                 }
@@ -213,7 +221,7 @@ mod tests {
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
         let identity_credit_withdrawal_transition = IdentityCreditWithdrawalTransitionV0 {
-            identity_id: identity.id,
+            identity_id: identity.id(),
             amount: 5000000,
             core_fee_per_byte: 34,
             pooling: Pooling::Standard,
@@ -234,7 +242,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
-        let created_data_contract = get_data_contract_fixture(Some(identity.id));
+        let created_data_contract = get_data_contract_fixture(Some(identity.id()), LATEST_PLATFORM_VERSION.protocol_version);
         let data_contract_create_transition: DataContractCreateTransition = created_data_contract
             .try_into_platform_versioned(platform_version)
             .expect("expected to transform into a DataContractCreateTransition");
@@ -251,7 +259,7 @@ mod tests {
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
         let mut created_data_contract =
-            get_data_contract_fixture(Some(identity.id), platform_version.protocol_version);
+            get_data_contract_fixture(Some(identity.id()), platform_version.protocol_version);
         created_data_contract.set_entropy_used(Default::default());
         let data_contract_update_transition =
             DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
