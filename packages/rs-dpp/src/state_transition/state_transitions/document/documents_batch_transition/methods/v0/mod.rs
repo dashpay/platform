@@ -1,4 +1,3 @@
-use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::identity::signer::Signer;

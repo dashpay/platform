@@ -1,35 +1,22 @@
-use crate::serialization::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
-use std::collections::{BTreeMap, HashMap};
-use std::convert::{TryFrom, TryInto};
+use crate::serialization::Signable;
+use bincode::{Decode, Encode};
 
-use anyhow::{anyhow, Context};
-use ciborium::value::Value as CborValue;
+use std::convert::TryInto;
+
 use derive_more::From;
-use integer_encoding::VarInt;
+
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 
-use platform_value::{BinaryData, Identifier, IntegerReplacementType, ReplacementType, Value};
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 
-use crate::data_contract::DataContract;
-use crate::util::json_value::JsonValueExt;
-use crate::version::{
-    FeatureVersion, FeatureVersionBounds, LATEST_PLATFORM_VERSION, LATEST_VERSION,
-};
 use crate::ProtocolError;
-use crate::{
-    identity::{KeyID, SecurityLevel},
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-};
-use platform_value::string_encoding::Encoding;
+use crate::{identity::SecurityLevel, state_transition::StateTransitionFieldTypes};
 
 pub use self::document_transition::{document_base_transition, document_create_transition};
-use crate::serialization::PlatformSerializable;
+
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
+use platform_versioning::PlatformVersioned;
 
 pub mod accessors;
 pub mod document_transition;
@@ -47,13 +34,9 @@ mod version;
 use crate::state_transition::data_contract_update_transition::{
     SIGNATURE, SIGNATURE_PUBLIC_KEY_ID,
 };
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
-use crate::state_transition::documents_batch_transition::fields::{
-    property_names, DEFAULT_SECURITY_LEVEL,
-};
-use crate::version::PlatformVersionCurrentVersion;
 
-use crate::state_transition::StateTransitionType::DocumentsBatch;
+use crate::state_transition::documents_batch_transition::fields::property_names;
+
 pub use v0::*;
 
 #[derive(

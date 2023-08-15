@@ -4,18 +4,14 @@ mod methods;
 #[cfg(feature = "random-public-keys")]
 mod random;
 
-use std::convert::{TryFrom, TryInto};
-
-use crate::serialization::{PlatformDeserializable, PlatformSerializable};
-
 pub use crate::identity::KeyType;
 pub use crate::identity::Purpose;
 pub use crate::identity::SecurityLevel;
-use crate::util::hash::ripemd160_sha256;
-use bincode::{config, Decode, Encode};
-use dashcore::hashes::Hash;
-use platform_value::{BinaryData, Bytes20, ReplacementType, Value};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use bincode::{Decode, Encode};
+
+use platform_value::BinaryData;
+use serde::{Deserialize, Serialize};
 
 use crate::identity::identity_public_key::key_type::KEY_TYPE_MAX_SIZE_TYPE;
 use crate::identity::Purpose::AUTHENTICATION;

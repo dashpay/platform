@@ -1,11 +1,8 @@
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
-use regex::Regex;
 
-use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
-use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
 use crate::consensus::basic::value_error::ValueError;
-use crate::consensus::{basic::BasicError, ConsensusError};
+use crate::consensus::basic::BasicError;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 

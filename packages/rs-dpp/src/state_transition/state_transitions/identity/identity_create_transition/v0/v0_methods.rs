@@ -1,12 +1,6 @@
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-
-use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
-
 use crate::{
-    identity::KeyID,
     prelude::Identifier,
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
+    state_transition::{StateTransitionLike, StateTransitionType},
     BlsModule, NonConsensusError, ProtocolError,
 };
 
@@ -16,16 +10,15 @@ use crate::identity::signer::Signer;
 use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::AssetLockProof;
-use crate::serialization::{PlatformDeserializable, Signable};
+use crate::serialization::Signable;
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
-use bincode::{config, Decode, Encode};
 
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransition;
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::PlatformVersion;
 
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]

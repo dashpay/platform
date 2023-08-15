@@ -18,7 +18,7 @@ use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 use serde_json::Value as JsonValue;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PlatformVersioned)]
 pub enum ExtendedDocument {

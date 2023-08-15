@@ -1,8 +1,6 @@
-use anyhow::{anyhow, bail, Error};
+use anyhow::{anyhow, bail};
 use platform_value::Value;
 use serde_json::Value as JsonValue;
-use std::convert::TryFrom;
-use std::iter::FromIterator;
 
 use crate::{identifier, ProtocolError};
 

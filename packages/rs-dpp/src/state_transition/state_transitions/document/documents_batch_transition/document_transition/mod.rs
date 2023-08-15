@@ -1,15 +1,10 @@
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
 
-use anyhow::Context;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 
-use crate::{
-    data_contract::DataContract, prelude::Identifier, util::json_value::JsonValueExt, ProtocolError,
-};
+use crate::prelude::Identifier;
 use document_base_transition::DocumentBaseTransition;
 
 pub mod action_type;

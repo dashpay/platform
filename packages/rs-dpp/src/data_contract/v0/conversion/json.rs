@@ -1,10 +1,10 @@
 use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-use crate::data_contract::serialized_version::v0::property_names;
+
 use crate::data_contract::v0::DataContractV0;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_value::{ReplacementType, Value};
+
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 

@@ -1,11 +1,10 @@
-use super::purpose::Purpose;
 use anyhow::bail;
 use bincode::{Decode, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
-use lazy_static::lazy_static;
+
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::collections::HashMap;
+
 use std::convert::TryFrom;
 
 #[repr(u8)]

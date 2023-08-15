@@ -11,20 +11,17 @@ use crate::document::{Document, DocumentV0Getters, ExtendedDocument};
 use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::Revision;
-use crate::serialization::{PlatformDeserializable, ValueConvertible};
+
 use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
 
-#[cfg(feature = "document-cbor-conversion")]
-use crate::document::serialization_traits::DocumentCborMethodsV0;
 use platform_value::btreemap_extensions::{
     BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
     BTreeValueRemoveFromMapHelper,
 };
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
-use std::convert::TryInto;
+use std::collections::BTreeMap;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -32,9 +29,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
 #[cfg(feature = "document-value-conversion")]
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
-use crate::document::serialization_traits::{
-    DocumentPlatformConversionMethodsV0, ExtendedDocumentPlatformConversionMethodsV0,
-};
+use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "document-json-conversion")]

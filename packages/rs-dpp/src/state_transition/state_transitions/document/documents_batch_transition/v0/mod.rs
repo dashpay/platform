@@ -9,19 +9,14 @@ mod value_conversion;
 mod version;
 
 use crate::identity::KeyID;
-use crate::serialization::PlatformSerializable;
-use crate::serialization::{PlatformDeserializable, Signable};
+
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_value::btreemap_extensions::{
-    BTreeValueMapHelper, BTreeValueMapReplacementPathHelper,
-};
-use platform_value::string_encoding::Encoding;
-use platform_value::{BinaryData, Identifier, Value};
+use bincode::{Decode, Encode};
+use platform_serialization_derive::PlatformSignable;
+
+use platform_value::{BinaryData, Identifier};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(

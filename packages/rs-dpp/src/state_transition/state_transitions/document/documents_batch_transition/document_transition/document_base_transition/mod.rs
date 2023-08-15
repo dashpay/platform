@@ -11,7 +11,7 @@ use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::{Display, From};
 pub use fields::*;
-use platform_value::{Identifier, Value};
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "state-transition-json-conversion")]
 use serde_json::Value as JsonValue;

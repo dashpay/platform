@@ -1,32 +1,19 @@
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
 
-use platform_value::btreemap_extensions::{
-    BTreeValueMapHelper, BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper,
-};
-use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
+use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
-use crate::{
-    data_contract::DataContract,
-    identity::KeyID,
-    prelude::Identifier,
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    NonConsensusError, ProtocolError,
-};
+use crate::{state_transition::StateTransitionFieldTypes, ProtocolError};
 
-use crate::serialization::{PlatformDeserializable, Signable};
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 use crate::state_transition::identity_credit_withdrawal_transition::fields::*;
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 use crate::state_transition::StateTransitionValueConvert;
-use bincode::{config, Decode, Encode};
+
 use platform_version::version::PlatformVersion;
 
 impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransitionV0 {
     fn from_object(
-        mut raw_object: Value,
-        platform_version: &PlatformVersion,
+        raw_object: Value,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         platform_value::from_value(raw_object).map_err(ProtocolError::ValueError)
     }
@@ -39,7 +26,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransitionV
     }
 
     fn from_value_map(
-        mut raw_value_map: BTreeMap<String, Value>,
+        raw_value_map: BTreeMap<String, Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let value: Value = raw_value_map.into();

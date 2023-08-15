@@ -1,11 +1,6 @@
-use crate::serialization::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
-use platform_serialization_derive::PlatformSignable;
-use platform_value::{BinaryData, ReplacementType, Value};
+use crate::serialization::Signable;
+
 use platform_version::version::PlatformVersion;
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-use std::convert::{TryFrom, TryInto};
 
 use crate::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, MissingPublicKeyError, SignatureError,
@@ -14,7 +9,6 @@ use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
 
-use crate::data_contract::DataContract;
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
@@ -22,15 +16,12 @@ use crate::state_transition::identity_update_transition::methods::IdentityUpdate
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::state_transition::{
-    GetDataContractSecurityLevelRequirementFn, StateTransition, StateTransitionIdentitySigned,
-};
+use crate::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
 use crate::version::FeatureVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    version::LATEST_VERSION,
+    state_transition::StateTransitionLike,
     ProtocolError,
 };
 

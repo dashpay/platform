@@ -1,39 +1,15 @@
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
-use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
-use crate::prelude::Identifier;
+use crate::identity::{Identity, IdentityPublicKey, KeyID};
 
-use crate::{BlsModule, ProtocolError};
+use crate::ProtocolError;
 
 use dashcore::{InstantLock, Transaction};
 use std::collections::BTreeMap;
-use std::convert::TryInto;
-use std::iter::FromIterator;
 
-use crate::consensus::basic::decode::SerializedObjectParsingError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
-use crate::serialization::PlatformDeserializable;
-
-#[cfg(feature = "identity-value-conversion")]
-use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
-use crate::identity::v0::IdentityV0;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::version::PlatformVersion;
 use platform_value::Value;
 use platform_version::TryIntoPlatformVersioned;
-use std::sync::Arc;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
 
@@ -94,7 +70,7 @@ impl IdentityFactory {
 
     //todo: this should be changed into identity.validate()
     #[cfg(feature = "validation")]
-    pub fn validate_identity(&self, raw_identity: &Value) -> Result<(), ProtocolError> {
+    pub fn validate_identity(&self, _raw_identity: &Value) -> Result<(), ProtocolError> {
         //todo: reenable
         // let result = self
         //     .identity_validator

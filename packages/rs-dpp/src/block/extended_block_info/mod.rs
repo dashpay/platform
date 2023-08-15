@@ -3,10 +3,9 @@ use crate::block::extended_block_info::v0::{
     ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters, ExtendedBlockInfoV0Setters,
 };
 use crate::protocol_error::ProtocolError;
-use crate::serialization::PlatformDeserializable;
-use crate::serialization::PlatformSerializable;
+
 use crate::version::FeatureVersion;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
@@ -122,6 +121,7 @@ impl ExtendedBlockInfoV0Setters for ExtendedBlockInfo {
 mod tests {
     use super::*;
     use crate::block::block_info::BlockInfo;
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 
     #[test]
     fn test_extended_block_info_bincode() {

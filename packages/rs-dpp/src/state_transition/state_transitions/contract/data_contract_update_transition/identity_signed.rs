@@ -1,6 +1,5 @@
-use crate::data_contract::DataContract;
 use crate::identity::{KeyID, SecurityLevel};
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::StateTransitionIdentitySigned;
 

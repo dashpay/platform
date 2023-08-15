@@ -35,13 +35,13 @@ use crate::document::document_methods::{
     DocumentMethodsV0,
 };
 use crate::document::errors::DocumentError;
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
-use platform_value::{Identifier, Value};
+
 #[cfg(feature = "document-serde-conversion")]
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+
 use std::fmt;
 use std::fmt::Formatter;
 

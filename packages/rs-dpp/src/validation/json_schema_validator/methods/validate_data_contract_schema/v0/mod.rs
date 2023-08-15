@@ -1,6 +1,6 @@
 use crate::consensus::ConsensusError;
 use crate::validation::{meta_validators, JsonSchemaValidator, SimpleConsensusValidationResult};
-use jsonschema::JSONSchema;
+
 use serde_json::Value as JsonValue;
 
 impl JsonSchemaValidator {

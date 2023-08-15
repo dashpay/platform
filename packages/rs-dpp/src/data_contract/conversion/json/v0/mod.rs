@@ -1,6 +1,6 @@
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use serde_json::{Value as JsonValue, Value};
+use serde_json::Value as JsonValue;
 
 pub trait DataContractJsonConversionMethodsV0 {
     fn from_json(

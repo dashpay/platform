@@ -7,15 +7,12 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
-use crate::serialization::{PlatformDeserializable, Signable};
-use bincode::enc::Encoder;
-use bincode::error::EncodeError;
-use bincode::{config, Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use bincode::{Decode, Encode};
+use platform_serialization_derive::PlatformSignable;
 
-use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
+use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
@@ -26,11 +23,9 @@ use crate::identity::accessors::IdentityGettersV0;
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
-use crate::state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
-};
+use crate::state_transition::StateTransitionLike;
 use crate::version::PlatformVersion;
-use crate::{NonConsensusError, ProtocolError};
+use crate::ProtocolError;
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
@@ -76,7 +71,7 @@ impl TryFrom<IdentityCreateTransitionV0Inner> for IdentityCreateTransitionV0 {
         let IdentityCreateTransitionV0Inner {
             public_keys,
             asset_lock_proof,
-            protocol_version,
+            protocol_version: _,
             signature,
         } = value;
         let identity_id = asset_lock_proof.create_identifier()?;

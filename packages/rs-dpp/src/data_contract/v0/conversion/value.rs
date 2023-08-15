@@ -8,7 +8,6 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{ReplacementType, Value};
 use platform_version::TryFromPlatformVersioned;
-use std::convert::TryInto;
 
 pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =
     [property_names::ID, property_names::OWNER_ID];

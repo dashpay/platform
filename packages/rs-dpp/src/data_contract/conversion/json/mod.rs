@@ -3,7 +3,7 @@ pub use v0::*;
 
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DataContract;
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use serde_json::Value as JsonValue;
 

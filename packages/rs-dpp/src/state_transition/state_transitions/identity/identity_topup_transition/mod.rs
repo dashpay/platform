@@ -11,16 +11,16 @@ mod version;
 
 use fields::*;
 
-use crate::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use crate::serialization::Signable;
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
-use crate::version::PlatformVersionCurrentVersion;
+
 use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
+use platform_versioning::PlatformVersioned;
 use serde::{Deserialize, Serialize};
 
 #[derive(

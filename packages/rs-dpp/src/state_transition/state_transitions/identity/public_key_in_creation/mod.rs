@@ -2,10 +2,10 @@ use crate::identity::IdentityPublicKey;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0Signable;
 use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::PlatformSignable;
-use platform_versioning::PlatformVersioned;
+
 use serde::{Deserialize, Serialize};
 
 pub mod accessors;

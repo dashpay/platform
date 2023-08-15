@@ -1,18 +1,13 @@
-use crate::serialization::PlatformDeserializable;
-use crate::serialization::PlatformSerializable;
 use crate::serialization::Signable;
-use crate::state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
-};
+use crate::state_transition::StateTransitionFieldTypes;
 use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_value::{BinaryData, Identifier, Value};
-use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
-use serde::de::{MapAccess, Visitor};
-use serde::ser::SerializeMap;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use platform_versioning::PlatformVersioned;
+
+use serde::{Deserialize, Serialize};
 
 pub mod accessors;
 mod fields;
@@ -27,13 +22,12 @@ mod v0;
 mod value_conversion;
 mod version;
 
-use crate::version::PlatformVersionCurrentVersion;
 pub use fields::*;
 use platform_version::version::PlatformVersion;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
 use crate::data_contract::DataContract;
-use crate::version::FeatureVersion;
+
 pub use v0::*;
 
 pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
@@ -123,6 +117,7 @@ mod test {
 
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::state_transition::{StateTransitionLike, StateTransitionType};
 
     struct TestData {
         state_transition: DataContractUpdateTransition,

@@ -12,30 +12,24 @@ mod value_conversion;
 mod version;
 
 use fields::*;
-use std::convert::TryFrom;
 
 use crate::data_contract::DataContract;
-use crate::identity::KeyID;
-use crate::serialization::PlatformDeserializable;
-use crate::serialization::{PlatformSerializable, Signable};
-use crate::state_transition::{
-    StateTransition, StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
-};
+
+use crate::serialization::Signable;
+use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_value::{BinaryData, Bytes32, Identifier, Value};
+
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
-use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
-use serde::de::{MapAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use platform_versioning::PlatformVersioned;
+
+use serde::{Deserialize, Serialize};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
 pub use v0::*;
-
-use crate::version::PlatformVersionCurrentVersion;
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 
@@ -165,10 +159,12 @@ mod test {
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::state_transitions::common_fields::property_names;
+    use crate::state_transition::traits::StateTransitionLike;
     use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
     use crate::tests::fixtures::get_data_contract_fixture;
     use crate::version;
     use crate::version::LATEST_PLATFORM_VERSION;
+    use platform_value::Value;
 
     pub(crate) struct TestData {
         pub(crate) state_transition: DataContractCreateTransition,
@@ -222,7 +218,7 @@ mod test {
                 .state_transition_serialization_versions
                 .contract_create_state_transition
                 .default_current_version,
-            data.state_transition.state_transition_protocol_version()
+            data.state_transition.state_transition_version()
         )
     }
 

@@ -1,10 +1,8 @@
 mod v0;
-use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::v0::DocumentTypeV0;
+
 use crate::data_contract::{DefinitionName, DocumentName};
 use crate::prelude::DataContract;
-use crate::serialization::PlatformSerializableWithPlatformVersion;
-use crate::util::hash::hash_to_vec;
+
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;

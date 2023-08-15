@@ -1,9 +1,9 @@
 use crate::document::extended_document::v0::ExtendedDocumentV0;
+use crate::document::property_names;
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
-use crate::document::{property_names, Document, DocumentV0};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+
 use platform_value::Value;
 use std::collections::BTreeMap;
 

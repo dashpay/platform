@@ -8,28 +8,21 @@ pub(crate) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use std::convert::TryFrom;
+use platform_serialization_derive::PlatformSignable;
 
-use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
+use platform_value::{BinaryData, Bytes32};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    data_contract::DataContract,
-    identity::KeyID,
-    prelude::Identifier,
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    NonConsensusError, ProtocolError,
+    data_contract::DataContract, identity::KeyID, state_transition::StateTransitionLike,
+    ProtocolError,
 };
 
-use crate::serialization::{PlatformDeserializable, Signable};
-use bincode::{BorrowDecode, config, Decode, Encode};
-use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};
+use bincode::{Decode, Encode};
+use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
 use crate::state_transition::StateTransition;
 use crate::version::PlatformVersion;

@@ -8,31 +8,25 @@ mod version;
 
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 
-use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{BinaryData, ReplacementType, Value};
-
-use serde_json::Value as JsonValue;
+use platform_value::{BinaryData, Value};
 
 use crate::errors::ProtocolError;
-use crate::identity::signer::Signer;
+
 use platform_serialization_derive::PlatformSignable;
 
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use crate::serialization::PlatformMessageSignable;
+
 use crate::state_transition::public_key_in_creation::accessors::{
     IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
 };
 use crate::state_transition::public_key_in_creation::methods::IdentityPublicKeyInCreationMethodsV0;
-use crate::{BlsModule, InvalidVectorSizeError, SerdeParsingError};
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 

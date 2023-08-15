@@ -1,4 +1,3 @@
-use crate::data_contract::document_type::property_names;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::serialized_version::v0::property_names as contract_property_names;
 use crate::data_contract::JsonValue;
@@ -28,7 +27,7 @@ pub fn enrich_with_base_schema_v0(
     schema_defs: Option<Value>,
     exclude_properties: &[&str], // TODO: Do we need this?
 ) -> Result<Value, ProtocolError> {
-    let mut schema_map = schema.to_map_mut().map_err(|err| {
+    let schema_map = schema.to_map_mut().map_err(|err| {
         ProtocolError::DataContractError(DataContractError::InvalidContractStructure(format!(
             "document schema must be an object: {err}"
         )))

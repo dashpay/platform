@@ -8,21 +8,17 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::identity::{KeyID, SecurityLevel};
+use crate::identity::KeyID;
 
 use crate::prelude::Identifier;
-use crate::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
-use crate::state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
-};
-use crate::version::LATEST_VERSION;
+
+use crate::state_transition::StateTransitionLike;
+
 use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_value::{BinaryData, Value};
+use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-use std::convert::TryInto;
 
 #[derive(
     Debug,

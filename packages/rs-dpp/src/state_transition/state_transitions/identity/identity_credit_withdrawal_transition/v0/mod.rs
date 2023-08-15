@@ -7,29 +7,18 @@ mod types;
 mod value_conversion;
 mod version;
 
-use crate::serialization::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
-use platform_value::{BinaryData, ReplacementType, Value};
+use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::convert::TryInto;
 
-use crate::version::{FeatureVersion, LATEST_VERSION};
 use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::{Identifier, Revision},
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
+    state_transition::StateTransitionLike,
     ProtocolError,
 };
-use data_contracts::withdrawals_contract::document_types::withdrawal::properties::OUTPUT_SCRIPT;
 
-use crate::serialization::PlatformSerializable;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-
-use crate::identity::SecurityLevel;
-use crate::identity::SecurityLevel::{CRITICAL, HIGH, MEDIUM};
 use crate::withdrawal::Pooling;
 
 #[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]

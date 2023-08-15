@@ -2,24 +2,19 @@ mod from_document;
 pub mod v0_methods;
 
 use bincode::{Decode, Encode};
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
+
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{Bytes32, Identifier, ReplacementType, Value};
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+
 use std::collections::BTreeMap;
-use std::convert::TryInto;
+
 use std::string::ToString;
 
-use crate::document::Document;
 use crate::identity::TimestampMillis;
-use crate::prelude::Revision;
 
-use crate::version::LATEST_PLATFORM_VERSION;
 use crate::{data_contract::DataContract, errors::ProtocolError};
 
-use crate::document::INITIAL_REVISION;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::{
     DocumentBaseTransitionV0, DocumentTransitionObjectLike,
 };
@@ -185,11 +180,14 @@ mod test {
 
     use crate::data_contract::data_contract::DataContractV0;
     use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
-    use platform_value::{platform_value, BinaryData, Identifier};
+    use platform_value::btreemap_extensions::BTreeValueMapHelper;
+    use platform_value::{platform_value, BinaryData, Bytes32, Identifier};
+    use platform_version::version::LATEST_PLATFORM_VERSION;
     use serde_json::json;
 
     use super::*;
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use serde_json::Value as JsonValue;
 
     fn init() {
         let _ = env_logger::builder()

@@ -1,18 +1,14 @@
 use crate::serialization::{
-    PlatformDeserializableFromVersionedStructure,
     PlatformDeserializableWithBytesLenFromVersionedStructure,
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
-    PlatformLimitDeserializableFromVersionedStructure, PlatformSerializable,
-    PlatformSerializableWithPlatformVersion,
+    PlatformLimitDeserializableFromVersionedStructure, PlatformSerializableWithPlatformVersion,
 };
-use bincode::{Decode, Encode};
+
 pub use data_contract::*;
 use derive_more::From;
 
 use bincode::config::{BigEndian, Configuration};
 pub use generate_data_contract::*;
-use platform_value::{Identifier, Value, ValueMapHelper};
-use std::collections::BTreeMap;
 
 pub mod errors;
 pub mod extra;
@@ -40,21 +36,16 @@ pub mod config;
 
 pub use v0::*;
 
-use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-#[cfg(feature = "data-contract-value-conversion")]
-use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
 };
 use crate::data_contract::v0::data_contract::DataContractV0;
 use crate::util::hash::hash_to_vec;
-#[cfg(feature = "validation")]
-use crate::validation::SimpleConsensusValidationResult;
+
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
+
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use platform_versioning::PlatformVersioned;
 pub use serde_json::Value as JsonValue;

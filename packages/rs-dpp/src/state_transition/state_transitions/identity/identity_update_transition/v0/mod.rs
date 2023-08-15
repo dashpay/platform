@@ -8,33 +8,22 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::serialization::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
-use platform_value::{BinaryData, ReplacementType, Value};
+use platform_value::{BinaryData, Value};
 use serde::{Deserialize, Serialize};
 
 use std::convert::{TryFrom, TryInto};
 
-use crate::consensus::signature::{
-    InvalidSignaturePublicKeySecurityLevelError, MissingPublicKeyError, SignatureError,
-};
-use crate::consensus::ConsensusError;
-use crate::identity::signer::Signer;
-use crate::identity::{Identity, IdentityPublicKey};
-
-use crate::serialization::PlatformSerializable;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
-use crate::version::FeatureVersion;
+
 use crate::{
-    identity::{KeyID, SecurityLevel},
+    identity::KeyID,
     prelude::{Identifier, Revision, TimestampMillis},
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    version::LATEST_VERSION,
+    state_transition::StateTransitionLike,
     ProtocolError,
 };
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 #[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq)]
 #[cfg_attr(

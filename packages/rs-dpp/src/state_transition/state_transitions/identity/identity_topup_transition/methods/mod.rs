@@ -2,15 +2,14 @@ mod v0;
 
 pub use v0::*;
 
-use crate::identity::signer::Signer;
-use crate::identity::{Identity, KeyID, PartialIdentity};
+use crate::identity::Identity;
 use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
-use crate::{BlsModule, NonConsensusError, ProtocolError};
-use platform_value::{Bytes32, Identifier};
+use crate::{BlsModule, ProtocolError};
+
 use platform_version::version::PlatformVersion;
 
 impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransition {

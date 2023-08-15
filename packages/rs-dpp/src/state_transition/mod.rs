@@ -3,10 +3,10 @@ use serde::{Deserialize, Serialize};
 
 pub use abstract_state_transition::state_transition_helpers;
 
-use platform_value::{BinaryData, Identifier, Value};
+use platform_value::{BinaryData, Identifier};
 pub use state_transition_types::*;
 
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use dashcore::signer;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
@@ -30,13 +30,13 @@ use crate::consensus::signature::{
     PublicKeyIsDisabledError, SignatureError,
 };
 use crate::consensus::ConsensusError;
-use crate::data_contract::DataContract;
+
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 pub use state_transitions::*;
 
-use crate::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use crate::serialization::Signable;
 use crate::state_transition::data_contract_create_transition::{
     DataContractCreateTransition, DataContractCreateTransitionSignable,
 };
@@ -121,8 +121,8 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::DataContractCreate(st) => Some(st.$method()),
             StateTransition::DataContractUpdate(st) => Some(st.$method()),
             StateTransition::DocumentsBatch(st) => Some(st.$method()),
-            StateTransition::IdentityCreate(st) => None,
-            StateTransition::IdentityTopUp(st) => None,
+            StateTransition::IdentityCreate(_st) => None,
+            StateTransition::IdentityTopUp(_st) => None,
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.$method()),
             StateTransition::IdentityUpdate(st) => Some(st.$method()),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method()),
@@ -136,8 +136,8 @@ macro_rules! call_method_identity_signed {
             StateTransition::DataContractCreate(st) => st.$method($args),
             StateTransition::DataContractUpdate(st) => st.$method($args),
             StateTransition::DocumentsBatch(st) => st.$method($args),
-            StateTransition::IdentityCreate(st) => {}
-            StateTransition::IdentityTopUp(st) => {}
+            StateTransition::IdentityCreate(_st) => {}
+            StateTransition::IdentityTopUp(_st) => {}
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
             StateTransition::IdentityUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
@@ -163,10 +163,10 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::DataContractCreate(st) => st.$method($args),
             StateTransition::DataContractUpdate(st) => st.$method($args),
             StateTransition::DocumentsBatch(st) => st.$method($args),
-            StateTransition::IdentityCreate(st) => Err(ProtocolError::CorruptedCodeExecution(
+            StateTransition::IdentityCreate(_st) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity create can not be called for identity signing".to_string(),
             )),
-            StateTransition::IdentityTopUp(st) => Err(ProtocolError::CorruptedCodeExecution(
+            StateTransition::IdentityTopUp(_st) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity top up can not be called for identity signing".to_string(),
             )),
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),

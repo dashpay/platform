@@ -44,7 +44,7 @@ impl IdentityCborConversionMethodsV0 for IdentityV0 {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let SplitProtocolVersionOutcome {
-            protocol_version,
+            protocol_version: _,
             main_message_bytes: identity_cbor_bytes,
             ..
         } = deserializer::split_cbor_protocol_version(identity_cbor)?;

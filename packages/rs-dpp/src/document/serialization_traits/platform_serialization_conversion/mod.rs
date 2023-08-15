@@ -40,7 +40,7 @@ impl DocumentPlatformConversionMethodsV0 for Document {
     /// The serialization of a document follows the pattern:
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     fn serialize_consume(
-        mut self,
+        self,
         document_type: DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {

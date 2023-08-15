@@ -1,16 +1,11 @@
-use crate::identity::identity_public_key::key_type::KEY_TYPE_MAX_SIZE_TYPE;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use crate::identity::KeyType::ECDSA_SECP256K1;
-use crate::identity::Purpose::AUTHENTICATION;
-use crate::identity::SecurityLevel::{HIGH, MASTER};
-use crate::identity::{IdentityPublicKey, KeyCount, KeyID, KeyType, Purpose, SecurityLevel};
-use crate::version::{FeatureVersion, PlatformVersion};
+
+use crate::identity::{IdentityPublicKey, KeyCount, KeyID};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_value::BinaryData;
+
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
-use std::convert::TryFrom;
-use std::ops::{Div, Rem};
+use rand::SeedableRng;
 
 pub type UsedKeyMatrix = Vec<bool>;
 

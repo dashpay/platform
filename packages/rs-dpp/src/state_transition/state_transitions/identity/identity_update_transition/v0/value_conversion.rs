@@ -1,30 +1,16 @@
-use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
-
 use crate::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
-use platform_value::btreemap_extensions::{
-    BTreeValueMapHelper, BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper,
-};
-use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
+use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
+use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
-use crate::{
-    data_contract::DataContract,
-    identity::KeyID,
-    prelude::Identifier,
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    NonConsensusError, ProtocolError,
-};
+use crate::{state_transition::StateTransitionFieldTypes, ProtocolError};
 
-use crate::serialization::{PlatformDeserializable, Signable};
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 use crate::state_transition::identity_update_transition::fields::*;
 use crate::state_transition::identity_update_transition::v0::{
-    get_list, remove_integer_list_or_default, IdentityUpdateTransitionV0,
+    remove_integer_list_or_default, IdentityUpdateTransitionV0,
 };
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
-use bincode::{config, Decode, Encode};
+
 use platform_version::version::PlatformVersion;
 
 impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransitionV0 {

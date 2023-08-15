@@ -1,22 +1,15 @@
 mod v0;
 
-use crate::consensus::basic::UnsupportedVersionError;
-use crate::consensus::ConsensusError;
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::DataContract;
-use crate::util::deserializer::ProtocolVersion;
+
 use crate::util::entropy_generator::EntropyGenerator;
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 
 pub use v0::DataContractFactoryV0;
-
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
 /// # Data Contract Factory
 ///

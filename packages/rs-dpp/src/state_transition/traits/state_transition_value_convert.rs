@@ -54,7 +54,7 @@ pub trait StateTransitionValueConvert<'a>:
     }
     fn from_object(
         raw_object: Value,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized,
@@ -64,7 +64,7 @@ pub trait StateTransitionValueConvert<'a>:
 
     fn from_value_map(
         raw_value_map: BTreeMap<String, Value>,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized,
@@ -77,7 +77,7 @@ pub trait StateTransitionValueConvert<'a>:
         ))
         .map_err(ProtocolError::ValueError)
     }
-    fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {
+    fn clean_value(_value: &mut Value) -> Result<(), ProtocolError> {
         Ok(())
     }
 }

@@ -1,31 +1,23 @@
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
 
-use crate::serialization::PlatformSerializable;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-
-use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
+use platform_value::Bytes32;
 
 use crate::{
-    data_contract::DataContract,
-    identity::KeyID,
-    prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionType},
+    data_contract::DataContract, identity::KeyID, state_transition::StateTransitionLike,
     NonConsensusError, ProtocolError,
 };
 
-use crate::serialization::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
-use platform_version::TryIntoPlatformVersioned;
-use platform_version::version::PlatformVersion;
+use crate::serialization::Signable;
+
 use crate::consensus::signature::{InvalidSignaturePublicKeySecurityLevelError, SignatureError};
-use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::data_contract::accessors::v0::DataContractV0Setters;
-use crate::identity::PartialIdentity;
+use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::identity::PartialIdentity;
 use crate::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
-use crate::state_transition::state_transitions::contract::data_contract_create_transition::fields::{BINARY_FIELDS, IDENTIFIER_FIELDS, U32_FIELDS};
+use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use platform_version::version::PlatformVersion;
+use platform_version::TryIntoPlatformVersioned;
 
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
@@ -45,7 +37,7 @@ impl DataContractCreateTransitionMethodsV0 for DataContractCreateTransitionV0 {
             entropy,
         ));
         data_contract.set_owner_id(identity.id);
-        let mut transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
+        let transition = DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
             data_contract: data_contract.try_into_platform_versioned(platform_version)?,
             entropy: Default::default(),
             signature_public_key_id: key_id,

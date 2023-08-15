@@ -1,5 +1,5 @@
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0Getters};
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 

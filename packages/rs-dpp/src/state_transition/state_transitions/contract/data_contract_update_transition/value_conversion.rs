@@ -1,25 +1,15 @@
 use std::collections::BTreeMap;
 
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_value::Value;
 
-use platform_value::{BinaryData, Bytes32, Error, IntegerReplacementType, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
+use crate::ProtocolError;
 
-use crate::{
-    data_contract::DataContract,
-    identity::KeyID,
-    prelude::Identifier,
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    NonConsensusError, ProtocolError,
-};
-
-use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::data_contract_update_transition::{
     DataContractUpdateTransition, DataContractUpdateTransitionV0,
 };
 use crate::state_transition::state_transitions::data_contract_update_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
-use bincode::{config, Decode, Encode};
+
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 

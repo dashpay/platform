@@ -2,8 +2,7 @@ use crate::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::data_contract::DataContractV0;
 use crate::util::cbor_value::CborCanonicalMap;
-use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
+
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use ciborium::Value as CborValue;
@@ -68,7 +67,7 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
     // TODO: Revisit
     fn to_cbor_canonical_map(
         &self,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<CborCanonicalMap, ProtocolError> {
         unimplemented!();
 

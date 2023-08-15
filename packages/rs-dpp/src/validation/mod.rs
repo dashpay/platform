@@ -1,6 +1,4 @@
 #[cfg(feature = "validation")]
-use async_trait::async_trait;
-#[cfg(feature = "validation")]
 pub use json_schema_validator::JsonSchemaValidator;
 #[cfg(feature = "validation")]
 #[cfg(test)]

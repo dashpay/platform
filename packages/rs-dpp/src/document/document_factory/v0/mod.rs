@@ -6,11 +6,11 @@ use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
 use crate::document::errors::DocumentError;
 use crate::document::{Document, DocumentV0Getters, INITIAL_REVISION};
-use crate::identity::TimestampMillis;
+
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
-use crate::version::{PlatformVersion, LATEST_PLATFORM_VERSION};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use anyhow::anyhow;
+
 use platform_value::{Bytes32, Identifier, Value};
 
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -441,7 +441,7 @@ impl DocumentFactoryV0 {
                     }
                     .into());
                 }
-                let Some(document_revision) = document.revision() else {
+                let Some(_document_revision) = document.revision() else {
                 return Err(DocumentError::RevisionAbsentError {
                     document: Box::new(document),
                 }.into());

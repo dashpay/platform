@@ -10,8 +10,8 @@ use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_lef
 use crate::fee::epoch::{BytesPerEpoch, CreditsPerEpoch};
 use crate::fee::Credits;
 use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, Encode};
+
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::btree_map::Iter;

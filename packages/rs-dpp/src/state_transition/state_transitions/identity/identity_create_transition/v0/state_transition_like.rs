@@ -1,14 +1,9 @@
-use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+use platform_value::BinaryData;
 
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::{
-    data_contract::DataContract,
-    identity::KeyID,
     prelude::Identifier,
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    NonConsensusError, ProtocolError,
+    state_transition::{StateTransitionLike, StateTransitionType},
 };
 
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;

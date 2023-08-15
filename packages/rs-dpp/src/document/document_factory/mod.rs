@@ -7,7 +7,7 @@ use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 
-use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;

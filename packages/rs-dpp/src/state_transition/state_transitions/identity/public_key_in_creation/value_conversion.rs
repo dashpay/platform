@@ -1,7 +1,7 @@
 use crate::state_transition::documents_batch_transition::fields::property_names::STATE_TRANSITION_PROTOCOL_VERSION;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::state_transition::{StateTransitionFieldTypes, StateTransitionValueConvert};
+use crate::state_transition::StateTransitionValueConvert;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;

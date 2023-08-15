@@ -1,27 +1,10 @@
-use crate::serialization::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
-use platform_serialization_derive::PlatformSignable;
-use platform_value::{BinaryData, ReplacementType, Value};
 use platform_version::version::PlatformVersion;
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-use std::convert::{TryFrom, TryInto};
 
-use crate::consensus::signature::{
-    InvalidSignaturePublicKeySecurityLevelError, MissingPublicKeyError, SignatureError,
-};
-use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
-use crate::{
-    identity::{KeyID, SecurityLevel},
-    prelude::{Identifier, Revision, TimestampMillis},
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    version::LATEST_VERSION,
-    ProtocolError,
-};
+use crate::{identity::KeyID, state_transition::StateTransitionType, ProtocolError};
 
 pub trait IdentityUpdateTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]

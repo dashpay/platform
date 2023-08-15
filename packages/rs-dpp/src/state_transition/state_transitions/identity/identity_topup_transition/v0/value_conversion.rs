@@ -1,32 +1,23 @@
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
-use platform_value::btreemap_extensions::{
-    BTreeValueMapHelper, BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper,
-};
-use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
-use crate::{
-    data_contract::DataContract,
-    identity::KeyID,
-    prelude::Identifier,
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    NonConsensusError, ProtocolError,
-};
+use crate::{prelude::Identifier, state_transition::StateTransitionFieldTypes, ProtocolError};
 
 use crate::prelude::AssetLockProof;
-use crate::serialization::{PlatformDeserializable, Signable};
+
 use crate::state_transition::identity_topup_transition::fields::*;
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::StateTransitionValueConvert;
-use bincode::{config, Decode, Encode};
+
 use platform_version::version::PlatformVersion;
 
 impl<'a> StateTransitionValueConvert<'a> for IdentityTopUpTransitionV0 {
     fn from_object(
-        mut raw_object: Value,
-        platform_version: &PlatformVersion,
+        raw_object: Value,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let signature = raw_object
             .get_optional_binary_data(SIGNATURE)

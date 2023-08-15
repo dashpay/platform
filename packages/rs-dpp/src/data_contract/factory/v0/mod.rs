@@ -1,17 +1,10 @@
-use derive_more::From;
-use serde_json::Value as JsonValue;
-use std::collections::BTreeMap;
-use std::convert::TryInto;
-
-use platform_value::{Bytes32, Error, Value};
-use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
-
-use crate::data_contract::errors::InvalidDataContractError;
+use platform_value::{Bytes32, Value};
+use platform_version::TryFromPlatformVersioned;
 
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::data_contract::config::v0::DataContractConfigGettersV0;
+
 use crate::data_contract::config::DataContractConfig;
 #[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -21,24 +14,17 @@ use crate::data_contract::serialized_version::v0::DataContractInSerializationFor
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::DataContract;
 use crate::serialization::{
-    PlatformDeserializable, PlatformDeserializableFromVersionedStructure,
+    PlatformDeserializableFromVersionedStructure,
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
 };
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 #[cfg(feature = "state-transitions")]
-use crate::state_transition::data_contract_update_transition::{
-    DataContractUpdateTransition, DataContractUpdateTransitionV0,
-};
-#[cfg(feature = "state-transitions")]
-use crate::state_transition::StateTransitionType;
+use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
-use crate::version::{FeatureVersion, PlatformVersion, LATEST_PLATFORM_VERSION};
-use crate::{
-    data_contract::{self},
-    errors::ProtocolError,
-    prelude::Identifier,
-};
+use crate::version::PlatformVersion;
+use crate::{errors::ProtocolError, prelude::Identifier};
 
 /// The version 0 implementation of the data contract factory.
 ///
@@ -113,8 +99,8 @@ impl DataContractFactoryV0 {
     /// Create Data Contract from plain object
     pub fn create_from_object(
         &self,
-        mut data_contract_object: Value,
-        #[cfg(feature = "validation")] skip_validation: bool,
+        data_contract_object: Value,
+        #[cfg(feature = "validation")] _skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         // TODO: We validate Data Contract on creation.
         //   Should we disable it when flag is off?

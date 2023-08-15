@@ -14,7 +14,7 @@ use std::convert::TryInto;
 impl<'a> DocumentJsonMethodsV0<'a> for DocumentV0 {
     fn to_json_with_identifiers_using_bytes(
         &self,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<JsonValue, ProtocolError> {
         let mut value = json!({
             property_names::ID: self.id,
@@ -51,7 +51,7 @@ impl<'a> DocumentJsonMethodsV0<'a> for DocumentV0 {
         Ok(value)
     }
 
-    fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
+    fn to_json(&self, _platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
         self.to_object()
             .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
     }

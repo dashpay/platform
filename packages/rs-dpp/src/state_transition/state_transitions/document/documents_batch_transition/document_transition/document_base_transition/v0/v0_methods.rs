@@ -1,6 +1,5 @@
-use crate::data_contract::DataContract;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
+
 use platform_value::Identifier;
 
 /// A trait that contains getter and setter methods for `DocumentBaseTransitionV0`

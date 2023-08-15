@@ -1,7 +1,7 @@
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::document::Document;
 use crate::identity::Identity;
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
 use rand::prelude::StdRng;

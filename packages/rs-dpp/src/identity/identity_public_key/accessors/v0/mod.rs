@@ -1,8 +1,8 @@
 use crate::identity::identity_public_key::KeyID;
+use crate::identity::KeyType;
 use crate::identity::Purpose;
 use crate::identity::SecurityLevel;
 use crate::identity::TimestampMillis;
-use crate::identity::{IdentityPublicKey, KeyType};
 use platform_value::BinaryData;
 
 /// Trait for getters in IdentityPublicKeyV0

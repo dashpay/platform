@@ -2,15 +2,15 @@ mod v0;
 pub use v0::*;
 
 use crate::identity::signer::Signer;
-use crate::identity::{Identity, IdentityPublicKey, KeyID, PartialIdentity};
-use crate::prelude::{AssetLockProof, Revision, TimestampMillis};
+use crate::identity::{Identity, IdentityPublicKey, KeyID};
+
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
-use crate::{BlsModule, NonConsensusError, ProtocolError};
-use platform_value::{Bytes32, Identifier};
+use crate::ProtocolError;
+
 use platform_version::version::PlatformVersion;
 
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransition {

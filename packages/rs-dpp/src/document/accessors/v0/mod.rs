@@ -1,7 +1,6 @@
-use crate::document::Document;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use crate::identity::TimestampMillis;
 use crate::prelude::Identifier;
