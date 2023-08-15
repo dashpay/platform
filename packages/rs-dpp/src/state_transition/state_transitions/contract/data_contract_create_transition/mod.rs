@@ -180,11 +180,13 @@ mod test {
         let state_transition = DataContractCreateTransition::from_object(Value::from([
             (
                 STATE_TRANSITION_PROTOCOL_VERSION,
-                LATEST_PLATFORM_VERSION
+                Value::U16(LATEST_PLATFORM_VERSION
                     .drive_abci
                     .validation_and_processing
                     .state_transitions
-                    .contract_create_state_transition as u8,
+                    .contract_create_state_transition
+                    .structure
+                ),
             ),
             (
                 property_names::ENTROPY,
@@ -197,7 +199,7 @@ mod test {
                     .to_value(LATEST_PLATFORM_VERSION)
                     .unwrap(),
             ),
-        ]))
+        ]), LATEST_PLATFORM_VERSION)
         .expect("state transition should be created without errors");
 
         TestData {
@@ -234,9 +236,9 @@ mod test {
         let data_contract = DataContract::try_from_platform_versioned(
             data.state_transition
                 .data_contract()
-                .to_owned()
-                .expect("conversion to object shouldn't fail"),
+                .to_owned(),
             false,
+            LATEST_PLATFORM_VERSION,
         )
         .expect("to get data contract");
 

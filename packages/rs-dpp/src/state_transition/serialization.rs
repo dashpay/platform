@@ -216,6 +216,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "random-identities")]
     fn identity_credit_withdrawal_transition_ser_de() {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)
@@ -238,8 +239,9 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "random-identities")]
     fn data_contract_create_ser_de() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = LATEST_PLATFORM_VERSION;
         let identity = Identity::random_identity(5, Some(5), platform_version)
             .expect("expected a random identity");
         let created_data_contract = get_data_contract_fixture(Some(identity.id()), LATEST_PLATFORM_VERSION.protocol_version);
@@ -254,6 +256,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "random-identities")]
     fn data_contract_update_ser_de() {
         let platform_version = PlatformVersion::latest();
         let identity = Identity::random_identity(5, Some(5), platform_version)

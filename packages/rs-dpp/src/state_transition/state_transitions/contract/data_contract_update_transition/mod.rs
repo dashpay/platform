@@ -138,9 +138,11 @@ mod test {
                 STATE_TRANSITION_PROTOCOL_VERSION.to_string(),
                 Value::U16(
                     LATEST_PLATFORM_VERSION
+                        .drive_abci
+                        .validation_and_processing
                         .state_transitions
                         .contract_create_state_transition
-                        .default_current_version,
+                        .structure
                 ),
             ),
             (
