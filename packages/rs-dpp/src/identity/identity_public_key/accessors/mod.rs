@@ -67,50 +67,66 @@ impl IdentityPublicKeyGettersV0 for IdentityPublicKey {
 
 impl IdentityPublicKeySettersV0 for IdentityPublicKey {
     fn set_id(&mut self, id: KeyID) {
-        if let IdentityPublicKey::V0(v0) = self {
-            v0.set_id(id);
+        match self {
+            IdentityPublicKey::V0(v0) => {
+                v0.set_id(id);
+            }
         }
     }
 
     fn set_purpose(&mut self, purpose: Purpose) {
-        if let IdentityPublicKey::V0(v0) = self {
-            v0.set_purpose(purpose);
+        match self {
+            IdentityPublicKey::V0(v0) => {
+                v0.set_purpose(purpose);
+            }
         }
     }
 
     fn set_security_level(&mut self, security_level: SecurityLevel) {
-        if let IdentityPublicKey::V0(v0) = self {
-            v0.set_security_level(security_level);
+        match self {
+            IdentityPublicKey::V0(v0) => {
+                v0.set_security_level(security_level);
+            }
         }
     }
 
     fn set_key_type(&mut self, key_type: KeyType) {
-        if let IdentityPublicKey::V0(v0) = self {
-            v0.set_key_type(key_type);
+        match self {
+            IdentityPublicKey::V0(v0) => {
+                v0.set_key_type(key_type);
+            }
         }
     }
 
     fn set_read_only(&mut self, read_only: bool) {
-        if let IdentityPublicKey::V0(v0) = self {
-            v0.set_read_only(read_only);
+        match self {
+            IdentityPublicKey::V0(v0) => {
+                v0.set_read_only(read_only);
+            }
         }
     }
 
     fn set_data(&mut self, data: BinaryData) {
-        if let IdentityPublicKey::V0(v0) = self {
-            v0.set_data(data);
+        match self {
+            IdentityPublicKey::V0(v0) => {
+                v0.set_data(data);
+            }
         }
     }
 
     fn set_disabled_at(&mut self, timestamp_millis: u64) {
-        if let IdentityPublicKey::V0(v0) = self {
-            v0.set_disabled_at(timestamp_millis);
+        match self {
+            IdentityPublicKey::V0(v0) => {
+                v0.set_disabled_at(timestamp_millis);
+            }
         }
     }
 
     fn remove_disabled_at(&mut self) {
-        if let IdentityPublicKey::V0(v0) = self {
-            v0.remove_disabled_at();
+        match self {
+            IdentityPublicKey::V0(v0) => {
+                v0.remove_disabled_at();
+            }
         }
     }
 }

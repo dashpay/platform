@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::sync::Arc;
@@ -194,7 +194,7 @@ mod tests {
     use dpp::fee::fee_result::FeeResult;
     use dpp::prelude::Identifier;
     use dpp::tests::json_document::json_document_to_contract;
-    use dpp::version::drive_versions::DriveVersion;
+
     use dpp::version::PlatformVersion;
     use std::sync::Arc;
 
@@ -445,12 +445,12 @@ mod tests {
             .expect("got contract fetch info");
 
         // Remove fees to match with fetch with epoch provided
-        let mut deep_contract_fetch_info_transactional_without_arc =
+        let deep_contract_fetch_info_transactional_without_arc =
             Arc::make_mut(&mut deep_contract_fetch_info_transactional);
 
         deep_contract_fetch_info_transactional_without_arc.fee = None;
 
-        let mut ref_contract_fetch_info_transactional_without_arc =
+        let ref_contract_fetch_info_transactional_without_arc =
             Arc::make_mut(&mut ref_contract_fetch_info_transactional);
 
         ref_contract_fetch_info_transactional_without_arc.fee = None;
@@ -523,12 +523,12 @@ mod tests {
             .expect("got contract fetch info");
 
         // Remove fees to match with fetch with epoch provided
-        let mut deep_contract_fetch_info_transactional_without_arc =
+        let deep_contract_fetch_info_transactional_without_arc =
             Arc::make_mut(&mut deep_contract_fetch_info_transactional2);
 
         deep_contract_fetch_info_transactional_without_arc.fee = None;
 
-        let mut ref_contract_fetch_info_transactional_without_arc =
+        let ref_contract_fetch_info_transactional_without_arc =
             Arc::make_mut(&mut ref_contract_fetch_info_transactional2);
 
         ref_contract_fetch_info_transactional_without_arc.fee = None;

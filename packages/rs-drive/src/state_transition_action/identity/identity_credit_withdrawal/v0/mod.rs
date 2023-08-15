@@ -1,6 +1,6 @@
 mod transformer;
 
-use dpp::document::{generate_document_id, Document, DocumentV0};
+use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::prelude::Revision;
 

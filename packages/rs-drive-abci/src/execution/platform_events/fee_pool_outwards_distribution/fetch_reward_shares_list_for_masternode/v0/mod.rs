@@ -18,7 +18,7 @@ use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
 use dpp::version::PlatformVersion;
-use drive::drive::document::query::{QueryDocumentsOutcome, QueryDocumentsOutcomeV0Methods};
+use drive::drive::document::query::{QueryDocumentsOutcomeV0Methods};
 use std::collections::BTreeMap;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use crate::execution::platform_events::fee_pool_outwards_distribution::fetch_reward_shares_list_for_masternode::MN_REWARD_SHARES_DOCUMENT_TYPE;
@@ -62,7 +62,7 @@ impl<C> Platform<C> {
             block_time_ms: None,
         };
 
-        let queryDocumentsOutcome = self.drive.query_documents(
+        let query_documents_outcome = self.drive.query_documents(
             drive_query,
             None,
             false,
@@ -70,6 +70,6 @@ impl<C> Platform<C> {
             Some(platform_version.protocol_version),
         )?;
 
-        Ok(queryDocumentsOutcome.documents().to_owned())
+        Ok(query_documents_outcome.documents().to_owned())
     }
 }

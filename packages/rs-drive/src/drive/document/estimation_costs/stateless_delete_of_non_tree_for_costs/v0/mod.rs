@@ -1,21 +1,13 @@
-use crate::drive::defaults::{
-    AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
-    CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_FLOAT_SIZE, DEFAULT_FLOAT_SIZE_U8,
-    DEFAULT_HASH_SIZE_U8,
-};
-use crate::drive::document::contract_documents_keeping_history_primary_key_path_for_document_id;
-use crate::drive::flags::StorageFlags;
+use crate::drive::defaults::CONTRACT_DOCUMENTS_PATH_HEIGHT;
+
 use crate::drive::grove_operations::{BatchDeleteUpTreeApplyType, IsSubTree, IsSumSubTree};
 
-use crate::drive::object_size_info::DocumentAndContractInfo;
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
-use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
-use grovedb::EstimatedSumTrees::NoSumTrees;
+
 use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes};
 use intmap::IntMap;
 use itertools::Itertools;

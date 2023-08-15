@@ -5,7 +5,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::fee::fee_result::FeeResult;
-use dpp::identifier::Identifier;
+
 use dpp::identity::PartialIdentity;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;

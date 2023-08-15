@@ -2,7 +2,7 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
-use dpp::ProtocolError;
+
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use dpp::version::PlatformVersion;
@@ -11,10 +11,10 @@ use crate::execution::validation::state_transition::documents_batch::data_trigge
 use crate::error::Error;
 
 pub trait DataTriggerExecutor {
-    fn validate_with_data_triggers<'a>(
+    fn validate_with_data_triggers(
         &self,
         data_trigger_bindings: &Vec<DataTriggerBinding>,
-        context: &DataTriggerExecutionContext<'a>,
+        context: &DataTriggerExecutionContext<'_>,
         platform_version: &PlatformVersion,
     ) -> Result<DataTriggerExecutionResult, Error>;
 }

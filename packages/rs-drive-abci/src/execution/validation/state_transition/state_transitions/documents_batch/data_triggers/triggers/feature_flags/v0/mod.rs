@@ -12,7 +12,6 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use dpp::system_data_contracts::feature_flags_contract;
 use dpp::system_data_contracts::feature_flags_contract::document_types::update_consensus_params::properties::PROPERTY_ENABLE_AT_HEIGHT;
 use dpp::version::PlatformVersion;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -90,21 +89,6 @@ pub fn create_feature_flag_data_trigger_v0(
 
 #[cfg(test)]
 mod test {
-    use super::create_feature_flag_data_trigger_v0;
-    use crate::platform_types::platform::PlatformStateRef;
-    use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use std::sync::Arc;
-
-    use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionContext;
-    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
-    use dpp::tests::fixtures::get_data_contract_fixture;
-    use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
-    use drive::drive::contract::DataContractFetchInfo;
-    use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
-    use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionV0};
-    use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
-    use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 
     //todo: Ivan look at this!
     // #[test]

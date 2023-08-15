@@ -10,10 +10,10 @@ use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
 use dpp::serialization::Signable;
-use dpp::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
+use dpp::state_transition::{StateTransition};
 use drive::state_transition_action::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
-use dpp::version::{DefaultForPlatformVersion, PlatformVersion, TryIntoPlatformVersioned};
+use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
@@ -283,10 +283,9 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                         let mut validation_result =
                             ConsensusValidationResult::<Option<PartialIdentity>>::default();
                         let signable_bytes: Vec<u8> = self.signable_bytes()?;
-                        let mut result = st
-                            .validate_identity_create_state_transition_signatures_v0(
-                                signable_bytes,
-                            )?;
+                        let result = st.validate_identity_create_state_transition_signatures_v0(
+                            signable_bytes,
+                        )?;
                         validation_result.merge(result);
                         validation_result.set_data(None);
                         Ok(validation_result)

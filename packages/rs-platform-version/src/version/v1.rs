@@ -416,6 +416,8 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             platform_state_structure: 0,
             platform_state_for_saving_structure: 0,
             state_transition_execution_context: 0,
+            commit: 0,
+            masternode: 0,
         },
         methods: DriveAbciMethodVersions {
             engine: DriveAbciEngineMethodVersions {

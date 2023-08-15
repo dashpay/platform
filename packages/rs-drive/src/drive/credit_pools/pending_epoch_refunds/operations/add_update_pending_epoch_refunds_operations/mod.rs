@@ -1,13 +1,12 @@
 mod v0;
 
-use crate::drive::batch::{DriveOperation, GroveDbOpBatch};
-use crate::drive::credit_pools::pending_epoch_refunds::pending_epoch_refunds_path_vec;
+use crate::drive::batch::DriveOperation;
+
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::fee::epoch::CreditsPerEpoch;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::Element;
 
 impl Drive {
     /// Adds GroveDB batch operations to update pending epoch storage pool updates

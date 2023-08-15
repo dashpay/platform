@@ -2,7 +2,6 @@ pub(crate) mod identity_and_signatures;
 mod state;
 mod structure;
 
-use dpp::identity::PartialIdentity;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -13,16 +12,14 @@ use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
-use crate::execution::validation::state_transition::identity_update::identity_and_signatures::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::identity_update::state::v0::IdentityUpdateStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::identity_update::structure::v0::IdentityUpdateStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionSignatureValidationV0, StateTransitionStateValidationV0,
-    StateTransitionStructureValidationV0,
+    StateTransitionStateValidationV0, StateTransitionStructureValidationV0,
 };
 
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;

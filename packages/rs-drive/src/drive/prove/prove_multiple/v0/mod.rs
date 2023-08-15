@@ -3,7 +3,7 @@ use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, TransactionArg};
 

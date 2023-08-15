@@ -124,16 +124,6 @@ impl ExtendedDocument {
         }
     }
 
-    /// Create an extended document from a CBOR buffer.
-    ///
-    /// This function is a passthrough to the `from_cbor_buffer` method.
-    #[cfg(feature = "document-cbor-conversion")]
-    pub fn from_cbor_buffer(cbor_bytes: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
-        Ok(ExtendedDocument::V0(ExtendedDocumentV0::from_cbor_buffer(
-            cbor_bytes,
-        )?))
-    }
-
     /// Convert the extended document to a BTreeMap of string keys and Value instances.
     ///
     /// This function is a passthrough to the `to_map_value` method.
@@ -184,23 +174,12 @@ impl ExtendedDocument {
         }
     }
 
-    /// Convert the extended document to a CBOR buffer.
-    ///
-    /// This function is a passthrough to the `to_cbor_buffer` method.
-    #[cfg(feature = "document-cbor-conversion")]
-    pub fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        match self {
-            ExtendedDocument::V0(v0) => v0.to_cbor_buffer(),
-        }
-    }
-
     /// Calculate the hash of the extended document.
     ///
     /// This function is a passthrough to the `hash` method.
-    #[cfg(feature = "cbor")]
-    pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
+    pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
         match self {
-            ExtendedDocument::V0(v0) => v0.hash(),
+            ExtendedDocument::V0(v0) => v0.hash(platform_version),
         }
     }
 

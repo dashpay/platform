@@ -122,11 +122,13 @@ pub(super) fn derive_platform_serialize_struct(
     let expanded = quote! {
         impl #impl_generics #crate_name::serialization::PlatformSerializableWithPlatformVersion for #name #ty_generics #where_clause
         {
-            fn serialize_with_platform_version(&self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, #error_type> {
+            type Error = #error_type;
+
+            fn serialize_with_platform_version(&self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, Self::Error> {
                 #serialize_into
             }
 
-            fn serialize_consume_with_platform_version(self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, #error_type> {
+            fn serialize_consume_with_platform_version(self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, Self::Error> {
                 #serialize_into_consume
             }
         }

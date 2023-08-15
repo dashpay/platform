@@ -9,13 +9,13 @@ use dpp::consensus::ConsensusError;
 
 use crate::error::Error;
 use dpp::identifier::Identifier;
-use dpp::platform_value::Value;
+
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
-use dpp::state_transition::StateTransitionLike;
+
 use dpp::validation::{SimpleConsensusValidationResult, ValidationResult};
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -70,7 +70,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
 
         let mut result = ValidationResult::default();
 
-        for (data_contract_id, transitions) in document_transitions_by_contracts {
+        for (data_contract_id, _transitions) in document_transitions_by_contracts {
             // We will be adding to block cache, contracts that are pulled
             // This block cache only gets merged to the main cache if the block is finalized
             let Some(contract_fetch_info) =
@@ -90,7 +90,7 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
                     return Ok(result);
                 };
 
-            let existing_data_contract = &contract_fetch_info.contract;
+            let _existing_data_contract = &contract_fetch_info.contract;
 
             //todo document structure validation
             // let transitions_as_objects: Vec<Value> = transitions

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+
 use dpp::document::Document;
 use dpp::platform_value::Value;
 use dpp::system_data_contracts::withdrawals_contract;
@@ -9,7 +9,6 @@ use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use indexmap::IndexMap;
-use lazy_static::__Deref;
 
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::{

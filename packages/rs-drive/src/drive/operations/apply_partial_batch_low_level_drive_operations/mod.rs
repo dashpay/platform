@@ -4,7 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::op::LowLevelDriveOperation::GroveOperation;
+
 use crate::query::GroveError;
 use costs::OperationCost;
 use dpp::version::drive_versions::DriveVersion;
@@ -31,6 +31,7 @@ impl Drive {
     ///
     /// * `Result<(), Error>` - On success, returns `Ok(())`. On error, returns an `Error`.
     ///
+    #[allow(dead_code)]
     pub(crate) fn apply_partial_batch_low_level_drive_operations(
         &self,
         estimated_costs_only_with_layer_info: Option<

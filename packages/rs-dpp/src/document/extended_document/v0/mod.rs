@@ -15,7 +15,7 @@ use crate::serialization::{PlatformDeserializable, ValueConvertible};
 use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
 
-#[cfg(feature = "cbor")]
+#[cfg(feature = "document-cbor-conversion")]
 use crate::document::serialization_traits::DocumentCborMethodsV0;
 use platform_value::btreemap_extensions::{
     BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
@@ -42,36 +42,72 @@ use serde_json::Value as JsonValue;
 
 /// The `ExtendedDocumentV0` struct represents the data provided by the platform in response to a query.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "document-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    all(
+        feature = "document-serde-conversion",
+        feature = "data-contract-serde-conversion"
+    ),
+    derive(Serialize, Deserialize)
+)]
 pub struct ExtendedDocumentV0 {
     /// The document type name, stored as a string.
-    #[cfg_attr(feature = "document-serde-conversion", serde(rename = "$type"))]
+    #[cfg_attr(
+        all(
+            feature = "document-serde-conversion",
+            feature = "data-contract-serde-conversion"
+        ),
+        serde(rename = "$type")
+    )]
     pub document_type_name: String,
 
     /// The identifier of the associated data contract.
     #[cfg_attr(
-        feature = "document-serde-conversion",
+        all(
+            feature = "document-serde-conversion",
+            feature = "data-contract-serde-conversion"
+        ),
         serde(rename = "$dataContractId")
     )]
     pub data_contract_id: Identifier,
 
     /// The actual document object containing the data.
-    #[cfg_attr(feature = "document-serde-conversion", serde(flatten))]
+    #[cfg_attr(
+        all(
+            feature = "document-serde-conversion",
+            feature = "data-contract-serde-conversion"
+        ),
+        serde(flatten)
+    )]
     pub document: Document,
 
     /// The data contract associated with the document.
-    #[cfg_attr(feature = "document-serde-conversion", serde(rename = "$dataContract"))]
+    #[cfg_attr(
+        all(
+            feature = "document-serde-conversion",
+            feature = "data-contract-serde-conversion"
+        ),
+        serde(rename = "$dataContract")
+    )]
     pub data_contract: DataContract,
 
     /// An optional field for metadata associated with the document.
     #[cfg_attr(
-        feature = "document-serde-conversion",
+        all(
+            feature = "document-serde-conversion",
+            feature = "data-contract-serde-conversion"
+        ),
         serde(rename = "$metadata", default)
     )]
     pub metadata: Option<Metadata>,
 
     /// A field representing the entropy, stored as `Bytes32`.
-    #[cfg_attr(feature = "document-serde-conversion", serde(rename = "$entropy"))]
+    #[cfg_attr(
+        all(
+            feature = "document-serde-conversion",
+            feature = "data-contract-serde-conversion"
+        ),
+        serde(rename = "$entropy")
+    )]
     pub entropy: Bytes32,
 }
 
@@ -366,7 +402,9 @@ impl ExtendedDocumentV0 {
     }
 
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(self.serialize(platform_version)?))
+        Ok(hash_to_vec(
+            ExtendedDocumentPlatformConversionMethodsV0::serialize(self, platform_version)?,
+        ))
     }
 
     /// Set the value under given path.

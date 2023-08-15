@@ -2,7 +2,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::DataContract;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
@@ -89,15 +89,12 @@ mod tests {
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-    use dpp::data_contract::config::v0::{
-        DataContractConfigGettersV0, DataContractConfigSettersV0,
-    };
+    use dpp::data_contract::config::v0::DataContractConfigSettersV0;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::{DataContract, DataContractMethodsV0};
     use dpp::platform_value::{platform_value, ValueMapHelper};
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::PlatformVersion;
-    use serde_json::json;
 
     struct TestData {
         data_contract: DataContract,

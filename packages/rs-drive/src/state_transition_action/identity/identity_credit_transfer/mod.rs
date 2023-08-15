@@ -4,7 +4,7 @@ pub mod v0;
 use crate::state_transition_action::identity::identity_credit_transfer::v0::IdentityCreditTransferTransitionActionV0;
 use derive_more::From;
 use dpp::fee::Credits;
-use dpp::platform_value::{Bytes36, Identifier};
+use dpp::platform_value::Identifier;
 
 #[derive(Debug, Clone, From)]
 pub enum IdentityCreditTransferTransitionAction {

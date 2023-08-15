@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use dashcore_rpc::dashcore::{
     blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo,
     hashes::Hash, QuorumHash,
@@ -22,7 +20,7 @@ use drive::grovedb::Transaction;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
-use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
+use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,

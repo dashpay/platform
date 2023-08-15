@@ -1,6 +1,5 @@
 use dpp::block::block_info::BlockInfo;
 
-use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -15,11 +14,11 @@ use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
 };
 use dpp::identity::{IdentityPublicKey, KeyID};
-use dpp::prelude::{Revision, TimestampMillis};
-use dpp::version::drive_versions::DriveVersion;
+use dpp::prelude::TimestampMillis;
+
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
 
@@ -64,7 +63,7 @@ impl Drive {
             None,
             Some(drive_operations),
             &block_info.epoch,
-            &platform_version,
+            platform_version,
         )?;
 
         Ok(fees)

@@ -18,24 +18,21 @@ use dpp::state_transition::identity_create_transition::accessors::IdentityCreate
 use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
-use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+
 use dpp::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
-use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::state_transition::{
-    GetDataContractSecurityLevelRequirementFn, StateTransition, StateTransitionIdentitySigned,
-    StateTransitionType,
-};
+use dpp::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTransition};
 use dpp::util::vec::hex_to_array;
-use dpp::version::{PlatformVersion, LATEST_VERSION};
+use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
 use dpp::NativeBlsModule;
 use drive_abci::test::helpers::signer::SimpleSigner;
 use rand::prelude::{IteratorRandom, StdRng};
-use rand::Rng;
+
 use std::collections::HashSet;
 use std::str::FromStr;
 
@@ -121,7 +118,7 @@ pub fn create_identity_top_up_transition(
         identity.clone(),
         asset_lock_proof,
         secret_key.as_ref(),
-        &NativeBlsModule::default(),
+        &NativeBlsModule,
         platform_version,
         None,
     )
@@ -265,7 +262,7 @@ pub fn create_identity_withdrawal_transition(
         )
         .expect("expected to sign withdrawal");
 
-    withdrawal.into()
+    withdrawal
 }
 
 pub fn create_identity_credit_transfer_transition(
@@ -299,7 +296,7 @@ pub fn create_identity_credit_transfer_transition(
         )
         .expect("expected to sign transfer");
 
-    transition.into()
+    transition
 }
 
 pub fn create_identities_state_transitions(
@@ -333,13 +330,13 @@ pub fn create_identities_state_transitions(
                     asset_lock_proof,
                     pk.as_slice(),
                     signer,
-                    &NativeBlsModule::default(),
+                    &NativeBlsModule,
                     platform_version,
                 )
                 .expect("expected to transform identity into identity create transition");
             identity.set_id(identity_create_transition.owner_id());
 
-            (identity, identity_create_transition.into())
+            (identity, identity_create_transition)
         })
         .collect()
 }

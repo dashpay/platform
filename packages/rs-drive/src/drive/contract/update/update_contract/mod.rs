@@ -1,22 +1,17 @@
 mod v0;
 
-use crate::drive::flags::StorageFlags;
-use crate::drive::grove_operations::BatchInsertTreeApplyType;
-use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKeyRef;
-use crate::drive::{contract_documents_path, Drive};
+use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
-use dpp::serialization::PlatformSerializable;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 impl Drive {
     /// Updates a data contract.
@@ -192,69 +187,6 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "update_contract_add_operations".to_string(),
-                known_versions: vec![0],
-                received: version,
-            })),
-        }
-    }
-
-    /// Updates operations for a contract.
-    ///
-    /// This function updates the operations for a given contract. The version of
-    /// the contract operations update method is determined by the drive version.
-    ///
-    /// # Arguments
-    ///
-    /// * `contract_element` - The `Element` to be operated on in the contract.
-    /// * `contract` - A reference to the `Contract` containing the operations to be updated.
-    /// * `original_contract` - A reference to the original `Contract` before updates.
-    /// * `block_info` - A `BlockInfo` object containing information about the block where
-    ///   the contract is being updated.
-    /// * `estimated_costs_only_with_layer_info` - A mutable reference to an `Option` of a `HashMap`
-    ///   containing estimated layer information. If provided (`Some`), only the estimated costs will be updated.
-    /// * `transaction` - A `TransactionArg` object representing the transaction to be used
-    ///   for updating the contract.
-    /// * `drive_version` - The `DriveVersion` to determine which version of contract operations update to use.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Vec<LowLevelDriveOperation>, Error>` - If successful, returns a `Vec<LowLevelDriveOperation>`. If an error occurs during the contract operations update,
-    ///   returns an `Error`.
-    ///
-    /// # Errors
-    ///
-    /// This function returns an error if the contract operations update fails, or if
-    /// the provided drive version does not match any known versions.
-    pub(crate) fn update_contract_operations(
-        &self,
-        contract_element: Element,
-        contract: &DataContract,
-        original_contract: &DataContract,
-        block_info: &BlockInfo,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        match platform_version
-            .drive
-            .methods
-            .contract
-            .update
-            .update_contract
-        {
-            0 => self.update_contract_operations_v0(
-                contract_element,
-                contract,
-                original_contract,
-                block_info,
-                estimated_costs_only_with_layer_info,
-                transaction,
-                platform_version,
-            ),
-            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "update_contract_operations".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

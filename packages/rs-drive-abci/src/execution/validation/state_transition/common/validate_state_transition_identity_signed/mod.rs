@@ -1,11 +1,11 @@
 use std::sync::Arc;
-use dpp::data_contract::DataContract;
+
 use dpp::identifier::Identifier;
 use dpp::identity::PartialIdentity;
 use dpp::ProtocolError;
 use dpp::state_transition::StateTransition;
 use dpp::validation::ConsensusValidationResult;
-use dpp::version::{FeatureVersion, PlatformVersion};
+use dpp::version::{PlatformVersion};
 use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;

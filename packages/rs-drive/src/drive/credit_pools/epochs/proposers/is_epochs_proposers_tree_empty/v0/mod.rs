@@ -1,5 +1,4 @@
-use grovedb::query_result_type::QueryResultType::QueryKeyElementPairResultType;
-use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::TransactionArg;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;

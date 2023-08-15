@@ -1,5 +1,4 @@
 use crate::serialization::ValueConvertible;
-use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;
 

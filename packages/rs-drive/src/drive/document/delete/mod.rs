@@ -83,52 +83,6 @@ mod delete_document_for_contract_operations;
 pub use delete_document_for_contract_operations::*;
 
 mod internal;
-use internal::*;
-
-use grovedb::batch::key_info::KeyInfo::KnownKey;
-use grovedb::batch::KeyInfoPath;
-
-use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
-use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-
-use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
-
-use grovedb::EstimatedSumTrees::NoSumTrees;
-use std::collections::HashMap;
-
-use crate::drive::defaults::{
-    AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
-    CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8,
-};
-use crate::drive::document::{
-    contract_document_type_path_vec, contract_documents_primary_key_path, document_reference_size,
-    unique_event_id,
-};
-use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DocumentInfo::{
-    DocumentEstimatedAverageSize, DocumentOwnedInfo,
-};
-use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::DataContract;
-use dpp::document::Document;
-
-use crate::drive::grove_operations::BatchDeleteApplyType::{
-    StatefulBatchDelete, StatelessBatchDelete,
-};
-use crate::drive::grove_operations::DirectQueryType;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo, PathInfo};
-use crate::drive::Drive;
-use crate::error::document::DocumentError;
-use crate::error::drive::DriveError;
-use crate::error::fee::FeeError;
-use crate::error::Error;
-use crate::fee::op::LowLevelDriveOperation;
-
-use dpp::block::epoch::Epoch;
-use dpp::fee::fee_result::FeeResult;
 
 #[cfg(feature = "full")]
 #[cfg(test)]
@@ -136,31 +90,28 @@ mod tests {
     use dpp::balances::credits::Creditable;
     use dpp::block::block_info::BlockInfo;
     use rand::Rng;
-    use serde_json::json;
+
     use std::borrow::Cow;
     use std::option::Option::None;
     use tempfile::TempDir;
 
-    use super::*;
-    use crate::common::{cbor_from_hex, setup_contract};
+    use crate::common::setup_contract;
     use crate::drive::config::DriveConfig;
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
 
     use crate::query::DriveQuery;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::document::serialization_traits::{
-        DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
-    };
-    use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use dpp::document::Document;
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
-    use dpp::util::cbor_serializer;
+
     use dpp::version::PlatformVersion;
 
     #[test]
@@ -170,7 +121,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -210,7 +161,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -245,7 +196,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to be able to delete the document");
 
@@ -265,7 +216,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -348,7 +299,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to be able to delete the document");
 
@@ -386,7 +337,7 @@ mod tests {
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
             document_type,
-            &platform_version,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -406,7 +357,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -426,7 +377,7 @@ mod tests {
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
             document_type,
-            &platform_version,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -446,7 +397,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -460,7 +411,7 @@ mod tests {
             "tests/supporting_files/contract/family/person1.json",
             Some(random_owner_id0.into()),
             document_type,
-            &platform_version,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -480,7 +431,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -518,7 +469,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to be able to delete the document");
 
@@ -556,7 +507,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to be able to delete the document");
 
@@ -587,7 +538,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -607,7 +558,7 @@ mod tests {
             "tests/supporting_files/contract/family/person0.json",
             Some(random_owner_id0.into()),
             document_type,
-            &platform_version,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -627,7 +578,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -637,7 +588,7 @@ mod tests {
             "tests/supporting_files/contract/family/person2-no-middle-name.json",
             Some(random_owner_id0.into()),
             document_type,
-            &platform_version,
+            platform_version,
         )
         .expect("expected to get document");
 
@@ -657,7 +608,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -695,7 +646,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to be able to delete the document");
 
@@ -725,7 +676,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -747,7 +698,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to be able to delete the document");
 
@@ -766,7 +717,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to be able to delete the document");
 
@@ -823,7 +774,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -842,7 +793,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 None,
-                &platform_version,
+                platform_version,
             )
             .expect("expected to be able to delete the document");
     }
@@ -856,7 +807,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -899,7 +850,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 
@@ -932,7 +883,7 @@ mod tests {
 
         let removed_credits = fee_result
             .fee_refunds
-            .get(&random_owner_id.into())
+            .get(&random_owner_id)
             .unwrap()
             .get(&0)
             .unwrap();
@@ -956,7 +907,7 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(Some(&db_transaction), &platform_version)
+            .create_initial_state_structure(Some(&db_transaction), platform_version)
             .expect("expected to create root tree successfully");
 
         let contract = setup_contract(
@@ -999,7 +950,7 @@ mod tests {
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
-                &platform_version,
+                platform_version,
             )
             .expect("expected to insert a document successfully");
 

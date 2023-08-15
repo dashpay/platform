@@ -69,50 +69,66 @@ impl BlockStateInfoV0Getters for BlockStateInfo {
 
 impl BlockStateInfoV0Setters for BlockStateInfo {
     fn set_height(&mut self, height: u64) {
-        if let BlockStateInfo::V0(v0) = self {
-            v0.set_height(height);
+        match self {
+            BlockStateInfo::V0(v0) => {
+                v0.set_height(height);
+            }
         }
     }
 
     fn set_round(&mut self, round: u32) {
-        if let BlockStateInfo::V0(v0) = self {
-            v0.set_round(round);
+        match self {
+            BlockStateInfo::V0(v0) => {
+                v0.set_round(round);
+            }
         }
     }
 
     fn set_block_time_ms(&mut self, block_time_ms: u64) {
-        if let BlockStateInfo::V0(v0) = self {
-            v0.set_block_time_ms(block_time_ms);
+        match self {
+            BlockStateInfo::V0(v0) => {
+                v0.set_block_time_ms(block_time_ms);
+            }
         }
     }
 
     fn set_previous_block_time_ms(&mut self, previous_block_time_ms: Option<u64>) {
-        if let BlockStateInfo::V0(v0) = self {
-            v0.set_previous_block_time_ms(previous_block_time_ms);
+        match self {
+            BlockStateInfo::V0(v0) => {
+                v0.set_previous_block_time_ms(previous_block_time_ms);
+            }
         }
     }
 
     fn set_proposer_pro_tx_hash(&mut self, proposer_pro_tx_hash: [u8; 32]) {
-        if let BlockStateInfo::V0(v0) = self {
-            v0.set_proposer_pro_tx_hash(proposer_pro_tx_hash);
+        match self {
+            BlockStateInfo::V0(v0) => {
+                v0.set_proposer_pro_tx_hash(proposer_pro_tx_hash);
+            }
         }
     }
 
     fn set_core_chain_locked_height(&mut self, core_chain_locked_height: u32) {
-        if let BlockStateInfo::V0(v0) = self {
-            v0.set_core_chain_locked_height(core_chain_locked_height);
+        match self {
+            BlockStateInfo::V0(v0) => {
+                v0.set_core_chain_locked_height(core_chain_locked_height);
+            }
         }
     }
 
     fn set_block_hash(&mut self, block_hash: Option<[u8; 32]>) {
-        if let BlockStateInfo::V0(v0) = self {
-            v0.set_block_hash(block_hash);
+        match self {
+            BlockStateInfo::V0(v0) => {
+                v0.set_block_hash(block_hash);
+            }
         }
     }
 
     fn set_app_hash(&mut self, app_hash: Option<[u8; 32]>) {
-        if let BlockStateInfo::V0(v0) = self {
-            v0.set_app_hash(app_hash);
+        match self {
+            BlockStateInfo::V0(v0) => {
+                v0.set_app_hash(app_hash);
+            }
         }
     }
 }

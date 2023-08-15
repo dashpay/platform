@@ -1,6 +1,6 @@
-use std::sync::Arc;
 use dpp::platform_value::Identifier;
-use dpp::data_contract::DataContract;
+use std::sync::Arc;
+
 use dpp::ProtocolError;
 use dpp::state_transition::documents_batch_transition::document_transition::document_delete_transition::DocumentDeleteTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;

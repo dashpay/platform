@@ -2,12 +2,11 @@ mod v0;
 
 use crate::drive::verify::RootHash;
 use crate::error::drive::DriveError;
-use crate::error::proof::ProofError;
+
 use crate::error::Error;
 use crate::query::DriveQuery;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
-use grovedb::{GroveDb, PathQuery};
 
 impl<'a> DriveQuery<'a> {
     /// Verifies if a document exists at the beginning of a proof,

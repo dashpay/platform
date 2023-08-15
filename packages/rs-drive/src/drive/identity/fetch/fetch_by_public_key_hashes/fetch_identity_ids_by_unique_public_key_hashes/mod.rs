@@ -3,11 +3,10 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::{drive::DriveError, Error};
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 
 impl Drive {
     /// Fetches identity ids from storage based on unique public key hashes.

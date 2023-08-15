@@ -16,7 +16,7 @@ use crate::execution::types::state_transition_execution_context::{
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::DataContract;
+
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::state_transition::documents_batch_transition::get_security_level_requirement;
@@ -188,7 +188,7 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
         //     return Ok(validation_result);
         // }
 
-        let signature_is_valid = self.verify_signature(public_key, &NativeBlsModule::default());
+        let signature_is_valid = self.verify_signature(public_key, &NativeBlsModule);
 
         if let Err(err) = signature_is_valid {
             let consensus_error = convert_to_consensus_signature_error(err)?;

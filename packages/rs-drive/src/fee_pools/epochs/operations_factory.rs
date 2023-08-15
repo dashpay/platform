@@ -307,7 +307,6 @@ mod tests {
 
     mod increment_proposer_block_count_operation {
         use super::*;
-        use dpp::platform_value::platform_value;
 
         #[test]
         fn test_increment_block_count_to_1_if_proposers_tree_is_not_committed() {

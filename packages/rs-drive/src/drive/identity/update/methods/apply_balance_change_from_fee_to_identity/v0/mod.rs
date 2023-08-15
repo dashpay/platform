@@ -1,8 +1,5 @@
-use crate::drive::identity::update::add_to_previous_balance_outcome;
 use crate::drive::identity::update::add_to_previous_balance_outcome::AddToPreviousBalanceOutcomeV0;
-use crate::drive::identity::update::add_to_previous_balance_outcome::{
-    AddToPreviousBalanceOutcome, AddToPreviousBalanceOutcomeV0Methods,
-};
+use crate::drive::identity::update::add_to_previous_balance_outcome::AddToPreviousBalanceOutcomeV0Methods;
 use crate::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcome;
 use crate::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0;
 use crate::drive::Drive;
@@ -12,7 +9,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::consensus::ConsensusError;
 use dpp::fee::fee_result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
@@ -59,7 +56,7 @@ impl Drive {
     ) -> Result<(Vec<LowLevelDriveOperation>, FeeResult), Error> {
         let mut drive_operations = vec![];
 
-        let drive_version = &platform_version.drive;
+        let _drive_version = &platform_version.drive;
 
         if matches!(balance_change.change(), BalanceChange::NoBalanceChange) {
             return Ok((drive_operations, balance_change.into_fee_result()));

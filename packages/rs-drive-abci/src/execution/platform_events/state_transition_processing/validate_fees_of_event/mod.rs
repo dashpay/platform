@@ -4,14 +4,13 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::PlatformState;
+
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use drive::grovedb::{Transaction, TransactionArg};
-use tenderdash_abci::proto::abci::ExecTxResult;
+use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C>
 where

@@ -1,17 +1,13 @@
 mod v0;
 
-use crate::drive::contract::paths::all_contracts_global_root_path;
-use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
-use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
+
 use grovedb::EstimatedLayerInformation;
-use grovedb::EstimatedLayerSizes::AllSubtrees;
-use grovedb::EstimatedSumTrees::NoSumTrees;
+
 use std::collections::HashMap;
 
 impl Drive {
@@ -31,9 +27,12 @@ impl Drive {
             .estimated_costs
             .add_estimation_costs_for_levels_up_to_contract
         {
-            0 => Ok(Self::add_estimation_costs_for_levels_up_to_contract_v0(
-                estimated_costs_only_with_layer_info,
-            )),
+            0 => {
+                Self::add_estimation_costs_for_levels_up_to_contract_v0(
+                    estimated_costs_only_with_layer_info,
+                );
+                Ok(())
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_levels_up_to_contract".to_string(),
                 known_versions: vec![0],

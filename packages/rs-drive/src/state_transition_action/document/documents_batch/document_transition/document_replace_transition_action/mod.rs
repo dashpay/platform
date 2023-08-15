@@ -1,9 +1,9 @@
 mod v0;
 
 use std::collections::BTreeMap;
-use bincode::{Decode, Encode};
+
 use derive_more::From;
-use serde::{Deserialize, Serialize};
+
 use dpp::platform_value::{Identifier, Value};
 pub use v0::*;
 use dpp::document::Document;

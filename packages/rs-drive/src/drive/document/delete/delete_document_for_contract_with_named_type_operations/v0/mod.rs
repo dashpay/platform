@@ -1,29 +1,18 @@
-use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{EstimatedLayerInformation, TransactionArg};
 
-use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
-
-use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 use dpp::data_contract::DataContract;
 
-use crate::drive::grove_operations::DirectQueryType;
-use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
-use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo, PathInfo};
 use crate::drive::Drive;
-use crate::error::document::DocumentError;
-use crate::error::drive::DriveError;
-use crate::error::fee::FeeError;
+
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
-use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::fee::fee_result::FeeResult;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 
 impl Drive {

@@ -37,11 +37,11 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::drive::identity::add_initial_withdrawal_state_structure_operations;
 use crate::drive::protocol_upgrade::add_initial_fork_update_structure_operations;
-use crate::drive::system::{misc_path, misc_path_vec};
+use crate::drive::system::misc_path_vec;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::fee_pools::add_create_fee_pool_trees_operations;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use integer_encoding::VarInt;
@@ -195,7 +195,7 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::drive::{Drive, RootTree};
-    use dpp::version::drive_versions::DriveVersion;
+
     use dpp::version::PlatformVersion;
     use grovedb::query_result_type::QueryResultType::QueryElementResultType;
     use grovedb::{PathQuery, Query, SizedQuery};
@@ -206,10 +206,10 @@ mod tests {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("should open Drive successfully");
 
-        let db_transaction = drive.grove.start_transaction();
+        let _db_transaction = drive.grove.start_transaction();
         let platform_version = PlatformVersion::latest();
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create structure");
         let mut query = Query::new();
         query.insert_all();
@@ -241,7 +241,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let drive_version = &platform_version.drive;
         drive
-            .create_initial_state_structure(None, &platform_version)
+            .create_initial_state_structure(None, platform_version)
             .expect("expected to create structure");
 
         // Merk Level 0
@@ -262,7 +262,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 110); //it + left + right
@@ -285,7 +285,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 179); //it + left + right + parent + parent other
@@ -307,7 +307,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 180); //it + left + right + parent + parent other
@@ -330,7 +330,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 247);
@@ -353,7 +353,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 183); //it + parent + sibling + parent sibling + grandparent
@@ -375,7 +375,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 215); //it + left + parent + sibling + parent sibling + grandparent
@@ -397,7 +397,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 215); //it + right + parent + sibling + parent sibling + grandparent
@@ -421,7 +421,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 247);
@@ -445,7 +445,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 247);
@@ -467,7 +467,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 213);
@@ -489,7 +489,7 @@ mod tests {
                 false,
                 None,
                 &mut drive_operations,
-                &drive_version,
+                drive_version,
             )
             .expect("expected to get root elements");
         assert_eq!(proof.len(), 215);

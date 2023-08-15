@@ -14,7 +14,7 @@ use drive::grovedb::Transaction;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
-use crate::platform_types::epochInfo::v0::EpochInfoV0Getters;
+use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
@@ -183,22 +183,21 @@ mod tests {
 
     use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
     use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
-    use crate::platform_types::epochInfo::v0::EpochInfoV0;
+    use crate::platform_types::epoch_info::v0::EpochInfoV0;
     use crate::platform_types::platform_state::v0::PlatformStateV0;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
 
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
+
     use dpp::document::DocumentV0Getters;
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
-    use dpp::serialization::PlatformDeserializableFromVersionedStructure;
+
     use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
     use dpp::version::PlatformVersion;
     use dpp::withdrawal::Pooling;
     use dpp::{
-        data_contract::DataContract,
         prelude::Identifier,
         system_data_contracts::{load_system_data_contract, SystemDataContract},
     };

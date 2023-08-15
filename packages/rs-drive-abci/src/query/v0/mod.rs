@@ -919,17 +919,13 @@ mod test {
         use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::data_contract::{DataContract, DataContractMethodsV0};
         use dpp::platform_value::platform_value;
-        use dpp::serialization::{
-            PlatformDeserializableFromVersionedStructure,
-            PlatformDeserializableWithPotentialValidationFromVersionedStructure,
-        };
+        use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
         use dpp::tests::fixtures::get_data_contract_fixture;
         use dpp::validation::ValidationResult;
         use dpp::version::PlatformVersion;
         use drive::drive::Drive;
         use drive::error::contract::DataContractError;
         use prost::Message;
-        use serde_json::json;
 
         fn default_request() -> GetDataContractHistoryRequest {
             GetDataContractHistoryRequest {
@@ -991,7 +987,7 @@ mod test {
 
             updated_data_contract
                 .set_document_schema(
-                    "niceDocument".into(),
+                    "niceDocument",
                     updated_document_schema,
                     true,
                     platform_version,

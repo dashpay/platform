@@ -3,7 +3,7 @@ use crate::drive::identity::key::fetch::{IdentityKeysRequest, IdentityPublicKeyR
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::version::drive_versions::DriveVersion;
+
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::TransactionArg;
