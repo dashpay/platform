@@ -17,8 +17,11 @@ use indexmap::IndexMap;
 
 use crate::platform_types::masternode;
 
+use crate::platform_types::masternode::Masternode;
 use crate::platform_types::validator_set::ValidatorSet;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+use platform_version::version::PlatformVersion;
+use platform_version::TryIntoPlatformVersioned;
 use std::collections::{BTreeMap, HashMap};
 
 /// Platform state
@@ -73,18 +76,21 @@ pub(super) struct PlatformStateForSavingV0 {
     pub validator_sets: Vec<(Bytes32, ValidatorSet)>,
 
     /// current full masternode list
-    pub full_masternode_list: BTreeMap<Bytes32, masternode::v0::Masternode>,
+    pub full_masternode_list: BTreeMap<Bytes32, Masternode>,
 
     /// current HPMN masternode list
-    pub hpmn_masternode_list: BTreeMap<Bytes32, masternode::v0::Masternode>,
+    pub hpmn_masternode_list: BTreeMap<Bytes32, Masternode>,
 
     /// if we initialized the chain this block
     pub initialization_information: Option<PlatformInitializationState>,
 }
 
-impl From<PlatformStateV0> for PlatformStateForSavingV0 {
-    fn from(value: PlatformStateV0) -> Self {
-        PlatformStateForSavingV0 {
+impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
+    type Error = Error;
+
+    fn try_from(value: PlatformStateV0) -> Result<Self, Self::Error> {
+        let platform_version = PlatformVersion::get(value.current_protocol_version_in_consensus)?;
+        Ok(PlatformStateForSavingV0 {
             last_committed_block_info: value.last_committed_block_info,
             current_protocol_version_in_consensus: value.current_protocol_version_in_consensus,
             next_epoch_protocol_version: value.next_epoch_protocol_version,
@@ -116,15 +122,25 @@ impl From<PlatformStateV0> for PlatformStateForSavingV0 {
             full_masternode_list: value
                 .full_masternode_list
                 .into_iter()
-                .map(|(k, v)| (k.into_inner().into(), v.into()))
-                .collect(),
+                .map(|(k, v)| {
+                    Ok((
+                        k.into_inner().into(),
+                        v.try_into_platform_versioned(platform_version)?,
+                    ))
+                })
+                .collect::<Result<BTreeMap<Bytes32, Masternode>, Error>>()?,
             hpmn_masternode_list: value
                 .hpmn_masternode_list
                 .into_iter()
-                .map(|(k, v)| (k.into_inner().into(), v.into()))
-                .collect(),
+                .map(|(k, v)| {
+                    Ok((
+                        k.into_inner().into(),
+                        v.try_into_platform_versioned(platform_version)?,
+                    ))
+                })
+                .collect::<Result<BTreeMap<Bytes32, Masternode>, Error>>()?,
             initialization_information: value.initialization_information,
-        }
+        })
     }
 }
 

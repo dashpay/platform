@@ -24,6 +24,7 @@ use dpp::ProtocolError;
 use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use indexmap::IndexMap;
 
+use crate::error::execution::ExecutionError;
 use std::collections::{BTreeMap, HashMap};
 
 /// Platform state
@@ -49,13 +50,15 @@ impl PlatformStateForSaving {
 }
 
 impl PlatformSerializable for PlatformState {
-    fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
+    type Error = Error;
+
+    fn serialize(&self) -> Result<Vec<u8>, Self::Error> {
         let platform_version = PlatformVersion::get(self.current_protocol_version_in_consensus())?;
         let config = config::standard().with_big_endian().with_no_limit();
         let platform_state_for_saving: PlatformStateForSaving =
             self.clone().try_into_platform_versioned(platform_version)?;
         bincode::encode_to_vec(platform_state_for_saving, config).map_err(|e| {
-            PlatformSerializationError(format!("unable to serialize PlatformState: {}", e))
+            PlatformSerializationError(format!("unable to serialize PlatformState: {}", e)).into()
         })
     }
 }
@@ -142,7 +145,7 @@ impl PlatformState {
 }
 
 impl TryFromPlatformVersioned<PlatformState> for PlatformStateForSaving {
-    type Error = ProtocolError;
+    type Error = Error;
     fn try_from_platform_versioned(
         value: PlatformState,
         platform_version: &PlatformVersion,
@@ -155,16 +158,16 @@ impl TryFromPlatformVersioned<PlatformState> for PlatformStateForSaving {
                     .platform_state_for_saving_structure
                 {
                     0 => {
-                        let saving_v0: PlatformStateForSavingV0 = v0.into();
+                        let saving_v0: PlatformStateForSavingV0 = v0.try_into()?;
                         Ok(saving_v0.into())
                     }
-                    version => Err(ProtocolError::UnknownVersionMismatch {
+                    version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                         method:
                             "PlatformStateForSaving::try_from_platform_versioned(PlatformState)"
                                 .to_string(),
                         known_versions: vec![0],
                         received: version,
-                    }),
+                    })),
                 }
             }
         }

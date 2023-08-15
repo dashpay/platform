@@ -12,6 +12,8 @@ pub struct DriveAbciStructureVersions {
     pub platform_state_structure: FeatureVersion,
     pub platform_state_for_saving_structure: FeatureVersion,
     pub state_transition_execution_context: FeatureVersion,
+    pub commit: FeatureVersion,
+    pub masternode: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

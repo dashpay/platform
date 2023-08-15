@@ -1,3 +1,5 @@
+pub mod accessors;
+
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
 use dashcore_rpc::json::MasternodeListItem;
 use dpp::bincode::{Decode, Encode};
@@ -8,7 +10,7 @@ use std::net::SocketAddr;
 
 /// `Masternode` represents a masternode on the network.
 #[derive(Clone, PartialEq, Eq, Debug, Encode, Decode)]
-pub struct Masternode {
+pub struct MasternodeV0 {
     /// The type of masternode (e.g., full, partial).
     pub node_type: MasternodeType,
     /// A unique hash representing the masternode's registration transaction.
@@ -24,10 +26,10 @@ pub struct Masternode {
     /// The amount of the operator's reward for running the masternode.
     pub operator_reward: u32,
     /// The current state of the masternode (e.g., enabled, pre-enabled, banned).
-    pub state: MasternodeState,
+    pub state: MasternodeStateV0,
 }
 
-impl From<MasternodeListItem> for Masternode {
+impl From<MasternodeListItem> for MasternodeV0 {
     fn from(value: MasternodeListItem) -> Self {
         let MasternodeListItem {
             node_type,
@@ -51,9 +53,9 @@ impl From<MasternodeListItem> for Masternode {
     }
 }
 
-impl From<Masternode> for MasternodeListItem {
-    fn from(value: Masternode) -> Self {
-        let Masternode {
+impl From<MasternodeV0> for MasternodeListItem {
+    fn from(value: MasternodeV0) -> Self {
+        let MasternodeV0 {
             node_type,
             pro_tx_hash,
             collateral_hash,
@@ -77,7 +79,7 @@ impl From<Masternode> for MasternodeListItem {
 
 /// A `MasternodeState` contains information about a masternode's state.
 #[derive(Clone, PartialEq, Eq, Debug, Encode, Decode)]
-pub struct MasternodeState {
+pub struct MasternodeStateV0 {
     /// Masternode's network service address.
     #[bincode(with_serde)]
     pub service: SocketAddr,
@@ -119,7 +121,7 @@ pub struct MasternodeState {
     pub platform_http_port: Option<u32>,
 }
 
-impl From<DMNState> for MasternodeState {
+impl From<DMNState> for MasternodeStateV0 {
     fn from(value: DMNState) -> Self {
         let DMNState {
             service,
@@ -155,9 +157,9 @@ impl From<DMNState> for MasternodeState {
     }
 }
 
-impl From<MasternodeState> for DMNState {
-    fn from(value: MasternodeState) -> Self {
-        let MasternodeState {
+impl From<MasternodeStateV0> for DMNState {
+    fn from(value: MasternodeStateV0) -> Self {
+        let MasternodeStateV0 {
             service,
             registered_height,
             pose_revived_height,
