@@ -73,7 +73,7 @@ pub fn enrich_with_base_schema_v0(
     if let Some(schema_defs) = schema_defs {
         schema_map.insert_string_key_value(
             contract_property_names::DEFINITIONS.to_string(),
-            Value::from(schema_defs),
+            schema_defs,
         )
     }
 

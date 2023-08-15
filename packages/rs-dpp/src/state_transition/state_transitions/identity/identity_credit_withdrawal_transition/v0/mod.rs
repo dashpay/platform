@@ -27,7 +27,7 @@ use crate::withdrawal::Pooling;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-
+#[derive(Default)]
 pub struct IdentityCreditWithdrawalTransitionV0 {
     pub identity_id: Identifier,
     pub amount: u64,
@@ -39,21 +39,6 @@ pub struct IdentityCreditWithdrawalTransitionV0 {
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
-}
-
-impl Default for IdentityCreditWithdrawalTransitionV0 {
-    fn default() -> Self {
-        IdentityCreditWithdrawalTransitionV0 {
-            identity_id: Default::default(),
-            amount: Default::default(),
-            core_fee_per_byte: Default::default(),
-            pooling: Default::default(),
-            output_script: Default::default(),
-            revision: Default::default(),
-            signature_public_key_id: Default::default(),
-            signature: Default::default(),
-        }
-    }
 }
 
 #[cfg(test)]

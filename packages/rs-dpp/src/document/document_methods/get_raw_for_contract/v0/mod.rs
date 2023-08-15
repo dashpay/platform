@@ -8,8 +8,8 @@ use crate::ProtocolError;
 
 pub trait DocumentGetRawForContractV0: DocumentV0Getters + DocumentGetRawForDocumentTypeV0 {
     /// Return a value given the path to its key and the document type for a contract.
-    fn get_raw_for_contract_v0<'a>(
-        &'a self,
+    fn get_raw_for_contract_v0(
+        &self,
         key: &str,
         document_type_name: &str,
         contract: &DataContract,

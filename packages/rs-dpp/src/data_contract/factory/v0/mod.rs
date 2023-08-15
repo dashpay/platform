@@ -282,7 +282,7 @@ mod tests {
         let data_contract = created_data_contract.data_contract_owned();
 
         let result = factory
-            .create_from_object(raw_data_contract.into(), false)
+            .create_from_object(raw_data_contract, false)
             .expect("Data Contract should be created");
 
         assert_eq!(data_contract.version(), result.version());
@@ -305,7 +305,7 @@ mod tests {
         let data_contract = created_data_contract.data_contract_owned();
 
         let serialized_data_contract = data_contract
-            .serialize_with_platform_version(&platform_version)
+            .serialize_with_platform_version(platform_version)
             .expect("should be serialized to buffer");
         let result = factory
             .create_from_buffer(serialized_data_contract, false)
@@ -338,10 +338,10 @@ mod tests {
         let contract_value = DataContract::try_from_platform_versioned(
             result.data_contract().to_owned(),
             false,
-            &platform_version,
+            platform_version,
         )
         .unwrap()
-        .to_value(&platform_version)
+        .to_value(platform_version)
         .unwrap();
 
         assert_eq!(raw_data_contract, contract_value);

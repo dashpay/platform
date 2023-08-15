@@ -24,7 +24,7 @@ mod tests {
             .serialize_with_platform_version(LATEST_PLATFORM_VERSION)
             .expect("expected to serialize");
         let recovered_contract =
-            DataContract::versioned_deserialize(&bytes, false, &platform_version)
+            DataContract::versioned_deserialize(&bytes, false, platform_version)
                 .expect("expected to deserialize state transition");
         assert_eq!(contract, recovered_contract);
     }

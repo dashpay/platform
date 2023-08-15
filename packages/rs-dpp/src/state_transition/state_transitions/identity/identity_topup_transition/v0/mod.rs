@@ -36,21 +36,11 @@ mod property_names {
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-
+#[derive(Default)]
 pub struct IdentityTopUpTransitionV0 {
     // Own ST fields
     pub asset_lock_proof: AssetLockProof,
     pub identity_id: Identifier,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
-}
-
-impl Default for IdentityTopUpTransitionV0 {
-    fn default() -> Self {
-        Self {
-            asset_lock_proof: Default::default(),
-            identity_id: Default::default(),
-            signature: Default::default(),
-        }
-    }
 }

@@ -60,7 +60,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreditTransferTransition {
         let version: FeatureVersion = raw_object
             .remove_optional_integer(STATE_TRANSITION_PROTOCOL_VERSION)
             .map_err(ProtocolError::ValueError)?
-            .unwrap_or_else(|| {
+            .unwrap_or({
                 platform_version
                     .dpp
                     .state_transition_serialization_versions
@@ -86,7 +86,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreditTransferTransition {
         let version: FeatureVersion = raw_value_map
             .remove_optional_integer(STATE_TRANSITION_PROTOCOL_VERSION)
             .map_err(ProtocolError::ValueError)?
-            .unwrap_or_else(|| {
+            .unwrap_or({
                 platform_version
                     .dpp
                     .state_transition_serialization_versions

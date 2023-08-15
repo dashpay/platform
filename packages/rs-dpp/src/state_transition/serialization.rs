@@ -108,7 +108,7 @@ mod tests {
                 LATEST_PLATFORM_VERSION,
             )
             .expect("expected to get identity");
-        let bls = NativeBlsModule::default();
+        let bls = NativeBlsModule;
         let add_public_keys_in_creation = identity
             .public_keys()
             .values()
@@ -172,7 +172,7 @@ mod tests {
                 LATEST_PLATFORM_VERSION,
             )
             .expect("expected to get identity");
-        let bls = NativeBlsModule::default();
+        let bls = NativeBlsModule;
         let add_public_keys_in_creation = identity
             .public_keys()
             .values()

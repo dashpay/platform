@@ -35,6 +35,7 @@ use crate::{
 // Hence we set to do it somewhat manually inside the PlatformSignable proc macro
 // Instead of inside of bincode_derive
 #[platform_signable(derive_bincode_with_borrowed_vec)]
+#[derive(Default)]
 pub struct IdentityUpdateTransitionV0 {
     /// Unique identifier of the identity to be updated
     pub identity_id: Identifier,
@@ -61,20 +62,6 @@ pub struct IdentityUpdateTransitionV0 {
     /// Cryptographic signature of the State Transition
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
-}
-
-impl Default for IdentityUpdateTransitionV0 {
-    fn default() -> Self {
-        Self {
-            signature: Default::default(),
-            signature_public_key_id: Default::default(),
-            identity_id: Default::default(),
-            revision: Default::default(),
-            add_public_keys: Default::default(),
-            disable_public_keys: Default::default(),
-            public_keys_disabled_at: Default::default(),
-        }
-    }
 }
 
 /// if the property isn't present the empty list is returned. If property is defined, the function

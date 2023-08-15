@@ -103,8 +103,8 @@ impl DocumentMethodsV0 for Document {
     }
 
     /// Return a value given the path to its key for a document type.
-    fn get_raw_for_document_type<'a>(
-        &'a self,
+    fn get_raw_for_document_type(
+        &self,
         key_path: &str,
         document_type: DocumentTypeRef,
         owner_id: Option<[u8; 32]>,
@@ -162,7 +162,7 @@ impl DocumentMethodsV0 for Document {
     fn increment_revision(&mut self) -> Result<(), ProtocolError> {
         let Some(revision) = self.revision() else {
             return Err(ProtocolError::Document(Box::new(DocumentError::DocumentNoRevisionError {
-                document: Box::new(self.clone().into()),
+                document: Box::new(self.clone()),
             })))
         };
 

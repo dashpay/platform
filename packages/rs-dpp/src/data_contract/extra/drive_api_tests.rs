@@ -114,7 +114,7 @@ mod test {
 
         let platform_version = PlatformVersion::latest();
 
-        let data_contract = DataContract::from_cbor(cbor_bytes, &platform_version)
+        let data_contract = DataContract::from_cbor(cbor_bytes, platform_version)
             .expect("contract should be deserialized");
 
         assert_eq!(0, data_contract.feature_version());
@@ -150,7 +150,7 @@ mod test {
 
         let contract = json_document_to_contract(
             "src/tests/payloads/contract/dashpay-contract.json",
-            &platform_version,
+            platform_version,
         )
         .expect("expected to get a contract")
         .into_v0()
@@ -211,7 +211,7 @@ mod test {
 
         let mut contract = json_document_to_contract(
             "src/tests/payloads/contract/dashpay-contract.json",
-            &platform_version,
+            platform_version,
         )
         .expect("expected to get a cbor document")
         .into_v0()
@@ -232,9 +232,9 @@ mod test {
             .set_documents_keep_history_contract_default(true);
 
         let contract_cbor = contract
-            .to_cbor(&platform_version)
+            .to_cbor(platform_version)
             .expect("serialization shouldn't fail");
-        let deserialized_contract = DataContract::from_cbor(contract_cbor, &platform_version)
+        let deserialized_contract = DataContract::from_cbor(contract_cbor, platform_version)
             .expect("deserialization shouldn't fail");
 
         assert!(matches!(
@@ -255,7 +255,7 @@ mod test {
 
         let mut contract = json_document_to_contract(
             "src/tests/payloads/contract/dashpay-contract.json",
-            &platform_version,
+            platform_version,
         )
         .expect("expected to decode a contract");
 
@@ -276,10 +276,10 @@ mod test {
             .set_documents_keep_history_contract_default(true);
 
         let contract = contract
-            .serialize_with_platform_version(&platform_version)
+            .serialize_with_platform_version(platform_version)
             .expect("serialization shouldn't fail");
         let deserialized_contract =
-            DataContract::versioned_deserialize(contract.as_slice(), false, &platform_version)
+            DataContract::versioned_deserialize(contract.as_slice(), false, platform_version)
                 .expect("deserialization shouldn't fail");
 
         assert_eq!(

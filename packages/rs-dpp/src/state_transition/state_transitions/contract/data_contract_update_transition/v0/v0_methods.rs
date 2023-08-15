@@ -39,7 +39,7 @@ impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransitionV0 {
                         "public key did not exist".to_string(),
                     ),
                 ))?;
-        state_transition.set_signature(signer.sign(public_key, &value)?.into());
+        state_transition.set_signature(signer.sign(public_key, &value)?);
         Ok(state_transition)
     }
 }

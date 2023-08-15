@@ -311,8 +311,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             revision,
             created_at,
             updated_at,
-        }
-        .into())
+        })
     }
 }
 

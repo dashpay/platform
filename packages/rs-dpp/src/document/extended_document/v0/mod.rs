@@ -120,7 +120,7 @@ impl ExtendedDocumentV0 {
     }
 
     pub fn properties(&self) -> &BTreeMap<String, Value> {
-        &self.document.properties()
+        self.document.properties()
     }
 
     pub fn properties_as_mut(&mut self) -> &mut BTreeMap<String, Value> {

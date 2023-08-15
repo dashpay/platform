@@ -26,8 +26,8 @@ impl IdentityCborConversionMethodsV0 for IdentityV0 {
         identity_map.insert(
             "publicKeys",
             self.public_keys
-                .iter()
-                .map(|(_, pk)| pk.into())
+                .values()
+                .map(|pk| pk.into())
                 .collect::<Vec<CborValue>>(),
         );
 

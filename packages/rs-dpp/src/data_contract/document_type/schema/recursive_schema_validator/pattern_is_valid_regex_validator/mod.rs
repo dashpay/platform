@@ -21,9 +21,10 @@ pub fn pattern_is_valid_regex_validator(
         .recursive_schema_validator_versions
         .pattern_is_valid_regex_validator
     {
-        0 => Ok(v0::pattern_is_valid_regex_validator_v0(
-            path, key, parent, value, result,
-        )),
+        0 => {
+            v0::pattern_is_valid_regex_validator_v0(path, key, parent, value, result);
+            Ok(())
+        }
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "pattern_is_valid_regex_validator".to_string(),
             known_versions: vec![0],

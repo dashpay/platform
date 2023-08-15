@@ -43,8 +43,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
                     batch_feature_version,
                     create_feature_version,
                     base_feature_version,
-                )?
-                .into(),
+                )?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_created_from_document".to_string(),
@@ -82,8 +81,7 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
                     batch_feature_version,
                     update_feature_version,
                     base_feature_version,
-                )?
-                .into(),
+                )?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method:

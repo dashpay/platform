@@ -195,12 +195,11 @@ impl DocumentFactoryV0 {
             return Err(DocumentError::MismatchOwnerIdsError {
                 documents: documents
                     .into_iter()
-                    .map(|(_, v)| {
+                    .flat_map(|(_, v)| {
                         v.into_iter()
                             .map(|(document, _)| document)
                             .collect::<Vec<_>>()
                     })
-                    .flatten()
                     .collect(),
             }
             .into());

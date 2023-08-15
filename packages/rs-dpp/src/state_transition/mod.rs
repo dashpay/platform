@@ -501,7 +501,7 @@ impl StateTransition {
         let signature = self.signature();
         if signature.is_empty() {
             return Err(ProtocolError::StateTransitionIsNotSignedError(
-                StateTransitionIsNotSignedError::new(self.clone().into()),
+                StateTransitionIsNotSignedError::new(self.clone()),
             ));
         }
 
@@ -533,7 +533,7 @@ impl StateTransition {
     ) -> Result<(), ProtocolError> {
         if self.signature().is_empty() {
             return Err(ProtocolError::StateTransitionIsNotSignedError(
-                StateTransitionIsNotSignedError::new(self.clone().into()),
+                StateTransitionIsNotSignedError::new(self.clone()),
             ));
         }
         let data = self.signable_bytes()?;
@@ -553,7 +553,7 @@ impl StateTransition {
     fn verify_ecdsa_signature_by_public_key(&self, public_key: &[u8]) -> Result<(), ProtocolError> {
         if self.signature().is_empty() {
             return Err(ProtocolError::StateTransitionIsNotSignedError(
-                StateTransitionIsNotSignedError::new(self.clone().into()),
+                StateTransitionIsNotSignedError::new(self.clone()),
             ));
         }
         let data = self.signable_bytes()?;
@@ -579,7 +579,7 @@ impl StateTransition {
     ) -> Result<(), ProtocolError> {
         if self.signature().is_empty() {
             return Err(ProtocolError::StateTransitionIsNotSignedError(
-                StateTransitionIsNotSignedError::new(self.clone().into()),
+                StateTransitionIsNotSignedError::new(self.clone()),
             ));
         }
 

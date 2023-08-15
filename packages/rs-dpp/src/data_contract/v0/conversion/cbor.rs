@@ -29,7 +29,7 @@ impl DataContractCborConversionMethodsV0 for DataContractV0 {
     ) -> Result<Self, ProtocolError> {
         let data_contract_cbor_value: CborValue = ciborium::de::from_reader(cbor_bytes.as_ref())
             .map_err(|_| {
-                ProtocolError::DecodingError(format!("unable to decode contract from cbor",))
+                ProtocolError::DecodingError("unable to decode contract from cbor".to_string())
             })?;
 
         let data_contract_value: Value =

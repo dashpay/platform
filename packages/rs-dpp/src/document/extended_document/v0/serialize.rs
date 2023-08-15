@@ -281,8 +281,7 @@ impl ExtendedDocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
             metadata: None,
 
             entropy: Default::default(),
-        }
-        .into())
+        })
     }
 }
 

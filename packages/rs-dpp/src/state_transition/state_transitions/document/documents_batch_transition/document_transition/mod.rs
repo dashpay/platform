@@ -230,7 +230,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
     }
 
     fn get_document_type(&self) -> &String {
-        &self.base().document_type_name()
+        self.base().document_type_name()
     }
 
     fn data_contract_id(&self) -> Identifier {

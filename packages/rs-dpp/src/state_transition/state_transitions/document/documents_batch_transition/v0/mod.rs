@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize)
 )]
-
+#[derive(Default)]
 pub struct DocumentsBatchTransitionV0 {
     pub owner_id: Identifier,
     pub transitions: Vec<DocumentTransition>,
@@ -31,15 +31,4 @@ pub struct DocumentsBatchTransitionV0 {
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
-}
-
-impl Default for DocumentsBatchTransitionV0 {
-    fn default() -> Self {
-        DocumentsBatchTransitionV0 {
-            owner_id: Identifier::default(),
-            transitions: vec![],
-            signature_public_key_id: 0,
-            signature: BinaryData::default(),
-        }
-    }
 }

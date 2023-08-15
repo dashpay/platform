@@ -8,8 +8,8 @@ use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 
 pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {
     /// Return a value given the path to its key for a document type.
-    fn get_raw_for_document_type_v0<'a>(
-        &'a self,
+    fn get_raw_for_document_type_v0(
+        &self,
         key_path: &str,
         document_type: DocumentTypeRef,
         owner_id: Option<[u8; 32]>,

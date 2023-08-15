@@ -38,6 +38,7 @@ use crate::ProtocolError;
 // Hence we set to do it somewhat manually inside the PlatformSignable proc macro
 // Instead of inside of bincode_derive
 #[platform_signable(derive_bincode_with_borrowed_vec)]
+#[derive(Default)]
 pub struct IdentityCreateTransitionV0 {
     // When signing, we don't sign the signatures for keys
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
@@ -85,16 +86,6 @@ impl TryFrom<IdentityCreateTransitionV0Inner> for IdentityCreateTransitionV0 {
 }
 
 //todo: there shouldn't be a default
-impl Default for IdentityCreateTransitionV0 {
-    fn default() -> Self {
-        Self {
-            public_keys: Default::default(),
-            asset_lock_proof: Default::default(),
-            identity_id: Default::default(),
-            signature: Default::default(),
-        }
-    }
-}
 
 impl IdentityCreateTransitionV0 {
     fn try_from_identity_v0(

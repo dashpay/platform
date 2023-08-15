@@ -292,7 +292,7 @@ mod test {
                 ("ownerId", Value::Identifier([0_u8; 32])),
                 ("documents", documents),
             ]),
-            &platform_version,
+            platform_version,
         )
         .unwrap()
     }
@@ -306,7 +306,7 @@ mod test {
             load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         let doc =
-            ExtendedDocument::from_json_string(&document_json, dpns_contract, &platform_version)?;
+            ExtendedDocument::from_json_string(&document_json, dpns_contract, platform_version)?;
         assert_eq!(doc.document_type_name(), "domain");
         assert_eq!(doc.feature_version(), 0);
         assert_eq!(

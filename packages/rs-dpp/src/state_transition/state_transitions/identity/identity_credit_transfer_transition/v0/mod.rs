@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
     serde(rename_all = "camelCase")
 )]
 #[platform_serialize(unversioned)]
+#[derive(Default)]
 pub struct IdentityCreditTransferTransitionV0 {
     // Own ST fields
     pub identity_id: Identifier,
@@ -45,18 +46,6 @@ pub struct IdentityCreditTransferTransitionV0 {
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
-}
-
-impl Default for IdentityCreditTransferTransitionV0 {
-    fn default() -> Self {
-        IdentityCreditTransferTransitionV0 {
-            identity_id: Identifier::default(),
-            recipient_id: Identifier::default(),
-            amount: Default::default(),
-            signature_public_key_id: Default::default(),
-            signature: Default::default(),
-        }
-    }
 }
 
 #[cfg(test)]
