@@ -177,7 +177,6 @@ impl DocumentCreateTransitionV0 {
 
 #[cfg(test)]
 mod test {
-
     use crate::data_contract::data_contract::DataContractV0;
     use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -338,14 +337,13 @@ mod test {
             .unwrap();
 
         println!("{:?}", object_transition);
+        let v0 = object_transition.get("V0").expect("to get V0");
+        let right_id = Identifier::from_bytes(&id).unwrap();
+        let right_data_contract_id = Identifier::from_bytes(&data_contract_id).unwrap();
 
-        assert_eq!(object_transition.get_identifier_bytes("$id").unwrap(), id);
-        assert_eq!(
-            object_transition
-                .get_identifier_bytes("$dataContractId")
-                .unwrap(),
-            data_contract_id
-        );
+        assert_eq!(v0["$id"], Value::Identifier(right_id.into_buffer()));
+        assert_eq!(v0["$dataContractId"], Value::Identifier(right_data_contract_id.into_buffer()));
+
         assert_eq!(
             object_transition.get_bytes("alphaBinary").unwrap(),
             alpha_value
