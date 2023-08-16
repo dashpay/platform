@@ -1,15 +1,12 @@
 mod from_document;
 pub mod v0_methods;
 
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
-use crate::{data_contract::DataContract, errors::ProtocolError};
+
 use bincode::{Decode, Encode};
 use derive_more::Display;
-use platform_value::Value;
+
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
 #[cfg_attr(

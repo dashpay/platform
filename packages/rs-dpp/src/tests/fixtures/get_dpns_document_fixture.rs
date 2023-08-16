@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use getrandom::getrandom;
 use platform_value::{Identifier, Value};

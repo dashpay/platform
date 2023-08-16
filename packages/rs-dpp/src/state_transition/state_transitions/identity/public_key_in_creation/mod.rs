@@ -2,14 +2,13 @@ use crate::identity::IdentityPublicKey;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0Signable;
 use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::PlatformSignable;
+
 use serde::{Deserialize, Serialize};
 
 pub mod accessors;
-#[cfg(feature = "state-transition-cbor-conversion")]
-mod cbor_conversion;
 mod fields;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
@@ -18,6 +17,7 @@ mod types;
 pub mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
+mod version;
 
 #[derive(Debug, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq, From)]
 //here we want to indicate that IdentityPublicKeyInCreation can be transformed into IdentityPublicKeyInCreationSignable

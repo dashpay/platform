@@ -6,7 +6,7 @@ pub use v0::*;
 
 use crate::prelude::Revision;
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
-use crate::state_transition::{StateTransitionLike, StateTransitionType};
+
 use crate::withdrawal::Pooling;
 
 impl IdentityCreditWithdrawalTransitionAccessorsV0 for IdentityCreditWithdrawalTransition {

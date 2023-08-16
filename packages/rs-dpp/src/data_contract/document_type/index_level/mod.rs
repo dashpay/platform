@@ -1,6 +1,4 @@
-use crate::consensus::basic::data_contract::{
-    DuplicateIndexError, SystemPropertyIndexAlreadyPresentError, UniqueIndicesLimitReachedError,
-};
+use crate::consensus::basic::data_contract::DuplicateIndexError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::Index;

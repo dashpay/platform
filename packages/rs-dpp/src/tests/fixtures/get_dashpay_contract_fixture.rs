@@ -1,8 +1,5 @@
-use std::sync::Arc;
-
 use crate::{
-    data_contract::{DataContract, DataContractFactory},
-    prelude::Identifier,
+    data_contract::DataContractFactory, prelude::Identifier,
     tests::utils::generate_random_identifier_struct,
 };
 

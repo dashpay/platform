@@ -3,7 +3,7 @@ use lazy_static::lazy_static;
 pub use platform_version::error::PlatformVersionError;
 pub use platform_version::version::*;
 pub use platform_version::*;
-use std::sync::{RwLock, RwLockReadGuard};
+use std::sync::RwLock;
 
 lazy_static! {
     static ref CURRENT_PLATFORM_VERSION: RwLock<Option<&'static PlatformVersion>> =

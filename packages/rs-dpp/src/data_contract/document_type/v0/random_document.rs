@@ -36,8 +36,7 @@
 use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT};
 use crate::data_contract::document_type::random_document::CreateRandomDocument;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
-use crate::data_contract::document_type::DocumentTypeRef;
-use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+
 use crate::document::{Document, DocumentV0};
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::Identity;

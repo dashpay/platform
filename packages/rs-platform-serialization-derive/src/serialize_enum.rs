@@ -269,7 +269,7 @@ pub(super) fn derive_platform_serialize_enum(
     //         #bincode_encode_body
     //     };
     // }
-    eprintln!("Processing variant: {}", &expanded);
+    //eprintln!("Processing variant: {}", &expanded);
 
     TokenStream::from(expanded)
 }

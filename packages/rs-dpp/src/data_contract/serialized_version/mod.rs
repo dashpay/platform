@@ -2,15 +2,13 @@ use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::DataContract;
 use crate::version::PlatformVersion;
-use crate::version::PlatformVersionCurrentVersion;
+
 use crate::ProtocolError;
-use bincode::{BorrowDecode, Decode, Encode};
+use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_value::Identifier;
 use platform_version::TryFromPlatformVersioned;
-use platform_versioning::{
-    PlatformSerdeVersionedDeserialize, PlatformSerdeVersionedSerialize, PlatformVersioned,
-};
+use platform_versioning::PlatformVersioned;
 use serde::{Deserialize, Serialize};
 
 pub(in crate::data_contract) mod v0;

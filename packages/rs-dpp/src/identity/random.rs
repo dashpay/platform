@@ -1,6 +1,6 @@
 use crate::identity::v0::IdentityV0;
 use crate::identity::{Identity, IdentityPublicKey, KeyCount};
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use rand::prelude::StdRng;
 use std::iter::FromIterator;

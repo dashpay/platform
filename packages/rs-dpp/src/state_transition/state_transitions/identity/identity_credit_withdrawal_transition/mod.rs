@@ -12,17 +12,16 @@ pub mod v0;
 mod value_conversion;
 mod version;
 
-use crate::serialization::Signable;
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
-use crate::version::PlatformVersionCurrentVersion;
+
 use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use data_contracts::withdrawals_contract::document_types::withdrawal::properties::OUTPUT_SCRIPT;
 use derive_more::From;
 use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
+use platform_versioning::PlatformVersioned;
 use serde::{Deserialize, Serialize};
 
 pub type IdentityCreditWithdrawalTransitionLatest = IdentityCreditWithdrawalTransitionV0;

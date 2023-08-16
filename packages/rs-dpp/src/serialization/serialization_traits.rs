@@ -1,15 +1,11 @@
 use crate::identity::KeyType;
-use bincode::config::Config;
-use bincode::enc;
-use bincode::enc::write::SizeWriter;
-use bincode::enc::Encoder;
-use bincode::error::EncodeError;
+
 use serde::{Deserialize, Serialize};
 
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::{BlsModule, ProtocolError};
-use platform_value::{platform_value, Value};
+use platform_value::Value;
 
 pub trait Signable {
     fn signable_bytes(&self) -> Result<Vec<u8>, ProtocolError>;

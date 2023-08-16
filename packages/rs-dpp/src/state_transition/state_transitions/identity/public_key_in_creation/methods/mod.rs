@@ -7,10 +7,9 @@ pub mod from_public_key_signed_with_private_key;
 pub mod hash;
 mod v0;
 
-use crate::identity::signer::Signer;
 use crate::identity::IdentityPublicKey;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::{BlsModule, ProtocolError};
+
 pub use v0::IdentityPublicKeyInCreationMethodsV0;
 
 impl IdentityPublicKeyInCreationMethodsV0 for IdentityPublicKeyInCreation {

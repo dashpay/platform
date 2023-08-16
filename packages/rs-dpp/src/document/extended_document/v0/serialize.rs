@@ -1,44 +1,28 @@
-use crate::data_contract::document_type::DocumentTypeRef;
-use crate::data_contract::errors::{DataContractError, StructureError};
+use crate::data_contract::errors::DataContractError;
 
 use crate::document::property_names::{CREATED_AT, UPDATED_AT};
-use crate::document::{property_names, Document};
+use crate::document::Document;
 
-use crate::identity::TimestampMillis;
 use crate::prelude::{DataContract, Revision};
-use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
+
 use crate::ProtocolError;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::document::extended_document::v0::ExtendedDocumentV0;
-use crate::document::serialization_traits::deserialize::v0::{
-    DocumentPlatformDeserializationMethodsV0, ExtendedDocumentPlatformDeserializationMethodsV0,
-};
-use crate::document::serialization_traits::serialize::v0::{
-    DocumentPlatformSerializationMethodsV0, ExtendedDocumentPlatformSerializationMethodsV0,
-};
+use crate::document::serialization_traits::deserialize::v0::ExtendedDocumentPlatformDeserializationMethodsV0;
+use crate::document::serialization_traits::serialize::v0::ExtendedDocumentPlatformSerializationMethodsV0;
 use crate::document::serialization_traits::{
     DocumentPlatformConversionMethodsV0, ExtendedDocumentPlatformConversionMethodsV0,
 };
-use crate::document::v0::DocumentV0;
-use crate::serialization::{
-    PlatformDeserializableFromVersionedStructure,
-    PlatformDeserializableWithBytesLenFromVersionedStructure,
-};
+
+use crate::serialization::PlatformDeserializableWithBytesLenFromVersionedStructure;
 use crate::version::PlatformVersion;
-use byteorder::{BigEndian, ReadBytesExt};
-use dashcore::consensus::ReadExt;
-use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{Identifier, Value};
+
+use integer_encoding::{VarInt, VarIntReader};
+
 use platform_version::version::FeatureVersion;
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use std::convert::TryFrom;
-use std::io::{BufReader, Read};
 
 impl ExtendedDocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
     /// Serializes the document.
@@ -293,8 +277,7 @@ impl ExtendedDocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
             metadata: None,
 
             entropy: Default::default(),
-        }
-        .into())
+        })
     }
 }
 

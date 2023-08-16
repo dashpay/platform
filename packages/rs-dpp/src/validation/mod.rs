@@ -1,11 +1,4 @@
-#[cfg(feature = "validation")]
-use async_trait::async_trait;
-#[cfg(feature = "validation")]
-#[cfg(test)]
-use mockall::automock;
-#[cfg(feature = "validation")]
-#[cfg(test)]
-use serde_json::Value as JsonValue;
+
 pub use validation_result::{
     ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
     ValidationResult,

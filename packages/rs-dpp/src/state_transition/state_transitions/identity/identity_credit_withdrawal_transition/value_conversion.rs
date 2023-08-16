@@ -1,22 +1,14 @@
 use std::collections::BTreeMap;
 
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_value::Value;
 
-use platform_value::{BinaryData, Bytes32, Error, IntegerReplacementType, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
+use crate::ProtocolError;
 
-use crate::{
-    prelude::Identifier,
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    NonConsensusError, ProtocolError,
-};
-
-use crate::serialization::{PlatformDeserializable, Signable};
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::state_transition::state_transitions::identity_credit_withdrawal_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
-use bincode::{config, Decode, Encode};
+
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
@@ -68,7 +60,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransition 
         let version: FeatureVersion = raw_object
             .remove_optional_integer(STATE_TRANSITION_PROTOCOL_VERSION)
             .map_err(ProtocolError::ValueError)?
-            .unwrap_or_else(|| {
+            .unwrap_or({
                 platform_version
                     .dpp
                     .state_transition_serialization_versions
@@ -95,7 +87,7 @@ impl<'a> StateTransitionValueConvert<'a> for IdentityCreditWithdrawalTransition 
         let version: FeatureVersion = raw_value_map
             .remove_optional_integer(STATE_TRANSITION_PROTOCOL_VERSION)
             .map_err(ProtocolError::ValueError)?
-            .unwrap_or_else(|| {
+            .unwrap_or({
                 platform_version
                     .dpp
                     .state_transition_serialization_versions

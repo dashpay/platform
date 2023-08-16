@@ -1,12 +1,12 @@
 use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
-use crate::data_contract::{DocumentName, PropertyPath};
+use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
 use crate::prelude::DataContract;
 use crate::ProtocolError;
 use platform_value::Identifier;
-use serde_json::Value as JsonValue;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod v0;

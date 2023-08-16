@@ -1,14 +1,11 @@
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::util::deserializer::ProtocolVersion;
-use crate::version::{FeatureVersion, PlatformVersion};
+
+use crate::version::PlatformVersion;
 use crate::{
     identity::{KeyType, Purpose, SecurityLevel},
-    state_transition::StateTransitionType,
     tests::utils::generate_random_identifier_struct,
-    version::LATEST_VERSION,
 };
 use platform_value::string_encoding::Encoding;
 use platform_value::BinaryData;

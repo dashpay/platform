@@ -35,13 +35,13 @@ use crate::document::document_methods::{
     DocumentMethodsV0,
 };
 use crate::document::errors::DocumentError;
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
-use platform_value::{Identifier, Value};
+
 #[cfg(feature = "document-serde-conversion")]
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+
 use std::fmt;
 use std::fmt::Formatter;
 
@@ -103,8 +103,8 @@ impl DocumentMethodsV0 for Document {
     }
 
     /// Return a value given the path to its key for a document type.
-    fn get_raw_for_document_type<'a>(
-        &'a self,
+    fn get_raw_for_document_type(
+        &self,
         key_path: &str,
         document_type: DocumentTypeRef,
         owner_id: Option<[u8; 32]>,
@@ -162,7 +162,7 @@ impl DocumentMethodsV0 for Document {
     fn increment_revision(&mut self) -> Result<(), ProtocolError> {
         let Some(revision) = self.revision() else {
             return Err(ProtocolError::Document(Box::new(DocumentError::DocumentNoRevisionError {
-                document: Box::new(self.clone().into()),
+                document: Box::new(self.clone()),
             })))
         };
 
@@ -188,7 +188,7 @@ mod tests {
     fn test_document_display() {
         let platform_version = PlatformVersion::first();
         let contract = json_document_to_contract(
-            "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
             platform_version,
         )
         .expect("expected to get contract");

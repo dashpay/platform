@@ -4,12 +4,12 @@ mod test {
         DataContractConfigGettersV0, DataContractConfigSettersV0, DataContractConfigV0,
     };
     use crate::data_contract::config::DataContractConfig;
-    #[cfg(feature = "state-transition-cbor-conversion")]
+    #[cfg(feature = "data-contract-cbor-conversion")]
     use crate::data_contract::conversion::cbor::DataContractCborConversionMethodsV0;
     use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use crate::data_contract::DataContract;
     use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
-    use crate::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+    use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::tests::json_document::json_document_to_contract;
     use platform_version::version::PlatformVersion;
 
@@ -104,7 +104,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "state-transition-cbor-conversion")]
+    #[cfg(feature = "data-contract-cbor-conversion")]
     fn deserialize_from_cbor_with_contract_inner() {
         let cbor_bytes = std::fs::read("src/tests/payloads/contract/contract.bin").unwrap();
         let expect_id_base58 = "2CAHCVpYLMw8uheSydQ4CTNrPYkFwdPmRVqYgWAeN9pL";
@@ -114,31 +114,24 @@ mod test {
 
         let platform_version = PlatformVersion::latest();
 
-        let data_contract = DataContract::from_cbor(cbor_bytes, &platform_version)
+        let data_contract = DataContract::from_cbor(cbor_bytes, platform_version)
             .expect("contract should be deserialized");
 
-        assert_eq!(1, data_contract.version());
-        assert_eq!(expect_id, data_contract.id.as_bytes());
-        assert_eq!(expect_owner_id, data_contract.owner_id.as_bytes());
+        assert_eq!(0, data_contract.feature_version());
+        assert_eq!(0, data_contract.version());
+        assert_eq!(expect_id, data_contract.id().as_bytes());
+        assert_eq!(expect_owner_id, data_contract.owner_id().as_bytes());
 
-        assert_eq!(7, data_contract.documents.len());
-        assert_eq!(7, data_contract.document_types.len());
-        assert_eq!(1, data_contract.version);
-        assert_eq!(
-            "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
-            data_contract.schema
-        );
+        assert_eq!(7, data_contract.document_types().len());
 
         for expect in expected_documents() {
             assert!(
-                data_contract.is_document_defined(expect.document_name),
+                data_contract.has_document_type_for_name(expect.document_name),
                 "'{}' document should be defined",
                 expect.document_name
             );
             assert!(
-                data_contract
-                    .document_type_for_name(expect.document_name)
-                    .is_ok(),
+                data_contract.has_document_type_for_name(expect.document_name),
                 "'{}' document type should be defined",
                 expect.document_name
             );
@@ -147,15 +140,7 @@ mod test {
             let document_type = data_contract
                 .document_type_for_name(expect.document_name)
                 .unwrap();
-            assert_eq!(expect.indexes.len(), document_type.indices.len());
-
-            // document type - JS API
-            let document = data_contract
-                .document_json_schema(expect.document_name)
-                .unwrap();
-
-            let document_indices = document.get_indices::<Vec<_>>().unwrap_or_default();
-            assert_eq!(expect.indexes.len(), document_indices.len());
+            assert_eq!(expect.indexes.len(), document_type.indices().len());
         }
     }
 
@@ -164,8 +149,8 @@ mod test {
         let platform_version = PlatformVersion::latest();
 
         let contract = json_document_to_contract(
-            "src/tests/payloads/contract/dashpay-contract.json",
-            &platform_version,
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            platform_version,
         )
         .expect("expected to get a contract")
         .into_v0()
@@ -220,13 +205,13 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "state-transition-cbor-conversion")]
+    #[cfg(feature = "data-contract-cbor-conversion")]
     fn mutability_properties_should_be_stored_and_restored_during_cbor_serialization() {
         let platform_version = PlatformVersion::latest();
 
         let mut contract = json_document_to_contract(
-            "src/tests/payloads/contract/dashpay-contract.json",
-            &platform_version,
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            platform_version,
         )
         .expect("expected to get a cbor document")
         .into_v0()
@@ -247,20 +232,20 @@ mod test {
             .set_documents_keep_history_contract_default(true);
 
         let contract_cbor = contract
-            .to_cbor(&platform_version)
+            .to_cbor(platform_version)
             .expect("serialization shouldn't fail");
-        let deserialized_contract = DataContract::from_cbor(contract_cbor, &platform_version)
+        let deserialized_contract = DataContract::from_cbor(contract_cbor, platform_version)
             .expect("deserialization shouldn't fail");
 
         assert!(matches!(
             deserialized_contract.config(),
-            DataContractConfigV0 {
+            DataContractConfig::V0(DataContractConfigV0 {
                 can_be_deleted: false,
                 readonly: true,
                 keeps_history: true,
                 documents_mutable_contract_default: false,
                 documents_keep_history_contract_default: true,
-            }
+            })
         ));
     }
 
@@ -269,8 +254,8 @@ mod test {
         let platform_version = PlatformVersion::latest();
 
         let mut contract = json_document_to_contract(
-            "src/tests/payloads/contract/dashpay-contract.json",
-            &platform_version,
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            platform_version,
         )
         .expect("expected to decode a contract");
 
@@ -291,10 +276,10 @@ mod test {
             .set_documents_keep_history_contract_default(true);
 
         let contract = contract
-            .serialize_with_platform_version(&platform_version)
+            .serialize_with_platform_version(platform_version)
             .expect("serialization shouldn't fail");
         let deserialized_contract =
-            DataContract::versioned_deserialize(contract.as_slice(), false, &platform_version)
+            DataContract::versioned_deserialize(contract.as_slice(), false, platform_version)
                 .expect("deserialization shouldn't fail");
 
         assert_eq!(

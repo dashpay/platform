@@ -1,14 +1,11 @@
-use itertools::Itertools;
-use jsonschema::JSONSchema;
 use std::collections::{BTreeMap, BTreeSet};
-use std::convert::{TryFrom, TryInto};
+use jsonschema::JSONSchema;
 
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
+
 use platform_value::{Identifier, Value};
-use serde::{Deserialize, Serialize};
 
 mod accessors;
 #[cfg(feature = "random-documents")]

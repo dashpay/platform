@@ -7,7 +7,7 @@ use platform_value::Value;
 
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::INITIAL_REVISION;
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::PlatformVersion;
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 

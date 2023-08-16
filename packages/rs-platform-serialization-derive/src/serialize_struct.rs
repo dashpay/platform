@@ -16,6 +16,7 @@ pub(super) fn derive_platform_serialize_struct(
         crate_name,
         platform_serialize_limit,
         platform_serialize_into,
+        unversioned,
         ..
     } = version_attributes;
 
@@ -89,26 +90,52 @@ pub(super) fn derive_platform_serialize_struct(
         )
     };
 
-    let serialize_into = match platform_serialize_into.clone() {
-        Some(inner) => quote! {
-            let inner: #inner = self.clone().into();
-            inner.serialize_with_platform_version(platform_version)
-        },
-        None => quote! {
-                    #config
-            platform_serialization::platform_encode_to_vec(self, config, platform_version)#limit_err
-        },
+    let serialize_into = if !unversioned {
+        match platform_serialize_into.clone() {
+            Some(inner) => quote! {
+                let inner: #inner = self.clone().into();
+                inner.serialize_with_platform_version(platform_version)
+            },
+            None => quote! {
+                        #config
+                platform_serialization::platform_encode_to_vec(self, config, platform_version)#limit_err
+            },
+        }
+    } else {
+        match platform_serialize_into.clone() {
+            Some(inner) => quote! {
+                let inner: #inner = self.clone().into();
+                inner.serialize()
+            },
+            None => quote! {
+                        #config
+                bincode::encode_to_vec(self, config)#limit_err
+            },
+        }
     };
 
-    let serialize_into_consume = match platform_serialize_into {
-        Some(inner) => quote! {
-            let inner: #inner = self.into();
-            inner.serialize_consume_with_platform_version(platform_version)
-        },
-        None => quote! {
-                #config
-            platform_serialization::platform_encode_to_vec(self, config, platform_version)#limit_err
-        },
+    let serialize_into_consume = if !unversioned {
+        match platform_serialize_into {
+            Some(inner) => quote! {
+                let inner: #inner = self.into();
+                inner.serialize_consume_with_platform_version(platform_version)
+            },
+            None => quote! {
+                    #config
+                platform_serialization::platform_encode_to_vec(self, config, platform_version)#limit_err
+            },
+        }
+    } else {
+        match platform_serialize_into {
+            Some(inner) => quote! {
+                let inner: #inner = self.into();
+                inner.serialize_consume()
+            },
+            None => quote! {
+                    #config
+                bincode::encode_to_vec(self, config)#limit_err
+            },
+        }
     };
 
     let bincode_encode_body = if true {
@@ -119,23 +146,41 @@ pub(super) fn derive_platform_serialize_struct(
         quote! {}
     };
 
-    let expanded = quote! {
-        impl #impl_generics #crate_name::serialization::PlatformSerializableWithPlatformVersion for #name #ty_generics #where_clause
-        {
-            type Error = #error_type;
+    let expanded = if unversioned {
+        quote! {
+            impl #impl_generics #crate_name::serialization::PlatformSerializable for #name #ty_generics #where_clause
+            {
+                type Error = #error_type;
 
-            fn serialize_with_platform_version(&self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, Self::Error> {
-                #serialize_into
-            }
+                fn serialize(&self) -> Result<Vec<u8>, Self::Error> {
+                    #serialize_into
+                }
 
-            fn serialize_consume_with_platform_version(self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, Self::Error> {
-                #serialize_into_consume
+                fn serialize_consume(self) -> Result<Vec<u8>, Self::Error> {
+                    #serialize_into_consume
+                }
             }
+            #bincode_encode_body
         }
-        #bincode_encode_body
+    } else {
+        quote! {
+            impl #impl_generics #crate_name::serialization::PlatformSerializableWithPlatformVersion for #name #ty_generics #where_clause
+            {
+                type Error = #error_type;
+
+                fn serialize_with_platform_version(&self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, Self::Error> {
+                    #serialize_into
+                }
+
+                fn serialize_consume_with_platform_version(self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, Self::Error> {
+                    #serialize_into_consume
+                }
+            }
+            #bincode_encode_body
+        }
     };
 
-    eprintln!("Processing serialize struct: {}", &expanded);
+    // eprintln!("Processing serialize struct: {}", &expanded);
 
     TokenStream::from(expanded)
 }

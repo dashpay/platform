@@ -1,10 +1,7 @@
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::{
-    identity::{KeyID, SecurityLevel},
+    identity::KeyID,
     prelude::{Identifier, Revision, TimestampMillis},
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    version::LATEST_VERSION,
-    ProtocolError,
 };
 
 pub trait IdentityUpdateTransitionAccessorsV0 {

@@ -1,11 +1,8 @@
-use crate::data_contract::DataContract;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
-use bincode::{Decode, Encode};
-use derive_more::Display;
+
 use platform_value::Identifier;
-use serde::{Deserialize, Serialize};
 
 impl DocumentBaseTransitionV0Methods for DocumentBaseTransition {
     fn id(&self) -> Identifier {

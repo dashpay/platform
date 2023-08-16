@@ -1,7 +1,6 @@
 use crate::data_contract::document_type::v0::DocumentTypeV0;
-use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 
 use crate::consensus::basic::data_contract::{
     DuplicateIndexNameError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
@@ -209,103 +208,98 @@ impl DocumentTypeV0 {
                             }
 
                             // Validate indexed properties
-                            index
-                                .properties
-                                .iter()
-                                .map(|index_property| {
-                                    // Do not allow to index already indexed system properties
-                                    if NOT_ALLOWED_SYSTEM_PROPERTIES
-                                        .contains(&index_property.name.as_str())
-                                    {
-                                        return Err(ProtocolError::ConsensusError(Box::new(
-                                            SystemPropertyIndexAlreadyPresentError::new(
-                                                name.to_owned(),
-                                                index.name.to_owned(),
-                                                index_property.name.to_owned(),
-                                            )
-                                            .into(),
-                                        ))
-                                        .into());
-                                    }
+                            index.properties.iter().try_for_each(|index_property| {
+                                // Do not allow to index already indexed system properties
+                                if NOT_ALLOWED_SYSTEM_PROPERTIES
+                                    .contains(&index_property.name.as_str())
+                                {
+                                    return Err(ProtocolError::ConsensusError(Box::new(
+                                        SystemPropertyIndexAlreadyPresentError::new(
+                                            name.to_owned(),
+                                            index.name.to_owned(),
+                                            index_property.name.to_owned(),
+                                        )
+                                        .into(),
+                                    )));
+                                }
 
-                                    // Indexed property must be defined in user schema if it's not a system one
-                                    if !SYSTEM_PROPERTIES.contains(&index_property.name.as_str()) {
-                                        let property_definition = flattened_document_properties
-                                            .get(&index_property.name)
-                                            .ok_or_else(|| {
-                                                ProtocolError::ConsensusError(Box::new(
-                                                    UndefinedIndexPropertyError::new(
-                                                        name.to_owned(),
-                                                        index.name.to_owned(),
-                                                        index_property.name.to_owned(),
-                                                    )
-                                                        .into(),
-                                                ))
-                                            })?;
+                                // Indexed property must be defined in user schema if it's not a system one
+                                if !SYSTEM_PROPERTIES.contains(&index_property.name.as_str()) {
+                                    let property_definition = flattened_document_properties
+                                        .get(&index_property.name)
+                                        .ok_or_else(|| {
+                                            ProtocolError::ConsensusError(Box::new(
+                                                UndefinedIndexPropertyError::new(
+                                                    name.to_owned(),
+                                                    index.name.to_owned(),
+                                                    index_property.name.to_owned(),
+                                                )
+                                                .into(),
+                                            ))
+                                        })?;
 
-                                        // Validate indexed property type
-                                        match property_definition.property_type {
-                                            // Array and objects aren't supported for indexing yet
-                                            DocumentPropertyType::Array(_)
-                                            | DocumentPropertyType::Object(_)
-                                            | DocumentPropertyType::VariableTypeArray(_) => {
-                                                Err(ProtocolError::ConsensusError(Box::new(
-                                                    InvalidIndexPropertyTypeError::new(
-                                                        name.to_owned(),
-                                                        index.name.to_owned(),
-                                                        index_property.name.to_owned(),
-                                                        property_definition.property_type.name(),
-                                                    )
-                                                        .into(),
-                                                )))
-                                            }
-                                            // Indexed byte array size must be limited
-                                            DocumentPropertyType::ByteArray(_, maybe_max_size)
+                                    // Validate indexed property type
+                                    match property_definition.property_type {
+                                        // Array and objects aren't supported for indexing yet
+                                        DocumentPropertyType::Array(_)
+                                        | DocumentPropertyType::Object(_)
+                                        | DocumentPropertyType::VariableTypeArray(_) => {
+                                            Err(ProtocolError::ConsensusError(Box::new(
+                                                InvalidIndexPropertyTypeError::new(
+                                                    name.to_owned(),
+                                                    index.name.to_owned(),
+                                                    index_property.name.to_owned(),
+                                                    property_definition.property_type.name(),
+                                                )
+                                                .into(),
+                                            )))
+                                        }
+                                        // Indexed byte array size must be limited
+                                        DocumentPropertyType::ByteArray(_, maybe_max_size)
                                             if maybe_max_size.is_none()
                                                 || maybe_max_size.unwrap()
-                                                > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH =>
-                                                {
-                                                    Err(ProtocolError::ConsensusError(Box::new(
-                                                        InvalidIndexedPropertyConstraintError::new(
-                                                            name.to_owned(),
-                                                            index.name.to_owned(),
-                                                            index_property.name.to_owned(),
-                                                            "maxItems".to_string(),
-                                                            format!(
-                                                                "should be less or equal {}",
-                                                                MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
-                                                            ),
-                                                        )
-                                                            .into(),
-                                                    )))
-                                                }
-                                            // Indexed string length must be limited
-                                            DocumentPropertyType::String(_, maybe_max_length)
+                                                    > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH =>
+                                        {
+                                            Err(ProtocolError::ConsensusError(Box::new(
+                                                InvalidIndexedPropertyConstraintError::new(
+                                                    name.to_owned(),
+                                                    index.name.to_owned(),
+                                                    index_property.name.to_owned(),
+                                                    "maxItems".to_string(),
+                                                    format!(
+                                                        "should be less or equal {}",
+                                                        MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
+                                                    ),
+                                                )
+                                                .into(),
+                                            )))
+                                        }
+                                        // Indexed string length must be limited
+                                        DocumentPropertyType::String(_, maybe_max_length)
                                             if maybe_max_length.is_none()
                                                 || maybe_max_length.unwrap()
-                                                > MAX_INDEXED_STRING_PROPERTY_LENGTH =>
-                                                {
-                                                    Err(ProtocolError::ConsensusError(Box::new(
-                                                        InvalidIndexedPropertyConstraintError::new(
-                                                            name.to_owned(),
-                                                            index.name.to_owned(),
-                                                            index_property.name.to_owned(),
-                                                            "maxLength".to_string(),
-                                                            format!(
-                                                                "should be less or equal {}",
-                                                                MAX_INDEXED_STRING_PROPERTY_LENGTH
-                                                            ),
-                                                        )
-                                                            .into(),
-                                                    )))
-                                                }
-                                            _ => Ok(()),
+                                                    > MAX_INDEXED_STRING_PROPERTY_LENGTH =>
+                                        {
+                                            Err(ProtocolError::ConsensusError(Box::new(
+                                                InvalidIndexedPropertyConstraintError::new(
+                                                    name.to_owned(),
+                                                    index.name.to_owned(),
+                                                    index_property.name.to_owned(),
+                                                    "maxLength".to_string(),
+                                                    format!(
+                                                        "should be less or equal {}",
+                                                        MAX_INDEXED_STRING_PROPERTY_LENGTH
+                                                    ),
+                                                )
+                                                .into(),
+                                            )))
                                         }
-                                    } else {
-                                        Ok(())
+                                        _ => Ok(()),
                                     }
-                                })
-                                .collect::<Result<_, ProtocolError>>()?;
+                                } else {
+                                    Ok(())
+                                }
+                            })?;
                         }
 
                         Ok(index)

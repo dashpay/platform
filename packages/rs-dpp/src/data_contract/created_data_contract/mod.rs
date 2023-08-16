@@ -1,14 +1,13 @@
 mod fields;
 pub mod v0;
 
-use crate::data_contract::accessors::v0::DataContractV0Setters;
 use crate::data_contract::created_data_contract::v0::CreatedDataContractV0;
 use crate::prelude::DataContract;
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{BinaryData, Bytes32, Identifier, Value};
+
+use platform_value::{Bytes32, Value};
 
 /// The created data contract is a intermediate structure that can be consumed by a
 /// contract create state transition.

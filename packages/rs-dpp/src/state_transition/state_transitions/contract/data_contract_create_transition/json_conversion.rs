@@ -7,7 +7,7 @@ use crate::ProtocolError;
 use serde_json::Number;
 use serde_json::Value as JsonValue;
 
-impl StateTransitionJsonConvert for DataContractCreateTransition {
+impl<'a> StateTransitionJsonConvert<'a> for DataContractCreateTransition {
     fn to_json(
         &self,
         options: JsonStateTransitionSerializationOptions,
@@ -19,7 +19,7 @@ impl StateTransitionJsonConvert for DataContractCreateTransition {
                 map_value.insert(
                     STATE_TRANSITION_PROTOCOL_VERSION.to_string(),
                     JsonValue::Number(Number::from(0)),
-                )?;
+                );
                 Ok(value)
             }
         }
@@ -33,6 +33,7 @@ mod test {
         JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
     };
     use crate::version;
+    use dpp::util::json_value::JsonValueExt;
     use platform_value::Bytes32;
 
     #[test]
@@ -47,7 +48,7 @@ mod test {
             .expect("conversion to JSON shouldn't fail");
 
         assert_eq!(
-            version::LATEST_VERSION,
+            0,
             json_object
                 .get_u64(STATE_TRANSITION_PROTOCOL_VERSION)
                 .expect("the protocol version should be present") as u32
@@ -73,7 +74,7 @@ mod test {
         );
 
         assert_eq!(
-            <Bytes32 as Into<String>>::into(data.created_data_contract.entropy_used),
+            <Bytes32 as Into<String>>::into(data.created_data_contract.entropy_used_owned()),
             json_object
                 .remove_into::<String>(ENTROPY)
                 .expect("the entropy should be present")

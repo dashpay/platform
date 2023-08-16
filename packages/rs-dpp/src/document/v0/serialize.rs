@@ -1,13 +1,10 @@
 use crate::data_contract::document_type::DocumentTypeRef;
-use crate::data_contract::errors::{DataContractError, StructureError};
+use crate::data_contract::errors::DataContractError;
 
 use crate::document::property_names::{CREATED_AT, UPDATED_AT};
-use crate::document::{property_names, DocumentV0Getters};
 
-use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
-use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
+
 use crate::ProtocolError;
 
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -18,13 +15,13 @@ use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::v0::DocumentV0;
 use crate::version::PlatformVersion;
 use byteorder::{BigEndian, ReadBytesExt};
-use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+use integer_encoding::{VarInt, VarIntReader};
+
 use platform_value::{Identifier, Value};
 use platform_version::version::FeatureVersion;
-use serde::{Deserialize, Serialize};
+
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
+
 use std::io::{BufReader, Read};
 
 impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
@@ -313,8 +310,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             revision,
             created_at,
             updated_at,
-        }
-        .into())
+        })
     }
 }
 

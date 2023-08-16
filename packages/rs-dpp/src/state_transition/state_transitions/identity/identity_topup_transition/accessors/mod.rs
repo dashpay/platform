@@ -2,13 +2,10 @@ mod v0;
 
 pub use v0::*;
 
-use crate::identity::signer::Signer;
-use crate::identity::{Identity, KeyID, PartialIdentity};
 use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use crate::version::FeatureVersion;
-use crate::{BlsModule, NonConsensusError, ProtocolError};
-use platform_value::{Bytes32, Identifier};
+
+use platform_value::Identifier;
 
 impl IdentityTopUpTransitionAccessorsV0 for IdentityTopUpTransition {
     fn set_asset_lock_proof(&mut self, asset_lock_proof: AssetLockProof) {

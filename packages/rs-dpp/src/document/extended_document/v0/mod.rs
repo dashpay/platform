@@ -11,30 +11,26 @@ use crate::document::{Document, DocumentV0Getters, ExtendedDocument};
 use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::Revision;
-use crate::serialization::{PlatformDeserializable, ValueConvertible};
+
 use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
 
-#[cfg(feature = "document-cbor-conversion")]
-use crate::document::serialization_traits::DocumentCborMethodsV0;
 use platform_value::btreemap_extensions::{
     BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
     BTreeValueRemoveFromMapHelper,
 };
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
-use std::convert::TryInto;
+use std::collections::BTreeMap;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::document::extended_document_property_names::DATA_CONTRACT;
 #[cfg(feature = "document-json-conversion")]
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
 #[cfg(feature = "document-value-conversion")]
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
-use crate::document::serialization_traits::{
-    DocumentPlatformConversionMethodsV0, ExtendedDocumentPlatformConversionMethodsV0,
-};
+use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "document-json-conversion")]
@@ -125,7 +121,7 @@ impl ExtendedDocumentV0 {
     }
 
     pub fn properties(&self) -> &BTreeMap<String, Value> {
-        &self.document.properties()
+        self.document.properties()
     }
 
     pub fn properties_as_mut(&mut self) -> &mut BTreeMap<String, Value> {
@@ -249,6 +245,7 @@ impl ExtendedDocumentV0 {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut properties = document_value
+            .clone()
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         let document_type_name = properties
@@ -257,11 +254,12 @@ impl ExtendedDocumentV0 {
 
         let document = Document::from_platform_value(document_value, platform_version)?;
 
+        let data_contract_id = data_contract.id();
         let mut extended_document = Self {
             data_contract,
             document_type_name,
             document,
-            data_contract_id: data_contract.id(),
+            data_contract_id,
             metadata: None,
             entropy: Default::default(),
         };
@@ -287,28 +285,40 @@ impl ExtendedDocumentV0 {
     ///
     /// Returns a `ProtocolError` if there is an error processing the untrusted platform value.
     pub fn from_untrusted_platform_value(
-        document_value: Value,
+        mut document_value: Value,
         data_contract: DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut properties = document_value
+            .clone()
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         let document_type_name = properties
             .remove_string(property_names::DOCUMENT_TYPE_NAME)
             .map_err(ProtocolError::ValueError)?;
 
-        //Because we don't know how the json came in we need to sanitize it
-        let (identifiers, binary_paths): (HashSet<_>, HashSet<_>) =
-            data_contract.get_identifiers_and_binary_paths_owned(document_type_name.as_str())?;
+        let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;
+
+        let identifiers = document_type.identifier_paths().to_owned();
+        let binary_paths = document_type.binary_paths();
+
+        document_value.replace_at_paths(["$id", "$ownerId"], ReplacementType::Identifier)?;
+        document_value.replace_at_paths(
+            identifiers.iter().map(|s| s.as_str()),
+            ReplacementType::Identifier,
+        )?;
+        document_value.replace_at_paths(
+            binary_paths.iter().map(|s| s.as_str()),
+            ReplacementType::BinaryBytes,
+        )?;
 
         let document = Document::from_platform_value(document_value, platform_version)?;
-
+        let data_contract_id = data_contract.id();
         let mut extended_document = Self {
             data_contract,
             document_type_name,
             document,
-            data_contract_id: data_contract.id(),
+            data_contract_id,
             metadata: None,
             entropy: Default::default(),
         };
@@ -316,15 +326,10 @@ impl ExtendedDocumentV0 {
         extended_document.data_contract_id = properties
             .remove_optional_identifier(property_names::DATA_CONTRACT_ID)?
             .unwrap_or(extended_document.data_contract.id());
-
         extended_document
             .document
-            .properties()
+            .properties_mut()
             .replace_at_paths(&identifiers, ReplacementType::Identifier)?;
-        extended_document
-            .document
-            .properties()
-            .replace_at_paths(&binary_paths, ReplacementType::BinaryBytes)?;
         Ok(extended_document)
     }
 
@@ -334,8 +339,11 @@ impl ExtendedDocumentV0 {
     /// # Errors
     ///
     /// Returns a `ProtocolError` if there is an error converting the document to pretty JSON.
-    pub fn to_pretty_json(&self) -> Result<JsonValue, ProtocolError> {
-        let mut value = self.document.to_json()?;
+    pub fn to_pretty_json(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<JsonValue, ProtocolError> {
+        let mut value = self.document.to_json(platform_version)?;
         let value_mut = value.as_object_mut().unwrap();
         value_mut.insert(
             property_names::DOCUMENT_TYPE_NAME.to_string(),

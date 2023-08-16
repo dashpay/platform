@@ -1,35 +1,19 @@
-use crate::serialization::Signable;
-use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 use anyhow::anyhow;
 use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
-use std::fmt::Debug;
 
 use crate::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
 };
-use crate::identity::signer::Signer;
-
-#[cfg(any(
-    feature = "state-transition-validation",
-    feature = "state-transition-signing"
-))]
-use crate::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
-};
 
 #[cfg(feature = "state-transition-validation")]
-use crate::state_transition::errors::{
-    PublicKeyMismatchError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
-};
+use crate::state_transition::errors::WrongPublicKeyPurposeError;
 
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::state_transition::StateTransitionLike;
-use crate::version::{FeatureVersion, PlatformVersion};
+
 use crate::{
-    identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel},
+    identity::{IdentityPublicKey, KeyID, Purpose, SecurityLevel},
     prelude::*,
-    util::hash::ripemd160_sha256,
-    BlsModule,
 };
 
 pub trait StateTransitionIdentitySigned: StateTransitionLike {

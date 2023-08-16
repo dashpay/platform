@@ -1,4 +1,3 @@
-use crate::identity::KeyID;
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;

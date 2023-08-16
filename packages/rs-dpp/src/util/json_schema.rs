@@ -1,8 +1,6 @@
-use anyhow::{anyhow, bail, Error};
+use anyhow::{anyhow, bail};
 use platform_value::Value;
 use serde_json::Value as JsonValue;
-use std::convert::TryFrom;
-use std::iter::FromIterator;
 
 use crate::{identifier, ProtocolError};
 
@@ -147,7 +145,12 @@ impl JsonSchemaExt for JsonValue {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+
+    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::document_type::DocumentType;
+
+    use platform_value::Identifier;
+    use platform_version::version::LATEST_PLATFORM_VERSION;
     use serde_json::json;
 
     #[test]
@@ -180,8 +183,21 @@ mod test {
              ]
         });
 
-        let indices_result = input.get_indices::<Vec<_>>();
-        let indices = indices_result.unwrap();
+        let platform_value = platform_value::to_value(input).unwrap();
+
+        let document_type = DocumentType::try_from_schema(
+            Identifier::random(),
+            "doc",
+            platform_value,
+            None,
+            false,
+            false,
+            false,
+            LATEST_PLATFORM_VERSION,
+        )
+        .unwrap();
+
+        let indices = document_type.indices();
 
         assert_eq!(indices.len(), 2);
         assert_eq!(indices[0].name, "first_index");

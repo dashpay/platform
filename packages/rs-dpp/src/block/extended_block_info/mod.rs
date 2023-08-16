@@ -3,10 +3,9 @@ use crate::block::extended_block_info::v0::{
     ExtendedBlockInfoV0, ExtendedBlockInfoV0Getters, ExtendedBlockInfoV0Setters,
 };
 use crate::protocol_error::ProtocolError;
-use crate::serialization::PlatformDeserializable;
-use crate::serialization::PlatformSerializable;
+
 use crate::version::FeatureVersion;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use serde::{Deserialize, Serialize};
@@ -88,32 +87,42 @@ impl ExtendedBlockInfoV0Getters for ExtendedBlockInfo {
 
 impl ExtendedBlockInfoV0Setters for ExtendedBlockInfo {
     fn set_basic_info(&mut self, info: BlockInfo) {
-        if let ExtendedBlockInfo::V0(v0) = self {
-            v0.set_basic_info(info);
+        match self {
+            ExtendedBlockInfo::V0(v0) => {
+                v0.set_basic_info(info);
+            }
         }
     }
 
     fn set_app_hash(&mut self, hash: [u8; 32]) {
-        if let ExtendedBlockInfo::V0(v0) = self {
-            v0.set_app_hash(hash);
+        match self {
+            ExtendedBlockInfo::V0(v0) => {
+                v0.set_app_hash(hash);
+            }
         }
     }
 
     fn set_quorum_hash(&mut self, hash: [u8; 32]) {
-        if let ExtendedBlockInfo::V0(v0) = self {
-            v0.set_quorum_hash(hash);
+        match self {
+            ExtendedBlockInfo::V0(v0) => {
+                v0.set_quorum_hash(hash);
+            }
         }
     }
 
     fn set_signature(&mut self, signature: [u8; 96]) {
-        if let ExtendedBlockInfo::V0(v0) = self {
-            v0.set_signature(signature);
+        match self {
+            ExtendedBlockInfo::V0(v0) => {
+                v0.set_signature(signature);
+            }
         }
     }
 
     fn set_round(&mut self, round: u32) {
-        if let ExtendedBlockInfo::V0(v0) = self {
-            v0.set_round(round);
+        match self {
+            ExtendedBlockInfo::V0(v0) => {
+                v0.set_round(round);
+            }
         }
     }
 }
@@ -122,6 +131,7 @@ impl ExtendedBlockInfoV0Setters for ExtendedBlockInfo {
 mod tests {
     use super::*;
     use crate::block::block_info::BlockInfo;
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 
     #[test]
     fn test_extended_block_info_bincode() {
@@ -135,10 +145,11 @@ mod tests {
         .into();
 
         // Serialize into a vector
-        let mut encoded: Vec<u8> = block_info.serialize().expect("expected to serialize");
+        let encoded = PlatformSerializable::serialize(&block_info).expect("expected to serialize");
 
         // Deserialize from the vector
-        let decoded: ExtendedBlockInfo = ExtendedBlockInfo::deserialize(encoded);
+        let decoded: ExtendedBlockInfo =
+            PlatformDeserializable::deserialize(&encoded).expect("expected to deserialize");
 
         assert_eq!(block_info, decoded);
     }

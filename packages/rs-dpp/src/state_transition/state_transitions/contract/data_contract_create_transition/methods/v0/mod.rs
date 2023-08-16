@@ -1,13 +1,11 @@
 use crate::data_contract::DataContract;
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
-use crate::state_transition::data_contract_create_transition::{
-    DataContractCreateTransition, DataContractCreateTransitionV0,
-};
+
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
-use platform_value::{Bytes32, Identifier};
+use platform_value::Bytes32;
 use platform_version::version::PlatformVersion;
 
 pub trait DataContractCreateTransitionMethodsV0 {

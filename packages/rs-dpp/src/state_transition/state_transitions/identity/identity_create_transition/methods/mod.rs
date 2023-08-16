@@ -3,15 +3,14 @@ mod v0;
 pub use v0::*;
 
 use crate::identity::signer::Signer;
-use crate::identity::{Identity, KeyID, PartialIdentity};
+use crate::identity::Identity;
 use crate::prelude::AssetLockProof;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+
 use crate::state_transition::{StateTransition, StateTransitionType};
-use crate::version::{FeatureVersion, PlatformVersion};
-use crate::{BlsModule, NonConsensusError, ProtocolError};
-use platform_value::{Bytes32, Identifier};
+use crate::version::PlatformVersion;
+use crate::{BlsModule, ProtocolError};
 
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransition {
     #[cfg(feature = "state-transition-signing")]

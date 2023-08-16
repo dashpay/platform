@@ -1,4 +1,3 @@
-use crate::prelude::IdentityPublicKey;
 use crate::ProtocolError;
 
 pub trait IdentityPublicKeyHashMethodsV0 {

@@ -1,5 +1,5 @@
 use platform_version::version::{FeatureVersion, PlatformVersion};
-use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use crate::data_contract::document_type::{DocumentTypeRef};
 use crate::document::{Document, DocumentV0Getters};
 use crate::document::errors::DocumentError;
 use crate::ProtocolError;

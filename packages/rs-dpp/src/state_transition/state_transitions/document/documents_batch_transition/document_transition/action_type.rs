@@ -1,4 +1,3 @@
-use crate::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 
 // @append-only

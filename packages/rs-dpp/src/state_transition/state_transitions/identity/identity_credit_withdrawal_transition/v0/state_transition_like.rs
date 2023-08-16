@@ -1,27 +1,15 @@
-use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+use platform_value::BinaryData;
 
 use crate::{
-    data_contract::DataContract,
-    identity::KeyID,
     prelude::Identifier,
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    NonConsensusError, ProtocolError,
+    state_transition::{StateTransitionLike, StateTransitionType},
 };
 
-use crate::identity::signer::Signer;
-use crate::identity::PartialIdentity;
-use crate::serialization::{PlatformDeserializable, Signable};
-use crate::state_transition::data_contract_create_transition::{
-    DataContractCreateTransition, DataContractCreateTransitionV0,
-};
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
-use bincode::{config, Decode, Encode};
 
 use crate::state_transition::StateTransition;
-use crate::state_transition::StateTransitionType::{IdentityCreate, IdentityCreditWithdrawal};
+use crate::state_transition::StateTransitionType::IdentityCreditWithdrawal;
 use crate::version::FeatureVersion;
 
 impl From<IdentityCreditWithdrawalTransitionV0> for StateTransition {

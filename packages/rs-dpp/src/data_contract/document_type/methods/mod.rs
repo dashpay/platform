@@ -5,25 +5,19 @@ mod index_for_types;
 mod max_size;
 mod serialize_value_for_key;
 
-use itertools::Itertools;
-use std::collections::{BTreeMap, BTreeSet};
-use std::convert::TryInto;
-
-use crate::data_contract::document_type::{property_names, DocumentTypeRef};
-use crate::data_contract::errors::{DataContractError, StructureError};
+use std::collections::BTreeMap;
 
 use crate::data_contract::document_type::index::{Index, IndexProperty};
 use crate::data_contract::document_type::index_level::IndexLevel;
-use crate::data_contract::document_type::property::{DocumentProperty, DocumentPropertyType};
-use crate::data_contract::document_type::v0::{DocumentTypeV0, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE};
+
+use crate::data_contract::document_type::v0::DocumentTypeV0;
+use crate::document::Document;
 use crate::document::INITIAL_REVISION;
-use crate::document::{Document, DocumentV0};
 use crate::prelude::Revision;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::{Identifier, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
+
+use platform_value::{Identifier, Value};
 
 // TODO: Some of those methods are only for tests. Hide under feature
 pub trait DocumentTypeV0Methods {

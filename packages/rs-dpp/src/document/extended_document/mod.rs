@@ -16,10 +16,11 @@ use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
+use platform_versioning::PlatformVersioned;
 use serde_json::Value as JsonValue;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PlatformVersioned)]
 pub enum ExtendedDocument {
     V0(ExtendedDocumentV0),
 }
@@ -108,9 +109,9 @@ impl ExtendedDocument {
     ///
     /// This function is a passthrough to the `to_json` method.
     #[cfg(feature = "document-json-conversion")]
-    pub fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+    pub fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
         match self {
-            ExtendedDocument::V0(v0) => v0.to_json(),
+            ExtendedDocument::V0(v0) => v0.to_json(platform_version),
         }
     }
 
@@ -118,9 +119,12 @@ impl ExtendedDocument {
     ///
     /// This function is a passthrough to the `to_pretty_json` method.
     #[cfg(feature = "document-json-conversion")]
-    pub fn to_pretty_json(&self) -> Result<JsonValue, ProtocolError> {
+    pub fn to_pretty_json(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<JsonValue, ProtocolError> {
         match self {
-            ExtendedDocument::V0(v0) => v0.to_pretty_json(),
+            ExtendedDocument::V0(v0) => v0.to_pretty_json(platform_version),
         }
     }
 
@@ -210,21 +214,25 @@ mod test {
 
     use crate::document::extended_document::{ExtendedDocument, IDENTIFIER_FIELDS};
 
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::DataContract;
     use crate::document::extended_document::v0::ExtendedDocumentV0;
-    use crate::document::{Document, DocumentV0};
+
     use crate::prelude::Identifier;
     use crate::system_data_contracts::load_system_data_contract;
     use crate::tests::utils::*;
     use data_contracts::SystemDataContract;
-    use platform_value::btreemap_extensions::BTreeValueMapHelper;
+
     use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
     use platform_value::string_encoding::Encoding;
     use platform_value::Value;
-    use platform_version::version::PlatformVersion;
+    use platform_version::version::{PlatformVersion, LATEST_PLATFORM_VERSION};
     use pretty_assertions::assert_eq;
 
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use crate::data_contract::document_type::random_document::CreateRandomDocument;
+    use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
+    use crate::tests::fixtures::get_dashpay_contract_fixture;
 
     fn init() {
         let _ = env_logger::builder()
@@ -259,6 +267,8 @@ mod test {
         let test_document_properties_alpha_identifier = Value::from([
             ("type", Value::Text("array".to_string())),
             ("byteArray", Value::Bool(true)),
+            ("minItems", Value::U64(32)),
+            ("maxItems", Value::U64(32)),
             (
                 "contentMediaType",
                 Value::Text("application/x.dash.dpp.identifier".to_string()),
@@ -272,35 +282,40 @@ mod test {
             ("alphaIdentifier", test_document_properties_alpha_identifier),
             ("alphaBinary", test_document_properties_alpha_binary),
         ]);
-        let test_document = Value::from([("properties", test_document_properties)]);
+        let test_document = Value::from([
+            ("type", Value::Text("object".to_string())),
+            ("properties", test_document_properties),
+            ("additionalProperties", Value::Bool(false)),
+        ]);
         let documents = Value::from([("test", test_document)]);
 
         DataContract::from_value(
             Value::from([
                 ("protocolVersion", Value::U32(1)),
-                ("$id", Value::Identifier([0_u8; 32])),
+                ("id", Value::Identifier([0_u8; 32])),
                 ("$schema", Value::Text("schema".to_string())),
                 ("version", Value::U32(0)),
                 ("ownerId", Value::Identifier([0_u8; 32])),
-                ("documents", documents),
+                ("documentSchemas", documents),
+                ("$format_version", Value::Text("0".to_string())),
             ]),
-            &platform_version,
+            platform_version,
         )
         .unwrap()
     }
 
     #[test]
     #[cfg(feature = "document-json-conversion")]
-    fn test_document_deserialize() -> Result<()> {
+    fn test_document_json_deserialize() -> Result<()> {
         init();
         let platform_version = PlatformVersion::latest();
         let dpns_contract =
             load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         let doc =
-            ExtendedDocument::from_json_string(&document_json, dpns_contract, &platform_version)?;
-        assert_eq!(doc.document_type_name, "domain");
-        assert_eq!(doc.feature_version, 0);
+            ExtendedDocument::from_json_string(&document_json, dpns_contract, platform_version)?;
+        assert_eq!(doc.document_type_name(), "domain");
+        assert_eq!(doc.feature_version(), 0);
         assert_eq!(
             doc.id().to_buffer(),
             Identifier::from_string(
@@ -311,7 +326,7 @@ mod test {
             .to_buffer()
         );
         assert_eq!(
-            doc.data_contract_id.to_buffer(),
+            doc.data_contract_id().to_buffer(),
             Identifier::from_string(
                 "566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy",
                 Encoding::Base58
@@ -319,12 +334,17 @@ mod test {
             .unwrap()
             .to_buffer()
         );
-
         assert_eq!(
             doc.properties()
                 .get("label")
                 .expect("expected to get label"),
             &Value::Text("user-9999".to_string())
+        );
+        println!(
+            "{:?}",
+            doc.properties()
+                .get_at_path("records.dashUniqueIdentityId")
+                .expect("expected to get value")
         );
         assert_eq!(
             doc.properties()
@@ -351,24 +371,37 @@ mod test {
     fn test_buffer_serialize_deserialize() {
         init();
         let init_doc = new_example_document();
-        let buffer_document = init_doc.to_cbor_value().expect("no errors");
+        let buffer_document = init_doc
+            .serialize(PlatformVersion::latest())
+            .expect("no errors");
 
-        let doc = ExtendedDocument::from_cbor_buffer(buffer_document)
-            .expect("document should be created from buffer");
+        let doc =
+            ExtendedDocument::from_bytes(buffer_document.as_slice(), PlatformVersion::latest())
+                .expect("document should be created from buffer");
 
         assert_eq!(init_doc.created_at(), doc.created_at());
         assert_eq!(init_doc.updated_at(), doc.updated_at());
         assert_eq!(init_doc.id(), doc.id());
-        assert_eq!(init_doc.data_contract_id, doc.data_contract_id);
+        assert_eq!(init_doc.data_contract_id(), doc.data_contract_id());
         assert_eq!(init_doc.owner_id(), doc.owner_id());
     }
 
     #[test]
     fn test_to_object() {
         init();
-        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS).unwrap();
-        let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
-        let document = ExtendedDocument::from_json_string(&document_json, dpns_contract).unwrap();
+        let dpns_contract = load_system_data_contract(
+            SystemDataContract::DPNS,
+            LATEST_PLATFORM_VERSION.protocol_version,
+        )
+        .unwrap();
+        let document_json =
+            get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
+        let document = ExtendedDocument::from_json_string(
+            &document_json,
+            dpns_contract,
+            LATEST_PLATFORM_VERSION,
+        )
+        .unwrap();
         let document_object = document.to_json_object_for_validation().unwrap();
 
         for property in IDENTIFIER_FIELDS {
@@ -385,12 +418,22 @@ mod test {
     fn test_json_serialize() -> Result<()> {
         init();
 
-        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS)?;
+        let dpns_contract = load_system_data_contract(
+            SystemDataContract::DPNS,
+            LATEST_PLATFORM_VERSION.protocol_version,
+        )?;
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        let document = ExtendedDocument::from_json_string(&document_json, dpns_contract)?;
+        let document = ExtendedDocument::from_json_string(
+            &document_json,
+            dpns_contract,
+            LATEST_PLATFORM_VERSION,
+        )?;
         let string = serde_json::to_string(&document)?;
 
-        assert_eq!("{\"$protocolVersion\":0,\"$type\":\"domain\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"$id\":\"4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E\",\"$ownerId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\",\"label\":\"user-9999\",\"normalizedLabel\":\"user-9999\",\"normalizedParentDomainName\":\"dash\",\"preorderSalt\":\"BzQi567XVqc8wYiVHS887sJtL6MDbxLHNnp+UpTFSB0=\",\"records\":{\"dashUniqueIdentityId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\"},\"subdomainRules\":{\"allowSubdomains\":false},\"$revision\":1,\"$createdAt\":null,\"$updatedAt\":null}", string);
+        assert_eq!(
+            "{\"version\":0,\"$type\":\"domain\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"document\":{\"$version\":\"0\",\"$id\":\"4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E\",\"$ownerId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"$protocolVersion\":0,\"$type\":\"domain\",\"label\":\"user-9999\",\"normalizedLabel\":\"user-9999\",\"normalizedParentDomainName\":\"dash\",\"preorderSalt\":\"BzQi567XVqc8wYiVHS887sJtL6MDbxLHNnp+UpTFSB0=\",\"records\":{\"dashUniqueIdentityId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\"},\"subdomainRules\":{\"allowSubdomains\":false},\"$revision\":1,\"$createdAt\":null,\"$updatedAt\":null}}",
+            string
+        );
 
         Ok(())
     }
@@ -400,56 +443,13 @@ mod test {
         init();
 
         let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
-        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS).unwrap();
-        ExtendedDocument::from_json_string(&document_json, dpns_contract)
+        let dpns_contract = load_system_data_contract(
+            SystemDataContract::DPNS,
+            LATEST_PLATFORM_VERSION.protocol_version,
+        )
+        .unwrap();
+        ExtendedDocument::from_json_string(&document_json, dpns_contract, LATEST_PLATFORM_VERSION)
             .expect("expected extended document");
-        Ok(())
-    }
-
-    #[test]
-    fn deserialize_js_cpp_cbor() -> Result<()> {
-        let document_cbor = document_cbor_bytes();
-
-        let document = ExtendedDocument::from_cbor_buffer(document_cbor)?;
-
-        assert_eq!(document.feature_version, 1);
-        assert_eq!(
-            document.id().to_buffer().to_vec(),
-            vec![
-                113, 93, 61, 101, 117, 96, 36, 162, 222, 10, 177, 178, 187, 30, 131, 181, 239, 41,
-                123, 240, 198, 250, 97, 106, 173, 92, 136, 126, 79, 16, 222, 249
-            ]
-        );
-        assert_eq!(&document.document_type_name, "niceDocument");
-        assert_eq!(
-            document.data_contract_id.to_buffer().to_vec(),
-            vec![
-                122, 188, 95, 154, 180, 188, 208, 97, 46, 214, 202, 206, 194, 4, 221, 109, 116, 17,
-                165, 97, 39, 212, 36, 138, 241, 234, 218, 203, 147, 82, 93, 162
-            ]
-        );
-        assert_eq!(
-            document.owner_id().to_buffer().to_vec(),
-            vec![
-                182, 191, 55, 77, 48, 47, 190, 43, 81, 27, 67, 226, 61, 3, 63, 150, 94, 46, 51,
-                160, 36, 199, 65, 157, 176, 117, 51, 212, 186, 125, 112, 142
-            ]
-        );
-        assert_eq!(document.revision(), Some(&1));
-        assert_eq!(document.created_at().unwrap(), &1656583332347);
-        assert_eq!(document.properties().get_string("name").unwrap(), "Cutie");
-
-        Ok(())
-    }
-
-    #[test]
-    fn to_buffer_serialize_to_the_same_format_as_js_dpp() -> Result<()> {
-        let document_cbor = document_cbor_bytes();
-        let document = ExtendedDocument::from_cbor_buffer(&document_cbor)?;
-
-        let buffer = document.to_cbor_buffer()?;
-
-        assert_eq!(hex::encode(document_cbor), hex::encode(buffer));
         Ok(())
     }
 
@@ -472,9 +472,17 @@ mod test {
             "alphaIdentifier" : alpha_value,
         });
 
-        let document =
-            ExtendedDocument::from_raw_json_document(raw_document, data_contract).unwrap();
-        let json_document = document.to_pretty_json().expect("no errors");
+        let document = ExtendedDocument::from_raw_json_document(
+            raw_document,
+            data_contract,
+            LATEST_PLATFORM_VERSION,
+        )
+        .unwrap();
+        let json_document = document
+            .to_pretty_json(LATEST_PLATFORM_VERSION)
+            .expect("no errors");
+
+        println!("{:?}", json_document);
 
         assert_eq!(
             json_document["$id"],
@@ -494,26 +502,34 @@ mod test {
         );
         assert_eq!(
             json_document["alphaIdentifier"],
-            JsonValue::String(bs58::encode(&alpha_value).into_string())
+            JsonValue::String(base64::encode(&alpha_value))
         );
     }
 
-    fn document_cbor_bytes() -> Vec<u8> {
-        hex::decode("01a7632469645820715d3d65756024a2de0ab1b2bb1e83b5ef297bf0c6fa616aad5c887e4f10def9646e616d656543757469656524747970656c6e696365446f63756d656e7468246f776e657249645820b6bf374d302fbe2b511b43e23d033f965e2e33a024c7419db07533d4ba7d708e69247265766973696f6e016a246372656174656441741b00000181b40fa1fb6f2464617461436f6e7472616374496458207abc5f9ab4bcd0612ed6cacec204dd6d7411a56127d4248af1eadacb93525da2").unwrap()
+    fn document_bytes() -> Vec<u8> {
+        new_example_document()
+            .serialize(LATEST_PLATFORM_VERSION)
+            .unwrap()
     }
 
-    fn new_example_document() -> ExtendedDocumentV0 {
+    fn new_example_document() -> ExtendedDocument {
+        let data_contract =
+            get_dashpay_contract_fixture(None, LATEST_PLATFORM_VERSION.protocol_version)
+                .data_contract_owned();
+        let document_type = data_contract
+            .document_type_for_name("profile")
+            .expect("expected to get profile document type");
+        let data_contract_id = data_contract.id();
         ExtendedDocumentV0 {
-            document: DocumentV0 {
-                id: generate_random_identifier_struct(),
-                owner_id: generate_random_identifier_struct(),
-                created_at: Some(1648013404492),
-                updated_at: Some(1648013404492),
-                ..Default::default()
-            }
-            .into(),
-            data_contract_id: generate_random_identifier_struct(),
-            ..Default::default()
+            document_type_name: "profile".to_string(),
+            document: document_type
+                .random_document(Some(15), LATEST_PLATFORM_VERSION)
+                .expect("expected to get a random document"),
+            data_contract,
+            metadata: None,
+            data_contract_id,
+            entropy: Default::default(),
         }
+        .into()
     }
 }

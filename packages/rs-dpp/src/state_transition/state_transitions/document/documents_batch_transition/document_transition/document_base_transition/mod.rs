@@ -11,7 +11,7 @@ use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::{Display, From};
 pub use fields::*;
-use platform_value::{Identifier, Value};
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "state-transition-json-conversion")]
 use serde_json::Value as JsonValue;
@@ -42,7 +42,7 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
     where
         Self: Sized,
     {
-        let value: Value = json_str.into()?;
+        let value: Value = json_str.into();
         Self::from_object(value, data_contract)
     }
     #[cfg(feature = "state-transition-value-conversion")]

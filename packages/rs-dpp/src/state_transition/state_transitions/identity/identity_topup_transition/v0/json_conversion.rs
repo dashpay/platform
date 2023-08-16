@@ -1,4 +1,4 @@
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use crate::state_transition::StateTransitionJsonConvert;
 
-impl StateTransitionJsonConvert for IdentityTopUpTransitionV0 {}
+impl<'a> StateTransitionJsonConvert<'a> for IdentityTopUpTransitionV0 {}

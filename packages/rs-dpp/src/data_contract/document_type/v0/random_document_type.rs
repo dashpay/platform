@@ -100,7 +100,7 @@ impl RandomDocumentTypeParameters {
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::{
-    DocumentProperty, DocumentPropertyType, DocumentType, DocumentTypeRef, Index,
+    DocumentProperty, DocumentPropertyType, DocumentType, Index,
 };
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
