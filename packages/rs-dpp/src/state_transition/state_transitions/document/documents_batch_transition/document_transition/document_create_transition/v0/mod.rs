@@ -272,7 +272,9 @@ mod test {
 
         let raw_document = platform_value!({
             "$protocolVersion"  : 0u32,
+            "$version"  : "0".to_string(),
             "$id" : id,
+            "id" : id,
             "$type" : "test",
             "$dataContractId" : data_contract_id,
             "revision" : 1u32,
@@ -286,9 +288,9 @@ mod test {
             DocumentCreateTransition::from_object(raw_document, data_contract).unwrap();
 
         let json_transition = transition.to_json().expect("no errors");
-        assert_eq!(json_transition["$id"], JsonValue::String(id.into()));
+        assert_eq!(json_transition["V0"]["$id"], JsonValue::String(id.into()));
         assert_eq!(
-            json_transition["$dataContractId"],
+            json_transition["V0"]["$dataContractId"],
             JsonValue::String(data_contract_id.into())
         );
         assert_eq!(
@@ -315,6 +317,7 @@ mod test {
 
         let raw_document = json!({
             "$protocolVersion"  : 0,
+            "$version"  : "0",
             "$id" : id,
             "$type" : "test",
             "$dataContractId" : data_contract_id,
@@ -333,6 +336,9 @@ mod test {
             .expect("no errors")
             .into_btree_string_map()
             .unwrap();
+
+        println!("{:?}", object_transition);
+
         assert_eq!(object_transition.get_identifier_bytes("$id").unwrap(), id);
         assert_eq!(
             object_transition
