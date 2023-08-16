@@ -311,7 +311,7 @@ mod test {
         let platform_version = PlatformVersion::latest();
         let dpns_contract =
             load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
-        let document_json = get_data_from_file("src/old/tests/payloads/document_dpns.json")?;
+        let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         let doc =
             ExtendedDocument::from_json_string(&document_json, dpns_contract, platform_version)?;
         assert_eq!(doc.document_type_name(), "domain");
@@ -395,7 +395,7 @@ mod test {
         )
         .unwrap();
         let document_json =
-            get_data_from_file("src/old/tests/payloads/document_dpns.json").unwrap();
+            get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
         let document = ExtendedDocument::from_json_string(
             &document_json,
             dpns_contract,
@@ -422,7 +422,7 @@ mod test {
             SystemDataContract::DPNS,
             LATEST_PLATFORM_VERSION.protocol_version,
         )?;
-        let document_json = get_data_from_file("src/old/tests/payloads/document_dpns.json")?;
+        let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         let document = ExtendedDocument::from_json_string(
             &document_json,
             dpns_contract,
@@ -442,7 +442,7 @@ mod test {
     fn test_document_to_buffer() -> Result<()> {
         init();
 
-        let document_json = get_data_from_file("src/old/tests/payloads/document_dpns.json")?;
+        let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
         let dpns_contract = load_system_data_contract(
             SystemDataContract::DPNS,
             LATEST_PLATFORM_VERSION.protocol_version,
