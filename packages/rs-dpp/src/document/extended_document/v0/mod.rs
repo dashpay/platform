@@ -302,9 +302,6 @@ impl ExtendedDocumentV0 {
         let identifiers = document_type.identifier_paths().to_owned();
         let binary_paths = document_type.binary_paths();
 
-        println!("identifiers: {:?}", identifiers);
-        println!("binary_paths: {:?}", binary_paths);
-
         document_value.replace_at_paths(["$id", "$ownerId"], ReplacementType::Identifier)?;
         document_value.replace_at_paths(
             identifiers.iter().map(|s| s.as_str()),

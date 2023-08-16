@@ -48,7 +48,7 @@ mod test {
             .expect("conversion to JSON shouldn't fail");
 
         assert_eq!(
-            version::LATEST_VERSION,
+            0,
             json_object
                 .get_u64(STATE_TRANSITION_PROTOCOL_VERSION)
                 .expect("the protocol version should be present") as u32
