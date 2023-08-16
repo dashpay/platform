@@ -37,14 +37,7 @@ impl IdentityPublicKeyWasm {
         let public_key_json: JsonValue =
             serde_json::from_str(&public_key_json_string).map_err(|e| e.to_string())?;
 
-        let mut public_key_platform_value: Value = public_key_json.into();
-        // Patch the binary data fields to be base64 encoded because of a bug in serde_wasm_bindgen
-        public_key_platform_value
-            .replace_at_paths(
-                dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
-                ReplacementType::TextBase64,
-            )
-            .map_err(|e| e.to_string())?;
+        let public_key_platform_value: Value = public_key_json.into();
 
         let raw_public_key: IdentityPublicKey =
             IdentityPublicKey::from_object(public_key_platform_value).map_err(|e| e.to_string())?;

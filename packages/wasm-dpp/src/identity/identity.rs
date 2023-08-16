@@ -47,27 +47,7 @@ impl IdentityWasm {
         let identity_json: JsonValue =
             serde_json::from_str(&identity_json_string).map_err(|e| e.to_string())?;
 
-        // Monkey patch identifier to be deserializable
-        let mut identity_platform_value: Value = identity_json.into();
-        identity_platform_value
-            .replace_at_paths(
-                dpp::identity::IDENTIFIER_FIELDS_RAW_OBJECT,
-                ReplacementType::TextBase58,
-            )
-            .map_err(|e| e.to_string())?;
-
-        // Monkey patch public keys data to be deserializable
-        let public_keys = identity_platform_value
-            .get_array_mut_ref(dpp::identity::property_names::PUBLIC_KEYS)
-            .map_err(|e| e.to_string())?;
-
-        for key in public_keys.iter_mut() {
-            key.replace_at_paths(
-                dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
-                ReplacementType::TextBase64,
-            )
-            .map_err(|e| e.to_string())?;
-        }
+        let identity_platform_value: Value = identity_json.into();
 
         let identity: Identity =
             Identity::from_object(identity_platform_value).map_err(from_dpp_err)?;
@@ -92,10 +72,11 @@ impl IdentityWasm {
         let public_keys = public_keys
             .into_iter()
             .map(|key| {
-                IdentityPublicKeyWasm::new(key).map(|key| {
-                    let key = IdentityPublicKey::from(key);
-                    (key.id(), key)
-                })
+                key.to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
+                    .map(|key| {
+                        let key = IdentityPublicKey::from(key.to_owned());
+                        (key.id(), key)
+                    })
             })
             .collect::<Result<_, _>>()?;
 
