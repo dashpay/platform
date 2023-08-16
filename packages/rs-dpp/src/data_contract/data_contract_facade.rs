@@ -35,10 +35,7 @@ impl DataContractFacade {
         entropy_generator: Option<Box<dyn EntropyGenerator>>,
     ) -> Result<Self, ProtocolError> {
         Ok(Self {
-            factory: DataContractFactory::new(
-                protocol_version,
-                entropy_generator,
-            )?,
+            factory: DataContractFactory::new(protocol_version, entropy_generator)?,
         })
     }
 
@@ -60,7 +57,8 @@ impl DataContractFacade {
         raw_data_contract: Value,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        self.factory.create_from_object(raw_data_contract, skip_validation)
+        self.factory
+            .create_from_object(raw_data_contract, skip_validation)
     }
 
     /// Create Data Contract from buffer
@@ -69,8 +67,7 @@ impl DataContractFacade {
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        self.factory
-            .create_from_buffer(buffer, skip_validation)
+        self.factory.create_from_buffer(buffer, skip_validation)
     }
 
     #[cfg(feature = "state-transitions")]

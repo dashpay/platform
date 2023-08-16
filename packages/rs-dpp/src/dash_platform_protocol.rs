@@ -25,9 +25,7 @@ impl<SR> DashPlatformProtocol<SR> {
         Ok(Self {
             state_repository,
             protocol_version: current_protocol_version,
-            identities: IdentityFacade::new(
-                current_protocol_version,
-            )?,
+            identities: IdentityFacade::new(current_protocol_version)?,
         })
     }
 

@@ -7,27 +7,27 @@ use crate::ProtocolError;
 use dashcore::{InstantLock, Transaction};
 use std::collections::BTreeMap;
 
-use crate::version::PlatformVersion;
-use platform_value::{Identifier, Value};
-use platform_version::TryIntoPlatformVersioned;
-use crate::consensus::basic::BasicError;
 use crate::consensus::basic::decode::SerializedObjectParsingError;
+use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::serialization::PlatformDeserializable;
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
-use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
-use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionIdentitySigned;
+use crate::version::PlatformVersion;
+use platform_value::{Identifier, Value};
+use platform_version::TryIntoPlatformVersioned;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
 
@@ -126,7 +126,11 @@ impl IdentityFactory {
         asset_lock_proof: AssetLockProof,
         platform_version: &PlatformVersion,
     ) -> Result<IdentityCreateTransition, ProtocolError> {
-        let transition = IdentityCreateTransitionV0::try_from_identity(identity, asset_lock_proof, platform_version)?;
+        let transition = IdentityCreateTransitionV0::try_from_identity(
+            identity,
+            asset_lock_proof,
+            platform_version,
+        )?;
 
         Ok(IdentityCreateTransition::V0(transition))
     }
@@ -146,7 +150,12 @@ impl IdentityFactory {
             revision: 0,
         });
 
-        let mut identity_create_transition = IdentityCreateTransition::V0(IdentityCreateTransitionV0::try_from_identity(identity.clone(), asset_lock_proof, platform_version)?);
+        let mut identity_create_transition =
+            IdentityCreateTransition::V0(IdentityCreateTransitionV0::try_from_identity(
+                identity.clone(),
+                asset_lock_proof,
+                platform_version,
+            )?);
         Ok((identity, identity_create_transition))
     }
 
@@ -176,7 +185,9 @@ impl IdentityFactory {
         identity_credit_transfer_transition.recipient_id = recipient_id;
         identity_credit_transfer_transition.amount = amount;
 
-        Ok(IdentityCreditTransferTransition::from(identity_credit_transfer_transition))
+        Ok(IdentityCreditTransferTransition::from(
+            identity_credit_transfer_transition,
+        ))
     }
 
     #[cfg(all(feature = "state-transitions", feature = "client"))]

@@ -239,7 +239,7 @@ mod test {
         let test_document = Value::from([
             ("type", Value::Text("object".to_string())),
             ("properties", test_document_properties),
-            ("additionalProperties", Value::Bool(false))
+            ("additionalProperties", Value::Bool(false)),
         ]);
         let documents = Value::from([("test", test_document)]);
         DataContract::V0(
@@ -342,7 +342,10 @@ mod test {
         let right_data_contract_id = Identifier::from_bytes(&data_contract_id).unwrap();
 
         assert_eq!(v0["$id"], Value::Identifier(right_id.into_buffer()));
-        assert_eq!(v0["$dataContractId"], Value::Identifier(right_data_contract_id.into_buffer()));
+        assert_eq!(
+            v0["$dataContractId"],
+            Value::Identifier(right_data_contract_id.into_buffer())
+        );
 
         assert_eq!(
             object_transition.get_bytes("alphaBinary").unwrap(),

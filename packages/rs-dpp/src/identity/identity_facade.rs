@@ -1,8 +1,8 @@
 use dashcore::{InstantLock, Transaction};
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use platform_version::version::PlatformVersion;
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
@@ -86,7 +86,8 @@ impl IdentityFacade {
         asset_lock_proof: AssetLockProof,
         platform_version: &PlatformVersion,
     ) -> Result<IdentityCreateTransition, ProtocolError> {
-        self.factory.create_identity_create_transition(identity, asset_lock_proof, platform_version)
+        self.factory
+            .create_identity_create_transition(identity, asset_lock_proof, platform_version)
     }
 
     #[cfg(feature = "state-transitions")]

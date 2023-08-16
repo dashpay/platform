@@ -25,6 +25,7 @@ use std::collections::BTreeMap;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::document::extended_document_property_names::DATA_CONTRACT;
 #[cfg(feature = "document-json-conversion")]
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
 #[cfg(feature = "document-value-conversion")]
@@ -284,7 +285,7 @@ impl ExtendedDocumentV0 {
     ///
     /// Returns a `ProtocolError` if there is an error processing the untrusted platform value.
     pub fn from_untrusted_platform_value(
-        document_value: Value,
+        mut document_value: Value,
         data_contract: DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -296,8 +297,23 @@ impl ExtendedDocumentV0 {
             .remove_string(property_names::DOCUMENT_TYPE_NAME)
             .map_err(ProtocolError::ValueError)?;
 
-        let identifiers = data_contract.identifier_paths();
-        let binary_paths = data_contract.binary_paths();
+        let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;
+
+        let identifiers = document_type.identifier_paths().to_owned();
+        let binary_paths = document_type.binary_paths();
+
+        println!("identifiers: {:?}", identifiers);
+        println!("binary_paths: {:?}", binary_paths);
+
+        document_value.replace_at_paths(["$id", "$ownerId"], ReplacementType::Identifier)?;
+        document_value.replace_at_paths(
+            identifiers.iter().map(|s| s.as_str()),
+            ReplacementType::Identifier,
+        )?;
+        document_value.replace_at_paths(
+            binary_paths.iter().map(|s| s.as_str()),
+            ReplacementType::BinaryBytes,
+        )?;
 
         let document = Document::from_platform_value(document_value, platform_version)?;
         let data_contract_id = data_contract.id();
@@ -313,15 +329,10 @@ impl ExtendedDocumentV0 {
         extended_document.data_contract_id = properties
             .remove_optional_identifier(property_names::DATA_CONTRACT_ID)?
             .unwrap_or(extended_document.data_contract.id());
-
         extended_document
             .document
             .properties_mut()
             .replace_at_paths(&identifiers, ReplacementType::Identifier)?;
-        extended_document
-            .document
-            .properties_mut()
-            .replace_at_paths(&binary_paths, ReplacementType::BinaryBytes)?;
         Ok(extended_document)
     }
 

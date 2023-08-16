@@ -267,6 +267,8 @@ mod test {
         let test_document_properties_alpha_identifier = Value::from([
             ("type", Value::Text("array".to_string())),
             ("byteArray", Value::Bool(true)),
+            ("minItems", Value::U64(32)),
+            ("maxItems", Value::U64(32)),
             (
                 "contentMediaType",
                 Value::Text("application/x.dash.dpp.identifier".to_string()),
@@ -280,17 +282,22 @@ mod test {
             ("alphaIdentifier", test_document_properties_alpha_identifier),
             ("alphaBinary", test_document_properties_alpha_binary),
         ]);
-        let test_document = Value::from([("properties", test_document_properties)]);
+        let test_document = Value::from([
+            ("type", Value::Text("object".to_string())),
+            ("properties", test_document_properties),
+            ("additionalProperties", Value::Bool(false)),
+        ]);
         let documents = Value::from([("test", test_document)]);
 
         DataContract::from_value(
             Value::from([
                 ("protocolVersion", Value::U32(1)),
-                ("$id", Value::Identifier([0_u8; 32])),
+                ("id", Value::Identifier([0_u8; 32])),
                 ("$schema", Value::Text("schema".to_string())),
                 ("version", Value::U32(0)),
                 ("ownerId", Value::Identifier([0_u8; 32])),
-                ("documents", documents),
+                ("documentSchemas", documents),
+                ("$format_version", Value::Text("0".to_string())),
             ]),
             platform_version,
         )
@@ -299,12 +306,12 @@ mod test {
 
     #[test]
     #[cfg(feature = "document-json-conversion")]
-    fn test_document_deserialize() -> Result<()> {
+    fn test_document_json_deserialize() -> Result<()> {
         init();
         let platform_version = PlatformVersion::latest();
         let dpns_contract =
             load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)?;
-        let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
+        let document_json = get_data_from_file("src/old/tests/payloads/document_dpns.json")?;
         let doc =
             ExtendedDocument::from_json_string(&document_json, dpns_contract, platform_version)?;
         assert_eq!(doc.document_type_name(), "domain");
@@ -327,12 +334,17 @@ mod test {
             .unwrap()
             .to_buffer()
         );
-
         assert_eq!(
             doc.properties()
                 .get("label")
                 .expect("expected to get label"),
             &Value::Text("user-9999".to_string())
+        );
+        println!(
+            "{:?}",
+            doc.properties()
+                .get_at_path("records.dashUniqueIdentityId")
+                .expect("expected to get value")
         );
         assert_eq!(
             doc.properties()
@@ -382,7 +394,8 @@ mod test {
             LATEST_PLATFORM_VERSION.protocol_version,
         )
         .unwrap();
-        let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
+        let document_json =
+            get_data_from_file("src/old/tests/payloads/document_dpns.json").unwrap();
         let document = ExtendedDocument::from_json_string(
             &document_json,
             dpns_contract,
@@ -409,7 +422,7 @@ mod test {
             SystemDataContract::DPNS,
             LATEST_PLATFORM_VERSION.protocol_version,
         )?;
-        let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
+        let document_json = get_data_from_file("src/old/tests/payloads/document_dpns.json")?;
         let document = ExtendedDocument::from_json_string(
             &document_json,
             dpns_contract,
@@ -417,7 +430,10 @@ mod test {
         )?;
         let string = serde_json::to_string(&document)?;
 
-        assert_eq!("{\"$protocolVersion\":0,\"$type\":\"domain\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"$id\":\"4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E\",\"$ownerId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\",\"label\":\"user-9999\",\"normalizedLabel\":\"user-9999\",\"normalizedParentDomainName\":\"dash\",\"preorderSalt\":\"BzQi567XVqc8wYiVHS887sJtL6MDbxLHNnp+UpTFSB0=\",\"records\":{\"dashUniqueIdentityId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\"},\"subdomainRules\":{\"allowSubdomains\":false},\"$revision\":1,\"$createdAt\":null,\"$updatedAt\":null}", string);
+        assert_eq!(
+            "{\"version\":0,\"$type\":\"domain\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"document\":{\"$version\":\"0\",\"$id\":\"4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E\",\"$ownerId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\",\"$dataContractId\":\"566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy\",\"$protocolVersion\":0,\"$type\":\"domain\",\"label\":\"user-9999\",\"normalizedLabel\":\"user-9999\",\"normalizedParentDomainName\":\"dash\",\"preorderSalt\":\"BzQi567XVqc8wYiVHS887sJtL6MDbxLHNnp+UpTFSB0=\",\"records\":{\"dashUniqueIdentityId\":\"HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn\"},\"subdomainRules\":{\"allowSubdomains\":false},\"$revision\":1,\"$createdAt\":null,\"$updatedAt\":null}}",
+            string
+        );
 
         Ok(())
     }
@@ -426,7 +442,7 @@ mod test {
     fn test_document_to_buffer() -> Result<()> {
         init();
 
-        let document_json = get_data_from_file("src/tests/payloads/document_dpns.json")?;
+        let document_json = get_data_from_file("src/old/tests/payloads/document_dpns.json")?;
         let dpns_contract = load_system_data_contract(
             SystemDataContract::DPNS,
             LATEST_PLATFORM_VERSION.protocol_version,
@@ -466,6 +482,8 @@ mod test {
             .to_pretty_json(LATEST_PLATFORM_VERSION)
             .expect("no errors");
 
+        println!("{:?}", json_document);
+
         assert_eq!(
             json_document["$id"],
             JsonValue::String(bs58::encode(&id).into_string())
@@ -484,7 +502,7 @@ mod test {
         );
         assert_eq!(
             json_document["alphaIdentifier"],
-            JsonValue::String(bs58::encode(&alpha_value).into_string())
+            JsonValue::String(base64::encode(&alpha_value))
         );
     }
 
