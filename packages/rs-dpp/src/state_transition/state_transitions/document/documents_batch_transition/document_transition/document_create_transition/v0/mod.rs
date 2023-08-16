@@ -226,6 +226,8 @@ mod test {
         let test_document_properties_alpha_binary = Value::from([
             ("type", Value::Text("array".to_string())),
             ("byteArray", Value::Bool(true)),
+            ("minItems", Value::U64(32)),
+            ("maxItems", Value::U64(32)),
             (
                 "contentMediaType",
                 Value::Text("application/x.dash.dpp.identifier".to_string()),
@@ -235,16 +237,22 @@ mod test {
             ("alphaIdentifier", test_document_properties_alpha_identifier),
             ("alphaBinary", test_document_properties_alpha_binary),
         ]);
-        let test_document = Value::from([("properties", test_document_properties)]);
+        let test_document = Value::from([
+            ("type", Value::Text("object".to_string())),
+            ("properties", test_document_properties),
+            ("additionalProperties", Value::Bool(false))
+        ]);
         let documents = Value::from([("test", test_document)]);
         DataContract::V0(
             DataContractV0::from_value(
                 Value::from([
                     ("$id", Value::Identifier([0_u8; 32])),
+                    ("id", Value::Identifier([0_u8; 32])),
                     ("$schema", Value::Text("schema".to_string())),
+                    ("$format_version", Value::Text("0".to_string())),
                     ("version", Value::U32(0)),
+                    ("documentSchemas", documents),
                     ("ownerId", Value::Identifier([0_u8; 32])),
-                    ("documents", documents),
                 ]),
                 LATEST_PLATFORM_VERSION,
             )
