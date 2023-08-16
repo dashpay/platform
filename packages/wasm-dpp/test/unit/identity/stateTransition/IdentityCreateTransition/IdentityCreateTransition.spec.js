@@ -16,6 +16,7 @@ describe('IdentityCreateTransition', () => {
   let stateTransition;
 
   const mockRawPublicKey = (params = {}) => ({
+    $version: '0',
     id: 0,
     type: KeyType.ECDSA_SECP256K1,
     data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
@@ -27,14 +28,10 @@ describe('IdentityCreateTransition', () => {
   });
 
   beforeEach(async () => {
-    stateTransition = await getIdentityCreateTransitionFixture();
-    // console.log(st);
-    // console.log(st.toObject());
-    // rawStateTransition = (await getIdentityCreateTransitionFixture()).toObject();
-    // console.log(rawStateTransition);
-    // stateTransition = new IdentityCreateTransition(
-    //   rawStateTransition,
-    // );
+    rawStateTransition = (await getIdentityCreateTransitionFixture()).toObject();
+    stateTransition = new IdentityCreateTransition(
+      rawStateTransition,
+    );
   });
 
   describe('#constructor', () => {
@@ -57,7 +54,7 @@ describe('IdentityCreateTransition', () => {
     });
   });
 
-  describe.only('#getType', () => {
+  describe('#getType', () => {
     it('should return IDENTITY_CREATE type', () => {
       expect(stateTransition.getType()).to.equal(StateTransitionTypes.IdentityCreate);
     });
@@ -150,11 +147,11 @@ describe('IdentityCreateTransition', () => {
       rawStateTransition = stateTransition.toObject();
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityCreate,
         assetLockProof: rawStateTransition.assetLockProof,
         publicKeys: rawStateTransition.publicKeys,
-        signature: undefined,
+        signature: Buffer.alloc(32),
       });
     });
 
@@ -162,7 +159,7 @@ describe('IdentityCreateTransition', () => {
       rawStateTransition = stateTransition.toObject({ skipSignature: true });
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityCreate,
         assetLockProof: rawStateTransition.assetLockProof,
         publicKeys: rawStateTransition.publicKeys,
@@ -175,11 +172,11 @@ describe('IdentityCreateTransition', () => {
       const jsonStateTransition = stateTransition.toJSON();
 
       expect(jsonStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityCreate,
         assetLockProof: stateTransition.getAssetLockProof().toJSON(),
         publicKeys: stateTransition.getPublicKeys().map((k) => k.toJSON()),
-        signature: undefined,
+        signature: Buffer.alloc(32).toString('base64'),
       });
     });
   });

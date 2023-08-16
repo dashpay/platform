@@ -31,14 +31,7 @@ impl IdentityPublicKeyWithWitnessWasm {
         let public_key_json: JsonValue =
             serde_json::from_str(&public_key_json_string).map_err(|e| e.to_string())?;
 
-        let mut public_key_platform_value: Value = public_key_json.into();
-        // Patch the binary data fields to be base64 encoded because of a bug in serde_wasm_bindgen
-        public_key_platform_value
-            .replace_at_paths(
-                dpp::state_transition::public_key_in_creation::v0::BINARY_DATA_FIELDS,
-                ReplacementType::TextBase64,
-            )
-            .map_err(|e| e.to_string())?;
+        let public_key_platform_value: Value = public_key_json.into();
 
         let raw_public_key: IdentityPublicKeyInCreation =
             IdentityPublicKeyInCreation::from_object(public_key_platform_value).map_err(|e| e.to_string())?;
@@ -146,13 +139,25 @@ impl IdentityPublicKeyWithWitnessWasm {
     //     self.0.is_master()
     // }
     //
-    // #[wasm_bindgen(js_name=toJSON)]
-    // pub fn to_json(&self) -> Result<JsValue, JsValue> {
-    //     let val = self.0.to_json().map_err(from_dpp_err)?;
-    //     let json = val.to_string();
-    //     js_sys::JSON::parse(&json)
-    // }
-    //
+    #[wasm_bindgen(js_name=toJSON)]
+    pub fn to_json(&self) -> Result<JsValue, JsValue> {
+        let mut value = self.0.to_object().map_err(from_dpp_err)?;
+
+        value
+            .replace_at_paths(
+                dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
+                ReplacementType::TextBase64,
+            )
+            .map_err(|e| e.to_string())?;
+
+        let json = value
+            .try_into_validating_json()
+            .map_err(|e| e.to_string())?
+            .to_string();
+
+        js_sys::JSON::parse(&json)
+    }
+
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, skip_signature: bool) -> Result<JsValue, JsValue> {
         let value = self.0.to_object().map_err(from_dpp_err)?;
