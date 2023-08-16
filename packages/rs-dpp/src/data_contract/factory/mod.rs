@@ -10,6 +10,8 @@ use derive_more::From;
 use platform_value::{Identifier, Value};
 
 pub use v0::DataContractFactoryV0;
+use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
 /// # Data Contract Factory
 ///

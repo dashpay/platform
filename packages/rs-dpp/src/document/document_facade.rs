@@ -1,6 +1,6 @@
 use crate::document::document_factory::DocumentFactory;
 
-pub struct DocumentFacade<SR> {
+pub struct DocumentFacade {
     pub factory: DocumentFactory,
 }
 

@@ -1,6 +1,6 @@
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
-use crate::identity::{Identity, IdentityPublicKey, KeyID};
+use crate::identity::{Identity, IdentityPublicKey, IdentityV0, KeyID, TimestampMillis};
 
 use crate::ProtocolError;
 
@@ -8,8 +8,26 @@ use dashcore::{InstantLock, Transaction};
 use std::collections::BTreeMap;
 
 use crate::version::PlatformVersion;
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 use platform_version::TryIntoPlatformVersioned;
+use crate::consensus::basic::BasicError;
+use crate::consensus::basic::decode::SerializedObjectParsingError;
+use crate::consensus::ConsensusError;
+use crate::identity::accessors::IdentityGettersV0;
+use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
+use crate::serialization::PlatformDeserializable;
+use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
+use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::state_transition::StateTransitionIdentitySigned;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
 
@@ -104,11 +122,13 @@ impl IdentityFactory {
     #[cfg(all(feature = "state-transitions", feature = "client"))]
     pub fn create_identity_create_transition(
         &self,
-        public_keys: BTreeMap<KeyID, IdentityPublicKey>,
+        identity: Identity,
         asset_lock_proof: AssetLockProof,
+        platform_version: &PlatformVersion,
     ) -> Result<IdentityCreateTransition, ProtocolError> {
-        let mut identity_create_transition: IdentityCreateTransition = identity.try_into()?;
-        Ok(identity_create_transition)
+        let transition = IdentityCreateTransitionV0::try_from_identity(identity, asset_lock_proof, platform_version)?;
+
+        Ok(IdentityCreateTransition::V0(transition))
     }
 
     #[cfg(all(feature = "state-transitions", feature = "client"))]
@@ -116,18 +136,18 @@ impl IdentityFactory {
         &self,
         public_keys: BTreeMap<KeyID, IdentityPublicKey>,
         asset_lock_proof: AssetLockProof,
+        platform_version: &PlatformVersion,
     ) -> Result<(Identity, IdentityCreateTransition), ProtocolError> {
         let identifier = asset_lock_proof.create_identifier()?;
-        let identity = IdentityV0 {
+        let identity = Identity::V0(IdentityV0 {
             id: identifier,
             public_keys: public_keys.clone(),
             balance: 0,
             revision: 0,
-        };
+        });
 
-        let mut identity_create_transition: IdentityCreateTransition =
-            identity.clone().try_into()?;
-        Ok((identity.into(), identity_create_transition))
+        let mut identity_create_transition = IdentityCreateTransition::V0(IdentityCreateTransitionV0::try_from_identity(identity.clone(), asset_lock_proof, platform_version)?);
+        Ok((identity, identity_create_transition))
     }
 
     #[cfg(all(feature = "state-transitions", feature = "client"))]
@@ -136,14 +156,12 @@ impl IdentityFactory {
         identity_id: Identifier,
         asset_lock_proof: AssetLockProof,
     ) -> Result<IdentityTopUpTransition, ProtocolError> {
-        let mut identity_topup_transition = IdentityTopUpTransition::default();
+        let mut identity_topup_transition = IdentityTopUpTransitionV0::default();
+
         identity_topup_transition.set_identity_id(identity_id);
+        identity_topup_transition.set_asset_lock_proof(asset_lock_proof);
 
-        identity_topup_transition
-            .set_asset_lock_proof(asset_lock_proof)
-            .map_err(ProtocolError::from)?;
-
-        Ok(identity_topup_transition)
+        Ok(IdentityTopUpTransition::V0(identity_topup_transition))
     }
 
     #[cfg(all(feature = "state-transitions", feature = "client"))]
@@ -153,13 +171,12 @@ impl IdentityFactory {
         recipient_id: Identifier,
         amount: u64,
     ) -> Result<IdentityCreditTransferTransition, ProtocolError> {
-        let mut identity_credit_transfer_transition = IdentityCreditTransferTransition::default();
-        identity_credit_transfer_transition.set_protocol_version(self.protocol_version);
-        identity_credit_transfer_transition.set_identity_id(identity_id);
-        identity_credit_transfer_transition.set_recipient_id(recipient_id);
-        identity_credit_transfer_transition.set_amount(amount);
+        let mut identity_credit_transfer_transition = IdentityCreditTransferTransitionV0::default();
+        identity_credit_transfer_transition.identity_id = identity_id;
+        identity_credit_transfer_transition.recipient_id = recipient_id;
+        identity_credit_transfer_transition.amount = amount;
 
-        Ok(identity_credit_transfer_transition)
+        Ok(IdentityCreditTransferTransition::from(identity_credit_transfer_transition))
     }
 
     #[cfg(all(feature = "state-transitions", feature = "client"))]
@@ -172,10 +189,9 @@ impl IdentityFactory {
         // https://github.com/rust-lang/rust/issues/48564
         disable_time: Option<TimestampMillis>,
     ) -> Result<IdentityUpdateTransition, ProtocolError> {
-        let mut identity_update_transition = IdentityUpdateTransition::default();
-        identity_update_transition.set_protocol_version(self.protocol_version);
-        identity_update_transition.set_identity_id(identity.get_id().to_owned());
-        identity_update_transition.set_revision(identity.get_revision() + 1);
+        let mut identity_update_transition = IdentityUpdateTransitionV0::default();
+        identity_update_transition.set_identity_id(identity.id().to_owned());
+        identity_update_transition.set_revision(identity.revision() + 1);
 
         if let Some(add_public_keys) = add_public_keys {
             identity_update_transition.set_public_keys_to_add(add_public_keys);
@@ -192,6 +208,6 @@ impl IdentityFactory {
             identity_update_transition.set_public_keys_disabled_at(disable_time);
         }
 
-        Ok(identity_update_transition)
+        Ok(IdentityUpdateTransition::V0(identity_update_transition))
     }
 }
