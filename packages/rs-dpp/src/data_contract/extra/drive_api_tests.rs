@@ -210,7 +210,7 @@ mod test {
         let platform_version = PlatformVersion::latest();
 
         let mut contract = json_document_to_contract(
-            "src/tests/payloads/contract/dashpay-contract.json",
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
             platform_version,
         )
         .expect("expected to get a cbor document")
@@ -254,7 +254,7 @@ mod test {
         let platform_version = PlatformVersion::latest();
 
         let mut contract = json_document_to_contract(
-            "src/tests/payloads/contract/dashpay-contract.json",
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
             platform_version,
         )
         .expect("expected to decode a contract");
