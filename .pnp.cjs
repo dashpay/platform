@@ -2634,7 +2634,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
-            ["@dashevo/wasm-re2", "npm:1.0.2"],\
+            ["@dashevo/wasm-re2", "npm:2.0.4"],\
             ["acorn", "npm:8.8.2"],\
             ["ajv", "npm:8.8.1"],\
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],\
@@ -2957,7 +2957,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
-            ["@dashevo/wasm-re2", "npm:1.0.2"],\
+            ["@dashevo/wasm-re2", "npm:2.0.4"],\
             ["@types/bs58", "npm:4.0.1"],\
             ["@types/node", "npm:14.17.34"],\
             ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
@@ -3008,10 +3008,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/wasm-re2", [\
-        ["npm:1.0.2", {\
-          "packageLocation": "./.yarn/cache/@dashevo-wasm-re2-npm-1.0.2-50818efe42-3d54788e4e.zip/node_modules/@dashevo/wasm-re2/",\
+        ["npm:2.0.4", {\
+          "packageLocation": "./.yarn/cache/@dashevo-wasm-re2-npm-2.0.4-7adcfc6dac-3a66db77e4.zip/node_modules/@dashevo/wasm-re2/",\
           "packageDependencies": [\
-            ["@dashevo/wasm-re2", "npm:1.0.2"]\
+            ["@dashevo/wasm-re2", "npm:2.0.4"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -8236,7 +8236,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["memory-streams", "npm:0.1.3"],\
             ["mocha", "npm:9.2.2"],\
             ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
-            ["node-fetch", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:2.6.7"],\
             ["node-forge", "npm:1.3.1"],\
             ["node-graceful", "npm:3.1.0"],\
             ["pretty-bytes", "npm:5.6.0"],\
