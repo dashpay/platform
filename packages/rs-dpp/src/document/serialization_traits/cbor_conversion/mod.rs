@@ -56,7 +56,7 @@ mod tests {
     fn test_document_cbor_serialization() {
         let platform_version = PlatformVersion::first();
         let contract = json_document_to_contract(
-            "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
             platform_version,
         )
         .expect("expected to get cbor contract");

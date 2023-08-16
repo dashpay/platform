@@ -13,6 +13,7 @@
                             "$ownerId": "asc"
                         }
                     ],
+                    "name": "&ownerId",
                     "unique": true
                 },
                 {
@@ -23,7 +24,8 @@
                         {
                             "$updatedAt": "asc"
                         }
-                    ]
+                    ],
+                    "name": "&ownerId&updatedAt"
                 }
             ],
             "properties": {
@@ -62,7 +64,8 @@
                             "derivationEncryptionKeyIndex": "asc"
                         }
                     ],
-                    "unique": true
+                    "unique": true,
+                    "name": "derivationEncryptionKeyIndex"
                 },
                 {
                     "properties": [
@@ -72,7 +75,8 @@
                         {
                             "$updatedAt": "asc"
                         }
-                    ]
+                    ],
+                    "name": "&ownerId&updatedAt"
                 }
             ],
             "properties": {
@@ -122,7 +126,8 @@
                             "accountReference": "asc"
                         }
                     ],
-                    "unique": true
+                    "unique": true,
+                    "name": "accountReference"
                 },
                 {
                     "properties": [
@@ -132,7 +137,8 @@
                         {
                             "toUserId": "asc"
                         }
-                    ]
+                    ],
+                    "name": "toUserId"
                 },
                 {
                     "properties": [
@@ -142,7 +148,8 @@
                         {
                             "$createdAt": "asc"
                         }
-                    ]
+                    ],
+                    "name": "toUserIdcreatedAt"
                 },
                 {
                     "properties": [
@@ -152,7 +159,8 @@
                         {
                             "$createdAt": "asc"
                         }
-                    ]
+                    ],
+                    "name": "ownerIdcreatedAt"
                 }
             ],
             "properties": {
