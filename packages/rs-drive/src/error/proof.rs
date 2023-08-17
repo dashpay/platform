@@ -15,7 +15,8 @@ pub enum ProofError {
     #[error("overflow error: {0}")]
     Overflow(&'static str),
 
-    /// Corrupted error
+    /// An incoherent result is akin to a corrupted code execution, the proof returned is said to
+    /// be valid, however data it possesses isn't what was asked for.
     #[error("corrupted error: {0}")]
     CorruptedProof(&'static str),
 

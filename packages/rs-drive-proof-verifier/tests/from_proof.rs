@@ -244,7 +244,6 @@ test_maybe_from_proof! {
 }
 
 // Identity balance and revision
-
 test_maybe_from_proof! {
     identity_balance_and_revision_ok,
     grpc::GetIdentityRequest,
