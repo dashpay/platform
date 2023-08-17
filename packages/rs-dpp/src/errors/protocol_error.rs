@@ -46,6 +46,19 @@ pub enum ProtocolError {
 
     /// Platform expected some specific versions
     #[error(
+    "dpp received not allowed version on {method}, allowed versions: {allowed_versions:?}, received: {received}"
+    )]
+    UnsupportedVersionMismatch {
+        /// method
+        method: String,
+        /// the allowed versions for this method
+        allowed_versions: Vec<FeatureVersion>,
+        /// requested core height
+        received: FeatureVersion,
+    },
+
+    /// Platform expected some specific versions
+    #[error(
         "dpp unknown version on {method}, known versions: {known_versions:?}, received: {received}"
     )]
     UnknownVersionMismatch {

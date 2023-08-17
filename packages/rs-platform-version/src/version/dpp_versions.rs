@@ -165,6 +165,7 @@ pub struct DocumentVersions {
     // This is for the overall structure of the document, like DocumentV0
     pub document_structure_version: FeatureVersion,
     pub document_serialization_version: FeatureVersionBounds,
+    pub document_cbor_serialization_version: FeatureVersionBounds,
     pub extended_document_structure_version: FeatureVersion,
     pub extended_document_serialization_version: FeatureVersionBounds,
     pub document_method_versions: DocumentMethodVersions,

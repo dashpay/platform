@@ -1,6 +1,8 @@
 mod v0;
 
 use crate::document::{Document, DocumentV0};
+use crate::util::deserializer;
+use crate::util::deserializer::SplitFeatureVersionOutcome;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use ciborium::Value as CborValue;
@@ -16,12 +18,27 @@ impl DocumentCborMethodsV0 for Document {
     where
         Self: Sized,
     {
-        match platform_version
+        let SplitFeatureVersionOutcome {
+            main_message_bytes: read_document_cbor,
+            feature_version,
+            ..
+        } = deserializer::split_cbor_feature_version(document_cbor)?;
+
+        if !platform_version
             .dpp
             .document_versions
-            .document_structure_version
+            .document_cbor_serialization_version
+            .check_version(feature_version)
         {
-            0 => DocumentV0::from_cbor(document_cbor, document_id, owner_id, platform_version)
+            return Err(ProtocolError::UnsupportedVersionMismatch {
+                method: "Document::from_cbor (for document structure)".to_string(),
+                allowed_versions: vec![0],
+                received: feature_version,
+            });
+        }
+
+        match feature_version {
+            0 => DocumentV0::from_cbor(read_document_cbor, document_id, owner_id, platform_version)
                 .map(|document| document.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "Document::from_cbor (for document structure)".to_string(),
