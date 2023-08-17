@@ -17,7 +17,7 @@ concurrency:
 jobs:
   release-npm:
     name: Release NPM packages
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
     if: github.event_name != 'workflow_dispatch'
     steps:
@@ -76,7 +76,7 @@ jobs:
 
   release-drive-docker-image:
     name: Release Drive to Docker Hub
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 120
     steps:
       - name: Check out repo
@@ -112,7 +112,7 @@ jobs:
 
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 120
     steps:
       - name: Check out repo
@@ -151,7 +151,7 @@ jobs:
 
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 120
     steps:
       - name: Check out repo
@@ -190,7 +190,7 @@ jobs:
 
   release-dashmate-helper-docker-image:
     name: Release Dashmate helper to Docker Hub
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 120
     steps:
       - name: Check out repo

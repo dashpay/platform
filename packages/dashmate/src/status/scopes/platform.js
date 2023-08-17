@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 const determineStatus = require('../determineStatus');
 const DockerStatusEnum = require('../enums/dockerStatus');
 const ServiceStatusEnum = require('../enums/serviceStatus');

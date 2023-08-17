@@ -31,7 +31,7 @@ Distribution package for Dash node installation
 ### Dependencies
 
 * [Docker](https://docs.docker.com/engine/installation/) (v20.10+)
-* [Node.js](https://nodejs.org/en/download/) (v16, NPM v8.0+)
+* [Node.js](https://nodejs.org/en/download/) (v18, NPM v8.0+)
 
 For Linux installations you may optionally wish to follow the Docker [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/) to manage Docker as a non-root user, otherwise you will have to run CLI and Docker commands with `sudo`.
 
