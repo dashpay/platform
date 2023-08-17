@@ -21,13 +21,19 @@ impl DocumentCborMethodsV0 for Document {
             .document_versions
             .document_structure_version
         {
-            0 => DocumentV0::from_cbor(document_cbor, document_id, owner_id, platform_version)
-                .map(|document| document.into()),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "Document::from_cbor (for document structure)".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
+            0 => {
+                println!("zero heh");
+                DocumentV0::from_cbor(document_cbor, document_id, owner_id, platform_version)
+                .map(|document| document.into())
+            },
+            version => {
+                println!("version: {}", version);
+                Err(ProtocolError::UnknownVersionMismatch {
+                    method: "Document::from_cbor (for document structure)".to_string(),
+                    known_versions: vec![0],
+                    received: version,
+                })
+            },
         }
     }
 

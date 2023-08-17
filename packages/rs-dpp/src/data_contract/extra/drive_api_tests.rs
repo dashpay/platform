@@ -29,17 +29,25 @@ mod test {
     fn expected_documents() -> Vec<ExpectedDocumentsData> {
         vec![
             ExpectedDocumentsData {
-                document_name: "niceDocument",
+                document_name: "profile",
                 required_properties: &["$cratedAt"],
+                indexes: &[
+                    ("index1", true, &[("$ownerId", "asc")]),
+                    ("index2", false, &[("$ownerId", "asc"), ("$updatedAt", "asc")]),
+                ],
                 ..Default::default()
             },
             ExpectedDocumentsData {
-                document_name: "prettyDocument",
+                document_name: "contactInfo",
                 required_properties: &["lastName", "$cratedAt"],
+                indexes: &[
+                    ("index1", true, &[("$ownerId", "asc")]),
+                    ("index2", false, &[("$ownerId", "asc"), ("lastName", "asc")]),
+                ],
                 ..Default::default()
             },
             ExpectedDocumentsData {
-                document_name: "indexedDocument",
+                document_name: "contactRequest",
                 required_properties: &["firstName", "$createdAt", "$updatedAt", "lastName"],
                 indexes: &[
                     (
@@ -58,47 +66,7 @@ mod test {
                         false,
                         &[("$createdAt", "asc"), ("$updatedAt", "asc")],
                     ),
-                    ("index5", false, &[("$updatedAt", "asc")]),
-                    ("index6", false, &[("$createdAt", "asc")]),
                 ],
-            },
-            ExpectedDocumentsData {
-                document_name: "noTimeDocument",
-                ..Default::default()
-            },
-            ExpectedDocumentsData {
-                document_name: "uniqueDates",
-                required_properties: &["firstName", "$createdAt", "$updatedAt"],
-                indexes: &[
-                    (
-                        "index1",
-                        true,
-                        &[("$createdAt", "asc"), ("$updatedAt", "asc")],
-                    ),
-                    ("index2", false, &[("$updatedAt", "asc")]),
-                ],
-            },
-            ExpectedDocumentsData {
-                document_name: "withByteArrays",
-                indexes: &[("index1", false, &[("byteArrayField", "asc")])],
-                required_properties: &["byteArrayField"],
-            },
-            ExpectedDocumentsData {
-                document_name: "optionalUniqueIndexedDocument",
-                indexes: &[
-                    ("index1", false, &[("firstName", "desc")]),
-                    (
-                        "index2",
-                        true,
-                        &[
-                            ("$ownerId", "asc"),
-                            ("firstName", "asc"),
-                            ("lastName", "asc"),
-                        ],
-                    ),
-                    ("index3", true, &[("country", "asc"), ("city", "asc")]),
-                ],
-                required_properties: &["firstName", "lastName"],
             },
         ]
     }
@@ -106,9 +74,9 @@ mod test {
     #[test]
     #[cfg(feature = "data-contract-cbor-conversion")]
     fn deserialize_from_cbor_with_contract_inner() {
-        let cbor_bytes = std::fs::read("src/tests/payloads/contract/contract.bin").unwrap();
-        let expect_id_base58 = "2CAHCVpYLMw8uheSydQ4CTNrPYkFwdPmRVqYgWAeN9pL";
-        let expect_owner_id_base58 = "6C7w6XJxXWbb12iJj2aLcQU3T9wn8CZ8pimiWXGfWb55";
+        let cbor_bytes = std::fs::read("../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-cbor.bin").unwrap();
+        let expect_id_base58 = "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6";
+        let expect_owner_id_base58 = "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6";
         let expect_id = bs58::decode(expect_id_base58).into_vec().unwrap();
         let expect_owner_id = bs58::decode(expect_owner_id_base58).into_vec().unwrap();
 
@@ -118,11 +86,10 @@ mod test {
             .expect("contract should be deserialized");
 
         assert_eq!(0, data_contract.feature_version());
-        assert_eq!(0, data_contract.version());
         assert_eq!(expect_id, data_contract.id().as_bytes());
         assert_eq!(expect_owner_id, data_contract.owner_id().as_bytes());
 
-        assert_eq!(7, data_contract.document_types().len());
+        assert_eq!(3, data_contract.document_types().len());
 
         for expect in expected_documents() {
             assert!(
