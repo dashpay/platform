@@ -1,5 +1,5 @@
 use crate::version::dpp_versions::{
-    ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
+    ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractMethodVersions,
     DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions,
     DocumentTypeClassMethodVersions, DocumentTypeIndexVersions, DocumentTypeMethodVersions,
     DocumentTypeSchemaVersions, DocumentTypeVersions, DocumentVersions,
@@ -686,6 +686,10 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             contract_structure: 0,
             created_data_contract_structure: 0,
             config: 0,
+            methods: DataContractMethodVersions {
+                validation: 0,
+                schema: 0,
+            },
             document_type: DocumentTypeVersions {
                 index_versions: DocumentTypeIndexVersions {
                     index_levels_from_indices: 0,

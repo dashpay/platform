@@ -1,5 +1,5 @@
 use crate::version::dpp_versions::{
-    ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
+    ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractMethodVersions,
     DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions,
     DocumentTypeClassMethodVersions, DocumentTypeIndexVersions, DocumentTypeMethodVersions,
     DocumentTypeSchemaVersions, DocumentTypeVersions, DocumentVersions,
@@ -51,7 +51,7 @@ use crate::version::drive_versions::{
     DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions, DriveVersion,
 };
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
-use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
+use crate::version::{AbciStructureVersion, FeatureVersion, PlatformArchitectureVersion};
 
 pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     protocol_version: 1,
@@ -573,12 +573,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         validation: DPPValidationVersions {
             validate_time_in_block_time_window: 0,
             json_schema_validator: JsonSchemaValidatorVersions {
-                get_schema_compilation_options: 0,
                 new: 0,
-                new_with_definitions: 0,
                 validate: 0,
-                validate_data_contract_schema: 0,
-                validate_schema: 0,
+                compile: 0,
             },
             data_contract: DataContractValidationVersions {
                 validate: 0,
@@ -683,6 +680,10 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             contract_structure: 0,
             created_data_contract_structure: 0,
             config: 0,
+            methods: DataContractMethodVersions {
+                validation: 0,
+                schema: 0,
+            },
             document_type: DocumentTypeVersions {
                 index_versions: DocumentTypeIndexVersions {
                     index_levels_from_indices: 0,

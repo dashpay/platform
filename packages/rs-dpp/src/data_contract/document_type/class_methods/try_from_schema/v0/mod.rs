@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::v0::DocumentTypeV0;
+use crate::data_contract::document_type::v0::{DocumentTypeV0, StatelessJsonSchemaLazyValidator};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::TryInto;
 
@@ -18,7 +18,7 @@ use crate::data_contract::document_type::schema::{
     traversal_validator, validate_max_depth,
 };
 
-use crate::data_contract::document_type::schema::{create_validator, enrich_with_base_schema};
+use crate::data_contract::document_type::schema::enrich_with_base_schema;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::util::json_schema::resolve_uri;
@@ -59,12 +59,16 @@ impl DocumentTypeV0 {
         )?;
 
         #[cfg(feature = "validation")]
-        let mut json_schema_validator = None;
+        let mut json_schema_validator = StatelessJsonSchemaLazyValidator::new();
 
         #[cfg(feature = "validation")]
         if validate {
             // Make sure JSON Schema is compilable
-            json_schema_validator = Some(create_validator(&root_schema, platform_version)?);
+            let root_json_schema = root_schema
+                .try_to_validating_json()
+                .map_err(ProtocolError::ValueError)?;
+
+            json_schema_validator.compile(&root_json_schema, platform_version)?;
 
             // Validate against JSON Schema
             DOCUMENT_META_SCHEMA_V0

@@ -35,12 +35,9 @@ pub struct DataContractValidationVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct JsonSchemaValidatorVersions {
-    pub get_schema_compilation_options: FeatureVersion,
     pub new: FeatureVersion,
-    pub new_with_definitions: FeatureVersion,
     pub validate: FeatureVersion,
-    pub validate_data_contract_schema: FeatureVersion,
-    pub validate_schema: FeatureVersion,
+    pub compile: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -140,7 +137,6 @@ pub struct DocumentTypeSchemaVersions {
     pub find_identifier_and_binary_paths: FeatureVersion,
     pub validate_max_depth: FeatureVersion,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,
-    pub create_validator: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

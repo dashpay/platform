@@ -5,16 +5,11 @@ mod find_identifier_and_binary_paths;
 pub use find_identifier_and_binary_paths::*;
 
 #[cfg(feature = "validation")]
-pub mod recursive_schema_validator;
+mod recursive_schema_validator;
 #[cfg(feature = "validation")]
 pub use recursive_schema_validator::*;
-#[cfg(feature = "validation")]
-pub mod validate_max_depth;
 
 #[cfg(feature = "validation")]
-mod create_validator;
-#[cfg(feature = "validation")]
-pub use create_validator::*;
-
+mod validate_max_depth;
 #[cfg(feature = "validation")]
 pub use validate_max_depth::*;
