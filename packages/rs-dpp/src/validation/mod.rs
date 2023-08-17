@@ -11,7 +11,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
 #[cfg(feature = "validation")]
-pub(crate) mod block_time_window;
+pub mod block_time_window;
 #[cfg(feature = "validation")]
 pub(crate) mod byte_array_meta;
 #[cfg(feature = "validation")]

@@ -11,6 +11,7 @@ use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::identity::accessors::IdentityGettersV0;
+#[cfg(feature = "validation")]
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::serialization::PlatformDeserializable;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
