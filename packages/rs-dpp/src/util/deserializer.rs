@@ -53,6 +53,10 @@ pub fn split_cbor_protocol_version(
                 "protocol version could not be decoded as a varint".to_string(),
             )),
         ))?;
+
+    // We actually encode protocol version as is. get method of protocol version always expects
+    // protocol version to be at least 1, an it will give back version 0 if 1 is passed.
+    let protocol_version = protocol_version + 1;
     let (_, main_message_bytes) = message_bytes.split_at(protocol_version_size);
 
     PlatformVersion::get(protocol_version)?;
