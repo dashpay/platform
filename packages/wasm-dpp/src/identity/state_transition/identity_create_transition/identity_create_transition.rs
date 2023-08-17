@@ -1,4 +1,3 @@
-use std::convert::TryInto;
 use std::default::Default;
 use dpp::platform_value::Value;
 use serde_json::Value as JsonValue;
@@ -15,13 +14,9 @@ use crate::{buffer::Buffer, errors::RustConversionError, identity::state_transit
     ChainAssetLockProofWasm, InstantAssetLockProofWasm,
 }, identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm, utils, with_js_error};
 
-use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-use dpp::state_transition::StateTransition;
-
-use crate::utils::{generic_of_js_val, ToSerdeJSONExt, WithJsError};
-use dpp::identity::KeyType;
+use crate::utils::{generic_of_js_val, WithJsError};
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::{string_encoding, BinaryData};
+use dpp::platform_value::{string_encoding};
 use dpp::serialization::{PlatformSerializable, ValueConvertible};
 use dpp::{
     state_transition::identity::identity_create_transition::{
@@ -34,6 +29,7 @@ use dpp::{
     state_transition::StateTransitionLike,
 };
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::StateTransition;
 
 #[wasm_bindgen(js_name=IdentityCreateTransition)]
 #[derive(Clone)]
@@ -95,7 +91,7 @@ impl IdentityCreateTransitionWasm {
             }
         }
     }
-    //
+
     #[wasm_bindgen(js_name=setPublicKeys)]
     pub fn set_public_keys(&mut self, public_keys: Vec<JsValue>) -> Result<(), JsValue> {
         let public_keys = public_keys
@@ -187,11 +183,6 @@ impl IdentityCreateTransitionWasm {
 
         let version = match self.0 {
             IdentityCreateTransition::V0(_) => "0",
-            _ => {
-                return Err(JsValue::from_str(
-                    "Unsupported version of IdentityCreateTransition",
-                ))
-            }
         };
 
         js_sys::Reflect::set(
@@ -244,27 +235,22 @@ impl IdentityCreateTransitionWasm {
 
         Ok(js_object.into())
     }
-    //
-    // #[wasm_bindgen(js_name=toBuffer)]
-    // pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-    //     let bytes =
-    //         PlatformSerializable::serialize(&StateTransition::IdentityCreate(self.0.clone()))
-    //             .with_js_error()?;
-    //     Ok(Buffer::from_bytes(&bytes))
-    // }
-    //
+
+    #[wasm_bindgen(js_name=toBuffer)]
+    pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
+        let bytes =
+            PlatformSerializable::serialize(&StateTransition::IdentityCreate(self.0.clone()))
+                .with_js_error()?;
+        Ok(Buffer::from_bytes(&bytes))
+    }
+
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
         let object = super::to_object::to_object_struct(&self.0, &Default::default());
         let js_object = js_sys::Object::new();
 
         let version = match self.0 {
-            IdentityCreateTransition::V0(_) => "0",
-            _ => {
-                return Err(JsValue::from_str(
-                    "Unsupported version of IdentityCreateTransition",
-                ))
-            }
+            IdentityCreateTransition::V0(_) => "0"
         };
 
         js_sys::Reflect::set(
