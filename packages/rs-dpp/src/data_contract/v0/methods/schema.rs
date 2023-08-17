@@ -58,7 +58,7 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
     fn document_schemas(&self) -> BTreeMap<DocumentName, &Value> {
         self.document_types
             .iter()
-            .map(|(name, r#type)| (name.to_owned(), r#type.schema()))
+            .map(|(name, document_type)| (name.to_owned(), document_type.schema()))
             .collect()
     }
 

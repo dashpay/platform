@@ -576,12 +576,9 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         validation: DPPValidationVersions {
             validate_time_in_block_time_window: 0,
             json_schema_validator: JsonSchemaValidatorVersions {
-                get_schema_compilation_options: 0,
                 new: 0,
-                new_with_definitions: 0,
                 validate: 0,
-                validate_data_contract_schema: 0,
-                validate_schema: 0,
+                compile: 0,
             },
             data_contract: DataContractValidationVersions {
                 validate: 0,

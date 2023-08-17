@@ -77,7 +77,7 @@ mod tests {
     use crate::drive::Drive;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
-    use dpp::data_contract::{DataContract, DataContractMethodsV0};
+    use dpp::data_contract::DataContract;
     use dpp::document::DocumentV0Getters;
     use dpp::platform_value::platform_value;
     use dpp::tests::json_document::json_document_to_contract;

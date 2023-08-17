@@ -1,6 +1,4 @@
-use crate::data_contract::{DataContract, DefinitionName, DocumentName};
-use crate::document::Document;
-use crate::validation::SimpleConsensusValidationResult;
+use crate::data_contract::{DefinitionName, DocumentName};
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;

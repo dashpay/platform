@@ -1,13 +1,12 @@
 mod v0;
-use crate::data_contract::accessors::v0::DataContractV0Getters;
+pub use v0::*;
+
 use crate::data_contract::{DefinitionName, DocumentName};
 use crate::prelude::DataContract;
-use crate::serialization::PlatformSerializableWithPlatformVersion;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
-pub use v0::*;
 
 impl DataContractSchemaMethodsV0 for DataContract {
     fn set_document_schemas(

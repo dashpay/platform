@@ -108,11 +108,7 @@ impl DataContractFactoryV0 {
         //     }
         // }
         let platform_version = PlatformVersion::get(self.protocol_version)?;
-        match platform_version
-            .dpp
-            .contract_versions
-            .contract_structure
-        {
+        match platform_version.dpp.contract_versions.contract_structure {
             0 => Ok(DataContractV0::from_value(data_contract_object, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractFactoryV0::create_from_object".to_string(),
@@ -199,8 +195,8 @@ impl DataContractFactoryV0 {
 mod tests {
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::schema::DataContractSchemaMethodsV0;
     use crate::data_contract::serialized_version::v0::property_names;
-    use crate::data_contract::DataContractMethodsV0;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::StateTransitionLike;
@@ -216,6 +212,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_data_contract =
             get_data_contract_fixture(None, platform_version.protocol_version);
+
         let raw_data_contract = created_data_contract
             .data_contract()
             .to_value(platform_version)
@@ -240,12 +237,12 @@ mod tests {
         let data_contract = created_data_contract.data_contract_owned();
 
         let raw_defs = raw_data_contract
-            .get_value(property_names::DEFINITIONS)
+            .get_value("schemaDefs")
             .expect("documents property should exist")
             .clone();
 
         let raw_documents = raw_data_contract
-            .get_value(property_names::DOCUMENTS)
+            .get_value("documentSchemas")
             .expect("documents property should exist")
             .clone();
 
@@ -263,6 +260,7 @@ mod tests {
         // id is generated based on entropy which is different every time the `create` call is used
         assert_eq!(data_contract.id().len(), result.id().len());
         assert_ne!(data_contract.id(), result.id());
+        assert_eq!(data_contract.schema_defs(), result.schema_defs());
         assert_eq!(data_contract.document_schemas(), result.document_schemas());
         assert_eq!(data_contract.owner_id(), result.owner_id());
         assert_eq!(data_contract.document_types(), result.document_types());
