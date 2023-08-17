@@ -171,9 +171,9 @@ mod tests {
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+        use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 
         use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
-        use dpp::data_contract::DataContractMethodsV0;
         use dpp::platform_value::platform_value;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::version::TryFromPlatformVersioned;
