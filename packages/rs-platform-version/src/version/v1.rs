@@ -719,6 +719,11 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 max_version: 0,
                 default_current_version: 0,
             },
+            document_cbor_serialization_version: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
             extended_document_structure_version: 0,
             extended_document_serialization_version: FeatureVersionBounds {
                 min_version: 0,

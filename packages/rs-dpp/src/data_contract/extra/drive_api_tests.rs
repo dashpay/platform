@@ -33,7 +33,11 @@ mod test {
                 required_properties: &["$cratedAt"],
                 indexes: &[
                     ("index1", true, &[("$ownerId", "asc")]),
-                    ("index2", false, &[("$ownerId", "asc"), ("$updatedAt", "asc")]),
+                    (
+                        "index2",
+                        false,
+                        &[("$ownerId", "asc"), ("$updatedAt", "asc")],
+                    ),
                 ],
                 ..Default::default()
             },
@@ -74,7 +78,10 @@ mod test {
     #[test]
     #[cfg(feature = "data-contract-cbor-conversion")]
     fn deserialize_from_cbor_with_contract_inner() {
-        let cbor_bytes = std::fs::read("../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-cbor.bin").unwrap();
+        let cbor_bytes = std::fs::read(
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-cbor.bin",
+        )
+        .unwrap();
         let expect_id_base58 = "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6";
         let expect_owner_id_base58 = "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6";
         let expect_id = bs58::decode(expect_id_base58).into_vec().unwrap();

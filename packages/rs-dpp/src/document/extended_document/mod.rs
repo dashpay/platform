@@ -394,8 +394,7 @@ mod test {
             LATEST_PLATFORM_VERSION.protocol_version,
         )
         .unwrap();
-        let document_json =
-            get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
+        let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
         let document = ExtendedDocument::from_json_string(
             &document_json,
             dpns_contract,
