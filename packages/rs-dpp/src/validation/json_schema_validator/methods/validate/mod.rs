@@ -1,6 +1,6 @@
 use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 use crate::version::PlatformVersion;
-use crate::{NonConsensusError, ProtocolError};
+use crate::ProtocolError;
 use serde_json::Value as JsonValue;
 
 mod v0;
@@ -17,7 +17,7 @@ impl JsonSchemaValidator {
             .json_schema_validator
             .validate
         {
-            0 => self.validate_v0(instance, platform_version),
+            0 => self.validate_v0(instance),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "JsonSchemaValidator::validate".to_string(),
                 known_versions: vec![0],

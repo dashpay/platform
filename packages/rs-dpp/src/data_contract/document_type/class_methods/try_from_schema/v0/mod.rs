@@ -59,7 +59,7 @@ impl DocumentTypeV0 {
         )?;
 
         #[cfg(feature = "validation")]
-        let mut json_schema_validator = StatelessJsonSchemaLazyValidator::new();
+        let json_schema_validator = StatelessJsonSchemaLazyValidator::new();
 
         #[cfg(feature = "validation")]
         if validate {

@@ -1,15 +1,13 @@
 use crate::consensus::ConsensusError;
 use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 use crate::ProtocolError;
-use jsonschema::ErrorIterator;
-use platform_version::version::PlatformVersion;
+
 use serde_json::Value as JsonValue;
 
 impl JsonSchemaValidator {
     pub(super) fn validate_v0(
         &self,
         instance: &JsonValue,
-        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let validator_guard = self.validator.read().unwrap();
 

@@ -1,9 +1,9 @@
-use crate::consensus::ConsensusError;
+
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::schema::enrich_with_base_schema;
-use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
-use crate::data_contract::errors::DataContractError;
+use crate::data_contract::document_type::{DocumentTypeRef};
+
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;

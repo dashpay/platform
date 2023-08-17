@@ -24,7 +24,7 @@ use crate::state_transition::identity_update_transition::accessors::IdentityUpda
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::state_transition::StateTransitionIdentitySigned;
+
 use crate::version::PlatformVersion;
 use platform_value::{Identifier, Value};
 use platform_version::TryIntoPlatformVersioned;
@@ -150,7 +150,7 @@ impl IdentityFactory {
             revision: 0,
         });
 
-        let mut identity_create_transition =
+        let identity_create_transition =
             IdentityCreateTransition::V0(IdentityCreateTransitionV0::try_from_identity(
                 identity.clone(),
                 asset_lock_proof,

@@ -196,7 +196,7 @@ mod tests {
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::schema::DataContractSchemaMethodsV0;
-    use crate::data_contract::serialized_version::v0::property_names;
+    
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::StateTransitionLike;
