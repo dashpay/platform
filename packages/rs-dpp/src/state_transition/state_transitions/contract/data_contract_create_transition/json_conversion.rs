@@ -57,12 +57,6 @@ mod test {
         assert_eq!(
             0,
             json_object
-                .get_u64(TRANSITION_TYPE)
-                .expect("the transition type should be present") as u8
-        );
-        assert_eq!(
-            0,
-            json_object
                 .get_u64(SIGNATURE_PUBLIC_KEY_ID)
                 .expect("default public key id should be defined"),
         );

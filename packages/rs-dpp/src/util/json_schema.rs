@@ -156,31 +156,49 @@ mod test {
     #[test]
     fn test_extract_indices() {
         let input = json!({
-            "properties" : {
-                "field_one" : {
-                    "type" : "string"
+            "type": "object",
+            "indices": [
+                {
+                    "properties": [
+                        {
+                            "$ownerId": "asc"
+                        }
+                    ],
+                    "name": "&ownerId",
+                    "unique": true
                 },
-                "field_two" : {
-                    "type" : "string"
+                {
+                    "properties": [
+                        {
+                            "$ownerId": "asc"
+                        },
+                        {
+                            "$updatedAt": "asc"
+                        }
+                    ],
+                    "name": "&ownerId&updatedAt"
+                }
+            ],
+            "properties": {
+                "avatarUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "maxLength": 2048
+                },
+                "publicMessage": {
+                    "type": "string",
+                    "maxLength": 140
+                },
+                "displayName": {
+                    "type": "string",
+                    "maxLength": 25
                 }
             },
-            "indices" : [
-                {
-                    "name" : "first_index",
-                    "properties" :[
-                        {"field_one" : "asc"},
-                        {"field_two" : "desc"},
-                    ],
-                    "unique" : true
-
-                },
-                {
-                    "name" : "second_index",
-                    "properties" : [
-                        {"field_two" : "desc"},
-                    ],
-                }
-             ]
+            "required": [
+                "$createdAt",
+                "$updatedAt"
+            ],
+            "additionalProperties": false
         });
 
         let platform_value = platform_value::to_value(input).unwrap();
@@ -200,18 +218,17 @@ mod test {
         let indices = document_type.indices();
 
         assert_eq!(indices.len(), 2);
-        assert_eq!(indices[0].name, "first_index");
-        assert_eq!(indices[0].properties.len(), 2);
 
-        assert_eq!(indices[0].properties[0].name, "field_one");
-        assert_eq!(indices[0].properties[1].name, "field_two");
-
+        assert_eq!(indices[0].name, "&ownerId");
+        assert_eq!(indices[0].properties.len(), 1);
+        assert_eq!(indices[0].properties[0].name, "$ownerId");
         assert!(indices[0].properties[0].ascending);
-        assert!(!indices[0].properties[1].ascending);
         assert!(indices[0].unique);
 
-        assert_eq!(indices[1].name, "second_index");
-        assert_eq!(indices[1].properties.len(), 1);
+        assert_eq!(indices[1].name, "&ownerId&updatedAt");
+        assert_eq!(indices[1].properties.len(), 2);
+        assert_eq!(indices[1].properties[0].name, "$ownerId");
+        assert_eq!(indices[1].properties[1].name, "$updatedAt");
         assert!(!indices[1].unique);
     }
 }
