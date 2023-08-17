@@ -257,38 +257,27 @@ impl InternalClauses {
     }
 }
 
-impl From<&InternalClauses> for Vec<WhereClause> {
-    fn from(clauses: &InternalClauses) -> Self {
-        let mut result: Self = clauses
-            .equal_clauses
-            .iter()
-            .map(|(_k, v)| v.clone())
-            .collect();
+impl From<InternalClauses> for Vec<WhereClause> {
+    fn from(clauses: InternalClauses) -> Self {
+        let mut result: Self = clauses.equal_clauses.into_values().collect();
 
-        if let Some(clause) = &clauses.in_clause {
-            result.push(clause.clone());
+        if let Some(clause) = clauses.in_clause {
+            result.push(clause);
         };
-
-        if let Some(clause) = &clauses.primary_key_equal_clause {
-            result.push(clause.clone());
+        if let Some(clause) = clauses.primary_key_equal_clause {
+            result.push(clause);
         };
-        if let Some(clause) = &clauses.primary_key_in_clause {
-            result.push(clause.clone());
+        if let Some(clause) = clauses.primary_key_in_clause {
+            result.push(clause);
         };
-        if let Some(clause) = &clauses.range_clause {
-            result.push(clause.clone());
+        if let Some(clause) = clauses.range_clause {
+            result.push(clause);
         };
 
         result
     }
 }
 
-// impl From<&InternalClauses> for Vec<Value> {
-//     fn from(value: &InternalClauses) -> Self {
-//         let clauses :Vec<WhereClause>= value.into();
-//         clauses.into_iter().map(|v|v.into )
-//     }
-// }
 #[cfg(any(feature = "full", feature = "verify"))]
 /// The encoding returned by queries
 #[derive(Debug, PartialEq)]
@@ -454,6 +443,10 @@ impl<'a> DriveQuery<'a> {
                 config.max_query_limit
             ))))?;
 
+        let offset: Option<u16> = query_document
+            .remove_optional_integer("offset")
+            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+
         let block_time_ms: Option<u64> = query_document
             .remove_optional_integer("blockTime")
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
@@ -545,8 +538,8 @@ impl<'a> DriveQuery<'a> {
             contract,
             document_type,
             internal_clauses,
-            offset: None,
             limit: Some(limit),
+            offset,
             order_by,
             start_at,
             start_at_included,
@@ -1895,7 +1888,7 @@ impl<'a> From<&DriveQuery<'a>> for BTreeMap<String, Value> {
         );
 
         // Internal clauses
-        let all_where_clauses: Vec<WhereClause> = (&query.internal_clauses).into();
+        let all_where_clauses: Vec<WhereClause> = query.internal_clauses.clone().into();
         response.insert(
             "where".to_string(),
             Value::Array(all_where_clauses.into_iter().map(|v| v.into()).collect()),
@@ -1939,6 +1932,7 @@ impl<'a> From<&DriveQuery<'a>> for BTreeMap<String, Value> {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
+    use dpp::prelude::Identifier;
     use serde_json::json;
     use std::borrow::Cow;
     use std::option::Option::None;
@@ -2024,19 +2018,26 @@ mod tests {
     #[test]
     fn test_drive_query_from_to_cbor() {
         let config = DriveConfig::default();
+        let contract = Contract::default();
+        let document_type = DocumentType::default();
+        let start_after = Identifier::random();
+
         let query_value = json!({
+            "contract_id": contract.id,
+            "document_type_name": document_type.name,
             "where": [
                 ["firstName", "<", "Gilligan"],
                 ["lastName", "=", "Doe"]
             ],
-            "limit": 100,
+            "limit": 100u16,
+            "offset": 10u16,
             "orderBy": [
                 ["firstName", "asc"],
                 ["lastName", "desc"],
-            ]
+            ],
+            "startAfter": start_after,
+            "blockTime": 13453432u64,
         });
-        let contract = Contract::default();
-        let document_type = DocumentType::default();
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
@@ -2047,9 +2048,13 @@ mod tests {
         let cbor = query.to_cbor().expect("should serialize cbor");
 
         let deserialized = DriveQuery::from_cbor(&cbor, &contract, &document_type, &config)
-            .expect("failed to deserialize");
+            .expect("should deserialize cbor");
 
         assert_eq!(query, deserialized);
+
+        assert_eq!(deserialized.start_at, Some(start_after.to_buffer()));
+        assert_eq!(deserialized.start_at_included, false);
+        assert_eq!(deserialized.block_time_ms, Some(13453432u64));
     }
 
     #[test]
