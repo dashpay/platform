@@ -9,8 +9,8 @@ use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 
-use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+
+
 pub use v0::DataContractFactoryV0;
 
 /// # Data Contract Factory

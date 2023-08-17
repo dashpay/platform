@@ -1,32 +1,31 @@
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
-use crate::identity::{Identity, IdentityPublicKey, IdentityV0, KeyID, TimestampMillis};
+use crate::identity::{Identity, IdentityPublicKey, KeyID};
 
 use crate::ProtocolError;
 
 use dashcore::{InstantLock, Transaction};
 use std::collections::BTreeMap;
 
-use crate::consensus::basic::decode::SerializedObjectParsingError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
-use crate::identity::accessors::IdentityGettersV0;
-#[cfg(feature = "validation")]
-use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
-use crate::serialization::PlatformDeserializable;
-use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
-use crate::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
-use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
-use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
-use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
-use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 use crate::version::PlatformVersion;
-use platform_value::{Identifier, Value};
+use platform_value::{Value};
 use platform_version::TryIntoPlatformVersioned;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
