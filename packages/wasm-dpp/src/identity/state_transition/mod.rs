@@ -10,6 +10,6 @@ mod identity_create_transition;
 // mod identity_credit_transfer_transition;
 pub(crate) mod identity_public_key_transitions;
 mod identity_topup_transition;
-// mod identity_update_transition;
+mod identity_update_transition;
 mod transition_types;
 // mod validate_public_key_signatures;
