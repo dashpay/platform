@@ -240,12 +240,12 @@ mod tests {
         let data_contract = created_data_contract.data_contract_owned();
 
         let raw_defs = raw_data_contract
-            .get_value(property_names::DEFINITIONS)
+            .get_value("schemaDefs")
             .expect("documents property should exist")
             .clone();
 
         let raw_documents = raw_data_contract
-            .get_value(property_names::DOCUMENTS)
+            .get_value("documentSchemas")
             .expect("documents property should exist")
             .clone();
 
