@@ -20,10 +20,11 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocument {
     fn serialize_specific_version(
         &self,
         feature_version: FeatureVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
             ExtendedDocument::V0(document_v0) => {
-                document_v0.serialize_specific_version(feature_version)
+                document_v0.serialize_specific_version(feature_version, platform_version)
             }
         }
     }
