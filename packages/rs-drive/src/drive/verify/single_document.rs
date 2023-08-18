@@ -44,7 +44,7 @@ impl SingleDocumentDriveQuery {
 
         if proved_key_values.len() != 1 {
             return Err(Error::Proof(ProofError::CorruptedProof(
-                "we should always get back one element",
+                "we should always get back one element".to_string(),
             )));
         }
 

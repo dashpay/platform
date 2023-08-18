@@ -1,6 +1,4 @@
-use crate::drive::contract::paths::{
-    contract_keeping_history_storage_path, contract_root_path, contract_storage_path_vec,
-};
+use crate::drive::contract::paths::{contract_keeping_history_storage_path, contract_root_path, contract_root_path_vec, contract_storage_path_vec};
 use crate::drive::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
@@ -13,6 +11,7 @@ use crate::common::decode;
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use grovedb::{GroveDb, PathQuery};
+use dpp::dashcore::hashes::hex::ToHex;
 
 impl Drive {
     /// Verifies that the contract is included in the proof.
@@ -71,17 +70,17 @@ impl Drive {
             if contract_known_keeps_history.unwrap_or_default() {
                 if path != contract_keeping_history_storage_path(&contract_id) {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "we did not get back an element for the correct path for the historical contract",
+                        "we did not get back an element for the correct path for the historical contract".to_string(),
                     )));
                 }
             } else if path != contract_root_path(&contract_id) {
                 if key != vec![0] {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "we did not get back an element for the correct key for the contract",
+                        "we did not get back an element for the correct key for the contract".to_string(),
                     )));
                 }
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                        "we did not get back an element for the correct path for the historical contract",
+                        "we did not get back an element for the correct path for the historical contract".to_string(),
                     )));
             };
 
@@ -159,49 +158,50 @@ impl Drive {
         }?;
         if proved_key_values.len() != request_len {
             return Err(Error::Proof(ProofError::CorruptedProof(
-                "we did not get back the number of elements we are looking for",
+                "we did not get back the number of elements we are looking for".to_string(),
             )));
         }
 
         let contracts = proved_key_values.into_iter().map(|(path, key, maybe_element) | {
             let last_part = path.last().ok_or(Error::Proof(ProofError::CorruptedProof(
-                "path of a proved item was empty",
+                "path of a proved item was empty".to_string(),
             )))?;
             let (contract_id, contract_keeps_history) = if last_part.len() == 32 { // non history
                 let contract_id : [u8;32] = last_part.clone().try_into().expect("expected 32 bytes");
-                (contract_id, true)
+                (contract_id, false)
             } else {
                 if path.len() == 0 {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "path of a proved item wasn't big enough",
+                        "path of a proved item wasn't big enough".to_string(),
                     )));
                 }
                 let before_last_part = path.get(path.len() - 1).ok_or(Error::Proof(ProofError::CorruptedProof(
-                    "we got back an invalid proof, the path was empty",
+                    "we got back an invalid proof, the path was empty".to_string(),
                 )))?;
                 if before_last_part.len() != 32 {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "the contract id wasn't 32 bytes",
+                        "the contract id wasn't 32 bytes".to_string(),
                     )));
                 }
                 // otherwise the key is the time and the previous to last member of the path is the contract id
                 let before_last_part : [u8;32] = before_last_part.clone().try_into().expect("expected 32 bytes");
-                (before_last_part, false)
+                (before_last_part, true)
             };
             if contract_keeps_history {
                 if path != contract_keeping_history_storage_path(&contract_id) {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "we did not get back an element for the correct path for the historical contract",
+                        format!("we did not get back an element for the correct path for the historical contract, received: ({})", path.iter().map(|a| a.to_hex()).collect::<Vec<_>>().join("|")),
                     )));
                 }
             } else if path != contract_root_path(&contract_id) {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct path for the historical contract",
+                    format!("we did not get back an element for the correct path for the non historical contract, received: ({})", path.iter().map(|a| a.to_hex()).collect::<Vec<_>>().join("|")),
                 )));
             };
 
             let contract = maybe_element
                 .map(|element| {
+                    dbg!(&element);
                     element
                         .into_item_bytes()
                         .map_err(Error::GroveDB)
@@ -254,7 +254,7 @@ impl Drive {
         for (path, key, maybe_element) in proved_key_values.drain(..) {
             if path != contract_storage_path_vec(&contract_id) {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct path for the historical contract",
+                    "we did not get back an element for the correct path for the historical contract".to_string(),
                 )));
             }
 
