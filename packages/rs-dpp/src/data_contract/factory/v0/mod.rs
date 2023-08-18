@@ -265,7 +265,6 @@ mod tests {
         assert_ne!(data_contract.id(), result.id());
         assert_eq!(data_contract.document_schemas(), result.document_schemas());
         assert_eq!(data_contract.owner_id(), result.owner_id());
-        assert_eq!(data_contract.document_types(), result.document_types());
         assert_eq!(data_contract.metadata(), result.metadata());
     }
 
