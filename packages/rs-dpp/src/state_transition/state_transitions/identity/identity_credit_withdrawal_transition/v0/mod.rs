@@ -7,29 +7,17 @@ mod types;
 mod value_conversion;
 mod version;
 
-use crate::serialization::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
-use platform_value::{BinaryData, ReplacementType, Value};
+use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::convert::TryInto;
 
-use crate::version::{FeatureVersion, LATEST_VERSION};
 use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::{Identifier, Revision},
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
     ProtocolError,
 };
-use data_contracts::withdrawals_contract::document_types::withdrawal::properties::OUTPUT_SCRIPT;
 
-use crate::serialization::PlatformSerializable;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-
-use crate::identity::SecurityLevel;
-use crate::identity::SecurityLevel::{CRITICAL, HIGH, MEDIUM};
 use crate::withdrawal::Pooling;
 
 #[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
@@ -38,7 +26,7 @@ use crate::withdrawal::Pooling;
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-
+#[derive(Default)]
 pub struct IdentityCreditWithdrawalTransitionV0 {
     pub identity_id: Identifier,
     pub amount: u64,
@@ -52,21 +40,6 @@ pub struct IdentityCreditWithdrawalTransitionV0 {
     pub signature: BinaryData,
 }
 
-impl Default for IdentityCreditWithdrawalTransitionV0 {
-    fn default() -> Self {
-        IdentityCreditWithdrawalTransitionV0 {
-            identity_id: Default::default(),
-            amount: Default::default(),
-            core_fee_per_byte: Default::default(),
-            pooling: Default::default(),
-            output_script: Default::default(),
-            revision: Default::default(),
-            signature_public_key_id: Default::default(),
-            signature: Default::default(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::identity::core_script::CoreScript;
@@ -76,7 +49,7 @@ mod test {
     use crate::state_transition::identity_credit_withdrawal_transition::v0::Pooling;
     use crate::state_transition::StateTransitionType;
     use crate::ProtocolError;
-    use bincode::{config, Decode, Encode};
+    use bincode::{Decode, Encode};
     use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
     use platform_value::{BinaryData, Identifier};
     use rand::Rng;
@@ -84,14 +57,14 @@ mod test {
 
     // Structure with 1 property
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV01 {
         pub protocol_version: u32,
     }
 
     // Structure with 2 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV02 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -99,7 +72,7 @@ mod test {
 
     // Structure with 3 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV03 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -108,7 +81,7 @@ mod test {
 
     // Structure with 4 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV04 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -118,7 +91,7 @@ mod test {
 
     // Structure with 5 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV05 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -129,7 +102,7 @@ mod test {
 
     // Structure with 6 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV06 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -141,7 +114,7 @@ mod test {
 
     // Structure with 7 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV07 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -154,7 +127,7 @@ mod test {
 
     // Structure with 8 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV08 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -168,7 +141,7 @@ mod test {
 
     // Structure with 9 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV09 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -183,7 +156,7 @@ mod test {
 
     // Structure with 10 properties
     #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
-
+    #[platform_serialize(unversioned)]
     struct IdentityCreditWithdrawalTransitionV010 {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
@@ -201,7 +174,9 @@ mod test {
         T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
     >(
         transition: T,
-    ) {
+    ) where
+        <T as PlatformSerializable>::Error: std::fmt::Debug,
+    {
         let serialized = T::serialize(&transition).expect("expected to serialize");
         let deserialized = T::deserialize(serialized.as_slice()).expect("expected to deserialize");
         assert_eq!(transition, deserialized);

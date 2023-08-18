@@ -7,15 +7,12 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
-use crate::serialization::{PlatformDeserializable, Signable};
-use bincode::enc::Encoder;
-use bincode::error::EncodeError;
-use bincode::{config, Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use bincode::{Decode, Encode};
+use platform_serialization_derive::PlatformSignable;
 
-use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
+use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
@@ -26,11 +23,8 @@ use crate::identity::accessors::IdentityGettersV0;
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
-use crate::state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
-};
 use crate::version::PlatformVersion;
-use crate::{NonConsensusError, ProtocolError};
+use crate::ProtocolError;
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
@@ -43,6 +37,7 @@ use crate::{NonConsensusError, ProtocolError};
 // Hence we set to do it somewhat manually inside the PlatformSignable proc macro
 // Instead of inside of bincode_derive
 #[platform_signable(derive_bincode_with_borrowed_vec)]
+#[derive(Default)]
 pub struct IdentityCreateTransitionV0 {
     // When signing, we don't sign the signatures for keys
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
@@ -76,7 +71,7 @@ impl TryFrom<IdentityCreateTransitionV0Inner> for IdentityCreateTransitionV0 {
         let IdentityCreateTransitionV0Inner {
             public_keys,
             asset_lock_proof,
-            protocol_version,
+            protocol_version: _,
             signature,
         } = value;
         let identity_id = asset_lock_proof.create_identifier()?;
@@ -90,16 +85,6 @@ impl TryFrom<IdentityCreateTransitionV0Inner> for IdentityCreateTransitionV0 {
 }
 
 //todo: there shouldn't be a default
-impl Default for IdentityCreateTransitionV0 {
-    fn default() -> Self {
-        Self {
-            public_keys: Default::default(),
-            asset_lock_proof: Default::default(),
-            identity_id: Default::default(),
-            signature: Default::default(),
-        }
-    }
-}
 
 impl IdentityCreateTransitionV0 {
     fn try_from_identity_v0(

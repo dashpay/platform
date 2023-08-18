@@ -7,11 +7,11 @@ use crate::block::epoch::{Epoch, EpochIndex};
 use crate::fee::default_costs::EpochCosts;
 use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
 use crate::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_leftovers;
-use crate::fee::epoch::CreditsPerEpoch;
+use crate::fee::epoch::{BytesPerEpoch, CreditsPerEpoch};
 use crate::fee::Credits;
 use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, Encode};
+
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::btree_map::Iter;
@@ -26,19 +26,23 @@ const MIN_REFUND_LIMIT_BYTES: u32 = 32;
 /// Credits per Epoch by Identifier
 pub type CreditsPerEpochByIdentifier = BTreeMap<[u8; 32], CreditsPerEpoch>;
 
+/// Bytes per Epoch by Identifier
+pub type BytesPerEpochByIdentifier = BTreeMap<[u8; 32], BytesPerEpoch>;
+
 /// Fee refunds to identities based on removed data from specific epochs
 #[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize, Encode, Decode)]
 pub struct FeeRefunds(pub CreditsPerEpochByIdentifier);
 
 impl FeeRefunds {
     /// Create fee refunds from GroveDB's StorageRemovalPerEpochByIdentifier
-    pub fn from_storage_removal<I, C>(
+    pub fn from_storage_removal<I, C, E>(
         storage_removal: I,
         current_epoch_index: EpochIndex,
     ) -> Result<Self, ProtocolError>
     where
         I: IntoIterator<Item = ([u8; 32], C)>,
-        C: IntoIterator<Item = (u64, u32)>,
+        C: IntoIterator<Item = (E, u32)>,
+        E: TryInto<u16>,
     {
         let refunds_per_epoch_by_identifier = storage_removal
             .into_iter()
@@ -47,7 +51,7 @@ impl FeeRefunds {
                     .into_iter()
                     .filter(|(_, bytes)| bytes >= &MIN_REFUND_LIMIT_BYTES)
                     .map(|(encoded_epoch_index, bytes)| {
-                        let epoch_index = u16::try_from(encoded_epoch_index).map_err(|_| ProtocolError::Overflow("can't fit u64 epoch index from StorageRemovalPerEpochByIdentifier to u16 EpochIndex"))?;
+                        let epoch_index : u16 = encoded_epoch_index.try_into().map_err(|_| ProtocolError::Overflow("can't fit u64 epoch index from StorageRemovalPerEpochByIdentifier to u16 EpochIndex"))?;
 
                         // TODO We should use multipliers
 
@@ -187,7 +191,7 @@ mod tests {
 
             let bytes_per_epoch = IntMap::from_iter([(0, 31), (1, 100)]);
             let storage_removal =
-                StorageRemovalPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
+                BytesPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
 
             let fee_refunds = FeeRefunds::from_storage_removal(storage_removal, 3)
                 .expect("should create fee refunds");

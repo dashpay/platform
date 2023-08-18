@@ -1,9 +1,6 @@
-use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::extended_document::v0::ExtendedDocumentV0;
-use crate::document::serialization_traits::{
-    DocumentPlatformConversionMethodsV0, ExtendedDocumentPlatformConversionMethodsV0,
-};
-use crate::document::{Document, DocumentV0};
+use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
+
 use crate::prelude::ExtendedDocument;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -23,10 +20,11 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocument {
     fn serialize_specific_version(
         &self,
         feature_version: FeatureVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {
             ExtendedDocument::V0(document_v0) => {
-                document_v0.serialize_specific_version(feature_version)
+                document_v0.serialize_specific_version(feature_version, platform_version)
             }
         }
     }
@@ -36,7 +34,7 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocument {
     /// The serialization of a document follows the pattern:
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     fn serialize_consume(
-        mut self,
+        self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match self {

@@ -205,10 +205,10 @@ pub fn derive_platform_versioned_deserialize(input: TokenStream) -> TokenStream 
         }
     };
 
-    eprintln!(
-        "Processing variant for platform version deserialize: {}",
-        &output
-    );
+    // eprintln!(
+    //     "Processing variant for platform version deserialize: {}",
+    //     &output
+    // );
 
     TokenStream::from(output)
 }
@@ -299,7 +299,7 @@ pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
         quote! {
             pub fn verify_protocol_version(&self, protocol_version: u32) -> Result<bool, ProtocolError> {
                 let platform_version = crate::version::PlatformVersion::get(protocol_version)?;
-                Ok(platform_version.#tokens.check_version(self.version()))
+                Ok(platform_version.#tokens.check_version(self.feature_version()))
             }
         }
     } else {
@@ -321,7 +321,7 @@ pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
 
     let output = quote! {
         impl #name {
-            pub fn version(&self) -> crate::version::FeatureVersion {
+            pub fn feature_version(&self) -> crate::version::FeatureVersion {
                 match self {
                     #(#version_arms),*
                 }
@@ -331,7 +331,7 @@ pub fn derive_platform_versioned(input: TokenStream) -> TokenStream {
         }
     };
 
-    eprintln!("Processing versioning : {}", &output);
+    // eprintln!("Processing versioning : {}", &output);
 
     TokenStream::from(output)
 }

@@ -1,18 +1,12 @@
-use crate::serialization::PlatformDeserializable;
-use crate::serialization::PlatformSerializable;
-use crate::serialization::Signable;
-use crate::state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
-};
+use crate::state_transition::StateTransitionFieldTypes;
 use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_value::{BinaryData, Identifier, Value};
-use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
-use serde::de::{MapAccess, Visitor};
-use serde::ser::SerializeMap;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use platform_versioning::PlatformVersioned;
+
+use serde::{Deserialize, Serialize};
 
 pub mod accessors;
 mod fields;
@@ -27,13 +21,12 @@ mod v0;
 mod value_conversion;
 mod version;
 
-use crate::version::PlatformVersionCurrentVersion;
 pub use fields::*;
 use platform_version::version::PlatformVersion;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
 use crate::data_contract::DataContract;
-use crate::version::FeatureVersion;
+
 pub use v0::*;
 
 pub type DataContractUpdateTransitionLatest = DataContractUpdateTransitionV0;
@@ -111,16 +104,14 @@ mod test {
     use crate::data_contract::DataContract;
     use crate::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
     use crate::tests::fixtures::get_data_contract_fixture;
-    use crate::util::json_value::JsonValueExt;
-    use crate::version::LATEST_PLATFORM_VERSION;
-    use integer_encoding::VarInt;
-    use platform_version::version::PlatformVersion;
-    use std::collections::BTreeMap;
-    use std::convert::TryInto;
 
-    use crate::state_transition::traits::StateTransitionValueConvert;
+    use crate::version::LATEST_PLATFORM_VERSION;
+
+    use platform_version::version::PlatformVersion;
 
     use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::state_transition::{StateTransitionLike, StateTransitionType};
 
     struct TestData {
         state_transition: DataContractUpdateTransition,
@@ -132,25 +123,10 @@ mod test {
         let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
             .data_contract_owned();
 
-        let value_map = BTreeMap::from([
-            (
-                STATE_TRANSITION_PROTOCOL_VERSION.to_string(),
-                Value::U16(
-                    LATEST_PLATFORM_VERSION
-                        .state_transitions
-                        .contract_create_state_transition
-                        .default_current_version,
-                ),
-            ),
-            (
-                DATA_CONTRACT.to_string(),
-                data_contract.clone().try_into().unwrap(),
-            ),
-        ]);
-
-        let state_transition =
-            DataContractUpdateTransition::from_value_map(value_map, platform_version)
-                .expect("state transition should be created without errors");
+        let state_transition: DataContractUpdateTransition = data_contract
+            .clone()
+            .try_into_platform_versioned(platform_version)
+            .expect("expected to get transition");
 
         TestData {
             data_contract,
@@ -163,7 +139,8 @@ mod test {
         let data = get_test_data();
         assert_eq!(
             LATEST_PLATFORM_VERSION
-                .state_transitions
+                .dpp
+                .state_transition_serialization_versions
                 .contract_update_state_transition
                 .default_current_version,
             data.state_transition.state_transition_protocol_version()
@@ -180,37 +157,23 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "state-transition-json-conversion")]
     fn should_return_data_contract() {
         let data = get_test_data();
 
         assert_eq!(
-            data.state_transition
-                .data_contract()
-                .to_json_object()
-                .expect("conversion to object shouldn't fail"),
+            data.state_transition.data_contract().clone(),
             data.data_contract
-                .to_json_object()
-                .expect("conversion to object shouldn't fail")
+                .try_into_platform_versioned(PlatformVersion::first())
+                .unwrap()
         );
-    }
-
-    #[test]
-    fn should_return_serialized_state_transition_to_buffer() {
-        let data = get_test_data();
-        let state_transition_bytes = data
-            .state_transition
-            .to_cbor_buffer(false)
-            .expect("state transition should be converted to buffer");
-        let (protocol_version, _) =
-            u32::decode_var(state_transition_bytes.as_ref()).expect("expected to decode");
-        assert_eq!(LATEST_PLATFORM_VERSION, protocol_version)
     }
 
     #[test]
     fn should_return_owner_id() {
         let data = get_test_data();
         assert_eq!(
-            &data.data_contract.owner_id(),
+            data.data_contract.owner_id(),
             data.state_transition.owner_id()
         );
     }

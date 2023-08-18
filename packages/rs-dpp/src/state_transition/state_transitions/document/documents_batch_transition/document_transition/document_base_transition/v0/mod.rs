@@ -2,11 +2,10 @@ pub mod from_document;
 pub mod v0_methods;
 
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
 
 use bincode::{Decode, Encode};
 use derive_more::Display;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
+
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};

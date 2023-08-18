@@ -6,7 +6,7 @@ use platform_value::BinaryData;
 use serde_json::json;
 
 use crate::prelude::{Identifier, Identity};
-use crate::serialization::ValueConvertible;
+
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 

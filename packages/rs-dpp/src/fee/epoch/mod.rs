@@ -57,5 +57,8 @@ pub const PERPETUAL_STORAGE_EPOCHS: u16 = PERPETUAL_STORAGE_YEARS * EPOCHS_PER_Y
 /// Credits per epoch map
 pub type CreditsPerEpoch = IntMap<EpochIndex, Credits>;
 
+/// Bytes removed per epoch map
+pub type BytesPerEpoch = IntMap<EpochIndex, u32>;
+
 /// Signed credits per epoch map
 pub type SignedCreditsPerEpoch = IntMap<EpochIndex, SignedCredits>;

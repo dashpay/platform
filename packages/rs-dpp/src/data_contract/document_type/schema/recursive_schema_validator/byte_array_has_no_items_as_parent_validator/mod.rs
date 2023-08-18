@@ -21,9 +21,10 @@ pub fn byte_array_has_no_items_as_parent_validator(
         .recursive_schema_validator_versions
         .byte_array_has_no_items_as_parent_validator
     {
-        0 => Ok(v0::byte_array_has_no_items_as_parent_validator_v0(
-            path, key, parent, value, result,
-        )),
+        0 => {
+            v0::byte_array_has_no_items_as_parent_validator_v0(path, key, parent, value, result);
+            Ok(())
+        }
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "byte_array_has_no_items_as_parent_validator".to_string(),
             known_versions: vec![0],

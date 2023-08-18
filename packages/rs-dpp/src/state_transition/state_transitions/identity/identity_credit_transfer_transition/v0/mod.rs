@@ -8,29 +8,33 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::identity::{KeyID, SecurityLevel};
+use crate::identity::KeyID;
 
 use crate::prelude::Identifier;
-use crate::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
-use crate::state_transition::{
-    StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
-};
-use crate::version::LATEST_VERSION;
-use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_value::{BinaryData, Value};
-use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
-use std::convert::TryInto;
 
-#[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
+use crate::ProtocolError;
+use bincode::{Decode, Encode};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_value::BinaryData;
+use serde::{Deserialize, Serialize};
+
+#[derive(
+    Debug,
+    Clone,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    PlatformSignable,
+    PartialEq,
+)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-
+#[platform_serialize(unversioned)]
+#[derive(Default)]
 pub struct IdentityCreditTransferTransitionV0 {
     // Own ST fields
     pub identity_id: Identifier,
@@ -40,18 +44,6 @@ pub struct IdentityCreditTransferTransitionV0 {
     pub signature_public_key_id: KeyID,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
-}
-
-impl Default for IdentityCreditTransferTransitionV0 {
-    fn default() -> Self {
-        IdentityCreditTransferTransitionV0 {
-            identity_id: Identifier::default(),
-            recipient_id: Identifier::default(),
-            amount: Default::default(),
-            signature_public_key_id: Default::default(),
-            signature: Default::default(),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -68,7 +60,9 @@ mod test {
         T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
     >(
         transition: T,
-    ) {
+    ) where
+        <T as PlatformSerializable>::Error: std::fmt::Debug,
+    {
         let serialized = T::serialize(&transition).expect("expected to serialize");
         let deserialized = T::deserialize(serialized.as_slice()).expect("expected to deserialize");
         assert_eq!(transition, deserialized);

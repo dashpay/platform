@@ -1,18 +1,14 @@
 use crate::serialization::{
-    PlatformDeserializableFromVersionedStructure,
     PlatformDeserializableWithBytesLenFromVersionedStructure,
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
-    PlatformLimitDeserializableFromVersionedStructure, PlatformSerializable,
-    PlatformSerializableWithPlatformVersion,
+    PlatformLimitDeserializableFromVersionedStructure, PlatformSerializableWithPlatformVersion,
 };
-use bincode::{Decode, Encode};
+
 pub use data_contract::*;
 use derive_more::From;
 
 use bincode::config::{BigEndian, Configuration};
 pub use generate_data_contract::*;
-use platform_value::{Identifier, Value, ValueMapHelper};
-use std::collections::BTreeMap;
 
 pub mod errors;
 pub mod extra;
@@ -40,22 +36,18 @@ pub mod config;
 
 pub use v0::*;
 
-use crate::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-#[cfg(feature = "data-contract-value-conversion")]
-use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
-use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
 };
 use crate::data_contract::v0::data_contract::DataContractV0;
 use crate::util::hash::hash_to_vec;
-#[cfg(feature = "validation")]
-use crate::validation::SimpleConsensusValidationResult;
+
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
+
+use platform_version::TryIntoPlatformVersioned;
+use platform_versioning::PlatformVersioned;
 pub use serde_json::Value as JsonValue;
 
 type JsonSchema = JsonValue;
@@ -88,7 +80,7 @@ type PropertyPath = String;
 ///
 
 /// Here we use PlatformSerialize, because
-#[derive(Debug, Clone, PartialEq, From)]
+#[derive(Debug, Clone, PartialEq, From, PlatformVersioned)]
 pub enum DataContract {
     V0(DataContractV0),
 }
@@ -217,14 +209,12 @@ impl DataContract {
     pub fn as_v0(&self) -> Option<&DataContractV0> {
         match self {
             DataContract::V0(v0) => Some(v0),
-            _ => None,
         }
     }
 
     pub fn as_v0_mut(&mut self) -> Option<&mut DataContractV0> {
         match self {
             DataContract::V0(v0) => Some(v0),
-            _ => None,
         }
     }
 
@@ -280,9 +270,8 @@ mod tests {
                 .default_current_version as u8
         );
 
-        let unserialized =
-            DataContract::versioned_deserialize(&serialized, true, &platform_version)
-                .expect("expected to deserialize data contract");
+        let unserialized = DataContract::versioned_deserialize(&serialized, true, platform_version)
+            .expect("expected to deserialize data contract");
 
         assert_eq!(data_contract, unserialized);
     }

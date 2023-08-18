@@ -1,6 +1,8 @@
 mod v0;
 
 use crate::document::{Document, DocumentV0};
+use crate::util::deserializer;
+use crate::util::deserializer::SplitFeatureVersionOutcome;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use ciborium::Value as CborValue;
@@ -16,12 +18,27 @@ impl DocumentCborMethodsV0 for Document {
     where
         Self: Sized,
     {
-        match platform_version
+        let SplitFeatureVersionOutcome {
+            main_message_bytes: read_document_cbor,
+            feature_version,
+            ..
+        } = deserializer::split_cbor_feature_version(document_cbor)?;
+
+        if !platform_version
             .dpp
             .document_versions
-            .document_structure_version
+            .document_cbor_serialization_version
+            .check_version(feature_version)
         {
-            0 => DocumentV0::from_cbor(document_cbor, document_id, owner_id, platform_version)
+            return Err(ProtocolError::UnsupportedVersionMismatch {
+                method: "Document::from_cbor (for document structure)".to_string(),
+                allowed_versions: vec![0],
+                received: feature_version,
+            });
+        }
+
+        match feature_version {
+            0 => DocumentV0::from_cbor(read_document_cbor, document_id, owner_id, platform_version)
                 .map(|document| document.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "Document::from_cbor (for document structure)".to_string(),
@@ -49,17 +66,15 @@ mod tests {
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
-    use crate::document::serialization_traits::{
-        DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
-    };
+    use crate::document::serialization_traits::DocumentCborMethodsV0;
     use crate::tests::json_document::json_document_to_contract;
+    use platform_version::version::LATEST_PLATFORM_VERSION;
 
     #[test]
     fn test_document_cbor_serialization() {
-        let platform_version = PlatformVersion::first();
         let contract = json_document_to_contract(
-            "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
-            platform_version,
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            LATEST_PLATFORM_VERSION,
         )
         .expect("expected to get cbor contract");
 
@@ -67,14 +82,18 @@ mod tests {
             .document_type_for_name("profile")
             .expect("expected to get profile document type");
         let document = document_type
-            .random_document(Some(3333), platform_version)
+            .random_document(Some(3333), LATEST_PLATFORM_VERSION)
             .expect("expected to get a random document");
 
         let document_cbor = document.to_cbor().expect("expected to encode to cbor");
 
-        let recovered_document =
-            Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
-                .expect("expected to get document");
+        let recovered_document = Document::from_cbor(
+            document_cbor.as_slice(),
+            None,
+            None,
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect("expected to get document");
 
         assert_eq!(recovered_document, document);
     }

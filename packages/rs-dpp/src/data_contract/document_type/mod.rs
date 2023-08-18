@@ -13,7 +13,6 @@ pub mod random_document;
 pub mod schema;
 pub mod v0;
 
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;

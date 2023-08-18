@@ -1,12 +1,10 @@
 mod v0;
 
-use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
 use crate::identity::IdentityPublicKey;
-use crate::serialization::PlatformMessageSignable;
-use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::{BlsModule, ProtocolError};
+use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 impl IdentityPublicKeyInCreation {

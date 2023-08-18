@@ -1,4 +1,3 @@
-use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::DataContract;
 
 #[cfg(feature = "data-contract-value-conversion")]

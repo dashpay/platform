@@ -1,15 +1,10 @@
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
 
-use anyhow::Context;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 
-use crate::{
-    data_contract::DataContract, prelude::Identifier, util::json_value::JsonValueExt, ProtocolError,
-};
+use crate::prelude::Identifier;
 use document_base_transition::DocumentBaseTransition;
 
 pub mod action_type;
@@ -235,7 +230,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
     }
 
     fn get_document_type(&self) -> &String {
-        &self.base().document_type_name()
+        self.base().document_type_name()
     }
 
     fn data_contract_id(&self) -> Identifier {
@@ -310,14 +305,14 @@ impl DocumentTransitionV0Methods for DocumentTransition {
     fn insert_dynamic_property(&mut self, property_name: String, value: Value) {
         match self {
             DocumentTransition::Create(document_create_transition) => {
-                if let Some(data) = document_create_transition.data_mut() {
-                    let _ = data.insert(property_name, value);
-                }
+                document_create_transition
+                    .data_mut()
+                    .insert(property_name, value);
             }
             DocumentTransition::Replace(document_replace_transition) => {
-                if let Some(data) = document_replace_transition.data_mut() {
-                    let _ = data.insert(property_name, value);
-                }
+                document_replace_transition
+                    .data_mut()
+                    .insert(property_name, value);
             }
             DocumentTransition::Delete(_) => {}
         }

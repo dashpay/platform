@@ -1,21 +1,13 @@
-use bincode::de::{BorrowDecoder, Decoder};
-use bincode::enc::Encoder;
-use bincode::{BorrowDecode, Decode, Encode};
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
 
-use itertools::Itertools;
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Identifier;
-use platform_value::{Value, ValueMapHelper};
-use serde::de::Error;
-use serde::{Deserialize, Serialize};
+use platform_value::Value;
 
 use crate::data_contract::{DefinitionName, DocumentName};
 
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
-use crate::{errors::ProtocolError, metadata::Metadata};
+use crate::metadata::Metadata;
 
 /// `DataContractV0` represents a data contract in a decentralized platform.
 ///
@@ -113,7 +105,6 @@ pub struct DataContractV0 {
 
 #[cfg(test)]
 mod test {
-    use super::*;
 
     fn init() {
         let _ = env_logger::builder()

@@ -43,6 +43,8 @@ pub type TimestampMillis = u64;
     PlatformSerialize,
     From,
     Hash,
+    Ord,
+    PartialOrd,
 )]
 #[platform_serialize(limit = 2000, unversioned)] //This is not platform versioned automatically
 #[serde(tag = "$version")]
@@ -95,14 +97,25 @@ mod tests {
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use crate::identity::IdentityPublicKey;
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
-    use serde::Deserialize;
+    use platform_version::version::LATEST_PLATFORM_VERSION;
+    use rand::SeedableRng;
 
     #[test]
     fn test_identity_key_serialization_deserialization() {
-        let key: IdentityPublicKey = IdentityPublicKeyV0::random_key(1, Some(500)).into();
+        let mut rng = rand::rngs::StdRng::from_entropy();
+        let key: IdentityPublicKey =
+            IdentityPublicKeyV0::random_ecdsa_master_authentication_key_with_rng(
+                1,
+                &mut rng,
+                LATEST_PLATFORM_VERSION,
+            )
+            .expect("expected a random key")
+            .0
+            .into();
         let serialized = key.serialize().expect("expected to serialize key");
-        let unserialized = IdentityPublicKey::deserialize(serialized.as_slice())
-            .expect("expected to deserialize key");
+        let unserialized: IdentityPublicKey =
+            PlatformDeserializable::deserialize(serialized.as_slice())
+                .expect("expected to deserialize key");
         assert_eq!(key, unserialized)
     }
 }

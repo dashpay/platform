@@ -2,25 +2,18 @@ mod conversion;
 #[cfg(feature = "random-identities")]
 pub mod random;
 
-use std::collections::{BTreeMap, HashSet};
-use std::convert::{TryFrom, TryInto};
+use std::collections::BTreeMap;
+use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
 
-use platform_value::{ReplacementType, Value};
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 
-use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-use crate::identity::{
-    identity_public_key, IdentityPublicKey, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel,
-};
+use crate::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use crate::prelude::Revision;
-#[cfg(feature = "cbor")]
-use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
-use crate::{errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash};
+
+use crate::{errors::ProtocolError, identifier::Identifier};
 use bincode::{Decode, Encode};
-#[cfg(feature = "cbor")]
-use ciborium::value::Value as CborValue;
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform

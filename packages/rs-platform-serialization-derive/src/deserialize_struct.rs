@@ -54,13 +54,23 @@ pub(super) fn derive_platform_deserialize_struct(
     let deserialize_into = match platform_serialize_into {
         Some(inner) => quote! {
             #config
-            let inner: #inner = bincode::decode_from_slice(&bytes, config).map(|(a, _)| a)?;
+            let inner: #inner = bincode::decode_from_slice(bytes, config).map(|(a, _)| a)?;
             Ok(inner.into())
         },
-        None => quote! {
-            #config
-            platform_serialization::platform_versioned_decode_from_slice(&bytes, config, platform_version).map(|(a, _)| a)#limit_err
-        },
+        None => {
+            if !unversioned {
+                quote! {
+                    #config
+                    platform_serialization::platform_versioned_decode_from_slice(&bytes, config, platform_version).map(|(a, _)| a)#limit_err
+                }
+            } else {
+                quote! {
+                    #config
+                        bincode::decode_from_slice(bytes, config).map(|(a,_)| a)
+                        #limit_err
+                }
+            }
+        }
     };
 
     // if we have passthrough or untagged we can't decode directly

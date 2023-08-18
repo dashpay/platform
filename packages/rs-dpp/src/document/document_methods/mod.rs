@@ -23,8 +23,8 @@ pub trait DocumentMethodsV0 {
     ) -> Result<Option<Vec<u8>>, ProtocolError>;
 
     /// Return a value given the path to its key for a document type.
-    fn get_raw_for_document_type<'a>(
-        &'a self,
+    fn get_raw_for_document_type(
+        &self,
         key_path: &str,
         document_type: DocumentTypeRef,
         owner_id: Option<[u8; 32]>,

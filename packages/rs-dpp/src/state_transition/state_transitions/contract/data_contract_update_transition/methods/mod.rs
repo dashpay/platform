@@ -11,7 +11,7 @@ use crate::state_transition::data_contract_update_transition::{
 use crate::state_transition::StateTransition;
 use crate::version::FeatureVersion;
 use crate::ProtocolError;
-use platform_value::{Bytes32, Identifier};
+
 use platform_version::version::PlatformVersion;
 
 impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransition {

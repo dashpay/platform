@@ -250,7 +250,7 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, DataContract) {
         let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor = cbor_serializer::serializable_value_to_cbor(
             &value,
-            Some(drive::drive::defaults::PROTOCOL_VERSION),
+            Some(0),
         )
         .expect("expected to serialize to cbor");
         let document = Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
@@ -322,7 +322,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
         let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor = cbor_serializer::serializable_value_to_cbor(
             &value,
-            Some(drive::drive::defaults::PROTOCOL_VERSION),
+            Some(0),
         )
         .expect("expected to serialize to cbor");
         let document = Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
@@ -393,7 +393,7 @@ pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive
         let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor = cbor_serializer::serializable_value_to_cbor(
             &value,
-            Some(drive::drive::defaults::PROTOCOL_VERSION),
+            Some(0),
         )
         .expect("expected to serialize to cbor");
         let document = Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
@@ -806,7 +806,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
 
         let domain_cbor = cbor_serializer::serializable_value_to_cbor(
             &domain_json,
-            Some(drive::drive::defaults::PROTOCOL_VERSION),
+            Some(0),
         )
         .expect("expected to serialize to cbor");
 
@@ -860,7 +860,7 @@ fn test_query_many() {
         let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor = cbor_serializer::serializable_value_to_cbor(
             &value,
-            Some(drive::drive::defaults::PROTOCOL_VERSION),
+            Some(0),
         )
         .expect("expected to serialize to cbor");
         let document = Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
@@ -1848,7 +1848,7 @@ fn test_family_basic_queries() {
     let serialized_person = serde_json::to_value(fixed_person).expect("serialized person");
     let person_cbor = cbor_serializer::serializable_value_to_cbor(
         &serialized_person,
-        Some(drive::drive::defaults::PROTOCOL_VERSION),
+        Some(0),
     )
     .expect("expected to serialize to cbor");
     let document = Document::from_cbor(person_cbor.as_slice(), None, None, platform_version)
@@ -1895,7 +1895,7 @@ fn test_family_basic_queries() {
     let serialized_person = serde_json::to_value(next_person).expect("serialized person");
     let person_cbor = cbor_serializer::serializable_value_to_cbor(
         &serialized_person,
-        Some(drive::drive::defaults::PROTOCOL_VERSION),
+        Some(0),
     )
     .expect("expected to serialize to cbor");
     let document = Document::from_cbor(person_cbor.as_slice(), None, None, platform_version)
@@ -2359,7 +2359,7 @@ fn test_family_person_update() {
     let serialized_person = serde_json::to_value(fixed_person).expect("serialized person");
     let person_cbor = cbor_serializer::serializable_value_to_cbor(
         &serialized_person,
-        Some(drive::drive::defaults::PROTOCOL_VERSION),
+        Some(0),
     )
     .expect("expected to serialize to cbor");
     let document = Document::from_cbor(person_cbor.as_slice(), None, None, platform_version)
@@ -2400,7 +2400,7 @@ fn test_family_person_update() {
     let serialized_person = serde_json::to_value(updated_fixed_person).expect("serialized person");
     let person_cbor = cbor_serializer::serializable_value_to_cbor(
         &serialized_person,
-        Some(drive::drive::defaults::PROTOCOL_VERSION),
+        Some(0),
     )
     .expect("expected to serialize to cbor");
     let document = Document::from_cbor(person_cbor.as_slice(), None, None, platform_version)
@@ -4179,7 +4179,7 @@ fn test_dpns_query_start_at_with_null_id() {
     let value1 = serde_json::to_value(domain1).expect("serialized domain");
     let document_cbor1 = cbor_serializer::serializable_value_to_cbor(
         &value1,
-        Some(drive::drive::defaults::PROTOCOL_VERSION),
+        Some(0),
     )
     .expect("expected to serialize to cbor");
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None, platform_version)
@@ -4341,7 +4341,7 @@ fn test_dpns_query_start_after_with_null_id() {
     let value0 = serde_json::to_value(domain0).expect("serialized domain");
     let document_cbor0 = cbor_serializer::serializable_value_to_cbor(
         &value0,
-        Some(drive::drive::defaults::PROTOCOL_VERSION),
+        Some(0),
     )
     .expect("expected to serialize to cbor");
     let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None, platform_version)
@@ -4387,7 +4387,7 @@ fn test_dpns_query_start_after_with_null_id() {
     let value1 = serde_json::to_value(domain1).expect("serialized domain");
     let document_cbor1 = cbor_serializer::serializable_value_to_cbor(
         &value1,
-        Some(drive::drive::defaults::PROTOCOL_VERSION),
+        Some(0),
     )
     .expect("expected to serialize to cbor");
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None, platform_version)
@@ -4552,7 +4552,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let value0 = serde_json::to_value(domain0).expect("serialized domain");
     let document_cbor0 = cbor_serializer::serializable_value_to_cbor(
         &value0,
-        Some(drive::drive::defaults::PROTOCOL_VERSION),
+        Some(0),
     )
     .expect("expected to serialize to cbor");
     let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None, platform_version)
@@ -4598,7 +4598,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let value1 = serde_json::to_value(domain1).expect("serialized domain");
     let document_cbor1 = cbor_serializer::serializable_value_to_cbor(
         &value1,
-        Some(drive::drive::defaults::PROTOCOL_VERSION),
+        Some(0),
     )
     .expect("expected to serialize to cbor");
     let document1 = Document::from_cbor(document_cbor1.as_slice(), None, None, platform_version)

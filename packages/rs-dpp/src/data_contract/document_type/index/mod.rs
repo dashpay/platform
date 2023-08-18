@@ -11,9 +11,8 @@ pub enum OrderBy {
 use crate::data_contract::errors::{DataContractError, StructureError};
 
 use crate::ProtocolError;
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 
-use crate::consensus::basic::data_contract::SystemPropertyIndexAlreadyPresentError;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
 use std::{collections::BTreeMap, convert::TryFrom};

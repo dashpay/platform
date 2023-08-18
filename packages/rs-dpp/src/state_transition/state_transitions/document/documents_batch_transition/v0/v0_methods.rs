@@ -1,7 +1,7 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0Getters};
 use crate::identity::signer::Signer;
-use crate::identity::{Identity, SecurityLevel};
+use crate::identity::SecurityLevel;
 use crate::prelude::IdentityPublicKey;
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;

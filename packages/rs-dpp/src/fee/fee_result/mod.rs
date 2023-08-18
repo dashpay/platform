@@ -37,7 +37,7 @@
 
 use crate::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
 use crate::consensus::fee::fee_error::FeeError;
-use crate::consensus::ConsensusError;
+
 use crate::fee::fee_result::refunds::FeeRefunds;
 use crate::fee::fee_result::BalanceChange::{AddToBalance, NoBalanceChange, RemoveFromBalance};
 use crate::fee::Credits;

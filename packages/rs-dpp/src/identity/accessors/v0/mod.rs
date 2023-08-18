@@ -1,6 +1,6 @@
-use crate::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
-use crate::metadata::Metadata;
-use crate::prelude::{AssetLockProof, Revision};
+use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+
+use crate::prelude::Revision;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use std::collections::{BTreeMap, HashSet};

@@ -11,7 +11,7 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 
 use crate::fee::Credits;
-use crate::version::{FeatureVersion, PlatformVersion};
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use rand::rngs::StdRng;
 use rand::Rng;

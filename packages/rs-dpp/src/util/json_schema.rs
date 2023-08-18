@@ -1,8 +1,6 @@
-use anyhow::{anyhow, bail, Error};
+use anyhow::{anyhow, bail};
 use platform_value::Value;
 use serde_json::Value as JsonValue;
-use std::convert::TryFrom;
-use std::iter::FromIterator;
 
 use crate::{identifier, ProtocolError};
 
@@ -147,55 +145,90 @@ impl JsonSchemaExt for JsonValue {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+
+    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::document_type::DocumentType;
+
+    use platform_value::Identifier;
+    use platform_version::version::LATEST_PLATFORM_VERSION;
     use serde_json::json;
 
     #[test]
     fn test_extract_indices() {
         let input = json!({
-            "properties" : {
-                "field_one" : {
-                    "type" : "string"
+            "type": "object",
+            "indices": [
+                {
+                    "properties": [
+                        {
+                            "$ownerId": "asc"
+                        }
+                    ],
+                    "name": "&ownerId",
+                    "unique": true
                 },
-                "field_two" : {
-                    "type" : "string"
+                {
+                    "properties": [
+                        {
+                            "$ownerId": "asc"
+                        },
+                        {
+                            "$updatedAt": "asc"
+                        }
+                    ],
+                    "name": "&ownerId&updatedAt"
+                }
+            ],
+            "properties": {
+                "avatarUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "maxLength": 2048
+                },
+                "publicMessage": {
+                    "type": "string",
+                    "maxLength": 140
+                },
+                "displayName": {
+                    "type": "string",
+                    "maxLength": 25
                 }
             },
-            "indices" : [
-                {
-                    "name" : "first_index",
-                    "properties" :[
-                        {"field_one" : "asc"},
-                        {"field_two" : "desc"},
-                    ],
-                    "unique" : true
-
-                },
-                {
-                    "name" : "second_index",
-                    "properties" : [
-                        {"field_two" : "desc"},
-                    ],
-                }
-             ]
+            "required": [
+                "$createdAt",
+                "$updatedAt"
+            ],
+            "additionalProperties": false
         });
 
-        let indices_result = input.get_indices::<Vec<_>>();
-        let indices = indices_result.unwrap();
+        let platform_value = platform_value::to_value(input).unwrap();
+
+        let document_type = DocumentType::try_from_schema(
+            Identifier::random(),
+            "doc",
+            platform_value,
+            None,
+            false,
+            false,
+            false,
+            LATEST_PLATFORM_VERSION,
+        )
+        .unwrap();
+
+        let indices = document_type.indices();
 
         assert_eq!(indices.len(), 2);
-        assert_eq!(indices[0].name, "first_index");
-        assert_eq!(indices[0].properties.len(), 2);
 
-        assert_eq!(indices[0].properties[0].name, "field_one");
-        assert_eq!(indices[0].properties[1].name, "field_two");
-
+        assert_eq!(indices[0].name, "&ownerId");
+        assert_eq!(indices[0].properties.len(), 1);
+        assert_eq!(indices[0].properties[0].name, "$ownerId");
         assert!(indices[0].properties[0].ascending);
-        assert!(!indices[0].properties[1].ascending);
         assert!(indices[0].unique);
 
-        assert_eq!(indices[1].name, "second_index");
-        assert_eq!(indices[1].properties.len(), 1);
+        assert_eq!(indices[1].name, "&ownerId&updatedAt");
+        assert_eq!(indices[1].properties.len(), 2);
+        assert_eq!(indices[1].properties[0].name, "$ownerId");
+        assert_eq!(indices[1].properties[1].name, "$updatedAt");
         assert!(!indices[1].unique);
     }
 }

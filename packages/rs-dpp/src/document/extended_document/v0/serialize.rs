@@ -1,252 +1,82 @@
-use crate::data_contract::document_type::DocumentTypeRef;
-use crate::data_contract::errors::{DataContractError, StructureError};
+use crate::data_contract::errors::DataContractError;
 
 use crate::document::property_names::{CREATED_AT, UPDATED_AT};
-use crate::document::{property_names, Document};
+use crate::document::Document;
 
-use crate::identity::TimestampMillis;
 use crate::prelude::{DataContract, Revision};
-use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
+
 use crate::ProtocolError;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::document::extended_document::v0::ExtendedDocumentV0;
-use crate::document::serialization_traits::deserialize::v0::{
-    DocumentPlatformDeserializationMethodsV0, ExtendedDocumentPlatformDeserializationMethodsV0,
-};
-use crate::document::serialization_traits::serialize::v0::{
-    DocumentPlatformSerializationMethodsV0, ExtendedDocumentPlatformSerializationMethodsV0,
-};
+use crate::document::serialization_traits::deserialize::v0::ExtendedDocumentPlatformDeserializationMethodsV0;
+use crate::document::serialization_traits::serialize::v0::ExtendedDocumentPlatformSerializationMethodsV0;
 use crate::document::serialization_traits::{
     DocumentPlatformConversionMethodsV0, ExtendedDocumentPlatformConversionMethodsV0,
 };
-use crate::document::v0::DocumentV0;
+
 use crate::serialization::{
-    PlatformDeserializableFromVersionedStructure,
     PlatformDeserializableWithBytesLenFromVersionedStructure,
+    PlatformSerializableWithPlatformVersion,
 };
 use crate::version::PlatformVersion;
-use byteorder::{BigEndian, ReadBytesExt};
-use dashcore::consensus::ReadExt;
-use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{Identifier, Value};
+
+use integer_encoding::{VarInt, VarIntReader};
+
 use platform_version::version::FeatureVersion;
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use std::convert::TryFrom;
-use std::io::{BufReader, Read};
 
 impl ExtendedDocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
-    /// Serializes the document.
+    /// Serializes the extended document.
     ///
-    /// The serialization of a document follows the pattern:
-    /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize_v0(&self) -> Result<Vec<u8>, ProtocolError> {
-        let document_type = self.document_type()?;
+    /// The serialization of an extended document follows the pattern:
+    /// data contract | document type name | document
+    fn serialize_v0(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = 0.encode_var_vec(); //version 0
 
-        // $id
-        buffer.extend(self.id().as_slice());
-
-        // $ownerId
-        buffer.extend(self.owner_id().as_slice());
-
-        // $revision
-        if let Some(revision) = self.revision() {
-            buffer.extend(revision.encode_var_vec())
-        } else if document_type.requires_revision() {
-            buffer.extend((1 as Revision).encode_var_vec())
-        }
-
-        // $createdAt
-        if let Some(created_at) = self.created_at() {
-            if !document_type.required_fields().contains(CREATED_AT) {
-                buffer.push(1);
-            }
-            // dbg!("we pushed created at {}", hex::encode(created_at.to_be_bytes()));
-            buffer.extend(created_at.to_be_bytes());
-        } else if document_type.required_fields().contains(CREATED_AT) {
-            return Err(ProtocolError::DataContractError(
-                DataContractError::MissingRequiredKey(
-                    "created at field is not present".to_string(),
-                ),
-            ));
-        } else {
-            // dbg!("we pushed created at with 0");
-            // We don't have the created_at that wasn't required
-            buffer.push(0);
-        }
-
-        // $updatedAt
-        if let Some(updated_at) = self.updated_at() {
-            if !document_type.required_fields().contains(UPDATED_AT) {
-                // dbg!("we added 1", field_name);
-                buffer.push(1);
-            }
-            // dbg!("we pushed updated at {}", hex::encode(updated_at.to_be_bytes()));
-            buffer.extend(updated_at.to_be_bytes());
-        } else if document_type.required_fields().contains(UPDATED_AT) {
-            return Err(ProtocolError::DataContractError(
-                DataContractError::MissingRequiredKey(
-                    "updated at field is not present".to_string(),
-                ),
-            ));
-        } else {
-            // dbg!("we pushed updated at with 0");
-            // We don't have the updated_at that wasn't required
-            buffer.push(0);
-        }
-
-        document_type
-            .properties()
-            .iter()
-            .try_for_each(|(field_name, field)| {
-                if let Some(value) = self.properties().get(field_name) {
-                    if value.is_null() {
-                        if field.required {
-                            Err(ProtocolError::DataContractError(
-                                DataContractError::MissingRequiredKey(
-                                    "a required field is not present".to_string(),
-                                ),
-                            ))
-                        } else {
-                            // dbg!("we pushed {} with 0", field_name);
-                            // We don't have something that wasn't required
-                            buffer.push(0);
-                            Ok(())
-                        }
-                    } else {
-                        if !field.required {
-                            // dbg!("we added 1", field_name);
-                            buffer.push(1);
-                        }
-                        let value = field
-                            .property_type
-                            .encode_value_ref_with_size(value, field.required)?;
-                        // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
-                        buffer.extend(value.as_slice());
-                        Ok(())
-                    }
-                } else if field.required {
-                    Err(ProtocolError::DataContractError(
-                        DataContractError::MissingRequiredKey(format!(
-                            "a required field {field_name} is not present"
-                        )),
-                    ))
-                } else {
-                    // dbg!("we pushed {} with 0", field_name);
-                    // We don't have something that wasn't required
-                    buffer.push(0);
-                    Ok(())
-                }
-            })?;
-
+        buffer.append(
+            &mut self
+                .data_contract
+                .serialize_with_platform_version(platform_version)?,
+        );
+        buffer.push(self.document_type_name.len() as u8);
+        buffer.extend(self.document_type_name.as_bytes());
+        buffer.append(
+            &mut self
+                .document
+                .serialize(self.document_type()?, platform_version)?,
+        );
         Ok(buffer)
     }
 
-    /// Serializes and consumes the document.
+    /// Serializes the extended document.
     ///
-    /// The serialization of a document follows the pattern:
-    /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize_consume_v0(mut self) -> Result<Vec<u8>, ProtocolError> {
-        let document_type = self.document_type()?.to_owned_document_type();
+    /// The serialization of an extended document follows the pattern:
+    /// data contract | document type name | document
+    fn serialize_consume_v0(
+        self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let ExtendedDocumentV0 {
+            document_type_name,
+            document,
+            data_contract,
+            ..
+        } = self;
+
+        let mut serialized_document = document.serialize_consume(
+            data_contract.document_type_for_name(document_type_name.as_str())?,
+            platform_version,
+        )?;
+
         let mut buffer: Vec<u8> = 0.encode_var_vec(); //version 0
 
-        // $id
-        buffer.extend(self.id().into_buffer());
-
-        // $ownerId
-        buffer.extend(self.owner_id().into_buffer());
-
-        // $revision
-        if let Some(revision) = self.revision() {
-            buffer.extend(revision.to_be_bytes())
-        }
-
-        // $createdAt
-        if let Some(created_at) = self.created_at() {
-            if !document_type.required_fields().contains(CREATED_AT) {
-                buffer.push(1);
-            }
-
-            buffer.extend(created_at.to_be_bytes());
-        } else if document_type.required_fields().contains(CREATED_AT) {
-            return Err(ProtocolError::DataContractError(
-                DataContractError::MissingRequiredKey(
-                    "created at field is not present".to_string(),
-                ),
-            ));
-        } else {
-            // We don't have the created_at that wasn't required
-            buffer.push(0);
-        }
-
-        // $updatedAt
-        if let Some(updated_at) = self.updated_at() {
-            if !document_type.required_fields().contains(UPDATED_AT) {
-                buffer.push(1);
-            }
-
-            buffer.extend(updated_at.to_be_bytes());
-        } else if document_type.required_fields().contains(UPDATED_AT) {
-            return Err(ProtocolError::DataContractError(
-                DataContractError::MissingRequiredKey(
-                    "updated at field is not present".to_string(),
-                ),
-            ));
-        } else {
-            // We don't have the updated_at that wasn't required
-            buffer.push(0);
-        }
-
-        document_type
-            .properties()
-            .iter()
-            .try_for_each(|(field_name, field)| {
-                if let Some(value) = self.properties_as_mut().remove(field_name) {
-                    if value.is_null() {
-                        if field.required {
-                            Err(ProtocolError::DataContractError(
-                                DataContractError::MissingRequiredKey(
-                                    "a required field is not present".to_string(),
-                                ),
-                            ))
-                        } else {
-                            // dbg!("we pushed {} with 0", field_name);
-                            // We don't have something that wasn't required
-                            buffer.push(0);
-                            Ok(())
-                        }
-                    } else {
-                        if !field.required {
-                            // dbg!("we added 1", field_name);
-                            buffer.push(1);
-                        }
-                        let value = field
-                            .property_type
-                            .encode_value_with_size(value, field.required)?;
-                        // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
-                        buffer.extend(value.as_slice());
-                        Ok(())
-                    }
-                } else if field.required {
-                    Err(ProtocolError::DataContractError(
-                        DataContractError::MissingRequiredKey(format!(
-                            "a required field {field_name} is not present"
-                        )),
-                    ))
-                } else {
-                    // dbg!("we pushed {} with 0", field_name);
-                    // We don't have something that wasn't required
-                    buffer.push(0);
-                    Ok(())
-                }
-            })?;
-
+        buffer
+            .append(&mut data_contract.serialize_consume_with_platform_version(platform_version)?);
+        buffer.push(document_type_name.len() as u8);
+        buffer.append(&mut document_type_name.into_bytes());
+        buffer.append(&mut serialized_document);
         Ok(buffer)
     }
 }
@@ -254,16 +84,16 @@ impl ExtendedDocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
 impl ExtendedDocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
     /// Reads a serialized document and creates a Document from it.
     fn from_bytes_v0(
-        serialized_document: &[u8],
+        serialized_extended_document: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // first we deserialize the contract
         let (data_contract, offset) = DataContract::versioned_deserialize_with_bytes_len(
-            serialized_document,
+            serialized_extended_document,
             true, //since this would only happen on the client, we should validate
             platform_version,
         )?;
-        let serialized_document = serialized_document.split_at(offset).1;
+        let serialized_document = serialized_extended_document.split_at(offset).1;
         let (document_type_name_len, rest) =
             serialized_document
                 .split_first()
@@ -293,8 +123,7 @@ impl ExtendedDocumentPlatformDeserializationMethodsV0 for ExtendedDocumentV0 {
             metadata: None,
 
             entropy: Default::default(),
-        }
-        .into())
+        })
     }
 }
 
@@ -310,7 +139,7 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocumentV0 {
             .document_serialization_version
             .default_current_version
         {
-            0 => self.serialize_v0(),
+            0 => self.serialize_v0(platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ExtendedDocumentV0::serialize".to_string(),
                 known_versions: vec![0],
@@ -322,9 +151,10 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocumentV0 {
     fn serialize_specific_version(
         &self,
         feature_version: FeatureVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
         match feature_version {
-            0 => self.serialize_v0(),
+            0 => self.serialize_v0(platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ExtendedDocumentV0::serialize".to_string(),
                 known_versions: vec![0],
@@ -347,7 +177,7 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocumentV0 {
             .contract_serialization_version
             .default_current_version
         {
-            0 => self.serialize_consume_v0(),
+            0 => self.serialize_consume_v0(platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentV0::serialize_consume".to_string(),
                 known_versions: vec![0],

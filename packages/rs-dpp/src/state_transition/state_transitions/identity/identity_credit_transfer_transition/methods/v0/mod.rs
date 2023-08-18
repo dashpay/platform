@@ -1,4 +1,3 @@
-use crate::identity::SecurityLevel;
 use crate::state_transition::StateTransitionType;
 
 pub trait IdentityCreditTransferTransitionMethodsV0 {

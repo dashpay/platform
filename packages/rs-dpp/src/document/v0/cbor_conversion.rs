@@ -5,7 +5,7 @@ use crate::document::property_names;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
+use crate::util::deserializer::SplitFeatureVersionOutcome;
 use crate::ProtocolError;
 
 use crate::document::serialization_traits::{
@@ -119,22 +119,16 @@ impl DocumentCborMethodsV0 for DocumentV0 {
         owner_id: Option<[u8; 32]>,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let SplitProtocolVersionOutcome {
-            main_message_bytes: read_document_cbor,
-            ..
-        } = deserializer::split_cbor_protocol_version(document_cbor)?;
-
         // first we need to deserialize the document and contract indices
         // we would need dedicated deserialization functions based on the document type
         let document_cbor_map: BTreeMap<String, CborValue> =
-            ciborium::de::from_reader(read_document_cbor).map_err(|_| {
+            ciborium::de::from_reader(document_cbor).map_err(|_| {
                 ProtocolError::StructureError(StructureError::InvalidCBOR(
                     "unable to decode document for document call",
                 ))
             })?;
         let document_map: BTreeMap<String, Value> =
             Value::convert_from_cbor_map(document_cbor_map).map_err(ProtocolError::ValueError)?;
-
         Self::from_map(document_map, document_id, owner_id)
     }
 

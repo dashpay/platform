@@ -2,24 +2,19 @@ mod from_document;
 pub mod v0_methods;
 
 use bincode::{Decode, Encode};
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
+
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{Bytes32, Identifier, ReplacementType, Value};
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+
 use std::collections::BTreeMap;
-use std::convert::TryInto;
+
 use std::string::ToString;
 
-use crate::document::Document;
 use crate::identity::TimestampMillis;
-use crate::prelude::Revision;
 
-use crate::version::LATEST_PLATFORM_VERSION;
 use crate::{data_contract::DataContract, errors::ProtocolError};
 
-use crate::document::INITIAL_REVISION;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::{
     DocumentBaseTransitionV0, DocumentTransitionObjectLike,
 };
@@ -182,12 +177,16 @@ impl DocumentCreateTransitionV0 {
 
 #[cfg(test)]
 mod test {
-
+    use crate::data_contract::data_contract::DataContractV0;
     use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
-    use platform_value::{platform_value, BinaryData, Identifier};
+    use platform_value::btreemap_extensions::BTreeValueMapHelper;
+    use platform_value::{platform_value, BinaryData, Bytes32, Identifier};
+    use platform_version::version::LATEST_PLATFORM_VERSION;
     use serde_json::json;
 
     use super::*;
+    use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use serde_json::Value as JsonValue;
 
     fn init() {
         let _ = env_logger::builder()
@@ -226,6 +225,8 @@ mod test {
         let test_document_properties_alpha_binary = Value::from([
             ("type", Value::Text("array".to_string())),
             ("byteArray", Value::Bool(true)),
+            ("minItems", Value::U64(32)),
+            ("maxItems", Value::U64(32)),
             (
                 "contentMediaType",
                 Value::Text("application/x.dash.dpp.identifier".to_string()),
@@ -235,21 +236,31 @@ mod test {
             ("alphaIdentifier", test_document_properties_alpha_identifier),
             ("alphaBinary", test_document_properties_alpha_binary),
         ]);
-        let test_document = Value::from([("properties", test_document_properties)]);
+        let test_document = Value::from([
+            ("type", Value::Text("object".to_string())),
+            ("properties", test_document_properties),
+            ("additionalProperties", Value::Bool(false)),
+        ]);
         let documents = Value::from([("test", test_document)]);
-        Value::from([
-            ("protocolVersion", Value::U32(1)),
-            ("$id", Value::Identifier([0_u8; 32])),
-            ("$schema", Value::Text("schema".to_string())),
-            ("version", Value::U32(0)),
-            ("ownerId", Value::Identifier([0_u8; 32])),
-            ("documents", documents),
-        ])
-        .try_into()
-        .unwrap()
+        DataContract::V0(
+            DataContractV0::from_value(
+                Value::from([
+                    ("$id", Value::Identifier([0_u8; 32])),
+                    ("id", Value::Identifier([0_u8; 32])),
+                    ("$schema", Value::Text("schema".to_string())),
+                    ("$format_version", Value::Text("0".to_string())),
+                    ("version", Value::U32(0)),
+                    ("documentSchemas", documents),
+                    ("ownerId", Value::Identifier([0_u8; 32])),
+                ]),
+                LATEST_PLATFORM_VERSION,
+            )
+            .unwrap(),
+        )
     }
 
     #[test]
+    #[cfg(feature = "state-transition-json-conversion")]
     fn convert_to_json_with_dynamic_binary_paths() {
         let data_contract = data_contract_with_dynamic_properties();
         let alpha_binary = BinaryData::new(vec![10_u8; 32]);
@@ -260,7 +271,9 @@ mod test {
 
         let raw_document = platform_value!({
             "$protocolVersion"  : 0u32,
+            "$version"  : "0".to_string(),
             "$id" : id,
+            "id" : id,
             "$type" : "test",
             "$dataContractId" : data_contract_id,
             "revision" : 1u32,
@@ -274,9 +287,9 @@ mod test {
             DocumentCreateTransition::from_object(raw_document, data_contract).unwrap();
 
         let json_transition = transition.to_json().expect("no errors");
-        assert_eq!(json_transition["$id"], JsonValue::String(id.into()));
+        assert_eq!(json_transition["V0"]["$id"], JsonValue::String(id.into()));
         assert_eq!(
-            json_transition["$dataContractId"],
+            json_transition["V0"]["$dataContractId"],
             JsonValue::String(data_contract_id.into())
         );
         assert_eq!(
@@ -303,6 +316,7 @@ mod test {
 
         let raw_document = json!({
             "$protocolVersion"  : 0,
+            "$version"  : "0",
             "$id" : id,
             "$type" : "test",
             "$dataContractId" : data_contract_id,
@@ -321,13 +335,18 @@ mod test {
             .expect("no errors")
             .into_btree_string_map()
             .unwrap();
-        assert_eq!(object_transition.get_identifier_bytes("$id").unwrap(), id);
+
+        println!("{:?}", object_transition);
+        let v0 = object_transition.get("V0").expect("to get V0");
+        let right_id = Identifier::from_bytes(&id).unwrap();
+        let right_data_contract_id = Identifier::from_bytes(&data_contract_id).unwrap();
+
+        assert_eq!(v0["$id"], Value::Identifier(right_id.into_buffer()));
         assert_eq!(
-            object_transition
-                .get_identifier_bytes("$dataContractId")
-                .unwrap(),
-            data_contract_id
+            v0["$dataContractId"],
+            Value::Identifier(right_data_contract_id.into_buffer())
         );
+
         assert_eq!(
             object_transition.get_bytes("alphaBinary").unwrap(),
             alpha_value

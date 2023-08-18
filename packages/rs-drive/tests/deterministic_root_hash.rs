@@ -148,7 +148,7 @@ pub fn add_domains_to_contract(
         let value = serde_json::to_value(domain).expect("serialized domain");
         let document_cbor = cbor_serializer::serializable_value_to_cbor(
             &value,
-            Some(drive::drive::defaults::PROTOCOL_VERSION),
+            Some(0),
         )
         .expect("expected to serialize to cbor");
         let document = Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)

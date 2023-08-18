@@ -5,13 +5,11 @@ use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use bincode::{Decode, Encode};
 use derive_more::Display;
-use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::{Bytes32, ReplacementType, Value};
+
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 

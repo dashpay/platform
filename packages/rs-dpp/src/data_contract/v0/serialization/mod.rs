@@ -6,7 +6,7 @@ use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DataContract;
 use crate::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use crate::ProtocolError;
-use platform_version::TryFromPlatformVersioned;
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub mod bincode;

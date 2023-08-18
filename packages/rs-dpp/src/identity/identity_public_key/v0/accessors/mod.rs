@@ -10,19 +10,19 @@ use platform_value::BinaryData;
 
 impl IdentityPublicKeyGettersV0 for IdentityPublicKeyV0 {
     fn id(&self) -> KeyID {
-        self.id.clone()
+        self.id
     }
 
     fn purpose(&self) -> Purpose {
-        self.purpose.clone()
+        self.purpose
     }
 
     fn security_level(&self) -> SecurityLevel {
-        self.security_level.clone()
+        self.security_level
     }
 
     fn key_type(&self) -> KeyType {
-        self.key_type.clone()
+        self.key_type
     }
 
     fn read_only(&self) -> bool {

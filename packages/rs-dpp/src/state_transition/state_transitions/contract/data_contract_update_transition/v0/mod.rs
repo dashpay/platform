@@ -8,26 +8,18 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use platform_value::{BinaryData, ReplacementType, Value};
+use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
-use std::fmt::Write;
 
-use crate::serialization::PlatformSerializable;
-use crate::serialization::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use bincode::{Decode, Encode};
+use platform_serialization_derive::PlatformSignable;
 use platform_version::version::PlatformVersion;
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
 
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::StateTransition;
-use crate::{
-    data_contract::DataContract,
-    identity::KeyID,
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    NonConsensusError, ProtocolError,
-};
+use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, PlatformSignable)]
 #[cfg_attr(

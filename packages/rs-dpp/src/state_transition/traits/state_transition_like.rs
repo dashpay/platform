@@ -1,33 +1,10 @@
 use std::fmt::Debug;
 
-use dashcore::signer;
+use platform_value::BinaryData;
 
-use platform_value::{BinaryData, ReplacementType, Value, ValueMapHelper};
-
-use crate::consensus::signature::InvalidStateTransitionSignatureError;
-use crate::consensus::signature::SignatureError;
-use crate::consensus::ConsensusError;
-
-use crate::serialization::{PlatformSerializable, Signable};
+use crate::prelude::Identifier;
 use crate::version::FeatureVersion;
-use crate::{
-    identity::KeyType,
-    prelude::{Identifier, ProtocolError},
-    util::hash,
-    BlsModule,
-};
 
-use crate::identity::KeyID;
-#[cfg(any(
-    feature = "state-transition-validation",
-    feature = "state-transition-signing"
-))]
-use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
-#[cfg(any(
-    feature = "state-transition-validation",
-    feature = "state-transition-signing"
-))]
-use crate::state_transition::errors::StateTransitionIsNotSignedError;
 use crate::state_transition::StateTransitionType;
 use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 

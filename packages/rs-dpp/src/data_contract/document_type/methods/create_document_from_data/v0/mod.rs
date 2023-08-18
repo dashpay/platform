@@ -7,13 +7,12 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use chrono::Utc;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
-use platform_value::{Identifier, ReplacementType, Value, ValueMapHelper};
-use std::collections::HashSet;
+use platform_value::{Identifier, ReplacementType, Value};
 
 impl DocumentTypeV0 {
     pub(in crate::data_contract::document_type) fn create_document_from_data_v0(
         &self,
-        mut data: Value,
+        data: Value,
         owner_id: Identifier,
         document_entropy: [u8; 32],
         platform_version: &PlatformVersion,

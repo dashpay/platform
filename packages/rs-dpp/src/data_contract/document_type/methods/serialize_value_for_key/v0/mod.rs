@@ -1,6 +1,4 @@
-use crate::data_contract::document_type::v0::{
-    DocumentTypeV0, DEFAULT_FLOAT_SIZE, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
-};
+use crate::data_contract::document_type::v0::{DocumentTypeV0, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE};
 use crate::data_contract::document_type::DocumentPropertyType;
 use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;

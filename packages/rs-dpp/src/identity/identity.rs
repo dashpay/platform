@@ -1,17 +1,17 @@
 use crate::identity::v0::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
 use crate::prelude::{AssetLockProof, Revision};
-use crate::serialization::ValueConvertible;
-use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+
+use crate::serialization::PlatformSerializable;
 use crate::util::hash;
 use crate::version::PlatformVersion;
-use crate::version::PlatformVersionCurrentVersion;
+
 use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
-use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
+
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 

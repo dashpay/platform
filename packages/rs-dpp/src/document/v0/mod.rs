@@ -13,32 +13,19 @@ mod platform_value_conversion;
 pub mod serialize;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::fmt;
 
-use serde_json::{json, Value as JsonValue};
-
-use crate::data_contract::document_type::DocumentPropertyType;
-use crate::data_contract::DataContract;
-use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
-use crate::data_contract::document_type::DocumentTypeRef;
-use crate::data_contract::errors::DataContractError;
 use crate::document::document_methods::{
     DocumentGetRawForContractV0, DocumentGetRawForDocumentTypeV0, DocumentHashV0Method,
-    DocumentMethodsV0,
 };
-
-use crate::document::errors::DocumentError;
 
 use crate::identity::TimestampMillis;
 use crate::prelude::Identifier;
 use crate::prelude::Revision;
-
-use crate::util::hash::hash_to_vec;
-use crate::ProtocolError;
 
 /// Documents contain the data that goes into data contracts.
 #[derive(Clone, Debug, PartialEq, Default)]

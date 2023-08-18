@@ -1,23 +1,13 @@
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-
-use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
-
-use crate::{
-    identity::KeyID,
-    prelude::Identifier,
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    BlsModule, NonConsensusError, ProtocolError,
-};
+use crate::{prelude::Identifier, BlsModule, ProtocolError};
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::AssetLockProof;
-use crate::serialization::{PlatformDeserializable, Signable};
+
 use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use crate::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
-use bincode::{config, Decode, Encode};
+
 use platform_version::version::PlatformVersion;
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
@@ -34,7 +24,7 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
         _platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
-        let mut identity_top_up_transition = IdentityTopUpTransitionV0 {
+        let identity_top_up_transition = IdentityTopUpTransitionV0 {
             asset_lock_proof,
             identity_id: identity.id(),
             signature: Default::default(),

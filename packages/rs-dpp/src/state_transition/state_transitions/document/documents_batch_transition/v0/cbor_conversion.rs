@@ -8,20 +8,17 @@ use crate::state_transition::documents_batch_transition::fields::property_names:
 use crate::state_transition::documents_batch_transition::{
     document_base_transition, document_create_transition, DocumentsBatchTransitionV0,
 };
-use crate::state_transition::{
-    StateTransitionCborConvert, StateTransitionFieldTypes, StateTransitionValueConvert,
-};
+use crate::state_transition::{FeatureVersioned, StateTransitionCborConvert, StateTransitionFieldTypes, StateTransitionValueConvert};
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::ProtocolError;
 use anyhow::Context;
 use ciborium::Value as CborValue;
 use std::convert::TryInto;
+use integer_encoding::VarInt;
 
-impl StateTransitionValueConvert for DocumentsBatchTransitionV0 {}
-
-impl StateTransitionCborConvert for DocumentsBatchTransitionV0 {
+impl<'a> StateTransitionCborConvert<'a> for DocumentsBatchTransitionV0 {
     fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        let mut result_buf = self.feature_version.encode_var_vec();
+        let mut result_buf = self.feature_version().encode_var_vec();
         let value: CborValue = self.to_object(skip_signature)?.try_into()?;
 
         let map = CborValue::serialized(&value)
@@ -40,9 +37,17 @@ impl StateTransitionCborConvert for DocumentsBatchTransitionV0 {
                     .get(i)
                     .context(format!("transition with index {} doesn't exist", i))?;
 
+                let mut identifiers_paths = document_type.identifier_paths().to_owned();
+
+                identifiers_paths.extend(IDENTIFIER_FIELDS.iter().map(|s| s.to_string()));
+
+                let mut binary_paths = document_type.binary_paths().to_owned();
+
+                binary_paths.extend(BINARY_FIELDS.iter().map(|s| s.to_string()));
+
                 let (identifier_properties, binary_properties) = transition
                     .base()
-                    .data_contract
+                    .data_contract()
                     .get_identifiers_and_binary_paths(
                         &self.transitions[i].base().document_type_name,
                     )?;

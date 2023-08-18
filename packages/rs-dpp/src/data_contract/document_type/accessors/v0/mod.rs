@@ -1,10 +1,9 @@
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
-use crate::data_contract::{JsonSchema, PropertyPath};
-use crate::ProtocolError;
+
 use platform_value::{Identifier, Value};
-use platform_version::version::PlatformVersion;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 pub trait DocumentTypeV0Getters {

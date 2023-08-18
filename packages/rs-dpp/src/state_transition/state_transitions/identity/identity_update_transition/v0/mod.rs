@@ -8,33 +8,21 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::serialization::{PlatformDeserializable, Signable};
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
-use platform_value::{BinaryData, ReplacementType, Value};
+use platform_value::{BinaryData, Value};
 use serde::{Deserialize, Serialize};
 
 use std::convert::{TryFrom, TryInto};
 
-use crate::consensus::signature::{
-    InvalidSignaturePublicKeySecurityLevelError, MissingPublicKeyError, SignatureError,
-};
-use crate::consensus::ConsensusError;
-use crate::identity::signer::Signer;
-use crate::identity::{Identity, IdentityPublicKey};
-
-use crate::serialization::PlatformSerializable;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
-use crate::version::FeatureVersion;
+
 use crate::{
-    identity::{KeyID, SecurityLevel},
+    identity::KeyID,
     prelude::{Identifier, Revision, TimestampMillis},
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    version::LATEST_VERSION,
     ProtocolError,
 };
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 #[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq)]
 #[cfg_attr(
@@ -46,6 +34,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 // Hence we set to do it somewhat manually inside the PlatformSignable proc macro
 // Instead of inside of bincode_derive
 #[platform_signable(derive_bincode_with_borrowed_vec)]
+#[derive(Default)]
 pub struct IdentityUpdateTransitionV0 {
     /// Unique identifier of the identity to be updated
     pub identity_id: Identifier,
@@ -72,20 +61,6 @@ pub struct IdentityUpdateTransitionV0 {
     /// Cryptographic signature of the State Transition
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
-}
-
-impl Default for IdentityUpdateTransitionV0 {
-    fn default() -> Self {
-        Self {
-            signature: Default::default(),
-            signature_public_key_id: Default::default(),
-            identity_id: Default::default(),
-            revision: Default::default(),
-            add_public_keys: Default::default(),
-            disable_public_keys: Default::default(),
-            public_keys_disabled_at: Default::default(),
-        }
-    }
 }
 
 /// if the property isn't present the empty list is returned. If property is defined, the function
@@ -129,39 +104,3 @@ where
         .map(|value| value.to_integer().map_err(ProtocolError::ValueError))
         .collect()
 }
-
-// #[cfg(test)]
-// mod test {
-//     use crate::state_transition::{
-//         JsonSerializationOptions, StateTransitionJsonConvert, StateTransitionValueConvert,
-//     };
-//     use crate::tests::{fixtures::identity_fixture, utils::generate_random_identifier_struct};
-//     use getrandom::getrandom;
-//
-//     use super::*;
-//
-//     #[test]
-//     fn conversion_to_raw_object() {
-//         let public_key = identity_fixture().public_keys()[&0].to_owned();
-//         let mut buffer = [0u8; 33];
-//         let _ = getrandom(&mut buffer);
-//         let transition = IdentityUpdateTransitionV0 {
-//             identity_id: generate_random_identifier_struct(),
-//             add_public_keys: vec![(&public_key).into()],
-//             signature: BinaryData::new(buffer.to_vec()),
-//
-//             ..Default::default()
-//         };
-//
-//         let result = transition
-//             .to_object(false)
-//             .expect("conversion to raw object shouldn't fail");
-//
-//         assert!(matches!(result[IDENTITY_ID], Value::Identifier(_)));
-//         assert!(matches!(result[SIGNATURE], Value::Bytes(_)));
-//         assert!(matches!(
-//             result[ADD_PUBLIC_KEYS][0]["data"],
-//             Value::Bytes(_)
-//         ));
-//     }
-// }

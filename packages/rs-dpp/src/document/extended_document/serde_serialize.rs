@@ -44,7 +44,7 @@ impl<'de> Visitor<'de> for ExtendedDocumentVisitor {
         let mut document_type_name: Option<String> = None;
         let mut data_contract_id: Option<Identifier> = None;
         let mut document: Option<Document> = None;
-        let mut data_contract: Option<DataContract> = None;
+        let data_contract: Option<DataContract> = None;
 
         while let Some(key) = map.next_key()? {
             match key {

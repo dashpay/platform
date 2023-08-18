@@ -1,5 +1,3 @@
-use crate::identity::KeyID;
-use crate::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;

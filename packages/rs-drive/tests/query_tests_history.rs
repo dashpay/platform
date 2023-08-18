@@ -226,7 +226,7 @@ pub fn setup(
             let value = serde_json::to_value(person).expect("serialized person");
             let document_cbor = cbor_serializer::serializable_value_to_cbor(
                 &value,
-                Some(drive::drive::defaults::PROTOCOL_VERSION),
+                Some(0),
             )
             .expect("expected to serialize to cbor");
             let document =
@@ -1110,7 +1110,7 @@ fn test_query_historical() {
     let serialized_person = serde_json::to_value(fixed_person).expect("serialized person");
     let person_cbor = cbor_serializer::serializable_value_to_cbor(
         &serialized_person,
-        Some(drive::drive::defaults::PROTOCOL_VERSION),
+        Some(0),
     )
     .expect("expected to serialize to cbor");
     let document = Document::from_cbor(person_cbor.as_slice(), None, None, platform_version)
@@ -1158,7 +1158,7 @@ fn test_query_historical() {
     let serialized_person = serde_json::to_value(next_person).expect("serialized person");
     let person_cbor = cbor_serializer::serializable_value_to_cbor(
         &serialized_person,
-        Some(drive::drive::defaults::PROTOCOL_VERSION),
+        Some(0),
     )
     .expect("expected to serialize to cbor");
     let document = Document::from_cbor(person_cbor.as_slice(), None, None, platform_version)
@@ -1663,8 +1663,7 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            179, 136, 130, 190, 15, 125, 20, 162, 168, 57, 34, 147, 87, 106, 155, 93, 138, 183, 37,
-            184, 235, 159, 230, 78, 172, 36, 190, 32, 170, 209, 13, 206
+            204, 82, 252, 12, 139, 229, 206, 154, 151, 132, 163, 83, 173, 96, 150, 81, 25, 93, 28, 194, 21, 99, 186, 115, 205, 136, 230, 216, 98, 181, 41, 155
         ]
     );
 }

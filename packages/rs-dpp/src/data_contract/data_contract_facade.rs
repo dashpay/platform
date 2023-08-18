@@ -32,17 +32,10 @@ pub struct DataContractFacade {
 impl DataContractFacade {
     pub fn new(
         protocol_version: u32,
-        preferred_default_data_contract_factory_version: Option<FeatureVersion>,
-        preferred_default_data_contract_version: Option<FeatureVersion>,
         entropy_generator: Option<Box<dyn EntropyGenerator>>,
     ) -> Result<Self, ProtocolError> {
         Ok(Self {
-            factory: DataContractFactory::new_from_protocol_version(
-                protocol_version,
-                preferred_default_data_contract_factory_version,
-                preferred_default_data_contract_version,
-                entropy_generator,
-            )?,
+            factory: DataContractFactory::new(protocol_version, entropy_generator)?,
         })
     }
 
@@ -59,25 +52,22 @@ impl DataContractFacade {
     }
 
     /// Create Data Contract from plain object
-    pub async fn create_from_object(
+    pub fn create_from_object(
         &self,
         raw_data_contract: Value,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         self.factory
             .create_from_object(raw_data_contract, skip_validation)
-            .await
     }
 
     /// Create Data Contract from buffer
-    pub async fn create_from_buffer(
+    pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        self.factory
-            .create_from_buffer(buffer, skip_validation)
-            .await
+        self.factory.create_from_buffer(buffer, skip_validation)
     }
 
     #[cfg(feature = "state-transitions")]

@@ -12,30 +12,22 @@ mod value_conversion;
 mod version;
 
 use fields::*;
-use std::convert::TryFrom;
 
 use crate::data_contract::DataContract;
-use crate::identity::KeyID;
-use crate::serialization::PlatformDeserializable;
-use crate::serialization::{PlatformSerializable, Signable};
-use crate::state_transition::{
-    StateTransition, StateTransitionFieldTypes, StateTransitionLike, StateTransitionType,
-};
+use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-use platform_value::{BinaryData, Bytes32, Identifier, Value};
+
 use platform_version::{TryFromPlatformVersioned, TryIntoPlatformVersioned};
-use platform_versioning::{PlatformSerdeVersionedDeserialize, PlatformVersioned};
-use serde::de::{MapAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use platform_versioning::PlatformVersioned;
+
+use serde::{Deserialize, Serialize};
 
 use crate::data_contract::created_data_contract::CreatedDataContract;
 pub use v0::*;
-
-use crate::version::PlatformVersionCurrentVersion;
 
 pub type DataContractCreateTransitionLatest = DataContractCreateTransitionV0;
 
@@ -158,16 +150,18 @@ impl DataContractCreateTransition {
 mod test {
     use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use crate::data_contract::created_data_contract::CreatedDataContract;
-    use integer_encoding::VarInt;
 
     use super::*;
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::state_transitions::common_fields::property_names;
+    use crate::state_transition::traits::StateTransitionLike;
     use crate::state_transition::{StateTransitionType, StateTransitionValueConvert};
     use crate::tests::fixtures::get_data_contract_fixture;
-    use crate::version;
+
     use crate::version::LATEST_PLATFORM_VERSION;
+    use platform_value::Value;
 
     pub(crate) struct TestData {
         pub(crate) state_transition: DataContractCreateTransition,
@@ -177,27 +171,33 @@ mod test {
     pub(crate) fn get_test_data() -> TestData {
         let created_data_contract = get_data_contract_fixture(None, 1);
 
-        let state_transition = DataContractCreateTransition::from_object(Value::from([
-            (
-                STATE_TRANSITION_PROTOCOL_VERSION,
-                LATEST_PLATFORM_VERSION
-                    .drive_abci
-                    .validation_and_processing
-                    .state_transitions
-                    .contract_create_state_transition as u8,
-            ),
-            (
-                property_names::ENTROPY,
-                created_data_contract.entropy_used().into(),
-            ),
-            (
-                DATA_CONTRACT,
-                created_data_contract
-                    .data_contract()
-                    .to_value(LATEST_PLATFORM_VERSION)
-                    .unwrap(),
-            ),
-        ]))
+        let state_transition = DataContractCreateTransition::from_object(
+            Value::from([
+                (
+                    STATE_TRANSITION_PROTOCOL_VERSION,
+                    Value::U16(
+                        LATEST_PLATFORM_VERSION
+                            .drive_abci
+                            .validation_and_processing
+                            .state_transitions
+                            .contract_create_state_transition
+                            .structure,
+                    ),
+                ),
+                (
+                    property_names::ENTROPY,
+                    Value::Bytes32(created_data_contract.entropy_used().to_buffer()),
+                ),
+                (
+                    DATA_CONTRACT,
+                    created_data_contract
+                        .data_contract()
+                        .to_value(LATEST_PLATFORM_VERSION)
+                        .unwrap(),
+                ),
+            ]),
+            LATEST_PLATFORM_VERSION,
+        )
         .expect("state transition should be created without errors");
 
         TestData {
@@ -211,10 +211,11 @@ mod test {
         let data = get_test_data();
         assert_eq!(
             LATEST_PLATFORM_VERSION
-                .drive_abci
-                .validation_and_processing
-                .state_transitions,
-            data.state_transition.state_transition_protocol_version()
+                .dpp
+                .state_transition_serialization_versions
+                .contract_create_state_transition
+                .default_current_version,
+            data.state_transition.state_transition_version()
         )
     }
 
@@ -232,11 +233,9 @@ mod test {
         let data = get_test_data();
 
         let data_contract = DataContract::try_from_platform_versioned(
-            data.state_transition
-                .data_contract()
-                .to_owned()
-                .expect("conversion to object shouldn't fail"),
+            data.state_transition.data_contract().clone(),
             false,
+            LATEST_PLATFORM_VERSION,
         )
         .expect("to get data contract");
 
@@ -252,22 +251,10 @@ mod test {
     }
 
     #[test]
-    fn should_return_serialized_state_transition_to_buffer() {
-        let data = get_test_data();
-        let state_transition_bytes = data
-            .state_transition
-            .to_cbor_buffer(false)
-            .expect("state transition should be converted to buffer");
-        let (protocol_version, _) =
-            u32::decode_var(state_transition_bytes.as_ref()).expect("expected to decode");
-        assert_eq!(version::LATEST_VERSION, protocol_version)
-    }
-
-    #[test]
     fn should_return_owner_id() {
         let data = get_test_data();
         assert_eq!(
-            &data.created_data_contract.data_contract().owner_id(),
+            data.created_data_contract.data_contract().owner_id(),
             data.state_transition.owner_id()
         );
     }

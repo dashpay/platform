@@ -1,7 +1,7 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use bincode::{Decode, Encode};
-use platform_value::Identifier;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

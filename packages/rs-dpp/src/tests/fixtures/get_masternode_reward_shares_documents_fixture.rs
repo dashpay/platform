@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::document::Document;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;

@@ -1,33 +1,29 @@
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 use platform_value::btreemap_extensions::{
-    BTreeValueMapHelper, BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper,
+    BTreeValueMapHelper, BTreeValueRemoveInnerValueFromMapHelper,
 };
-use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
+use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
 use crate::{
-    data_contract::DataContract,
-    identity::KeyID,
-    prelude::Identifier,
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
-    NonConsensusError, ProtocolError,
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike},
+    ProtocolError,
 };
 
 use crate::prelude::AssetLockProof;
-use crate::serialization::{PlatformDeserializable, Signable};
+
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::identity_create_transition::fields::*;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
-use bincode::{config, Decode, Encode};
+
 use platform_version::version::PlatformVersion;
 
 impl<'a> StateTransitionValueConvert<'a> for IdentityCreateTransitionV0 {
     fn from_object(
-        mut raw_object: Value,
+        raw_object: Value,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut state_transition = Self::default();
