@@ -124,12 +124,10 @@ impl IdentityFactory {
         &self,
         identity: Identity,
         asset_lock_proof: AssetLockProof,
-        platform_version: &PlatformVersion,
     ) -> Result<IdentityCreateTransition, ProtocolError> {
-        let transition = IdentityCreateTransitionV0::try_from_identity(
+        let transition = IdentityCreateTransitionV0::try_from_identity_v0(
             identity,
             asset_lock_proof,
-            platform_version,
         )?;
 
         Ok(IdentityCreateTransition::V0(transition))
@@ -140,7 +138,6 @@ impl IdentityFactory {
         &self,
         public_keys: BTreeMap<KeyID, IdentityPublicKey>,
         asset_lock_proof: AssetLockProof,
-        platform_version: &PlatformVersion,
     ) -> Result<(Identity, IdentityCreateTransition), ProtocolError> {
         let identifier = asset_lock_proof.create_identifier()?;
         let identity = Identity::V0(IdentityV0 {
@@ -151,10 +148,9 @@ impl IdentityFactory {
         });
 
         let mut identity_create_transition =
-            IdentityCreateTransition::V0(IdentityCreateTransitionV0::try_from_identity(
+            IdentityCreateTransition::V0(IdentityCreateTransitionV0::try_from_identity_v0(
                 identity.clone(),
                 asset_lock_proof,
-                platform_version,
             )?);
         Ok((identity, identity_create_transition))
     }

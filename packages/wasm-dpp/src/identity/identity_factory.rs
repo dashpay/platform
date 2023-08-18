@@ -3,16 +3,18 @@ use crate::buffer::Buffer;
 use crate::errors::{from_dpp_err, RustConversionError};
 use crate::identifier::IdentifierWrapper;
 use crate::identity::errors::InvalidIdentityError;
-use crate::identity::validation::IdentityValidatorWasm;
+
+use crate::identity::identity::IdentityWasm;
+use crate::identity::state_transition::{AssetLockProofWasm, InstantAssetLockProofWasm};
+use crate::identity::state_transition::ChainAssetLockProofWasm;
+use crate::identity::state_transition::IdentityCreditTransferTransitionWasm;
 
 use crate::{
-    create_asset_lock_proof_from_wasm_instance, with_js_error, ChainAssetLockProofWasm,
-    IdentityCreateTransitionWasm, IdentityCreditTransferTransitionWasm,
-    IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, IdentityWasm,
-    InstantAssetLockProofWasm,
+    with_js_error, identity::state_transition::IdentityCreateTransitionWasm,
+    identity::state_transition::IdentityTopUpTransitionWasm, identity::state_transition::IdentityUpdateTransitionWasm,
+    identity::state_transition::create_asset_lock_proof_from_wasm_instance
 };
 use dpp::dashcore::{consensus, InstantLock, Transaction};
-use dpp::identity::identity_factory::IdentityFactory;
 
 use dpp::prelude::Identity;
 
@@ -24,12 +26,14 @@ use std::sync::Arc;
 use crate::utils::{with_serde_to_platform_value, WithJsError};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use dpp::identity::identity_factory::IdentityFactory;
+use dpp::version::PlatformVersion;
 
 #[wasm_bindgen(js_name=IdentityFactory)]
-pub struct IdentityFactoryWasm(IdentityFactory<BlsAdapter>);
+pub struct IdentityFactoryWasm(IdentityFactory);
 
-impl From<IdentityFactory<BlsAdapter>> for IdentityFactoryWasm {
-    fn from(factory: IdentityFactory<BlsAdapter>) -> Self {
+impl From<IdentityFactory> for IdentityFactoryWasm {
+    fn from(factory: IdentityFactory) -> Self {
         Self(factory)
     }
 }
@@ -39,9 +43,8 @@ impl IdentityFactoryWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
         protocol_version: u32,
-        identity_validator: IdentityValidatorWasm,
     ) -> Result<IdentityFactoryWasm, JsValue> {
-        let factory = IdentityFactory::new(protocol_version, Arc::new(identity_validator.into()));
+        let factory = IdentityFactory::new(protocol_version);
         Ok(factory.into())
     }
 
@@ -76,7 +79,7 @@ impl IdentityFactoryWasm {
 
         let result = self
             .0
-            .create_from_object(raw_identity, options.skip_validation.unwrap_or(false));
+            .create_from_object(raw_identity);
 
         match result {
             Ok(identity) => Ok(identity.into()),
@@ -101,7 +104,7 @@ impl IdentityFactoryWasm {
 
         let result = self
             .0
-            .create_from_buffer(buffer.clone(), options.skip_validation.unwrap_or(false));
+            .create_from_buffer(buffer.clone());
 
         match result {
             Ok(identity) => Ok(identity.into()),
@@ -125,7 +128,7 @@ impl IdentityFactoryWasm {
         let asset_lock_transaction: Transaction =
             consensus::deserialize(&asset_lock_transaction).map_err(|e| e.to_string())?;
 
-        Ok(IdentityFactory::<BlsAdapter>::create_instant_lock_proof(
+        Ok(IdentityFactory::create_instant_lock_proof(
             instant_lock,
             asset_lock_transaction,
             output_index,
@@ -145,7 +148,7 @@ impl IdentityFactoryWasm {
         })?;
 
         Ok(
-            IdentityFactory::<BlsAdapter>::create_chain_asset_lock_proof(
+            IdentityFactory::create_chain_asset_lock_proof(
                 core_chain_locked_height,
                 out_point,
             )
@@ -157,9 +160,15 @@ impl IdentityFactoryWasm {
     pub fn create_identity_create_transition(
         &self,
         identity: &IdentityWasm,
+        asset_lock_proof: JsValue,
     ) -> Result<IdentityCreateTransitionWasm, JsValue> {
+        let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&asset_lock_proof)?;
+
         self.0
-            .create_identity_create_transition(Identity::from(identity.to_owned()))
+            .create_identity_create_transition(
+                Identity::from(identity.to_owned()),
+                asset_lock_proof,
+            )
             .map(Into::into)
             .with_js_error()
     }

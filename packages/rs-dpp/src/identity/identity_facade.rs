@@ -49,7 +49,7 @@ impl IdentityFacade {
         skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
         self.factory
-            .create_from_object(raw_identity, skip_validation)
+            .create_from_object(raw_identity)
     }
 
     pub fn create_from_buffer(
@@ -57,7 +57,7 @@ impl IdentityFacade {
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
-        self.factory.create_from_buffer(buffer, skip_validation)
+        self.factory.create_from_buffer(buffer)
     }
 
     pub fn create_instant_lock_proof(
@@ -84,10 +84,9 @@ impl IdentityFacade {
         &self,
         identity: Identity,
         asset_lock_proof: AssetLockProof,
-        platform_version: &PlatformVersion,
     ) -> Result<IdentityCreateTransition, ProtocolError> {
         self.factory
-            .create_identity_create_transition(identity, asset_lock_proof, platform_version)
+            .create_identity_create_transition(identity, asset_lock_proof)
     }
 
     #[cfg(feature = "state-transitions")]

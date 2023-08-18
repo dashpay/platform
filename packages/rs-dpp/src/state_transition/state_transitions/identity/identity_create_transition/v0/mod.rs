@@ -86,7 +86,7 @@ impl TryFrom<IdentityCreateTransitionV0Inner> for IdentityCreateTransitionV0 {
 //todo: there shouldn't be a default
 
 impl IdentityCreateTransitionV0 {
-    fn try_from_identity_v0(
+    pub fn try_from_identity_v0(
         identity: Identity,
         asset_lock_proof: AssetLockProof,
     ) -> Result<Self, ProtocolError> {
@@ -104,24 +104,5 @@ impl IdentityCreateTransitionV0 {
             .map_err(ProtocolError::from)?;
 
         Ok(identity_create_transition)
-    }
-
-    pub fn try_from_identity(
-        identity: Identity,
-        asset_lock_proof: AssetLockProof,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        match platform_version
-            .dpp
-            .state_transition_conversion_versions
-            .identity_to_identity_create_transition
-        {
-            0 => Self::try_from_identity_v0(identity, asset_lock_proof),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "IdentityCreateTransitionV0::try_from_identity".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-        }
     }
 }

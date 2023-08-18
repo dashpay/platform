@@ -21,6 +21,7 @@ module.exports = async function getIdentityFixture(id = staticId, publicKeys = u
 
   const preCreatedPublicKeys = [
     {
+      $version: '0',
       id: 0,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
@@ -29,6 +30,7 @@ module.exports = async function getIdentityFixture(id = staticId, publicKeys = u
       readOnly: false,
     },
     {
+      $version: '0',
       id: 1,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       data: Buffer.from('A8AK95PYMVX5VQKzOhcVQRCUbc9pyg3RiL7jttEMDU+L', 'base64'),
@@ -40,7 +42,7 @@ module.exports = async function getIdentityFixture(id = staticId, publicKeys = u
 
   const rawIdentity = {
     // TODO: obtain latest version from some wasm binding?
-    protocolVersion: 1,
+    $version: '0',
     id, // TODO: should be probably id.toBuffer(), but it causes panic in IdentityWasm
     balance: 10000,
     revision: 0,
