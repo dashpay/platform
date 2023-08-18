@@ -148,7 +148,9 @@ impl Drive {
             })
             .collect();
 
-        let merged_path_query = PathQuery::merge(path_queries.iter().collect())?;
+        let mut merged_path_query = PathQuery::merge(path_queries.iter().collect())?;
+
+        merged_path_query.query.limit = Some(request_len as u16);
 
         let (root_hash, mut proved_key_values) = if is_proof_subset {
             GroveDb::verify_subset_query_with_absence_proof(proof, &merged_path_query)
