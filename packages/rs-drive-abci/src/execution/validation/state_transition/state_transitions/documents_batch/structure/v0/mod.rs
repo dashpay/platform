@@ -1,4 +1,5 @@
 use dpp::data_contract::DataContract;
+use std::sync::Arc;
 
 use crate::error::Error;
 use dpp::identifier::Identifier;
@@ -8,6 +9,7 @@ use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
@@ -30,28 +32,29 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let get_data_contract =
             |data_contract_id: Identifier| -> Result<Option<&DataContract>, ProtocolError> {
-                drive
-                    .get_contract_with_fetch_info_and_fee(
-                        data_contract_id.0 .0,
-                        None,
-                        true,
-                        tx,
-                        platform_version,
-                    )
-                    .and_then(|(_, maybe_contract_with_fetch_info)| {
-                        let maybe_contract = maybe_contract_with_fetch_info
-                            .map(|contract_with_fetch_info| &contract_with_fetch_info.contract);
+                let (_, maybe_contract_with_fetch_info): (_, Option<Arc<DataContractFetchInfo>>) =
+                    drive
+                        .get_contract_with_fetch_info_and_fee(
+                            data_contract_id.to_buffer(),
+                            None,
+                            true,
+                            tx,
+                            platform_version,
+                        ) // TODO: Create a special error
+                        .map_err(|e| {
+                            ProtocolError::Generic(format!(
+                                "fetch data contract from cache error: {e}"
+                            ))
+                        })?;
 
-                        Ok(maybe_contract)
-                    })
-                    // TODO: Create and handle special type of error
-                    .map_err(|e| {
-                        ProtocolError::Generic(
-                            "we should figure out what to do with this error".to_string(),
-                        )
-                    })
+                if let Some(ref contract_with_fetch_info) = maybe_contract_with_fetch_info {
+                    Ok(Some(&contract_with_fetch_info.contract))
+                } else {
+                    Ok(None)
+                }
             };
 
         self.validate(get_data_contract, platform_version)
+            .map_err(|e| e.into())
     }
 }

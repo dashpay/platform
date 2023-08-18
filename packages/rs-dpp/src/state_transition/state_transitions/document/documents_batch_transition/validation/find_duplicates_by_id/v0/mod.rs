@@ -56,8 +56,11 @@ mod test {
     use crate::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
     use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransitionV0;
-    use rand::random;
     use crate::state_transition::documents_batch_transition::document_transition::document_delete_transition::DocumentDeleteTransitionV0;
+    use crate::state_transition::documents_batch_transition::document_transition::DocumentCreateTransition;
+    use crate::state_transition::documents_batch_transition::document_transition::DocumentReplaceTransition;
+    use crate::state_transition::documents_batch_transition::document_transition::DocumentDeleteTransition;
+    use crate::state_transition::documents_batch_transition::document_transition::document_replace_transition::DocumentReplaceTransitionV0;
 
     #[test]
     fn test_duplicates() {
@@ -83,6 +86,7 @@ mod test {
                     document_type_name: "a".to_string(),
                     data_contract_id: Identifier::random(),
                 }),
+                revision: Default::default(),
                 updated_at: None,
                 data: Default::default(),
             },
@@ -97,19 +101,15 @@ mod test {
                 }),
             }));
 
-        let create_json = dt_create.to_object().unwrap();
-        let dt_create_duplicate_json = dt_create_duplicate.to_object().unwrap();
-        let dt_replace_json = dt_replace.to_object().unwrap();
-        let dt_delete_json = dt_delete.to_object().unwrap();
-
         let input = vec![
-            &create_json,
-            &dt_create_duplicate_json,
-            &dt_replace_json,
-            &dt_delete_json,
+            &create_transition,
+            &create_transition_duplicate,
+            &replace_transition,
+            &delete_transition,
         ];
 
-        let duplicates = find_duplicates_by_id(&input).unwrap();
+        let duplicates = find_duplicates_by_id(&input);
+
         assert_eq!(duplicates.len(), 2);
     }
 }

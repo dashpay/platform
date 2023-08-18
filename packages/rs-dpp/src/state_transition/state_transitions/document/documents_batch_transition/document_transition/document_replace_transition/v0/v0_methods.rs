@@ -1,10 +1,11 @@
-use std::collections::BTreeMap;
-use platform_value::Value;
-use platform_version::version::PlatformVersion;
 use crate::consensus::basic::document::{InvalidDocumentTypeError, MissingDocumentTypeError};
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::DataContract;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::DataContract;
+use platform_value::Value;
+use platform_version::version::PlatformVersion;
+use std::collections::BTreeMap;
+#[cfg(feature = "validation")]
 use crate::data_contract::validation::DataContractValidationMethodsV0;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;

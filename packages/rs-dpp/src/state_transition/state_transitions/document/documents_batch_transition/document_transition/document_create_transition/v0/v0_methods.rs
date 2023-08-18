@@ -5,6 +5,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::state::document::document_timestamps_mismatch_error::DocumentTimestampsMismatchError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+#[cfg(feature = "validation")]
 use crate::data_contract::validation::DataContractValidationMethodsV0;
 use crate::data_contract::DataContract;
 use crate::document::{property_names, Document};

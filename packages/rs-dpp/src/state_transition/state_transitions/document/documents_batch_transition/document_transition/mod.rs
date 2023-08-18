@@ -61,6 +61,7 @@ pub trait DocumentTransitionV0Methods {
     fn base_mut(&mut self) -> &mut DocumentBaseTransition;
     fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>>;
 
+    #[cfg(feature = "validation")]
     fn validate(
         &self,
         data_contract: &DataContract,
@@ -332,6 +333,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         }
     }
 
+    #[cfg(feature = "validation")]
     fn validate(
         &self,
         data_contract: &DataContract,
