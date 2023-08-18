@@ -1,12 +1,13 @@
 use crate::version::dpp_versions::{
     ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractMethodVersions,
     DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions,
-    DocumentTypeClassMethodVersions, DocumentTypeIndexVersions, DocumentTypeMethodVersions,
-    DocumentTypeSchemaVersions, DocumentTypeVersions, DocumentVersions,
+    DocumentTransitionVersions, DocumentTypeClassMethodVersions, DocumentTypeIndexVersions,
+    DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeVersions, DocumentVersions,
+    DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
     IdentityKeyTypeMethodVersions, IdentityVersions, JsonSchemaValidatorVersions,
     PublicKeyInCreationMethodVersions, RecursiveSchemaValidatorVersions,
     StateTransitionConversionVersions, StateTransitionMethodVersions,
-    StateTransitionSerializationVersions,
+    StateTransitionSerializationVersions, StateTransitionVersions,
 };
 use crate::version::drive_abci_versions::{
     DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
@@ -669,6 +670,16 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 hash: 0,
                 duplicated_key_ids_witness: 0,
                 duplicated_keys_witness: 0,
+            },
+        },
+        state_transitions: StateTransitionVersions {
+            documents: DocumentTransitionVersions {
+                documents_batch_transition: DocumentsBatchTransitionVersions {
+                    validation: DocumentsBatchTransitionValidationVersions {
+                        find_duplicates_by_id: 0,
+                        validate: 0,
+                    },
+                },
             },
         },
         contract_versions: ContractVersions {

@@ -76,7 +76,7 @@ drive = ["state-transitions", "fee-distribution", "system_contracts"]
 abci = ["state-transitions", "state-transition-validation", "validation", "random-public-keys",
   "identity-serialization"]
 cbor = ["ciborium"]
-validation = ["platform-value", "document-value-conversion"]
+validation = ["platform-value", "document-value-conversion", "state-transition-serde-conversion"]
 json-object = ["platform-value"]
 platform-value = []
 identity-hashing = ["identity-serialization"]

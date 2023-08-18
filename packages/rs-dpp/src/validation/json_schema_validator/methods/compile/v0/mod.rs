@@ -19,6 +19,7 @@ impl JsonSchemaValidator {
         }
 
         let validator = JSONSchema::options()
+            .with_meta_schemas()
             .should_ignore_unknown_formats(false)
             .should_validate_formats(true)
             .with_draft(jsonschema::Draft::Draft202012)

@@ -28,23 +28,6 @@ pub struct Index {
 }
 
 impl Index {
-    /// Check to see if two objects are conflicting
-    pub fn objects_are_conflicting(&self, object1: &ValueMap, object2: &ValueMap) -> bool {
-        if !self.unique {
-            return false;
-        }
-        self.properties.iter().all(|property| {
-            //if either or both are null then there can not be an overlap
-            let Some(value1) = Value::get_optional_from_map(object1,property.name.as_str()) else {
-                return false;
-            };
-            let Some(value2) = Value::get_optional_from_map(object2,property.name.as_str()) else {
-                return false;
-            };
-            value1 == value2
-        })
-    }
-
     /// The field names of the index
     pub fn property_names(&self) -> Vec<String> {
         self.properties

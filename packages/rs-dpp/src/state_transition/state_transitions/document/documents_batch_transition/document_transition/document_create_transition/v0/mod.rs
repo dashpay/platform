@@ -63,6 +63,7 @@ pub struct DocumentCreateTransitionV0 {
         serde(rename = "$createdAt", skip_serializing_if = "Option::is_none")
     )]
     pub created_at: Option<TimestampMillis>,
+    // TODO: It should be moved to update transition
     #[cfg_attr(
         feature = "state-transition-serde-conversion",
         serde(rename = "$updatedAt", skip_serializing_if = "Option::is_none")

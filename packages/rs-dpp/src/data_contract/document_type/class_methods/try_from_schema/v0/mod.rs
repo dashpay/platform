@@ -56,7 +56,6 @@ impl DocumentTypeV0 {
         let root_schema = enrich_with_base_schema(
             schema.clone(),
             schema_defs.map(|defs| Value::from(defs.clone())),
-            &[],
             platform_version,
         )?;
 
