@@ -124,7 +124,7 @@ impl Drive {
     ///
     /// - The proof is corrupted.
     /// - The GroveDb query fails.
-    pub fn verify_contracts<I>(
+    pub fn verify_contracts(
         proof: &[u8],
         is_proof_subset: bool,
         contract_ids_with_keeps_history: BTreeMap<[u8; 32], bool>,

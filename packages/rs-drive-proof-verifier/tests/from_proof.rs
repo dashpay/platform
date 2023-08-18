@@ -1,11 +1,11 @@
-use dapi_grpc::platform::v0::{self as grpc, GetIdentityRequest, GetIdentityResponse};
+use dapi_grpc::platform::v0::{self as grpc};
 use dpp::{
     identity::PartialIdentity,
     prelude::{DataContract, Identity},
 };
 use drive_proof_verifier::proof::from_proof::{
     DataContractHistory, DataContracts, FromProof, Identities, IdentitiesByPublicKeyHashes,
-    IdentityBalance, IdentityBalanceAndRevision,
+    IdentityBalance, IdentityBalanceAndRevision, Length,
 };
 
 include!("utils.rs");
@@ -386,20 +386,6 @@ enum TestedObject {
     IdentitiesByPublicKeyHashes(IdentitiesByPublicKeyHashes),
     PartialIdentity(PartialIdentity),
 }
-/// Determine number of non-None elements
-trait Length {
-    /// Return number of non-None elements in the data structure
-    fn count_some(&self) -> usize;
-}
-
-impl<T: Length> Length for Option<T> {
-    fn count_some(&self) -> usize {
-        match self {
-            None => 0,
-            Some(i) => i.count_some(),
-        }
-    }
-}
 
 impl Length for TestedObject {
     fn count_some(&self) -> usize {
@@ -415,21 +401,5 @@ impl Length for TestedObject {
             IdentitiesByPublicKeyHashes(d) => d.count_some(),
             PartialIdentity(_d) => 1,
         }
-    }
-}
-
-impl<T> Length for Vec<Option<T>> {
-    fn count_some(&self) -> usize {
-        self.into_iter()
-            .map(|v| v.as_ref().map(|_t| 1).unwrap_or(0))
-            .sum()
-    }
-}
-
-impl<K, T> Length for Vec<(K, Option<T>)> {
-    fn count_some(&self) -> usize {
-        self.into_iter()
-            .map(|(_k, v)| v.as_ref().map(|_t| 1).unwrap_or(0))
-            .sum()
     }
 }
