@@ -5,6 +5,10 @@
 
 * npm audit fix ([#1321](https://github.com/dashpay/platform/issues/1321))
 
+### Continuous Integration
+
+* ci: fix credentials could not be loaded error ([#1321](https://github.com/dashpay/platform/issues/1320))
+
 ### [0.24.22](https://github.com/dashevo/platform/compare/v0.24.21...v0.24.22) (2023-08-15)
 
 
