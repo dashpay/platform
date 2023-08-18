@@ -8,10 +8,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const DEFAULT_CONTRACT_KEEPS_HISTORY: bool = false;
-pub const DEFAULT_CONTRACT_CAN_BE_DELETED: bool = false;
-pub const DEFAULT_CONTRACT_MUTABILITY: bool = true;
-pub const DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY: bool = false;
-pub const DEFAULT_CONTRACT_DOCUMENT_MUTABILITY: bool = true;
+pub const DEFAULT_ALLOW_CONTRACT_DELETION: bool = false;
+pub const DEFAULT_ALLOW_CONTRACT_UPDATE: bool = true;
+pub const DEFAULT_DOCUMENTS_KEEP_HISTORY: bool = false;
+pub const DEFAULT_DOCUMENTS_READ_ONLY: bool = true;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
@@ -22,16 +22,16 @@ pub struct DataContractConfigV0 {
     pub allow_contract_deletion: bool,
     /// Is the contract mutable. Means that the document definitions can be changed or new
     /// document definitions can be added to the contract
-    pub allowe_contract_update: bool,
+    pub allow_contract_update: bool,
     /// Does the contract keep history when the contract itself changes
     pub keep_previous_contract_versions: bool,
     /// Do documents in the contract keep history. This is a default for all documents in
     /// the contract, but can be overridden by the document itself
-    pub document_revisions_default: bool,
+    pub documents_keep_history_contract_default: bool,
     /// Are documents in the contract mutable. This specifies whether the document can be
     /// changed or deleted. This is a default for all documents in the contract, but can be
     /// overridden by the document itself
-    pub documents_read_only_default: bool,
+    pub documents_read_only_contract_default: bool,
 }
 
 /// Trait representing getters for `DataContractConfigV0`
@@ -46,10 +46,10 @@ pub trait DataContractConfigGettersV0 {
     fn keep_previous_contract_versions(&self) -> bool;
 
     /// Returns whether documents in the contract keep history by default.
-    fn document_revisions(&self) -> bool;
+    fn documents_keep_history_contract_default(&self) -> bool;
 
     /// Returns whether documents in the contract are mutable by default.
-    fn documents_read_only(&self) -> bool;
+    fn documents_read_only_contract_default(&self) -> bool;
 }
 
 /// Trait representing setters for `DataContractConfigV0`
@@ -64,20 +64,20 @@ pub trait DataContractConfigSettersV0 {
     fn set_keep_previous_contract_versions(&mut self, value: bool);
 
     /// Sets whether documents in the contract keep history by default.
-    fn set_document_revisions_default(&mut self, value: bool);
+    fn set_documents_keep_history_contract_default(&mut self, value: bool);
 
     /// Sets whether documents in the contract are mutable by default.
-    fn set_documents_read_only_default(&mut self, value: bool);
+    fn set_documents_read_only_contract_default(&mut self, value: bool);
 }
 
 impl std::default::Default for DataContractConfigV0 {
     fn default() -> Self {
         DataContractConfigV0 {
-            allow_contract_deletion: DEFAULT_CONTRACT_CAN_BE_DELETED,
-            allowe_contract_update: !DEFAULT_CONTRACT_MUTABILITY,
+            allow_contract_deletion: DEFAULT_ALLOW_CONTRACT_DELETION,
+            allow_contract_update: DEFAULT_ALLOW_CONTRACT_UPDATE,
             keep_previous_contract_versions: DEFAULT_CONTRACT_KEEPS_HISTORY,
-            document_revisions_default: DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
-            documents_read_only_default: DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
+            documents_keep_history_contract_default: DEFAULT_DOCUMENTS_KEEP_HISTORY,
+            documents_read_only_contract_default: DEFAULT_DOCUMENTS_READ_ONLY,
         }
     }
 }

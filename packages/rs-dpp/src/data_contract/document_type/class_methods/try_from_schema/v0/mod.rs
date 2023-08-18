@@ -105,7 +105,7 @@ impl DocumentTypeV0 {
 
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
-            Value::inner_optional_bool_value(schema_map, property_names::REVISIONS)
+            Value::inner_optional_bool_value(schema_map, property_names::KEEPS_HISTORY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or(default_revisions);
 

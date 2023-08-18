@@ -24,7 +24,7 @@ use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
 pub(self) mod property_names {
-    pub const REVISIONS: &str = "revisions";
+    pub const KEEPS_HISTORY: &str = "keepsHistory";
     pub const READ_ONLY: &str = "readOnly";
     pub const INDICES: &str = "indices";
     pub const PROPERTIES: &str = "properties";

@@ -423,7 +423,7 @@
       "type": "boolean",
       "$comment": "must be implemented for all subschemas so it will be moved to #/$defs/documentSchema"
     },
-    "history": {
+    "keepsHistory": {
       "type": "boolean"
     },
     "signatureSecurityLevelRequirement": {

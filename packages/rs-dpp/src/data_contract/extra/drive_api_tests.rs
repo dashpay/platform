@@ -215,10 +215,10 @@ mod test {
             deserialized_contract.config(),
             DataContractConfig::V0(DataContractConfigV0 {
                 allow_contract_deletion: false,
-                allowe_contract_update: true,
+                allow_contract_update: true,
                 keep_previous_contract_versions: true,
-                documents_read_only_default: false,
-                document_revisions_default: true,
+                documents_read_only_contract_default: false,
+                documents_keep_history_contract_default: true,
             })
         ));
     }
@@ -260,10 +260,10 @@ mod test {
             deserialized_contract.as_v0().unwrap().config,
             DataContractConfig::V0(DataContractConfigV0 {
                 allow_contract_deletion: false,
-                allowe_contract_update: true,
+                allow_contract_update: true,
                 keep_previous_contract_versions: true,
-                documents_read_only_default: false,
-                document_revisions_default: true,
+                documents_read_only_contract_default: false,
+                documents_keep_history_contract_default: true,
             })
         );
     }

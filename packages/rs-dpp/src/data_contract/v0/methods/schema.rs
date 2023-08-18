@@ -20,8 +20,8 @@ impl DataContractMethodsV0 for DataContractV0 {
             self.id,
             schemas,
             defs.as_ref(),
-            self.config.document_revisions(),
-            self.config.documents_read_only(),
+            self.config.documents_keep_history_contract_default(),
+            self.config.documents_read_only_contract_default(),
             validate,
             platform_version,
         )?;
@@ -41,8 +41,8 @@ impl DataContractMethodsV0 for DataContractV0 {
             name,
             schema,
             self.schema_defs.as_ref(),
-            self.config.document_revisions(),
-            self.config.documents_read_only(),
+            self.config.documents_keep_history_contract_default(),
+            self.config.documents_read_only_contract_default(),
             validate,
             platform_version,
         )?;

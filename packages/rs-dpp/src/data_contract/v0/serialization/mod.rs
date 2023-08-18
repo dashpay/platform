@@ -87,8 +87,8 @@ impl DataContractV0 {
             id,
             document_schemas,
             schema_defs.as_ref(),
-            config.document_revisions(),
-            config.documents_read_only(),
+            config.documents_keep_history_contract_default(),
+            config.documents_read_only_contract_default(),
             validate,
             platform_version,
         )?;

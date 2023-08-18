@@ -57,7 +57,7 @@ impl DataContractConfigGettersV0 for DataContractConfig {
 
     fn is_contract_update_allowed(&self) -> bool {
         match self {
-            DataContractConfig::V0(v0) => v0.allowe_contract_update,
+            DataContractConfig::V0(v0) => v0.allow_contract_update,
         }
     }
 
@@ -67,15 +67,15 @@ impl DataContractConfigGettersV0 for DataContractConfig {
         }
     }
 
-    fn document_revisions(&self) -> bool {
+    fn documents_keep_history_contract_default(&self) -> bool {
         match self {
-            DataContractConfig::V0(v0) => v0.document_revisions_default,
+            DataContractConfig::V0(v0) => v0.documents_keep_history_contract_default,
         }
     }
 
-    fn documents_read_only(&self) -> bool {
+    fn documents_read_only_contract_default(&self) -> bool {
         match self {
-            DataContractConfig::V0(v0) => v0.documents_read_only_default,
+            DataContractConfig::V0(v0) => v0.documents_read_only_contract_default,
         }
     }
 }
@@ -91,7 +91,7 @@ impl DataContractConfigSettersV0 for DataContractConfig {
 
     fn set_allow_contract_update(&mut self, value: bool) {
         match self {
-            DataContractConfig::V0(v0) => v0.allowe_contract_update = value,
+            DataContractConfig::V0(v0) => v0.allow_contract_update = value,
             // _ => {}
         }
     }
@@ -103,16 +103,16 @@ impl DataContractConfigSettersV0 for DataContractConfig {
         }
     }
 
-    fn set_document_revisions_default(&mut self, value: bool) {
+    fn set_documents_keep_history_contract_default(&mut self, value: bool) {
         match self {
-            DataContractConfig::V0(v0) => v0.document_revisions_default = value,
+            DataContractConfig::V0(v0) => v0.documents_keep_history_contract_default = value,
             // _ => {}
         }
     }
 
-    fn set_documents_read_only_default(&mut self, value: bool) {
+    fn set_documents_read_only_contract_default(&mut self, value: bool) {
         match self {
-            DataContractConfig::V0(v0) => v0.documents_read_only_default = value,
+            DataContractConfig::V0(v0) => v0.documents_read_only_contract_default = value,
             // _ => {}
         }
     }
