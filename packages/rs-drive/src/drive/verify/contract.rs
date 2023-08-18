@@ -109,6 +109,9 @@ impl Drive {
     ///
     /// - `proof`: A byte slice representing the proof to be verified.
     /// - `is_proof_subset`: A boolean indicating whether to verify a subset of a larger proof.
+    /// - `contract_ids_with_keeps_history` a BTreemap with keys being the contract ids we are looking
+    ///     to search for, values being if they keep history. For this call we must know if they keep
+    ///     history.
     ///
     /// # Returns
     ///
