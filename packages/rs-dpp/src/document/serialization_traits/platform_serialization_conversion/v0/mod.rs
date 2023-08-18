@@ -58,6 +58,7 @@ pub trait ExtendedDocumentPlatformConversionMethodsV0 {
     fn serialize_specific_version(
         &self,
         feature_version: FeatureVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError>;
 
     /// Serializes and consumes the document.

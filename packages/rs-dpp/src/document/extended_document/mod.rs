@@ -375,9 +375,8 @@ mod test {
             .serialize(LATEST_PLATFORM_VERSION)
             .expect("no errors");
 
-        let doc =
-            ExtendedDocument::from_bytes(buffer_document.as_slice(), LATEST_PLATFORM_VERSION)
-                .expect("document should be created from buffer");
+        let doc = ExtendedDocument::from_bytes(buffer_document.as_slice(), LATEST_PLATFORM_VERSION)
+            .expect("document should be created from buffer");
 
         assert_eq!(init_doc.created_at(), doc.created_at());
         assert_eq!(init_doc.updated_at(), doc.updated_at());
