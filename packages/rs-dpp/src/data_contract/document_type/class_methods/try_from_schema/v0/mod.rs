@@ -45,8 +45,8 @@ impl DocumentTypeV0 {
         name: &str,
         schema: Value,
         schema_defs: Option<&Value>,
-        default_revisions: bool,
-        default_read_only: bool,
+        default_keeps_history: bool,
+        default_mutability: bool,
         validate: bool, // we don't need to validate if loaded from state
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -107,13 +107,13 @@ impl DocumentTypeV0 {
         let documents_keep_history: bool =
             Value::inner_optional_bool_value(schema_map, property_names::KEEPS_HISTORY)
                 .map_err(ProtocolError::ValueError)?
-                .unwrap_or(default_revisions);
+                .unwrap_or(default_keeps_history);
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
             Value::inner_optional_bool_value(schema_map, property_names::READ_ONLY)
                 .map_err(ProtocolError::ValueError)?
-                .map_or(default_read_only, |v| !v);
+                .map_or(default_mutability, |v| !v);
 
         // Extract the properties
         let property_values =

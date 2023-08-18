@@ -11,7 +11,7 @@ pub const DEFAULT_CONTRACT_KEEPS_HISTORY: bool = false;
 pub const DEFAULT_ALLOW_CONTRACT_DELETION: bool = false;
 pub const DEFAULT_ALLOW_CONTRACT_UPDATE: bool = true;
 pub const DEFAULT_DOCUMENTS_KEEP_HISTORY: bool = false;
-pub const DEFAULT_DOCUMENTS_READ_ONLY: bool = true;
+pub const DEFAULT_DOCUMENTS_MUTABILITY: bool = true;
 
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
@@ -31,7 +31,7 @@ pub struct DataContractConfigV0 {
     /// Are documents in the contract mutable. This specifies whether the document can be
     /// changed or deleted. This is a default for all documents in the contract, but can be
     /// overridden by the document itself
-    pub documents_read_only_contract_default: bool,
+    pub documents_mutability_contract_default: bool,
 }
 
 /// Trait representing getters for `DataContractConfigV0`
@@ -49,7 +49,7 @@ pub trait DataContractConfigGettersV0 {
     fn documents_keep_history_contract_default(&self) -> bool;
 
     /// Returns whether documents in the contract are mutable by default.
-    fn documents_read_only_contract_default(&self) -> bool;
+    fn documents_mutability_contract_default(&self) -> bool;
 }
 
 /// Trait representing setters for `DataContractConfigV0`
@@ -67,7 +67,7 @@ pub trait DataContractConfigSettersV0 {
     fn set_documents_keep_history_contract_default(&mut self, value: bool);
 
     /// Sets whether documents in the contract are mutable by default.
-    fn set_documents_read_only_contract_default(&mut self, value: bool);
+    fn set_documents_mutability_contract_default(&mut self, value: bool);
 }
 
 impl std::default::Default for DataContractConfigV0 {
@@ -77,7 +77,7 @@ impl std::default::Default for DataContractConfigV0 {
             allow_contract_update: DEFAULT_ALLOW_CONTRACT_UPDATE,
             keep_previous_contract_versions: DEFAULT_CONTRACT_KEEPS_HISTORY,
             documents_keep_history_contract_default: DEFAULT_DOCUMENTS_KEEP_HISTORY,
-            documents_read_only_contract_default: DEFAULT_DOCUMENTS_READ_ONLY,
+            documents_mutability_contract_default: DEFAULT_DOCUMENTS_MUTABILITY,
         }
     }
 }

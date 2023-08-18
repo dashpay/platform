@@ -217,7 +217,7 @@ mod test {
                 allow_contract_deletion: false,
                 allow_contract_update: true,
                 keep_previous_contract_versions: true,
-                documents_read_only_contract_default: false,
+                documents_mutability_contract_default: false,
                 documents_keep_history_contract_default: true,
             })
         ));
@@ -262,7 +262,7 @@ mod test {
                 allow_contract_deletion: false,
                 allow_contract_update: true,
                 keep_previous_contract_versions: true,
-                documents_read_only_contract_default: false,
+                documents_mutability_contract_default: false,
                 documents_keep_history_contract_default: true,
             })
         );

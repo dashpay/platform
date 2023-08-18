@@ -234,7 +234,10 @@ impl Drive {
             )));
         }
 
-        if contract.config().documents_keep_history_contract_default() ^ original_contract.config().documents_keep_history_contract_default()
+        if contract.config().documents_keep_history_contract_default()
+            ^ original_contract
+                .config()
+                .documents_keep_history_contract_default()
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsKeepsHistoryDefault(
@@ -243,8 +246,10 @@ impl Drive {
             ));
         }
 
-        if contract.config().documents_read_only_contract_default()
-            ^ original_contract.config().documents_read_only_contract_default()
+        if contract.config().documents_mutability_contract_default()
+            ^ original_contract
+                .config()
+                .documents_mutability_contract_default()
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsMutabilityDefault(

@@ -73,9 +73,9 @@ impl DataContractConfigGettersV0 for DataContractConfig {
         }
     }
 
-    fn documents_read_only_contract_default(&self) -> bool {
+    fn documents_mutability_contract_default(&self) -> bool {
         match self {
-            DataContractConfig::V0(v0) => v0.documents_read_only_contract_default,
+            DataContractConfig::V0(v0) => v0.documents_mutability_contract_default,
         }
     }
 }
@@ -110,9 +110,9 @@ impl DataContractConfigSettersV0 for DataContractConfig {
         }
     }
 
-    fn set_documents_read_only_contract_default(&mut self, value: bool) {
+    fn set_documents_mutability_contract_default(&mut self, value: bool) {
         match self {
-            DataContractConfig::V0(v0) => v0.documents_read_only_contract_default = value,
+            DataContractConfig::V0(v0) => v0.documents_mutability_contract_default = value,
             // _ => {}
         }
     }
