@@ -30,22 +30,21 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
+        // TODO: We should return Option<Arc<DataContractFetchInfo>> but DPP doesn't know about it
+        //  or use clone which is not great
         let get_data_contract =
             |data_contract_id: Identifier| -> Result<Option<&DataContract>, ProtocolError> {
-                let (_, maybe_contract_with_fetch_info): (_, Option<Arc<DataContractFetchInfo>>) =
-                    drive
-                        .get_contract_with_fetch_info_and_fee(
-                            data_contract_id.to_buffer(),
-                            None,
-                            true,
-                            tx,
-                            platform_version,
-                        ) // TODO: Create a special error
-                        .map_err(|e| {
-                            ProtocolError::Generic(format!(
-                                "fetch data contract from cache error: {e}"
-                            ))
-                        })?;
+                let (_, maybe_contract_with_fetch_info) = drive
+                    .get_contract_with_fetch_info_and_fee(
+                        data_contract_id.to_buffer(),
+                        None,
+                        true,
+                        tx,
+                        platform_version,
+                    ) // TODO: Create a special error
+                    .map_err(|e| {
+                        ProtocolError::Generic(format!("fetch data contract from cache error: {e}"))
+                    })?;
 
                 if let Some(ref contract_with_fetch_info) = maybe_contract_with_fetch_info {
                     Ok(Some(&contract_with_fetch_info.contract))
