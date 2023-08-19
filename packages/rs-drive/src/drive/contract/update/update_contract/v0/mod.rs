@@ -226,8 +226,8 @@ impl Drive {
             )));
         }
 
-        if contract.config().keep_previous_contract_versions()
-            ^ original_contract.config().keep_previous_contract_versions()
+        if contract.config().keeps_previous_contract_versions()
+            ^ original_contract.config().keeps_previous_contract_versions()
         {
             return Err(Error::Drive(DriveError::ChangingContractKeepsHistory(
                 "contract can not change whether it keeps history",

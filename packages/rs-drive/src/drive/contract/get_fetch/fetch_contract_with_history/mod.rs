@@ -180,7 +180,7 @@ mod tests {
     ) -> DataContract {
         data_contract
             .config_mut()
-            .set_keep_previous_contract_versions(true);
+            .set_keeps_previous_contract_versions(true);
         data_contract.config_mut().set_allow_contract_update(false);
 
         let original_data_contract = data_contract.clone();

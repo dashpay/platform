@@ -61,9 +61,9 @@ impl DataContractConfigGettersV0 for DataContractConfig {
         }
     }
 
-    fn keep_previous_contract_versions(&self) -> bool {
+    fn keeps_previous_contract_versions(&self) -> bool {
         match self {
-            DataContractConfig::V0(v0) => v0.keep_previous_contract_versions,
+            DataContractConfig::V0(v0) => v0.keeps_previous_contract_versions,
         }
     }
 
@@ -96,9 +96,9 @@ impl DataContractConfigSettersV0 for DataContractConfig {
         }
     }
 
-    fn set_keep_previous_contract_versions(&mut self, value: bool) {
+    fn set_keeps_previous_contract_versions(&mut self, value: bool) {
         match self {
-            DataContractConfig::V0(v0) => v0.keep_previous_contract_versions = value,
+            DataContractConfig::V0(v0) => v0.keeps_previous_contract_versions = value,
             // _ => {}
         }
     }

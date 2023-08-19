@@ -948,7 +948,7 @@ mod test {
                 get_data_contract_fixture(None, current_protocol_version).data_contract_owned();
             data_contract
                 .config_mut()
-                .set_keep_previous_contract_versions(true);
+                .set_keeps_previous_contract_versions(true);
             data_contract.config_mut().set_allow_contract_update(false);
 
             platform

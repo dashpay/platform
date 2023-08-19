@@ -24,7 +24,7 @@ pub struct DataContractConfigV0 {
     /// document definitions can be added to the contract
     pub allow_contract_update: bool,
     /// Does the contract keep history when the contract itself changes
-    pub keep_previous_contract_versions: bool,
+    pub keeps_previous_contract_versions: bool,
     /// Do documents in the contract keep history. This is a default for all documents in
     /// the contract, but can be overridden by the document itself
     pub documents_keep_history_contract_default: bool,
@@ -43,7 +43,7 @@ pub trait DataContractConfigGettersV0 {
     fn is_contract_update_allowed(&self) -> bool;
 
     /// Returns whether the contract keeps history.
-    fn keep_previous_contract_versions(&self) -> bool;
+    fn keeps_previous_contract_versions(&self) -> bool;
 
     /// Returns whether documents in the contract keep history by default.
     fn documents_keep_history_contract_default(&self) -> bool;
@@ -61,7 +61,7 @@ pub trait DataContractConfigSettersV0 {
     fn set_allow_contract_update(&mut self, value: bool);
 
     /// Sets whether the contract keeps history.
-    fn set_keep_previous_contract_versions(&mut self, value: bool);
+    fn set_keeps_previous_contract_versions(&mut self, value: bool);
 
     /// Sets whether documents in the contract keep history by default.
     fn set_documents_keep_history_contract_default(&mut self, value: bool);
@@ -75,7 +75,7 @@ impl std::default::Default for DataContractConfigV0 {
         DataContractConfigV0 {
             allow_contract_deletion: DEFAULT_ALLOW_CONTRACT_DELETION,
             allow_contract_update: DEFAULT_ALLOW_CONTRACT_UPDATE,
-            keep_previous_contract_versions: DEFAULT_CONTRACT_KEEPS_HISTORY,
+            keeps_previous_contract_versions: DEFAULT_CONTRACT_KEEPS_HISTORY,
             documents_keep_history_contract_default: DEFAULT_DOCUMENTS_KEEP_HISTORY,
             documents_mutability_contract_default: DEFAULT_DOCUMENTS_MUTABILITY,
         }

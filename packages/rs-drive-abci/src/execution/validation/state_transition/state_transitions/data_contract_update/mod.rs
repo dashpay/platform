@@ -247,7 +247,7 @@ mod tests {
 
             data_contract
                 .config_mut()
-                .set_keep_previous_contract_versions(true);
+                .set_keeps_previous_contract_versions(true);
             data_contract.config_mut().set_allow_contract_update(false);
 
             // TODO: check that keep_history actually works

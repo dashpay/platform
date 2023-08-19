@@ -216,7 +216,7 @@ mod test {
             DataContractConfig::V0(DataContractConfigV0 {
                 allow_contract_deletion: false,
                 allow_contract_update: true,
-                keep_previous_contract_versions: true,
+                keeps_previous_contract_versions: true,
                 documents_mutability_contract_default: false,
                 documents_keep_history_contract_default: true,
             })
@@ -261,7 +261,7 @@ mod test {
             DataContractConfig::V0(DataContractConfigV0 {
                 allow_contract_deletion: false,
                 allow_contract_update: true,
-                keep_previous_contract_versions: true,
+                keeps_previous_contract_versions: true,
                 documents_mutability_contract_default: false,
                 documents_keep_history_contract_default: true,
             })

@@ -62,7 +62,7 @@ impl Drive {
             );
         }
 
-        if contract.config().keep_previous_contract_versions() {
+        if contract.config().keeps_previous_contract_versions() {
             // we are dealing with a sibling reference
             // sibling reference serialized size is going to be the encoded time size
             // (DEFAULT_FLOAT_SIZE) plus 1 byte for reference type and 1 byte for the space of
