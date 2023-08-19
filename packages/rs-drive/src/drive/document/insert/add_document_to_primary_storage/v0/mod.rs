@@ -80,7 +80,7 @@ impl Drive {
             )?;
         }
 
-        if document_type.document_revisions() {
+        if document_type.documents_keep_history() {
             let (path_key_info, storage_flags) = if document_and_contract_info
                 .owned_document_info
                 .document_info

@@ -178,7 +178,7 @@ fn make_document_reference(
     // Then we add 0 if the document type keys history
     let mut reference_path = vec![vec![0], document.id().to_vec()];
     let mut max_reference_hops = 1;
-    if document_type.document_revisions() {
+    if document_type.documents_keep_history() {
         reference_path.push(vec![0]);
         max_reference_hops += 1;
     }
@@ -210,7 +210,7 @@ fn document_reference_size(document_type: DocumentTypeRef) -> u32 {
     // vec![vec![0], Vec::from(document.id)];
     // 1 (vec size) + 1 (subvec size) + 1 (0) + 1 (subvec size) + 32 (document id size)
     let mut reference_path_size = 36;
-    if document_type.document_revisions() {
+    if document_type.documents_keep_history() {
         reference_path_size += 2;
     }
 

@@ -278,14 +278,14 @@ impl Drive {
         for (type_key, document_type) in contract.document_types().iter() {
             let original_document_type = &original_contract.document_types().get(type_key);
             if let Some(original_document_type) = original_document_type {
-                if original_document_type.documents_read_only()
-                    ^ document_type.documents_read_only()
+                if original_document_type.documents_mutable()
+                    ^ document_type.documents_mutable()
                 {
                     return Err(Error::Drive(DriveError::ChangingDocumentTypeMutability(
                         "contract can not change whether a specific document type is mutable",
                     )));
                 }
-                if original_document_type.document_revisions() ^ document_type.document_revisions()
+                if original_document_type.documents_keep_history() ^ document_type.documents_keep_history()
                 {
                     return Err(Error::Drive(DriveError::ChangingDocumentTypeKeepsHistory(
                         "contract can not change whether a specific document type keeps history",

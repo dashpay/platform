@@ -144,12 +144,12 @@ impl ExtendedDocumentV0 {
 
     pub fn can_be_modified(&self) -> Result<bool, ProtocolError> {
         self.document_type()
-            .map(|document_type| document_type.documents_read_only())
+            .map(|document_type| document_type.documents_mutable())
     }
 
     pub fn needs_revision(&self) -> Result<bool, ProtocolError> {
         self.document_type()
-            .map(|document_type| document_type.documents_read_only())
+            .map(|document_type| document_type.documents_mutable())
     }
 
     pub fn revision(&self) -> Option<Revision> {

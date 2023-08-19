@@ -40,7 +40,7 @@ impl Drive {
         let index_level = document_type.index_structure();
         let contract = document_and_contract_info.contract;
         let event_id = unique_event_id();
-        let storage_flags = if document_type.documents_read_only()
+        let storage_flags = if document_type.documents_mutable()
             || contract.config().is_contract_deletion_allowed()
         {
             document_and_contract_info

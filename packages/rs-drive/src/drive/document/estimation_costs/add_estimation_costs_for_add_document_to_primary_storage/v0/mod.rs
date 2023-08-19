@@ -43,7 +43,7 @@ impl Drive {
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         // at this level we have all the documents for the contract
-        if document_type.document_revisions() {
+        if document_type.documents_keep_history() {
             // if we keep history this level has trees
             // we only keep flags if the contract can be deleted
             let average_flags_size = if contract.config().is_contract_deletion_allowed() {
@@ -96,7 +96,7 @@ impl Drive {
             );
         } else {
             // we just have the elements
-            let approximate_size = if document_type.documents_read_only() {
+            let approximate_size = if document_type.documents_mutable() {
                 //todo: have the contract say how often we expect documents to mutate
                 Some((
                     AVERAGE_NUMBER_OF_UPDATES as u16,

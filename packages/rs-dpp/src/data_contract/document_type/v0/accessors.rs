@@ -49,11 +49,11 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
         &self.required_fields
     }
 
-    fn document_revisions(&self) -> bool {
+    fn documents_keep_history(&self) -> bool {
         self.documents_keep_history
     }
 
-    fn documents_read_only(&self) -> bool {
+    fn documents_mutable(&self) -> bool {
         self.documents_mutable
     }
 
