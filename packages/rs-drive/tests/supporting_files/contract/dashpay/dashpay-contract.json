@@ -112,7 +112,7 @@
         },
         "contactRequest": {
             "type": "object",
-            "readOnly": true,
+            "documentsMutable": false,
             "indices": [
                 {
                     "properties": [

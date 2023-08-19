@@ -419,7 +419,7 @@
       "minItems": 1,
       "maxItems": 10
     },
-    "readOnly": {
+    "documentsMutable": {
       "type": "boolean",
       "$comment": "must be implemented for all subschemas so it will be moved to #/$defs/documentSchema"
     },
