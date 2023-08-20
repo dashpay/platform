@@ -68,6 +68,16 @@ describe('DataContractCreateTransition', () => {
       expect(result).to.be.instanceOf(Buffer);
       expect(result).to.have.lengthOf(2271);
     });
+
+    it('should be able to restore contract config from bytes', () => {
+      const config = stateTransition.getDataContract().getConfig();
+      config.keepsHistory = true;
+      stateTransition.setDataContractConfig(config);
+      expect(stateTransition.getDataContract().getConfig().keepsHistory).to.be.true();
+      const buffer = stateTransition.toBuffer();
+      const restoredSt = DataContractCreateTransition.fromBuffer(buffer);
+      expect(restoredSt.getDataContract().getConfig().keepsHistory).to.be.true();
+    });
   });
 
   describe('#getOwnerId', () => {

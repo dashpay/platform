@@ -40,6 +40,7 @@ module.exports = {
   docker: {
     network: {
       subnet: '172.24.24.0/24',
+      bindIp: '0.0.0.0',
     },
   },
   core: {
@@ -155,7 +156,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.12',
+          image: 'dashpay/tenderdash:0.13-dev',
         },
         p2p: {
           port: 26656,
@@ -164,6 +165,10 @@ module.exports = {
         },
         rpc: {
           port: 26657,
+        },
+        pprof: {
+          enabled: false,
+          port: 6060,
         },
         consensus: {
           createEmptyBlocks: true,
@@ -252,7 +257,7 @@ module.exports = {
       },
       api: {
         enable: false,
-        port: 9000,
+        port: 9100,
       },
     },
   },

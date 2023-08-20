@@ -1,7 +1,3 @@
-const fetch = require('node-fetch');
-
-const { FetchError } = fetch;
-
 const getPlatformScopeFactory = require('../../../../src/status/scopes/platform');
 const determineStatus = require('../../../../src/status/determineStatus');
 const DockerStatusEnum = require('../../../../src/status/enums/dockerStatus');
@@ -41,12 +37,14 @@ describe('getPlatformScopeFactory', () => {
       mockDockerCompose = {
         execCommand: this.sinon.stub(),
         getContainerIp: this.sinon.stub(),
+        isNodeRunning: this.sinon.stub(),
         isServiceRunning: this.sinon.stub(),
       };
       mockCreateRpcClient = () => mockRpcClient;
       mockDetermineDockerStatus = this.sinon.stub(determineStatus, 'docker');
       mockMNOWatchProvider = this.sinon.stub(providers.mnowatch, 'checkPortStatus');
-      mockFetch = this.sinon.stub(fetch, 'Promise');
+      // eslint-disable-next-line
+      mockFetch = this.sinon.stub(globalThis, 'fetch');
       mockGetConnectionHost = this.sinon.stub();
       configFile = { getProjectId: this.sinon.stub() };
 
@@ -135,7 +133,10 @@ describe('getPlatformScopeFactory', () => {
     it('should return empty scope if error during request to core', async () => {
       mockRpcClient.mnsync.withArgs('status').throws(new Error());
       mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
-      mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_abci')
+      mockDockerCompose.isServiceRunning.returns(true);
+      mockDetermineDockerStatus.withArgs(mockDockerCompose, configFile, config, 'drive_tenderdash')
+        .returns(DockerStatusEnum.running);
+      mockDetermineDockerStatus.withArgs(mockDockerCompose, configFile, config, 'drive_abci')
         .returns(DockerStatusEnum.running);
 
       const expectedScope = {
@@ -150,8 +151,8 @@ describe('getPlatformScopeFactory', () => {
         tenderdash: {
           httpPortState: null,
           p2pPortState: null,
-          dockerStatus: null,
-          serviceStatus: null,
+          dockerStatus: DockerStatusEnum.running,
+          serviceStatus: ServiceStatusEnum.wait_for_core,
           version: null,
           listening: null,
           catchingUp: null,
@@ -164,8 +165,8 @@ describe('getPlatformScopeFactory', () => {
           network: null,
         },
         drive: {
-          dockerStatus: null,
-          serviceStatus: null,
+          dockerStatus: DockerStatusEnum.running,
+          serviceStatus: ServiceStatusEnum.wait_for_core,
         },
       };
 
@@ -178,8 +179,8 @@ describe('getPlatformScopeFactory', () => {
       mockDockerCompose.isServiceRunning
         .withArgs(generateEnvs(configFile, config), 'drive_tenderdash')
         .returns(true);
-      mockDetermineDockerStatus.withArgs(mockDockerCompose, config, 'drive_tenderdash')
-        .returns(DockerStatusEnum.running);
+      mockDetermineDockerStatus.withArgs(mockDockerCompose, configFile, config, 'drive_tenderdash').returns(DockerStatusEnum.running);
+      mockDetermineDockerStatus.withArgs(mockDockerCompose, configFile, config, 'drive_abci').returns(DockerStatusEnum.running);
       mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: false } });
       mockDockerCompose.execCommand.returns({ exitCode: 1, out: '' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
@@ -196,8 +197,8 @@ describe('getPlatformScopeFactory', () => {
         tenderdash: {
           httpPortState: null,
           p2pPortState: null,
-          dockerStatus: null,
-          serviceStatus: null,
+          dockerStatus: DockerStatusEnum.running,
+          serviceStatus: ServiceStatusEnum.wait_for_core,
           version: null,
           listening: null,
           catchingUp: null,
@@ -210,8 +211,8 @@ describe('getPlatformScopeFactory', () => {
           network: null,
         },
         drive: {
-          dockerStatus: null,
-          serviceStatus: null,
+          dockerStatus: DockerStatusEnum.running,
+          serviceStatus: ServiceStatusEnum.wait_for_core,
         },
       };
 
@@ -346,7 +347,7 @@ describe('getPlatformScopeFactory', () => {
       mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
-      mockFetch.returns(Promise.reject(new FetchError('test')));
+      mockFetch.returns(Promise.reject(new Error('FetchError')));
 
       const expectedScope = {
         coreIsSynced: true,

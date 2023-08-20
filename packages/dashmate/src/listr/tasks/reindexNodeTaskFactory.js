@@ -40,7 +40,7 @@ function reindexNodeTaskFactory(
         title: 'Check services are not running',
         enabled: () => config.get('core.reindex.enable'),
         task: async () => {
-          const isRunning = await dockerCompose.isServiceRunning(generateEnvs(configFile, config));
+          const isRunning = await dockerCompose.isNodeRunning(generateEnvs(configFile, config));
 
           if (isRunning) {
             throw new Error('Services is running, stop your nodes first');

@@ -14,7 +14,7 @@ use dpp::{
 use wasm_bindgen::prelude::*;
 
 use crate::entropy_generator::ExternalEntropyGenerator;
-use crate::utils::WithJsError;
+use crate::utils::{ToSerdeJSONExt, WithJsError};
 
 use crate::{
     data_contract::errors::InvalidDataContractError,
@@ -106,15 +106,24 @@ impl DataContractFactoryWasm {
         &self,
         owner_id: Vec<u8>,
         documents: JsValue,
+        config: JsValue,
     ) -> Result<DataContractWasm, JsValue> {
         let documents_object: platform_value::Value =
             with_js_error!(serde_wasm_bindgen::from_value(documents))?;
+
+        let contract_config = if config.is_object() && !config.is_falsy() {
+            let raw_config = config.with_serde_to_json_value()?;
+            Some(serde_json::from_value(raw_config).with_js_error()?)
+        } else {
+            None
+        };
+
         let identifier = Identifier::from_bytes(&owner_id)
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
         //todo: contract config
         self.0
-            .create(identifier, documents_object, None, None)
+            .create(identifier, documents_object, contract_config, None)
             .map(Into::into)
             .with_js_error()
     }

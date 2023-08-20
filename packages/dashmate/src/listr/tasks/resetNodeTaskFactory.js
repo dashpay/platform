@@ -39,7 +39,7 @@ function resetNodeTaskFactory(
         title: 'Check services are not running',
         skip: (ctx) => ctx.isForce,
         task: async () => {
-          if (await dockerCompose.isServiceRunning(generateEnvs(configFile, config))) {
+          if (await dockerCompose.isNodeRunning(generateEnvs(configFile, config))) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
         },
@@ -60,8 +60,7 @@ function resetNodeTaskFactory(
           const serviceNames = (await dockerCompose
             .getContainersList(
               envs,
-              undefined,
-              true,
+              { returnServiceNames: true },
             ))
             .filter((serviceName) => !nonPlatformServices.includes(serviceName));
 

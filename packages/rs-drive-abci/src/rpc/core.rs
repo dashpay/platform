@@ -96,6 +96,7 @@ pub trait CoreRPCLike {
     fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error>;
 }
 
+#[derive(Debug)]
 /// Default implementation of Dash Core RPC using DashCoreRPC client
 pub struct DefaultCoreRPC {
     inner: Client,

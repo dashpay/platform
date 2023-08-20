@@ -335,4 +335,22 @@ describe('DataContract', () => {
       expect(dataContract.getMetadata().toObject()).to.deep.equal(otherMetadataToObject);
     });
   });
+
+  describe('#setConfig', () => {
+    it('should set config', () => {
+      const config = {
+        canBeDeleted: true,
+        readonly: true,
+        keepsHistory: true,
+        documentsKeepHistoryContractDefault: true,
+        documentsMutableContractDefault: true,
+      };
+
+      dataContract.setConfig(config);
+
+      const restoredConfig = dataContract.getConfig();
+
+      expect(config).to.deep.equal(restoredConfig);
+    });
+  });
 });

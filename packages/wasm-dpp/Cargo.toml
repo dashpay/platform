@@ -10,7 +10,11 @@ crate-type = ["cdylib"]
 [dependencies]
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
-wasm-bindgen = { version = "0.2.85" }
+# TODO: Build wasm with build.rs
+# Meantime if you want to update wasm-bindgen you also need to update version in:
+#  - packages/wasm-dpp/scripts/build-wasm.sh
+#  - Dockerfile
+wasm-bindgen = { version = "=0.2.86" }
 js-sys = "0.3.53"
 web-sys = { version = "0.3.6", features = ["console"] }
 thiserror = { version = "1.0" }

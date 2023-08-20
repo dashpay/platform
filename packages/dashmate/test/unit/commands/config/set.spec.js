@@ -84,7 +84,7 @@ describe('Config set command', () => {
 
       await command.runWithDependencies({
         option: 'docker',
-        value: '{"network":{"subnet":"127.0.0.1/24"}}',
+        value: '{"network":{"subnet":"127.0.0.1/24", "bindIp": "0.0.0.0"}}',
       }, flags, config);
     });
 

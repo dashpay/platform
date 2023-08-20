@@ -1,5 +1,8 @@
+use tenderdash_abci::CancellationToken;
+
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
+use std::fmt::Debug;
 use std::time::Duration;
 
 const CORE_SYNC_STATUS_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -7,9 +10,19 @@ const CORE_SYNC_STATUS_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 /// Blocks execution until Core is synced
 /// This isn't in consensus, however we still version it just in case we will upgrade it on a
 /// version
-pub fn wait_for_core_to_sync_v0<C: CoreRPCLike>(core_rpc: &C) -> Result<(), Error> {
-    loop {
-        let mn_sync_status = core_rpc.masternode_sync_status()?;
+pub fn wait_for_core_to_sync_v0<C: CoreRPCLike + Debug>(
+    core_rpc: &C,
+    cancel: CancellationToken,
+) -> Result<(), Error> {
+    while !cancel.is_cancelled() {
+        tracing::debug!(?core_rpc, "waiting for core rpc to start");
+        let mn_sync_status = match core_rpc.masternode_sync_status() {
+            Ok(status) => status,
+            Err(error) => {
+                tracing::warn!(?error, "cannot get masternode status, retrying");
+                continue;
+            }
+        };
 
         if !mn_sync_status.is_synced || !mn_sync_status.is_blockchain_synced {
             std::thread::sleep(CORE_SYNC_STATUS_CHECK_TIMEOUT);

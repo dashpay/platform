@@ -27,7 +27,7 @@ function stopNodeTaskFactory(
         title: 'Check node is running',
         skip: (ctx) => ctx.isForce,
         task: async (ctx) => {
-          if (!await dockerCompose.isServiceRunning(
+          if (!await dockerCompose.isNodeRunning(
             generateEnvs(configFile, config, { platformOnly: ctx.platformOnly }),
           )) {
             throw new Error('Node is not running');

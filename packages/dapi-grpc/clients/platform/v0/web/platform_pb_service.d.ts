@@ -76,6 +76,15 @@ type PlatformgetDataContract = {
   readonly responseType: typeof platform_pb.GetDataContractResponse;
 };
 
+type PlatformgetDataContractHistory = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetDataContractHistoryRequest;
+  readonly responseType: typeof platform_pb.GetDataContractHistoryResponse;
+};
+
 type PlatformgetDataContracts = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -140,6 +149,7 @@ export class Platform {
   static readonly getIdentityBalanceAndRevision: PlatformgetIdentityBalanceAndRevision;
   static readonly getProofs: PlatformgetProofs;
   static readonly getDataContract: PlatformgetDataContract;
+  static readonly getDataContractHistory: PlatformgetDataContractHistory;
   static readonly getDataContracts: PlatformgetDataContracts;
   static readonly getDocuments: PlatformgetDocuments;
   static readonly getIdentitiesByPublicKeyHashes: PlatformgetIdentitiesByPublicKeyHashes;
@@ -251,6 +261,15 @@ export class PlatformClient {
   getDataContract(
     requestMessage: platform_pb.GetDataContractRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetDataContractResponse|null) => void
+  ): UnaryResponse;
+  getDataContractHistory(
+    requestMessage: platform_pb.GetDataContractHistoryRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDataContractHistoryResponse|null) => void
+  ): UnaryResponse;
+  getDataContractHistory(
+    requestMessage: platform_pb.GetDataContractHistoryRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDataContractHistoryResponse|null) => void
   ): UnaryResponse;
   getDataContracts(
     requestMessage: platform_pb.GetDataContractsRequest,

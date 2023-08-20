@@ -5,7 +5,7 @@ services:
     image: ${CORE_DOCKER_IMAGE:?err}
     restart: unless-stopped
     ports:
-      - ${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P
+      - ${DOCKER_NETWORK_BIND_IP:?err}:${CORE_P2P_PORT:?err}:${CORE_P2P_PORT:?err} # P2P
       - 127.0.0.1:${CORE_RPC_PORT:?err}:${CORE_RPC_PORT:?err} #RPC
     volumes:
       - core_data:/home/dash

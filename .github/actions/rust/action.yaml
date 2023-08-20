@@ -32,21 +32,18 @@ runs:
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
 
-    - name: Install sccache cache
-      uses: mozilla-actions/sccache-action@v0.0.3
-    - name: Set sccache Rust variables
-      shell: bash
-      run: |
-        echo SCCACHE_GHA_ENABLED=true >> $GITHUB_ENV
-        echo RUSTC_WRAPPER=sccache >> $GITHUB_ENV
-
-    - name: Rust cache
-      uses: Swatinem/rust-cache@v2
+    - name: Cache Rust build artifacts
+      uses: everpcpc/actions-cache@v1
       with:
-        # Don't cache ./target, as it takes tons of space, use sccache instead.
-        cache-targets: false
-        # We set a shared key, as our cache is reusable between jobs
-        shared-key: rust-cargo
+        bucket: multi-runner-linux-x64-platform-cache-gy9micic
+        root: actions-cache
+        path: |
+          /home/ubuntu/.cargo/registry/index
+          /home/ubuntu/.cargo/registry/cache
+          /home/ubuntu/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-
 
     - name: Install clang
       id: deps-clang

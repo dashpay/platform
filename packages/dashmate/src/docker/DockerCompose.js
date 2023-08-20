@@ -8,13 +8,15 @@ const dockerCompose = require('@dashevo/docker-compose');
 
 const hasbin = require('hasbin');
 const semver = require('semver');
+const yaml = require('js-yaml');
+const fs = require('fs');
 
 const DockerComposeError = require('./errors/DockerComposeError');
 const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError');
 const ServiceIsNotRunningError = require('./errors/ServiceIsNotRunningError');
 const ContainerIsNotPresentError = require('./errors/ContainerIsNotPresentError');
 
-const { HOME_DIR_PATH } = require('../constants');
+const { HOME_DIR_PATH, PACKAGE_ROOT_DIR } = require('../constants');
 
 class DockerCompose {
   /**
@@ -66,36 +68,53 @@ class DockerCompose {
   }
 
   /**
-   * Is service running?
+   * Checks if node is running by checking whether first container
+   * from the targeted node is in `running` state
    *
    * @param {Object} envs
-   * @param {string} [serviceName]
    * @return {Promise<boolean>}
    */
-  async isServiceRunning(envs, serviceName = undefined) {
+  async isNodeRunning(envs) {
     await this.throwErrorIfNotInstalled();
 
-    const coreContainerIds = await this.getContainersList(envs, serviceName);
+    const targetedComposeFiles = envs.COMPOSE_FILE.split(':');
 
-    for (const containerId of coreContainerIds) {
-      const container = this.docker.getContainer(containerId);
+    const services = targetedComposeFiles
+      .map((composeFile) => yaml.load(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, composeFile), 'utf8')))
+      .map((composeFile) => Object.keys(composeFile.services))
+      .flat()
+      .filter((value, index, array) => array.indexOf(value) === index);
 
-      let status;
+    const serviceContainers = await this.getContainersList(envs, {
+      filterServiceNames: services,
+      formatJson: true,
+    });
 
-      try {
-        ({ State: { Status: status } } = await container.inspect());
-      } catch (e) {
-        if (!e.message.includes(`No such container: ${containerId}`)) {
-          throw e;
-        }
-      }
-
-      if (status === 'running') {
+    for (const { State: state } of serviceContainers) {
+      if (state === 'running') {
         return true;
       }
     }
 
     return false;
+  }
+
+  /**
+   * Checks if service is running
+   *
+   * @param {Object} envs
+   * @param {string} serviceName filter by service name
+   * @return {Promise<boolean>}
+   */
+  async isServiceRunning(envs, serviceName) {
+    await this.throwErrorIfNotInstalled();
+
+    const [container] = await this.getContainersList(envs, {
+      filterServiceNames: serviceName,
+      formatJson: true,
+    });
+
+    return container?.State === 'running';
   }
 
   /**
@@ -182,7 +201,11 @@ class DockerCompose {
   async inspectService(envs, serviceName) {
     await this.throwErrorIfNotInstalled();
 
-    const containerIds = await this.getContainersList(envs, serviceName);
+    const containerIds = await this.getContainersList(envs, {
+      filterServiceNames:
+      serviceName,
+      quiet: true,
+    });
 
     if (containerIds.length === 0) {
       throw new ContainerIsNotPresentError(serviceName);
@@ -233,22 +256,35 @@ class DockerCompose {
    * Get list of Docker containers
    *
    * @param {Object} envs
-   * @param {string} [filterServiceNames]
-   * @param {boolean} returnServiceNames
-   * @return {Promise<string[]>}
+   * @param {Object} [options={}] optional
+   * @param {string|string[]} [options.filterServiceNames=false] - Filter by service name
+   * @param {boolean} [options.returnServiceNames] - Return only service names
+   * @param {boolean} [options.quiet=false] - Return only container ids
+   * @param {boolean} [options.formatJson=false] - Return as json with details
+   * @return {Promise<string[]|object[]>}
    */
   async getContainersList(
     envs,
-    filterServiceNames = undefined,
-    returnServiceNames = false,
+    {
+      filterServiceNames = undefined,
+      returnServiceNames = false,
+      quiet = false,
+      formatJson = false,
+    } = {},
   ) {
     let psOutput;
     const commandOptions = [];
 
     if (returnServiceNames) {
       commandOptions.push('--services');
-    } else {
+    }
+
+    if (quiet) {
       commandOptions.push('--quiet');
+    }
+
+    if (formatJson) {
+      commandOptions.push('--format', 'json');
     }
 
     commandOptions.push(filterServiceNames);
@@ -266,10 +302,16 @@ class DockerCompose {
       throw new DockerComposeError(e);
     }
 
-    return psOutput
+    const containerList = psOutput
       .trim()
       .split(/\r?\n/)
       .filter(Boolean);
+
+    if (containerList.length > 0 && formatJson) {
+      return JSON.parse(containerList[0]);
+    }
+
+    return containerList;
   }
 
   /**

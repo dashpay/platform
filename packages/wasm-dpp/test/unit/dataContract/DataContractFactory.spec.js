@@ -46,6 +46,26 @@ describe('DataContractFactory', () => {
 
       expect(result).excluding('$id').to.deep.equal(rawDataContract);
     });
+
+    it('should pass config', () => {
+      const config = {
+        canBeDeleted: false,
+        readonly: false,
+        keepsHistory: true,
+        documentsKeepHistoryContractDefault: false,
+        documentsMutableContractDefault: true,
+      };
+      const contract = factory.create(
+        dataContract.getOwnerId(),
+        rawDataContract.documents,
+        config,
+      );
+
+      const result = contract.toObject();
+
+      expect(contract.getConfig()).to.be.deep.equal(config);
+      expect(result).excluding('$id').to.deep.equal(rawDataContract);
+    });
   });
 
   describe('createFromObject', () => {

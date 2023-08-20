@@ -7,12 +7,16 @@ services:
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/Dockerfile
       target: drive-abci
       args:
+        RUSTC_WRAPPER: ${RUSTC_WRAPPER}
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
         ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
+      cache_from:
+        - ${CACHE_DRIVE_ABCI_FROM:-${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE}}
+      cache_to:
+        - ${CACHE_DRIVE_ABCI_TO:-type=inline}
     image: drive:local
-    stop_grace_period: 30s
 
   dapi_api:
     build:
@@ -20,12 +24,16 @@ services:
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/Dockerfile
       target: dapi
       args:
+        RUSTC_WRAPPER: ${RUSTC_WRAPPER}
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
         ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
+      cache_from:
+        - ${CACHE_DAPI_API_FROM:-${PLATFORM_DAPI_API_DOCKER_IMAGE}}
+      cache_to:
+        - ${CACHE_DAPI_API_TO:-type=inline}
     image: dapi:local
-    stop_grace_period: 10s
 
   dapi_tx_filter_stream:
     build:
@@ -33,24 +41,32 @@ services:
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/Dockerfile
       target: dapi
       args:
+        RUSTC_WRAPPER: ${RUSTC_WRAPPER}
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
         ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
+      cache_from:
+        - ${CACHE_DAPI_API_FROM:-${PLATFORM_DAPI_API_DOCKER_IMAGE}}
+      cache_to:
+        - ${CACHE_DAPI_API_TO:-type=inline}
     image: dapi:local
-    stop_grace_period: 10s
 
   dapi_envoy:
     build:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dashmate/docker/envoy/Dockerfile
       args:
+        RUSTC_WRAPPER: "${RUSTC_WRAPPER}"
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
         ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
+      cache_from:
+        - ${CACHE_ENVOY_FROM:-${PLATFORM_DAPI_ENVOY_DOCKER_IMAGE}}
+      cache_to:
+        - ${CACHE_ENVOY_TO:-type=inline}
     image: dapi-envoy:local
-    stop_grace_period: 10s
 
   dashmate_helper:
     build:
@@ -58,9 +74,13 @@ services:
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/Dockerfile
       target: dashmate-helper
       args:
+        RUSTC_WRAPPER: ${RUSTC_WRAPPER}
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
         ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
+      cache_from:
+        - ${CACHE_DASHMATE_HELPER_FROM:-${DASHMATE_HELPER_DOCKER_IMAGE}}
+      cache_to:
+        - ${CACHE_DASHMATE_HELPER_TO:-type=inline}
     image: dashmate_helper:local
-    stop_grace_period: 10s

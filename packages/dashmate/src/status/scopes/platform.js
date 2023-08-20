@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 const determineStatus = require('../determineStatus');
 const DockerStatusEnum = require('../enums/dockerStatus');
 const ServiceStatusEnum = require('../enums/serviceStatus');
@@ -34,6 +33,8 @@ function getPlatformScopeFactory(dockerCompose,
 
   async function getTenderdashInfo(config, isCoreSynced) {
     const info = {
+      p2pPortState: null,
+      httpPortState: null,
       dockerStatus: null,
       serviceStatus: null,
       version: null,
@@ -140,14 +141,16 @@ function getPlatformScopeFactory(dockerCompose,
       info.dockerStatus = await determineStatus.docker(dockerCompose, configFile, config, 'drive_abci');
       info.serviceStatus = determineStatus.platform(info.dockerStatus, isCoreSynced);
 
-      const driveEchoResult = await dockerCompose.execCommand(
-        generateEnvs(configFile, config),
-        'drive_abci',
-        'drive-abci status',
-      );
+      if (info.serviceStatus === ServiceStatusEnum.up) {
+        const driveEchoResult = await dockerCompose.execCommand(
+          generateEnvs(configFile, config),
+          'drive_abci',
+          'drive-abci status',
+        );
 
-      if (driveEchoResult.exitCode !== 0) {
-        info.serviceStatus = ServiceStatusEnum.error;
+        if (driveEchoResult.exitCode !== 0) {
+          info.serviceStatus = ServiceStatusEnum.error;
+        }
       }
 
       return info;
@@ -227,15 +230,12 @@ function getPlatformScopeFactory(dockerCompose,
           // eslint-disable-next-line no-console
           console.error('Platform status is not available until masternode state is \'READY\'');
         }
-        return scope;
       }
     } catch (e) {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
         console.error('Could not get MNSync from core', e);
       }
-
-      return scope;
     }
 
     const [tenderdash, drive] = await Promise.all([

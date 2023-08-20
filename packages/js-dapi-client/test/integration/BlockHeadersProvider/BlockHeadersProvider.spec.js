@@ -11,7 +11,7 @@ describe('BlockHeadersProvider - integration', function describe() {
   let historicalStreams = [];
   let continuousStream;
 
-  const createBlockHeadersProvider = (sinon, opts = {}) => {
+  const createBlockHeadersProvider = async (sinon, opts = {}) => {
     historicalStreams = [];
     continuousStream = null;
 
@@ -39,6 +39,7 @@ describe('BlockHeadersProvider - integration', function describe() {
         count: 0,
       }),
     );
+    await blockHeadersProvider.initializeChainWith([], 0);
   };
 
   // Start from height bigger than the first block
@@ -59,7 +60,7 @@ describe('BlockHeadersProvider - integration', function describe() {
   before(async function () {
     headers = await mockHeadersChain('testnet', numHeaders);
 
-    createBlockHeadersProvider(this.sinon, {
+    await createBlockHeadersProvider(this.sinon, {
       targetBatchSize: historicalBatchSize,
     });
   });

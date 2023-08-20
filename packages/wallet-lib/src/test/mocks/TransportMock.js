@@ -31,6 +31,7 @@ class TransportMock extends EventEmitter {
     provider.stop = sinonSandbox.stub().callsFake(() => {
       provider.emit('STOPPED');
     });
+    provider.initializeChainWith = sinonSandbox.spy();
     provider.readHistorical = sinonSandbox.spy();
     provider.startContinuousSync = sinonSandbox.spy();
     provider.spvChain = {

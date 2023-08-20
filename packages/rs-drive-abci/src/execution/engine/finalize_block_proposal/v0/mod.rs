@@ -97,6 +97,12 @@ where
             core_chain_lock: _,
         } = block;
 
+        let block_id_hash = Into::<ProtoBlockId>::into(block_id.clone())
+            .sha256(&self.config.abci.chain_id, height as i64, round as i32)
+            .map_err(AbciError::from)?
+            .try_into()
+            .expect("invalid sha256 length");
+
         //// Verification that commit is for our current executed block
         // When receiving the finalized block, we need to make sure that info matches our current block
 
@@ -204,6 +210,7 @@ where
             basic_info: to_commit_block_info,
             app_hash: block_header.app_hash,
             quorum_hash: current_quorum_hash,
+            block_id_hash,
             signature: commit_info.block_signature,
             round,
         }

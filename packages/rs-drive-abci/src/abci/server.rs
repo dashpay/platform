@@ -8,6 +8,7 @@ use crate::{
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
 use std::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
@@ -23,7 +24,11 @@ pub struct AbciApplication<'a, C> {
 /// Start ABCI server and process incoming connections.
 ///
 /// Should never return.
-pub fn start<C: CoreRPCLike>(config: &PlatformConfig, core_rpc: C) -> Result<(), Error> {
+pub fn start<C: CoreRPCLike>(
+    config: &PlatformConfig,
+    core_rpc: C,
+    cancel: CancellationToken,
+) -> Result<(), Error> {
     let bind_address = config.abci.bind_address.clone();
 
     let platform: Platform<C> =
@@ -31,16 +36,20 @@ pub fn start<C: CoreRPCLike>(config: &PlatformConfig, core_rpc: C) -> Result<(),
 
     let abci = AbciApplication::new(&platform)?;
 
-    let server =
-        tenderdash_abci::start_server(&bind_address, abci).map_err(super::AbciError::from)?;
+    let server = tenderdash_abci::ServerBuilder::new(abci, &bind_address)
+        .with_cancel_token(cancel.clone())
+        .build()
+        .map_err(super::AbciError::from)?;
 
-    loop {
+    while !cancel.is_cancelled() {
         tracing::info!("waiting for new connection");
-        match server.handle_connection() {
+        match server.next_client() {
             Err(e) => tracing::error!("tenderdash connection terminated: {:?}", e),
             Ok(_) => tracing::info!("tenderdash connection closed"),
         }
     }
+
+    Ok(())
 }
 
 impl<'a, C> AbciApplication<'a, C> {
