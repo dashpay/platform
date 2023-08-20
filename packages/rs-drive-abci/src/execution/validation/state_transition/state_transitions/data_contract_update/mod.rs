@@ -401,7 +401,7 @@ mod tests {
                 },
             );
 
-            let updated_document = json!({
+            let updated_document_type = json!({
                 "type": "object",
                 "properties": {
                     "name": {
@@ -422,7 +422,7 @@ mod tests {
             data_contract
                 .set_document_schema(
                     "niceDocument".into(),
-                    updated_document.into(),
+                    updated_document_type.into(),
                     true,
                     LATEST_PLATFORM_VERSION,
                 )
