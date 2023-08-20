@@ -3,7 +3,6 @@
 members = [
     "packages/dapi-grpc",
     "packages/rs-dpp",
-    "packages/wasm-dpp",
     "packages/rs-drive",
     "packages/rs-platform-value",
     "packages/rs-platform-serialization",
@@ -18,5 +17,4 @@ members = [
     "packages/feature-flags-contract",
     "packages/dpns-contract",
     "packages/data-contracts",
-    "packages/rs-drive-verify-c-binding",
 ]
