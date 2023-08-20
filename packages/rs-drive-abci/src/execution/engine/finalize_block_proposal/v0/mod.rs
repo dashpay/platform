@@ -9,7 +9,11 @@ use drive::grovedb::Transaction;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::version::PlatformVersion;
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+
+use tenderdash_abci::{
+    proto::{serializers::timestamp::ToMilis, types::BlockId as ProtoBlockId},
+    signatures::SignBytes,
+};
 
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;

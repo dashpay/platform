@@ -1232,7 +1232,7 @@ mod test {
 
             let request = GetDataContractHistoryRequest {
                 id: original_data_contract.id().to_vec(),
-                limit: Some(100000),
+                limit: 100000,
                 ..default_request()
             };
             let request_data = request.encode_to_vec();

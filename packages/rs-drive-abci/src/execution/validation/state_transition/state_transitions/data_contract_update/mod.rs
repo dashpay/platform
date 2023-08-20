@@ -180,7 +180,8 @@ mod tests {
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::state_transition::StateTransitionType;
         use dpp::version::TryFromPlatformVersioned;
-        use platform_version::version::LATEST_VERSION;
+        use platform_version::version::{LATEST_PLATFORM_VERSION, LATEST_VERSION};
+        use platform_version::TryIntoPlatformVersioned;
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
@@ -382,13 +383,12 @@ mod tests {
         #[test]
         fn should_fail_if_trying_to_update_config() {
             let TestData {
-                raw_state_transition: _,
                 mut data_contract,
                 platform,
             } = setup_test();
 
-            data_contract.config.keeps_history = true;
-            data_contract.config.readonly = false;
+            data_contract.config_mut().set_keeps_history(true);
+            data_contract.config_mut().set_readonly(false);
 
             apply_contract(
                 &platform,
@@ -420,20 +420,22 @@ mod tests {
 
             data_contract.increment_version();
             data_contract
-                .set_document_schema("niceDocument".into(), updated_document)
+                .set_document_schema(
+                    "niceDocument".into(),
+                    updated_document.into(),
+                    true,
+                    LATEST_PLATFORM_VERSION,
+                )
                 .expect("to be able to set document schema");
 
             // It should be not possible to modify this
-            data_contract.config.keeps_history = false;
+            data_contract.config_mut().set_keeps_history(false);
 
-            // TODO: add a data contract stop transition
-            let state_transition = DataContractUpdateTransition {
-                protocol_version: LATEST_VERSION,
-                data_contract: data_contract.clone(),
-                signature: BinaryData::new(vec![0; 65]),
-                signature_public_key_id: 0,
-                transition_type: StateTransitionType::DataContractUpdate,
-            };
+            let state_transition: DataContractUpdateTransitionV0 = data_contract
+                .try_into_platform_versioned(LATEST_PLATFORM_VERSION)
+                .expect("expected an update transition");
+
+            let state_transition: DataContractUpdateTransition = state_transition.into();
 
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
