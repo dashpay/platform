@@ -404,7 +404,7 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     fn last_block_id_hash(&self) -> [u8; 32] {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.block_id_hash)
+            .map(|block_info| *block_info.block_id_hash())
             .unwrap_or_default()
     }
 

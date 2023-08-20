@@ -65,6 +65,13 @@ metrics = { version = "0.21" }
 metrics-exporter-prometheus = { version = "0.12" }
 url = { version = "2.3.1" }
 ureq = { "version" = "2.6.2" }
+tokio = { version = "1", features = [
+    "macros",
+    "signal",
+    "rt-multi-thread",
+    "time",
+] }
+tokio-util = { version = "0.7.8" }
 derive_more = "0.99.17"
 
 [dev-dependencies]

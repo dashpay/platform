@@ -161,6 +161,7 @@ mod tests {
 
     mod validate_state {
         use super::*;
+        use serde_json::json;
 
         use dpp::assert_state_consensus_errors;
         use dpp::consensus::state::state_error::StateError;
@@ -177,7 +178,9 @@ mod tests {
         use dpp::data_contract::DataContractMethodsV0;
         use dpp::platform_value::platform_value;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+        use dpp::state_transition::StateTransitionType;
         use dpp::version::TryFromPlatformVersioned;
+        use platform_version::version::LATEST_VERSION;
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {

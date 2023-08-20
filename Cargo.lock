@@ -1290,6 +1290,8 @@ dependencies = [
  "tempfile",
  "tenderdash-abci",
  "thiserror",
+ "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "ureq",

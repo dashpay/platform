@@ -1,4 +1,5 @@
 use crate::block::block_info::BlockInfo;
+use crate::block::extended_block_info::ExtendedBlockInfo;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
@@ -11,6 +12,8 @@ pub struct ExtendedBlockInfoV0 {
     pub app_hash: [u8; 32],
     /// Quorum Hash
     pub quorum_hash: [u8; 32],
+    /// The block id hash
+    pub block_id_hash: [u8; 32],
     /// Signature
     #[serde(with = "signature_serializer")]
     pub signature: [u8; 96],
@@ -34,6 +37,7 @@ pub trait ExtendedBlockInfoV0Getters {
 
     /// Returns the quorum hash.
     fn quorum_hash(&self) -> &[u8; 32];
+    fn block_id_hash(&self) -> &[u8; 32];
 
     /// Returns the signature.
     fn signature(&self) -> &[u8; 96];
@@ -79,6 +83,10 @@ impl ExtendedBlockInfoV0Getters for ExtendedBlockInfoV0 {
 
     fn quorum_hash(&self) -> &[u8; 32] {
         &self.quorum_hash
+    }
+
+    fn block_id_hash(&self) -> &[u8; 32] {
+        &self.block_id_hash
     }
 
     fn signature(&self) -> &[u8; 96] {
