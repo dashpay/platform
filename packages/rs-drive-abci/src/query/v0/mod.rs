@@ -582,7 +582,7 @@ impl<C> Platform<C> {
                             get_data_contract_history_response::DataContractHistoryEntry {
                                 date: date_in_seconds,
                                 value: data_contract
-                                            .serialize_with_platform_version(platform_version)?
+                                    .serialize_with_platform_version(platform_version)?
                             }
                         ))
                         .collect());

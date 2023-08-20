@@ -1,4 +1,5 @@
 mod fields;
+mod methods;
 pub mod v0;
 
 use crate::version::PlatformVersion;
