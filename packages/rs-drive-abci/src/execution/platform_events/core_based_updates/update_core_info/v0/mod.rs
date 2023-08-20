@@ -1,8 +1,9 @@
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state;
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
@@ -29,24 +30,31 @@ where
     ///
     /// * Result<(), Error> - Returns Ok(()) if the update is successful. Returns an error if
     /// there is a problem updating the masternode list, quorum information, or the state.
-    pub(crate) fn update_core_info_v0(
+    pub(super) fn update_core_info_v0(
         &self,
-        platform_state: Option<&platform_state::v0::PlatformState>,
-        block_platform_state: &mut platform_state::v0::PlatformState,
+        platform_state: Option<&PlatformState>,
+        block_platform_state: &mut PlatformState,
         core_block_height: u32,
         is_init_chain: bool,
         block_info: &BlockInfo,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        self.update_masternode_list_v0(
+        self.update_masternode_list(
             platform_state,
             block_platform_state,
             core_block_height,
             is_init_chain,
             block_info,
             transaction,
+            platform_version,
         )?;
 
-        self.update_quorum_info_v0(block_platform_state, core_block_height, false)
+        self.update_quorum_info(
+            block_platform_state,
+            core_block_height,
+            false,
+            platform_version,
+        )
     }
 }

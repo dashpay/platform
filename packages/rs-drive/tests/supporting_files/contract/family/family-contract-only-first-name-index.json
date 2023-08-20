@@ -1,10 +1,11 @@
 {
-  "$id": "94zNLp7A1ZcYG3Egqf2YmQk4DQr9P8D543GwXyCJRz4",
+  "$format_version": "0",
+  "id": "94zNLp7A1ZcYG3Egqf2YmQk4DQr9P8D543GwXyCJRz4",
   "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
-  "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
   "version": 1,
-  "documents": {
+  "documentSchemas": {
     "person": {
+      "type": "object",
       "indices": [
         {
           "properties": [

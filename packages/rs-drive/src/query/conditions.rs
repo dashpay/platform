@@ -42,9 +42,12 @@ use WhereOperator::{
 
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::Document;
 use dpp::platform_value::Value;
+use dpp::version::PlatformVersion;
 
 /// Converts SQL values to CBOR.
 fn sql_value_to_platform_value(sql_value: ast::Value) -> Option<Value> {
@@ -641,7 +644,8 @@ impl<'a> WhereClause {
 
     fn split_value_for_between(
         &self,
-        document_type: &DocumentType,
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
     ) -> Result<(Vec<u8>, Vec<u8>), Error> {
         let in_values = match &self.value {
             Value::Array(array) => Some(array),
@@ -657,10 +661,16 @@ impl<'a> WhereClause {
                 "when using between operator you must provide an array of exactly two values",
             )));
         }
-        let left_key = document_type
-            .serialize_value_for_key(self.field.as_str(), in_values.get(0).unwrap())?;
-        let right_key = document_type
-            .serialize_value_for_key(self.field.as_str(), in_values.get(1).unwrap())?;
+        let left_key = document_type.serialize_value_for_key(
+            self.field.as_str(),
+            in_values.get(0).unwrap(),
+            platform_version,
+        )?;
+        let right_key = document_type.serialize_value_for_key(
+            self.field.as_str(),
+            in_values.get(1).unwrap(),
+            platform_version,
+        )?;
         Ok((left_key, right_key))
     }
 
@@ -671,9 +681,10 @@ impl<'a> WhereClause {
     // left_to_right: should we be going left to right or right to left?
     pub(crate) fn to_path_query(
         &self,
-        document_type: &DocumentType,
+        document_type: DocumentTypeRef,
         start_at_document: &Option<(Document, bool)>,
         left_to_right: bool,
+        platform_version: &PlatformVersion,
     ) -> Result<Query, Error> {
         // If there is a start_at_document, we need to get the value that it has for the
         // current field.
@@ -682,7 +693,12 @@ impl<'a> WhereClause {
             Some((document, included)) => {
                 // if the key doesn't exist then we should ignore the starts at key
                 document
-                    .get_raw_for_document_type(self.field.as_str(), document_type, None)?
+                    .get_raw_for_document_type(
+                        self.field.as_str(),
+                        document_type,
+                        None,
+                        platform_version,
+                    )?
                     .map(|raw_value_option| (raw_value_option, *included))
             }
         };
@@ -690,8 +706,11 @@ impl<'a> WhereClause {
         let mut query = Query::new_with_direction(left_to_right);
         match self.operator {
             Equal => {
-                let key =
-                    document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
+                let key = document_type.serialize_value_for_key(
+                    self.field.as_str(),
+                    &self.value,
+                    platform_version,
+                )?;
                 match starts_at_key_option {
                     None => {
                         query.insert_key(key);
@@ -712,15 +731,21 @@ impl<'a> WhereClause {
                 match starts_at_key_option {
                     None => {
                         for value in in_values.iter() {
-                            let key = document_type
-                                .serialize_value_for_key(self.field.as_str(), value)?;
+                            let key = document_type.serialize_value_for_key(
+                                self.field.as_str(),
+                                value,
+                                platform_version,
+                            )?;
                             query.insert_key(key)
                         }
                     }
                     Some((starts_at_key, included)) => {
                         for value in in_values.iter() {
-                            let key = document_type
-                                .serialize_value_for_key(self.field.as_str(), value)?;
+                            let key = document_type.serialize_value_for_key(
+                                self.field.as_str(),
+                                value,
+                                platform_version,
+                            )?;
 
                             if (left_to_right && starts_at_key < key)
                                 || (!left_to_right && starts_at_key > key)
@@ -733,8 +758,11 @@ impl<'a> WhereClause {
                 }
             }
             GreaterThan => {
-                let key =
-                    document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
+                let key = document_type.serialize_value_for_key(
+                    self.field.as_str(),
+                    &self.value,
+                    platform_version,
+                )?;
                 match starts_at_key_option {
                     None => query.insert_range_after(key..),
                     Some((starts_at_key, included)) => {
@@ -757,8 +785,11 @@ impl<'a> WhereClause {
                 }
             }
             GreaterThanOrEquals => {
-                let key =
-                    document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
+                let key = document_type.serialize_value_for_key(
+                    self.field.as_str(),
+                    &self.value,
+                    platform_version,
+                )?;
                 match starts_at_key_option {
                     None => query.insert_range_from(key..),
                     Some((starts_at_key, included)) => {
@@ -783,8 +814,11 @@ impl<'a> WhereClause {
                 }
             }
             LessThan => {
-                let key =
-                    document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
+                let key = document_type.serialize_value_for_key(
+                    self.field.as_str(),
+                    &self.value,
+                    platform_version,
+                )?;
                 match starts_at_key_option {
                     None => query.insert_range_to(..key),
                     Some((starts_at_key, included)) => {
@@ -807,8 +841,11 @@ impl<'a> WhereClause {
                 }
             }
             LessThanOrEquals => {
-                let key =
-                    document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
+                let key = document_type.serialize_value_for_key(
+                    self.field.as_str(),
+                    &self.value,
+                    platform_version,
+                )?;
                 match starts_at_key_option {
                     None => query.insert_range_to_inclusive(..=key),
                     Some((starts_at_key, included)) => {
@@ -833,7 +870,8 @@ impl<'a> WhereClause {
                 }
             }
             Between => {
-                let (left_key, right_key) = self.split_value_for_between(document_type)?;
+                let (left_key, right_key) =
+                    self.split_value_for_between(document_type, platform_version)?;
                 match starts_at_key_option {
                     None => query.insert_range_inclusive(left_key..=right_key),
                     Some((starts_at_key, included)) => {
@@ -871,7 +909,8 @@ impl<'a> WhereClause {
                 }
             }
             BetweenExcludeBounds => {
-                let (left_key, right_key) = self.split_value_for_between(document_type)?;
+                let (left_key, right_key) =
+                    self.split_value_for_between(document_type, platform_version)?;
                 match starts_at_key_option {
                     None => query.insert_range_after_to(left_key..right_key),
                     Some((starts_at_key, included)) => {
@@ -900,7 +939,8 @@ impl<'a> WhereClause {
                 }
             }
             BetweenExcludeLeft => {
-                let (left_key, right_key) = self.split_value_for_between(document_type)?;
+                let (left_key, right_key) =
+                    self.split_value_for_between(document_type, platform_version)?;
                 match starts_at_key_option {
                     None => query.insert_range_after_to_inclusive(left_key..=right_key),
                     Some((starts_at_key, included)) => {
@@ -932,7 +972,8 @@ impl<'a> WhereClause {
                 }
             }
             BetweenExcludeRight => {
-                let (left_key, right_key) = self.split_value_for_between(document_type)?;
+                let (left_key, right_key) =
+                    self.split_value_for_between(document_type, platform_version)?;
                 match starts_at_key_option {
                     None => query.insert_range(left_key..right_key),
                     Some((starts_at_key, included)) => {
@@ -963,8 +1004,11 @@ impl<'a> WhereClause {
                 }
             }
             StartsWith => {
-                let left_key =
-                    document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
+                let left_key = document_type.serialize_value_for_key(
+                    self.field.as_str(),
+                    &self.value,
+                    platform_version,
+                )?;
                 let mut right_key = left_key.clone();
                 let last_char = right_key.last_mut().ok_or({
                     Error::Query(QuerySyntaxError::InvalidStartsWithClause(

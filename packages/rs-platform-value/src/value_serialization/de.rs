@@ -1,7 +1,8 @@
 use core::{fmt, slice};
 use std::iter::Peekable;
 
-use serde::de::{self, Deserializer as _};
+use serde::de::value::SeqDeserializer;
+use serde::de::{self, Deserializer as _, IntoDeserializer};
 
 use crate::{Error, Value};
 
@@ -123,34 +124,40 @@ impl<'de> de::Visitor<'de> for Visitor {
         Ok(Value::Map(map))
     }
 
-    fn visit_enum<A: de::EnumAccess<'de>>(self, _acc: A) -> Result<Self::Value, A::Error> {
-        // use serde::de::VariantAccess;
-
-        // struct Inner;
-
-        // impl<'de> serde::de::Visitor<'de> for Inner {
-        //     type Value = Value;
-
-        //     fn expecting(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        //         write!(formatter, "a valid CBOR item")
-        //     }
-
-        //             //     fn visit_seq<A: de::SeqAccess<'de>>(self, mut acc: A) -> Result<Self::Value, A::Error> {
-        //         let tag: u64 = acc
-        //             .next_element()?
-        //             .ok_or_else(|| de::Error::custom("expected tag"))?;
-        //         let val = acc
-        //             .next_element()?
-        //             .ok_or_else(|| de::Error::custom("expected val"))?;
-        //         Ok(Value::EnumU8(tag, Box::new(val)))
-        //     }
-        // }
-
-        // let (name, data): (String, _) = acc.variant()?;
-        // assert_eq!("@@TAGGED@@", name);
-        // data.tuple_variant(2, Inner)
-
-        todo!()
+    fn visit_enum<A: de::EnumAccess<'de>>(self, mut acc: A) -> Result<Self::Value, A::Error> {
+        use serde::de::VariantAccess;
+        struct Inner;
+        impl<'de> de::Visitor<'de> for Inner {
+            type Value = Value;
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(formatter, "a valid CBOR item")
+            }
+            fn visit_seq<A: de::SeqAccess<'de>>(self, mut acc: A) -> Result<Self::Value, A::Error> {
+                match acc.size_hint() {
+                    Some(size) if size == 1 => {
+                        let tag: u8 = acc
+                            .next_element()?
+                            .ok_or_else(|| de::Error::custom("expected tag"))?;
+                        Ok(Value::EnumU8(vec![tag]))
+                    }
+                    _ => {
+                        let val: Vec<String> = de::Deserialize::deserialize(
+                            de::value::SeqAccessDeserializer::new(acc),
+                        )?;
+                        Ok(Value::EnumString(val))
+                    }
+                }
+            }
+        }
+        let (name, data): (String, _) = acc.variant()?;
+        if name == "@@TAGGED@@" {
+            data.tuple_variant(2, Inner)
+        } else {
+            Err(de::Error::custom(format!(
+                "Unexpected variant name: {}",
+                name
+            )))
+        }
     }
 }
 
@@ -212,8 +219,8 @@ impl<'de> de::Deserializer<'de> for Deserializer<Value> {
                     visitor.visit_bytes(&x)
                 }
             }
-            Value::EnumU8(_x) => todo!(),
-            Value::EnumString(_x) => todo!(),
+            Value::EnumU8(x) => visitor.visit_seq(SeqDeserializer::new(x.into_iter())),
+            Value::EnumString(x) => visitor.visit_seq(SeqDeserializer::new(x.into_iter())),
             Value::Identifier(x) => {
                 if human_readable {
                     visitor.visit_str(bs58::encode(x).into_string().as_str())
@@ -434,14 +441,25 @@ impl<'de> de::Deserializer<'de> for Deserializer<Value> {
         self,
         _name: &'static str,
         _variants: &'static [&'static str],
-        _visitor: V,
+        visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        // match self.0 {
-        //     Value::Map(x) if x.len() == 1 => visitor.visit_enum(Deserializer(&x[0])),
-        //     x @ Value::Text(..) => visitor.visit_enum(Deserializer(x)),
-        //     _ => Err(de::Error::invalid_type(self.0.into(), &"map")),
-        // }
-        todo!()
+        match self.0 {
+            Value::EnumU8(x) => {
+                let enum_variant = x.get(0).ok_or_else(|| {
+                    de::Error::invalid_length(0, &"at least one variant expected")
+                })?;
+                let variant_name = format!("Variant{}", enum_variant);
+                visitor.visit_enum(variant_name.into_deserializer())
+            }
+            Value::EnumString(x) => {
+                let variant_name = x
+                    .get(0)
+                    .ok_or_else(|| de::Error::invalid_length(0, &"at least one variant expected"))?
+                    .clone();
+                visitor.visit_enum(variant_name.into_deserializer())
+            }
+            _ => Err(de::Error::invalid_type((&self.0).into(), &"enum")),
+        }
     }
 
     fn is_human_readable(&self) -> bool {

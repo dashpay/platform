@@ -5,9 +5,8 @@ use thiserror::Error;
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use crate::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
-use crate::consensus::state::data_trigger::data_trigger_error::{
-    DataTriggerActionError, DataTriggerError,
-};
+#[cfg(feature = "state-transition-validation")]
+use crate::consensus::state::data_trigger::DataTriggerError;
 use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
 use crate::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use crate::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
@@ -41,11 +40,11 @@ pub enum StateError {
     #[error(transparent)]
     DataContractAlreadyPresentError(DataContractAlreadyPresentError),
 
+    // TODO: Not sure we can do it.
+    //   The order of variants must be always the same otherwise serialization won't work
+    #[cfg(feature = "state-transition-validation")]
     #[error(transparent)]
     DataTriggerError(DataTriggerError),
-
-    #[error(transparent)]
-    DataTriggerActionError(DataTriggerActionError),
 
     #[error(transparent)]
     DocumentAlreadyPresentError(DocumentAlreadyPresentError),

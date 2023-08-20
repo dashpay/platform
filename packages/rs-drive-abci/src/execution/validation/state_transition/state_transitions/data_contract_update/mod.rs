@@ -1,64 +1,99 @@
-mod identity_and_signatures;
 mod state;
 mod structure;
 
-use dpp::identity::PartialIdentity;
-
-use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dpp::state_transition::StateTransitionAction;
 
-use crate::platform_types::platform::PlatformRef;
-use crate::rpc::core::CoreRPCLike;
-use crate::execution::validation::state_transition::data_contract_update::identity_and_signatures::v0::StateTransitionIdentityAndSignaturesValidationV0;
-use crate::execution::validation::state_transition::data_contract_update::state::v0::StateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::data_contract_update::structure::v0::StateTransitionStructureValidationV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionValidationV0;
+use dpp::version::PlatformVersion;
+use drive::state_transition_action::StateTransitionAction;
+
+use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::data_contract_update::structure::v0::DataContractUpdateStateTransitionStructureValidationV0;
+use crate::execution::validation::state_transition::processor::v0::{
+    StateTransitionStateValidationV0, StateTransitionStructureValidationV0,
+};
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::rpc::core::CoreRPCLike;
 
 impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
-        _platform: &PlatformRef<C>,
+        platform: &PlatformRef<C>,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        //todo: use protocol version to determine validation
-        self.transform_into_action_v0()
+        let platform_version =
+            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .contract_update_state_transition
+            .transform_into_action
+        {
+            0 => self.transform_into_action_v0(platform_version),
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "data contract update transition: transform_into_action".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
     }
 }
 
-impl StateTransitionValidationV0 for DataContractUpdateTransition {
+impl StateTransitionStructureValidationV0 for DataContractUpdateTransition {
     fn validate_structure(
         &self,
         _drive: &Drive,
-        _protocol_version: u32,
+        protocol_version: u32,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        //todo: use protocol version to determine validation
-        self.validate_structure_v0()
+        let platform_version = PlatformVersion::get(protocol_version)?;
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .contract_update_state_transition
+            .structure
+        {
+            0 => self.validate_structure_v0(platform_version),
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "data contract update transition: validate_structure".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
     }
+}
 
-    fn validate_identity_and_signatures(
-        &self,
-        drive: &Drive,
-        _protocol_version: u32,
-        transaction: TransactionArg,
-    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
-        //todo: use protocol version to determine validation
-        self.validate_identity_and_signatures_v0(drive, transaction)
-    }
-
+impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        //todo: use protocol version to determine validation
-        self.validate_state_v0(platform, tx)
+        let platform_version =
+            PlatformVersion::get(platform.state.current_protocol_version_in_consensus())?;
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .contract_update_state_transition
+            .state
+        {
+            0 => self.validate_state_v0(platform, tx, platform_version),
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "data contract update transition: validate_state".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
     }
 }
 
@@ -69,15 +104,15 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+
     use dpp::data_contract::DataContract;
-    use dpp::platform_value::{BinaryData, Value};
-    use dpp::state_transition::{StateTransitionConvert, StateTransitionType};
+    use dpp::platform_value::BinaryData;
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
+
     use dpp::tests::fixtures::get_data_contract_fixture;
-    use dpp::version::LATEST_VERSION;
+    use dpp::version::PlatformVersion;
 
     struct TestData<T> {
-        raw_state_transition: Value,
         data_contract: DataContract,
         platform: TempPlatform<T>,
     }
@@ -87,29 +122,24 @@ mod tests {
         data_contract: &DataContract,
         block_info: BlockInfo,
     ) {
+        let platform_version = PlatformVersion::latest();
         platform
             .drive
-            .apply_contract(data_contract, block_info, true, None, None)
+            .apply_contract(
+                data_contract,
+                block_info,
+                true,
+                None,
+                None,
+                platform_version,
+            )
             .expect("to apply contract");
     }
 
     fn setup_test() -> TestData<MockCoreRPCLike> {
-        let data_contract = get_data_contract_fixture(None).data_contract;
-        let mut updated_data_contract = data_contract.clone();
-
-        updated_data_contract.increment_version();
-
-        let state_transition = DataContractUpdateTransition {
-            protocol_version: LATEST_VERSION,
-            data_contract: updated_data_contract,
-            signature: BinaryData::new(vec![0; 65]),
-            signature_public_key_id: 0,
-            transition_type: StateTransitionType::DataContractUpdate,
-        };
-
-        let raw_state_transition = state_transition.to_object(false).unwrap();
-
-        let dc = data_contract;
+        let platform_version = PlatformVersion::latest();
+        let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
+            .data_contract_owned();
 
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -124,35 +154,47 @@ mod tests {
             .build_with_mock_rpc();
 
         TestData {
-            raw_state_transition,
-            data_contract: dc,
+            data_contract,
             platform: platform.set_initial_state_structure(),
         }
     }
 
     mod validate_state {
-        use super::super::StateTransitionValidationV0;
         use super::*;
+        use serde_json::json;
 
         use dpp::assert_state_consensus_errors;
         use dpp::consensus::state::state_error::StateError;
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
 
-        use serde_json::json;
+        use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+
+        use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+
+        use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+        use dpp::data_contract::DataContractMethodsV0;
+        use dpp::platform_value::platform_value;
+        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+        use dpp::state_transition::StateTransitionType;
+        use dpp::version::TryFromPlatformVersioned;
+        use platform_version::version::{LATEST_PLATFORM_VERSION, LATEST_VERSION};
+        use platform_version::TryIntoPlatformVersioned;
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
+            let platform_version = PlatformVersion::latest();
             let TestData {
-                raw_state_transition: _,
                 mut data_contract,
                 platform,
             } = setup_test();
 
-            data_contract.config.readonly = true;
+            data_contract.config_mut().set_readonly(true);
             apply_contract(&platform, &data_contract, Default::default());
 
-            let updated_document = json!({
+            let updated_document = platform_value!({
                 "type": "object",
                 "properties": {
                     "name": {
@@ -171,15 +213,17 @@ mod tests {
 
             data_contract.increment_version();
             data_contract
-                .set_document_schema("niceDocument".into(), updated_document)
+                .set_document_schema("niceDocument", updated_document, true, platform_version)
                 .expect("to be able to set document schema");
 
-            let state_transition = DataContractUpdateTransition {
-                protocol_version: LATEST_VERSION,
-                data_contract,
+            let state_transition = DataContractUpdateTransitionV0 {
+                data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
+                    data_contract,
+                    platform_version,
+                )
+                .expect("to be able to convert data contract to serialization format"),
                 signature: BinaryData::new(vec![0; 65]),
                 signature_public_key_id: 0,
-                transition_type: StateTransitionType::DataContractUpdate,
             };
 
             let platform_ref = PlatformRef {
@@ -189,7 +233,7 @@ mod tests {
                 core_rpc: &platform.core_rpc,
             };
 
-            let result = state_transition
+            let result = DataContractUpdateTransition::V0(state_transition)
                 .validate_state(&platform_ref, None)
                 .expect("state transition to be validated");
 
@@ -200,13 +244,14 @@ mod tests {
         #[test]
         pub fn should_keep_history_if_contract_config_keeps_history_is_true() {
             let TestData {
-                raw_state_transition: _,
                 mut data_contract,
                 platform,
             } = setup_test();
 
-            data_contract.config.keeps_history = true;
-            data_contract.config.readonly = false;
+            let platform_version = PlatformVersion::latest();
+
+            data_contract.config_mut().set_keeps_history(true);
+            data_contract.config_mut().set_readonly(false);
 
             apply_contract(
                 &platform,
@@ -219,7 +264,7 @@ mod tests {
                 },
             );
 
-            let updated_document = json!({
+            let updated_document = platform_value!({
                 "type": "object",
                 "properties": {
                     "name": {
@@ -238,16 +283,18 @@ mod tests {
 
             data_contract.increment_version();
             data_contract
-                .set_document_schema("niceDocument".into(), updated_document)
+                .set_document_schema("niceDocument", updated_document, true, platform_version)
                 .expect("to be able to set document schema");
 
             // TODO: add a data contract stop transition
-            let state_transition = DataContractUpdateTransition {
-                protocol_version: LATEST_VERSION,
-                data_contract: data_contract.clone(),
+            let state_transition = DataContractUpdateTransitionV0 {
+                data_contract: DataContractInSerializationFormat::try_from_platform_versioned(
+                    data_contract.clone(),
+                    platform_version,
+                )
+                .expect("to be able to convert data contract to serialization format"),
                 signature: BinaryData::new(vec![0; 65]),
                 signature_public_key_id: 0,
-                transition_type: StateTransitionType::DataContractUpdate,
             };
 
             let platform_ref = PlatformRef {
@@ -257,7 +304,7 @@ mod tests {
                 core_rpc: &platform.core_rpc,
             };
 
-            let result = state_transition
+            let result = DataContractUpdateTransition::V0(state_transition)
                 .validate_state(&platform_ref, None)
                 .expect("state transition to be validated");
 
@@ -278,7 +325,14 @@ mod tests {
             // Fetch from time 0 without a limit or offset
             let contract_history = platform
                 .drive
-                .fetch_contract_with_history(*data_contract.id.as_bytes(), None, 0, None, None)
+                .fetch_contract_with_history(
+                    *data_contract.id().as_bytes(),
+                    None,
+                    0,
+                    None,
+                    None,
+                    platform_version,
+                )
                 .expect("to get contract history");
 
             let keys = contract_history.keys().copied().collect::<Vec<u64>>();
@@ -291,7 +345,14 @@ mod tests {
             // Fetch with an offset should offset from the newest to oldest
             let contract_history = platform
                 .drive
-                .fetch_contract_with_history(*data_contract.id.as_bytes(), None, 0, None, Some(1))
+                .fetch_contract_with_history(
+                    *data_contract.id().as_bytes(),
+                    None,
+                    0,
+                    None,
+                    Some(1),
+                    platform_version,
+                )
                 .expect("to get contract history");
 
             let keys = contract_history.keys().copied().collect::<Vec<u64>>();
@@ -302,7 +363,14 @@ mod tests {
             // Check that when we limit ny 1 we get only the most recent contract
             let contract_history = platform
                 .drive
-                .fetch_contract_with_history(*data_contract.id.as_bytes(), None, 0, Some(1), None)
+                .fetch_contract_with_history(
+                    *data_contract.id().as_bytes(),
+                    None,
+                    0,
+                    Some(1),
+                    None,
+                    platform_version,
+                )
                 .expect("to get contract history");
 
             let keys = contract_history.keys().copied().collect::<Vec<u64>>();
@@ -315,13 +383,12 @@ mod tests {
         #[test]
         fn should_fail_if_trying_to_update_config() {
             let TestData {
-                raw_state_transition: _,
                 mut data_contract,
                 platform,
             } = setup_test();
 
-            data_contract.config.keeps_history = true;
-            data_contract.config.readonly = false;
+            data_contract.config_mut().set_keeps_history(true);
+            data_contract.config_mut().set_readonly(false);
 
             apply_contract(
                 &platform,
@@ -334,7 +401,7 @@ mod tests {
                 },
             );
 
-            let updated_document = json!({
+            let updated_document_type = json!({
                 "type": "object",
                 "properties": {
                     "name": {
@@ -353,20 +420,22 @@ mod tests {
 
             data_contract.increment_version();
             data_contract
-                .set_document_schema("niceDocument".into(), updated_document)
+                .set_document_schema(
+                    "niceDocument".into(),
+                    updated_document_type.into(),
+                    true,
+                    LATEST_PLATFORM_VERSION,
+                )
                 .expect("to be able to set document schema");
 
             // It should be not possible to modify this
-            data_contract.config.keeps_history = false;
+            data_contract.config_mut().set_keeps_history(false);
 
-            // TODO: add a data contract stop transition
-            let state_transition = DataContractUpdateTransition {
-                protocol_version: LATEST_VERSION,
-                data_contract: data_contract.clone(),
-                signature: BinaryData::new(vec![0; 65]),
-                signature_public_key_id: 0,
-                transition_type: StateTransitionType::DataContractUpdate,
-            };
+            let state_transition: DataContractUpdateTransitionV0 = data_contract
+                .try_into_platform_versioned(LATEST_PLATFORM_VERSION)
+                .expect("expected an update transition");
+
+            let state_transition: DataContractUpdateTransition = state_transition.into();
 
             let platform_ref = PlatformRef {
                 drive: &platform.drive,

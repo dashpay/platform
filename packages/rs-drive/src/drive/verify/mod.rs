@@ -1,4 +1,4 @@
-/// Contract verification methods on proofs
+///DataContract verification methods on proofs
 pub mod contract;
 /// Document verification methods on proofs
 pub mod document;

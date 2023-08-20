@@ -432,7 +432,7 @@ The masternode identities logic is partially disabled due to incomplete Identity
 * fees distribution (dashpay/rs-platform[#105](https://github.com/dashpay/platform/issues/105))
 * identity create state transition (dashpay/rs-platform[#9](https://github.com/dashpay/platform/issues/9))
 * identity credit withdrawal transition (dashpay/rs-platform[#25](https://github.com/dashpay/platform/issues/25))
-* identity from_buffer and from_raw_object
+* identity from_buffer and from_object
 * immutibility and contracts that allow document history (dashpay/rs-platform[#79](https://github.com/dashpay/platform/issues/79))
 * implement `deleteDocument`
 * implement `updateDocument`

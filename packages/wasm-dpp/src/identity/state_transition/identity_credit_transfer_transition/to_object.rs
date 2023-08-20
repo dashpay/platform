@@ -1,5 +1,5 @@
 use dpp::identity::KeyID;
-use dpp::state_transition::StateTransitionIdentitySigned;
+use dpp::state_transition::StateTransitionIdentitySignedV0;
 use dpp::{
     identifier::Identifier,
     identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition,

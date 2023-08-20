@@ -1,6 +1,6 @@
 use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm, JsonSchemaErrorWasm,
-    UnsupportedProtocolVersionErrorWasm,
+    UnsupportedProtocolVersionErrorWasm, UnsupportedVersionErrorWasm,
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
 use std::ops::Deref;
@@ -23,6 +23,7 @@ use crate::errors::consensus::basic::identity::{
     InvalidInstantAssetLockProofSignatureErrorWasm, MissingMasterPublicKeyErrorWasm,
     NotImplementedIdentityCreditWithdrawalTransitionPoolingErrorWasm,
 };
+
 use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
     MissingIdentityPublicKeyIdsErrorWasm,
@@ -43,12 +44,13 @@ use dpp::consensus::basic::BasicError::{
     InvalidIdentityPublicKeySecurityLevelError, InvalidInstantAssetLockProofError,
     InvalidInstantAssetLockProofSignatureError, JsonSchemaError, MissingMasterPublicKeyError,
     NotImplementedIdentityCreditWithdrawalTransitionPoolingError, ProtocolVersionParsingError,
-    SerializedObjectParsingError, UnsupportedProtocolVersionError,
+    SerializedObjectParsingError, UnsupportedProtocolVersionError, UnsupportedVersionError,
 };
 use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::SignatureError;
 
-use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
+// TODO(versioning): remove
+// use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use dpp::consensus::state::state_error::StateError;
 
 use wasm_bindgen::{JsError, JsValue};
@@ -71,9 +73,9 @@ use crate::errors::consensus::signature::{
     BasicBLSErrorWasm, BasicECDSAErrorWasm, IdentityNotFoundErrorWasm,
     SignatureShouldNotBePresentErrorWasm,
 };
-use crate::errors::consensus::state::data_contract::data_trigger::{
-    DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
-};
+// use crate::errors::consensus::state::data_contract::data_trigger::{
+//     DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
+// };
 use crate::errors::consensus::state::data_contract::{
     DataContractAlreadyPresentErrorWasm, DataContractConfigUpdateErrorWasm,
     DataContractIsReadonlyErrorWasm,
@@ -115,7 +117,8 @@ use crate::errors::consensus::basic::{
     PublicKeySecurityLevelNotMetErrorWasm, WrongPublicKeyPurposeErrorWasm,
 };
 use crate::errors::consensus::fee::BalanceIsNotEnoughErrorWasm;
-use crate::errors::consensus::state::data_contract::data_trigger::DataTriggerInvalidResultErrorWasm;
+
+// use crate::errors::consensus::state::data_contract::data_trigger::DataTriggerInvalidResultErrorWasm;
 use crate::errors::consensus::value_error::ValueErrorWasm;
 
 use super::state::document::DocumentTimestampsAreEqualErrorWasm;
@@ -181,17 +184,18 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::MissingIdentityPublicKeyIdsError(e) => {
             MissingIdentityPublicKeyIdsErrorWasm::from(e).into()
         }
-        StateError::DataTriggerError(data_trigger_error) => match data_trigger_error.deref() {
-            DataTriggerError::DataTriggerConditionError(e) => {
-                DataTriggerConditionErrorWasm::from(e).into()
-            }
-            DataTriggerError::DataTriggerExecutionError(e) => {
-                DataTriggerExecutionErrorWasm::from(e).into()
-            }
-            DataTriggerError::DataTriggerInvalidResultError(e) => {
-                DataTriggerInvalidResultErrorWasm::from(e).into()
-            }
-        },
+        // TODO(versioning): restore
+        // StateError::DataTriggerError(data_trigger_error) => match data_trigger_error.deref() {
+        //     DataTriggerError::DataTriggerConditionError(e) => {
+        //         DataTriggerConditionErrorWasm::from(e).into()
+        //     }
+        //     DataTriggerError::DataTriggerExecutionError(e) => {
+        //         DataTriggerExecutionErrorWasm::from(e).into()
+        //     }
+        //     DataTriggerError::DataTriggerInvalidResultError(e) => {
+        //         DataTriggerInvalidResultErrorWasm::from(e).into()
+        //     }
+        // },
         // TODO(v0.24-backport): this error seems to be used only in drive executor. Do we need binding for it?
         StateError::DataTriggerActionError(_) => JsError::new("Data Trigger action error").into(),
         StateError::IdentityAlreadyExistsError(e) => {
@@ -314,6 +318,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         SerializedObjectParsingError(e) => SerializedObjectParsingErrorWasm::from(e).into(),
         JsonSchemaError(e) => JsonSchemaErrorWasm::from(e).into(),
         UnsupportedProtocolVersionError(e) => UnsupportedProtocolVersionErrorWasm::from(e).into(),
+        UnsupportedVersionError(e) => UnsupportedVersionErrorWasm::from(e).into(),
         IncompatibleProtocolVersionError(e) => IncompatibleProtocolVersionErrorWasm::from(e).into(),
         DuplicatedIdentityPublicKeyIdBasicError(e) => {
             DuplicatedIdentityPublicKeyIdErrorWasm::from(e).into()

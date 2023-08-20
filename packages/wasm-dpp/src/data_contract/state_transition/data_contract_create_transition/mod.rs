@@ -14,7 +14,7 @@ use dpp::{
     data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
     platform_value,
     state_transition::{
-        StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
+        StateTransitionFieldTypes, StateTransitionIdentitySignedV0, StateTransitionLike,
     },
     ProtocolError,
 };
@@ -67,14 +67,14 @@ impl DataContractCreateTransitionWasm {
         let transition_object = platform_value::to_value(parameters)
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
-        DataContractCreateTransition::from_raw_object(transition_object)
+        DataContractCreateTransition::from_object(transition_object)
             .map(Into::into)
             .with_js_error()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
     pub fn get_data_contract(&self) -> DataContractWasm {
-        self.0.data_contract.clone().into()
+        self.0.data_contract().clone().into()
     }
 
     #[wasm_bindgen(js_name=setDataContractConfig)]
@@ -86,12 +86,12 @@ impl DataContractCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn get_protocol_version(&self) -> u32 {
-        self.0.protocol_version
+        self.0.state_transition_protocol_version()
     }
 
     #[wasm_bindgen(js_name=getEntropy)]
     pub fn get_entropy(&self) -> Buffer {
-        Buffer::from_bytes_owned(self.0.entropy.to_vec())
+        Buffer::from_bytes_owned(self.0.entropy().to_vec())
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -101,7 +101,7 @@ impl DataContractCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> u32 {
-        self.0.get_type() as u32
+        self.0.state_transition_type() as u32
     }
 
     #[wasm_bindgen(js_name=toJSON)]
@@ -134,9 +134,9 @@ impl DataContractCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getModifiedDataIds)]
-    pub fn get_modified_data_ids(&self) -> Vec<JsValue> {
+    pub fn modified_data_ids(&self) -> Vec<JsValue> {
         self.0
-            .get_modified_data_ids()
+            .modified_data_ids()
             .into_iter()
             .map(|identifier| Into::<IdentifierWrapper>::into(identifier).into())
             .collect()

@@ -1,15 +1,15 @@
 {
-  "$id": "9Lo6Fq1idp7YG3Egqf2YmQk4DQr9P8D543GwXyCJRyG",
+  "$format_version": "0",
+  "id": "9Lo6Fq1idp7YG3Egqf2YmQk4DQr9P8D543GwXyCJRyG",
   "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
-  "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
   "version": 1,
-  "$defs": {
+  "schemaDefs": {
     "regex": {
       "type": "string",
       "maxLength": 63
     }
   },
-  "documents": {
+  "documentSchemas": {
     "note": {
       "type": "object",
       "indices": [
