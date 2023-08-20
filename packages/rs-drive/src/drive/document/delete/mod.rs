@@ -323,6 +323,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/family/family-contract-reduced.json",
+            false,
             platform_version,
         )
         .expect("expected to get cbor contract");

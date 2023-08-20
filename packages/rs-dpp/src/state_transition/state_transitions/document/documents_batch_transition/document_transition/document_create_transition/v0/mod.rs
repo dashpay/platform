@@ -253,6 +253,7 @@ mod test {
                     ("documentSchemas", documents),
                     ("ownerId", Value::Identifier([0_u8; 32])),
                 ]),
+                true,
                 LATEST_PLATFORM_VERSION,
             )
             .unwrap(),

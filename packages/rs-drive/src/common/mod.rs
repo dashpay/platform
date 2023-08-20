@@ -81,6 +81,7 @@ pub fn setup_contract(
         path,
         contract_id.map(Identifier::from),
         None,
+        false, //no need to validate the data contracts in tests for drive
         platform_version,
     )
     .expect("expected to get json based contract");

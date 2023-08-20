@@ -11,9 +11,10 @@ use std::convert::TryInto;
 impl DataContractJsonConversionMethodsV0 for DataContractV0 {
     fn from_json(
         json_value: JsonValue,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        Self::from_value(json_value.into(), platform_version)
+        Self::from_value(json_value.into(), validate, platform_version)
     }
 
     /// Returns Data Contract as a JSON Value

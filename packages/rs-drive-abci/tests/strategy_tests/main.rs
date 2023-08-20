@@ -929,6 +929,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
             platform_version,
         )
         .expect("expected to get contract from a json document");
@@ -1006,12 +1007,14 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
             platform_version,
         )
         .expect("expected to get contract from a json document");
 
         let mut contract_update_1 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-1.json",
+            true,
             platform_version,
         )
         .expect("expected to get contract from a json document");
@@ -1021,6 +1024,7 @@ mod tests {
 
         let mut contract_update_2 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-2.json",
+            true,
             platform_version,
         )
         .expect("expected to get contract from a json document");
@@ -1106,6 +1110,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
             platform_version,
         )
         .expect("expected to get contract from a json document");
@@ -1177,6 +1182,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
             platform_version,
         )
         .expect("expected to get contract from a json document");
@@ -1258,6 +1264,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
             platform_version,
         )
         .expect("expected to get contract from a json document");
@@ -1357,6 +1364,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
             platform_version,
         )
         .expect("expected to get contract from a json document");
@@ -1470,6 +1478,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
             platform_version,
         )
         .expect("expected to get contract from a json document");
@@ -1572,6 +1581,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
             platform_version,
         )
         .expect("expected to get contract from a json document");

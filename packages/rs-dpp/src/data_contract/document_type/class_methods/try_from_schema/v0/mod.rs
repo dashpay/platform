@@ -177,7 +177,7 @@ impl DocumentTypeV0 {
                             .try_into()?;
 
                         #[cfg(feature = "validation")]
-                        {
+                        if validate {
                             // Unique indices produces significant load on the system during state validation
                             // so we need to limit their number to prevent of spikes and DoS attacks
                             if index.unique {

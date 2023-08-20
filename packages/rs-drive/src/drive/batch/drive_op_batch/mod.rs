@@ -216,6 +216,7 @@ mod tests {
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            false,
             platform_version,
         )
         .expect("expected to get contract");
@@ -334,6 +335,7 @@ mod tests {
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            false,
             platform_version,
         )
         .expect("expected to get contract");
@@ -450,6 +452,7 @@ mod tests {
 
         let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            false,
             platform_version,
         )
         .expect("expected to get contract");

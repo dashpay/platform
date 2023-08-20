@@ -146,11 +146,8 @@ pub fn add_domains_to_contract(
     let domains = Domain::random_domains_in_parent(count, seed, "dash");
     for domain in domains {
         let value = serde_json::to_value(domain).expect("serialized domain");
-        let document_cbor = cbor_serializer::serializable_value_to_cbor(
-            &value,
-            Some(0),
-        )
-        .expect("expected to serialize to cbor");
+        let document_cbor = cbor_serializer::serializable_value_to_cbor(&value, Some(0))
+            .expect("expected to serialize to cbor");
         let document = Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
             .expect("document should be properly deserialized");
         let document_type = contract

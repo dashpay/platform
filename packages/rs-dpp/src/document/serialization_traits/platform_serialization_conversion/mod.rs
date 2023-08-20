@@ -89,6 +89,7 @@ mod tests {
         let platform_version = PlatformVersion::first();
         let contract = json_document_to_contract(
             "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
             platform_version,
         )
         .expect("expected to get dashpay contract");

@@ -319,7 +319,7 @@ mod tests {
 
         // Create a deep placed contract
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
-        let deep_contract = json_document_to_contract(contract_path, platform_version)
+        let deep_contract = json_document_to_contract(contract_path, false, platform_version)
             .expect("expected to get cbor document");
         drive
             .apply_contract(
