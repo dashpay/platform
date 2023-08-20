@@ -563,10 +563,10 @@ pub mod get_data_contracts_response {
 pub struct GetDataContractHistoryRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(uint32, tag = "2")]
-    pub limit: u32,
-    #[prost(uint32, tag = "3")]
-    pub offset: u32,
+    #[prost(message, optional, tag = "2")]
+    pub limit: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub offset: ::core::option::Option<u32>,
     #[prost(uint64, tag = "4")]
     pub start_at_ms: u64,
     #[prost(bool, tag = "5")]

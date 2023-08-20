@@ -273,8 +273,8 @@ message GetDataContractsResponse {
 
 message GetDataContractHistoryRequest {
   bytes id = 1;
-  uint32 limit = 2;
-  uint32 offset = 3;
+  google.protobuf.UInt32Value limit = 2;
+  google.protobuf.UInt32Value offset = 3;
   uint64 start_at_ms = 4;
   bool prove = 5;
 }
