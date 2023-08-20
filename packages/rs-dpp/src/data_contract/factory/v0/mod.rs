@@ -97,19 +97,18 @@ impl DataContractFactoryV0 {
     pub fn create_from_object(
         &self,
         data_contract_object: Value,
-        #[cfg(feature = "validation")] _skip_validation: bool,
+        validate: bool,
     ) -> Result<DataContract, ProtocolError> {
-        // TODO: We validate Data Contract on creation.
-        //   Should we disable it when flag is off?
-        // #[cfg(feature = "validation")]
-        // {
-        //     if !skip_validation {
-        //         self.validate_data_contract(&data_contract_object)?;
-        //     }
-        // }
         let platform_version = PlatformVersion::get(self.protocol_version)?;
-        match platform_version.dpp.contract_versions.contract_structure {
-            0 => Ok(DataContractV0::from_value(data_contract_object, platform_version)?.into()),
+        match platform_version
+            .dpp
+            .contract_versions
+            .contract_structure_version
+        {
+            0 => Ok(
+                DataContractV0::from_value(data_contract_object, validate, platform_version)?
+                    .into(),
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractFactoryV0::create_from_object".to_string(),
                 known_versions: vec![0],

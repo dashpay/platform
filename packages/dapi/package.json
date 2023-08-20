@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/dapi",
   "private": true,
-  "version": "0.25.0-dev.15",
+  "version": "0.25.0-dev.16",
   "description": "A decentralized API for the Dash network",
   "scripts": {
     "api": "node scripts/api.js",
@@ -52,7 +52,7 @@
     "lodash": "^4.17.21",
     "lru-cache": "^5.1.1",
     "ws": "^7.5.3",
-    "zeromq": "^5.2.8"
+    "zeromq": "~5.2.8"
   },
   "devDependencies": {
     "@dashevo/dapi-client": "workspace:*",

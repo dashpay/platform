@@ -74,6 +74,7 @@ mod tests {
     fn test_document_cbor_serialization() {
         let contract = json_document_to_contract(
             "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
             LATEST_PLATFORM_VERSION,
         )
         .expect("expected to get cbor contract");

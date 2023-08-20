@@ -22,14 +22,14 @@ byteorder = { version = "1.4.3" }
 indexmap = { version = "1.8.0" }
 sqlparser = { version = "0.13.0" }
 thiserror = { version = "1.0.30" }
-moka = { version = "0.10.1", features = ["future", "futures-util"] }
+moka = { version = "0.11.1", features = ["future", "futures-util"] }
 nohash-hasher = { version = "0.2.0" }
 dpp = { path = "../rs-dpp", features = ["drive", "cbor"]}
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 derive_more = "0.99.17"
 
 # optional dependencies
-bs58 = { version = "0.4.0", optional = true }
+bs58 = { version = "0.5.0", optional = true }
 base64 = { version = "0.21.0", optional = true }
 hex = { version = "0.4.3", optional = true }
 tempfile = { version = "3", optional = true }

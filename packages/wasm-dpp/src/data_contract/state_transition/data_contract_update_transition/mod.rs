@@ -7,7 +7,7 @@ pub use apply::*;
 pub use validation::*;
 
 use dpp::consensus::ConsensusError;
-use dpp::serialization::PlatformSerializable;
+use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use dpp::{
     consensus::signature::SignatureError,
@@ -79,6 +79,13 @@ impl DataContractUpdateTransitionWasm {
         self.0.data_contract().clone().into()
     }
 
+    #[wasm_bindgen(js_name=setDataContractConfig)]
+    pub fn set_data_contract_config(&mut self, config: JsValue) -> Result<(), JsValue> {
+        let res = serde_wasm_bindgen::from_value(config);
+        self.0.data_contract.config = res.unwrap();
+        Ok(())
+    }
+
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn get_protocol_version(&self) -> u32 {
         self.0.state_transition_protocol_version()
@@ -111,6 +118,16 @@ impl DataContractUpdateTransitionWasm {
             PlatformSerializable::serialize(&StateTransition::DataContractUpdate(self.0.clone()))
                 .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
+    }
+
+    #[wasm_bindgen(js_name=fromBuffer)]
+    pub fn from_buffer(buffer: Vec<u8>) -> Result<DataContractUpdateTransitionWasm, JsValue> {
+        let state_transition: StateTransition =
+            PlatformDeserializable::deserialize(&buffer).with_js_error()?;
+        match state_transition {
+            StateTransition::DataContractUpdate(dct) => Ok(dct.into()),
+            _ => Err(JsValue::from_str("Invalid state transition type")),
+        }
     }
 
     #[wasm_bindgen(js_name=getModifiedDataIds)]

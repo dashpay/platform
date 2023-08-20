@@ -15,6 +15,7 @@ pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =
 impl DataContractValueConversionMethodsV0 for DataContractV0 {
     fn from_value(
         mut value: Value,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         value.replace_at_paths(
@@ -29,7 +30,7 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
 
                 DataContractV0::try_from_platform_versioned(
                     data_contract_data.into(),
-                    true,
+                    validate,
                     platform_version,
                 )
             }

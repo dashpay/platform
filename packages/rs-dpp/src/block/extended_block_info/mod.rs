@@ -72,6 +72,12 @@ impl ExtendedBlockInfoV0Getters for ExtendedBlockInfo {
         }
     }
 
+    fn block_id_hash(&self) -> &[u8; 32] {
+        match self {
+            ExtendedBlockInfo::V0(v0) => &v0.block_id_hash,
+        }
+    }
+
     fn signature(&self) -> &[u8; 96] {
         match self {
             ExtendedBlockInfo::V0(v0) => &v0.signature,
@@ -139,6 +145,7 @@ mod tests {
             basic_info: BlockInfo::default(),
             app_hash: [1; 32],
             quorum_hash: [2; 32],
+            block_id_hash: [3; 32],
             signature: [3; 96],
             round: 1,
         }

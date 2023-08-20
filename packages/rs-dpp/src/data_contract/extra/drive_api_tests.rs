@@ -89,7 +89,7 @@ mod test {
 
         let platform_version = PlatformVersion::latest();
 
-        let data_contract = DataContract::from_cbor(cbor_bytes, platform_version)
+        let data_contract = DataContract::from_cbor(cbor_bytes, true, platform_version)
             .expect("contract should be deserialized");
 
         assert_eq!(0, data_contract.feature_version());
@@ -124,6 +124,7 @@ mod test {
 
         let contract = json_document_to_contract(
             "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
             platform_version,
         )
         .expect("expected to get a contract")
@@ -185,6 +186,7 @@ mod test {
 
         let mut contract = json_document_to_contract(
             "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
             platform_version,
         )
         .expect("expected to get a cbor document")
@@ -208,7 +210,7 @@ mod test {
         let contract_cbor = contract
             .to_cbor(platform_version)
             .expect("serialization shouldn't fail");
-        let deserialized_contract = DataContract::from_cbor(contract_cbor, platform_version)
+        let deserialized_contract = DataContract::from_cbor(contract_cbor, true, platform_version)
             .expect("deserialization shouldn't fail");
 
         assert!(matches!(
@@ -229,6 +231,7 @@ mod test {
 
         let mut contract = json_document_to_contract(
             "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
             platform_version,
         )
         .expect("expected to decode a contract");

@@ -15,6 +15,7 @@ use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
@@ -127,6 +128,17 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         }
 
         if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
+        let config_validation_result = old_data_contract.config().validate_config_update(
+            new_data_contract.config(),
+            self.data_contract().id(),
+            platform_version,
+        )?;
+
+        if !config_validation_result.is_valid() {
+            validation_result.merge(config_validation_result);
             return Ok(validation_result);
         }
 

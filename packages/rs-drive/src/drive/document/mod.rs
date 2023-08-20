@@ -263,7 +263,7 @@ pub(crate) mod tests {
         };
 
         // let's construct the grovedb structure for the dashpay data contract
-        let dashpay = json_document_to_contract(dashpay_path, platform_version)
+        let dashpay = json_document_to_contract(dashpay_path, false, platform_version)
             .expect("expected to get cbor document");
         drive
             .apply_contract(

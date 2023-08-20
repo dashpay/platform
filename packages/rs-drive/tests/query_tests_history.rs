@@ -224,11 +224,8 @@ pub fn setup(
                 }
             }
             let value = serde_json::to_value(person).expect("serialized person");
-            let document_cbor = cbor_serializer::serializable_value_to_cbor(
-                &value,
-                Some(0),
-            )
-            .expect("expected to serialize to cbor");
+            let document_cbor = cbor_serializer::serializable_value_to_cbor(&value, Some(0))
+                .expect("expected to serialize to cbor");
             let document =
                 Document::from_cbor(document_cbor.as_slice(), None, None, platform_version)
                     .expect("document should be properly deserialized");
@@ -1108,11 +1105,8 @@ fn test_query_historical() {
         age: rng.gen_range(0..85),
     };
     let serialized_person = serde_json::to_value(fixed_person).expect("serialized person");
-    let person_cbor = cbor_serializer::serializable_value_to_cbor(
-        &serialized_person,
-        Some(0),
-    )
-    .expect("expected to serialize to cbor");
+    let person_cbor = cbor_serializer::serializable_value_to_cbor(&serialized_person, Some(0))
+        .expect("expected to serialize to cbor");
     let document = Document::from_cbor(person_cbor.as_slice(), None, None, platform_version)
         .expect("document should be properly deserialized");
 
@@ -1156,11 +1150,8 @@ fn test_query_historical() {
         age: rng.gen_range(0..85),
     };
     let serialized_person = serde_json::to_value(next_person).expect("serialized person");
-    let person_cbor = cbor_serializer::serializable_value_to_cbor(
-        &serialized_person,
-        Some(0),
-    )
-    .expect("expected to serialize to cbor");
+    let person_cbor = cbor_serializer::serializable_value_to_cbor(&serialized_person, Some(0))
+        .expect("expected to serialize to cbor");
     let document = Document::from_cbor(person_cbor.as_slice(), None, None, platform_version)
         .expect("document should be properly deserialized");
 
@@ -1553,6 +1544,7 @@ fn test_query_historical() {
 
     let dashpay_contract = json_document_to_contract(
         "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        false,
         platform_version,
     )
     .expect("expected to get cbor document");
@@ -1663,7 +1655,8 @@ fn test_query_historical() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            204, 82, 252, 12, 139, 229, 206, 154, 151, 132, 163, 83, 173, 96, 150, 81, 25, 93, 28, 194, 21, 99, 186, 115, 205, 136, 230, 216, 98, 181, 41, 155
+            204, 82, 252, 12, 139, 229, 206, 154, 151, 132, 163, 83, 173, 96, 150, 81, 25, 93, 28,
+            194, 21, 99, 186, 115, 205, 136, 230, 216, 98, 181, 41, 155
         ]
     );
 }

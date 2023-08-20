@@ -31,7 +31,7 @@ Distribution package for Dash node installation
 ### Dependencies
 
 * [Docker](https://docs.docker.com/engine/installation/) (v20.10+)
-* [Node.js](https://nodejs.org/en/download/) (v16, NPM v8.0+)
+* [Node.js](https://nodejs.org/en/download/) (v18, NPM v8.0+)
 
 For Linux installations you may optionally wish to follow the Docker [post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/) to manage Docker as a non-root user, otherwise you will have to run CLI and Docker commands with `sudo`.
 
@@ -53,6 +53,8 @@ USAGE
 FLAGS
   -v, --verbose     use verbose mode for output
   --config=<value>  configuration name to use
+  --format=<option>  [default: plain] display output format
+                   <options: json|plain>
 ```
 
 Example usage:
@@ -61,6 +63,18 @@ Example usage:
 $ dashmate stop
 $ npm update -g dashmate
 $ dashmate update
+╔══════════════════╤══════════════════════════════╤════════════╗
+║ Service          │ Image                        │ Updated    ║
+╟──────────────────┼──────────────────────────────┼────────────╢
+║ Core             │ dashpay/dashd:19.1.0         │ up to date ║
+║ Drive ABCI       │ dashpay/drive:0.24           │ updated    ║
+║ Drive Tenderdash │ dashpay/tenderdash:0.11.2    │ up to date ║
+║ DAPI API         │ dashpay/dapi:0.24            │ updated    ║
+║ DAPI Envoy       │ dashpay/envoy:0.24           │ updated    ║
+║ Dashmate Helper  │ dashpay/dashmate-helper:0.24 │ updated    ║
+╚══════════════════╧══════════════════════════════╧════════════╝
+$ dashmate update --format=json 
+[{"name":"core","title":"Core","updated":false,"image":"dashpay/dashd:19.2.0"},{"name":"drive_abci","title":"Drive ABCI","pulled":false,"image":"dashpay/drive:0.24"},{"name":"drive_tenderdash","title":"Drive Tenderdash","pulled":true,"image":"dashpay/tenderdash:0.11.2"},{"name":"dapi_api","title":"DAPI API","pulled":false,"image":"dashpay/dapi:0.24"},{"name":"dapi_envoy","title":"DAPI Envoy","pulled":false,"image":"dashpay/envoy:0.24"},{"name":"dashmate_helper","title":"Dashmate Helper","pulled":false,"image":"dashpay/dashmate-helper:0.24"}]
 $ dashmate start
 ```
 

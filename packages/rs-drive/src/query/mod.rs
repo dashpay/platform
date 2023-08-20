@@ -1838,7 +1838,7 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/family/family-contract.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract = json_document_to_contract(contract_path, platform_version)
+        let contract = json_document_to_contract(contract_path, false, platform_version)
             .expect("expected to get document");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -1869,7 +1869,7 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-with-birthday.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract = json_document_to_contract(contract_path, platform_version)
+        let contract = json_document_to_contract(contract_path, false, platform_version)
             .expect("expected to get document");
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive

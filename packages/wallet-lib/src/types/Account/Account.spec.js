@@ -44,6 +44,13 @@ describe('Account - class', function suite() {
       this.accounts = [];
       this.network = Dashcore.Networks.testnet;
       this.storage = new Storage();
+      this.transport = {
+        client: {
+          blockHeadersProvider: {
+            initializeChainWith: () => {}
+          }
+        }
+      }
     })());
     mocks.wallet.storage.application.network = mocks.wallet.network;
     mocks.wallet.storage.currentNetwork = mocks.wallet.network.toString()

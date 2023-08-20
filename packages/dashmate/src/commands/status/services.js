@@ -29,7 +29,7 @@ class ServicesStatusCommand extends ConfigBaseCommand {
 
     for (const [serviceName, serviceDescription] of Object.entries(scope)) {
       const {
-        humanName, containerId, image, status,
+        title, containerId, image, status,
       } = serviceDescription;
       if (flags.format === OUTPUT_FORMATS.PLAIN) {
         let statusText;
@@ -38,7 +38,7 @@ class ServicesStatusCommand extends ConfigBaseCommand {
         }
 
         outputRows.push({
-          Service: humanName || 'n/a',
+          Service: title || 'n/a',
           'Container ID': containerId ? containerId.slice(0, 12) : 'n/a',
           Image: image || 'n/a',
           Status: statusText || 'n/a',

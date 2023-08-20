@@ -471,4 +471,10 @@ impl PlatformStateV0Methods for PlatformState {
             PlatformState::V0(v0) => v0.take_next_validator_set_quorum_hash(),
         }
     }
+
+    fn last_block_id_hash(&self) -> [u8; 32] {
+        match self {
+            PlatformState::V0(v0) => v0.last_block_id_hash(),
+        }
+    }
 }

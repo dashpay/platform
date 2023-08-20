@@ -17,6 +17,7 @@ service Platform {
           returns (GetIdentityBalanceAndRevisionResponse);
   rpc getProofs (GetProofsRequest) returns (GetProofsResponse);
   rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
+  rpc getDataContractHistory (GetDataContractHistoryRequest) returns (GetDataContractHistoryResponse);
   rpc getDataContracts (GetDataContractsRequest) returns (GetDataContractsResponse);
   rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
   rpc getIdentitiesByPublicKeyHashes (GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse);
@@ -30,6 +31,8 @@ message Proof {
   bytes quorum_hash = 2;
   bytes signature = 3;
   uint32 round = 4;
+  bytes block_id_hash = 5;
+  uint32 quorum_type = 6;    
 }
 
 message ResponseMetadata {
@@ -37,6 +40,7 @@ message ResponseMetadata {
   uint32 core_chain_locked_height = 2;
   uint64 time_ms = 3;
   uint32 protocol_version = 4;
+  string chain_id = 5;
 }
 
 message StateTransitionBroadcastError {
@@ -269,20 +273,16 @@ message GetDataContractsResponse {
 
 message GetDataContractHistoryRequest {
   bytes id = 1;
-  optional uint32 limit = 2;
-  optional uint32 offset = 3;
-  optional uint64 start_at_seconds = 4;
+  google.protobuf.UInt32Value limit = 2;
+  google.protobuf.UInt32Value offset = 3;
+  uint64 start_at_ms = 4;
   bool prove = 5;
 }
 
 message GetDataContractHistoryResponse {
-  message DataContractValue {
-    bytes value = 1;
-  }
-
   message DataContractHistoryEntry {
     uint64 date = 1;
-    DataContractValue value = 2;
+    bytes value = 2;
   }
 
   message DataContractHistory {

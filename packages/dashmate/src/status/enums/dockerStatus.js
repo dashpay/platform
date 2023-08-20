@@ -1,4 +1,4 @@
-const ServiceStatusEnum = {
+const DockerStatusEnum = {
   // all possible Docker statuses
   created: 'created',
   restarting: 'restarting',
@@ -9,4 +9,4 @@ const ServiceStatusEnum = {
   not_started: 'not_started',
 };
 
-module.exports = ServiceStatusEnum;
+module.exports = DockerStatusEnum;

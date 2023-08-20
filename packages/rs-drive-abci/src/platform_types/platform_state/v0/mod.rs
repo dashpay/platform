@@ -334,6 +334,8 @@ pub trait PlatformStateV0Methods {
     fn initialization_information_mut(&mut self) -> &mut Option<PlatformInitializationState>;
     /// The epoch ref
     fn epoch_ref(&self) -> &Epoch;
+    /// The last block id hash
+    fn last_block_id_hash(&self) -> [u8; 32];
 }
 
 impl PlatformStateV0Methods for PlatformStateV0 {
@@ -395,6 +397,14 @@ impl PlatformStateV0Methods for PlatformStateV0 {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| *block_info.quorum_hash())
+            .unwrap_or_default()
+    }
+
+    /// The last block id hash
+    fn last_block_id_hash(&self) -> [u8; 32] {
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| *block_info.block_id_hash())
             .unwrap_or_default()
     }
 

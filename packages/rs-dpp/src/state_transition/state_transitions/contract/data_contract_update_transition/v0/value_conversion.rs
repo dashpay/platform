@@ -63,6 +63,7 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractUpdateTransitionV0 {
                         "data contract missing on state transition".to_string(),
                     )
                 })?,
+                true,
                 platform_version,
             )?
             .try_into_platform_versioned(platform_version)?,
@@ -88,6 +89,7 @@ impl<'a> StateTransitionValueConvert<'a> for DataContractUpdateTransitionV0 {
                     .ok_or(ProtocolError::DecodingError(
                         "data contract missing on state transition".to_string(),
                     ))?,
+                false,
                 platform_version,
             )?
             .try_into_platform_versioned(platform_version)?,

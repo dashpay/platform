@@ -148,6 +148,7 @@ impl ErrorWithCode for StateError {
             Self::DataContractIsReadonlyError { .. } => 4026,
             #[cfg(feature = "validation")]
             Self::DataTriggerError(ref e) => e.code(),
+            Self::DataContractConfigUpdateError { .. } => 4027,
 
             // Document
             Self::DocumentAlreadyPresentError { .. } => 4004,

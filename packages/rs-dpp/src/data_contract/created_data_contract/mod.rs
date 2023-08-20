@@ -97,6 +97,7 @@ impl CreatedDataContract {
     #[cfg(feature = "data-contract-value-conversion")]
     pub fn from_object(
         raw_object: Value,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version
@@ -104,7 +105,9 @@ impl CreatedDataContract {
             .contract_versions
             .created_data_contract_structure
         {
-            0 => Ok(CreatedDataContractV0::from_object(raw_object, platform_version)?.into()),
+            0 => Ok(
+                CreatedDataContractV0::from_object(raw_object, validate, platform_version)?.into(),
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "CreatedDataContract::from_object".to_string(),
                 known_versions: vec![0],

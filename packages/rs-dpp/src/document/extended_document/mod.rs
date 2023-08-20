@@ -311,6 +311,7 @@ mod test {
                 ("documentSchemas", documents),
                 ("$format_version", Value::Text("0".to_string())),
             ]),
+            true,
             platform_version,
         )
         .unwrap()

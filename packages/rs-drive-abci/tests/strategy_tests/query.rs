@@ -22,6 +22,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::{HashMap, HashSet};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::{CanonicalVote, SignedMsgType, StateId};
 use tenderdash_abci::signatures::{SignBytes, SignDigest};
 
@@ -153,7 +154,7 @@ impl<'a> ProofVerification<'a> {
             app_version: self.app_version,
             core_chain_locked_height: self.core_chain_locked_height,
             height: self.height as u64,
-            time: Some(self.time.clone()),
+            time: self.time.to_milis(),
         };
 
         self.verify_signature(state_id, proof.round)

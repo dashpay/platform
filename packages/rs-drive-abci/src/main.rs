@@ -10,7 +10,32 @@ use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
 use drive_abci::rpc::core::DefaultCoreRPC;
 use itertools::Itertools;
 use std::path::PathBuf;
+use std::process::ExitCode;
+use tokio::runtime::Builder;
+use tokio::signal::unix::{signal, SignalKind};
+use tokio::time::Duration;
+use tokio_util::sync::CancellationToken;
 use tracing::warn;
+
+const SHUTDOWN_TIMEOUT_MILIS: u64 = 5000; // 5s; Docker defaults to 10s
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    /// Start server in foreground.
+    #[command()]
+    Start,
+    /// Dump configuration
+    ///
+    /// WARNING: output can contain sensitive data!
+    #[command()]
+    Config,
+
+    /// Check status.
+    ///
+    /// Returns 0 on success.
+    #[command()]
+    Status,
+}
 
 /// Server that accepts connections from Tenderdash, and
 /// executes Dash Platform logic as part of the ABCI++ protocol.
@@ -47,54 +72,105 @@ struct Cli {
     color: Option<bool>,
 }
 
-#[derive(Debug, Subcommand)]
-enum Commands {
-    /// Start server in foreground.
-    #[command()]
-    Start {},
-    /// Dump configuration
-    ///
-    /// WARNING: output can contain sensitive data!
-    #[command()]
-    Config {},
+impl Cli {
+    fn run(self, config: PlatformConfig, cancel: CancellationToken) -> Result<(), String> {
+        match self.command {
+            Commands::Start => {
+                let core_rpc = DefaultCoreRPC::open(
+                    config.core.rpc.url().as_str(),
+                    config.core.rpc.username.clone(),
+                    config.core.rpc.password.clone(),
+                )
+                .unwrap();
 
-    /// Check status.
-    ///
-    /// Returns 0 on success.
-    #[command()]
-    Status {},
+                let _prometheus = start_prometheus(&config)?;
+
+                // Drive and Tenderdash rely on Core. Various functions will fail if Core is not synced.
+                // We need to make sure that Core is ready before we start Drive ABCI app
+                // Tenderdash won't start too until ABCI port is open.
+                wait_for_core_to_sync_v0(&core_rpc, cancel.clone()).unwrap();
+
+                drive_abci::abci::start(&config, core_rpc, cancel).map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+            Commands::Config => dump_config(&config)?,
+            Commands::Status => check_status(&config)?,
+        };
+
+        Ok(())
+    }
 }
 
-pub fn main() -> Result<(), String> {
+fn main() -> Result<(), ExitCode> {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
+    // We use `cancel` to notify other subsystems that the server is shutting down
+    let cancel = tokio_util::sync::CancellationToken::new();
 
-    configure_logging(&cli, &config).expect("failed to configure logging");
+    let loggers = configure_logging(&cli, &config).expect("failed to configure logging");
 
-    install_panic_hook();
+    install_panic_hook(cancel.clone());
 
-    match cli.command {
-        Commands::Start {} => {
-            let core_rpc = DefaultCoreRPC::open(
-                config.core.rpc.url().as_str(),
-                config.core.rpc.username.clone(),
-                config.core.rpc.password.clone(),
-            )
-            .unwrap();
+    // Start tokio runtime and thread listening for signals.
+    // The runtime will be reused by Prometheus and rs-tenderdash-abci.
+    let runtime = Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("cannot initialize tokio runtime");
+    let rt_guard = runtime.enter();
 
-            let _prometheus = start_prometheus(&config)?;
+    runtime.spawn(handle_signals(cancel.clone(), loggers));
 
-            // Drive and Tenderdash rely on Core. Various functions will fail if Core is not synced.
-            // We need to make sure that Core is ready before we start Drive ABCI app
-            // Tenderdash won't start too until ABCI port is open.
-            wait_for_core_to_sync_v0(&core_rpc).unwrap();
-
-            drive_abci::abci::start(&config, core_rpc).unwrap();
-            Ok(())
+    // Main thread is not started in runtime, as it is synchronous and we don't want to run into
+    // potential, hard to debug, issues.
+    let status = match cli.run(config, cancel) {
+        Ok(()) => {
+            tracing::debug!("shutdown complete");
+            ExitCode::SUCCESS
         }
-        Commands::Config {} => dump_config(&config),
-        Commands::Status {} => check_status(&config),
+        Err(e) => {
+            tracing::error!(error = e, "drive-abci failed");
+            ExitCode::FAILURE
+        }
+    };
+
+    drop(rt_guard);
+    runtime.shutdown_timeout(Duration::from_millis(SHUTDOWN_TIMEOUT_MILIS));
+    tracing::info!("drive-abci server is down");
+
+    Err(status)
+}
+
+/// Handle signals received from operating system
+async fn handle_signals(cancel: CancellationToken, logs: Loggers) -> Result<(), String> {
+    let mut sigint = signal(SignalKind::interrupt()).map_err(|e| e.to_string())?;
+    let mut sigterm = signal(SignalKind::terminate()).map_err(|e| e.to_string())?;
+    let mut sighup = signal(SignalKind::hangup()).map_err(|e| e.to_string())?;
+
+    while !cancel.is_cancelled() {
+        tokio::select! {
+          _ = sigint.recv() => {
+                tracing::info!("received SIGINT (ctrl+c), initiating shutdown");
+                cancel.cancel();
+            },
+          _ = sigterm.recv() => {
+                tracing::info!("received SIGTERM, initiating shutdown");
+                cancel.cancel();
+            },
+        _ = sighup.recv() => {
+                tracing::info!("received SIGHUP, flushing and rotating logs");
+                if let Err(error) = logs.flush() {
+                    tracing::error!(?error, "logs flush failed");
+                };
+                if let Err(error) = logs.rotate() {
+                    tracing::error!(?error, "logs rotate failed");
+                };
+            },
+          _ = cancel.cancelled() => tracing::trace!("shutting down signal handlers"),
+        };
     }
+
+    Ok(())
 }
 
 /// Start prometheus exporter if it's configured.
@@ -202,7 +278,10 @@ fn configure_logging(
 
 /// Install panic hook to ensure that all panic logs are correctly formatted.
 ///
-/// Depends on [set_verbosity()].
-fn install_panic_hook() {
-    std::panic::set_hook(Box::new(|info| tracing::error!(panic=%info, "panic")));
+/// Should be called after [set_verbosity()].
+fn install_panic_hook(cancel: CancellationToken) {
+    std::panic::set_hook(Box::new(move |info| {
+        tracing::error!(panic=%info, "panic");
+        cancel.cancel();
+    }));
 }

@@ -10,6 +10,7 @@ use platform_value::Value;
 impl DataContractValueConversionMethodsV0 for DataContract {
     fn from_value(
         raw_object: Value,
+        validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version
@@ -17,7 +18,7 @@ impl DataContractValueConversionMethodsV0 for DataContract {
             .contract_versions
             .contract_structure
         {
-            0 => Ok(DataContractV0::from_value(raw_object, platform_version)?.into()),
+            0 => Ok(DataContractV0::from_value(raw_object, validate, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::from_object".to_string(),
                 known_versions: vec![0],

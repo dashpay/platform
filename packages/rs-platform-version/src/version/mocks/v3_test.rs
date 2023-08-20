@@ -583,6 +583,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             },
             data_contract: DataContractValidationVersions {
                 validate: 0,
+                validate_config_update: 0,
                 validate_index_definitions: 0,
                 validate_index_naming_duplicates: 0,
                 validate_not_defined_properties: 0,

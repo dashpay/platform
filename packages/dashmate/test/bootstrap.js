@@ -10,9 +10,6 @@ use(dirtyChai);
 
 process.env.NODE_ENV = 'test';
 
-use(dirtyChai);
-use(sinonChai);
-
 beforeEach(function beforeEach() {
   if (!this.sinon) {
     this.sinon = sinon.createSandbox();

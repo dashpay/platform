@@ -54,17 +54,6 @@ impl VersionAttributes {
 ///
 /// - `passthrough`: If the attribute is an enum, it serializes the inner data directly, bypassing the enum's own serialization.
 ///   This means the serialization process is handled by the inner data itself rather than the enum.
-///   For example, consider this enum:
-///
-///   ```rust
-///   #[derive(PlatformSerialize)]
-///   #[platform_error_type(MyError)]
-///   #[platform_serialize(passthrough)]
-///   pub enum MyEnum {
-///       Variant1(InnerType1),
-///       Variant2(InnerType2),
-///   }
-///   ```
 ///
 ///   If `MyEnum::Variant1(inner)` is serialized, it will call `inner.serialize()` directly instead of `MyEnum::Variant1(inner).serialize()`.
 ///

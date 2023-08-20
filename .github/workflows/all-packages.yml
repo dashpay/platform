@@ -5,7 +5,7 @@ on:
   pull_request:
     branches:
       - master
-      - v[0-9]+\.[0-9]+-dev
+      - 'v[0-9]+\.[0-9]+-dev(-nightly)?'
   push:
     branches:
       - master
@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: "16"
+          node-version: "18"
 
       - name: Enable corepack
         run: corepack enable
@@ -59,17 +59,12 @@ jobs:
         run: corepack enable
 
       - name: Audit NPM
-        run: yarn npm audit --environment production --all --recursive --ignore 1091050
-        # ignore "public ip"
+        run: yarn npm audit --environment production --all --recursive
 
   test-suite:
     name: Run Platform Test Suite
-    runs-on: self-hosted
-    timeout-minutes: 30
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    timeout-minutes: 120
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -81,9 +76,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Setup Node.JS
-        uses: actions/setup-node@v3
-        with:
-          node-version: "16"
+        uses: ./.github/actions/nodejs
 
       - name: Setup Rust
         uses: ./.github/actions/rust
@@ -91,63 +84,93 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
-
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
-
-      - name: Enable corepack
-        run: corepack enable
-
-      - name: Disable NPM audit
-        run: npm config set audit false
-
-      - name: Enable Yarn unplugged modules cache
-        uses: actions/cache@v3
-        with:
-          path: ".yarn/unplugged"
-          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-unplugged-
-
-      - name: Install dependencies
-        run: yarn install
-
       - name: Build SDK
         run: yarn build --filter "+dash"
 
       - name: Set up Docker BuildX
-        id: buildx
         uses: docker/setup-buildx-action@v2
-
-      - name: Enable docker cache mount
-        uses: actions/cache@v3
         with:
-          path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildkit
+          install: true
+          driver-opts: env.BUILDKIT_STEP_LOG_MAX_SIZE=10485760
+          config-inline: |
+            [worker.oci]
+              gc = true
+              gckeepstorage = 40000 # 40 GB
+              [[worker.oci.gcpolicy]]
+                all = true
+                keepBytes = 30000000000 # 30 GB
+                keepDuration = 864000 # 10 days
 
-      - name: Load docker cache mount
-        uses: dashevo/gh-action-cache-buildkit-state@master
+      - name: Load Docker mount cache
+        uses: dcginfra/buildkit-cache-dance/inject@main
         with:
-          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-          cache-path: /tmp/buildkit-cache
-          cache-max-size: 3g
+          bucket: multi-runner-linux-x64-platform-cache-gy9micic
+          mounts: |
+            cargo_registry_index
+            cargo_registry_cache
+            cargo_git
+            target_amd64
+            target_wasm
+            unplugged_amd64
 
       - name: Setup local network
         run: yarn configure
 
+      - name: Configure Drive ABCI layer cache
+        uses: ./.github/actions/s3-layer-cache-settings
+        id: drive_abci_layer_cache_settings
+        with:
+          name: dashpay/drive
+
+      - name: Configure DAPI layer cache
+        uses: ./.github/actions/s3-layer-cache-settings
+        id: dapi_layer_cache_settings
+        with:
+          name: dashpay/dapi
+
+      - name: Configure Dashmate Helper layer cache
+        uses: ./.github/actions/s3-layer-cache-settings
+        id: dashmate_helper_layer_cache_settings
+        with:
+          name: dashpay/dashmate-helper
+
+      - name: Configure Deps layer cache
+        uses: ./.github/actions/s3-layer-cache-settings
+        id: envoy_layer_cache_settings
+        with:
+          name: dashpay/envoy
+
+      - name: Configure Envoy layer cache
+        uses: ./.github/actions/s3-layer-cache-settings
+        id: deps_layer_cache_settings
+        with:
+          name: dashpay/deps
+
       - name: Start local network
         run: yarn start
+        env:
+          CACHE_DRIVE_ABCI_FROM: ${{ steps.drive_abci_layer_cache_settings.outputs.cache_from }}
+          CACHE_DRIVE_ABCI_TO: ${{ steps.drive_abci_layer_cache_settings.outputs.cache_to }}
+          CACHE_DAPI_API_FROM: ${{ steps.dapi_layer_cache_settings.outputs.cache_from }}
+          CACHE_DAPI_API_TO: ${{ steps.dapi_layer_cache_settings.outputs.cache_to }}
+          CACHE_DASHMATE_HELPER_FROM: ${{ steps.dashmate_helper_layer_cache_settings.outputs.cache_from }}
+          CACHE_DASHMATE_HELPER_TO: ${{ steps.dashmate_helper_layer_cache_settings.outputs.cache_to }}
+          CACHE_ENVOY_FROM: ${{ steps.envoy_layer_cache_settings.outputs.cache_from }}
+          CACHE_ENVOY_TO: ${{ steps.envoy_layer_cache_settings.outputs.cache_to }}
+          CACHE_DEPS_FROM: ${{ steps.deps_layer_cache_settings.outputs.cache_from }}
+          CACHE_DEPS_TO: ${{ steps.deps_layer_cache_settings.outputs.cache_to }}
+
+      - name: Store Docker mount cache
+        uses: dcginfra/buildkit-cache-dance/extract@main
+        with:
+          bucket: multi-runner-linux-x64-platform-cache-gy9micic
+          mounts: |
+            cargo_registry_index
+            cargo_registry_cache
+            cargo_git
+            target_amd64
+            target_wasm
+            unplugged_amd64
 
       - name: Run test suite
         run: yarn test:suite
@@ -158,12 +181,8 @@ jobs:
 
   test-suite-browsers:
     name: Run Platform Test Suite in Browsers
-    runs-on: self-hosted
-    timeout-minutes: 30
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    timeout-minutes: 120
     steps:
       - name: Login to DockerHub
         uses: docker/login-action@v2
@@ -175,9 +194,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Setup Node.JS
-        uses: actions/setup-node@v3
-        with:
-          node-version: "16"
+        uses: ./.github/actions/nodejs
 
       - name: Setup Rust
         uses: ./.github/actions/rust
@@ -185,63 +202,93 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
-
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
-
-      - name: Enable corepack
-        run: corepack enable
-
-      - name: Disable NPM audit
-        run: npm config set audit false
-
-      - name: Enable Yarn unplugged modules cache
-        uses: actions/cache@v3
-        with:
-          path: ".yarn/unplugged"
-          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-unplugged-
-
-      - name: Install dependencies
-        run: yarn install
-
       - name: Build SDK
         run: yarn build --filter "+dash"
 
       - name: Set up Docker BuildX
-        id: buildx
         uses: docker/setup-buildx-action@v2
-
-      - name: Enable docker cache mount
-        uses: actions/cache@v3
         with:
-          path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildkit
+          install: true
+          driver-opts: env.BUILDKIT_STEP_LOG_MAX_SIZE=10485760
+          config-inline: |
+            [worker.oci]
+              gc = true
+              gckeepstorage = 40000 # 40 GB
+              [[worker.oci.gcpolicy]]
+                all = true
+                keepBytes = 30000000000 # 30 GB
+                keepDuration = 864000 # 10 days
 
-      - name: Load docker cache mount
-        uses: dashevo/gh-action-cache-buildkit-state@master
+      - name: Load Docker mount cache
+        uses: dcginfra/buildkit-cache-dance/inject@main
         with:
-          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-          cache-path: /tmp/buildkit-cache
-          cache-max-size: 3g
+          bucket: multi-runner-linux-x64-platform-cache-gy9micic
+          mounts: |
+            cargo_registry_index
+            cargo_registry_cache
+            cargo_git
+            target_amd64
+            target_wasm
+            unplugged_amd64
 
       - name: Setup local network
         run: yarn configure
 
+      - name: Configure Drive ABCI layer cache
+        uses: ./.github/actions/s3-layer-cache-settings
+        id: drive_abci_layer_cache_settings
+        with:
+          name: dashpay/drive
+
+      - name: Configure DAPI layer cache
+        uses: ./.github/actions/s3-layer-cache-settings
+        id: dapi_layer_cache_settings
+        with:
+          name: dashpay/dapi
+
+      - name: Configure Dashmate Helper layer cache
+        uses: ./.github/actions/s3-layer-cache-settings
+        id: dashmate_helper_layer_cache_settings
+        with:
+          name: dashpay/dashmate-helper
+
+      - name: Configure Deps layer cache
+        uses: ./.github/actions/s3-layer-cache-settings
+        id: envoy_layer_cache_settings
+        with:
+          name: dashpay/envoy
+
+      - name: Configure Envoy layer cache
+        uses: ./.github/actions/s3-layer-cache-settings
+        id: deps_layer_cache_settings
+        with:
+          name: dashpay/deps
+
       - name: Start local network
         run: yarn start
+        env:
+          CACHE_DRIVE_ABCI_FROM: ${{ steps.drive_abci_layer_cache_settings.outputs.cache_from }}
+          CACHE_DRIVE_ABCI_TO: ${{ steps.drive_abci_layer_cache_settings.outputs.cache_to }}
+          CACHE_DAPI_API_FROM: ${{ steps.dapi_layer_cache_settings.outputs.cache_from }}
+          CACHE_DAPI_API_TO: ${{ steps.dapi_layer_cache_settings.outputs.cache_to }}
+          CACHE_DASHMATE_HELPER_FROM: ${{ steps.dashmate_helper_layer_cache_settings.outputs.cache_from }}
+          CACHE_DASHMATE_HELPER_TO: ${{ steps.dashmate_helper_layer_cache_settings.outputs.cache_to }}
+          CACHE_ENVOY_FROM: ${{ steps.envoy_layer_cache_settings.outputs.cache_from }}
+          CACHE_ENVOY_TO: ${{ steps.envoy_layer_cache_settings.outputs.cache_to }}
+          CACHE_DEPS_FROM: ${{ steps.deps_layer_cache_settings.outputs.cache_from }}
+          CACHE_DEPS_TO: ${{ steps.deps_layer_cache_settings.outputs.cache_to }}
+
+      - name: Store Docker mount cache
+        uses: dcginfra/buildkit-cache-dance/extract@main
+        with:
+          bucket: multi-runner-linux-x64-platform-cache-gy9micic
+          mounts: |
+            cargo_registry_index
+            cargo_registry_cache
+            cargo_git
+            target_amd64
+            target_wasm
+            unplugged_amd64
 
       - name: Run test suite in browsers
         run: yarn test:suite:browsers
@@ -252,7 +299,7 @@ jobs:
 
   codeql:
     name: Code security audit
-    runs-on: ubuntu-22.04
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     permissions:
       actions: read
       contents: read
@@ -268,9 +315,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Setup Node.JS
-        uses: actions/setup-node@v3
-        with:
-          node-version: "16"
+        uses: ./.github/actions/nodejs
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v2
@@ -283,36 +328,6 @@ jobs:
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
-
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
-
-      - name: Enable corepack
-        run: corepack enable
-
-      - name: Disable NPM audit
-        run: npm config set audit false
-
-      - name: Enable Yarn unplugged modules cache
-        uses: actions/cache@v3
-        with:
-          path: ".yarn/unplugged"
-          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-unplugged-
-
-      - name: Install dependencies
-        run: yarn install
 
       - name: Build package and dependencies
         run: yarn build --filter "+dash"

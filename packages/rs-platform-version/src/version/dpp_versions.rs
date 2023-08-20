@@ -50,6 +50,7 @@ pub struct DPPValidationVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DataContractValidationVersions {
     pub validate: FeatureVersion,
+    pub validate_config_update: FeatureVersion,
     pub validate_index_definitions: FeatureVersion,
     pub validate_index_naming_duplicates: FeatureVersion,
     pub validate_not_defined_properties: FeatureVersion,

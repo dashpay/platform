@@ -161,8 +161,10 @@ mod tests {
 
     mod validate_state {
         use super::*;
+        use serde_json::json;
 
         use dpp::assert_state_consensus_errors;
+        use dpp::consensus::state::state_error::StateError;
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
 
@@ -176,7 +178,10 @@ mod tests {
         use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
         use dpp::platform_value::platform_value;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+        use dpp::state_transition::StateTransitionType;
         use dpp::version::TryFromPlatformVersioned;
+        use platform_version::version::{LATEST_PLATFORM_VERSION, LATEST_VERSION};
+        use platform_version::TryIntoPlatformVersioned;
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
@@ -248,7 +253,6 @@ mod tests {
             data_contract.config_mut().set_keeps_history(true);
             data_contract.config_mut().set_readonly(false);
 
-            // TODO: check that keep_history actually works
             apply_contract(
                 &platform,
                 &data_contract,
@@ -374,6 +378,87 @@ mod tests {
             // Check that when we limit ny 1 we get only the most recent contract
             assert_eq!(contract_history.len(), 1);
             assert_eq!(keys[0], 2000);
+        }
+
+        #[test]
+        fn should_fail_if_trying_to_update_config() {
+            let TestData {
+                mut data_contract,
+                platform,
+            } = setup_test();
+
+            data_contract.config_mut().set_keeps_history(true);
+            data_contract.config_mut().set_readonly(false);
+
+            apply_contract(
+                &platform,
+                &data_contract,
+                BlockInfo {
+                    time_ms: 1000,
+                    height: 100,
+                    core_height: 10,
+                    epoch: Default::default(),
+                },
+            );
+
+            let updated_document_type = json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "newProp": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                },
+                "required": [
+                "$createdAt"
+                ],
+                "additionalProperties": false
+            });
+
+            data_contract.increment_version();
+            data_contract
+                .set_document_schema(
+                    "niceDocument".into(),
+                    updated_document_type.into(),
+                    true,
+                    LATEST_PLATFORM_VERSION,
+                )
+                .expect("to be able to set document schema");
+
+            // It should be not possible to modify this
+            data_contract.config_mut().set_keeps_history(false);
+
+            let state_transition: DataContractUpdateTransitionV0 = data_contract
+                .try_into_platform_versioned(LATEST_PLATFORM_VERSION)
+                .expect("expected an update transition");
+
+            let state_transition: DataContractUpdateTransition = state_transition.into();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform.state.read().unwrap(),
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = state_transition
+                .validate_state(&platform_ref, None)
+                .expect("state transition to be validated");
+
+            assert!(!result.is_valid());
+            let errors = assert_state_consensus_errors!(
+                result,
+                StateError::DataContractConfigUpdateError,
+                1
+            );
+            let error = errors.get(0).expect("to have an error");
+            assert_eq!(
+                error.additional_message(),
+                "contract can not change whether it keeps history: changing from true to false"
+            );
         }
     }
 }

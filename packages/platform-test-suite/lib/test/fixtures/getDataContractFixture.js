@@ -140,5 +140,13 @@ module.exports = async function getDataContractFixture(
     entropyGenerator,
   );
 
-  return factory.create(ownerId, documents);
+  const config = {
+    canBeDeleted: false,
+    readonly: false,
+    keepsHistory: true,
+    documentsKeepHistoryContractDefault: false,
+    documentsMutableContractDefault: true,
+  };
+
+  return factory.create(ownerId, documents, config);
 };

@@ -49,9 +49,12 @@ function configureNodeTaskFactory() {
 
           // Platform Node Key
           if (ctx.isHP) {
-            const platformNodeKey = await task.prompt(createPlatformNodeKeyInput({
-              skipInitial: ctx.nodeType === NODE_TYPE_MASTERNODE,
-            }));
+            let platformNodeKey = ctx.tenderdashNodeKey;
+            if (!ctx.tenderdashNodeKey) {
+              platformNodeKey = await task.prompt(createPlatformNodeKeyInput({
+                initial: ctx.nodeType === NODE_TYPE_MASTERNODE ? '' : undefined,
+              }));
+            }
 
             ctx.config.set('platform.drive.tenderdash.node.id', deriveTenderdashNodeId(platformNodeKey));
             ctx.config.set('platform.drive.tenderdash.node.key', platformNodeKey);
@@ -65,13 +68,18 @@ function configureNodeTaskFactory() {
             const showEmptyPort = ctx.preset !== PRESET_MAINNET
               && ctx.nodeType !== NODE_TYPE_FULLNODE;
 
-            const form = await task.prompt(await createIpAndPortsForm(ctx.preset, {
-              isHPMN: ctx.isHP,
-              initialIp: '',
-              initialCoreP2PPort: showEmptyPort ? '' : undefined,
-              initialPlatformHTTPPort: showEmptyPort ? '' : undefined,
-              initialPlatformP2PPort: showEmptyPort ? '' : undefined,
-            }));
+            let form;
+            if (ctx.initialIpForm) {
+              form = ctx.initialIpForm;
+            } else {
+              form = await task.prompt(await createIpAndPortsForm(ctx.preset, {
+                isHPMN: ctx.isHP,
+                initialIp: '',
+                initialCoreP2PPort: showEmptyPort ? '' : undefined,
+                initialPlatformHTTPPort: showEmptyPort ? '' : undefined,
+                initialPlatformP2PPort: showEmptyPort ? '' : undefined,
+              }));
+            }
 
             ctx.config.set('externalIp', form.ip);
             ctx.config.set('core.p2p.port', form.coreP2PPort);
