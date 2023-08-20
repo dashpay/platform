@@ -1,28 +1,39 @@
 use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
+use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::block::epoch::Epoch;
-use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::prelude::Identifier;
+use dpp::version::PlatformVersion;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentTransitionAction {
-    fn into_high_level_document_drive_operations<'a>(
+    fn into_high_level_document_drive_operations<'b>(
         self,
         epoch: &Epoch,
         owner_id: Identifier,
-    ) -> Result<Vec<DriveOperation<'a>>, Error> {
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<DriveOperation<'b>>, Error> {
         match self {
             DocumentTransitionAction::CreateAction(document_create_transition) => {
-                document_create_transition
-                    .into_high_level_document_drive_operations(epoch, owner_id)
+                document_create_transition.into_high_level_document_drive_operations(
+                    epoch,
+                    owner_id,
+                    platform_version,
+                )
             }
             DocumentTransitionAction::ReplaceAction(document_replace_transition) => {
-                document_replace_transition
-                    .into_high_level_document_drive_operations(epoch, owner_id)
+                document_replace_transition.into_high_level_document_drive_operations(
+                    epoch,
+                    owner_id,
+                    platform_version,
+                )
             }
             DocumentTransitionAction::DeleteAction(document_delete_transition) => {
-                document_delete_transition
-                    .into_high_level_document_drive_operations(epoch, owner_id)
+                document_delete_transition.into_high_level_document_drive_operations(
+                    epoch,
+                    owner_id,
+                    platform_version,
+                )
             }
         }
     }

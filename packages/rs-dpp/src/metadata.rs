@@ -1,8 +1,12 @@
+use bincode::Encode;
+use platform_serialization::de::Decode;
 use serde::{Deserialize, Serialize};
 
 use crate::{errors::ProtocolError, prelude::TimestampMillis, util::deserializer::ProtocolVersion};
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, PartialOrd, Eq)]
+#[derive(
+    Serialize, Deserialize, Encode, Decode, Debug, Default, Clone, Copy, PartialEq, PartialOrd, Eq,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct Metadata {
     #[serde(default)]

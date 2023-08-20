@@ -7,3 +7,4 @@ license = "MIT"
 
 [dependencies]
 serde_json = { version = "1.0" }
+platform-value = { path = "../rs-platform-value" }

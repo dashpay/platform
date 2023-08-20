@@ -1,3 +1,1 @@
-pub use identity::identity_json;
-
-mod identity;
+pub mod v0;

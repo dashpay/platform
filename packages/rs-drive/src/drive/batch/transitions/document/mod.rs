@@ -2,6 +2,7 @@ use crate::drive::batch::DriveOperation;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::platform_value::Identifier;
+use dpp::version::PlatformVersion;
 
 mod document_create_transition;
 mod document_delete_transition;
@@ -16,5 +17,6 @@ pub trait DriveHighLevelDocumentOperationConverter {
         self,
         epoch: &Epoch,
         owner_id: Identifier,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error>;
 }

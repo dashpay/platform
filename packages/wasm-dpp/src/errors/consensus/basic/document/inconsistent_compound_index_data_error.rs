@@ -2,7 +2,7 @@ use crate::buffer::Buffer;
 use dpp::consensus::basic::document::InconsistentCompoundIndexDataError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use js_sys::JsString;
 use wasm_bindgen::prelude::*;
 

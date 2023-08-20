@@ -1,4 +1,7 @@
 mod estimation_costs;
+/// Genesis time module
+#[cfg(feature = "full")]
+pub mod genesis_time;
 /// Constants for the misc tree
 pub mod misc_tree_constants;
 /// Protocol version module

@@ -13,9 +13,9 @@ use dpp::identity::state_transition::identity_credit_transfer_transition::Identi
 use dpp::identity::KeyType;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::StateTransitionLike;
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySignedV0};
 
 #[wasm_bindgen(js_name=IdentityCreditTransferTransition)]
 #[derive(Clone)]
@@ -40,7 +40,7 @@ impl IdentityCreditTransferTransitionWasm {
         let raw_state_transition = raw_parameters.with_serde_to_platform_value()?;
 
         let identity_credit_transfer_transition =
-            IdentityCreditTransferTransition::from_raw_object(raw_state_transition)
+            IdentityCreditTransferTransition::from_object(raw_state_transition)
                 .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
 
         Ok(identity_credit_transfer_transition.into())
@@ -230,8 +230,8 @@ impl IdentityCreditTransferTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getModifiedDataIds)]
-    pub fn get_modified_data_ids(&self) -> Vec<JsValue> {
-        let ids = self.0.get_modified_data_ids();
+    pub fn modified_data_ids(&self) -> Vec<JsValue> {
+        let ids = self.0.modified_data_ids();
 
         ids.into_iter()
             .map(|id| <IdentifierWrapper as std::convert::From<Identifier>>::from(id).into())
