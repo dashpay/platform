@@ -14,7 +14,7 @@ use dashcore_rpc::dashcore;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use dpp::block::block_info::BlockInfo;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
@@ -258,7 +258,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 .as_ref()
                 .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "block execution context must be set in block begin handler for mimic block execution",
-                )))?;
+                )))?.v0()?;
 
         let extensions = block_execution_context
             .withdrawal_transactions

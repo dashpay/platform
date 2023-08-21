@@ -12,5 +12,5 @@ pub enum DocumentError {
     InvalidContractIdSize(),
     /// Error
     #[error("contact with specified identifier is not found")]
-    ContractNotFound,
+    DataContractNotFound,
 }

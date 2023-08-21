@@ -16,8 +16,10 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
     IntoPrimitive,
     Encode,
     Decode,
+    Default,
 )]
 pub enum StateTransitionType {
+    #[default]
     DataContractCreate = 0,
     DocumentsBatch = 1,
     IdentityCreate = 2,
@@ -31,11 +33,5 @@ pub enum StateTransitionType {
 impl std::fmt::Display for StateTransitionType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
-    }
-}
-
-impl Default for StateTransitionType {
-    fn default() -> Self {
-        StateTransitionType::DataContractCreate
     }
 }

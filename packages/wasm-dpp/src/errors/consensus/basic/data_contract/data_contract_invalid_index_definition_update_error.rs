@@ -2,7 +2,7 @@ use crate::buffer::Buffer;
 use dpp::consensus::basic::data_contract::DataContractInvalidIndexDefinitionUpdateError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractInvalidIndexDefinitionUpdateError)]
@@ -27,7 +27,7 @@ impl DataContractInvalidIndexDefinitionUpdateErrorWasm {
 
     #[wasm_bindgen(js_name=getIndexName)]
     pub fn get_index_name(&self) -> String {
-        self.inner.index_name().to_string()
+        self.inner.index_path().to_string()
     }
 
     #[wasm_bindgen(js_name=getCode)]

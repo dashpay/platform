@@ -6,13 +6,15 @@ use crate::execution::types::execution_event::ExecutionEvent::{
     PaidDriveEvent, PaidFromAssetLockDriveEvent,
 };
 use dpp::block::epoch::Epoch;
+use dpp::fee::Credits;
 
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::StateTransitionAction;
+
+use dpp::version::PlatformVersion;
+use drive::state_transition_action::StateTransitionAction;
 
 use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
 use drive::drive::batch::DriveOperation;
-use drive::fee::credits::Credits;
 
 /// An execution event
 #[derive(Clone)]
@@ -73,18 +75,19 @@ impl<'a> ExecutionEvent<'a> {
     }
 }
 
-impl<'a> TryFrom<(Option<PartialIdentity>, StateTransitionAction, &Epoch)> for ExecutionEvent<'a> {
-    type Error = Error;
-
-    fn try_from(
-        value: (Option<PartialIdentity>, StateTransitionAction, &Epoch),
-    ) -> Result<Self, Self::Error> {
-        let (identity, action, epoch) = value;
+impl<'a> ExecutionEvent<'a> {
+    pub(crate) fn create_from_state_transition_action(
+        action: StateTransitionAction,
+        identity: Option<PartialIdentity>,
+        epoch: &Epoch,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Error> {
         match &action {
             StateTransitionAction::IdentityCreateAction(identity_create_action) => {
                 let identity = identity_create_action.into();
-                let added_balance = identity_create_action.initial_balance_amount;
-                let operations = action.into_high_level_drive_operations(epoch)?;
+                let added_balance = identity_create_action.initial_balance_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(PaidFromAssetLockDriveEvent {
                     identity,
                     added_balance,
@@ -92,8 +95,9 @@ impl<'a> TryFrom<(Option<PartialIdentity>, StateTransitionAction, &Epoch)> for E
                 })
             }
             StateTransitionAction::IdentityTopUpAction(identity_top_up_action) => {
-                let added_balance = identity_top_up_action.top_up_balance_amount;
-                let operations = action.into_high_level_drive_operations(epoch)?;
+                let added_balance = identity_top_up_action.top_up_balance_amount();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
                     Ok(PaidFromAssetLockDriveEvent {
                         identity,
@@ -107,7 +111,8 @@ impl<'a> TryFrom<(Option<PartialIdentity>, StateTransitionAction, &Epoch)> for E
                 }
             }
             _ => {
-                let operations = action.into_high_level_drive_operations(epoch)?;
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
                     Ok(PaidDriveEvent {
                         identity,

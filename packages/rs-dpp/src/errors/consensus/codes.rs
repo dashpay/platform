@@ -1,7 +1,6 @@
 use crate::consensus::signature::SignatureError;
-use crate::consensus::state::data_trigger::data_trigger_error::{
-    DataTriggerActionError, DataTriggerError,
-};
+#[cfg(feature = "state-transition-validation")]
+use crate::consensus::state::data_trigger::DataTriggerError;
 
 use crate::errors::consensus::{
     basic::BasicError, fee::fee_error::FeeError, state::state_error::StateError, ConsensusError,
@@ -30,11 +29,14 @@ impl ErrorWithCode for ConsensusError {
 impl ErrorWithCode for BasicError {
     fn code(&self) -> u32 {
         match self {
+            // Versioning
+            Self::UnsupportedVersionError(_) => 1100,
             // Decoding
             Self::ProtocolVersionParsingError { .. } => 1000,
             Self::SerializedObjectParsingError { .. } => 1001,
             Self::UnsupportedProtocolVersionError(_) => 1002,
             Self::IncompatibleProtocolVersionError(_) => 1003,
+            Self::VersionError(_) => 1004,
 
             // Structure error
             Self::JsonSchemaCompilationError(..) => 1004,
@@ -74,6 +76,7 @@ impl ErrorWithCode for BasicError {
             Self::MissingDocumentTransitionActionError { .. } => 1026,
             Self::MissingDocumentTransitionTypeError { .. } => 1027,
             Self::MissingDocumentTypeError { .. } => 1028,
+            Self::MaxDocumentsTransitionsExceededError { .. } => 1065,
 
             // Identity
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 1029,
@@ -98,6 +101,10 @@ impl ErrorWithCode for BasicError {
             Self::InvalidIdentityCreditWithdrawalTransitionOutputScriptError(_) => 1057,
             Self::InvalidIdentityCreditWithdrawalTransitionCoreFeeError(_) => 1058,
             Self::NotImplementedIdentityCreditWithdrawalTransitionPoolingError(_) => 1059,
+            Self::InvalidIdentityCreditTransferAmountError(_) => 1061,
+            Self::InvalidIdentityCreditWithdrawalTransitionAmountError(_) => 1062,
+            Self::InvalidIdentityUpdateTransitionEmptyError(_) => 1063,
+            Self::InvalidIdentityUpdateTransitionDisableKeysError(_) => 1064,
 
             // State Transition
             Self::InvalidStateTransitionTypeError { .. } => 1043,
@@ -139,8 +146,8 @@ impl ErrorWithCode for StateError {
             // Data contract
             Self::DataContractAlreadyPresentError { .. } => 4000,
             Self::DataContractIsReadonlyError { .. } => 4026,
+            #[cfg(feature = "validation")]
             Self::DataTriggerError(ref e) => e.code(),
-            Self::DataTriggerActionError(ref e) => e.code(),
             Self::DataContractConfigUpdateError { .. } => 4027,
 
             // Document
@@ -169,24 +176,13 @@ impl ErrorWithCode for StateError {
     }
 }
 
+#[cfg(feature = "state-transition-validation")]
 impl ErrorWithCode for DataTriggerError {
     fn code(&self) -> u32 {
         match self {
             Self::DataTriggerConditionError { .. } => 4001,
             Self::DataTriggerExecutionError { .. } => 4002,
             Self::DataTriggerInvalidResultError { .. } => 4003,
-        }
-    }
-}
-
-impl ErrorWithCode for DataTriggerActionError {
-    fn code(&self) -> u32 {
-        match *self {
-            // Data Contract - Data Trigger
-            Self::DataTriggerConditionError { .. } => 4001,
-            Self::DataTriggerExecutionError { .. } => 4002,
-            Self::DataTriggerInvalidResultError { .. } => 4003,
-            Self::ValueError(_) => 4004,
         }
     }
 }

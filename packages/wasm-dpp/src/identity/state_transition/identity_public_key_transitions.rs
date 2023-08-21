@@ -1,9 +1,9 @@
 //todo: move this file to transition
 use dpp::dashcore::anyhow;
 use dpp::document::document_transition::document_base_transition::JsonValue;
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use dpp::platform_value::BinaryData;
-use dpp::Convertible;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+
 pub use serde::{Deserialize, Serialize};
 use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;

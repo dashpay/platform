@@ -1,22 +1,30 @@
-use dpp::identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-use dpp::identity::state_transition::identity_credit_transfer_transition::validation::basic::identity_credit_transfer_basic::IDENTITY_CREDIT_TRANSFER_TRANSITION_SCHEMA_VALIDATOR;
-use dpp::validation::SimpleConsensusValidationResult;
-use crate::error::Error;
-use crate::execution::validation::state_transition::common::validate_protocol_version::v0::validate_protocol_version_v0;
-use crate::execution::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
+use dpp::consensus::basic::identity::InvalidIdentityCreditTransferAmountError;
 
-pub(crate) trait StateTransitionStructureValidationV0 {
+// use dpp::platform_value::
+use crate::error::Error;
+use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use dpp::validation::SimpleConsensusValidationResult;
+
+const MIN_TRANSFER_AMOUNT: u64 = 1000;
+
+pub(in crate::execution::validation::state_transition::state_transitions::identity_credit_transfer) trait IdentityCreditTransferStateTransitionStructureValidationV0 {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl StateTransitionStructureValidationV0 for IdentityCreditTransferTransition {
+impl IdentityCreditTransferStateTransitionStructureValidationV0
+    for IdentityCreditTransferTransition
+{
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
-        let result =
-            validate_schema_v0(&IDENTITY_CREDIT_TRANSFER_TRANSITION_SCHEMA_VALIDATOR, self);
-        if !result.is_valid() {
-            return Ok(result);
+        let result = SimpleConsensusValidationResult::new();
+
+        if self.amount() < MIN_TRANSFER_AMOUNT {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidIdentityCreditTransferAmountError::new(self.amount(), MIN_TRANSFER_AMOUNT)
+                    .into(),
+            ));
         }
 
-        Ok(validate_protocol_version_v0(self.protocol_version))
+        Ok(result)
     }
 }

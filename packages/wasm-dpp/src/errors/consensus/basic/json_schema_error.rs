@@ -6,7 +6,7 @@ use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::errors::consensus::ConsensusError;
 
 use crate::buffer::Buffer;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=JsonSchemaError, inspectable)]

@@ -1,7 +1,6 @@
 use dpp::identity::state_transition::asset_lock_proof::{
     AssetLockTransactionValidator, InstantAssetLockProofStructureValidator,
 };
-use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::ProtocolError;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;

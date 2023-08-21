@@ -24,8 +24,8 @@ use dpp::identity::{KeyID, KeyType, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData, Value};
 use dpp::prelude::Revision;
-use dpp::serialization_traits::PlatformSerializable;
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
+use dpp::serialization::PlatformSerializable;
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySignedV0};
 use dpp::{
     identifier::Identifier,
     identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
@@ -386,8 +386,8 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getModifiedDataIds)]
-    pub fn get_modified_data_ids(&self) -> Vec<JsValue> {
-        let ids = self.0.get_modified_data_ids();
+    pub fn modified_data_ids(&self) -> Vec<JsValue> {
+        let ids = self.0.modified_data_ids();
 
         ids.into_iter()
             .map(|id| <IdentifierWrapper as std::convert::From<Identifier>>::from(id).into())
@@ -445,7 +445,7 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Buffer {
-        Buffer::from_bytes_owned(self.0.get_signature().to_vec())
+        Buffer::from_bytes_owned(self.0.signature().to_vec())
     }
 
     #[wasm_bindgen(js_name=setSignature)]

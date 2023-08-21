@@ -49,7 +49,7 @@ impl From<DocumentReplaceTransitionWasm> for DocumentReplaceTransition {
 #[wasm_bindgen(js_class=DocumentReplaceTransition)]
 impl DocumentReplaceTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn from_raw_object(
+    pub fn from_object(
         raw_object: JsValue,
         data_contract: &DataContractWasm,
     ) -> Result<DocumentReplaceTransitionWasm, JsValue> {

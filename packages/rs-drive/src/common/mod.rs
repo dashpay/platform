@@ -36,9 +36,7 @@
 pub mod decode;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod encode;
-#[cfg(feature = "full")]
-/// Helpers module
-pub mod helpers;
+pub mod identities;
 
 #[cfg(feature = "full")]
 use std::fs::File;
@@ -52,62 +50,56 @@ use std::option::Option::None;
 use std::path::Path;
 
 #[cfg(feature = "full")]
-use ciborium::value::Value;
-
-#[cfg(feature = "full")]
 use grovedb::TransactionArg;
 
 #[cfg(feature = "full")]
-use crate::contract::Contract;
-#[cfg(feature = "full")]
 use crate::drive::Drive;
+#[cfg(feature = "full")]
+use dpp::data_contract::DataContract;
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::extra::common::json_document_to_contract_with_ids;
 use dpp::prelude::Identifier;
 
-#[cfg(feature = "full")]
+#[cfg(feature = "fixtures-and-mocks")]
+use dpp::tests::json_document::json_document_to_contract_with_ids;
+use dpp::version::PlatformVersion;
+
+#[cfg(test)]
+use ciborium::value::Value;
+
+#[cfg(feature = "fixtures-and-mocks")]
 /// Serializes to CBOR and applies to Drive a JSON contract from the file system.
 pub fn setup_contract(
     drive: &Drive,
     path: &str,
     contract_id: Option<[u8; 32]>,
     transaction: TransactionArg,
-) -> Contract {
-    let contract =
-        json_document_to_contract_with_ids(path, contract_id.map(Identifier::from), None)
-            .expect("expected to get cbor contract");
+) -> DataContract {
+    let platform_version = PlatformVersion::latest();
+    let contract = json_document_to_contract_with_ids(
+        path,
+        contract_id.map(Identifier::from),
+        None,
+        false, //no need to validate the data contracts in tests for drive
+        platform_version,
+    )
+    .expect("expected to get json based contract");
 
     drive
-        .apply_contract(&contract, BlockInfo::default(), true, None, transaction)
-        .expect("contract should be applied");
-    contract
-}
-
-#[cfg(feature = "full")]
-/// Serializes to CBOR and applies to Drive a contract from hex string format.
-pub fn setup_contract_from_cbor_hex(
-    drive: &Drive,
-    hex_string: String,
-    transaction: TransactionArg,
-) -> Contract {
-    let contract_cbor = cbor_from_hex(hex_string);
-    let contract = Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
-    drive
-        .apply_contract_cbor(
-            contract_cbor,
-            None,
+        .apply_contract(
+            &contract,
             BlockInfo::default(),
             true,
             None,
             transaction,
+            platform_version,
         )
         .expect("contract should be applied");
     contract
 }
 
-#[cfg(feature = "full")]
+#[cfg(test)]
 /// Serializes a hex string to CBOR.
 pub fn cbor_from_hex(hex_string: String) -> Vec<u8> {
     hex::decode(hex_string).expect("Decoding failed")
@@ -121,7 +113,7 @@ pub fn text_file_strings(path: impl AsRef<Path>) -> Vec<String> {
     reader.into_iter().map(|a| a.unwrap()).collect()
 }
 
-#[cfg(feature = "full")]
+#[cfg(test)]
 /// Retrieves the value of a key from a CBOR map.
 pub fn get_key_from_cbor_map<'a>(
     cbor_map: &'a [(Value, Value)],
@@ -139,7 +131,7 @@ pub fn get_key_from_cbor_map<'a>(
     None
 }
 
-#[cfg(feature = "full")]
+#[cfg(test)]
 /// Retrieves the value of a key from a CBOR map if it's a map itself.
 pub fn cbor_inner_map_value<'a>(
     document_type: &'a [(Value, Value)],

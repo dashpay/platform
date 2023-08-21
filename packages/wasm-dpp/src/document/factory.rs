@@ -115,24 +115,18 @@ impl DocumentFactoryWASM {
     #[wasm_bindgen]
     pub fn create(
         &self,
-        data_contract: &DataContractWasm,
         js_owner_id: &JsValue,
         document_type: &str,
         data: &JsValue,
     ) -> Result<ExtendedDocumentWasm, JsValue> {
         let owner_id = identifier_from_js_value(js_owner_id)?;
         let dynamic_data = data.with_serde_to_platform_value()?;
-        let document = self
+        let extended_document = self
             .0
-            .create_extended_document_for_state_transition(
-                data_contract.to_owned().into(),
-                owner_id,
-                document_type.to_string(),
-                dynamic_data,
-            )
+            .create_extended_document(owner_id, document_type.to_string(), dynamic_data)
             .with_js_error()?;
 
-        Ok(document.into())
+        Ok(extended_document.into())
     }
 
     #[wasm_bindgen(js_name=createStateTransition)]
@@ -233,17 +227,18 @@ impl DocumentFactoryWASM {
 
 fn extract_documents_by_action(
     documents: &JsValue,
-) -> Result<HashMap<Action, Vec<ExtendedDocument>>, JsValue> {
+) -> Result<HashMap<DocumentTransitionActionType, Vec<ExtendedDocument>>, JsValue> {
     check_actions(documents)?;
-    let mut documents_by_action: HashMap<Action, Vec<ExtendedDocument>> = Default::default();
+    let mut documents_by_action: HashMap<DocumentTransitionActionType, Vec<ExtendedDocument>> =
+        Default::default();
 
     let documents_create = extract_documents_of_action(documents, "create").with_js_error()?;
     let documents_replace = extract_documents_of_action(documents, "replace").with_js_error()?;
     let documents_delete = extract_documents_of_action(documents, "delete").with_js_error()?;
 
-    documents_by_action.insert(Action::Create, documents_create);
-    documents_by_action.insert(Action::Replace, documents_replace);
-    documents_by_action.insert(Action::Delete, documents_delete);
+    documents_by_action.insert(DocumentTransitionActionType::Create, documents_create);
+    documents_by_action.insert(DocumentTransitionActionType::Replace, documents_replace);
+    documents_by_action.insert(DocumentTransitionActionType::Delete, documents_delete);
 
     Ok(documents_by_action)
 }
