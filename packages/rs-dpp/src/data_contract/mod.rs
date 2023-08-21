@@ -33,6 +33,7 @@ pub mod serialized_version;
 pub use methods::*;
 pub mod accessors;
 pub mod config;
+pub mod storage_requirements;
 
 pub use v0::*;
 

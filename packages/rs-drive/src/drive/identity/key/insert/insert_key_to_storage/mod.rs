@@ -35,7 +35,8 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .identity
             .keys

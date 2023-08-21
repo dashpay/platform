@@ -1,13 +1,13 @@
-use std::collections::HashMap;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use dpp::block::epoch::Epoch;
-use dpp::identity::IdentityPublicKey;
-use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::epoch::Epoch;
+use dpp::identity::IdentityPublicKey;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use platform_version::version::PlatformVersion;
+use std::collections::HashMap;
 
 mod v0;
 
@@ -45,9 +45,11 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
-            .identity.contract_info
+            .identity
+            .contract_info
             .add_potential_contract_info_for_contract_bounded_key
         {
             0 => self.add_potential_contract_info_for_contract_bounded_key_v0(

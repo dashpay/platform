@@ -1,7 +1,7 @@
 use crate::data_contract::config::v0::DataContractConfigV0;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, DefinitionName, DocumentName};
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};

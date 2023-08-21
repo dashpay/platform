@@ -3,8 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
-
-use crate::data_contract::document_type::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use platform_value::{Identifier, Value};
 
 mod accessors;

@@ -18,6 +18,8 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::identifier::Identifier;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::version::PlatformVersion;
@@ -26,17 +28,15 @@ use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::{BTreeMap, HashMap};
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::identifier::Identifier;
 
-pub enum DataContractApplyInfo<'a> {
+pub enum DataContractApplyInfo {
     /// The root_id is either a contract id or an owner id
     /// It is a contract id for in the case of contract bound keys or contract
     /// document bound keys
     /// In the case
     ContractBased {
         contract_id: Identifier,
-        document_type_keys: BTreeMap<&'a str, Vec<KeyID>>,
+        document_type_keys: BTreeMap<String, Vec<KeyID>>,
         contract_keys: Vec<KeyID>,
     },
     ContractFamilyBased {
@@ -45,7 +45,7 @@ pub enum DataContractApplyInfo<'a> {
     },
 }
 
-impl<'a> DataContractApplyInfo<'a> {
+impl DataContractApplyInfo {
     fn root_id(&self) -> [u8; 32] {
         match self {
             ContractBased { contract_id, .. } => contract_id.to_buffer(),
@@ -54,7 +54,7 @@ impl<'a> DataContractApplyInfo<'a> {
             } => contracts_owner_id.to_buffer(),
         }
     }
-    fn keys(self) -> (BTreeMap<&'a str, Vec<KeyID>>, Vec<KeyID>) {
+    fn keys(self) -> (BTreeMap<String, Vec<KeyID>>, Vec<KeyID>) {
         match self {
             ContractBased {
                 document_type_keys,
@@ -99,7 +99,10 @@ impl<'a> DataContractApplyInfo<'a> {
                     .map_err(Error::Protocol)?;
                 Ok(ContractBased {
                     contract_id: contract.id(),
-                    document_type_keys: BTreeMap::from([(document_type.name().as_str(), vec![key_id])]),
+                    document_type_keys: BTreeMap::from([(
+                        document_type.name().clone(),
+                        vec![key_id],
+                    )]),
                     contract_keys: vec![],
                 })
             }

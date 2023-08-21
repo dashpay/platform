@@ -1,5 +1,6 @@
 use crate::drive::grove_operations::BatchInsertApplyType::StatefulBatchInsert;
 use crate::drive::grove_operations::BatchInsertTreeApplyType::StatefulBatchInsertTree;
+use crate::drive::identity::contract_info::insert::DataContractApplyInfo;
 use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
 use crate::drive::identity::{
     identity_contract_info_group_path_vec, identity_contract_info_root_path_vec,
@@ -11,15 +12,14 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::identity::{IdentityPublicKey};
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::IdentityPublicKey;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
-use std::collections::{HashMap};
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use crate::drive::identity::contract_info::insert::DataContractApplyInfo;
+use std::collections::HashMap;
 
 impl Drive {
     pub(super) fn add_potential_contract_info_for_contract_bounded_key_v0(

@@ -1,7 +1,7 @@
 use crate::ProtocolError;
+use bincode::{Decode, Encode};
 use serde_repr::*;
 use std::convert::TryFrom;
-use bincode::{Decode, Encode};
 
 /// The Storage Key requirements
 // @append_only
@@ -11,8 +11,6 @@ pub enum StorageKeyRequirements {
     Unique = 0,
     UniqueReplaceable = 1,
     Multiple = 2,
-    MultipleWithMain = 3,
-    MultipleIndexed = 4,
 }
 
 impl TryFrom<u8> for StorageKeyRequirements {
@@ -22,8 +20,6 @@ impl TryFrom<u8> for StorageKeyRequirements {
             0 => Ok(Self::Unique),
             1 => Ok(Self::UniqueReplaceable),
             2 => Ok(Self::Multiple),
-            3 => Ok(Self::MultipleWithMain),
-            4 => Ok(Self::MultipleIndexed),
             value => Err(ProtocolError::UnknownStorageKeyRequirements(format!(
                 "unrecognized storage key requirements: {}",
                 value
@@ -39,8 +35,6 @@ impl TryFrom<i128> for StorageKeyRequirements {
             0 => Ok(Self::Unique),
             1 => Ok(Self::UniqueReplaceable),
             2 => Ok(Self::Multiple),
-            3 => Ok(Self::MultipleWithMain),
-            4 => Ok(Self::MultipleIndexed),
             value => Err(ProtocolError::UnknownStorageKeyRequirements(format!(
                 "unrecognized storage key requirements: {}",
                 value

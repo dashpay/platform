@@ -31,6 +31,7 @@ impl Drive {
             keys_to_add,
             vec![],
             true,
+            &block_info.epoch,
             &mut estimated_costs_only_with_layer_info,
             transaction,
             platform_version,

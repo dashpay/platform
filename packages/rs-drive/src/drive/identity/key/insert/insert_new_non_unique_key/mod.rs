@@ -10,8 +10,8 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 use dpp::block::epoch::Epoch;
-use std::collections::HashMap;
 use platform_version::version::PlatformVersion;
+use std::collections::HashMap;
 
 impl Drive {
     /// Generates a set of operations to insert a new non-unique key into an identity.
@@ -47,7 +47,8 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .identity
             .keys

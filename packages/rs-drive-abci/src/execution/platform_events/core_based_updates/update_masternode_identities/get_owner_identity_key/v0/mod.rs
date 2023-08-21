@@ -21,6 +21,7 @@ where
             read_only: true,
             data: BinaryData::new(payout_address.to_vec()),
             disabled_at: None,
+            contract_bounds: None,
         }
         .into())
     }
