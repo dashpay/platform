@@ -11,7 +11,7 @@ pub use index_level::IndexLevel;
 #[cfg(feature = "random-documents")]
 pub mod random_document;
 pub mod schema;
-mod storage_requirements;
+pub(crate) mod storage_requirements;
 pub mod v0;
 
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;

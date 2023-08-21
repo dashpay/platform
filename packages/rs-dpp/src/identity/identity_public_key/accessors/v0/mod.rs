@@ -1,3 +1,4 @@
+use crate::identity::contract_bounds::ContractBounds;
 use crate::identity::identity_public_key::KeyID;
 use crate::identity::KeyType;
 use crate::identity::Purpose;
@@ -33,6 +34,9 @@ pub trait IdentityPublicKeyGettersV0 {
 
     /// Is public key disabled
     fn is_disabled(&self) -> bool;
+
+    /// Contract bounds
+    fn contract_bounds(&self) -> Option<&ContractBounds>;
 }
 
 /// Trait for setters in IdentityPublicKeyV0

@@ -83,7 +83,9 @@ impl DataContractFactoryV0 {
             version: 1,
             owner_id,
             document_schemas: documents_map,
+            encryption_key_storage_requirements: None,
             schema_defs: defs,
+            decryption_key_storage_requirements: None,
         });
 
         let data_contract =

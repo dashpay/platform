@@ -6,6 +6,7 @@ use platform_value::Value;
 use crate::data_contract::{DefinitionName, DocumentName};
 
 use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::document_type::DocumentType;
 use crate::metadata::Metadata;
 

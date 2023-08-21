@@ -1,4 +1,3 @@
-mod accessors;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 mod types;
@@ -17,6 +16,7 @@ use platform_value::{BinaryData, Value};
 
 use crate::errors::ProtocolError;
 
+use crate::identity::contract_bounds::ContractBounds;
 use platform_serialization_derive::PlatformSignable;
 
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -38,6 +38,7 @@ pub struct IdentityPublicKeyInCreationV0 {
     pub key_type: KeyType,
     pub purpose: Purpose,
     pub security_level: SecurityLevel,
+    pub contract_bounds: Option<ContractBounds>,
     pub read_only: bool,
     pub data: BinaryData,
     /// The signature is needed for ECDSA_SECP256K1 Key type and BLS12_381 Key type
@@ -73,6 +74,10 @@ impl IdentityPublicKeyInCreationV0Getters for IdentityPublicKeyInCreationV0 {
     fn signature(&self) -> &BinaryData {
         &self.signature
     }
+
+    fn contract_bounds(&self) -> Option<&ContractBounds> {
+        self.contract_bounds.as_ref()
+    }
 }
 
 impl IdentityPublicKeyInCreationV0Setters for IdentityPublicKeyInCreationV0 {
@@ -87,6 +92,7 @@ impl IdentityPublicKeyInCreationMethodsV0 for IdentityPublicKeyInCreationV0 {
             id,
             purpose,
             security_level,
+            contract_bounds,
             key_type,
             data,
             read_only,
@@ -96,6 +102,7 @@ impl IdentityPublicKeyInCreationMethodsV0 for IdentityPublicKeyInCreationV0 {
             id,
             purpose,
             security_level,
+            contract_bounds,
             key_type,
             data,
             read_only,
@@ -231,6 +238,7 @@ impl From<IdentityPublicKeyInCreationV0> for IdentityPublicKey {
             id: val.id,
             purpose: val.purpose,
             security_level: val.security_level,
+            contract_bounds: val.contract_bounds,
             key_type: val.key_type,
             read_only: val.read_only,
             data: val.data,
@@ -246,6 +254,7 @@ impl From<&IdentityPublicKeyInCreationV0> for IdentityPublicKey {
             id: val.id,
             purpose: val.purpose,
             security_level: val.security_level,
+            contract_bounds: val.contract_bounds.clone(),
             key_type: val.key_type,
             read_only: val.read_only,
             data: val.data.clone(),
@@ -261,6 +270,7 @@ impl From<IdentityPublicKey> for IdentityPublicKeyInCreationV0 {
             id: val.id(),
             purpose: val.purpose(),
             security_level: val.security_level(),
+            contract_bounds: val.contract_bounds().cloned(),
             key_type: val.key_type(),
             read_only: val.read_only(),
             data: val.data_owned(),
@@ -275,6 +285,7 @@ impl From<&IdentityPublicKey> for IdentityPublicKeyInCreationV0 {
             id: val.id(),
             purpose: val.purpose(),
             security_level: val.security_level(),
+            contract_bounds: val.contract_bounds().cloned(),
             key_type: val.key_type(),
             read_only: val.read_only(),
             data: val.data().clone(),
