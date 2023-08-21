@@ -7,26 +7,16 @@ use platform_value::Value;
 use crate::document::ExtendedDocument;
 use crate::tests::fixtures::ParentDocumentOptions;
 use crate::util::hash::hash;
-use crate::{
-    document::{
-        document_factory::DocumentFactory,
-        fetch_and_validate_data_contract::DataContractFetcherAndValidator,
-    },
-    state_repository::MockStateRepositoryLike,
-    version::LATEST_VERSION,
-};
+use crate::{document::document_factory::DocumentFactory, version::LATEST_VERSION};
 
-use super::{get_document_validator_fixture, get_dpns_data_contract_fixture};
+use super::get_dpns_data_contract_fixture;
 
 pub fn get_dpns_preorder_document_fixture(
     options: ParentDocumentOptions,
 ) -> (ExtendedDocument, [u8; 32]) {
-    let document_factory = DocumentFactory::new(
-        LATEST_VERSION,
-        get_document_validator_fixture(),
-        DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new())),
-    );
     let data_contract = get_dpns_data_contract_fixture(Some(options.owner_id));
+    let document_factory =
+        DocumentFactory::new(LATEST_VERSION, data_contract.data_contract_owned());
     let mut pre_order_salt = [0u8; 32];
     let _ = getrandom(&mut pre_order_salt);
 
