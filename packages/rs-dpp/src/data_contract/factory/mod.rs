@@ -79,7 +79,7 @@ impl DataContractFactory {
                 }
                 #[cfg(not(feature = "validation"))]
                 {
-                    v0.create_from_object(data_contract_object)
+                    v0.create_from_object(data_contract_object, true)
                 }
             }
         }

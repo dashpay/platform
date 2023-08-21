@@ -105,4 +105,23 @@ impl IdentityCreateTransitionV0 {
 
         Ok(identity_create_transition)
     }
+
+    pub fn try_from_identity(
+        identity: Identity,
+        asset_lock_proof: AssetLockProof,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .state_transition_conversion_versions
+            .identity_to_identity_create_transition
+        {
+            0 => Self::try_from_identity_v0(identity, asset_lock_proof),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "IdentityCreateTransitionV0::try_from_identity".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
 }

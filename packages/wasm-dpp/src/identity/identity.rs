@@ -70,6 +70,7 @@ impl IdentityWasm {
         }
 
         let public_keys = public_keys
+            .iter()
             .into_iter()
             .map(|key| {
                 key.to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
@@ -266,6 +267,7 @@ impl IdentityWasm {
         }
 
         let public_keys: Vec<IdentityPublicKey> = public_keys
+            .iter()
             .into_iter()
             .map(|key| {
                 key.to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
