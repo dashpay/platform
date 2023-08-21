@@ -11,6 +11,7 @@ pub use index_level::IndexLevel;
 #[cfg(feature = "random-documents")]
 pub mod random_document;
 pub mod schema;
+mod storage_requirements;
 pub mod v0;
 
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -39,6 +40,8 @@ pub(self) mod property_names {
     pub const MAX_LENGTH: &str = "maxLength";
     pub const BYTE_ARRAY: &str = "byteArray";
     pub const CONTENT_MEDIA_TYPE: &str = "contentMediaType";
+    pub const ENCRYPTION_KEY_REQUIREMENTS: &str = "encryptionKeyReqs";
+    pub const DECRYPTION_KEY_REQUIREMENTS: &str = "decryptionKeyReqs";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -1,6 +1,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::epoch::Epoch;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, Purpose};
 use dpp::version::drive_versions::DriveVersion;
@@ -16,6 +17,7 @@ impl Drive {
         identity_id: [u8; 32],
         identity_key: IdentityPublicKey,
         with_references: bool,
+        epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -39,6 +41,16 @@ impl Drive {
             key_id_bytes.as_slice(),
             drive_operations,
             drive_version,
+        )?;
+
+        // if there are contract bounds we need to insert them
+        self.add_potential_contract_info_for_contract_bounded_key(
+            identity_id,
+            &identity_key,
+            epoch,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            drive_operations,
         )?;
 
         if with_references

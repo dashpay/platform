@@ -39,8 +39,17 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) properties: BTreeMap<String, DocumentProperty>,
     pub(in crate::data_contract) identifier_paths: BTreeSet<String>,
     pub(in crate::data_contract) binary_paths: BTreeSet<String>,
+    /// The required fields on the document type
     pub(in crate::data_contract) required_fields: BTreeSet<String>,
+    /// Should documents keep history?
     pub(in crate::data_contract) documents_keep_history: bool,
+    /// Are documents mutable?
     pub(in crate::data_contract) documents_mutable: bool,
     pub(in crate::data_contract) data_contract_id: Identifier,
+    /// Encryption key storage requirements
+    pub(in crate::data_contract) encryption_key_storage_requirements:
+        Option<StorageKeyRequirements>,
+    /// Decryption key storage requirements
+    pub(in crate::data_contract) decryption_key_storage_requirements:
+        Option<StorageKeyRequirements>,
 }

@@ -429,6 +429,28 @@
       ],
       "description": "Public key security level. 0 - Master, 1 - Critical, 2 - High, 3 - Medium. If none specified, High level is used"
     },
+    "requiresIdentityEncryptionBoundedKey": {
+      "type": "integer",
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "description": "Key requirements. 0 - Unique Non Replaceable, 1 - Unique Replaceable, 2 - Multiple With Main, 3 - Multiple, 4 - Multiple Indexed."
+    },
+    "requiresIdentityDecryptionBoundedKey": {
+      "type": "integer",
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "description": "Key requirements. 0 - Unique Non Replaceable, 1 - Unique Replaceable, 2 - Multiple With Main, 3 - Multiple, 4 - Multiple Indexed."
+    },
     "properties": {
       "type": "object",
       "additionalProperties": {

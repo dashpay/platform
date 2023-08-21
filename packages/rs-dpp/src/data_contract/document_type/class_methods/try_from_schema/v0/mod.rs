@@ -328,6 +328,8 @@ impl DocumentTypeV0 {
             documents_keep_history,
             documents_mutable,
             data_contract_id,
+            encryption_key_storage_requirements: None, //todo
+            decryption_key_storage_requirements: None,
         })
     }
 }

@@ -105,6 +105,16 @@ pub fn identity_contract_info_root_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> 
     ]
 }
 
+/// The group is either a contract id or on a family of contracts owned by the same identity
+pub fn identity_contract_info_group_path_vec(identity_id: &[u8], group_id: &[u8]) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityContractInfo as u8],
+        group_id.to_vec(),
+    ]
+}
+
 #[cfg(feature = "full")]
 /// The path for a specific contract info for an identity
 pub fn identity_contract_info_path<'a>(
