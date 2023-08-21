@@ -188,12 +188,14 @@ impl Drive {
                     let key_reference =
                         identity_key_location_within_identity_vec(key_id_bytes.as_slice());
 
+                    let reference = UpstreamRootHeightReference(1, key_reference);
+
                     let ref_apply_type = if estimated_costs_only_with_layer_info.is_none() {
                         BatchInsertApplyType::StatefulBatchInsert
                     } else {
                         BatchInsertApplyType::StatelessBatchInsert {
                             in_tree_using_sums: false,
-                            target: QueryTargetValue(key_reference.serialized_size() as u32),
+                            target: QueryTargetValue(reference.serialized_size() as u32),
                         }
                     };
 
@@ -204,11 +206,7 @@ impl Drive {
                                 &contract_id_bytes_with_document_type_name,
                             ),
                             key_id_bytes.as_slice(),
-                            Element::Reference(
-                                UpstreamRootHeightReference(1, key_reference),
-                                Some(1),
-                                None,
-                            ),
+                            Element::Reference(reference, Some(1), None),
                         )),
                         ref_apply_type,
                         transaction,
