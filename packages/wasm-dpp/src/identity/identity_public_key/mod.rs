@@ -13,6 +13,7 @@ use dpp::identity::identity_public_key::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::platform_value::{BinaryData, ReplacementType, Value};
 use dpp::serialization::ValueConvertible;
+use dpp::state_transition::public_key_in_creation::v0::BINARY_DATA_FIELDS;
 
 mod purpose;
 pub use purpose::*;
@@ -37,14 +38,13 @@ impl IdentityPublicKeyWasm {
         let public_key_json: JsonValue =
             serde_json::from_str(&public_key_json_string).map_err(|e| e.to_string())?;
 
+        // Patch Base64 fields because enum deserializer doing it wrong
+        // https://github.com/serde-rs/serde/issues/2172
         let mut public_key_platform_value: Value = public_key_json.into();
-        // Patch the binary data fields to be base64 encoded because of a bug in serde_wasm_bindgen
-        public_key_platform_value
-            .replace_at_paths(
-                dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
-                ReplacementType::TextBase64,
-            )
-            .map_err(|e| e.to_string())?;
+        public_key_platform_value.replace_at_paths(
+            BINARY_DATA_FIELDS,
+            ReplacementType::TextBase64
+        ).map_err(|e| e.to_string())?;
 
         let raw_public_key: IdentityPublicKey =
             IdentityPublicKey::from_object(public_key_platform_value).map_err(|e| e.to_string())?;

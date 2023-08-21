@@ -2,9 +2,10 @@ use std::convert::{TryFrom, TryInto};
 
 use dashcore::{Transaction, TxOut};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 pub use bincode::{Decode, Encode};
+use serde::de::Error;
 pub use chain::*;
 pub use instant::*;
 use platform_value::Value;
@@ -16,11 +17,62 @@ use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
 pub mod chain;
 pub mod instant;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
 #[serde(untagged)]
 pub enum AssetLockProof {
     Instant(#[bincode(with_serde)] InstantAssetLockProof),
     Chain(ChainAssetLockProof),
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawAssetLockProof {
+    Instant(RawInstantLock),
+    Chain(ChainAssetLockProof)
+}
+
+impl TryFrom<RawAssetLockProof> for AssetLockProof {
+    type Error = ProtocolError;
+
+    fn try_from(value: RawAssetLockProof) -> Result<Self, Self::Error> {
+        match value {
+            RawAssetLockProof::Instant(raw_instant_lock) => {
+                let instant_lock = raw_instant_lock.try_into()?;
+
+                Ok(AssetLockProof::Instant(instant_lock))
+            }
+            RawAssetLockProof::Chain(chain) => {
+                Ok(AssetLockProof::Chain(chain))
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for AssetLockProof {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+    {
+        // Try to parse into IS Lock
+        // let maybe_is_lock = RawInstantLock::deserialize(&deserializer);
+        //
+        // if let Ok(raw_instant_lock) = maybe_is_lock {
+        //     let instant_lock = raw_instant_lock.try_into()
+        //         .map_err(|e: ProtocolError| D::Error::custom(e.to_string()))?;
+        //
+        //     return Ok(AssetLockProof::Instant(instant_lock))
+        // };
+        //
+        //
+        // ChainAssetLockProof::deserialize(deserializer)
+        //     .map(|chain| AssetLockProof::Chain(chain))
+        // // Try to parse into chain lock
+
+
+        let raw = RawAssetLockProof::deserialize(deserializer)?;
+        raw.try_into()
+            .map_err(|e: ProtocolError| D::Error::custom(e.to_string()))
+    }
 }
 //
 // impl AssetLockProof {

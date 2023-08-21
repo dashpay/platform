@@ -54,8 +54,8 @@ impl Identity {
     }
 
     /// Created a new identity based on asset locks and keys
-    pub fn new_with_asset_lock_and_keys(
-        asset_lock_proof: AssetLockProof,
+    pub fn new_with_id_and_keys(
+        id: Identifier,
         public_keys: BTreeMap<KeyID, IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<Identity, ProtocolError> {
@@ -66,7 +66,7 @@ impl Identity {
         {
             0 => {
                 let identity_v0 = IdentityV0 {
-                    id: asset_lock_proof.create_identifier()?,
+                    id,
                     public_keys,
                     balance: 0,
                     revision: 0,
@@ -74,7 +74,7 @@ impl Identity {
                 Ok(identity_v0.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "Identity::new_with_asset_lock_and_keys".to_string(),
+                method: "Identity::new_with_id_and_keys".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

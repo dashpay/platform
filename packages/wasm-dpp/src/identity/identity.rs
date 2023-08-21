@@ -4,6 +4,7 @@ use crate::identifier::IdentifierWrapper;
 use crate::identity::IdentityPublicKeyWasm;
 use crate::metadata::MetadataWasm;
 use crate::utils::{IntoWasm, WithJsError};
+use crate::identity::state_transition::create_asset_lock_proof_from_wasm_instance;
 use crate::{utils, with_js_error};
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -47,27 +48,7 @@ impl IdentityWasm {
         let identity_json: JsonValue =
             serde_json::from_str(&identity_json_string).map_err(|e| e.to_string())?;
 
-        // Monkey patch identifier to be deserializable
-        let mut identity_platform_value: Value = identity_json.into();
-        identity_platform_value
-            .replace_at_paths(
-                dpp::identity::IDENTIFIER_FIELDS_RAW_OBJECT,
-                ReplacementType::TextBase58,
-            )
-            .map_err(|e| e.to_string())?;
-
-        // Monkey patch public keys data to be deserializable
-        let public_keys = identity_platform_value
-            .get_array_mut_ref(dpp::identity::property_names::PUBLIC_KEYS)
-            .map_err(|e| e.to_string())?;
-
-        for key in public_keys.iter_mut() {
-            key.replace_at_paths(
-                dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
-                ReplacementType::TextBase64,
-            )
-            .map_err(|e| e.to_string())?;
-        }
+        let identity_platform_value: Value = identity_json.into();
 
         let identity: Identity =
             Identity::from_object(identity_platform_value).map_err(from_dpp_err)?;
@@ -83,6 +64,11 @@ impl IdentityWasm {
         self.inner.id().into()
     }
 
+    #[wasm_bindgen(js_name=setId)]
+    pub fn set_id(&mut self, id: IdentifierWrapper) {
+        self.inner.set_id(id.into());
+    }
+
     #[wasm_bindgen(js_name=setPublicKeys)]
     pub fn set_public_keys(&mut self, public_keys: js_sys::Array) -> Result<usize, JsValue> {
         if public_keys.length() == 0 {
@@ -90,12 +76,14 @@ impl IdentityWasm {
         }
 
         let public_keys = public_keys
+            .iter()
             .into_iter()
             .map(|key| {
-                IdentityPublicKeyWasm::new(key).map(|key| {
-                    let key = IdentityPublicKey::from(key);
-                    (key.id(), key)
-                })
+                key.to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
+                    .map(|key| {
+                        let key = IdentityPublicKey::from(key.to_owned());
+                        (key.id(), key)
+                    })
             })
             .collect::<Result<_, _>>()?;
 
@@ -148,22 +136,7 @@ impl IdentityWasm {
     pub fn reduce_balance(&mut self, amount: f64) -> f64 {
         self.inner.reduce_balance(amount as u64) as f64
     }
-    //
-    // #[wasm_bindgen(js_name=setAssetLockProof)]
-    // pub fn set_asset_lock_proof(&mut self, lock: JsValue) -> Result<(), JsValue> {
-    //     let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&lock)?;
-    //     self.inner.set_asset_lock_proof(asset_lock_proof);
-    //     Ok(())
-    // }
-    //
-    // #[wasm_bindgen(js_name=getAssetLockProof)]
-    // pub fn get_asset_lock_proof(&self) -> Option<AssetLockProofWasm> {
-    //     self.inner
-    //         .get_asset_lock_proof()
-    //         .map(AssetLockProof::to_owned)
-    //         .map(Into::into)
-    // }
-    //
+
     #[wasm_bindgen(js_name=setRevision)]
     pub fn set_revision(&mut self, revision: f64) {
         self.inner.set_revision(revision as u64);
@@ -285,6 +258,7 @@ impl IdentityWasm {
         }
 
         let public_keys: Vec<IdentityPublicKey> = public_keys
+            .iter()
             .into_iter()
             .map(|key| {
                 key.to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")

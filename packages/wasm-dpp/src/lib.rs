@@ -24,7 +24,7 @@ mod metadata;
 
 mod utils;
 
-// mod bls_adapter;
+mod bls_adapter;
 mod buffer;
 // mod entropy_generator;
 // mod generate_temporary_ecdsa_private_key;

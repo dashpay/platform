@@ -43,28 +43,29 @@ impl IdentityFactory {
 
     pub fn create(
         &self,
-        asset_lock_proof: AssetLockProof,
+        id: Identifier,
         public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     ) -> Result<Identity, ProtocolError> {
-        Identity::new_with_asset_lock_and_keys(
-            asset_lock_proof,
+        Identity::new_with_id_and_keys(
+            id,
             public_keys,
             PlatformVersion::get(self.protocol_version)?,
         )
     }
 
-    #[cfg(feature = "identity-value-conversion")]
-    pub fn create_from_object(
-        &self,
-        raw_identity: Value,
-        #[cfg(feature = "validation")] skip_validation: bool,
-    ) -> Result<Identity, ProtocolError> {
-        #[cfg(feature = "validation")]
-        if !skip_validation {
-            self.validate_identity(&raw_identity)?;
-        }
-        raw_identity.try_into_platform_versioned(PlatformVersion::get(self.protocol_version)?)
-    }
+    // TODO(versioning): not used anymore?
+    // #[cfg(feature = "identity-value-conversion")]
+    // pub fn create_from_object(
+    //     &self,
+    //     raw_identity: Value,
+    //     #[cfg(feature = "validation")] skip_validation: bool,
+    // ) -> Result<Identity, ProtocolError> {
+    //     #[cfg(feature = "validation")]
+    //     if !skip_validation {
+    //         self.validate_identity(&raw_identity)?;
+    //     }
+    //     raw_identity.try_into_platform_versioned(PlatformVersion::get(self.protocol_version)?)
+    // }
 
     #[cfg(all(feature = "identity-serialization", feature = "client"))]
     pub fn create_from_buffer(
@@ -124,12 +125,10 @@ impl IdentityFactory {
         &self,
         identity: Identity,
         asset_lock_proof: AssetLockProof,
-        platform_version: &PlatformVersion,
     ) -> Result<IdentityCreateTransition, ProtocolError> {
-        let transition = IdentityCreateTransitionV0::try_from_identity(
+        let transition = IdentityCreateTransitionV0::try_from_identity_v0(
             identity,
             asset_lock_proof,
-            platform_version,
         )?;
 
         Ok(IdentityCreateTransition::V0(transition))
@@ -140,7 +139,6 @@ impl IdentityFactory {
         &self,
         public_keys: BTreeMap<KeyID, IdentityPublicKey>,
         asset_lock_proof: AssetLockProof,
-        platform_version: &PlatformVersion,
     ) -> Result<(Identity, IdentityCreateTransition), ProtocolError> {
         let identifier = asset_lock_proof.create_identifier()?;
         let identity = Identity::V0(IdentityV0 {
@@ -151,10 +149,9 @@ impl IdentityFactory {
         });
 
         let mut identity_create_transition =
-            IdentityCreateTransition::V0(IdentityCreateTransitionV0::try_from_identity(
+            IdentityCreateTransition::V0(IdentityCreateTransitionV0::try_from_identity_v0(
                 identity.clone(),
                 asset_lock_proof,
-                platform_version,
             )?);
         Ok((identity, identity_create_transition))
     }

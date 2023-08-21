@@ -17,4 +17,5 @@ members = [
     "packages/feature-flags-contract",
     "packages/dpns-contract",
     "packages/data-contracts",
+    "packages/wasm-dpp",
 ]

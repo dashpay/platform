@@ -1,29 +1,29 @@
 use crate::errors::RustConversionError;
-use crate::identity::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm;
 use crate::utils::{generic_of_js_val, to_vec_of_platform_values};
-use crate::{create_asset_lock_proof_from_wasm_instance, IdentityPublicKeyWasm};
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use std::collections::BTreeMap;
 use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::{JsCast, JsValue};
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::serialization::ValueConvertible;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use crate::identity::IdentityPublicKeyWasm;
+use crate::identity::state_transition::create_asset_lock_proof_from_wasm_instance;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm;
 
-pub fn parse_create_args(
-    asset_lock_proof: JsValue,
+pub fn parse_public_keys(
     public_keys: js_sys::Array,
-) -> Result<(AssetLockProof, BTreeMap<KeyID, IdentityPublicKey>), JsValue> {
-    let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&asset_lock_proof)?;
-
+) -> Result<BTreeMap<KeyID, IdentityPublicKey>, JsValue> {
     let raw_public_keys = to_vec_of_platform_values(public_keys.iter())?;
 
     let public_keys = raw_public_keys
         .into_iter()
-        .map(|v| IdentityPublicKey::from_value(v).map(|key| (key.id, key)))
+        .map(|v| IdentityPublicKey::from_object(v).map(|key| (key.id(), key)))
         .collect::<Result<_, _>>()
         .map_err(|e| format!("converting to collection of IdentityPublicKeys failed: {e:#}"))?;
 
-    Ok((asset_lock_proof, public_keys))
+    Ok(public_keys)
 }
 
 type AddPublicKeys = Option<Vec<IdentityPublicKeyInCreation>>;
