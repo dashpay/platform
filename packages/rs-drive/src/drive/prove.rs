@@ -36,7 +36,7 @@ impl Drive {
             count += identity_queries.len();
         }
         if !contract_ids.is_empty() {
-            path_queries.push(Self::fetch_contracts_query(contract_ids)?);
+            path_queries.push(Self::fetch_non_historical_contracts_query(contract_ids)?);
             count += contract_ids.len();
         }
         if !document_queries.is_empty() {
