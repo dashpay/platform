@@ -172,6 +172,16 @@ mod tests {
         }
     }
 
+    /// Sets up history test with a given number of updates.
+    ///
+    /// # Arguments
+    /// * `data_contract` - The data contract.
+    /// * `drive` - The drive instance.
+    /// * `n` - Number of updates.
+    /// * `platform_version` - The platform version.
+    ///
+    /// # Returns
+    /// * `DataContract` - The data contract.
     pub fn setup_history_test_with_n_updates(
         mut data_contract: DataContract,
         drive: &Drive,
@@ -199,6 +209,11 @@ mod tests {
         original_data_contract
     }
 
+    /// Asserts that a property exists in the data contract.
+    ///
+    /// # Arguments
+    /// * `data_contract` - The data contract.
+    /// * `property` - The property to check.
     pub fn assert_property_exists(data_contract: &DataContract, property: &str) {
         let document_schema = data_contract
             .document_type_for_name("niceDocument")
@@ -237,6 +252,7 @@ mod tests {
         }
     }
 
+    /// Tests fetching the 10 latest contracts without offset, limit, and start date set to 0.
     #[test]
     pub fn should_fetch_10_latest_contract_without_offset_and_limit_and_start_date_0() {
         let test_case = TestCase {
@@ -262,6 +278,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test to ensure contract history can be fetched with a specified limit but without an offset.
     #[test]
     pub fn should_fetch_with_limit_without_offset() {
         let test_case = TestCase {
@@ -282,6 +299,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test to ensure contract history can be fetched without a specified limit but with an offset.
     #[test]
     pub fn should_fetch_without_limit_with_offset() {
         let test_case = TestCase {
@@ -303,6 +321,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test to ensure contract history can be fetched with both a specified limit and offset.
     #[test]
     pub fn should_fetch_with_limit_with_offset() {
         let test_case = TestCase {
@@ -323,6 +342,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test to ensure contract history can be fetched with a non-zero start date.
     #[test]
     pub fn should_fetch_with_non_zero_start_date() {
         let test_case = TestCase {
@@ -343,6 +363,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test that the function should fail when the limit is higher than the acceptable maximum value of 10.
     #[test]
     pub fn should_fail_with_limit_higher_than_10() {
         let test_case = TestCase {
@@ -365,6 +386,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test that the function should fail when the limit is set to a value smaller than the minimum acceptable value of 1.
     #[test]
     pub fn should_fail_with_limit_smaller_than_1() {
         let test_case = TestCase {
@@ -387,6 +409,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test that when querying with a start date after the latest update, the function should return an empty result set.
     #[test]
     pub fn should_fetch_empty_with_start_date_after_latest_update() {
         let test_case = TestCase {
@@ -407,6 +430,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test that querying with a non-existent contract ID should result in an empty return set.
     #[test]
     pub fn should_return_empty_result_with_non_existent_contract_id() {
         let test_case = TestCase {
@@ -427,6 +451,8 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test that when the number of available updates is fewer than the combined sum of the limit and offset, 
+    /// the function should only return the oldest available updates, including the original contract.
     #[test]
     pub fn should_fetch_only_oldest_updates_with_offset_regardless_of_limit_when_not_enough_updates(
     ) {
@@ -450,6 +476,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test that when the offset is so large that it exceeds the number of total updates, the function should return an empty result set.
     #[test]
     pub fn should_fetch_empty_history_when_offset_is_so_large_that_no_updates_can_be_fetched() {
         let test_case = TestCase {
@@ -472,6 +499,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test that when the limit is set equal to the total number of updates, the function should fetch and return all of them.
     #[test]
     pub fn should_fetch_with_limit_equals_total_updates() {
         let test_case = TestCase {
@@ -492,6 +520,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test that when the set limit exceeds the total number of available updates, the function should only fetch the latest updates and the original contract.
     #[test]
     pub fn should_fetch_only_latest_updates_if_updates_count_lower_than_the_limit() {
         let test_case = TestCase {
@@ -512,6 +541,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test to verify that the system correctly handles a scenario when no updates have been applied.
     #[test]
     pub fn should_handle_when_no_updates_at_all() {
         let test_case = TestCase {
@@ -532,6 +562,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test to verify the system returns an empty history when querying with a future start date.
     #[test]
     pub fn should_fetch_empty_when_start_date_is_in_future() {
         let test_case = TestCase {
@@ -552,6 +583,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
+    /// Test to validate fetching behavior when the start date matches the date of the latest update.
     #[test]
     pub fn should_fetch_when_start_date_is_same_as_latest_update() {
         let test_case = TestCase {
