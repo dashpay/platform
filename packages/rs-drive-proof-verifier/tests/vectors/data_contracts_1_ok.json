@@ -1,30 +1,30 @@
 [
     {
         "ids": [
-            "2NrTPKF9ozH6fGeApv5Y7ppoA8y9scBt6bUYCuYBH+0="
+            "C3jBo0Br/dWD4KUkuik+llEIAVBsHY61Jb+NVv4LQMg="
         ],
         "prove": true
     },
     {
         "metadata": {
-            "height": "1721",
-            "core_chain_locked_height": 2198,
-            "time_ms": "1690552206837",
+            "height": "183",
+            "core_chain_locked_height": 1597,
+            "time_ms": "1692619242080",
             "protocol_version": 1,
-            "chain_id": "dashmate_local_18"
+            "chain_id": "dashmate_local_39"
         },
         "result": {
             "proof": {
-                "grovedb_proof": "AlMEAQAADAIBCIAAAYmbnZkvAPG0m7zp9Wq0uWUeHbTHwPGDvQuBw6sh3LjbWZFEW3YXAqtOEPLiTKFbMMja2WIxkincYp6qqphD8oFzKcI0xpswEAHRAQGaT8uQHQm6+/tZ5Q378IVvEyC1+FXbiRPDN9kmsXmHZAJXc7VrwxVpb53P0kUHQZMJMasypqCUJpkcAiQSQrDkexAEINja0zyhfaMx+nxngKb+WO6aaAPMvbHAbem1GArmAR/tAAUCAQEBAKTN8tl1j/BhEurFmKQW30FDL3SZezF97SwZrJcihn4zAlRMlteJ7kdIKfGblYlhNBI419dVr9gKkpP4zVNlrxDgEAE5TbzjUIord73pVltN8F357hzKYG7DPfDfwSGOwUgdVxERAY0BAa0FrofJ11LVVF2M5icDE/fXtTr1NlanSLQQmUzDZu8VBAFAACQCASCiobSsb+8i6ioaaOgSNkSzV4dfa0EsGBCSgcFG57JxvACI/wawhOGR7SYv62ov/1suGdGMflh4/lsMoIgQZph4CBABngWX6JU1Q9ASGYumPNmi6zG9SvfchfUQkDZromNOzeoR",
-                "quorum_hash": "PJJ0skJ3lCF7raUF6pPLT/BjpSrNEJrXJOHKvVQs2sU=",
-                "signature": "hYI328L7stzS7VrjTh9I0ZyzBEFd0iAp6W11gwxYHLe606CsXIwmgy1NyQUzJLaSBQrO9/mu0QprYBl6Xvq/+zEGuozPjfBBv92OBmDUniifobEYhv14T7bqGnnNbjVp",
+                "grovedb_proof": "AlMEAQAADAIBCIAAAYoX8eLTAM3YPcT9VjPSNmG0A9qWspZ8i/X2CGi8EaVcV4UPXp2HArFraGyNrZnWW6N0fPz75WxCvdKPDAYG+DDVBhlUihJQEAHzAQQgC3jBo0Br/dWD4KUkuik+llEIAVBsHY61Jb+NVv4LQMgABQIBAQEAZo5OIWK6nuoxf5u16hB7aM7htSrbXYJZgV/CTxAhRa8CaUk0arsaqFQ0FR99DQcboBdYyTUSbHLjhyG4xfbkyrAQArH9SUWdrMPHWEmFr4iRWNvNbBA5Zvo/YP2vntq+gLdbEAHxNTpIS0ij+e7Oh0x25f3OvISfQp7a7cguwZuee0vPhBECV3O1a8MVaW+dz9JFB0GTCTGrMqaglCaZHAIkEkKw5HsQARHTVm5MazeJmhQltavQrMxNWo7JuqpZOgWIooVzqubtEQGNAQFqTeEYbKJCCLRgMpg9noryjg5PgIAsngjVV+k7gG1fIwQBQAAkAgEgoqG0rG/vIuoqGmjoEjZEs1eHX2tBLBgQkoHBRueycbwA2awBvDKP682VVnuyv9P4OEFhNYEufZ7EC8WBoYr7VjQQASs4d2QG1dR0LHZTqRdY5F4CHaEdBC5EstjF5S8JKOCsEQ==",
+                "quorum_hash": "BaMWoaEneJvfpJDWeVhqKfmLq0IziFXYVBdYvJ2T1mA=",
+                "signature": "pXt8z4T8TGONZJpxSKlg6Ww0STiYI9+m3VC+GyX3xY9dP1lcpkwxU7poaEmpeXA/BSKDTH++d87f8g0vlx3cTMxf2P926Vmu1peKrC6gKbxAF8nXIJ1vdZFCYkzcIVON",
                 "round": 0,
-                "block_id_hash": "EynfKTLfFwWYl15M/a/zb8wACMcI/1n7iuMolRF0EUI=",
+                "block_id_hash": "3iQuGjnUX/perE3JBq12snl0eJPbqZtZeNn7e1X97+8=",
                 "quorum_type": 106
             }
         }
     },
     {
-        "quorum_public_key": "b777cca8dac57d6e93e92e0f146ea9c4d6b6492f8df5652a0410ebf4670653d8e5be5ea72c51660e697a8db75f7fad2b"
+        "quorum_public_key": "a6e6922ed79167d08c603a6d3b31eb44912a0c296f0c2f8fbda9dc4ec235741e90c45bbe99270c8dea0cd8b2c72470e2"
     }
 ]
