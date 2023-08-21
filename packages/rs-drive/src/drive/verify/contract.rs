@@ -1,4 +1,7 @@
-use crate::drive::contract::paths::{contract_keeping_history_storage_path, contract_root_path, contract_root_path_vec, contract_storage_path_vec};
+use crate::drive::contract::paths::{
+    contract_keeping_history_storage_path, contract_root_path, contract_root_path_vec,
+    contract_storage_path_vec,
+};
 use crate::drive::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
@@ -10,8 +13,8 @@ use std::collections::BTreeMap;
 use crate::common::decode;
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
-use grovedb::{GroveDb, PathQuery};
 use dpp::dashcore::hashes::hex::ToHex;
+use grovedb::{Element, GroveDb, PathQuery};
 
 impl Drive {
     /// Verifies that the contract is included in the proof.
@@ -76,7 +79,8 @@ impl Drive {
             } else if path != contract_root_path(&contract_id) {
                 if key != vec![0] {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "we did not get back an element for the correct key for the contract".to_string(),
+                        "we did not get back an element for the correct key for the contract"
+                            .to_string(),
                     )));
                 }
                 return Err(Error::Proof(ProofError::CorruptedProof(
@@ -126,41 +130,73 @@ impl Drive {
     pub fn verify_contracts(
         proof: &[u8],
         is_proof_subset: bool,
-        contract_ids_with_keeps_history: BTreeMap<[u8; 32], bool>,
+        contract_ids: &[[u8; 32]],
     ) -> Result<(RootHash, BTreeMap<[u8; 32], Option<DataContract>>), Error> {
-        let request_len = contract_ids_with_keeps_history.len();
+        let request_len = contract_ids.len();
 
         if request_len == 0 {
             return Err(Error::Query(QuerySyntaxError::NoQueryItems(
-                "we did not get back an element for the correct path for the historical contract",
+                "we didn't query anything",
             )));
         }
 
-        let path_queries: Vec<PathQuery> = contract_ids_with_keeps_history
-            .into_iter()
-            .map(|(contract_id, keeps_history)| {
-                if keeps_history {
-                    Self::fetch_contract_with_history_latest_query(contract_id)
-                } else {
-                    Self::fetch_contract_query(contract_id)
-                }
-            })
-            .collect();
+        let mut path_query = Self::fetch_non_historical_contracts_query(contract_ids)?;
 
-        let mut merged_path_query = PathQuery::merge(path_queries.iter().collect())?;
+        path_query.query.limit = Some(request_len as u16);
 
-        merged_path_query.query.limit = Some(request_len as u16);
+        let (root_hash, mut proved_key_values) =
+            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?;
 
-        let (root_hash, mut proved_key_values) = if is_proof_subset {
-            GroveDb::verify_subset_query_with_absence_proof(proof, &merged_path_query)
-        } else {
-            GroveDb::verify_query_with_absence_proof(proof, &merged_path_query)
-        }?;
         if proved_key_values.len() != request_len {
             return Err(Error::Proof(ProofError::CorruptedProof(
                 "we did not get back the number of elements we are looking for".to_string(),
             )));
         }
+
+        let mut historical_contracts: Vec<[u8; 32]> = Vec::new();
+        let mut non_historical_contracts: Vec<[u8; 32]> = Vec::new();
+
+        for (path, _key, element) in proved_key_values.into_iter() {
+            let contract_id: [u8; 32] = path
+                .last()
+                .ok_or(Error::Drive(DriveError::CorruptedContractPath(
+                    "the path should always have a last",
+                )))?
+                .clone()
+                .try_into()
+                .map_err(|_| {
+                    Error::Drive(DriveError::CorruptedContractPath(
+                        "the path last component should always be 32 bytes",
+                    ))
+                })?;
+
+            if let Some(element) = element {
+                match element {
+                    Element::Item(_, _) => {
+                        non_historical_contracts.push(contract_id);
+                    }
+                    Element::Tree(_, _) => {
+                        historical_contracts.push(contract_id);
+                    }
+                    _ => {
+                        return Err(Error::Drive(DriveError::CorruptedContractPath("")));
+                    }
+                }
+            } else {
+                non_historical_contracts.push(contract_id);
+            }
+        }
+
+        let contracts_query = Self::fetch_contracts_query(
+            non_historical_contracts.as_slice(),
+            historical_contracts.as_slice(),
+        )?;
+
+        let (root_hash, mut proved_key_values) = if is_proof_subset {
+            GroveDb::verify_subset_query_with_absence_proof(proof, &contracts_query)
+        } else {
+            GroveDb::verify_query_with_absence_proof(proof, &contracts_query)
+        }?;
 
         let contracts = proved_key_values.into_iter().map(|(path, key, maybe_element) | {
             let last_part = path.last().ok_or(Error::Proof(ProofError::CorruptedProof(
@@ -175,7 +211,7 @@ impl Drive {
                         "path of a proved item wasn't big enough".to_string(),
                     )));
                 }
-                let before_last_part = path.get(path.len() - 1).ok_or(Error::Proof(ProofError::CorruptedProof(
+                let before_last_part = path.get(path.len() - 2).ok_or(Error::Proof(ProofError::CorruptedProof(
                     "we got back an invalid proof, the path was empty".to_string(),
                 )))?;
                 if before_last_part.len() != 32 {

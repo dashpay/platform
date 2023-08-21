@@ -64,7 +64,9 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the merging of path queries fails.
-    pub fn fetch_non_historical_contracts_query(contract_ids: &[[u8; 32]]) -> Result<PathQuery, Error> {
+    pub fn fetch_non_historical_contracts_query(
+        contract_ids: &[[u8; 32]],
+    ) -> Result<PathQuery, Error> {
         let mut queries = Vec::new();
         for contract_id in contract_ids {
             queries.push(Self::fetch_contract_query(*contract_id));
@@ -93,15 +95,20 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the merging of path queries fails.
-    pub fn fetch_contracts_query(non_historical_contract_ids: &[[u8; 32]], historical_contract_ids: &[[u8; 32]]) -> Result<PathQuery, Error> {
+    pub fn fetch_contracts_query(
+        non_historical_contract_ids: &[[u8; 32]],
+        historical_contract_ids: &[[u8; 32]],
+    ) -> Result<PathQuery, Error> {
         if non_historical_contract_ids.is_empty() {
-            return Self::fetch_historical_contracts_query(historical_contract_ids)
+            return Self::fetch_historical_contracts_query(historical_contract_ids);
         }
         if historical_contract_ids.is_empty() {
-            return Self::fetch_non_historical_contracts_query(non_historical_contract_ids)
+            return Self::fetch_non_historical_contracts_query(non_historical_contract_ids);
         }
-        let contracts_query = Self::fetch_non_historical_contracts_query(non_historical_contract_ids)?;
-        let historical_contracts_query = Self::fetch_historical_contracts_query(historical_contract_ids)?;
+        let contracts_query =
+            Self::fetch_non_historical_contracts_query(non_historical_contract_ids)?;
+        let historical_contracts_query =
+            Self::fetch_historical_contracts_query(historical_contract_ids)?;
         PathQuery::merge(vec![&contracts_query, &historical_contracts_query]).map_err(GroveDB)
     }
 
@@ -124,7 +131,9 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the merging of path queries fails.
-    pub fn fetch_historical_contracts_query(historical_contract_ids: &[[u8; 32]]) -> Result<PathQuery, Error> {
+    pub fn fetch_historical_contracts_query(
+        historical_contract_ids: &[[u8; 32]],
+    ) -> Result<PathQuery, Error> {
         let mut queries = Vec::new();
         for contract_id in historical_contract_ids {
             queries.push(Self::fetch_contract_with_history_latest_query(*contract_id));

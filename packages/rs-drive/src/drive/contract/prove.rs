@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
-use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use crate::drive::Drive;
 use crate::error::Error;
+use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
+use std::collections::BTreeMap;
 
-use grovedb::{Element, TransactionArg};
 use crate::error::drive::DriveError;
+use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Proves the existence of a specified contract.
@@ -93,7 +93,8 @@ impl Drive {
     ) -> Result<Vec<u8>, Error> {
         let contracts_query = Self::fetch_non_historical_contracts_query(contract_ids)?;
         // we first need to fetch all contracts
-        let contracts = self.grove_get_path_query_with_optional(&contracts_query, transaction, &mut vec![])?;
+        let contracts =
+            self.grove_get_path_query_with_optional(&contracts_query, transaction, &mut vec![])?;
         // We have 3 options
         // If the contract is non existing -> treat it as non historical
         // If the contract is there as an item -> it is non historical
@@ -103,8 +104,18 @@ impl Drive {
         let mut non_historical_contracts: Vec<[u8; 32]> = Vec::new();
 
         for (path, _key, element) in contracts.into_iter() {
-            let contract_id: [u8; 32] = path.last().ok_or(Error::Drive(DriveError::CorruptedContractPath("the path should always have a last")))?.clone()
-                .try_into().map_err(|_| Error::Drive(DriveError::CorruptedContractPath("the path last component should always be 32 bytes")))?;
+            let contract_id: [u8; 32] = path
+                .last()
+                .ok_or(Error::Drive(DriveError::CorruptedContractPath(
+                    "the path should always have a last",
+                )))?
+                .clone()
+                .try_into()
+                .map_err(|_| {
+                    Error::Drive(DriveError::CorruptedContractPath(
+                        "the path last component should always be 32 bytes",
+                    ))
+                })?;
 
             if let Some(element) = element {
                 match element {
@@ -123,7 +134,10 @@ impl Drive {
             }
         }
 
-        let contracts_query = Self::fetch_contracts_query(non_historical_contracts.as_slice(), historical_contracts.as_slice())?;
+        let contracts_query = Self::fetch_contracts_query(
+            non_historical_contracts.as_slice(),
+            historical_contracts.as_slice(),
+        )?;
 
         self.grove_get_proved_path_query(&contracts_query, false, transaction, &mut vec![])
     }
