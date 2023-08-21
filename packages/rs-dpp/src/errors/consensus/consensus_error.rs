@@ -17,9 +17,7 @@ use crate::ProtocolError;
 
 // TODO It must be versioned as all other serializable types
 
-#[derive(
-    Error, Debug, Serialize, Deserialize, Encode, Decode, PlatformSerialize, PlatformDeserialize,
-)]
+#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 #[platform_serialize(limit = 2000)]
 pub enum ConsensusError {
     /*
@@ -51,13 +49,5 @@ pub enum ConsensusError {
 impl From<TestConsensusError> for ConsensusError {
     fn from(error: TestConsensusError) -> Self {
         Self::TestConsensusError(error)
-    }
-}
-
-impl ConsensusError {
-    // TODO(versioning): remove this method
-    // and figure out why real one does not work anymore
-    pub fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
-        todo!();
     }
 }
