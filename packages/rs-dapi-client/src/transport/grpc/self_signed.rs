@@ -30,7 +30,7 @@ lazy_static! {
 
         hyper_rustls::HttpsConnectorBuilder::new()
             .with_tls_config(tls_config)
-            .https_only()
+            .https_or_http()
             .enable_http1()
             .build()
     };

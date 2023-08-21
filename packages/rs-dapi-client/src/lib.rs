@@ -8,6 +8,7 @@ mod request_settings;
 mod transport;
 
 use futures::{future::BoxFuture, FutureExt};
+pub use http::Uri;
 
 pub use address_list::AddressList;
 pub use dapi_client::{DapiClient, DapiClientError};
