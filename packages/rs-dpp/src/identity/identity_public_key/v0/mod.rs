@@ -70,6 +70,7 @@ impl Into<IdentityPublicKeyInCreationV0> for &IdentityPublicKeyV0 {
             read_only: self.read_only,
             data: self.data.clone(),
             signature: BinaryData::default(),
+            contract_bounds: self.contract_bounds.clone(),
         }
     }
 }

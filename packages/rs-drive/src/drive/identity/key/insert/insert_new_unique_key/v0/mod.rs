@@ -9,6 +9,7 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Insert a new key into an identity operations
@@ -23,14 +24,14 @@ impl Drive {
         >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         drive_operations.append(&mut self.insert_reference_to_unique_key_operations(
             identity_id,
             &identity_key,
             estimated_costs_only_with_layer_info,
             transaction,
-            drive_version,
+            &platform_version.drive,
         )?);
 
         let key_id_bytes = identity_key.id().encode_var_vec();
@@ -40,7 +41,7 @@ impl Drive {
             &identity_key,
             key_id_bytes.as_slice(),
             drive_operations,
-            drive_version,
+            platform_version,
         )?;
 
         // if there are contract bounds we need to insert them
@@ -51,6 +52,7 @@ impl Drive {
             estimated_costs_only_with_layer_info,
             transaction,
             drive_operations,
+            platform_version,
         )?;
 
         if with_references
@@ -66,7 +68,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 drive_operations,
-                drive_version,
+                &platform_version.drive,
             )?;
         }
         Ok(())

@@ -1,31 +1,30 @@
-mod v0;
-
+use std::collections::HashMap;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
+use dpp::block::epoch::Epoch;
+use dpp::identity::IdentityPublicKey;
+use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::identity::IdentityPublicKey;
-use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
 
-use dpp::block::epoch::Epoch;
-use std::collections::HashMap;
-use platform_version::version::PlatformVersion;
+mod v0;
 
 impl Drive {
-    /// Generates a set of operations to insert a new non-unique key into an identity.
+    /// Adds potential contract information for a contract-bounded key.
+    ///
+    /// This function considers the contract bounds associated with an identity key and forms the operations needed to process the contract information.
     ///
     /// # Arguments
     ///
     /// * `identity_id` - An array of bytes representing the identity id.
-    /// * `identity_key` - The `IdentityPublicKey` to be inserted.
-    /// * `with_references` - A boolean value indicating whether to include references in the operations.
+    /// * `identity_key` - A reference to the `IdentityPublicKey` associated with the contract.
     /// * `epoch` - The current epoch.
     /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` that may contain estimated layer information.
     /// * `transaction` - The transaction arguments.
     /// * `drive_operations` - A mutable reference to a vector of `LowLevelDriveOperation` objects.
-    /// * `drive_version` - The version of the drive.
+    /// * `platform_version` - A reference to the platform version information.
     ///
     /// # Returns
     ///
@@ -33,12 +32,11 @@ impl Drive {
     ///
     /// # Errors
     ///
-    /// This function may return an `Error` if the operation creation process fails or if the drive version does not match any of the implemented method versions.
-    pub fn insert_new_non_unique_key_operations(
+    /// This function may return an `Error` if the operation creation process fails or if the platform version does not match any of the implemented method versions.
+    pub(crate) fn add_potential_contract_info_for_contract_bounded_key(
         &self,
         identity_id: [u8; 32],
-        identity_key: IdentityPublicKey,
-        with_references: bool,
+        identity_key: &IdentityPublicKey,
         epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -49,15 +47,12 @@ impl Drive {
     ) -> Result<(), Error> {
         match platform_version.drive
             .methods
-            .identity
-            .keys
-            .insert
-            .insert_new_non_unique_key
+            .identity.contract_info
+            .add_potential_contract_info_for_contract_bounded_key
         {
-            0 => self.insert_new_non_unique_key_operations_v0(
+            0 => self.add_potential_contract_info_for_contract_bounded_key_v0(
                 identity_id,
                 identity_key,
-                with_references,
                 epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,
@@ -65,7 +60,7 @@ impl Drive {
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "insert_new_non_unique_key_operations".to_string(),
+                method: "add_potential_contract_info_for_contract_bounded_key".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

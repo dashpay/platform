@@ -378,7 +378,13 @@ pub struct DriveIdentityMethodVersions {
     pub keys: DriveIdentityKeysMethodVersions,
     pub update: DriveIdentityUpdateMethodVersions,
     pub insert: DriveIdentityInsertMethodVersions,
+    pub contract_info: DriveIdentityContractInfoMethodVersions,
     pub cost_estimation: DriveIdentityCostEstimationMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveIdentityContractInfoMethodVersions {
+    pub add_potential_contract_info_for_contract_bounded_key: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

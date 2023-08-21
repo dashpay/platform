@@ -1,11 +1,12 @@
 use crate::ProtocolError;
 use serde_repr::*;
 use std::convert::TryFrom;
+use bincode::{Decode, Encode};
 
 /// The Storage Key requirements
 // @append_only
 #[repr(u8)]
-#[derive(Serialize_repr, Deserialize_repr, Debug, PartialEq, Copy, Clone)]
+#[derive(Serialize_repr, Deserialize_repr, Debug, PartialEq, Copy, Clone, Encode, Decode)]
 pub enum StorageKeyRequirements {
     Unique = 0,
     UniqueReplaceable = 1,

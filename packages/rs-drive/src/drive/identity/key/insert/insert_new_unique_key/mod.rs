@@ -11,6 +11,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 use dpp::block::epoch::Epoch;
 use std::collections::HashMap;
+use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// Generates a set of operations to insert a new unique key into an identity.
@@ -44,9 +45,9 @@ impl Drive {
         >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match drive_version
+        match platform_version.drive
             .methods
             .identity
             .keys
@@ -61,7 +62,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 drive_operations,
-                drive_version,
+                platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "insert_new_unique_key_operations".to_string(),
