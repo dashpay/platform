@@ -1,7 +1,12 @@
 const getInstantAssetLockProofFixture = require('../../../lib/test/fixtures/getInstantAssetLockProofFixture');
 const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
-const { default: loadWasmDpp } = require('../../..');
+const {
+  default: loadWasmDpp, Identity, IdentityFactory, IdentityValidator,
+  InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
+  IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyWithWitness,
+  InvalidIdentityError, UnsupportedProtocolVersionError,
+} = require('../../..');
 const { IdentityPublicKey, SerializedObjectParsingError } = require('../../..');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
@@ -11,27 +16,6 @@ describe('IdentityFactory', () => {
   let instantAssetLockProof;
   let chainAssetLockProof;
   let fakeTime;
-
-  let Identity;
-  let IdentityFactory;
-  let IdentityValidator;
-  let InstantAssetLockProof;
-  let IdentityCreateTransition;
-  let IdentityTopUpTransition;
-  let IdentityUpdateTransition;
-  let IdentityPublicKeyWithWitness;
-  let InvalidIdentityError;
-  let UnsupportedProtocolVersionError;
-  let ChainAssetLockProof;
-
-  before(async () => {
-    ({
-      Identity, IdentityFactory, IdentityValidator,
-      InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
-      IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyWithWitness,
-      InvalidIdentityError, UnsupportedProtocolVersionError,
-    } = await loadWasmDpp());
-  });
 
   beforeEach(async function () {
     instantAssetLockProof = await getInstantAssetLockProofFixture();
@@ -43,11 +27,7 @@ describe('IdentityFactory', () => {
 
     factory = new IdentityFactory(1);
 
-    const identityObject = (await getIdentityFixture()).toObject();
-    identityObject.id = instantAssetLockProof.createIdentifier();
-
-    identity = new Identity(identityObject);
-    // identity.setAssetLockProof(instantAssetLockProof);
+    identity = await getIdentityFixture(instantAssetLockProof.createIdentifier());
     identity.setBalance(0);
 
     fakeTime = this.sinonSandbox.useFakeTimers(new Date());
@@ -61,13 +41,13 @@ describe('IdentityFactory', () => {
     it('should create Identity from asset lock transaction, output index, proof and public keys', () => {
       const publicKeys = identity
         .getPublicKeys()
-        .map((identityPublicKey) => ({
+        .map((identityPublicKey) => (new IdentityPublicKey({
           ...identityPublicKey.toObject(),
           readonly: true,
-        }));
+        })));
 
       const result = factory.create(
-        instantAssetLockProof,
+        instantAssetLockProof.createIdentifier(),
         publicKeys,
       );
 
@@ -76,7 +56,8 @@ describe('IdentityFactory', () => {
     });
   });
 
-  describe('#createFromObject', () => {
+  // TODO(versioning): re-check. Not used anymore
+  describe.skip('#createFromObject', () => {
     it('should skip validation if options is set', () => {
       const identityObject = identity.toObject();
       identityObject.protocolVersion = 100;
@@ -199,9 +180,7 @@ describe('IdentityFactory', () => {
 
   describe('createChainAssetLockProof', () => {
     it('should create IdentityCreateTransition from Identity model', async () => {
-      const identityObject = (await getIdentityFixture()).toObject();
-      identityObject.id = chainAssetLockProof.createIdentifier();
-      identity = new Identity(identityObject);
+      identity = await getIdentityFixture(chainAssetLockProof.createIdentifier());
       identity.setBalance(0);
 
       const stateTransition = factory.createIdentityCreateTransition(

@@ -43,28 +43,29 @@ impl IdentityFactory {
 
     pub fn create(
         &self,
-        asset_lock_proof: AssetLockProof,
+        id: Identifier,
         public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     ) -> Result<Identity, ProtocolError> {
-        Identity::new_with_asset_lock_and_keys(
-            asset_lock_proof,
+        Identity::new_with_id_and_keys(
+            id,
             public_keys,
             PlatformVersion::get(self.protocol_version)?,
         )
     }
 
-    #[cfg(feature = "identity-value-conversion")]
-    pub fn create_from_object(
-        &self,
-        raw_identity: Value,
-        #[cfg(feature = "validation")] skip_validation: bool,
-    ) -> Result<Identity, ProtocolError> {
-        #[cfg(feature = "validation")]
-        if !skip_validation {
-            self.validate_identity(&raw_identity)?;
-        }
-        raw_identity.try_into_platform_versioned(PlatformVersion::get(self.protocol_version)?)
-    }
+    // TODO(versioning): not used anymore?
+    // #[cfg(feature = "identity-value-conversion")]
+    // pub fn create_from_object(
+    //     &self,
+    //     raw_identity: Value,
+    //     #[cfg(feature = "validation")] skip_validation: bool,
+    // ) -> Result<Identity, ProtocolError> {
+    //     #[cfg(feature = "validation")]
+    //     if !skip_validation {
+    //         self.validate_identity(&raw_identity)?;
+    //     }
+    //     raw_identity.try_into_platform_versioned(PlatformVersion::get(self.protocol_version)?)
+    // }
 
     #[cfg(all(feature = "identity-serialization", feature = "client"))]
     pub fn create_from_buffer(

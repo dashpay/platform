@@ -51,44 +51,45 @@ impl IdentityFactoryWasm {
     #[wasm_bindgen]
     pub fn create(
         &self,
-        asset_lock_proof: JsValue,
+        id: IdentifierWrapper,
         public_keys: js_sys::Array,
     ) -> Result<IdentityWasm, JsValue> {
-        let (asset_lock_proof, public_keys) =
-            super::factory_utils::parse_create_args(asset_lock_proof, public_keys)?;
+        let public_keys =
+            super::factory_utils::parse_public_keys(public_keys)?;
 
         self.0
-            .create(asset_lock_proof, public_keys)
+            .create(id.into(), public_keys)
             .map(|identity| identity.into())
             .with_js_error()
     }
 
-    #[wasm_bindgen(js_name=createFromObject)]
-    pub fn create_from_object(
-        &self,
-        identity_object: JsValue,
-        options: JsValue,
-    ) -> Result<IdentityWasm, JsValue> {
-        let options: FromObjectOptions = if options.is_object() {
-            with_js_error!(serde_wasm_bindgen::from_value(options))?
-        } else {
-            Default::default()
-        };
-
-        let raw_identity = with_serde_to_platform_value(&identity_object)?;
-
-        let result = self
-            .0
-            .create_from_object(raw_identity);
-
-        match result {
-            Ok(identity) => Ok(identity.into()),
-            Err(dpp::ProtocolError::InvalidIdentityError { errors, .. }) => {
-                Err(InvalidIdentityError::new(errors, identity_object).into())
-            }
-            Err(other) => Err(from_dpp_err(other)),
-        }
-    }
+    // TODO(versioning): not used anymore?
+    // #[wasm_bindgen(js_name=createFromObject)]
+    // pub fn create_from_object(
+    //     &self,
+    //     identity_object: JsValue,
+    //     options: JsValue,
+    // ) -> Result<IdentityWasm, JsValue> {
+    //     let options: FromObjectOptions = if options.is_object() {
+    //         with_js_error!(serde_wasm_bindgen::from_value(options))?
+    //     } else {
+    //         Default::default()
+    //     };
+    //
+    //     let raw_identity = with_serde_to_platform_value(&identity_object)?;
+    //
+    //     let result = self
+    //         .0
+    //         .create_from_object(raw_identity);
+    //
+    //     match result {
+    //         Ok(identity) => Ok(identity.into()),
+    //         Err(dpp::ProtocolError::InvalidIdentityError { errors, .. }) => {
+    //             Err(InvalidIdentityError::new(errors, identity_object).into())
+    //         }
+    //         Err(other) => Err(from_dpp_err(other)),
+    //     }
+    // }
 
     #[wasm_bindgen(js_name=createFromBuffer)]
     pub fn create_from_buffer(

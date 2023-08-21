@@ -1,5 +1,6 @@
-const { default: loadWasmDpp } = require('../../..');
-let { Identity, IdentityPublicKey } = require('../../..');
+const {
+  default: loadWasmDpp, Identity, IdentityPublicKey, IdentityFactory,
+} = require('../../..');
 const generateRandomIdentifierAsync = require('../utils/generateRandomIdentifierAsync');
 
 let staticId = null;
@@ -8,7 +9,7 @@ let staticId = null;
  * @return {Identity}
  */
 module.exports = async function getIdentityFixture(id = staticId, publicKeys = undefined) {
-  ({ Identity, IdentityPublicKey } = await loadWasmDpp());
+  await loadWasmDpp();
 
   if (!staticId) {
     staticId = await generateRandomIdentifierAsync();
@@ -19,8 +20,8 @@ module.exports = async function getIdentityFixture(id = staticId, publicKeys = u
     id = staticId;
   }
 
-  const preCreatedPublicKeys = [
-    {
+  const newPublicKeys = publicKeys || [
+    new IdentityPublicKey({
       $version: '0',
       id: 0,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
@@ -28,8 +29,8 @@ module.exports = async function getIdentityFixture(id = staticId, publicKeys = u
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
       readOnly: false,
-    },
-    {
+    }),
+    new IdentityPublicKey({
       $version: '0',
       id: 1,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
@@ -37,17 +38,15 @@ module.exports = async function getIdentityFixture(id = staticId, publicKeys = u
       purpose: IdentityPublicKey.PURPOSES.ENCRYPTION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
       readOnly: false,
-    },
+    }),
   ];
 
-  const rawIdentity = {
-    // TODO: obtain latest version from some wasm binding?
-    $version: '0',
-    id, // TODO: should be probably id.toBuffer(), but it causes panic in IdentityWasm
-    balance: 10000,
-    revision: 0,
-    publicKeys: publicKeys === undefined ? preCreatedPublicKeys : publicKeys,
-  };
+  const identityFactory = new IdentityFactory(1);
+  const identity = identityFactory.create(
+    id,
+    newPublicKeys,
+  );
 
-  return new Identity(rawIdentity);
+  identity.setBalance(10000);
+  return identity;
 };

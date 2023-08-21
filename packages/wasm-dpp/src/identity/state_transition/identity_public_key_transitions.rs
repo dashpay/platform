@@ -8,6 +8,7 @@ use std::convert::{TryFrom, TryInto};
 use wasm_bindgen::prelude::*;
 use dpp::serialization::ValueConvertible;
 use dpp::state_transition::public_key_in_creation::accessors::{IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters};
+use dpp::state_transition::public_key_in_creation::v0::BINARY_DATA_FIELDS;
 
 use crate::errors::from_dpp_err;
 use crate::utils::WithJsError;
@@ -31,7 +32,11 @@ impl IdentityPublicKeyWithWitnessWasm {
         let public_key_json: JsonValue =
             serde_json::from_str(&public_key_json_string).map_err(|e| e.to_string())?;
 
-        let public_key_platform_value: Value = public_key_json.into();
+        let mut public_key_platform_value: Value = public_key_json.into();
+        public_key_platform_value.replace_at_paths(
+            BINARY_DATA_FIELDS,
+            ReplacementType::TextBase64
+        ).map_err(|e| e.to_string())?;
 
         let raw_public_key: IdentityPublicKeyInCreation =
             IdentityPublicKeyInCreation::from_object(public_key_platform_value).map_err(|e| e.to_string())?;

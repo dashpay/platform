@@ -37,20 +37,21 @@ impl IdentityFacade {
 
     pub fn create(
         &self,
-        asset_lock_proof: AssetLockProof,
+        id: Identifier,
         public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     ) -> Result<Identity, ProtocolError> {
-        self.factory.create(asset_lock_proof, public_keys)
+        self.factory.create(id, public_keys)
     }
 
-    pub fn create_from_object(
-        &self,
-        raw_identity: Value,
-        skip_validation: bool,
-    ) -> Result<Identity, ProtocolError> {
-        self.factory
-            .create_from_object(raw_identity)
-    }
+    // TODO(versioning): not used anymore?
+    // pub fn create_from_object(
+    //     &self,
+    //     raw_identity: Value,
+    //     skip_validation: bool,
+    // ) -> Result<Identity, ProtocolError> {
+    //     self.factory
+    //         .create_from_object(raw_identity)
+    // }
 
     pub fn create_from_buffer(
         &self,

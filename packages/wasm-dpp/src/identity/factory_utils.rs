@@ -12,12 +12,9 @@ use crate::identity::IdentityPublicKeyWasm;
 use crate::identity::state_transition::create_asset_lock_proof_from_wasm_instance;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm;
 
-pub fn parse_create_args(
-    asset_lock_proof: JsValue,
+pub fn parse_public_keys(
     public_keys: js_sys::Array,
-) -> Result<(AssetLockProof, BTreeMap<KeyID, IdentityPublicKey>), JsValue> {
-    let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&asset_lock_proof)?;
-
+) -> Result<BTreeMap<KeyID, IdentityPublicKey>, JsValue> {
     let raw_public_keys = to_vec_of_platform_values(public_keys.iter())?;
 
     let public_keys = raw_public_keys
@@ -26,7 +23,7 @@ pub fn parse_create_args(
         .collect::<Result<_, _>>()
         .map_err(|e| format!("converting to collection of IdentityPublicKeys failed: {e:#}"))?;
 
-    Ok((asset_lock_proof, public_keys))
+    Ok(public_keys)
 }
 
 type AddPublicKeys = Option<Vec<IdentityPublicKeyInCreation>>;

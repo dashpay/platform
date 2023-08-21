@@ -4,6 +4,7 @@ use crate::identifier::IdentifierWrapper;
 use crate::identity::IdentityPublicKeyWasm;
 use crate::metadata::MetadataWasm;
 use crate::utils::{IntoWasm, WithJsError};
+use crate::identity::state_transition::create_asset_lock_proof_from_wasm_instance;
 use crate::{utils, with_js_error};
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -61,6 +62,11 @@ impl IdentityWasm {
     #[wasm_bindgen(js_name=getId)]
     pub fn get_id(&self) -> IdentifierWrapper {
         self.inner.id().into()
+    }
+
+    #[wasm_bindgen(js_name=setId)]
+    pub fn set_id(&mut self, id: IdentifierWrapper) {
+        self.inner.set_id(id.into());
     }
 
     #[wasm_bindgen(js_name=setPublicKeys)]
@@ -130,22 +136,7 @@ impl IdentityWasm {
     pub fn reduce_balance(&mut self, amount: f64) -> f64 {
         self.inner.reduce_balance(amount as u64) as f64
     }
-    //
-    // #[wasm_bindgen(js_name=setAssetLockProof)]
-    // pub fn set_asset_lock_proof(&mut self, lock: JsValue) -> Result<(), JsValue> {
-    //     let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&lock)?;
-    //     self.inner.set_asset_lock_proof(asset_lock_proof);
-    //     Ok(())
-    // }
-    //
-    // #[wasm_bindgen(js_name=getAssetLockProof)]
-    // pub fn get_asset_lock_proof(&self) -> Option<AssetLockProofWasm> {
-    //     self.inner
-    //         .get_asset_lock_proof()
-    //         .map(AssetLockProof::to_owned)
-    //         .map(Into::into)
-    // }
-    //
+
     #[wasm_bindgen(js_name=setRevision)]
     pub fn set_revision(&mut self, revision: f64) {
         self.inner.set_revision(revision as u64);
