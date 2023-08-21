@@ -12,7 +12,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::{Borrow, Cow};
 use std::collections::HashMap;
 
-/// Operations onDataContracts
+/// Operations on DataContracts
 #[derive(Clone, Debug)]
 pub enum DataContractOperationType<'a> {
     /// Applies a contract and returns the fee for applying.
