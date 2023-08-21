@@ -1,7 +1,6 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use dapi_grpc::platform::v0::get_documents_request::where_clause::WhereOperator as ProtoWhereOperator;
 use dapi_grpc::platform::v0::get_documents_request::Start;
 use dapi_grpc::platform::v0::{
     get_data_contract_history_response, get_data_contract_response, get_data_contracts_response,
@@ -29,7 +28,6 @@ use drive::drive::identity::IdentityProveRequestType;
 
 use crate::platform_types::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
-use dapi_grpc::platform::v0::get_documents_request;
 use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_response::BalanceAndRevision;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
@@ -39,7 +37,7 @@ use drive::drive::identity::key::fetch::{
 };
 use drive::error::contract::ContractError;
 use drive::error::query::QuerySyntaxError;
-use drive::query::{DriveQuery, OrderClause, SingleDocumentDriveQuery, WhereClause, WhereOperator};
+use drive::query::{DriveQuery, SingleDocumentDriveQuery};
 use prost::Message;
 
 fn from_i32_to_key_kind_request_type(value: i32) -> Option<KeyKindRequestType> {
@@ -314,18 +312,14 @@ impl<C> Platform<C> {
                         )));
                     }
                 }
-                let Some(request_type) = request_type else {
+                let Some(request_type) =  request_type  else {
                     return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        QuerySyntaxError::InvalidParameter(
-                            "key request must be defined".to_string(),
-                        ),
+                        QuerySyntaxError::InvalidParameter("key request must be defined".to_string()),
                     )));
                 };
-                let Some(request) = request_type.request else {
+                let Some(request) =  request_type.request  else {
                     return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        QuerySyntaxError::InvalidParameter(
-                            "key request must be defined".to_string(),
-                        ),
+                        QuerySyntaxError::InvalidParameter("key request must be defined".to_string()),
                     )));
                 };
                 let key_request_type =
@@ -576,56 +570,30 @@ impl<C> Platform<C> {
                     contract_ref.document_type_for_name(document_type_name.as_str())
                 );
 
-                let where_clause: Vec<WhereClause> = check_validation_result_with_data!(r#where
-                    .into_iter()
-                    .map(|c| {
-                        Ok::<_, QueryError>(WhereClause {
-                            field: c.field,
-                            operator: ProtoWhereOperator::from_i32(c.operator)
-                                .map(|op| match op {
-                                    ProtoWhereOperator::Equal => WhereOperator::Equal,
-                                    ProtoWhereOperator::GreaterThan => WhereOperator::GreaterThan,
-                                    ProtoWhereOperator::GreaterThanOrEquals => {
-                                        WhereOperator::GreaterThanOrEquals
-                                    }
-                                    ProtoWhereOperator::LessThan => WhereOperator::LessThan,
-                                    ProtoWhereOperator::LessThanOrEquals => {
-                                        WhereOperator::LessThanOrEquals
-                                    }
-                                    ProtoWhereOperator::Between => WhereOperator::Between,
-                                    ProtoWhereOperator::BetweenExcludeBounds => {
-                                        WhereOperator::BetweenExcludeBounds
-                                    }
-                                    ProtoWhereOperator::BetweenExcludeLeft => {
-                                        WhereOperator::BetweenExcludeLeft
-                                    }
-                                    ProtoWhereOperator::BetweenExcludeRight => {
-                                        WhereOperator::BetweenExcludeRight
-                                    }
-                                    ProtoWhereOperator::In => WhereOperator::In,
-                                    ProtoWhereOperator::StartsWith => WhereOperator::StartsWith,
-                                })
-                                .ok_or_else(|| {
-                                    QueryError::Query(QuerySyntaxError::DeserializationError(
-                                        "unsupported `where` operator".to_owned(),
-                                    ))
-                                })?,
-                            value: ciborium::de::from_reader(c.value.as_slice()).map_err(|_|
-                                QueryError::Query(QuerySyntaxError::DeserializationError(
-                                    "`where` clause's `value` is not a valid CBOR-encoded `PlatformValue`".to_owned(),
-                                )),
-                            )?,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, _>>());
+                let where_clause = check_validation_result_with_data!(ciborium::de::from_reader(
+                    r#where.as_slice()
+                )
+                .map_err(|_| {
+                    QueryError::Query(QuerySyntaxError::DeserializationError(
+                        "unable to decode 'where' query from cbor".to_string(),
+                    ))
+                }));
 
-                let order_by = order_by
-                    .into_iter()
-                    .map(|oc| OrderClause {
-                        field: oc.field,
-                        ascending: oc.ascending,
-                    })
-                    .collect();
+                // TODO: fix?
+                //   Fails with "query syntax error: deserialization error: unable to decode 'order_by' query from cbor"
+                //   cbor deserialization fails if order_by is empty
+                let order_by = if !order_by.is_empty() {
+                    check_validation_result_with_data!(ciborium::de::from_reader(
+                        order_by.as_slice()
+                    )
+                    .map_err(|_| {
+                        QueryError::Query(QuerySyntaxError::DeserializationError(
+                            "unable to decode 'order_by' query from cbor".to_string(),
+                        ))
+                    }))
+                } else {
+                    None
+                };
 
                 let (start_at_included, start_at) = if let Some(start) = start {
                     match start {

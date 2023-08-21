@@ -298,36 +298,11 @@ message GetDataContractHistoryResponse {
 }
 
 message GetDocumentsRequest {
-  message WhereClause {
-    enum WhereOperator {
-      EQUAL = 0;
-      GREATER_THAN = 1;
-      GREATER_THAN_OR_EQUALS = 2;
-      LESS_THAN = 3;
-      LESS_THAN_OR_EQUALS = 4;
-      BETWEEN = 5;
-      BETWEEN_EXCLUDE_BOUNDS = 6;
-      BETWEEN_EXCLUDE_LEFT = 7;
-      BETWEEN_EXCLUDE_RIGHT = 8;
-      IN = 9;
-      STARTS_WITH = 10;
-    }
-
-    string field = 1;
-    WhereOperator operator = 2;
-    bytes value = 3;
-  }
-
-  message OrderClause {
-    string field = 1;
-    bool ascending = 2;
-  }
-
   bytes data_contract_id = 1;
   string document_type = 2;
 
-  repeated WhereClause where = 3;
-  repeated OrderClause order_by = 4;
+  bytes where = 3;
+  bytes order_by = 4;
 
   uint32 limit = 5;
 

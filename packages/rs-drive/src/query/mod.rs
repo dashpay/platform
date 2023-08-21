@@ -498,8 +498,8 @@ impl<'a> DriveQuery<'a> {
     #[cfg(any(feature = "full", feature = "verify"))]
     /// Converts a query Value to a `DriveQuery`.
     pub fn from_decomposed_values(
-        all_where_clauses: Vec<WhereClause>,
-        order_by: Vec<OrderClause>,
+        where_clause: Value,
+        order_by: Option<Value>,
         maybe_limit: Option<u16>,
         start_at: Option<[u8; 32]>,
         start_at_included: bool,
@@ -521,12 +521,47 @@ impl<'a> DriveQuery<'a> {
                 config.max_query_limit
             ))))?;
 
+        let all_where_clauses: Vec<WhereClause> = match where_clause {
+            Value::Null => Ok(vec![]),
+            Value::Array(clauses) => clauses
+                .iter()
+                .map(|where_clause| {
+                    if let Value::Array(clauses_components) = where_clause {
+                        WhereClause::from_components(clauses_components)
+                    } else {
+                        Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
+                            "where clause must be an array",
+                        )))
+                    }
+                })
+                .collect::<Result<Vec<WhereClause>, Error>>(),
+            _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
+                "where clause must be an array",
+            ))),
+        }?;
+
         let internal_clauses = InternalClauses::extract_from_clauses(all_where_clauses)?;
 
         let order_by: IndexMap<String, OrderClause> = order_by
-            .into_iter()
-            .map(|order_clause| (order_clause.field.clone(), order_clause))
-            .collect();
+            .map_or(vec![], |id_cbor| {
+                if let Value::Array(clauses) = id_cbor {
+                    clauses
+                        .iter()
+                        .filter_map(|order_clause| {
+                            if let Value::Array(clauses_components) = order_clause {
+                                OrderClause::from_components(clauses_components).ok()
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                } else {
+                    vec![]
+                }
+            })
+            .iter()
+            .map(|order_clause| Ok((order_clause.field.clone(), order_clause.to_owned())))
+            .collect::<Result<IndexMap<String, OrderClause>, Error>>()?;
 
         Ok(DriveQuery {
             contract,
