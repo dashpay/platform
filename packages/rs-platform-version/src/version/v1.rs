@@ -329,6 +329,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 cost_estimation: DriveIdentityCostEstimationMethodVersions {
                     for_authentication_keys_security_level_in_key_reference_tree: 0,
                     for_balances: 0,
+                    for_contract_info: 0,
                     for_keys_for_identity_id: 0,
                     for_negative_credit: 0,
                     for_purpose_in_key_reference_tree: 0,

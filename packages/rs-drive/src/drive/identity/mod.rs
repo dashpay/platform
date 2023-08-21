@@ -87,7 +87,7 @@ pub(crate) fn identity_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
 
 #[cfg(feature = "full")]
 /// The path for the contract info for an identity
-pub fn identity_contract_info_root_path(identity_id: &[u8]) -> [&[u8]; 3] {
+pub fn identity_contract_info_root_path(identity_id: &[u8; 32]) -> [&[u8]; 3] {
     [
         Into::<&[u8; 1]>::into(RootTree::Identities),
         identity_id,
@@ -97,7 +97,7 @@ pub fn identity_contract_info_root_path(identity_id: &[u8]) -> [&[u8]; 3] {
 
 #[cfg(feature = "full")]
 /// The path for the contract info for an identity as a vec
-pub fn identity_contract_info_root_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
+pub fn identity_contract_info_root_path_vec(identity_id: &[u8; 32]) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Identities as u8],
         identity_id.to_vec(),
@@ -106,7 +106,10 @@ pub fn identity_contract_info_root_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> 
 }
 
 /// The group is either a contract id or on a family of contracts owned by the same identity
-pub fn identity_contract_info_group_path_vec(identity_id: &[u8], group_id: &[u8]) -> Vec<Vec<u8>> {
+pub fn identity_contract_info_group_path_vec(
+    identity_id: &[u8; 32],
+    group_id: &[u8],
+) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Identities as u8],
         identity_id.to_vec(),

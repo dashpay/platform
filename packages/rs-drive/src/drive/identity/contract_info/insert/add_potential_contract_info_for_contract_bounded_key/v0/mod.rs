@@ -1,5 +1,5 @@
-use crate::drive::grove_operations::BatchInsertApplyType::StatefulBatchInsert;
-use crate::drive::grove_operations::BatchInsertTreeApplyType::StatefulBatchInsertTree;
+use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
+use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::drive::identity::contract_info::insert::DataContractApplyInfo;
 use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
 use crate::drive::identity::{
@@ -70,11 +70,30 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let identity_path = identity_path_vec(identity_id.as_slice());
+
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_contract_info(
+                &identity_id,
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+        }
+
+        let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+            BatchInsertTreeApplyType::StatefulBatchInsertTree
+        } else {
+            BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                in_tree_using_sums: false,
+                is_sum_tree: false,
+                flags_len: 0,
+            }
+        };
+
         // we insert the contract root tree if it doesn't exist already
         self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
             PathKeyInfo::<0>::PathKey((identity_path, vec![IdentityContractInfo as u8])),
             None,
-            StatefulBatchInsertTree,
+            apply_type,
             transaction,
             drive_operations,
             &platform_version.drive,
@@ -82,52 +101,83 @@ impl Drive {
 
         for contract_info in contract_infos.into_iter() {
             let root_id = contract_info.root_id();
+
+            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
+            {
+                Self::add_estimation_costs_for_contract_info_group(
+                    &identity_id,
+                    &root_id,
+                    estimated_costs_only_with_layer_info,
+                    &platform_version.drive,
+                )?;
+            }
+
             self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
                 PathKeyInfo::<0>::PathKey((
-                    identity_contract_info_root_path_vec(identity_id.as_slice()),
+                    identity_contract_info_root_path_vec(&identity_id),
                     root_id.to_vec(),
                 )),
                 None,
-                StatefulBatchInsertTree,
+                apply_type,
                 transaction,
                 drive_operations,
                 &platform_version.drive,
             )?;
             let (document_keys, contract_or_family_keys) = contract_info.keys();
+
             for key_id in contract_or_family_keys {
                 // we need to add a reference to the key
                 let key_id_bytes = key_id.encode_var_vec();
                 let key_reference =
                     identity_key_location_within_identity_vec(key_id_bytes.as_slice());
 
+                let reference_type_path = UpstreamRootHeightReference(1, key_reference);
+
+                let ref_apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                    BatchInsertApplyType::StatefulBatchInsert
+                } else {
+                    BatchInsertApplyType::StatelessBatchInsert {
+                        in_tree_using_sums: false,
+                        target: QueryTargetValue(reference_type_path.serialized_size() as u32),
+                    }
+                };
+
                 self.batch_insert_if_not_exists(
                     PathKeyElementInfo::<0>::PathKeyRefElement((
-                        identity_contract_info_group_path_vec(
-                            identity_id.as_slice(),
-                            root_id.as_slice(),
-                        ),
+                        identity_contract_info_group_path_vec(&identity_id, &root_id),
                         key_id_bytes.as_slice(),
-                        Element::Reference(
-                            UpstreamRootHeightReference(1, key_reference),
-                            Some(1),
-                            None,
-                        ),
+                        Element::Reference(reference_type_path, Some(1), None),
                     )),
-                    StatefulBatchInsert,
+                    ref_apply_type,
                     transaction,
                     drive_operations,
                     &platform_version.drive,
                 )?;
             }
 
-            for (document_type, document_key_ids) in document_keys {
+            for (document_type_name, document_key_ids) in document_keys {
+                // The path is the concatenation of the contract_id and the document type name
+                let mut contract_id_bytes_with_document_type_name = root_id.to_vec();
+                contract_id_bytes_with_document_type_name.extend(document_type_name.as_bytes());
+
+                if let Some(estimated_costs_only_with_layer_info) =
+                    estimated_costs_only_with_layer_info
+                {
+                    Self::add_estimation_costs_for_contract_info_group(
+                        &identity_id,
+                        &contract_id_bytes_with_document_type_name,
+                        estimated_costs_only_with_layer_info,
+                        &platform_version.drive,
+                    )?;
+                }
+
                 self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
                     PathKeyInfo::<0>::PathKey((
-                        identity_contract_info_root_path_vec(identity_id.as_slice()),
-                        root_id.to_vec(),
+                        identity_contract_info_root_path_vec(&identity_id),
+                        contract_id_bytes_with_document_type_name.to_vec(),
                     )),
                     None,
-                    StatefulBatchInsertTree,
+                    apply_type,
                     transaction,
                     drive_operations,
                     &platform_version.drive,
@@ -138,11 +188,20 @@ impl Drive {
                     let key_reference =
                         identity_key_location_within_identity_vec(key_id_bytes.as_slice());
 
+                    let ref_apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                        BatchInsertApplyType::StatefulBatchInsert
+                    } else {
+                        BatchInsertApplyType::StatelessBatchInsert {
+                            in_tree_using_sums: false,
+                            target: QueryTargetValue(key_reference.serialized_size() as u32),
+                        }
+                    };
+
                     self.batch_insert_if_not_exists(
                         PathKeyElementInfo::<0>::PathKeyRefElement((
                             identity_contract_info_group_path_vec(
-                                identity_id.as_slice(),
-                                root_id.as_slice(),
+                                &identity_id,
+                                &contract_id_bytes_with_document_type_name,
                             ),
                             key_id_bytes.as_slice(),
                             Element::Reference(
@@ -151,7 +210,7 @@ impl Drive {
                                 None,
                             ),
                         )),
-                        StatefulBatchInsert,
+                        ref_apply_type,
                         transaction,
                         drive_operations,
                         &platform_version.drive,
