@@ -100,13 +100,17 @@ static GPBFileDescriptor *PlatformRoot_FileDescriptor(void) {
 @dynamic quorumHash;
 @dynamic signature;
 @dynamic round;
+@dynamic blockIdHash;
+@dynamic quorumType;
 
 typedef struct Proof__storage_ {
   uint32_t _has_storage_[1];
   uint32_t round;
+  uint32_t quorumType;
   NSData *grovedbProof;
   NSData *quorumHash;
   NSData *signature;
+  NSData *blockIdHash;
 } Proof__storage_;
 
 // This method is threadsafe because it is initially called
@@ -151,6 +155,24 @@ typedef struct Proof__storage_ {
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },
+      {
+        .name = "blockIdHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = Proof_FieldNumber_BlockIdHash,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(Proof__storage_, blockIdHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "quorumType",
+        .dataTypeSpecific.clazz = Nil,
+        .number = Proof_FieldNumber_QuorumType,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(Proof__storage_, quorumType),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
     };
     GPBDescriptor *localDescriptor =
         [GPBDescriptor allocDescriptorForClass:[Proof class]
@@ -178,11 +200,13 @@ typedef struct Proof__storage_ {
 @dynamic coreChainLockedHeight;
 @dynamic timeMs;
 @dynamic protocolVersion;
+@dynamic chainId;
 
 typedef struct ResponseMetadata__storage_ {
   uint32_t _has_storage_[1];
   uint32_t coreChainLockedHeight;
   uint32_t protocolVersion;
+  NSString *chainId;
   uint64_t height;
   uint64_t timeMs;
 } ResponseMetadata__storage_;
@@ -228,6 +252,15 @@ typedef struct ResponseMetadata__storage_ {
         .offset = (uint32_t)offsetof(ResponseMetadata__storage_, protocolVersion),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "chainId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = ResponseMetadata_FieldNumber_ChainId,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(ResponseMetadata__storage_, chainId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
       },
     };
     GPBDescriptor *localDescriptor =

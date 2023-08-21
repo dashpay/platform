@@ -273,17 +273,6 @@ impl QueryResultEncoding {
 }
 
 #[cfg(any(feature = "full", feature = "verify"))]
-/// `start_at` variants of [DriveQuery].
-// TODO: [DriveQuery] is not yet updated to use it, solely for DAPI client for now
-#[derive(Debug, Clone, PartialEq)]
-pub enum StartClause {
-    /// Bound included
-    StartAt([u8; 32]),
-    /// Bound excluded
-    StartAfter([u8; 32]),
-}
-
-#[cfg(any(feature = "full", feature = "verify"))]
 /// Drive query struct
 #[derive(Debug, PartialEq, Clone)]
 pub struct DriveQuery<'a> {

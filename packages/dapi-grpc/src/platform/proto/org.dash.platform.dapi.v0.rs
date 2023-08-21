@@ -744,10 +744,10 @@ pub struct GetDocumentsRequest {
     pub data_contract_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(string, tag = "2")]
     pub document_type: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "3")]
-    pub r#where: ::prost::alloc::vec::Vec<get_documents_request::WhereClause>,
-    #[prost(message, repeated, tag = "4")]
-    pub order_by: ::prost::alloc::vec::Vec<get_documents_request::OrderClause>,
+    #[prost(bytes = "vec", tag = "3")]
+    pub r#where: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "4")]
+    pub order_by: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint32, tag = "5")]
     pub limit: u32,
     #[prost(bool, tag = "8")]
@@ -757,96 +757,6 @@ pub struct GetDocumentsRequest {
 }
 /// Nested message and enum types in `GetDocumentsRequest`.
 pub mod get_documents_request {
-    #[derive(::serde::Serialize, ::serde::Deserialize)]
-    #[serde(rename_all = "snake_case")]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct WhereClause {
-        #[prost(string, tag = "1")]
-        pub field: ::prost::alloc::string::String,
-        #[prost(enumeration = "where_clause::WhereOperator", tag = "2")]
-        pub operator: i32,
-        #[prost(bytes = "vec", tag = "3")]
-        pub value: ::prost::alloc::vec::Vec<u8>,
-    }
-    /// Nested message and enum types in `WhereClause`.
-    pub mod where_clause {
-        #[derive(::serde::Serialize, ::serde::Deserialize)]
-        #[serde(rename_all = "snake_case")]
-        #[derive(
-            Clone,
-            Copy,
-            Debug,
-            PartialEq,
-            Eq,
-            Hash,
-            PartialOrd,
-            Ord,
-            ::prost::Enumeration
-        )]
-        #[repr(i32)]
-        pub enum WhereOperator {
-            Equal = 0,
-            GreaterThan = 1,
-            GreaterThanOrEquals = 2,
-            LessThan = 3,
-            LessThanOrEquals = 4,
-            Between = 5,
-            BetweenExcludeBounds = 6,
-            BetweenExcludeLeft = 7,
-            BetweenExcludeRight = 8,
-            In = 9,
-            StartsWith = 10,
-        }
-        impl WhereOperator {
-            /// String value of the enum field names used in the ProtoBuf definition.
-            ///
-            /// The values are not transformed in any way and thus are considered stable
-            /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-            pub fn as_str_name(&self) -> &'static str {
-                match self {
-                    WhereOperator::Equal => "EQUAL",
-                    WhereOperator::GreaterThan => "GREATER_THAN",
-                    WhereOperator::GreaterThanOrEquals => "GREATER_THAN_OR_EQUALS",
-                    WhereOperator::LessThan => "LESS_THAN",
-                    WhereOperator::LessThanOrEquals => "LESS_THAN_OR_EQUALS",
-                    WhereOperator::Between => "BETWEEN",
-                    WhereOperator::BetweenExcludeBounds => "BETWEEN_EXCLUDE_BOUNDS",
-                    WhereOperator::BetweenExcludeLeft => "BETWEEN_EXCLUDE_LEFT",
-                    WhereOperator::BetweenExcludeRight => "BETWEEN_EXCLUDE_RIGHT",
-                    WhereOperator::In => "IN",
-                    WhereOperator::StartsWith => "STARTS_WITH",
-                }
-            }
-            /// Creates an enum from field names used in the ProtoBuf definition.
-            pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-                match value {
-                    "EQUAL" => Some(Self::Equal),
-                    "GREATER_THAN" => Some(Self::GreaterThan),
-                    "GREATER_THAN_OR_EQUALS" => Some(Self::GreaterThanOrEquals),
-                    "LESS_THAN" => Some(Self::LessThan),
-                    "LESS_THAN_OR_EQUALS" => Some(Self::LessThanOrEquals),
-                    "BETWEEN" => Some(Self::Between),
-                    "BETWEEN_EXCLUDE_BOUNDS" => Some(Self::BetweenExcludeBounds),
-                    "BETWEEN_EXCLUDE_LEFT" => Some(Self::BetweenExcludeLeft),
-                    "BETWEEN_EXCLUDE_RIGHT" => Some(Self::BetweenExcludeRight),
-                    "IN" => Some(Self::In),
-                    "STARTS_WITH" => Some(Self::StartsWith),
-                    _ => None,
-                }
-            }
-        }
-    }
-    #[derive(::serde::Serialize, ::serde::Deserialize)]
-    #[serde(rename_all = "snake_case")]
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct OrderClause {
-        #[prost(string, tag = "1")]
-        pub field: ::prost::alloc::string::String,
-        #[prost(bool, tag = "2")]
-        pub ascending: bool,
-    }
     #[derive(::serde::Serialize, ::serde::Deserialize)]
     #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]

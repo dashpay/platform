@@ -145,6 +145,8 @@ typedef GPB_ENUM(Proof_FieldNumber) {
   Proof_FieldNumber_QuorumHash = 2,
   Proof_FieldNumber_Signature = 3,
   Proof_FieldNumber_Round = 4,
+  Proof_FieldNumber_BlockIdHash = 5,
+  Proof_FieldNumber_QuorumType = 6,
 };
 
 GPB_FINAL @interface Proof : GPBMessage
@@ -157,6 +159,10 @@ GPB_FINAL @interface Proof : GPBMessage
 
 @property(nonatomic, readwrite) uint32_t round;
 
+@property(nonatomic, readwrite, copy, null_resettable) NSData *blockIdHash;
+
+@property(nonatomic, readwrite) uint32_t quorumType;
+
 @end
 
 #pragma mark - ResponseMetadata
@@ -166,6 +172,7 @@ typedef GPB_ENUM(ResponseMetadata_FieldNumber) {
   ResponseMetadata_FieldNumber_CoreChainLockedHeight = 2,
   ResponseMetadata_FieldNumber_TimeMs = 3,
   ResponseMetadata_FieldNumber_ProtocolVersion = 4,
+  ResponseMetadata_FieldNumber_ChainId = 5,
 };
 
 GPB_FINAL @interface ResponseMetadata : GPBMessage
@@ -177,6 +184,8 @@ GPB_FINAL @interface ResponseMetadata : GPBMessage
 @property(nonatomic, readwrite) uint64_t timeMs;
 
 @property(nonatomic, readwrite) uint32_t protocolVersion;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *chainId;
 
 @end
 

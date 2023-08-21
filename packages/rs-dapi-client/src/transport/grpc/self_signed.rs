@@ -1,4 +1,4 @@
-use hyper::{client::connect::HttpConnector, Client};
+use hyper::{client::connect::HttpConnector};
 use hyper_rustls::HttpsConnector;
 use lazy_static::lazy_static;
 use rustls::client::{ServerCertVerified, ServerCertVerifier};
