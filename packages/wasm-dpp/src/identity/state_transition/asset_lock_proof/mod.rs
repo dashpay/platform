@@ -15,17 +15,19 @@ use dpp::identity::errors::UnknownAssetLockProofTypeError;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
-use crate::errors::dpp_error::from_dpp_error_ref;
+// use crate::errors::dpp_error::from_dpp_error_ref;
 use crate::identifier::IdentifierWrapper;
 use crate::identity::errors::UnknownAssetLockProofTypeErrorWasm;
-use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
+// use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::utils::generic_of_js_val;
-use crate::validation::ValidationResultWasm;
-use crate::{Deserialize, StateTransitionExecutionContextWasm};
+// use crate::validation::ValidationResultWasm;
+// use crate::{Deserialize, StateTransitionExecutionContextWasm};
 use dpp::identity::state_transition::asset_lock_proof::{
-    AssetLockProof, AssetLockProofType, AssetLockPublicKeyHashFetcher,
-    AssetLockTransactionOutputFetcher, AssetLockTransactionValidator,
+    AssetLockProof,
+    AssetLockProofType,
+    // AssetLockPublicKeyHashFetcher, AssetLockTransactionOutputFetcher, AssetLockTransactionValidator,
 };
+use serde::Deserialize;
 
 #[derive(Deserialize, Clone)]
 #[wasm_bindgen(js_name=AssetLockProof)]
@@ -164,106 +166,109 @@ pub fn create_asset_lock_proof_from_wasm_instance(
     }
 }
 
-#[wasm_bindgen(js_name=validateAssetLockTransaction)]
-pub async fn validate_asset_lock_transaction(
-    state_repository: ExternalStateRepositoryLike,
-    raw_transaction: String,
-    output_index: usize,
-    execution_context: &StateTransitionExecutionContextWasm,
-) -> Result<ValidationResultWasm, JsValue> {
-    let tx_bytes = Vec::from_hex(&raw_transaction)
-        .map_err(|_| RustConversionError::Error(String::from("invalid transaction hex")))?;
+// TODO(versioning): restore?
+// #[wasm_bindgen(js_name=validateAssetLockTransaction)]
+// pub async fn validate_asset_lock_transaction(
+//     state_repository: ExternalStateRepositoryLike,
+//     raw_transaction: String,
+//     output_index: usize,
+//     execution_context: &StateTransitionExecutionContextWasm,
+// ) -> Result<ValidationResultWasm, JsValue> {
+//     let tx_bytes = Vec::from_hex(&raw_transaction)
+//         .map_err(|_| RustConversionError::Error(String::from("invalid transaction hex")))?;
+//
+//     let state_repository_wrapper =
+//         Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
+//
+//     let validator = AssetLockTransactionValidator::new(state_repository_wrapper);
+//
+//     let result = validator
+//         .validate(tx_bytes.as_slice(), output_index, execution_context.into())
+//         .await
+//         .map_err(|e| from_dpp_err(e.into()))?;
+//
+//     let validation_result = result.map(|item| {
+//         let object = js_sys::Object::new();
+//
+//         js_sys::Reflect::set(
+//             &object,
+//             &"publicKeyHash".to_owned().into(),
+//             &Buffer::from_bytes(&item.public_key_hash),
+//         )
+//         .unwrap();
+//
+//         let deserialized_tx = consensus::serialize(&item.transaction);
+//
+//         js_sys::Reflect::set(
+//             &object,
+//             &"transaction".to_owned().into(),
+//             &Buffer::from_bytes(&deserialized_tx),
+//         )
+//         .unwrap();
+//
+//         object
+//     });
+//
+//     Ok(validation_result.into())
+// }
 
-    let state_repository_wrapper =
-        Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
+// TODO(versioning): restore?
+// #[wasm_bindgen(js_name=fetchAssetLockTransactionOutput)]
+// pub async fn fetch_asset_lock_transaction_output(
+//     state_repository: ExternalStateRepositoryLike,
+//     raw_asset_lock_proof: JsValue,
+//     execution_context: &StateTransitionExecutionContextWasm,
+// ) -> Result<JsValue, JsValue> {
+//     let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&raw_asset_lock_proof)?;
+//
+//     let state_repository_wrapper =
+//         Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
+//
+//     let fetcher = AssetLockTransactionOutputFetcher::new(state_repository_wrapper);
+//
+//     let fetch_result = fetcher
+//         .fetch(&asset_lock_proof, execution_context.into())
+//         .await
+//         .map_err(|e| from_dpp_error_ref(&e))?;
+//
+//     let tx_out = js_sys::Object::new();
+//
+//     js_sys::Reflect::set(
+//         &tx_out,
+//         &"satoshis".to_owned().into(),
+//         &(fetch_result.value as u32).into(),
+//     )
+//     .unwrap();
+//
+//     let script_hex = format!("{:x}", fetch_result.script_pubkey);
+//
+//     js_sys::Reflect::set(&tx_out, &"script".to_owned().into(), &script_hex.into()).unwrap();
+//
+//     Ok(tx_out.into())
+// }
 
-    let validator = AssetLockTransactionValidator::new(state_repository_wrapper);
-
-    let result = validator
-        .validate(tx_bytes.as_slice(), output_index, execution_context.into())
-        .await
-        .map_err(|e| from_dpp_err(e.into()))?;
-
-    let validation_result = result.map(|item| {
-        let object = js_sys::Object::new();
-
-        js_sys::Reflect::set(
-            &object,
-            &"publicKeyHash".to_owned().into(),
-            &Buffer::from_bytes(&item.public_key_hash),
-        )
-        .unwrap();
-
-        let deserialized_tx = consensus::serialize(&item.transaction);
-
-        js_sys::Reflect::set(
-            &object,
-            &"transaction".to_owned().into(),
-            &Buffer::from_bytes(&deserialized_tx),
-        )
-        .unwrap();
-
-        object
-    });
-
-    Ok(validation_result.into())
-}
-
-#[wasm_bindgen(js_name=fetchAssetLockTransactionOutput)]
-pub async fn fetch_asset_lock_transaction_output(
-    state_repository: ExternalStateRepositoryLike,
-    raw_asset_lock_proof: JsValue,
-    execution_context: &StateTransitionExecutionContextWasm,
-) -> Result<JsValue, JsValue> {
-    let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&raw_asset_lock_proof)?;
-
-    let state_repository_wrapper =
-        Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
-
-    let fetcher = AssetLockTransactionOutputFetcher::new(state_repository_wrapper);
-
-    let fetch_result = fetcher
-        .fetch(&asset_lock_proof, execution_context.into())
-        .await
-        .map_err(|e| from_dpp_error_ref(&e))?;
-
-    let tx_out = js_sys::Object::new();
-
-    js_sys::Reflect::set(
-        &tx_out,
-        &"satoshis".to_owned().into(),
-        &(fetch_result.value as u32).into(),
-    )
-    .unwrap();
-
-    let script_hex = format!("{:x}", fetch_result.script_pubkey);
-
-    js_sys::Reflect::set(&tx_out, &"script".to_owned().into(), &script_hex.into()).unwrap();
-
-    Ok(tx_out.into())
-}
-
-#[wasm_bindgen(js_name=fetchAssetLockPublicKeyHash)]
-pub async fn fetch_asset_lock_public_key_hash(
-    state_repository: ExternalStateRepositoryLike,
-    raw_asset_lock_proof: JsValue,
-    execution_context: &StateTransitionExecutionContextWasm,
-) -> Result<JsValue, JsValue> {
-    let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&raw_asset_lock_proof)?;
-
-    let state_repository_wrapper =
-        Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
-
-    let tx_output_fetcher =
-        AssetLockTransactionOutputFetcher::new(state_repository_wrapper.clone());
-
-    let public_key_hash_fetcher =
-        AssetLockPublicKeyHashFetcher::new(state_repository_wrapper, Arc::new(tx_output_fetcher));
-
-    let fetch_result = public_key_hash_fetcher
-        .fetch_public_key_hash(asset_lock_proof, execution_context.into())
-        .await
-        .map_err(|e| from_dpp_error_ref(&e))?;
-
-    Ok(Buffer::from_bytes(&fetch_result).into())
-}
+// TODO(versioning): restore?
+// #[wasm_bindgen(js_name=fetchAssetLockPublicKeyHash)]
+// pub async fn fetch_asset_lock_public_key_hash(
+//     state_repository: ExternalStateRepositoryLike,
+//     raw_asset_lock_proof: JsValue,
+//     execution_context: &StateTransitionExecutionContextWasm,
+// ) -> Result<JsValue, JsValue> {
+//     let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&raw_asset_lock_proof)?;
+//
+//     let state_repository_wrapper =
+//         Arc::new(ExternalStateRepositoryLikeWrapper::new(state_repository));
+//
+//     let tx_output_fetcher =
+//         AssetLockTransactionOutputFetcher::new(state_repository_wrapper.clone());
+//
+//     let public_key_hash_fetcher =
+//         AssetLockPublicKeyHashFetcher::new(state_repository_wrapper, Arc::new(tx_output_fetcher));
+//
+//     let fetch_result = public_key_hash_fetcher
+//         .fetch_public_key_hash(asset_lock_proof, execution_context.into())
+//         .await
+//         .map_err(|e| from_dpp_error_ref(&e))?;
+//
+//     Ok(Buffer::from_bytes(&fetch_result).into())
+// }

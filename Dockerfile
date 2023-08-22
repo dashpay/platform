@@ -29,7 +29,7 @@
 # 3. Github Actions have shared networking configured, so we need to set a random
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 
-ARG ALPINE_VERSION=3.16
+ARG ALPINE_VERSION=3.18
 
 # Set RUSTC_WRAPPER to `sccache` to enable sccache caching
 ARG RUSTC_WRAPPER
@@ -53,7 +53,7 @@ RUN apk add --no-cache \
         libc-dev \
         linux-headers \
         llvm-static llvm-dev  \
-        'nodejs~=16' \
+        'nodejs~=18' \
         npm \
         openssl-dev \
         perl \
@@ -255,7 +255,7 @@ RUN yarn workspaces focus --production dashmate
 #
 #  STAGE: FINAL DASHMATE HELPER IMAGE
 #
-FROM node:16-alpine${ALPINE_VERSION} AS dashmate-helper
+FROM node:18-alpine${ALPINE_VERSION} AS dashmate-helper
 
 RUN apk add --no-cache docker-cli docker-cli-compose curl
 
@@ -303,7 +303,7 @@ RUN yarn workspaces focus --production @dashevo/platform-test-suite
 #
 #  STAGE: FINAL TEST SUITE IMAGE
 #
-FROM node:16-alpine${ALPINE_VERSION} AS test-suite
+FROM node:18-alpine${ALPINE_VERSION} AS test-suite
 
 RUN apk add --no-cache bash
 
@@ -339,6 +339,9 @@ COPY --from=build-test-suite /platform/packages/feature-flags-contract packages/
 COPY --from=build-test-suite /platform/packages/dpns-contract packages/dpns-contract
 COPY --from=build-test-suite /platform/packages/data-contracts packages/data-contracts
 COPY --from=build-test-suite /platform/packages/rs-platform-serialization packages/rs-platform-serialization
+COPY --from=build-test-suite /platform/packages/rs-platform-serialization-derive packages/rs-platform-serialization-derive
+COPY --from=build-test-suite /platform/packages/rs-platform-version packages/rs-platform-version
+COPY --from=build-test-suite /platform/packages/rs-platform-versioning packages/rs-platform-versioning
 COPY --from=build-test-suite /platform/packages/rs-platform-value-convertible packages/rs-platform-value-convertible
 COPY --from=build-test-suite /platform/packages/rs-dpp packages/rs-dpp
 COPY --from=build-test-suite /platform/packages/wasm-dpp packages/wasm-dpp
@@ -361,7 +364,7 @@ RUN yarn workspaces focus --production @dashevo/dapi
 #
 # STAGE: FINAL DAPI IMAGE
 #
-FROM node:16-alpine3.16 AS dapi
+FROM node:18-alpine${ALPINE_VERSION} AS dapi
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DAPI Node.JS"

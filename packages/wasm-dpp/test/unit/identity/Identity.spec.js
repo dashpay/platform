@@ -1,40 +1,29 @@
-const varint = require('varint');
-
 const { hash: hashFunction } = require('@dashevo/dpp/lib/util/hash');
 const { expect } = require('chai');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
-const { default: loadWasmDpp } = require('../../..');
-const { getLatestProtocolVersion } = require('../../..');
+const {
+  Identity, Metadata, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
+} = require('../../..');
 
 describe('Identity', () => {
   let rawIdentity;
   let identity;
   let metadataFixture;
-  let Identity;
-  let Metadata;
-  let IdentityPublicKey;
-  let KeyPurpose;
-  let KeyType;
-  let KeySecurityLevel;
-
-  before(async () => {
-    ({
-      Identity, Metadata, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
-    } = await loadWasmDpp());
-  });
 
   beforeEach(async () => {
     rawIdentity = {
-      protocolVersion: getLatestProtocolVersion(),
+      $version: '0',
       id: await generateRandomIdentifierAsync(),
       publicKeys: [
         {
+          $version: '0',
           id: 0,
           type: KeyType.ECDSA_SECP256K1,
           data: Buffer.alloc(36).fill('a'),
           purpose: KeyPurpose.AUTHENTICATION,
           securityLevel: KeySecurityLevel.MASTER,
           readOnly: false,
+          disabledAt: null,
         },
       ],
       balance: 0,
@@ -58,9 +47,6 @@ describe('Identity', () => {
       timeMs: 100,
       protocolVersion: 2,
     });
-  });
-
-  afterEach(() => {
   });
 
   describe('#constructor', () => {
@@ -99,12 +85,14 @@ describe('Identity', () => {
 
     it('should set public keys', () => {
       const rawKey = {
+        $version: '0',
         id: 2,
         type: KeyType.ECDSA_SECP256K1,
         data: Buffer.alloc(36).fill('a'),
         purpose: KeyPurpose.AUTHENTICATION,
         securityLevel: KeySecurityLevel.MASTER,
         readOnly: false,
+        disabledAt: null,
       };
 
       const ipk = new IdentityPublicKey(rawKey);
@@ -136,7 +124,7 @@ describe('Identity', () => {
     it('should return buffer', () => {
       const result = identity.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.length(87);
+      expect(result).to.have.length(81);
     });
   });
 
@@ -153,12 +141,6 @@ describe('Identity', () => {
     it('should return the same has as JS Identity', () => {
       const expectedHash = hashFunction(identity.toBuffer());
       const result = identity.hash();
-
-      const identityDataToEncode = identity.toObject();
-      delete identityDataToEncode.protocolVersion;
-
-      varint.encode(identity.getProtocolVersion());
-
       expect(result).to.deep.equal(expectedHash);
     });
   });
@@ -166,10 +148,6 @@ describe('Identity', () => {
   describe('#toObject', () => {
     it('should return plain object representation', () => {
       const identityObject = identity.toObject();
-
-      // We can't compare Identifier directly - it needs to be converted into a Buffer
-      rawIdentity.id = rawIdentity.id.toBuffer();
-
       expect(identityObject).to.deep.equal(rawIdentity);
     });
   });
@@ -179,16 +157,18 @@ describe('Identity', () => {
       const jsonIdentity = identity.toJSON();
 
       expect(jsonIdentity).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         id: rawIdentity.id.toString(),
         publicKeys: [
           {
+            $version: '0',
             id: 0,
             type: KeyType.ECDSA_SECP256K1,
             data: rawIdentity.publicKeys[0].data.toString('base64'),
             purpose: KeyPurpose.AUTHENTICATION,
             securityLevel: KeySecurityLevel.MASTER,
             readOnly: false,
+            disabledAt: null,
           },
         ],
         balance: 0,
@@ -261,6 +241,7 @@ describe('Identity', () => {
   describe('#getPublicKeyMaxId', () => {
     it('should get the biggest public key ID', () => {
       const key = new IdentityPublicKey({
+        $version: '0',
         id: 99,
         type: KeyType.ECDSA_SECP256K1,
         data: Buffer.alloc(36).fill('a'),
@@ -272,6 +253,7 @@ describe('Identity', () => {
       identity.addPublicKeys(
         key,
         new IdentityPublicKey({
+          $version: '0',
           id: 50,
           type: KeyType.ECDSA_SECP256K1,
           data: Buffer.alloc(36).fill('a'),

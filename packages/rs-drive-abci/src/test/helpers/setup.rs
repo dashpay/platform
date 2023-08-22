@@ -36,8 +36,9 @@ use std::ops::{Deref, DerefMut};
 
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::MockCoreRPCLike;
-use crate::test::fixture::abci::static_system_identity_public_keys;
+use crate::test::fixture::abci::static_system_identity_public_keys_v0;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
+use dpp::version::PlatformVersion;
 use tempfile::TempDir;
 
 /// A test platform builder.
@@ -104,7 +105,15 @@ impl TempPlatform<MockCoreRPCLike> {
     pub fn set_initial_state_structure(self) -> Self {
         self.platform
             .drive
-            .create_initial_state_structure(None)
+            .create_initial_state_structure(
+                None,
+                self.platform
+                    .state
+                    .read()
+                    .unwrap()
+                    .current_platform_version()
+                    .expect("expected to get current platform version"),
+            )
             .expect("should create root tree successfully");
 
         self
@@ -115,8 +124,9 @@ impl TempPlatform<MockCoreRPCLike> {
         self.platform
             .create_genesis_state_v0(
                 Default::default(),
-                static_system_identity_public_keys(),
+                static_system_identity_public_keys_v0().into(),
                 None,
+                PlatformVersion::latest(),
             )
             .expect("should create root tree successfully");
 

@@ -6,6 +6,8 @@ pub(in crate::execution) mod block_fees;
 pub mod block_state_info;
 /// An execution event
 pub(in crate::execution) mod execution_event;
+/// A structure representing the context of the execution of a state transition
+pub(in crate::execution) mod execution_operation;
 /// The execution result
 pub(in crate::execution) mod execution_result;
 /// A structure showing the storage and processing fees in a pool
@@ -14,6 +16,8 @@ pub(in crate::execution) mod fees_in_pools;
 pub(in crate::execution) mod processed_block_fees_outcome;
 /// Proposer payouts
 pub(in crate::execution) mod proposer_payouts;
+/// A structure representing the context of the execution of a state transition
+pub(in crate::execution) mod state_transition_execution_context;
 /// A structure used in the distribution of storage fees
 pub(in crate::execution) mod storage_fee_distribution_outcome;
 /// A structure representing an unpaid epoch

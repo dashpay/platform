@@ -1,10 +1,12 @@
 use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::credits::Credits;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
+use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
+
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -38,6 +40,7 @@ impl DriveLowLevelOperationConverter for SystemOperationType {
         >,
         _block_info: &BlockInfo,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             SystemOperationType::AddToSystemCredits { amount } => drive
@@ -45,18 +48,21 @@ impl DriveLowLevelOperationConverter for SystemOperationType {
                     amount,
                     estimated_costs_only_with_layer_info,
                     transaction,
+                    platform_version,
                 ),
             SystemOperationType::RemoveFromSystemCredits { amount } => drive
                 .remove_from_system_credits_operations(
                     amount,
                     estimated_costs_only_with_layer_info,
                     transaction,
+                    platform_version,
                 ),
             SystemOperationType::AddUsedAssetLock {
                 asset_lock_outpoint,
             } => drive.add_asset_lock_outpoint_operations(
                 &asset_lock_outpoint,
                 estimated_costs_only_with_layer_info,
+                platform_version,
             ),
         }
     }

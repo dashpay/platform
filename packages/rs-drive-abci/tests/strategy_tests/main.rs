@@ -52,7 +52,6 @@ mod masternode_list_item_helpers;
 mod masternodes;
 mod operations;
 mod query;
-mod signer;
 mod strategy;
 mod transitions;
 mod upgrade_fork_tests;
@@ -73,9 +72,16 @@ mod tests {
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
-    use dpp::data_contract::extra::common::json_document_to_created_contract;
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
+    use dpp::version::PlatformVersion;
     use drive_abci::config::PlatformTestConfig;
+    use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
     use itertools::Itertools;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
@@ -268,9 +274,16 @@ mod tests {
             .unwrap()
             .expect("expected root hash");
 
+        let state = abci_app.platform.state.read().unwrap();
+
+        let protocol_version = state.current_protocol_version_in_consensus();
+        drop(state);
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
         abci_app
             .platform
-            .recreate_state()
+            .recreate_state(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -296,10 +309,10 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
 
@@ -323,6 +336,7 @@ mod tests {
 
     #[test]
     fn run_chain_one_identity_in_solitude() {
+        let platform_version = PlatformVersion::latest();
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
@@ -371,11 +385,15 @@ mod tests {
             .abci_app
             .platform
             .drive
-            .fetch_identity_balance(outcome.identities.first().unwrap().id.to_buffer(), None)
+            .fetch_identity_balance(
+                outcome.identities.first().unwrap().id().to_buffer(),
+                None,
+                platform_version,
+            )
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864467880)
+        assert_eq!(balance, 99865075600)
     }
 
     #[test]
@@ -483,6 +501,7 @@ mod tests {
 
     #[test]
     fn run_chain_core_height_randomly_increasing_with_quorum_updates() {
+        let platform_version = PlatformVersion::latest();
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
@@ -541,7 +560,7 @@ mod tests {
             .expect("expected a version counter");
         platform
             .drive
-            .fetch_versions_with_counter(None)
+            .fetch_versions_with_counter(None, &platform_version.drive)
             .expect("expected to get versions");
 
         assert_eq!(
@@ -549,10 +568,10 @@ mod tests {
                 .state
                 .read()
                 .unwrap()
-                .last_committed_block_info
+                .last_committed_block_info()
                 .as_ref()
                 .unwrap()
-                .basic_info
+                .basic_info()
                 .epoch
                 .index,
             0
@@ -620,7 +639,7 @@ mod tests {
         let platform = abci_app.platform;
         let platform_state = platform.state.read().unwrap();
 
-        assert!(platform_state.hpmn_masternode_list.len() > 100);
+        assert!(platform_state.hpmn_masternode_list().len() > 100);
     }
 
     #[test]
@@ -686,7 +705,7 @@ mod tests {
         let platform = abci_app.platform;
         let platform_state = platform.state.read().unwrap();
 
-        assert_ne!(platform_state.hpmn_masternode_list.len(), 100);
+        assert_ne!(platform_state.hpmn_masternode_list().len(), 100);
     }
 
     #[test]
@@ -748,6 +767,7 @@ mod tests {
 
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
+        let platform_version = PlatformVersion::latest();
         let platform = abci_app.platform;
         let _platform_state = platform.state.read().unwrap();
 
@@ -762,6 +782,7 @@ mod tests {
                     .collect::<Vec<_>>()
                     .as_slice(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch identities");
 
@@ -770,9 +791,9 @@ mod tests {
                 .as_ref()
                 .map(|identity| {
                     identity
-                        .public_keys
+                        .public_keys()
                         .values()
-                        .any(|key| key.disabled_at.is_some())
+                        .any(|key| key.disabled_at().is_some())
                 })
                 .unwrap_or_default()
         });
@@ -899,14 +920,17 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "e51e1f015314e8c1f46c37db22a4d29f9ee116cb23e80ce75582ad136ba2c028".to_string()
+            "e955c46f649bc21c529b3ea8f1800d7295141ad68c0b842894c33fd9fa26f2cd".to_string()
         )
     }
 
     #[test]
     fn run_chain_insert_one_new_identity_and_a_contract() {
+        let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
@@ -965,12 +989,13 @@ mod tests {
                     .first()
                     .unwrap()
                     .0
-                    .data_contract
-                    .id
+                    .data_contract()
+                    .id()
                     .to_buffer(),
                 None,
                 None,
                 None,
+                platform_version,
             )
             .unwrap()
             .expect("expected to execute the fetch of a contract")
@@ -979,25 +1004,32 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_and_a_contract_with_updates() {
+        let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
         let mut contract_update_1 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-1.json",
+            true,
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
         //todo: versions should start at 0 (so this should be 1)
-        contract_update_1.data_contract.version = 2;
+        contract_update_1.data_contract_mut().set_version(2);
 
         let mut contract_update_2 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-2.json",
+            true,
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
-        contract_update_2.data_contract.version = 3;
+        contract_update_2.data_contract_mut().set_version(3);
 
         let strategy = Strategy {
             contracts_with_updates: vec![(
@@ -1060,12 +1092,13 @@ mod tests {
                     .first()
                     .unwrap()
                     .0
-                    .data_contract
-                    .id
+                    .data_contract()
+                    .id()
                     .to_buffer(),
                 None,
                 None,
                 None,
+                platform_version,
             )
             .unwrap()
             .expect("expected to execute the fetch of a contract")
@@ -1074,12 +1107,15 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_and_one_new_document() {
+        let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
-        let contract = &created_contract.data_contract;
+        let contract = created_contract.data_contract();
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -1087,7 +1123,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1143,12 +1179,15 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change() {
+        let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
-        let contract = &created_contract.data_contract;
+        let contract = created_contract.data_contract();
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -1156,7 +1195,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1222,12 +1261,15 @@ mod tests {
     #[test]
     fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions_with_epoch_change(
     ) {
+        let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
-        let contract = &created_contract.data_contract;
+        let contract = created_contract.data_contract();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1235,7 +1277,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_deletion_op = DocumentOp {
@@ -1244,7 +1286,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1319,12 +1361,15 @@ mod tests {
     #[test]
     fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
     ) {
+        let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
-        let contract = &created_contract.data_contract;
+        let contract = created_contract.data_contract();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1332,7 +1377,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_deletion_op = DocumentOp {
@@ -1341,7 +1386,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1423,19 +1468,22 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "5c01c4a47d4be68d44cec1b0d2cb0cd39d5228b1ad55643aa29f5d29eba3a102".to_string()
+            "667d64ad15fa71c505e54c490814608809d22a66205afe0cc9c4c9745a55f38f".to_string()
         )
     }
 
     #[test]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
     ) {
+        let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
-        let contract = &created_contract.data_contract;
+        let contract = created_contract.data_contract();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1443,7 +1491,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_deletion_op = DocumentOp {
@@ -1452,7 +1500,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1517,7 +1565,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 449);
+        assert_eq!(outcome.identities.len() as u64, 417);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -1530,12 +1578,15 @@ mod tests {
     #[test]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_and_deletions_with_epoch_change(
     ) {
+        let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            true,
+            platform_version,
         )
         .expect("expected to get contract from a json document");
 
-        let contract = &created_contract.data_contract;
+        let contract = created_contract.data_contract();
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1543,7 +1594,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_replace_op = DocumentOp {
@@ -1552,7 +1603,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let document_deletion_op = DocumentOp {
@@ -1561,7 +1612,7 @@ mod tests {
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
-                .clone(),
+                .to_owned_document_type(),
         };
 
         let strategy = Strategy {
@@ -1633,7 +1684,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 97);
+        assert_eq!(outcome.identities.len() as u64, 80);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -1704,7 +1755,7 @@ mod tests {
                 &outcome
                     .identities
                     .into_iter()
-                    .map(|identity| identity.id.to_buffer())
+                    .map(|identity| identity.id().to_buffer())
                     .collect(),
                 None,
             )
@@ -1768,6 +1819,9 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+        let state = outcome.abci_app.platform.state.read().unwrap();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
 
         let identities = outcome
             .abci_app
@@ -1777,20 +1831,22 @@ mod tests {
                 outcome
                     .identities
                     .into_iter()
-                    .map(|identity| identity.id.to_buffer())
+                    .map(|identity| identity.id().to_buffer())
                     .collect::<Vec<_>>()
                     .as_slice(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch balances");
 
         assert!(identities
             .into_iter()
-            .any(|(_, identity)| { identity.expect("expected identity").public_keys.len() > 7 }));
+            .any(|(_, identity)| { identity.expect("expected identity").public_keys().len() > 7 }));
     }
 
     #[test]
     fn run_chain_update_identities_remove_keys() {
+        let platform_version = PlatformVersion::latest();
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![Operation {
@@ -1853,18 +1909,19 @@ mod tests {
                 outcome
                     .identities
                     .into_iter()
-                    .map(|identity| identity.id.to_buffer())
+                    .map(|identity| identity.id().to_buffer())
                     .collect::<Vec<_>>()
                     .as_slice(),
                 None,
+                platform_version,
             )
             .expect("expected to fetch balances");
 
         assert!(identities.into_iter().any(|(_, identity)| {
             identity
                 .expect("expected identity")
-                .public_keys
-                .into_iter()
+                .public_keys()
+                .iter()
                 .any(|(_, public_key)| public_key.is_disabled())
         }));
     }
@@ -1933,7 +1990,7 @@ mod tests {
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
         assert_eq!(outcome.identities.len(), 10);
-        assert_eq!(outcome.withdrawals.len(), 14);
+        assert_eq!(outcome.withdrawals.len(), 18);
     }
 
     #[test]
@@ -2383,6 +2440,11 @@ mod tests {
             ..
         } = run_chain_for_strategy(&mut platform, 100, strategy.clone(), config.clone(), 89);
 
+        let state = abci_app.platform.state.read().unwrap();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        drop(state);
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
         let known_root_hash = abci_app
             .platform
             .drive
@@ -2393,7 +2455,7 @@ mod tests {
 
         abci_app
             .platform
-            .recreate_state()
+            .recreate_state(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -2419,10 +2481,10 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
 
@@ -2506,7 +2568,7 @@ mod tests {
                 &outcome
                     .identities
                     .iter()
-                    .map(|identity| identity.id.to_buffer())
+                    .map(|identity| identity.id().to_buffer())
                     .collect(),
                 None,
             )
@@ -2517,14 +2579,14 @@ mod tests {
         let len = outcome.identities.len();
 
         for identity in &outcome.identities[..len - 1] {
-            let new_balance = balances[&identity.id.to_buffer()];
+            let new_balance = balances[&identity.id().to_buffer()];
             // All identity balances decreased
             // as we transferred funds to the last identity
             assert_eq!(new_balance, 0);
         }
 
         let last_identity = &outcome.identities[len - 1];
-        let last_identity_balance = balances[&last_identity.id.to_buffer()];
+        let last_identity_balance = balances[&last_identity.id().to_buffer()];
         // We transferred funds to the last identity, so we need to check that last identity balance was increased
         assert!(last_identity_balance > 100000000000u64);
     }

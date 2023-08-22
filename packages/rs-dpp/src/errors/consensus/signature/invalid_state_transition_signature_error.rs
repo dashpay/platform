@@ -16,7 +16,7 @@ DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
 impl InvalidStateTransitionSignatureError {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 

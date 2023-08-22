@@ -3,6 +3,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive::drive::Drive;
+use std::fmt::{Debug, Formatter};
 use std::cell::RefCell;
 
 use drive::drive::defaults::PROTOCOL_VERSION;
@@ -14,11 +15,12 @@ use dashcore_rpc::dashcore::hashes::hex::FromHex;
 
 use dashcore_rpc::dashcore::BlockHash;
 
-use dpp::serialization_traits::PlatformDeserializable;
-
-use crate::execution::types::block_execution_context;
-use crate::platform_types::platform_state::v0::PlatformState;
+use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::platform_types::platform_state::PlatformState;
+use dpp::serialization::PlatformDeserializable;
+use dpp::version::PlatformVersion;
 use crate::platform_types::snapshot::Manager;
+
 use drive::error::Error::GroveDB;
 use serde_json::json;
 
@@ -35,7 +37,7 @@ pub struct Platform<C> {
     /// Configuration
     pub config: PlatformConfig,
     /// Block execution context
-    pub block_execution_context: RwLock<Option<block_execution_context::v0::BlockExecutionContext>>,
+    pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
     /// Core RPC Client
     pub core_rpc: C,
 }
@@ -62,6 +64,15 @@ pub struct PlatformStateRef<'a> {
     pub state: &'a PlatformState,
     /// Configuration
     pub config: &'a PlatformConfig,
+}
+
+impl<'a> Debug for PlatformStateRef<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("platform_state_ref")
+            .field("state", self.state)
+            .field("config", self.config)
+            .finish()
+    }
 }
 
 impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
@@ -132,7 +143,7 @@ impl Platform<MockCoreRPCLike> {
     }
 
     /// Recreate the state from the backing store
-    pub fn recreate_state(&self) -> Result<bool, Error> {
+    pub fn recreate_state(&self, _platform_version: &PlatformVersion) -> Result<bool, Error> {
         let Some(serialized_platform_state) = self.drive
             .grove
             .get_aux(b"saved_state", None)
@@ -141,7 +152,7 @@ impl Platform<MockCoreRPCLike> {
             return Ok(false);
         };
 
-        let recreated_state = PlatformState::deserialize(&serialized_platform_state)?;
+        let recreated_state = PlatformState::deserialize_no_limit(&serialized_platform_state)?;
 
         let mut state_cache = self.state.write().unwrap();
         *state_cache = recreated_state;
@@ -197,7 +208,7 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let platform_state = PlatformState::deserialize(&serialized_platform_state)?;
+        let platform_state = PlatformState::deserialize_no_limit(&serialized_platform_state)?;
 
         let platform: Platform<C> = Platform {
             drive,

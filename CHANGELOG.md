@@ -1,3 +1,80 @@
+## [0.25.0-dev.16](https://github.com/dashpay/platform/compare/v0.25.0-dev.15...v0.25.0-dev.16) (2023-08-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* Platform state is modified so previous data won't be valid
+
+### Features
+
+* abci versioning ([#1172](https://github.com/dashpay/platform/issues/1172))
+* adapt GroveDB's API changes ([#1099](https://github.com/dashpay/platform/issues/1099))
+* build dapi-gprc rust client ([#1182](https://github.com/dashpay/platform/issues/1182))
+* **drive:** add block_id_hash, quorum_type and chain_id required to verify proofs to GRPC responses ([#1207](https://github.com/dashpay/platform/issues/1207))
+* **drive:** core block reward distribution ([#1135](https://github.com/dashpay/platform/issues/1135))
+* **drive:** ensure that chain lock height valid ([#1157](https://github.com/dashpay/platform/issues/1157))
+* **drive:** fetch contract history and contract.is_readonly ([#1120](https://github.com/dashpay/platform/issues/1120))
+* **drive:** graceful shutdown ([#1154](https://github.com/dashpay/platform/issues/1154))
+* **drive:** verify chain lock Core RPC ([#1146](https://github.com/dashpay/platform/issues/1146))
+* **drive:** verify instant lock Core RPC ([#1142](https://github.com/dashpay/platform/issues/1142))
+* fetch data contract history endpoint ([#1149](https://github.com/dashpay/platform/issues/1149))
+* identity credit transfer state transition ([#1138](https://github.com/dashpay/platform/issues/1138))
+* remove bad masternodes from validator sets ([#1160](https://github.com/dashpay/platform/issues/1160))
+* **sdk:** retry policy for newly created platform entities ([#1143](https://github.com/dashpay/platform/issues/1143))
+
+
+### Bug Fixes
+
+* **dapi:** invalid json response body ([#1150](https://github.com/dashpay/platform/issues/1150))
+* double process proposal from Tenderdash restart ([#1165](https://github.com/dashpay/platform/issues/1165))
+* **drive:** core RPC retry all errors ([#1140](https://github.com/dashpay/platform/issues/1140))
+* **drive:** do not return an error for non existence contract when verifying ([#1241](https://github.com/dashpay/platform/issues/1241))
+* **drive:** wait for core to sync ([#1153](https://github.com/dashpay/platform/issues/1153))
+* update abci test state root ([#1144](https://github.com/dashpay/platform/issues/1144))
+
+
+### Code Refactoring
+
+* misc changes during v0.25 review ([#1121](https://github.com/dashpay/platform/issues/1121))
+* update dapi proto file to use either proofs or result ([#1148](https://github.com/dashpay/platform/issues/1148))
+
+
+### Tests
+
+* **drive:** verify proof signatures in strategy tests ([#1147](https://github.com/dashpay/platform/issues/1147))
+
+
+### Documentation
+
+* backport changelog from v0.24
+* better drive verify docs ([#1171](https://github.com/dashpay/platform/issues/1171))
+
+
+### Build System
+
+* fix dash sdk ts config
+* remove unnecessary yarn installation
+
+
+### Miscellaneous Chores
+
+* add QuantumExplorer as Code Owner
+* backport deps from master
+* temp fix rust-dashcore-dependency
+* update grovedb version
+* update lock file
+* upgrade to tenderdash v0.13 ([#1236](https://github.com/dashpay/platform/issues/1236))
+
+
+### Continuous Integration
+
+* runs not cancelled when PR is closed or merged ([#1234](https://github.com/dashpay/platform/issues/1234))
+* s3 cache ([#1167](https://github.com/dashpay/platform/issues/1167))
+* select workflow_id to cancel based on head_ref ([#1247](https://github.com/dashpay/platform/issues/1247))
+* specify docker mount cache bucket name as variable ([#1252](https://github.com/dashpay/platform/issues/1252))
+* switch to multi-runner stack ([#1268](https://github.com/dashpay/platform/issues/1268))
+
+
 ### [0.24.14](https://github.com/dashpay/platform/compare/v0.24.13...v0.24.14) (2023-07-05)
 
 
@@ -355,7 +432,7 @@ The masternode identities logic is partially disabled due to incomplete Identity
 * fees distribution (dashpay/rs-platform[#105](https://github.com/dashpay/platform/issues/105))
 * identity create state transition (dashpay/rs-platform[#9](https://github.com/dashpay/platform/issues/9))
 * identity credit withdrawal transition (dashpay/rs-platform[#25](https://github.com/dashpay/platform/issues/25))
-* identity from_buffer and from_raw_object
+* identity from_buffer and from_object
 * immutibility and contracts that allow document history (dashpay/rs-platform[#79](https://github.com/dashpay/platform/issues/79))
 * implement `deleteDocument`
 * implement `updateDocument`
