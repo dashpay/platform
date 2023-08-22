@@ -497,16 +497,17 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
         let ids = request
             .ids
             .iter()
-            .map(|id| match Identifier::from_bytes(id) {
-                Ok(id) => Ok(id.to_buffer()),
-                Err(e) => Err(Error::RequestDecodeError {
-                    error: e.to_string(),
-                }),
+            .map(|id| {
+                id.clone()
+                    .try_into()
+                    .map_err(|_e| Error::RequestDecodeError {
+                        error: format!("wrong id size: expected: {}, got: {}", 32, id.len()),
+                    })
             })
             .collect::<Result<Vec<[u8; 32]>, Error>>()?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
-        let (root_hash, contracts) = Drive::verify_contracts(&proof.grovedb_proof, false, ids.as_slice())
+        let (root_hash, contracts) = Drive::verify_contracts(&proof.grovedb_proof, false, &ids)
             .map_err(|e| Error::DriveError {
                 error: e.to_string(),
             })?;
