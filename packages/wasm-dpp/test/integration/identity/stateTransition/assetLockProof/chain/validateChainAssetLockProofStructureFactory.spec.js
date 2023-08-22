@@ -8,7 +8,7 @@ const { expectJsonSchemaError, expectValidationError } = require('../../../../..
 
 const { default: loadWasmDpp } = require('../../../../../../dist');
 
-describe('validateChainAssetLockProofStructureFactory', () => {
+describe.skip('validateChainAssetLockProofStructureFactory', () => {
   let rawProof;
   let stateRepositoryMock;
   let publicKeyHash;

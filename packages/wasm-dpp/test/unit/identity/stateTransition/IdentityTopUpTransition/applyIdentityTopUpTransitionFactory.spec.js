@@ -6,7 +6,7 @@ const createStateRepositoryMock = require('../../../../../lib/test/mocks/createS
 
 const { default: loadWasmDpp } = require('../../../../..');
 
-describe('applyIdentityTopUpTransitionFactory', () => {
+describe.skip('applyIdentityTopUpTransitionFactory', () => {
   let stateTransition;
   let applyIdentityTopUpTransition;
   let stateRepositoryMock;

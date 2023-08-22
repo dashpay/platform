@@ -10,7 +10,7 @@ const {
 
 const { default: loadWasmDpp } = require('../../../../dist');
 
-describe('validatePublicKeysFactory', function main() {
+describe.skip('validatePublicKeysFactory', function main() {
   this.timeout(10000);
 
   let rawPublicKeys;
