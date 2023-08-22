@@ -95,7 +95,7 @@ impl Drive {
 
         // we first need to fetch all contracts
         let contracts =
-            self.grove_get_path_query_with_optional(&contracts_query, transaction, &mut vec![])?;
+            self.grove_get_raw_path_query_with_optional(&contracts_query, transaction, &mut vec![])?;
         // We have 3 options
         // If the contract is non existing -> treat it as non historical
         // If the contract is there as an item -> it is non historical
