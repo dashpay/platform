@@ -3,6 +3,7 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
@@ -89,6 +90,14 @@ impl DataContractV0Getters for DataContractV0 {
 
     fn config_mut(&mut self) -> &mut DataContractConfig {
         &mut self.config
+    }
+
+    fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
+        self.encryption_key_storage_requirements
+    }
+
+    fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
+        self.decryption_key_storage_requirements
     }
 }
 

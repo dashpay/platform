@@ -7,6 +7,7 @@ use crate::prelude::DataContract;
 use crate::ProtocolError;
 use platform_value::Identifier;
 
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod v0;
@@ -93,6 +94,18 @@ impl DataContractV0Getters for DataContract {
     fn config_mut(&mut self) -> &mut DataContractConfig {
         match self {
             DataContract::V0(v0) => v0.config_mut(),
+        }
+    }
+
+    fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
+        match self {
+            DataContract::V0(v0) => v0.encryption_key_storage_requirements(),
+        }
+    }
+
+    fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
+        match self {
+            DataContract::V0(v0) => v0.decryption_key_storage_requirements(),
         }
     }
 }

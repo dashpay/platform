@@ -1,57 +1,223 @@
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::consensus::basic::document::DataContractNotPresentError;
+use dpp::consensus::basic::document::{
+    DataContractNotPresentError, InvalidDocumentTypeError, MissingDocumentTypeError,
+};
+use dpp::consensus::basic::identity::DataContractBoundsNotPresentError;
 use dpp::consensus::basic::BasicError;
-use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use dpp::identity::contract_bounds::ContractBounds;
+use dpp::identity::Purpose::{DECRYPTION, ENCRYPTION};
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::drive::contract::DataContractFetchInfo;
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
-use drive::grovedb::Transaction;
-use platform_version::version::PlatformVersion;
-use std::sync::Arc;
+use drive::grovedb::{Transaction, TransactionArg};
 
 pub(crate) fn validate_identity_public_keys_contract_bounds_v0(
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
     drive: &Drive,
-    transaction: &Transaction,
+    tx: TransactionArg,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    let consensus_validation_results = identity_public_keys_with_witness
+        .iter()
+        .map(|identity_public_key| {
+            validate_identity_public_key_contract_bounds_v0(
+                identity_public_key,
+                drive,
+                tx,
+                execution_context,
+                platform_version,
+            )
+        })
+        .collect::<Result<Vec<SimpleConsensusValidationResult>, Error>>()?;
+    Ok(SimpleConsensusValidationResult::merge_many_errors(
+        consensus_validation_results,
+    ))
+}
+
+fn validate_identity_public_key_contract_bounds_v0(
+    identity_public_key_in_creation: &IdentityPublicKeyInCreation,
+    drive: &Drive,
+    tx: TransactionArg,
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     //todo: we should add to the execution context the cost of fetching contracts
-    for identity_public_key in identity_public_keys_with_witness {
-        let purpose = identity_public_key.purpose();
-        if let Some(contract_bounds) = identity_public_key.contract_bounds() {
-            match contract_bounds {
-                ContractBounds::SingleContract { id: contract_id } => {
-                    // we should fetch the contract
-                    let contract = drive.get_contract_with_fetch_info(
-                        contract_id.to_buffer(),
-                        false,
-                        Some(transaction),
-                    )?;
-                    match contract {
-                        None => {
-                            return Ok(SimpleConsensusValidationResult::new_with_error(
+    let purpose = identity_public_key_in_creation.purpose();
+    if let Some(contract_bounds) = identity_public_key_in_creation.contract_bounds() {
+        match contract_bounds {
+            ContractBounds::SingleContract { id: contract_id } => {
+                // we should fetch the contract
+                let contract = drive.get_contract_with_fetch_info(
+                    contract_id.to_buffer(),
+                    false,
+                    tx,
+                    platform_version,
+                )?;
+                match contract {
+                    None => {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ConsensusError::BasicError(BasicError::DataContractNotPresentError(
+                                DataContractNotPresentError::new(*contract_id),
+                            )),
+                        ));
+                    }
+                    Some(contract) => {
+                        match purpose {
+                            ENCRYPTION => {
+                                let Some(requirements) = contract.contract.encryption_key_storage_requirements() else {
+                                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                                            ConsensusError::BasicError(
+                                                BasicError::DataContractBoundsNotPresentError(
+                                                    DataContractBoundsNotPresentError::new(*contract_id),
+                                                ),
+                                            ),
+                                        ))
+                                    };
+
+                                match requirements {
+                                    StorageKeyRequirements::Unique => {
+                                        // We should make sure no other key exists for these bounds
+                                        Ok(SimpleConsensusValidationResult::new())
+                                    }
+                                    StorageKeyRequirements::Multiple => {
+                                        Ok(SimpleConsensusValidationResult::new())
+                                    }
+                                }
+                            }
+                            DECRYPTION => {
+                                let Some(requirements) = contract.contract.decryption_key_storage_requirements() else {
+                                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                                            ConsensusError::BasicError(
+                                                BasicError::DataContractBoundsNotPresentError(
+                                                    DataContractBoundsNotPresentError::new(*contract_id),
+                                                ),
+                                            ),
+                                        ))
+                                    };
+
+                                match requirements {
+                                    StorageKeyRequirements::Unique => {
+                                        // We should make sure no other key exists for these bounds
+                                        Ok(SimpleConsensusValidationResult::new())
+                                    }
+                                    StorageKeyRequirements::Multiple => {
+                                        Ok(SimpleConsensusValidationResult::new())
+                                    }
+                                }
+                            }
+                            _ => Ok(SimpleConsensusValidationResult::new_with_error(
                                 ConsensusError::BasicError(
                                     BasicError::DataContractNotPresentError(
                                         DataContractNotPresentError::new(*contract_id),
                                     ),
                                 ),
-                            ));
+                            )),
                         }
-                        Some(contract) => {}
                     }
                 }
-                ContractBounds::SingleContractDocumentType {
-                    id: contract_id,
-                    document_type: String,
-                } => {}
-                ContractBounds::MultipleContractsOfSameOwner { owner_id } => {}
+            }
+            ContractBounds::SingleContractDocumentType {
+                id: contract_id,
+                document_type_name,
+            } => {
+                let contract = drive.get_contract_with_fetch_info(
+                    contract_id.to_buffer(),
+                    false,
+                    tx,
+                    platform_version,
+                )?;
+                match contract {
+                    None => {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ConsensusError::BasicError(BasicError::DataContractNotPresentError(
+                                DataContractNotPresentError::new(*contract_id),
+                            )),
+                        ));
+                    }
+                    Some(contract) => {
+                        let document_type = contract
+                            .contract
+                            .document_type_optional_for_name(document_type_name.as_str());
+                        match document_type {
+                            None => {
+                                return Ok(SimpleConsensusValidationResult::new_with_error(
+                                    ConsensusError::BasicError(
+                                        BasicError::InvalidDocumentTypeError(
+                                            InvalidDocumentTypeError::new(
+                                                document_type_name.clone(),
+                                                *contract_id,
+                                            ),
+                                        ),
+                                    ),
+                                ));
+                            }
+                            Some(document_type) => {
+                                match purpose {
+                                    ENCRYPTION => {
+                                        let Some(requirements) = document_type.encryption_key_storage_requirements() else {
+                                                return Ok(SimpleConsensusValidationResult::new_with_error(
+                                                    ConsensusError::BasicError(
+                                                        BasicError::DataContractBoundsNotPresentError(
+                                                            DataContractBoundsNotPresentError::new(*contract_id),
+                                                        ),
+                                                    ),
+                                                ))
+                                            };
+
+                                        match requirements {
+                                            StorageKeyRequirements::Unique => {
+                                                // We should make sure no other key exists for these bounds
+                                                Ok(SimpleConsensusValidationResult::new())
+                                            }
+                                            StorageKeyRequirements::Multiple => {
+                                                Ok(SimpleConsensusValidationResult::new())
+                                            }
+                                        }
+                                    }
+                                    DECRYPTION => {
+                                        let Some(requirements) = document_type.encryption_key_storage_requirements() else {
+                                                return Ok(SimpleConsensusValidationResult::new_with_error(
+                                                    ConsensusError::BasicError(
+                                                        BasicError::DataContractBoundsNotPresentError(
+                                                            DataContractBoundsNotPresentError::new(*contract_id),
+                                                        ),
+                                                    ),
+                                                ))
+                                            };
+
+                                        match requirements {
+                                            StorageKeyRequirements::Unique => {
+                                                // We should make sure no other key exists for these bounds
+                                                Ok(SimpleConsensusValidationResult::new())
+                                            }
+                                            StorageKeyRequirements::Multiple => {
+                                                Ok(SimpleConsensusValidationResult::new())
+                                            }
+                                        }
+                                    }
+                                    _ => Ok(SimpleConsensusValidationResult::new_with_error(
+                                        ConsensusError::BasicError(
+                                            BasicError::DataContractNotPresentError(
+                                                DataContractNotPresentError::new(*contract_id),
+                                            ),
+                                        ),
+                                    )),
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
+    } else {
+        Ok(SimpleConsensusValidationResult::new())
     }
 }

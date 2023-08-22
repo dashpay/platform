@@ -18,6 +18,8 @@ use drive::state_transition_action::identity::identity_update::IdentityUpdateTra
 use drive::state_transition_action::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
+use dpp::version::DefaultForPlatformVersion;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_contract_bounds::v0::validate_identity_public_keys_contract_bounds_v0;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::v0::validate_identity_public_key_ids_dont_exist_in_state_v0;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_exist_in_state::v0::validate_identity_public_key_ids_exist_in_state_v0;
@@ -45,6 +47,8 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let mut state_transition_execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
         let drive = platform.drive;
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
@@ -83,6 +87,9 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
         validation_result.add_errors(
             validate_identity_public_keys_contract_bounds_v0(
                 self.public_keys_to_add(),
+                drive,
+                tx,
+                &mut state_transition_execution_context,
                 platform_version,
             )?
             .errors,

@@ -25,8 +25,8 @@ use crate::consensus::basic::document::{
     MissingDocumentTransitionTypeError, MissingDocumentTypeError,
 };
 use crate::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
-    IdentityAssetLockProofLockedTransactionMismatchError,
+    DataContractBoundsNotPresentError, DuplicatedIdentityPublicKeyBasicError,
+    DuplicatedIdentityPublicKeyIdBasicError, IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     IdentityAssetLockTransactionOutputNotFoundError, InvalidAssetLockProofCoreChainHeightError,
@@ -151,6 +151,9 @@ pub enum BasicError {
     // Document
     #[error(transparent)]
     DataContractNotPresentError(DataContractNotPresentError),
+
+    #[error(transparent)]
+    DataContractBoundsNotPresentError(DataContractBoundsNotPresentError),
 
     #[error(transparent)]
     DuplicateDocumentTransitionsWithIdsError(DuplicateDocumentTransitionsWithIdsError),

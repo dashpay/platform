@@ -1077,7 +1077,7 @@ mod tests {
             signature: Default::default(),
             contract_bounds: Some(SingleContractDocumentType {
                 id: Dashpay.id(),
-                document_type: "contactRequest".to_string(),
+                document_type_name: "contactRequest".to_string(),
             }),
         };
 

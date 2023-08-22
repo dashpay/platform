@@ -6,6 +6,7 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentTypeV0Getters for DocumentTypeV0 {
@@ -59,5 +60,13 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
 
     fn data_contract_id(&self) -> Identifier {
         self.data_contract_id
+    }
+
+    fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
+        self.encryption_key_storage_requirements
+    }
+
+    fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
+        self.decryption_key_storage_requirements
     }
 }

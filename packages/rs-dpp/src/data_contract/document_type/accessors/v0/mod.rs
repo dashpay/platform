@@ -4,6 +4,7 @@ use crate::data_contract::document_type::property::DocumentProperty;
 
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub trait DocumentTypeV0Getters {
@@ -43,4 +44,10 @@ pub trait DocumentTypeV0Getters {
 
     /// Returns the data contract id of the document type.
     fn data_contract_id(&self) -> Identifier;
+
+    /// Returns the encryption key storage requirements
+    fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements>;
+
+    /// Returns the decryption key storage requirements
+    fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements>;
 }

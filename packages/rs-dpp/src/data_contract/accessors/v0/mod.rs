@@ -1,5 +1,6 @@
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
 use crate::ProtocolError;
@@ -43,6 +44,12 @@ pub trait DataContractV0Getters {
 
     /// Returns the internal configuration for the contract as mutable.
     fn config_mut(&mut self) -> &mut DataContractConfig;
+
+    /// Returns the encryption key storage requirements
+    fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements>;
+
+    /// Returns the decryption key storage requirements
+    fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements>;
 }
 
 pub trait DataContractV0Setters {

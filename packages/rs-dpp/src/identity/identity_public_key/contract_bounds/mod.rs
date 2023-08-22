@@ -1,6 +1,6 @@
 use crate::identifier::Identifier;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds::{
-    MultipleContractsOfSameOwner, SingleContract, SingleContractDocumentType,
+    SingleContract, SingleContractDocumentType,
 };
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::ProtocolError;
@@ -28,11 +28,11 @@ pub enum ContractBounds {
     #[serde(rename = "documentType")]
     SingleContractDocumentType {
         id: Identifier,
-        document_type: String,
+        document_type_name: String,
     } = 1,
-    /// this key can only be used within contracts owned by a specified owner
-    #[serde(rename = "multipleContractsOfSameOwner")]
-    MultipleContractsOfSameOwner { owner_id: Identifier } = 2,
+    // /// this key can only be used within contracts owned by a specified owner
+    // #[serde(rename = "multipleContractsOfSameOwner")]
+    // MultipleContractsOfSameOwner { owner_id: Identifier } = 2,
 }
 
 impl ContractBounds {
@@ -48,7 +48,7 @@ impl ContractBounds {
             },
             1 => SingleContractDocumentType {
                 id: Identifier::from_bytes(identifier.as_slice())?,
-                document_type,
+                document_type_name: document_type,
             },
             _ => {
                 return Err(ProtocolError::InvalidKeyContractBoundsError(format!(
@@ -64,7 +64,7 @@ impl ContractBounds {
         match self {
             SingleContract { .. } => 0,
             SingleContractDocumentType { .. } => 1,
-            MultipleContractsOfSameOwner { .. } => 2,
+            // MultipleContractsOfSameOwner { .. } => 2,
         }
     }
 
@@ -82,7 +82,7 @@ impl ContractBounds {
         match self {
             SingleContract { .. } => "singleContract",
             SingleContractDocumentType { .. } => "documentType",
-            MultipleContractsOfSameOwner { .. } => "multipleContractsOfSameOwner",
+            // MultipleContractsOfSameOwner { .. } => "multipleContractsOfSameOwner",
         }
     }
 
@@ -91,7 +91,7 @@ impl ContractBounds {
         match self {
             SingleContract { id } => id,
             SingleContractDocumentType { id, .. } => id,
-            MultipleContractsOfSameOwner { owner_id } => owner_id,
+            // MultipleContractsOfSameOwner { owner_id } => owner_id,
         }
     }
 
@@ -99,8 +99,11 @@ impl ContractBounds {
     pub fn document_type(&self) -> Option<&String> {
         match self {
             SingleContract { .. } => None,
-            SingleContractDocumentType { document_type, .. } => Some(document_type),
-            MultipleContractsOfSameOwner { .. } => None,
+            SingleContractDocumentType {
+                document_type_name: document_type,
+                ..
+            } => Some(document_type),
+            // MultipleContractsOfSameOwner { .. } => None,
         }
     }
     //

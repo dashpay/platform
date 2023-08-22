@@ -7,7 +7,7 @@ use drive::drive::batch::DriveOperation;
 
 pub mod signature_verification_operation;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExecutionOperation {
     SignatureVerification(SignatureVerificationOperation),
     PrecalculatedOperation(FeeResult),

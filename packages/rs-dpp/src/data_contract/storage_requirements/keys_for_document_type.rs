@@ -9,8 +9,7 @@ use std::convert::TryFrom;
 #[derive(Serialize_repr, Deserialize_repr, Debug, PartialEq, Copy, Clone, Encode, Decode)]
 pub enum StorageKeyRequirements {
     Unique = 0,
-    UniqueReplaceable = 1,
-    Multiple = 2,
+    Multiple = 1,
 }
 
 impl TryFrom<u8> for StorageKeyRequirements {
@@ -18,8 +17,7 @@ impl TryFrom<u8> for StorageKeyRequirements {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::Unique),
-            1 => Ok(Self::UniqueReplaceable),
-            2 => Ok(Self::Multiple),
+            1 => Ok(Self::Multiple),
             value => Err(ProtocolError::UnknownStorageKeyRequirements(format!(
                 "unrecognized storage key requirements: {}",
                 value
@@ -33,8 +31,7 @@ impl TryFrom<i128> for StorageKeyRequirements {
     fn try_from(value: i128) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::Unique),
-            1 => Ok(Self::UniqueReplaceable),
-            2 => Ok(Self::Multiple),
+            1 => Ok(Self::Multiple),
             value => Err(ProtocolError::UnknownStorageKeyRequirements(format!(
                 "unrecognized storage key requirements: {}",
                 value
