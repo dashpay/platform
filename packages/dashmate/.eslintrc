@@ -4,6 +4,9 @@
     // Required for certain syntax usages
     "ecmaVersion": 2022
   },
+  "globals": {
+    "fetch": false
+  },
   "parser":"babel-eslint",
   "env": {
     "commonjs": true,

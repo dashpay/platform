@@ -1617,7 +1617,7 @@ __metadata:
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
-    "@dashevo/wasm-re2": ~1.0.2
+    "@dashevo/wasm-re2": ~2.0.4
     acorn: ^8.5.0
     ajv: ^8.6.0
     ajv-formats: ^2.1.1
@@ -1923,7 +1923,7 @@ __metadata:
     "@dashevo/dashcore-lib": ~0.20.9
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
-    "@dashevo/wasm-re2": ~1.0.2
+    "@dashevo/wasm-re2": ~2.0.4
     "@types/bs58": ^4.0.1
     "@types/node": ^14.6.0
     "@yarnpkg/pnpify": ^4.0.0-rc.42
@@ -1972,10 +1972,10 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/wasm-re2@npm:~1.0.2":
-  version: 1.0.2
-  resolution: "@dashevo/wasm-re2@npm:1.0.2"
-  checksum: 3d54788e4e133e0677e60c125550a1f81cc5d9ed742e7dfec936e4da7653bb17a43054db3fc1287074efdb05ebbef7625d19f1f3286662f135218fadc27e6818
+"@dashevo/wasm-re2@npm:~2.0.4":
+  version: 2.0.4
+  resolution: "@dashevo/wasm-re2@npm:2.0.4"
+  checksum: 3a66db77e404487cf47c07e6532fdab981f3eecbe65af83e9ec2c23dc235c7eef59f770a1343e5cae81a24267d66ee5fa5f693f9b1435fa6d97f9cab560eaa3b
   languageName: node
   linkType: hard
 
@@ -6175,7 +6175,6 @@ __metadata:
     memory-streams: ^0.1.3
     mocha: ^9.1.2
     mocha-sinon: ^2.1.2
-    node-fetch: ^2.6.7
     node-forge: ^1.3.1
     node-graceful: ^3.0.1
     pretty-bytes: ^5.3.0
