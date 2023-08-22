@@ -29,9 +29,11 @@ describe('IdentityCreditTransferTransition', () => {
       expect(stateTransition.getIdentityId().toBuffer()).to.be.deep.equal(
         rawStateTransition.identityId,
       );
+
       expect(stateTransition.getRecipientId().toBuffer()).to.be.deep.equal(
         rawStateTransition.recipientId,
       );
+
       expect(stateTransition.getAmount()).to.be.equal(
         rawStateTransition.amount,
       );
@@ -65,7 +67,7 @@ describe('IdentityCreditTransferTransition', () => {
       rawStateTransition = stateTransition.toObject();
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityCreditTransfer,
         identityId: rawStateTransition.identityId,
         recipientId: rawStateTransition.recipientId,
@@ -79,7 +81,7 @@ describe('IdentityCreditTransferTransition', () => {
       rawStateTransition = stateTransition.toObject({ skipSignature: true });
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityCreditTransfer,
         identityId: rawStateTransition.identityId,
         recipientId: rawStateTransition.recipientId,
@@ -93,7 +95,7 @@ describe('IdentityCreditTransferTransition', () => {
       const jsonStateTransition = stateTransition.toJSON();
 
       expect(jsonStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityCreditTransfer,
         identityId: new Identifier(rawStateTransition.identityId).toString(),
         recipientId: new Identifier(rawStateTransition.recipientId).toString(),

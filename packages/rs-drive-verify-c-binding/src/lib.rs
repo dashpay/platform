@@ -606,9 +606,9 @@ mod tests {
         // verify part of the identity, make sure it's the correct one
         assert!(proved_identity.is_some());
         let proved_identity = proved_identity.unwrap();
-        assert_eq!(proved_identity.protocol_version, 1);
-        assert_eq!(proved_identity.public_keys.len(), 3);
-        assert_eq!(proved_identity.balance, 11077485418638);
+        assert_eq!(proved_identity.feature_version, 1);
+        assert_eq!(proved_identity.public_keys().len(), 3);
+        assert_eq!(proved_identity.balance(), 11077485418638);
     }
 
     #[test]
@@ -674,9 +674,9 @@ mod tests {
             Drive::verify_full_identity_by_identity_id(proof, true, identity_id)
                 .expect("verification failed");
         let identity = maybe_identity.expect("couldn't get identity");
-        assert_eq!(identity.protocol_version, 1);
-        assert_eq!(identity.public_keys.len(), 3);
-        assert_eq!(identity.balance, 11077485418638);
+        assert_eq!(identity.feature_version, 1);
+        assert_eq!(identity.public_keys().len(), 3);
+        assert_eq!(identity.balance(), 11077485418638);
     }
 
     #[test]

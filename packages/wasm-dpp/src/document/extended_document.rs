@@ -7,7 +7,7 @@ use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::JsonValueExt;
 
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -68,7 +68,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn get_protocol_version(&self) -> u32 {
-        self.0.protocol_version
+        self.0.feature_version
     }
 
     #[wasm_bindgen(js_name=getId)]

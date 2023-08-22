@@ -3,6 +3,7 @@ use crate::ProtocolError;
 use platform_value::Value;
 use thiserror::Error;
 
+// @append_only
 #[derive(Error, Debug)]
 #[error("Invalid Data Contract: {errors:?}")]
 pub struct InvalidDataContractError {

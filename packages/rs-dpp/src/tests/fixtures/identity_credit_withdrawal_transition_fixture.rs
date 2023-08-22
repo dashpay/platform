@@ -7,10 +7,8 @@ use platform_value::BinaryData;
 use platform_value::{platform_value, Value};
 use serde_json::{json, Value as JsonValue};
 
-use crate::{
-    identity::state_transition::identity_credit_withdrawal_transition::Pooling,
-    state_transition::StateTransitionType, version,
-};
+use crate::withdrawal::Pooling;
+use crate::{state_transition::StateTransitionType, version};
 
 pub fn identity_credit_withdrawal_transition_fixture_raw_object() -> Value {
     platform_value!({

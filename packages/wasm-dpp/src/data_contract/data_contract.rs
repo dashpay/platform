@@ -7,12 +7,12 @@ pub use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 
-use dpp::data_contract::{CreatedDataContract, DataContract, SCHEMA_URI};
+use dpp::data_contract::{CreatedDataContract, DataContract, DATA_CONTRACT_SCHEMA_URI_V0};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{Bytes32, Value};
 
-use dpp::serialization_traits::PlatformSerializable;
-use dpp::{platform_value, Convertible, ProtocolError};
+use dpp::serialization::PlatformSerializable;
+use dpp::{platform_value,  ProtocolError};
 
 use crate::identifier::identifier_from_js_value;
 use crate::metadata::MetadataWasm;
@@ -119,7 +119,7 @@ impl DataContractWasm {
         let parameters: DataContractParameters =
             with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
 
-        DataContract::from_raw_object(
+        DataContract::from_value(
             platform_value::to_value(parameters).expect("Implements Serialize"),
         )
         .with_js_error()
@@ -128,7 +128,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn get_protocol_version(&self) -> u32 {
-        self.inner.protocol_version
+        self.0.data_contract_protocol_version
     }
 
     #[wasm_bindgen(js_name=getId)]
@@ -215,14 +215,14 @@ impl DataContractWasm {
     ) -> Result<(), JsValue> {
         let json_schema: JsonValue = with_js_error!(serde_wasm_bindgen::from_value(schema))?;
         self.inner
-            .set_document_schema(doc_type, json_schema)
+            .set_document_json_schema(doc_type, json_schema)
             .with_js_error()?;
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getDocumentSchema)]
     pub fn get_document_schema(&mut self, doc_type: &str) -> Result<JsValue, JsValue> {
-        let doc_schema = self.inner.get_document_schema(doc_type).with_js_error()?;
+        let doc_schema = self.inner.document_json_schema(doc_type).with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         with_js_error!(doc_schema.serialize(&serializer))
     }
@@ -232,7 +232,7 @@ impl DataContractWasm {
         with_js_error!(serde_wasm_bindgen::to_value(
             &self
                 .inner
-                .get_document_schema_ref(doc_type)
+                .document_json_schema_ref(doc_type)
                 .with_js_error()?
         ))
     }
@@ -406,6 +406,6 @@ pub struct DataContractDefaults;
 impl DataContractDefaults {
     #[wasm_bindgen(getter = SCHEMA)]
     pub fn get_default_schema() -> String {
-        SCHEMA_URI.to_string()
+        DATA_CONTRACT_SCHEMA_URI_V0.to_string()
     }
 }

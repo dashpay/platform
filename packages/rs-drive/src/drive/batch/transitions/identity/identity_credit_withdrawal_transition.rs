@@ -5,19 +5,18 @@ use crate::drive::object_size_info::{DocumentInfo, OwnedDocumentInfo};
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 
-use dpp::identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransitionAction;
+use crate::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;
+use dpp::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionAction {
     fn into_high_level_drive_operations<'a>(
         self,
         _epoch: &Epoch,
+        _platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
-        let IdentityCreditWithdrawalTransitionAction {
-            prepared_withdrawal_document,
-            identity_id,
-            revision,
-            ..
-        } = self;
+        let identity_id = self.identity_id();
+        let revision = self.revision();
+        let prepared_withdrawal_document = self.prepared_withdrawal_document_owned();
 
         let drive_operations = vec![
             IdentityOperation(IdentityOperationType::UpdateIdentityRevision {

@@ -32,15 +32,10 @@ runs:
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-region: eu-west-1
-
     - name: Cache Rust build artifacts
       uses: everpcpc/actions-cache@v1
       with:
-        bucket: platform-runner-cache
+        bucket: multi-runner-linux-x64-platform-cache-gy9micic
         root: actions-cache
         path: |
           /home/ubuntu/.cargo/registry/index

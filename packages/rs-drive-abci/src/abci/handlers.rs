@@ -44,7 +44,6 @@ use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::platform_value::platform_value;
-use drive::fee::credits::SignedCredits;
 use serde_json::{json, Value};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
@@ -62,12 +61,22 @@ use tenderdash_abci::proto::types::VoteExtensionType;
 use super::AbciError;
 
 use dpp::platform_value::string_encoding::{encode, Encoding};
-use dpp::serialization_traits::PlatformSerializable;
 
+use crate::execution::types::block_execution_context::v0::{
+    BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
+    BlockExecutionContextV0Setters,
+};
+use crate::execution::types::block_state_info::v0::{
+    BlockStateInfoV0Getters, BlockStateInfoV0Methods, BlockStateInfoV0Setters,
+};
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::block_proposal::v0::BlockProposal;
-use crate::platform_types::platform_state::v0;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
+use dpp::fee::SignedCredits;
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
+use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use serde_json::Map;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
@@ -116,7 +125,7 @@ where
             );
             let protocol_version_in_consensus = self.platform.config.initial_protocol_version;
             let mut platform_state_write_guard = self.platform.state.write().unwrap();
-            *platform_state_write_guard = v0::PlatformState::default_with_protocol_versions(
+            *platform_state_write_guard = PlatformState::default_with_protocol_versions(
                 protocol_version_in_consensus,
                 protocol_version_in_consensus,
             );
@@ -245,7 +254,7 @@ where
         let block_execution_context = block_execution_context_guard
             .as_mut()
             .expect("expected that a block execution context was set");
-        block_execution_context.proposer_results = Some(response.clone());
+        block_execution_context.set_proposer_results(Some(response.clone()));
 
         Ok(response)
     }
@@ -263,15 +272,15 @@ where
         if let Some(block_execution_context) = block_execution_context_guard.as_mut() {
             // We are already in a block
             // This only makes sense if we were the proposer unless we are at a future round
-            if block_execution_context.block_state_info.round != (request.round as u32) {
+            if block_execution_context.block_state_info().round() != (request.round as u32) {
                 // We were not the proposer, and we should process something new
                 drop_block_execution_context = true;
             } else if let Some(current_block_hash) =
-                block_execution_context.block_state_info.block_hash
+                block_execution_context.block_state_info().block_hash()
             {
                 // There is also the possibility that this block already came in, but tenderdash crashed
                 // Now tenderdash is sending it again
-                if let Some(proposal_info) = block_execution_context.proposer_results.as_ref() {
+                if let Some(proposal_info) = block_execution_context.proposer_results() {
                     // We were the proposer as well, so we have the result in cache
                     return Ok(ResponseProcessProposal {
                         status: proto::response_process_proposal::ProposalStatus::Accept.into(),
@@ -294,24 +303,40 @@ where
                     )))?;
                 }
             } else {
-                let Some(proposal_info) = block_execution_context.proposer_results.as_ref() else {
-                    return Err(Error::Abci(AbciError::BadRequest(
-                        "received a process proposal request twice".to_string(),
-                    )))?;
+                let (app_hash, tx_results, consensus_param_updates, validator_set_update) = {
+                    let Some(proposal_info) = block_execution_context.proposer_results() else {
+                        return Err(Error::Abci(AbciError::BadRequest(
+                            "received a process proposal request twice".to_string(),
+                        )))?;
+                    };
+
+                    // Cloning all required properties from proposal_info and then dropping it
+                    let app_hash = proposal_info.app_hash.clone();
+                    let tx_results = proposal_info.tx_results.clone();
+                    let consensus_param_updates = proposal_info.consensus_param_updates.clone();
+                    let validator_set_update = proposal_info.validator_set_update.clone();
+                    (
+                        app_hash,
+                        tx_results,
+                        consensus_param_updates,
+                        validator_set_update,
+                    )
                 };
+
                 // We need to set the block hash
-                block_execution_context.block_state_info.block_hash =
-                    Some(request.hash.clone().try_into().map_err(|_| {
+                block_execution_context
+                    .block_state_info_mut()
+                    .set_block_hash(Some(request.hash.clone().try_into().map_err(|_| {
                         Error::Abci(AbciError::BadRequestDataSize(
                             "block hash is not 32 bytes in process proposal".to_string(),
                         ))
-                    })?);
+                    })?));
                 return Ok(ResponseProcessProposal {
                     status: proto::response_process_proposal::ProposalStatus::Accept.into(),
-                    app_hash: proposal_info.app_hash.clone(),
-                    tx_results: proposal_info.tx_results.clone(),
-                    consensus_param_updates: proposal_info.consensus_param_updates.clone(),
-                    validator_set_update: proposal_info.validator_set_update.clone(),
+                    app_hash,
+                    tx_results,
+                    consensus_param_updates,
+                    validator_set_update,
                 });
             }
         }
@@ -393,7 +418,7 @@ where
                     "block execution context must be set in block begin handler for extend vote",
                 )))?;
 
-        let block_state_info = &block_execution_context.block_state_info;
+        let block_state_info = &block_execution_context.block_state_info();
 
         if !block_state_info.matches_current_block(
             height as u64,
@@ -403,13 +428,13 @@ where
             Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
                 height, round, block_hash.to_hex(),
-                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
+                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
                 .into())
         } else {
             // we only want to sign the hash of the transaction
             let extensions = block_execution_context
-                .withdrawal_transactions
+                .withdrawal_transactions()
                 .keys()
                 .map(|tx_id| ExtendVoteExtension {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
@@ -445,7 +470,11 @@ where
                     "block execution context must be set in block begin handler for verify vote extension",
                 )))?;
 
-        let block_state_info = &block_execution_context.block_state_info;
+        let platform_version = block_execution_context
+            .block_platform_state()
+            .current_platform_version()?;
+
+        let block_state_info = &block_execution_context.block_state_info();
 
         if !block_state_info.matches_current_block(
             height as u64,
@@ -454,15 +483,15 @@ where
         )? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received verify vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round, block_hash.to_hex(),
-                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
+                height, round,block_hash.to_hex(),
+                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
                 .into());
         }
 
         let got: withdrawal_txs::v0::WithdrawalTxs = vote_extensions.into();
         let expected = block_execution_context
-            .withdrawal_transactions
+            .withdrawal_transactions()
             .keys()
             .map(|tx_id| ExtendVoteExtension {
                 r#type: VoteExtensionType::ThresholdRecover as i32,
@@ -489,14 +518,15 @@ where
         //     });
         // };
 
-        let validation_result = self.platform.check_withdrawals_v0(
+        let validation_result = self.platform.check_withdrawals(
             &got,
             &expected,
             height as u64,
             round as u32,
             None,
             None,
-        );
+            platform_version,
+        )?;
 
         if validation_result.is_valid() {
             Ok(proto::ResponseVerifyVoteExtension {
@@ -585,11 +615,13 @@ where
         let RequestCheckTx { tx, .. } = request;
         match self.platform.check_tx(tx.as_slice()) {
             Ok(validation_result) => {
+                let platform_state = self.platform.state.read().unwrap();
+                let platform_version = platform_state.current_platform_version()?;
                 let validation_error = validation_result.errors.first();
 
                 let (code, info) = if let Some(validation_error) = validation_error {
                     let serialized_error = platform_value!(validation_error
-                        .serialize()
+                        .serialize_with_platform_version(platform_version)
                         .map_err(|e| ResponseException::from(Error::Protocol(e)))?);
 
                     let error_data = json!({
@@ -654,7 +686,28 @@ where
 
         let RequestQuery { data, path, .. } = &request;
 
-        let result = self.platform.query(path.as_str(), data.as_slice())?;
+        let Some(platform_version) = PlatformVersion::get_maybe_current() else {
+            let response = ResponseQuery {
+                //todo: right now just put GRPC error codes,
+                //  later we will use own error codes
+                code: 1,
+                log: "".to_string(),
+                info: "Platform not initialized".to_string(),
+                index: 0,
+                key: vec![],
+                value: vec![],
+                proof_ops: None,
+                height: self.platform.state.read().unwrap().height() as i64,
+                codespace: "".to_string(),
+            };
+            tracing::trace!(method = "query", ?request, ?response);
+
+            return Ok(response)
+        };
+
+        let result = self
+            .platform
+            .query(path.as_str(), data.as_slice(), platform_version)?;
 
         let (code, data, info) = if result.is_valid() {
             (0, result.data.unwrap_or_default(), "success".to_string())
@@ -791,7 +844,7 @@ where
 //                     .expect("expected withdrawal document");
 //
 //                 let document_type = data_contract
-//                     .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+//                     .document_type(withdrawals_contract::document_types::WITHDRAWAL)
 //                     .expect("expected to get document type");
 //
 //                 setup_document(

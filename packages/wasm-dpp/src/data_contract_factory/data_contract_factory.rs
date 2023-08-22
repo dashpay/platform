@@ -4,7 +4,7 @@ use std::sync::Arc;
 use dpp::data_contract::CreatedDataContract;
 use dpp::{
     data_contract::{
-        validation::data_contract_validator::DataContractValidator, DataContractFactory,
+        validation::data_contract_validation::DataContractValidator, DataContractFactory,
     },
     platform_value,
     prelude::Identifier,

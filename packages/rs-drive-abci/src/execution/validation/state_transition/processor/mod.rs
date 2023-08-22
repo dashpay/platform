@@ -1,11 +1,13 @@
 pub(crate) mod v0;
 
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
+
 use drive::grovedb::TransactionArg;
 
 /// There are 3 stages in a state transition processing:
@@ -26,8 +28,22 @@ pub(in crate::execution) fn process_state_transition<'a, C: CoreRPCLike>(
     state_transition: StateTransition,
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
-    //Todo: feature type (next versioning pr)
-    // We will need to check the protocol version and use feature type to determine the version of
-    // the processing.
-    v0::process_state_transition_v0(platform, state_transition, transaction)
+    let platform_version = platform.state.current_platform_version()?;
+    match platform_version
+        .drive_abci
+        .validation_and_processing
+        .process_state_transition
+    {
+        0 => v0::process_state_transition_v0(
+            platform,
+            state_transition,
+            transaction,
+            platform_version,
+        ),
+        version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+            method: "process_state_transition".to_string(),
+            known_versions: vec![0],
+            received: version,
+        })),
+    }
 }

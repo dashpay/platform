@@ -1,12 +1,14 @@
 {
-  "$id": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+  "$format_version": "0",
+  "id": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
   "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
-  "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
   "version": 1,
-  "documents": {
+  "documentSchemas": {
     "profile": {
+      "type": "object",
       "indices": [
         {
+          "name": "ownerId",
           "properties": [
             {
               "$ownerId": "asc"
@@ -15,6 +17,7 @@
           "unique": true
         },
         {
+          "name": "ownerIdUpdatedAt",
           "properties": [
             {
               "$ownerId": "asc"
@@ -47,8 +50,10 @@
       "additionalProperties": false
     },
     "contactInfo": {
+      "type": "object",
       "indices": [
         {
+          "name": "ownerIdKeyIndexes",
           "properties": [
             {
               "$ownerId": "asc"
@@ -63,6 +68,7 @@
           "unique": true
         },
         {
+          "name": "owner_updated",
           "properties": [
             {
               "$ownerId": "asc"
@@ -105,8 +111,10 @@
       "additionalProperties": false
     },
     "contactRequest": {
+      "type": "object",
       "indices": [
         {
+          "name": "owner_user_ref",
           "properties": [
             {
               "$ownerId": "asc"
@@ -121,6 +129,7 @@
           "unique": true
         },
         {
+          "name": "ownerId_toUserId",
           "properties": [
             {
               "$ownerId": "asc"
@@ -131,6 +140,7 @@
           ]
         },
         {
+          "name": "toUserId_$createdAt",
           "properties": [
             {
               "toUserId": "asc"
@@ -141,6 +151,7 @@
           ]
         },
         {
+          "name": "$ownerId_$createdAt",
           "properties": [
             {
               "$ownerId": "asc"

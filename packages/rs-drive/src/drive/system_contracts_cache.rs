@@ -10,10 +10,16 @@ pub struct SystemContracts {
 }
 
 impl SystemContracts {
-    pub fn load_system_contracts() -> Result<Self, Error> {
+    pub fn load_genesis_system_contracts(protocol_version: u32) -> Result<Self, Error> {
         Ok(SystemContracts {
-            withdrawal_contract: load_system_data_contract(SystemDataContract::Withdrawals)?,
-            masternode_rewards: load_system_data_contract(SystemDataContract::MasternodeRewards)?,
+            withdrawal_contract: load_system_data_contract(
+                SystemDataContract::Withdrawals,
+                protocol_version,
+            )?,
+            masternode_rewards: load_system_data_contract(
+                SystemDataContract::MasternodeRewards,
+                protocol_version,
+            )?,
         })
     }
 }

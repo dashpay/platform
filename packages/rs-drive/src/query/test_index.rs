@@ -1,81 +1,97 @@
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    use dpp::data_contract::document_type::{DocumentType, Index, IndexProperty};
-    use dpp::platform_value::Identifier;
+    use dpp::data_contract::document_type::DocumentType;
+    use dpp::platform_value::{platform_value, Identifier};
     use dpp::util::cbor_serializer;
     use serde_json::json;
 
-    use crate::contract::Contract;
     use crate::drive::config::DriveConfig;
     use crate::error::{query::QuerySyntaxError, Error};
     use crate::query::DriveQuery;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+
+    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+    use dpp::version::PlatformVersion;
 
     fn construct_indexed_document_type() -> DocumentType {
-        DocumentType::new(
-            Identifier::default(),
-            "a".to_string(),
-            vec![
-                Index {
-                    name: "a".to_string(),
-                    properties: vec![IndexProperty {
-                        name: "a".to_string(),
-                        ascending: true,
-                    }],
-                    unique: false,
-                },
-                Index {
-                    name: "b".to_string(),
-                    properties: vec![IndexProperty {
-                        name: "b".to_string(),
-                        ascending: false,
-                    }],
-                    unique: false,
-                },
-                Index {
-                    name: "c".to_string(),
-                    properties: vec![
-                        IndexProperty {
-                            name: "b".to_string(),
-                            ascending: false,
-                        },
-                        IndexProperty {
-                            name: "a".to_string(),
-                            ascending: false,
-                        },
+        let platform_version = PlatformVersion::latest();
+
+        let schema = platform_value!({
+            "type": "object",
+            "indices": [
+                {
+                    "name": "a",
+                    "properties": [
+                        { "a": "asc" }
                     ],
-                    unique: false,
+                    "unique": false
                 },
-                Index {
-                    name: "d".to_string(),
-                    properties: vec![
-                        IndexProperty {
-                            name: "b".to_string(),
-                            ascending: false,
-                        },
-                        IndexProperty {
-                            name: "a".to_string(),
-                            ascending: false,
-                        },
-                        IndexProperty {
-                            name: "d".to_string(),
-                            ascending: false,
-                        },
+                {
+                    "name": "b",
+                    "properties": [
+                        { "b": "asc" }
                     ],
-                    unique: false,
+                    "unique": false
                 },
+                {
+                    "name": "c",
+                    "properties": [
+                        { "b": "asc" },
+                        { "a": "asc" }
+                    ],
+                    "unique": false
+                },
+                {
+                    "name": "d",
+                    "properties": [
+                        { "b": "asc" },
+                        { "a": "asc" },
+                        { "d": "asc" }
+                    ],
+                    "unique": false
+                }
             ],
-            Default::default(),
-            Default::default(),
+            "properties": {
+                "a": {
+                    "type": "string",
+                    "maxLength": 10,
+                },
+                "b": {
+                    "type": "string",
+                    "maxLength": 10,
+                },
+                "c": {
+                    "type": "string",
+                    "maxLength": 10,
+                },
+                "d": {
+                    "type": "string",
+                    "maxLength": 10,
+                }
+            },
+            "additionalProperties": false,
+        });
+
+        DocumentType::try_from_schema(
+            Identifier::random(),
+            "indexed_type",
+            schema,
+            None,
             false,
             false,
+            true,
+            platform_version,
         )
+        .expect("expected to create a document type")
     }
 
     #[test]
     fn test_find_best_index() {
         let document_type = construct_indexed_document_type();
-        let contract = Contract::default();
+        let contract = get_dpns_data_contract_fixture(None, 1).data_contract_owned();
+
+        let platform_version = PlatformVersion::latest();
 
         let query_value = json!({
             "where": [
@@ -88,12 +104,14 @@ mod tests {
         let query = DriveQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
-            &document_type,
+            document_type.as_ref(),
             &DriveConfig::default(),
         )
         .expect("query should be valid");
-        let index = query.find_best_index().expect("expected to find index");
-        assert_eq!(index, document_type.indices.get(2).unwrap());
+        let index = query
+            .find_best_index(platform_version)
+            .expect("expected to find index");
+        assert_eq!(index, document_type.indices().get(2).unwrap());
 
         let query_value = json!({
             "where": [
@@ -105,18 +123,22 @@ mod tests {
         let query = DriveQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
-            &document_type,
+            document_type.as_ref(),
             &DriveConfig::default(),
         )
         .expect("query should be valid");
-        let index = query.find_best_index().expect("expected to find index");
-        assert_eq!(index, document_type.indices.get(0).unwrap());
+        let index = query
+            .find_best_index(platform_version)
+            .expect("expected to find index");
+        assert_eq!(index, document_type.indices().get(0).unwrap());
     }
 
     #[test]
     fn test_find_best_index_error() {
         let document_type = construct_indexed_document_type();
-        let contract = Contract::default();
+        let contract = get_dpns_data_contract_fixture(None, 1).data_contract_owned();
+
+        let platform_version = PlatformVersion::latest();
 
         let query_value = json!({
             "where": [
@@ -128,12 +150,12 @@ mod tests {
         let query = DriveQuery::from_cbor(
             where_cbor.as_slice(),
             &contract,
-            &document_type,
+            document_type.as_ref(),
             &DriveConfig::default(),
         )
         .expect("query should be valid");
         let error = query
-            .find_best_index()
+            .find_best_index(platform_version)
             .expect_err("expected to not find index");
         assert!(
             matches!(error, Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message)) if message == "query must be for valid indexes")

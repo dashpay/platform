@@ -1,6 +1,6 @@
-const ServerError = require('../../errors/response/RetriableResponseError');
+const RetriableResponseError = require('../../errors/response/RetriableResponseError');
 
-class InternalServerError extends ServerError {
+class InternalServerError extends RetriableResponseError {
   /**
    * @param {number} code
    * @param {string} message

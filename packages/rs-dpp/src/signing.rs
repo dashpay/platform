@@ -2,7 +2,8 @@ use crate::consensus::signature::{
     BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
 };
 use crate::identity::KeyType;
-use crate::serialization_traits::PlatformMessageSignable;
+use crate::serialization::PlatformMessageSignable;
+#[cfg(any(feature = "state-transitions", feature = "validation"))]
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{BlsModule, ProtocolError};
@@ -21,12 +22,12 @@ impl PlatformMessageSignable for &[u8] {
                 if let Err(e) =
                     signer::verify_data_signature(signable_data, signature, public_key_data)
                 {
-                    // dbg!(format!(
-                    //     "error with signature {} data {} public key {}",
-                    //     hex::encode(signature),
-                    //     hex::encode(signable_data),
-                    //     hex::encode(public_key_data)
-                    // ));
+                    dbg!(format!(
+                        "error with signature {} data {} public key {}",
+                        hex::encode(signature),
+                        hex::encode(signable_data),
+                        hex::encode(public_key_data)
+                    ));
                     Ok(SimpleConsensusValidationResult::new_with_error(
                         SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
                     ))

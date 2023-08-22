@@ -1,4 +1,5 @@
 use crate::drive::contract::MAX_CONTRACT_HISTORY_FETCH_LIMIT;
+use dpp::version::FeatureVersion;
 
 /// Drive errors
 #[derive(Debug, thiserror::Error)]
@@ -7,6 +8,26 @@ pub enum DriveError {
     /// This error should never occur, it is the equivalent of a panic.
     #[error("corrupted code execution error: {0}")]
     CorruptedCodeExecution(&'static str),
+
+    /// Platform expected some specific versions
+    #[error("drive unknown version on {method}, received: {received}")]
+    UnknownVersionMismatch {
+        /// method
+        method: String,
+        /// the allowed versions for this method
+        known_versions: Vec<FeatureVersion>,
+        /// requested core height
+        received: FeatureVersion,
+    },
+
+    /// Platform expected some specific versions
+    #[error("{method} not active for drive version")]
+    VersionNotActive {
+        /// method
+        method: String,
+        /// the allowed versions for this method
+        known_versions: Vec<FeatureVersion>,
+    },
 
     /// Error
     /// A critical corrupted state should stall the chain.
