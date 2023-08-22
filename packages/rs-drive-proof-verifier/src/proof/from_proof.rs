@@ -498,15 +498,15 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
             .ids
             .iter()
             .map(|id| match Identifier::from_bytes(id) {
-                Ok(id) => Ok((id.to_buffer(), false)),
+                Ok(id) => Ok(id.to_buffer()),
                 Err(e) => Err(Error::RequestDecodeError {
                     error: e.to_string(),
                 }),
             })
-            .collect::<Result<BTreeMap<[u8; 32], bool>, Error>>()?;
+            .collect::<Result<Vec<[u8; 32]>, Error>>()?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
-        let (root_hash, contracts) = Drive::verify_contracts(&proof.grovedb_proof, false, ids)
+        let (root_hash, contracts) = Drive::verify_contracts(&proof.grovedb_proof, false, ids.as_slice())
             .map_err(|e| Error::DriveError {
                 error: e.to_string(),
             })?;
