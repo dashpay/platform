@@ -126,12 +126,12 @@ impl<'a> DriveQuery<'a> {
                 let (path, key, maybe_element) = proved_key_values.remove(0);
                 if path != start_at_document_path {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "we did not get back a document for the correct path",
+                        "we did not get back a document for the correct path".to_string(),
                     )));
                 }
                 if key != start_at_document_key {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "we did not get back a document for the correct key",
+                        "we did not get back a document for the correct key".to_string(),
                     )));
                 }
                 let document = maybe_element

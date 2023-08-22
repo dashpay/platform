@@ -182,7 +182,7 @@ impl Drive {
                     }
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "balance wasn't for the identity requested",
+                        "balance wasn't for the identity requested".to_string(),
                     )));
                 }
             } else if path == identity_path && key == vec![IdentityTreeRevision as u8] {
@@ -209,7 +209,7 @@ impl Drive {
                     keys.insert(key.id, key);
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "we received an absence proof for a key but didn't request one",
+                        "we received an absence proof for a key but didn't request one".to_string(),
                     )));
                 }
             } else {
@@ -285,7 +285,7 @@ impl Drive {
                     keys.insert(key.id, key);
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "we received an absence proof for a key but didn't request one",
+                        "we received an absence proof for a key but didn't request one".to_string(),
                     )));
                 }
             } else {
@@ -349,12 +349,14 @@ impl Drive {
             let (path, key, maybe_element) = proved_key_values.remove(0);
             if path != unique_key_hashes_tree_path_vec() {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct path in unique key hashes",
+                    "we did not get back an element for the correct path in unique key hashes"
+                        .to_string(),
                 )));
             }
             if key != public_key_hash {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct key in unique key hashes",
+                    "we did not get back an element for the correct key in unique key hashes"
+                        .to_string(),
                 )));
             }
             let identity_id = maybe_element
@@ -418,12 +420,12 @@ impl Drive {
             let (path, key, maybe_element) = &proved_key_values.remove(0);
             if path != &balance_path() {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct path in balances",
+                    "we did not get back an element for the correct path in balances".to_string(),
                 )));
             }
             if key != &identity_id {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct key in balances",
+                    "we did not get back an element for the correct key in balances".to_string(),
                 )));
             }
 
