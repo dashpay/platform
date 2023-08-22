@@ -43,16 +43,18 @@ impl Drive {
         is_proof_subset: bool,
         contract_id: [u8; 32],
     ) -> Result<(RootHash, Option<DataContract>), Error> {
-        let path_query = if contract_known_keeps_history.unwrap_or_default() {
+        let mut path_query = if contract_known_keeps_history.unwrap_or_default() {
             Self::fetch_contract_with_history_latest_query(contract_id)
         } else {
             Self::fetch_contract_query(contract_id)
         };
 
+        path_query.query.limit = Some(1);
+
         let result = if is_proof_subset {
-            GroveDb::verify_subset_query(proof, &path_query)
+            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)
         } else {
-            GroveDb::verify_query(proof, &path_query)
+            GroveDb::verify_query_with_absence_proof(proof, &path_query)
         };
         let (root_hash, mut proved_key_values) = match result.map_err(GroveDB) {
             Ok(ok_result) => ok_result,
@@ -65,8 +67,10 @@ impl Drive {
                 };
             }
         };
-        if proved_key_values.is_empty() {
-            return Ok((root_hash, None));
+        if proved_key_values.len() == 0 {
+            return Err(Error::Proof(ProofError::WrongElementCount(
+                "expected one element (even if it is none)",
+            )));
         }
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = proved_key_values.remove(0);
@@ -97,8 +101,18 @@ impl Drive {
                             DataContract::deserialize_no_limit(&bytes).map_err(Error::Protocol)
                         })
                 })
-                .transpose()?;
-            Ok((root_hash, contract))
+                .transpose();
+            match contract {
+                Ok(contract) => Ok((root_hash, contract)),
+                Err(e) => {
+                    if contract_known_keeps_history == Some(true) {
+                        // just return error
+                        Err(e)
+                    } else {
+                        Self::verify_contract(proof, Some(true), is_proof_subset, contract_id)
+                    }
+                }
+            }
         } else {
             Err(Error::Proof(ProofError::TooManyElements(
                 "expected one contract id",
@@ -140,83 +154,77 @@ impl Drive {
             )));
         }
 
-        let mut historical_contracts: Vec<[u8; 32]> = Vec::new();
-        let mut non_historical_contracts: Vec<[u8; 32]> = Vec::new();
+        let mut contracts = BTreeMap::new();
+
+        let mut returned_root_hash = None;
 
         for contract_id in contract_ids {
-            let (_, contract) = Self::verify_contract(proof, None, true, *contract_id)?;
-            if let Some(contract) = contract {
-                if contract.config.keeps_history {
-                    historical_contracts.push(*contract_id);
-                } else {
-                    non_historical_contracts.push(*contract_id);
-                }
-            } else {
-                non_historical_contracts.push(*contract_id);
-            }
+            let (root_hash, contract) = Self::verify_contract(proof, None, true, *contract_id)?;
+            returned_root_hash = Some(root_hash);
+            contracts.insert(*contract_id, contract);
         }
 
-        let mut contracts_query = Self::fetch_contracts_query(
-            non_historical_contracts.as_slice(),
-            historical_contracts.as_slice(),
-        )?;
+        // let mut contracts_query = Self::fetch_contracts_query(
+        //     non_historical_contracts.as_slice(),
+        //     historical_contracts.as_slice(),
+        // )?;
+        //
+        // contracts_query.query.limit = Some(request_len as u16);
+        //
+        // //todo: we are currently not proving succintness, a new method is required in grovedb
+        // let (root_hash, mut proved_key_values) = GroveDb::verify_subset_query_with_absence_proof(proof, &contracts_query)?;
+        //
+        // let contracts = proved_key_values.into_iter().map(|(path, key, maybe_element) | {
+        //     let last_part = path.last().ok_or(Error::Proof(ProofError::CorruptedProof(
+        //         "path of a proved item was empty".to_string(),
+        //     )))?;
+        //     let (contract_id, contract_keeps_history) = if last_part.len() == 32 { // non history
+        //         let contract_id : [u8;32] = last_part.clone().try_into().expect("expected 32 bytes");
+        //         (contract_id, false)
+        //     } else {
+        //         if path.len() == 0 {
+        //             return Err(Error::Proof(ProofError::CorruptedProof(
+        //                 "path of a proved item wasn't big enough".to_string(),
+        //             )));
+        //         }
+        //         let before_last_part = path.get(path.len() - 2).ok_or(Error::Proof(ProofError::CorruptedProof(
+        //             "we got back an invalid proof, the path was empty".to_string(),
+        //         )))?;
+        //         if before_last_part.len() != 32 {
+        //             return Err(Error::Proof(ProofError::CorruptedProof(
+        //                 "the contract id wasn't 32 bytes".to_string(),
+        //             )));
+        //         }
+        //         // otherwise the key is the time and the previous to last member of the path is the contract id
+        //         let before_last_part : [u8;32] = before_last_part.clone().try_into().expect("expected 32 bytes");
+        //         (before_last_part, true)
+        //     };
+        //     if contract_keeps_history {
+        //         if path != contract_keeping_history_storage_path(&contract_id) {
+        //             return Err(Error::Proof(ProofError::CorruptedProof(
+        //                 format!("we did not get back an element for the correct path for the historical contract, received: ({})", path.iter().map(|a| a.to_hex()).collect::<Vec<_>>().join("|")),
+        //             )));
+        //         }
+        //     } else if path != contract_root_path(&contract_id) {
+        //         return Err(Error::Proof(ProofError::CorruptedProof(
+        //             format!("we did not get back an element for the correct path for the non historical contract, received: ({})", path.iter().map(|a| a.to_hex()).collect::<Vec<_>>().join("|")),
+        //         )));
+        //     };
+        //
+        //     let contract = maybe_element
+        //         .map(|element| {
+        //             element
+        //                 .into_item_bytes()
+        //                 .map_err(Error::GroveDB)
+        //                 .and_then(|bytes| {
+        //                     DataContract::deserialize_no_limit(&bytes).map_err(Error::Protocol)
+        //                 })
+        //         })
+        //         .transpose()?;
+        //     Ok((root_hash, contract))
+        // }).collect::<Result<BTreeMap<[u8; 32], Option<DataContract>>, Error>>()?;
 
-        contracts_query.query.limit = Some(request_len as u16);
-
-        //todo: we are currently not proving succintness, a new method is required in grovedb
-        let (root_hash, mut proved_key_values) = GroveDb::verify_subset_query_with_absence_proof(proof, &contracts_query)?;
-
-        let contracts = proved_key_values.into_iter().map(|(path, key, maybe_element) | {
-            let last_part = path.last().ok_or(Error::Proof(ProofError::CorruptedProof(
-                "path of a proved item was empty".to_string(),
-            )))?;
-            let (contract_id, contract_keeps_history) = if last_part.len() == 32 { // non history
-                let contract_id : [u8;32] = last_part.clone().try_into().expect("expected 32 bytes");
-                (contract_id, false)
-            } else {
-                if path.len() == 0 {
-                    return Err(Error::Proof(ProofError::CorruptedProof(
-                        "path of a proved item wasn't big enough".to_string(),
-                    )));
-                }
-                let before_last_part = path.get(path.len() - 2).ok_or(Error::Proof(ProofError::CorruptedProof(
-                    "we got back an invalid proof, the path was empty".to_string(),
-                )))?;
-                if before_last_part.len() != 32 {
-                    return Err(Error::Proof(ProofError::CorruptedProof(
-                        "the contract id wasn't 32 bytes".to_string(),
-                    )));
-                }
-                // otherwise the key is the time and the previous to last member of the path is the contract id
-                let before_last_part : [u8;32] = before_last_part.clone().try_into().expect("expected 32 bytes");
-                (before_last_part, true)
-            };
-            if contract_keeps_history {
-                if path != contract_keeping_history_storage_path(&contract_id) {
-                    return Err(Error::Proof(ProofError::CorruptedProof(
-                        format!("we did not get back an element for the correct path for the historical contract, received: ({})", path.iter().map(|a| a.to_hex()).collect::<Vec<_>>().join("|")),
-                    )));
-                }
-            } else if path != contract_root_path(&contract_id) {
-                return Err(Error::Proof(ProofError::CorruptedProof(
-                    format!("we did not get back an element for the correct path for the non historical contract, received: ({})", path.iter().map(|a| a.to_hex()).collect::<Vec<_>>().join("|")),
-                )));
-            };
-
-            let contract = maybe_element
-                .map(|element| {
-                    element
-                        .into_item_bytes()
-                        .map_err(Error::GroveDB)
-                        .and_then(|bytes| {
-                            DataContract::deserialize_no_limit(&bytes).map_err(Error::Protocol)
-                        })
-                })
-                .transpose()?;
-            Ok((root_hash, contract))
-        }).collect::<Result<BTreeMap<[u8; 32], Option<DataContract>>, Error>>()?;
-
-        Ok((root_hash, contracts))
+        Ok((returned_root_hash.unwrap(), contracts))
     }
 
     /// Verifies that the contract's history is included in the proof.

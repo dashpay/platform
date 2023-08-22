@@ -426,5 +426,5 @@ impl Length for TestedObject {
 
 #[test]
 fn run_test() {
-    data_contracts_1_ok()
+    data_contracts_1_no_history_ok()
 }
