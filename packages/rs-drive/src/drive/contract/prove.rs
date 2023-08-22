@@ -94,8 +94,11 @@ impl Drive {
         let contracts_query = Self::fetch_non_historical_contracts_query(contract_ids);
 
         // we first need to fetch all contracts
-        let contracts =
-            self.grove_get_raw_path_query_with_optional(&contracts_query, transaction, &mut vec![])?;
+        let contracts = self.grove_get_raw_path_query_with_optional(
+            &contracts_query,
+            transaction,
+            &mut vec![],
+        )?;
         // We have 3 options
         // If the contract is non existing -> treat it as non historical
         // If the contract is there as an item -> it is non historical
@@ -140,7 +143,7 @@ impl Drive {
             historical_contracts.as_slice(),
         )?;
 
-        self.grove_get_proved_path_query(&contracts_query, false, transaction, &mut vec![])
+        self.grove_get_proved_path_query(&contracts_query, true, transaction, &mut vec![])
     }
 
     /// Proves the existence of the specified contract's history.

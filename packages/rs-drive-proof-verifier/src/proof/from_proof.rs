@@ -506,9 +506,11 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
             .collect::<Result<Vec<[u8; 32]>, Error>>()?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
-        let (root_hash, contracts) = Drive::verify_contracts(&proof.grovedb_proof, false, ids.as_slice())
-            .map_err(|e| Error::DriveError {
-                error: e.to_string(),
+        let (root_hash, contracts) =
+            Drive::verify_contracts(&proof.grovedb_proof, false, ids.as_slice()).map_err(|e| {
+                Error::DriveError {
+                    error: e.to_string(),
+                }
             })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
