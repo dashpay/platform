@@ -804,16 +804,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e496a50fda8aacccc86d7529e2c1e0892dbd0f898a6b5645b5561b89c3210efa"
 
 [[package]]
-name = "costs"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fb887722c14432a18fbab82afb2f245bceb7fca0#fb887722c14432a18fbab82afb2f245bceb7fca0"
-dependencies = [
- "integer-encoding",
- "intmap",
- "thiserror",
-]
-
-[[package]]
 name = "cpufeatures"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1228,12 +1218,14 @@ dependencies = [
  "byteorder",
  "chrono",
  "ciborium",
- "costs",
  "criterion",
  "derive_more",
  "dpp",
  "enum-map",
  "grovedb",
+ "grovedb-costs",
+ "grovedb-path",
+ "grovedb-storage",
  "hex",
  "indexmap 1.9.3",
  "integer-encoding",
@@ -1243,7 +1235,6 @@ dependencies = [
  "mockall",
  "moka",
  "nohash-hasher",
- "path",
  "platform-version",
  "rand",
  "rust_decimal",
@@ -1251,7 +1242,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlparser",
- "storage",
  "tempfile",
  "thiserror",
 ]
@@ -1745,24 +1735,91 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "grovedb"
-version = "0.12.2"
-source = "git+https://github.com/dashpay/grovedb?rev=fb887722c14432a18fbab82afb2f245bceb7fca0#fb887722c14432a18fbab82afb2f245bceb7fca0"
+version = "1.0.0-rc.1"
+source = "git+https://github.com/dashpay/grovedb?rev=cc1b577227525b2cfa9114590283b1a4a4d91661#cc1b577227525b2cfa9114590283b1a4a4d91661"
 dependencies = [
  "bincode 1.3.3",
- "costs",
+ "grovedb-costs",
+ "grovedb-merk",
+ "grovedb-path",
+ "grovedb-storage",
+ "grovedb-visualize",
  "hex",
  "indexmap 1.9.3",
  "integer-encoding",
  "intmap",
  "itertools",
- "merk",
  "nohash-hasher",
- "path",
  "serde",
- "storage",
  "tempfile",
  "thiserror",
- "visualize",
+]
+
+[[package]]
+name = "grovedb-costs"
+version = "1.0.0-rc.1"
+source = "git+https://github.com/dashpay/grovedb?rev=cc1b577227525b2cfa9114590283b1a4a4d91661#cc1b577227525b2cfa9114590283b1a4a4d91661"
+dependencies = [
+ "integer-encoding",
+ "intmap",
+ "thiserror",
+]
+
+[[package]]
+name = "grovedb-merk"
+version = "1.0.0-rc.1"
+source = "git+https://github.com/dashpay/grovedb?rev=cc1b577227525b2cfa9114590283b1a4a4d91661#cc1b577227525b2cfa9114590283b1a4a4d91661"
+dependencies = [
+ "blake3",
+ "byteorder",
+ "colored",
+ "ed",
+ "failure",
+ "grovedb-costs",
+ "grovedb-path",
+ "grovedb-storage",
+ "grovedb-visualize",
+ "hex",
+ "indexmap 1.9.3",
+ "integer-encoding",
+ "jemallocator",
+ "num_cpus",
+ "rand",
+ "thiserror",
+ "time 0.3.26",
+]
+
+[[package]]
+name = "grovedb-path"
+version = "1.0.0-rc.1"
+source = "git+https://github.com/dashpay/grovedb?rev=cc1b577227525b2cfa9114590283b1a4a4d91661#cc1b577227525b2cfa9114590283b1a4a4d91661"
+
+[[package]]
+name = "grovedb-storage"
+version = "1.0.0-rc.1"
+source = "git+https://github.com/dashpay/grovedb?rev=cc1b577227525b2cfa9114590283b1a4a4d91661#cc1b577227525b2cfa9114590283b1a4a4d91661"
+dependencies = [
+ "blake3",
+ "grovedb-costs",
+ "grovedb-path",
+ "grovedb-visualize",
+ "hex",
+ "integer-encoding",
+ "lazy_static",
+ "num_cpus",
+ "rocksdb",
+ "strum",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "grovedb-visualize"
+version = "1.0.0-rc.1"
+source = "git+https://github.com/dashpay/grovedb?rev=cc1b577227525b2cfa9114590283b1a4a4d91661#cc1b577227525b2cfa9114590283b1a4a4d91661"
+dependencies = [
+ "hex",
+ "itertools",
 ]
 
 [[package]]
@@ -2301,30 +2358,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "merk"
-version = "0.12.2"
-source = "git+https://github.com/dashpay/grovedb?rev=fb887722c14432a18fbab82afb2f245bceb7fca0#fb887722c14432a18fbab82afb2f245bceb7fca0"
-dependencies = [
- "blake3",
- "byteorder",
- "colored",
- "costs",
- "ed",
- "failure",
- "hex",
- "indexmap 1.9.3",
- "integer-encoding",
- "jemallocator",
- "num_cpus",
- "path",
- "rand",
- "storage",
- "thiserror",
- "time 0.3.26",
- "visualize",
-]
-
-[[package]]
 name = "metrics"
 version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2693,11 +2726,6 @@ name = "paste"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de3145af08024dea9fa9914f381a17b8fc6034dfb00f3a84013f7ff43f29ed4c"
-
-[[package]]
-name = "path"
-version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fb887722c14432a18fbab82afb2f245bceb7fca0#fb887722c14432a18fbab82afb2f245bceb7fca0"
 
 [[package]]
 name = "peeking_take_while"
@@ -3781,25 +3809,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "storage"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fb887722c14432a18fbab82afb2f245bceb7fca0#fb887722c14432a18fbab82afb2f245bceb7fca0"
-dependencies = [
- "blake3",
- "costs",
- "hex",
- "integer-encoding",
- "lazy_static",
- "num_cpus",
- "path",
- "rocksdb",
- "strum",
- "tempfile",
- "thiserror",
- "visualize",
-]
-
-[[package]]
 name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4521,15 +4530,6 @@ name = "virtue"
 version = "0.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b522f715ead3537dc57c9907899a08e461a8f1e87fc8414a4a89bbd9854289ff"
-
-[[package]]
-name = "visualize"
-version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fb887722c14432a18fbab82afb2f245bceb7fca0#fb887722c14432a18fbab82afb2f245bceb7fca0"
-dependencies = [
- "hex",
- "itertools",
-]
 
 [[package]]
 name = "waker-fn"
