@@ -1,40 +1,28 @@
 use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::batch::DriveOperation::{IdentityOperation, SystemOperation};
 use crate::drive::batch::{DriveOperation, IdentityOperationType, SystemOperationType};
-use crate::drive::defaults::PROTOCOL_VERSION;
 
 use crate::error::Error;
+use crate::state_transition_action::identity::identity_create::{
+    IdentityCreateTransitionAction, IdentityFromIdentityCreateTransitionAction,
+};
 use dpp::block::epoch::Epoch;
-use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
-
 use dpp::prelude::Identity;
+use dpp::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
     fn into_high_level_drive_operations<'a>(
         self,
         _epoch: &Epoch,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
-        let IdentityCreateTransitionAction {
-            public_keys,
-            initial_balance_amount,
-            identity_id,
-            asset_lock_outpoint,
-            ..
-        } = self;
+        let initial_balance_amount = self.initial_balance_amount();
+        let asset_lock_outpoint = self.asset_lock_outpoint();
+        let identity =
+            Identity::try_from_identity_create_transition_action(self, platform_version)?;
 
         let drive_operations = vec![
-            IdentityOperation(IdentityOperationType::AddNewIdentity {
-                identity: Identity {
-                    //todo: deal with protocol version
-                    protocol_version: PROTOCOL_VERSION,
-                    id: identity_id,
-                    public_keys: public_keys.into_iter().map(|key| (key.id, key)).collect(),
-                    balance: initial_balance_amount,
-                    revision: 0,
-                    asset_lock_proof: None,
-                    metadata: None,
-                },
-            }),
+            IdentityOperation(IdentityOperationType::AddNewIdentity { identity }),
             SystemOperation(SystemOperationType::AddToSystemCredits {
                 amount: initial_balance_amount,
             }),

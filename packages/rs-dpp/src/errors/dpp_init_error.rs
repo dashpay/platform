@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use crate::version::FeatureVersion;
 use jsonschema::ValidationError;
 use thiserror::Error;
 
@@ -11,6 +12,15 @@ pub enum DashPlatformProtocolInitError {
     ValidationError(ValidationError<'static>),
     #[error("Loaded Schema is invalid: {0}")]
     InvalidSchemaError(&'static str),
+    #[error("platform init unknown version on {method}, received: {received}")]
+    UnknownVersionMismatch {
+        /// method
+        method: String,
+        /// the allowed versions for this method
+        known_versions: Vec<FeatureVersion>,
+        /// requested core height
+        received: FeatureVersion,
+    },
 }
 
 fn into_owned(err: ValidationError) -> ValidationError<'static> {

@@ -1,12 +1,13 @@
 use thiserror::Error;
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
-use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
+use crate::consensus::signature::{
+    InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
+};
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
-use crate::data_contract::state_transition::errors::MissingDataContractIdError;
-use crate::data_contract::state_transition::errors::PublicKeyIsDisabledError;
 use crate::document::errors::*;
+#[cfg(feature = "validation")]
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
     PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
@@ -19,7 +20,9 @@ use crate::{
 
 use dashcore::consensus::encode::Error as DashCoreError;
 
+use crate::version::FeatureVersion;
 use platform_value::{Error as ValueError, Value};
+use platform_version::error::PlatformVersionError;
 
 #[derive(Error, Debug)]
 pub enum ProtocolError {
@@ -40,6 +43,36 @@ pub enum ProtocolError {
     DecodingError(String),
     #[error("File not found Error - {0}")]
     FileNotFound(String),
+
+    /// Platform expected some specific versions
+    #[error(
+    "dpp received not allowed version on {method}, allowed versions: {allowed_versions:?}, received: {received}"
+    )]
+    UnsupportedVersionMismatch {
+        /// method
+        method: String,
+        /// the allowed versions for this method
+        allowed_versions: Vec<FeatureVersion>,
+        /// requested core height
+        received: FeatureVersion,
+    },
+
+    /// Platform expected some specific versions
+    #[error(
+        "dpp unknown version on {method}, known versions: {known_versions:?}, received: {received}"
+    )]
+    UnknownVersionMismatch {
+        /// method
+        method: String,
+        /// the allowed versions for this method
+        known_versions: Vec<FeatureVersion>,
+        /// requested core height
+        received: FeatureVersion,
+    },
+    #[error("current platform version not initialized")]
+    CurrentProtocolVersionNotInitialized,
+    #[error("unknown version error {0}")]
+    UnknownVersionError(String),
     #[error("unknown protocol version error {0}")]
     UnknownProtocolVersionError(String),
     #[error("Not included or invalid protocol version")]
@@ -56,11 +89,15 @@ pub enum ProtocolError {
     #[error(transparent)]
     DataContractError(#[from] DataContractError),
 
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     StateTransitionError(#[from] StateTransitionError),
 
     #[error(transparent)]
     StructureError(#[from] StructureError),
+
+    #[error(transparent)]
+    PlatformVersionError(#[from] PlatformVersionError),
 
     #[error(transparent)]
     ConsensusError(Box<ConsensusError>),
@@ -72,16 +109,22 @@ pub enum ProtocolError {
     Generic(String),
 
     // State Transition Errors
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     InvalidIdentityPublicKeyTypeError(InvalidIdentityPublicKeyTypeError),
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     StateTransitionIsNotSignedError(StateTransitionIsNotSignedError),
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     PublicKeySecurityLevelNotMetError(PublicKeySecurityLevelNotMetError),
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     WrongPublicKeyPurposeError(WrongPublicKeyPurposeError),
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     PublicKeyMismatchError(PublicKeyMismatchError),
+    #[cfg(all(feature = "state-transitions", feature = "validation"))]
     #[error(transparent)]
     InvalidSignaturePublicKeyError(InvalidSignaturePublicKeyError),
 
@@ -109,9 +152,6 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     InvalidStateTransitionTypeError(InvalidStateTransitionTypeError),
-
-    #[error(transparent)]
-    MissingDataContractIdError(MissingDataContractIdError),
 
     #[error(transparent)]
     PublicKeyIsDisabledError(PublicKeyIsDisabledError),
@@ -154,6 +194,12 @@ pub enum ProtocolError {
 
     #[error("corrupted code execution: {0}")]
     CorruptedCodeExecution(String),
+
+    #[error("corrupted serialization: {0}")]
+    CorruptedSerialization(String),
+
+    #[error("critical corrupted credits code execution: {0}")]
+    CriticalCorruptedCreditsCodeExecution(String),
 }
 
 impl From<&str> for ProtocolError {

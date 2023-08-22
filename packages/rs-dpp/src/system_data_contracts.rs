@@ -1,22 +1,10 @@
-use crate::data_contract::validation::data_contract_validator::DataContractValidator;
 use crate::data_contract::DataContractFactory;
 use crate::prelude::*;
-use crate::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use crate::ProtocolError;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 
-pub use data_contracts::DataContractSource;
-pub use data_contracts::SystemDataContract;
-
-fn create_data_contract_factory() -> DataContractFactory {
-    let protocol_version_validator =
-        ProtocolVersionValidator::new(LATEST_VERSION, LATEST_VERSION, COMPATIBILITY_MAP.clone());
-
-    let data_contract_validator = DataContractValidator::new(Arc::new(protocol_version_validator));
-
-    DataContractFactory::new(1, Arc::new(data_contract_validator))
-}
+use crate::data_contract::accessors::v0::DataContractV0Setters;
+pub use data_contracts::*;
 
 fn create_data_contract(
     factory: &DataContractFactory,
@@ -41,23 +29,25 @@ fn create_data_contract(
         definitions.map(|def| def.into()),
     )?;
 
-    data_contract.data_contract.id = id;
+    data_contract.data_contract_mut().set_id(id);
 
-    Ok(data_contract.data_contract)
+    Ok(data_contract.data_contract_owned())
 }
 
 pub fn load_system_data_contract(
     system_contract: SystemDataContract,
+    protocol_version: u32,
 ) -> Result<DataContract, ProtocolError> {
-    let factory = create_data_contract_factory();
+    let factory = DataContractFactory::new(protocol_version, None)?;
 
     create_data_contract(&factory, system_contract)
 }
 
 pub fn load_system_data_contracts(
     system_contracts: BTreeSet<SystemDataContract>,
+    protocol_version: u32,
 ) -> Result<BTreeMap<SystemDataContract, DataContract>, ProtocolError> {
-    let factory = create_data_contract_factory();
+    let factory = DataContractFactory::new(protocol_version, None)?;
 
     system_contracts
         .into_iter()

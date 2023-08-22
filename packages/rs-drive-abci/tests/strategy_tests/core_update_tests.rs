@@ -6,6 +6,8 @@ mod tests {
     use crate::frequency::Frequency;
     use crate::strategy::{MasternodeListChangesStrategy, Strategy};
     use drive_abci::config::{PlatformConfig, PlatformTestConfig};
+    use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use drive_abci::platform_types::validator_set::v0::ValidatorSetV0Getters;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
     #[test]
@@ -81,11 +83,11 @@ mod tests {
         let state = outcome.abci_app.platform.state.read().unwrap();
 
         let banned_count = state
-            .validator_sets
+            .validator_sets()
             .values()
             .map(|validator_set| {
                 validator_set
-                    .members
+                    .members()
                     .values()
                     .map(|validator| validator.is_banned as usize)
                     .sum::<usize>()

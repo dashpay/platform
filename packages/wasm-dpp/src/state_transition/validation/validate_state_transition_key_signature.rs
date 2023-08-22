@@ -5,7 +5,7 @@ use crate::StateTransitionExecutionContextWasm;
 use dpp::identity::state_transition::asset_lock_proof::{
     AssetLockPublicKeyHashFetcher, AssetLockTransactionOutputFetcher,
 };
-use dpp::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
+use dpp::state_transition::state_transition_validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
 use dpp::validation::AsyncDataValidator;
 use std::sync::Arc;
 use wasm_bindgen::prelude::wasm_bindgen;

@@ -1,0 +1,17 @@
+[package]
+name = "platform-serialization-derive"
+authors = ["Samuel Westrich <sam@dash.org>"]
+description = "Bincode serialization and deserialization derivations"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+private = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.56"
+virtue = "0.0.14"
+quote = "1.0.26"
+syn = "2.0.15"

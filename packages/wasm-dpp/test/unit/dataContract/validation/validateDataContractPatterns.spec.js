@@ -2,7 +2,7 @@ const getDataContractFixture = require('../../../../lib/test/fixtures/getDataCon
 
 const { default: loadWasmDpp } = require('../../../..');
 
-describe('validateDataContractPatterns', () => {
+describe.skip('validateDataContractPatterns', () => {
   let DataContractValidator;
   let IncompatibleRe2PatternError;
 

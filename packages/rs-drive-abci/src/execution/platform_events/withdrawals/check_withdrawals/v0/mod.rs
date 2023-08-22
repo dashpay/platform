@@ -30,7 +30,7 @@ where
     ///   and the signatures are valid (if provided), it returns a default `SimpleValidationResult`. Otherwise,
     ///   it returns a `SimpleValidationResult` with an error.
     ///
-    pub fn check_withdrawals_v0(
+    pub(super) fn check_withdrawals_v0(
         &self,
         received_withdrawals: &withdrawal_txs::v0::WithdrawalTxs,
         our_withdrawals: &withdrawal_txs::v0::WithdrawalTxs,

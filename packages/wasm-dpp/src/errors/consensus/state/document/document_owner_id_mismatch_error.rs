@@ -2,7 +2,7 @@ use crate::buffer::Buffer;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
 use dpp::consensus::ConsensusError;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DocumentOwnerIdMismatchError)]
@@ -41,14 +41,5 @@ impl DocumentOwnerIdMismatchErrorWasm {
     #[wasm_bindgen(getter)]
     pub fn message(&self) -> String {
         self.inner.to_string()
-    }
-
-    #[wasm_bindgen(js_name=serialize)]
-    pub fn serialize(&self) -> Result<Buffer, JsError> {
-        let bytes = ConsensusError::from(self.inner.clone())
-            .serialize()
-            .map_err(JsError::from)?;
-
-        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

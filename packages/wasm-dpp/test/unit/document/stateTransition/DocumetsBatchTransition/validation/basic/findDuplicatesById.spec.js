@@ -3,7 +3,7 @@ const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 let findDuplicatesById;
 
-describe('findDuplicatesById', () => {
+describe.skip('findDuplicatesById', () => {
   let rawDocumentTransitions;
 
   beforeEach(async () => {

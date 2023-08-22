@@ -39,7 +39,7 @@ pub use types::binary_data::BinaryData;
 pub use types::bytes_20::Bytes20;
 pub use types::bytes_32::Bytes32;
 pub use types::bytes_36::Bytes36;
-pub use types::identifier::{Identifier, IDENTIFIER_MEDIA_TYPE};
+pub use types::identifier::{Identifier, IdentifierBytes32, IDENTIFIER_MEDIA_TYPE};
 
 pub use value_serialization::{from_value, to_value};
 

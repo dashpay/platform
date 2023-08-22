@@ -9,12 +9,12 @@ pub const MAX_ENCODED_KBYTE_LENGTH: usize = 16;
 
 pub fn serializable_value_to_cbor<T: ?Sized + ser::Serialize>(
     value: &T,
-    protocol_version: Option<u32>,
+    version: Option<u32>,
 ) -> Result<Vec<u8>, ProtocolError> {
     let mut buffer: Vec<u8> = Vec::new();
-    if let Some(protocol_version) = protocol_version {
+    if let Some(version) = version {
         buffer
-            .write_varint(protocol_version)
+            .write_varint(version)
             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
     }
     let size_with_protocol = buffer.len();

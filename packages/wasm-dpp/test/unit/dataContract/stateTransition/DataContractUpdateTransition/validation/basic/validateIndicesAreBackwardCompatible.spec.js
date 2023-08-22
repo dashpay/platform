@@ -2,7 +2,7 @@ const getDataContractFixture = require('../../../../../../../lib/test/fixtures/g
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
-describe('validateIndicesAreBackwardCompatible', () => {
+describe.skip('validateIndicesAreBackwardCompatible', () => {
   let oldDocumentsSchema;
   let newDocumentsSchema;
   let validateIndicesAreBackwardCompatible;

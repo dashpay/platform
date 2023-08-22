@@ -6,9 +6,9 @@ pub(crate) fn build_c_identity_struct(maybe_identity: Option<DppIdentity>) -> *m
     maybe_identity
         .map(|identity| {
             Box::into_raw(Box::from(Identity {
-                protocol_version: identity.protocol_version,
-                id: Box::into_raw(Box::from(identity.id.0 .0)),
-                public_keys_count: identity.public_keys.len(),
+                protocol_version: identity.feature_version,
+                id: Box::into_raw(Box::from(identity.id().0 .0)),
+                public_keys_count: identity.public_keys().len(),
                 public_keys: build_c_public_keys_struct(&identity),
                 balance: identity.balance,
                 revision: identity.revision,
@@ -23,7 +23,7 @@ pub(crate) fn build_c_identity_struct(maybe_identity: Option<DppIdentity>) -> *m
 
 pub(crate) fn build_c_public_keys_struct(identity: &DppIdentity) -> *const *const IdPublicKeyMap {
     let mut id_public_key_map_as_vec: Vec<*const IdPublicKeyMap> = vec![];
-    for (key_id, identity_public_key) in &identity.public_keys {
+    for (key_id, identity_public_key) in identity.public_keys() {
         id_public_key_map_as_vec.push(Box::into_raw(Box::from(IdPublicKeyMap {
             key: *key_id,
             public_key: Box::into_raw(Box::from(IdentityPublicKey {
