@@ -383,22 +383,23 @@ test_maybe_from_proof! {
     Ok(2)
 }
 
-// One contract out of 2 requested exists
+// Two existing contracts, one with history and one without, out of 3 requested
 test_maybe_from_proof! {
-    data_contracts_1_of_2,
+    data_contracts_mixed_2_of_3,
     grpc::GetDataContractsRequest,
     grpc::GetDataContractsResponse,
     DataContracts,
-    "vectors/data_contracts_1_of_2.json",
-    Ok(1)
+    "vectors/data_contracts_mixed_2_of_3.json",
+    Ok(2)
 }
 
+// One data contract requested and not found
 test_maybe_from_proof! {
-    data_contracts_not_found,
+    data_contracts_1_not_found,
     grpc::GetDataContractsRequest,
     grpc::GetDataContractsResponse,
     DataContracts,
-    "vectors/data_contracts_not_found.json",
+    "vectors/data_contracts_1_not_found.json",
     Ok(0)
 }
 
