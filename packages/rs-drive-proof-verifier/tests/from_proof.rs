@@ -363,6 +363,16 @@ test_maybe_from_proof! {
     Ok(1)
 }
 
+// Two contracts (without history) requested and found
+test_maybe_from_proof! {
+    data_contracts_no_history_2_ok,
+    grpc::GetDataContractsRequest,
+    grpc::GetDataContractsResponse,
+    DataContracts,
+    "vectors/data_contracts_no_history_2_ok.json",
+    Ok(2)
+}
+
 // 2 contracts: with and without history, requested and found
 test_maybe_from_proof! {
     data_contracts_mixed_2_ok,
