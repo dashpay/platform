@@ -107,10 +107,12 @@ impl Drive {
                 non_historical_contract_ids,
             ));
         }
-        let contracts_query =
+        let mut contracts_query =
             Self::fetch_non_historical_contracts_query(non_historical_contract_ids);
-        let historical_contracts_query =
+        contracts_query.query.limit = None;
+        let mut historical_contracts_query =
             Self::fetch_historical_contracts_query(historical_contract_ids)?;
+        historical_contracts_query.query.limit = None;
         PathQuery::merge(vec![&contracts_query, &historical_contracts_query]).map_err(GroveDB)
     }
 
