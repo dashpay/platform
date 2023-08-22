@@ -105,7 +105,10 @@ impl IdentityFactoryWasm {
 
         let result = self
             .0
-            .create_from_buffer(buffer.clone());
+            .create_from_buffer(
+                buffer.clone(),
+                options.skip_validation.unwrap_or(false),
+            );
 
         match result {
             Ok(identity) => Ok(identity.into()),
