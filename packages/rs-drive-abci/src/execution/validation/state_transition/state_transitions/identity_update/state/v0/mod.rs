@@ -18,6 +18,7 @@ use drive::state_transition_action::identity::identity_update::IdentityUpdateTra
 use drive::state_transition_action::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
+use crate::execution::validation::state_transition::common::validate_identity_public_key_contract_bounds::v0::validate_identity_public_keys_contract_bounds_v0;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::v0::validate_identity_public_key_ids_dont_exist_in_state_v0;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_exist_in_state::v0::validate_identity_public_key_ids_exist_in_state_v0;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::v0::validate_unique_identity_public_key_hashes_in_state_v0;
@@ -71,6 +72,20 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
                 platform_version,
             )?
             .errors,
+        );
+
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
+        // Now we should check to make sure any keys that are added are valid for the contract
+        // bounds they refer to
+        validation_result.add_errors(
+            validate_identity_public_keys_contract_bounds_v0(
+                self.public_keys_to_add(),
+                platform_version,
+            )?
+                .errors,
         );
 
         if !validation_result.is_valid() {
