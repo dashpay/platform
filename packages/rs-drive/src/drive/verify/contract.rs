@@ -129,7 +129,7 @@ impl Drive {
     /// - The GroveDb query fails.
     pub fn verify_contracts(
         proof: &[u8],
-        is_proof_subset: bool,
+        _is_proof_subset: bool, //this will be used later
         contract_ids: &[[u8; 32]],
     ) -> Result<(RootHash, BTreeMap<[u8; 32], Option<DataContract>>), Error> {
         let request_len = contract_ids.len();
@@ -140,61 +140,31 @@ impl Drive {
             )));
         }
 
-        let path_query = Self::fetch_non_historical_contracts_query(contract_ids);
-
-        let (_, mut proved_key_values) =
-            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?;
-
-        if proved_key_values.len() != request_len {
-            return Err(Error::Proof(ProofError::CorruptedProof(
-                "we did not get back the number of elements we are looking for".to_string(),
-            )));
-        }
-
         let mut historical_contracts: Vec<[u8; 32]> = Vec::new();
         let mut non_historical_contracts: Vec<[u8; 32]> = Vec::new();
 
-        for (path, _key, element) in proved_key_values.into_iter() {
-            let contract_id: [u8; 32] = path
-                .last()
-                .ok_or(Error::Drive(DriveError::CorruptedContractPath(
-                    "the path should always have a last",
-                )))?
-                .clone()
-                .try_into()
-                .map_err(|_| {
-                    Error::Drive(DriveError::CorruptedContractPath(
-                        "the path last component should always be 32 bytes",
-                    ))
-                })?;
-
-            if let Some(element) = element {
-                match element {
-                    Element::Item(_, _) => {
-                        non_historical_contracts.push(contract_id);
-                    }
-                    Element::Tree(_, _) => {
-                        historical_contracts.push(contract_id);
-                    }
-                    _ => {
-                        return Err(Error::Drive(DriveError::CorruptedContractPath("")));
-                    }
+        for contract_id in contract_ids {
+            let (_, contract) = Self::verify_contract(proof, None, true, *contract_id)?;
+            if let Some(contract) = contract {
+                if contract.config.keeps_history {
+                    historical_contracts.push(*contract_id);
+                } else {
+                    non_historical_contracts.push(*contract_id);
                 }
             } else {
-                non_historical_contracts.push(contract_id);
+                non_historical_contracts.push(*contract_id);
             }
         }
 
-        let contracts_query = Self::fetch_contracts_query(
+        let mut contracts_query = Self::fetch_contracts_query(
             non_historical_contracts.as_slice(),
             historical_contracts.as_slice(),
         )?;
 
-        let (root_hash, mut proved_key_values) = if is_proof_subset {
-            GroveDb::verify_subset_query_with_absence_proof(proof, &contracts_query)
-        } else {
-            GroveDb::verify_query_with_absence_proof(proof, &contracts_query)
-        }?;
+        contracts_query.query.limit = Some(request_len as u16);
+
+        //todo: we are currently not proving succintness, a new method is required in grovedb
+        let (root_hash, mut proved_key_values) = GroveDb::verify_subset_query_with_absence_proof(proof, &contracts_query)?;
 
         let contracts = proved_key_values.into_iter().map(|(path, key, maybe_element) | {
             let last_part = path.last().ok_or(Error::Proof(ProofError::CorruptedProof(
@@ -235,7 +205,6 @@ impl Drive {
 
             let contract = maybe_element
                 .map(|element| {
-                    dbg!(&element);
                     element
                         .into_item_bytes()
                         .map_err(Error::GroveDB)
