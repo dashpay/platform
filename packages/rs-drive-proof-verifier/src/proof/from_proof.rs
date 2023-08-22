@@ -497,11 +497,12 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
         let ids = request
             .ids
             .iter()
-            .map(|id| match Identifier::from_bytes(id) {
-                Ok(id) => Ok(id.to_buffer()),
-                Err(e) => Err(Error::RequestDecodeError {
-                    error: e.to_string(),
-                }),
+            .map(|id| {
+                id.clone()
+                    .try_into()
+                    .map_err(|_e| Error::RequestDecodeError {
+                        error: format!("wrong id size: expected: {}, got: {}", 32, id.len()),
+                    })
             })
             .collect::<Result<Vec<[u8; 32]>, Error>>()?;
 
