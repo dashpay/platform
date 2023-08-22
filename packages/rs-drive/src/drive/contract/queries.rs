@@ -3,7 +3,7 @@ use crate::drive::contract::paths::{
     contract_keeping_history_storage_path_vec, contract_root_path_vec,
 };
 use crate::drive::contract::{paths, MAX_CONTRACT_HISTORY_FETCH_LIMIT};
-use crate::drive::Drive;
+use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::error::Error::GroveDB;
@@ -64,14 +64,14 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the merging of path queries fails.
-    pub fn fetch_non_historical_contracts_query(
-        contract_ids: &[[u8; 32]],
-    ) -> Result<PathQuery, Error> {
-        let mut queries = Vec::new();
-        for contract_id in contract_ids {
-            queries.push(Self::fetch_contract_query(*contract_id));
-        }
-        PathQuery::merge(queries.iter().collect()).map_err(GroveDB)
+    pub fn fetch_non_historical_contracts_query(contract_ids: &[[u8; 32]]) -> PathQuery {
+        let mut query = Query::new();
+        query.insert_keys(contract_ids.iter().map(|key| key.to_vec()).collect());
+        query.set_subquery_key(vec![0]);
+        PathQuery::new(
+            vec![Into::<&[u8; 1]>::into(RootTree::ContractDocuments).to_vec()],
+            SizedQuery::new(query, Some(contract_ids.len() as u16), None),
+        )
     }
 
     /// Creates a merged path query for multiple contracts.
@@ -103,10 +103,12 @@ impl Drive {
             return Self::fetch_historical_contracts_query(historical_contract_ids);
         }
         if historical_contract_ids.is_empty() {
-            return Self::fetch_non_historical_contracts_query(non_historical_contract_ids);
+            return Ok(Self::fetch_non_historical_contracts_query(
+                non_historical_contract_ids,
+            ));
         }
         let contracts_query =
-            Self::fetch_non_historical_contracts_query(non_historical_contract_ids)?;
+            Self::fetch_non_historical_contracts_query(non_historical_contract_ids);
         let historical_contracts_query =
             Self::fetch_historical_contracts_query(historical_contract_ids)?;
         PathQuery::merge(vec![&contracts_query, &historical_contracts_query]).map_err(GroveDB)

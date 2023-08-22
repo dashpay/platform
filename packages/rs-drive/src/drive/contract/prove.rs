@@ -91,7 +91,8 @@ impl Drive {
         contract_ids: &[[u8; 32]],
         transaction: TransactionArg,
     ) -> Result<Vec<u8>, Error> {
-        let contracts_query = Self::fetch_non_historical_contracts_query(contract_ids)?;
+        let contracts_query = Self::fetch_non_historical_contracts_query(contract_ids);
+
         // we first need to fetch all contracts
         let contracts =
             self.grove_get_path_query_with_optional(&contracts_query, transaction, &mut vec![])?;

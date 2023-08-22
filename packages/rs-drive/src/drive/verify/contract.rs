@@ -140,11 +140,9 @@ impl Drive {
             )));
         }
 
-        let mut path_query = Self::fetch_non_historical_contracts_query(contract_ids)?;
+        let path_query = Self::fetch_non_historical_contracts_query(contract_ids);
 
-        path_query.query.limit = Some(request_len as u16);
-
-        let (root_hash, mut proved_key_values) =
+        let (_, mut proved_key_values) =
             GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?;
 
         if proved_key_values.len() != request_len {
