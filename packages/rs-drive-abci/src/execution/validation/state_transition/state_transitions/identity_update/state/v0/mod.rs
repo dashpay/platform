@@ -85,7 +85,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
                 self.public_keys_to_add(),
                 platform_version,
             )?
-                .errors,
+            .errors,
         );
 
         if !validation_result.is_valid() {
