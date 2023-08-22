@@ -380,7 +380,7 @@ test_maybe_from_proof! {
     grpc::GetDataContractsResponse,
     DataContracts,
     "vectors/data_contracts_mixed_2_ok.json",
-    Ok(1)
+    Ok(2)
 }
 
 // One contract out of 2 requested exists
