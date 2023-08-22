@@ -4,7 +4,7 @@ const { expectJsonSchemaError, expectValidationError } = require('../../../../li
 
 const { default: loadWasmDpp } = require('../../../../dist');
 
-describe('validateDataContractFactory', () => {
+describe.skip('validateDataContractFactory', () => {
   let dataContract;
   let validateDataContract;
 

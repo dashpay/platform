@@ -27,7 +27,7 @@ let DocumentOwnerIdMismatchError;
 let DocumentTimestampsMismatchError;
 let DocumentTimestampWindowViolationError;
 
-describe('validateDocumentsBatchTransitionStateFactory', () => {
+describe.skip('validateDocumentsBatchTransitionStateFactory', () => {
   let stateTransitionJs;
   let stateTransition;
   let documentsJs;

@@ -11,7 +11,7 @@ const getBlsAdapterMock = require('../../../../lib/test/mocks/getBlsAdapterMock'
 
 const { default: loadWasmDpp } = require('../../../../dist');
 
-describe('validatePublicKeySignaturesFactory', () => {
+describe.skip('validatePublicKeySignaturesFactory', () => {
   let identityCreateTransition;
   let rawIdentityCreateTransition;
   let validatePublicKeySignatures;

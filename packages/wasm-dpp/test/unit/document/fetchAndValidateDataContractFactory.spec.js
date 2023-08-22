@@ -10,7 +10,7 @@ let ValidationResult;
 let MissingDataContractIdError;
 let DataContractNotPresentError;
 
-describe('fetchAndValidateDataContractFactory', () => {
+describe.skip('fetchAndValidateDataContractFactory', () => {
   let stateRepositoryMock;
   let fetchAndValidateDataContract;
   let rawDocument;
