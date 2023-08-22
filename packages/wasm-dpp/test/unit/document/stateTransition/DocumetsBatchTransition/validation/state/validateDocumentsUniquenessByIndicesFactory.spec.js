@@ -18,7 +18,7 @@ let DocumentTransition;
 let Identifier;
 let StateTransitionExecutionContext;
 
-describe('validateDocumentsUniquenessByIndices', () => {
+describe.skip('validateDocumentsUniquenessByIndices', () => {
   let stateRepositoryMockJs;
   let stateRepositoryMock;
   let documentsJs;

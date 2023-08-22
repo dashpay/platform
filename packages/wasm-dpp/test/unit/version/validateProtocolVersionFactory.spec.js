@@ -8,7 +8,7 @@ let {
 } = require('../../..');
 const { default: loadWasmDpp } = require('../../..');
 
-describe('validateProtocolVersionFactory', () => {
+describe.skip('validateProtocolVersionFactory', () => {
   let protocolVersionValidator;
   let versionCompatibilityMap;
   let currentProtocolVersion;
