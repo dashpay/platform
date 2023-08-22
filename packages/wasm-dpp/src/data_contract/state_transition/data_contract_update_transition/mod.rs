@@ -14,7 +14,7 @@ use dpp::{
     data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition,
     platform_value,
     state_transition::{
-        StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
+        StateTransitionFieldTypes, StateTransitionIdentitySignedV0, StateTransitionLike,
     },
     ProtocolError,
 };
@@ -69,14 +69,14 @@ impl DataContractUpdateTransitionWasm {
         let raw_data_contract_update_transition = platform_value::to_value(parameters)
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
-        DataContractUpdateTransition::from_raw_object(raw_data_contract_update_transition)
+        DataContractUpdateTransition::from_object(raw_data_contract_update_transition)
             .map(Into::into)
             .with_js_error()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
     pub fn get_data_contract(&self) -> DataContractWasm {
-        self.0.data_contract.clone().into()
+        self.0.data_contract().clone().into()
     }
 
     #[wasm_bindgen(js_name=setDataContractConfig)]
@@ -88,7 +88,7 @@ impl DataContractUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn get_protocol_version(&self) -> u32 {
-        self.0.protocol_version
+        self.0.state_transition_protocol_version()
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -98,7 +98,7 @@ impl DataContractUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> u32 {
-        self.0.get_type() as u32
+        self.0.state_transition_type() as u32
     }
 
     #[wasm_bindgen(js_name=toJSON)]
@@ -131,9 +131,9 @@ impl DataContractUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getModifiedDataIds)]
-    pub fn get_modified_data_ids(&self) -> Vec<JsValue> {
+    pub fn modified_data_ids(&self) -> Vec<JsValue> {
         self.0
-            .get_modified_data_ids()
+            .modified_data_ids()
             .into_iter()
             .map(|identifier| Into::<IdentifierWrapper>::into(identifier).into())
             .collect()

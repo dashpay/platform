@@ -11,7 +11,7 @@ on:
 jobs:
   lint:
     name: Linting
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
     steps:
       - name: Check out repo
@@ -30,7 +30,7 @@ jobs:
 
   formatting:
     name: Formatting
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -46,7 +46,7 @@ jobs:
 
   compile:
     name: Compilation errors
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
     steps:
       - name: Check out repo
@@ -77,13 +77,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Save structures
+      - name: Save append_only and immutable structures
         id: base_structures
         run: |
           mkdir base_structures
           for file in $(jq -r '.[]' <<< "${{ steps.files.outputs.files }}"); do
             if [[ $file == *.rs ]]; then
-              awk '/@append_only/,/}/' $file > "base_structures/$(basename $file).base"
+              awk '/@append_only/,/}/' $file > "base_structures/$(basename $file).append_only.base"
+              awk '/@immutable/,/}/' $file > "base_structures/$(basename $file).immutable.base"
             fi
           done
           echo "::set-output name=base_dir::$(pwd)/base_structures"
@@ -95,11 +96,22 @@ jobs:
         run: |
           for file in $(jq -r '.[]' <<< "${{ steps.files.outputs.files }}"); do
             if [[ $file == *.rs ]]; then
-              awk '/@append_only/,/}/' $file > "$(basename $file).pr"
-              if ! diff -u "${{ steps.base_structures.outputs.base_dir }}/$(basename $file).base" "$(basename $file).pr" | grep "^-" | grep -v "@append_only" | grep -v "^-" | grep -v "^///" | grep -v "^//" | grep -v "^-$"; then
+              awk '/@append_only/,/}/' $file > "$(basename $file).append_only.pr"
+              awk '/@immutable/,/}/' $file > "$(basename $file).immutable.pr"
+          
+              # Check append_only structures
+              if ! diff -u "${{ steps.base_structures.outputs.base_dir }}/$(basename $file).append_only.base" "$(basename $file).append_only.pr" | grep "^-" | grep -v "@append_only" | grep -v "^-" | grep -v "^///" | grep -v "^//" | grep -v "^-$"; then
                 echo "No deletions detected in @append_only structures in $file. Test passed."
               else
                 echo "Deletions detected in @append_only structures in $file. Test failed."
+                exit 1
+              fi
+          
+              # Check immutable structures
+              if ! diff -u "${{ steps.base_structures.outputs.base_dir }}/$(basename $file).immutable.base" "$(basename $file).immutable.pr" | grep -E "^\+[^/+]|^-[^/-]" ; then
+                echo "No code changes detected in @immutable structures in $file. Test passed."
+              else
+                echo "Code changes detected in @immutable structures in $file. Test failed."
                 exit 1
               fi
             fi
@@ -107,7 +119,7 @@ jobs:
 
   test:
     name: Tests
-    runs-on: self-hosted
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
     steps:
       - name: Check out repo

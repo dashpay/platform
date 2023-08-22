@@ -14,19 +14,23 @@ module.exports = async function getIdentityCreateTransitionFixture(
   oneTimePrivateKey = new PrivateKey(),
 ) {
   await loadWasmDpp();
+
+  const assetLockProof = (await getInstantAssetLockProofFixture(oneTimePrivateKey)).toObject();
   const rawStateTransition = {
-    protocolVersion: 1,
+    signature: Buffer.alloc(32),
+    $version: '0',
     type: 2,
-    assetLockProof: (await getInstantAssetLockProofFixture(oneTimePrivateKey)).toObject(),
+    assetLockProof,
     publicKeys: [
       {
+        $version: '0',
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
-        signature: Buffer.alloc(0),
+        signature: Buffer.alloc(32),
       },
     ],
   };

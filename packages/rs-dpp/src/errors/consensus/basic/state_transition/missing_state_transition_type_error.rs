@@ -17,7 +17,7 @@ DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
 impl MissingStateTransitionTypeError {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 

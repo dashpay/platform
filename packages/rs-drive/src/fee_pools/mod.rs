@@ -28,15 +28,18 @@
 //
 
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::fee_pools::pools_vec_path;
+use crate::drive::credit_pools::paths::pools_vec_path;
 use crate::error::Error;
-use crate::fee::credits::{Creditable, Credits};
-use crate::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::fee_pools::epochs::operations_factory::EpochOperations;
 use crate::fee_pools::epochs_root_tree_key_constants::{
     KEY_PENDING_EPOCH_REFUNDS, KEY_STORAGE_FEE_POOL, KEY_UNPAID_EPOCH_INDEX,
 };
-use dpp::block::epoch::Epoch;
+use dpp::balances::credits::Creditable;
+use dpp::block::epoch::{Epoch, EpochIndex};
+use dpp::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+use dpp::fee::Credits;
 use grovedb::batch::GroveDbOp;
 use grovedb::Element;
 
@@ -99,14 +102,16 @@ mod tests {
 
     mod add_create_fee_pool_trees_operations {
         use super::*;
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn test_values_are_set() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
+            let platform_version = PlatformVersion::latest();
 
             let storage_fee_pool = drive
-                .get_storage_fees_from_distribution_pool(Some(&transaction))
+                .get_storage_fees_from_distribution_pool(Some(&transaction), platform_version)
                 .expect("should get storage fee pool");
 
             assert_eq!(storage_fee_pool, 0u64);
@@ -115,13 +120,18 @@ mod tests {
         #[test]
         fn test_epoch_trees_are_created() {
             let drive = setup_drive_with_initial_state_structure();
+            let platform_version = PlatformVersion::latest();
             let transaction = drive.grove.start_transaction();
 
             for epoch_index in 0..1000 {
                 let epoch = Epoch::new(epoch_index).unwrap();
 
                 let storage_fee = drive
-                    .get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction))
+                    .get_epoch_storage_credits_for_distribution(
+                        &epoch,
+                        Some(&transaction),
+                        platform_version,
+                    )
                     .expect("should get storage fee");
 
                 assert_eq!(storage_fee, 0);
@@ -129,8 +139,11 @@ mod tests {
 
             let epoch = Epoch::new(1000).unwrap(); // 1001th epochs pool
 
-            let result =
-                drive.get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction));
+            let result = drive.get_epoch_storage_credits_for_distribution(
+                &epoch,
+                Some(&transaction),
+                platform_version,
+            );
 
             assert!(matches!(result, Err(Error::GroveDB(_))));
         }
@@ -138,11 +151,14 @@ mod tests {
 
     mod update_storage_fee_distribution_pool_operation {
         use super::*;
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn test_update_and_get_value() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
+
+            let platform_version = PlatformVersion::latest();
 
             let storage_fee = 42;
 
@@ -154,11 +170,11 @@ mod tests {
             );
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let stored_storage_fee = drive
-                .get_storage_fees_from_distribution_pool(Some(&transaction))
+                .get_storage_fees_from_distribution_pool(Some(&transaction), platform_version)
                 .expect("should get storage fee pool");
 
             assert_eq!(storage_fee, stored_storage_fee);

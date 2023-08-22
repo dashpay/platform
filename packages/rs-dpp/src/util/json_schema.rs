@@ -1,11 +1,8 @@
-use crate::data_contract::document_type::index::IndexWithRawProperties;
-pub use crate::data_contract::document_type::Index;
-use anyhow::{anyhow, bail, Error};
+use anyhow::{anyhow, bail};
+use platform_value::Value;
 use serde_json::Value as JsonValue;
-use std::convert::TryFrom;
-use std::iter::FromIterator;
 
-use crate::identifier;
+use crate::{identifier, ProtocolError};
 
 pub trait JsonSchemaExt {
     /// returns true if json value contains property 'type`, and it equals 'object'
@@ -21,11 +18,24 @@ pub trait JsonSchemaExt {
     /// returns the required fields of Json Schema object
     fn get_schema_required_fields(&self) -> Result<Vec<&str>, anyhow::Error>;
     /// returns the indexes from Json Schema
-    fn get_indices<I: FromIterator<Index>>(&self) -> Result<I, anyhow::Error>;
+    // fn get_indices<I: FromIterator<Index>>(&self) -> Result<I, anyhow::Error>;
     /// returns the indexes from Json Schema
-    fn get_indices_map<I: FromIterator<(String, Index)>>(&self) -> Result<I, anyhow::Error>;
+    // fn get_indices_map<I: FromIterator<(String, Index)>>(&self) -> Result<I, anyhow::Error>;
     /// returns true if json value contains property `contentMediaType` and it equals to Identifier
     fn is_type_of_identifier(&self) -> bool;
+}
+
+pub fn resolve_uri<'a>(value: &'a Value, uri: &str) -> Result<&'a Value, ProtocolError> {
+    if !uri.starts_with("#/") {
+        return Err(ProtocolError::Generic(
+            "only local references are allowed".to_string(),
+        ));
+    }
+
+    let string_path = uri.strip_prefix("#/").unwrap().replace('/', ".");
+    value
+        .get_value_at_path(&string_path)
+        .map_err(ProtocolError::ValueError)
 }
 
 impl JsonSchemaExt for JsonValue {
@@ -92,18 +102,19 @@ impl JsonSchemaExt for JsonValue {
         bail!("the {:?} isn't an map", self);
     }
 
-    fn get_indices<I: FromIterator<Index>>(&self) -> Result<I, anyhow::Error> {
-        let indices_with_raw_properties: Vec<IndexWithRawProperties> = match self.get("indices") {
-            Some(raw_indices) => serde_json::from_value(raw_indices.to_owned())?,
-
-            None => vec![],
-        };
-
-        indices_with_raw_properties
-            .into_iter()
-            .map(Index::try_from)
-            .collect::<Result<I, anyhow::Error>>()
-    }
+    // TODO: Why we are doing this?
+    // fn get_indices<I: FromIterator<Index>>(&self) -> Result<I, anyhow::Error> {
+    //     let indices_with_raw_properties: Vec<IndexWithRawProperties> = match self.get("indices") {
+    //         Some(raw_indices) => serde_json::from_value(raw_indices.to_owned())?,
+    //
+    //         None => vec![],
+    //     };
+    //
+    //     indices_with_raw_properties
+    //         .into_iter()
+    //         .map(Index::try_from)
+    //         .collect::<Result<I, anyhow::Error>>()
+    // }
 
     fn is_type_of_identifier(&self) -> bool {
         if let JsonValue::Object(ref map) = self {
@@ -114,74 +125,110 @@ impl JsonSchemaExt for JsonValue {
         false
     }
 
-    fn get_indices_map<I: FromIterator<(String, Index)>>(&self) -> Result<I, Error> {
-        let indices_with_raw_properties: Vec<IndexWithRawProperties> = match self.get("indices") {
-            Some(raw_indices) => serde_json::from_value(raw_indices.to_owned())?,
-
-            None => vec![],
-        };
-
-        indices_with_raw_properties
-            .into_iter()
-            .map(|r| {
-                let index = Index::try_from(r)?;
-                Ok((index.name.clone(), index))
-            })
-            .collect::<Result<I, anyhow::Error>>()
-    }
+    // TODO: Why do we need this?
+    // fn get_indices_map<I: FromIterator<(String, Index)>>(&self) -> Result<I, Error> {
+    //     let indices_with_raw_properties: Vec<IndexWithRawProperties> = match self.get("indices") {
+    //         Some(raw_indices) => serde_json::from_value(raw_indices.to_owned())?,
+    //
+    //         None => vec![],
+    //     };
+    //
+    //     indices_with_raw_properties
+    //         .into_iter()
+    //         .map(|r| {
+    //             let index = Index::try_from(r)?;
+    //             Ok((index.name().clone(), index))
+    //         })
+    //         .collect::<Result<I, anyhow::Error>>()
+    // }
 }
 
 #[cfg(test)]
 mod test {
-    use super::*;
+
+    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::document_type::DocumentType;
+
+    use platform_value::Identifier;
+    use platform_version::version::LATEST_PLATFORM_VERSION;
     use serde_json::json;
 
     #[test]
     fn test_extract_indices() {
         let input = json!({
-            "properties" : {
-                "field_one" : {
-                    "type" : "string"
+            "type": "object",
+            "indices": [
+                {
+                    "properties": [
+                        {
+                            "$ownerId": "asc"
+                        }
+                    ],
+                    "name": "&ownerId",
+                    "unique": true
                 },
-                "field_two" : {
-                    "type" : "string"
+                {
+                    "properties": [
+                        {
+                            "$ownerId": "asc"
+                        },
+                        {
+                            "$updatedAt": "asc"
+                        }
+                    ],
+                    "name": "&ownerId&updatedAt"
+                }
+            ],
+            "properties": {
+                "avatarUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "maxLength": 2048
+                },
+                "publicMessage": {
+                    "type": "string",
+                    "maxLength": 140
+                },
+                "displayName": {
+                    "type": "string",
+                    "maxLength": 25
                 }
             },
-            "indices" : [
-                {
-                    "name" : "first_index",
-                    "properties" :[
-                        {"field_one" : "asc"},
-                        {"field_two" : "desc"},
-                    ],
-                    "unique" : true
-
-                },
-                {
-                    "name" : "second_index",
-                    "properties" : [
-                        {"field_two" : "desc"},
-                    ],
-                }
-             ]
+            "required": [
+                "$createdAt",
+                "$updatedAt"
+            ],
+            "additionalProperties": false
         });
 
-        let indices_result = input.get_indices::<Vec<_>>();
-        let indices = indices_result.unwrap();
+        let platform_value = platform_value::to_value(input).unwrap();
+
+        let document_type = DocumentType::try_from_schema(
+            Identifier::random(),
+            "doc",
+            platform_value,
+            None,
+            false,
+            false,
+            false,
+            LATEST_PLATFORM_VERSION,
+        )
+        .unwrap();
+
+        let indices = document_type.indices();
 
         assert_eq!(indices.len(), 2);
-        assert_eq!(indices[0].name, "first_index");
-        assert_eq!(indices[0].properties.len(), 2);
 
-        assert_eq!(indices[0].properties[0].name, "field_one");
-        assert_eq!(indices[0].properties[1].name, "field_two");
-
+        assert_eq!(indices[0].name, "&ownerId");
+        assert_eq!(indices[0].properties.len(), 1);
+        assert_eq!(indices[0].properties[0].name, "$ownerId");
         assert!(indices[0].properties[0].ascending);
-        assert!(!indices[0].properties[1].ascending);
         assert!(indices[0].unique);
 
-        assert_eq!(indices[1].name, "second_index");
-        assert_eq!(indices[1].properties.len(), 1);
+        assert_eq!(indices[1].name, "&ownerId&updatedAt");
+        assert_eq!(indices[1].properties.len(), 2);
+        assert_eq!(indices[1].properties[0].name, "$ownerId");
+        assert_eq!(indices[1].properties[1].name, "$updatedAt");
         assert!(!indices[1].unique);
     }
 }

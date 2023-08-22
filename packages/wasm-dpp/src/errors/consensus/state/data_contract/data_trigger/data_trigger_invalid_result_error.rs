@@ -4,7 +4,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::data_trigger::data_trigger_invalid_result_error::DataTriggerInvalidResultError;
 use dpp::consensus::ConsensusError;
 use dpp::identifier::Identifier;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataTriggerInvalidResultError)]

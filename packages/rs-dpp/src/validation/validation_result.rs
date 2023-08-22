@@ -80,6 +80,13 @@ impl<E: Debug> SimpleValidationResult<E> {
 }
 
 impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
+    pub fn new() -> Self {
+        Self {
+            errors: vec![],
+            data: None::<TData>,
+        }
+    }
+
     pub fn new_with_data(data: TData) -> Self {
         Self {
             errors: vec![],
@@ -181,6 +188,10 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
 
     pub fn add_errors(&mut self, mut errors: Vec<E>) {
         self.errors.append(&mut errors)
+    }
+
+    pub fn add_errors_into<EI: Into<E>>(&mut self, errors: Vec<EI>) {
+        errors.into_iter().for_each(|e| self.add_error(e.into()))
     }
 
     pub fn merge<TOtherData: Clone>(&mut self, mut other: ValidationResult<TOtherData, E>) {

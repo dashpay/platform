@@ -8,24 +8,27 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::identity::IdentityPublicKey;
+use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-
-pub enum ContractApplyInfo {
+#[allow(dead_code)]
+pub enum DataContractApplyInfo {
     Keys(Vec<IdentityPublicKey>),
 }
 
 impl Drive {
+    #[allow(dead_code)]
     pub(crate) fn add_contract_info_operations(
         &self,
         identity_id: [u8; 32],
-        contract_infos: Vec<([u8; 32], ContractApplyInfo)>,
+        contract_infos: Vec<([u8; 32], DataContractApplyInfo)>,
         epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         let storage_flags = StorageFlags::SingleEpoch(epoch.index);
@@ -38,6 +41,7 @@ impl Drive {
             transaction,
             &mut None,
             &mut batch_operations,
+            &platform_version.drive,
         )?;
 
         let identity_contract_root_path =
@@ -54,9 +58,10 @@ impl Drive {
                 transaction,
                 &mut None,
                 &mut batch_operations,
+                &platform_version.drive,
             )?;
             match contract_info {
-                ContractApplyInfo::Keys(keys) => {
+                DataContractApplyInfo::Keys(keys) => {
                     self.add_new_keys_to_identity_operations(
                         identity_id,
                         keys,
@@ -64,6 +69,7 @@ impl Drive {
                         false,
                         estimated_costs_only_with_layer_info,
                         transaction,
+                        platform_version,
                     )?;
                 }
             }

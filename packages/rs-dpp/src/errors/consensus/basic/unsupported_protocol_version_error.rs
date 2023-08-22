@@ -53,7 +53,8 @@ impl TryFrom<Value> for UnsupportedProtocolVersionError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::serialization_traits::PlatformSerializable;
+    use crate::serialization::PlatformSerializableWithPlatformVersion;
+    use platform_version::version::LATEST_PLATFORM_VERSION;
 
     #[test]
     fn test_try_from() {
@@ -61,7 +62,9 @@ mod tests {
 
         let consensus_error: ConsensusError = error.clone().into();
 
-        let _cbor = PlatformSerializable::serialize(&consensus_error);
+        let _cbor = consensus_error
+            .serialize_with_platform_version(LATEST_PLATFORM_VERSION)
+            .expect("should serialize");
 
         // let value = Value::try_from(&consensus_error).expect("should convert to value");
 

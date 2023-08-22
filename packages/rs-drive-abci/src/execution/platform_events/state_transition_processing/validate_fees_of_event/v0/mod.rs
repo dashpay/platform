@@ -6,8 +6,9 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::ConsensusValidationResult;
-use drive::fee::result::FeeResult;
+use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C>
@@ -36,6 +37,7 @@ where
         event: &ExecutionEvent,
         block_info: &BlockInfo,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         match event {
             ExecutionEvent::PaidFromAssetLockDriveEvent {
@@ -49,11 +51,18 @@ where
                 let previous_balance_with_top_up = previous_balance + added_balance;
                 let estimated_fee_result = self
                     .drive
-                    .apply_drive_operations(operations.clone(), false, block_info, transaction)
+                    .apply_drive_operations(
+                        operations.clone(),
+                        false,
+                        block_info,
+                        transaction,
+                        platform_version,
+                    )
                     .map_err(Error::Drive)?;
 
                 // TODO: Should take into account refunds as well
-                if previous_balance_with_top_up >= estimated_fee_result.total_base_fee() {
+                let total_fee = estimated_fee_result.total_base_fee();
+                if previous_balance_with_top_up >= total_fee {
                     Ok(ConsensusValidationResult::new_with_data(
                         estimated_fee_result,
                     ))
@@ -64,6 +73,7 @@ where
                             IdentityInsufficientBalanceError::new(
                                 identity.id,
                                 previous_balance_with_top_up,
+                                total_fee,
                             ),
                         )
                         .into()],
@@ -79,11 +89,18 @@ where
                 ))?;
                 let estimated_fee_result = self
                     .drive
-                    .apply_drive_operations(operations.clone(), false, block_info, transaction)
+                    .apply_drive_operations(
+                        operations.clone(),
+                        false,
+                        block_info,
+                        transaction,
+                        platform_version,
+                    )
                     .map_err(Error::Drive)?;
 
                 // TODO: Should take into account refunds as well
-                if balance >= estimated_fee_result.total_base_fee() {
+                let required_balance = estimated_fee_result.total_base_fee();
+                if balance >= required_balance {
                     Ok(ConsensusValidationResult::new_with_data(
                         estimated_fee_result,
                     ))
@@ -91,7 +108,11 @@ where
                     Ok(ConsensusValidationResult::new_with_data_and_errors(
                         estimated_fee_result,
                         vec![StateError::IdentityInsufficientBalanceError(
-                            IdentityInsufficientBalanceError::new(identity.id, balance),
+                            IdentityInsufficientBalanceError::new(
+                                identity.id,
+                                balance,
+                                required_balance,
+                            ),
                         )
                         .into()],
                     ))

@@ -2,7 +2,6 @@ use crate::masternodes;
 use crate::masternodes::{GenerateTestMasternodeUpdates, MasternodeListItemWithUpdates};
 use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::query::ProofVerification;
-use crate::signer::SimpleSigner;
 use crate::strategy::{
     ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness,
     ValidatorVersionMigration,
@@ -17,14 +16,20 @@ use dashcore_rpc::dashcore_rpc_json::{
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
-use drive_abci::platform_types::epoch::v0::{EpochInfo, EPOCH_CHANGE_TIME_MS_V0};
+use drive_abci::platform_types::epoch_info::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
 use drive_abci::platform_types::platform::Platform;
+use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
+use drive_abci::test::helpers::signer::SimpleSigner;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
 use std::collections::{BTreeMap, HashMap};
@@ -551,7 +556,7 @@ pub(crate) fn start_chain_for_strategy(
         .state
         .read()
         .unwrap()
-        .current_validator_set_quorum_hash;
+        .current_validator_set_quorum_hash();
 
     continue_chain_for_strategy(
         abci_application,
@@ -594,7 +599,6 @@ pub(crate) fn continue_chain_for_strategy(
         StrategyRandomness::RNGEntropy(rng) => rng,
     };
     let quorum_size = config.quorum_size;
-    let _quorum_rotation_block_count = config.validator_set_quorum_rotation_block_count as u64;
     let first_block_time = 0;
     let mut current_identities = vec![];
     let mut signer = SimpleSigner::default();
@@ -624,16 +628,16 @@ pub(crate) fn continue_chain_for_strategy(
     let mut validator_set_updates = BTreeMap::new();
 
     for block_height in block_start..(block_start + block_count) {
-        let epoch_info = EpochInfo::calculate(
+        let epoch_info = EpochInfoV0::calculate(
             first_block_time,
             current_time_ms,
             platform
                 .state
                 .read()
                 .expect("lock is poisoned")
-                .last_committed_block_info
+                .last_committed_block_info()
                 .as_ref()
-                .map(|block_info| block_info.basic_info.time_ms),
+                .map(|block_info| block_info.basic_info().time_ms),
         )
         .expect("should calculate epoch info");
 
@@ -711,6 +715,10 @@ pub(crate) fn continue_chain_for_strategy(
             continue;
         }
 
+        let platform_state = platform.state.read().expect("lock is poisoned");
+
+        let platform_version = platform_state.current_platform_version().unwrap();
+
         total_withdrawals.append(&mut withdrawals_this_block);
 
         for finalize_block_operation in finalize_block_operations {
@@ -718,11 +726,11 @@ pub(crate) fn continue_chain_for_strategy(
                 IdentityAddKeys(identifier, keys) => {
                     let identity = current_identities
                         .iter_mut()
-                        .find(|identity| identity.id == identifier)
+                        .find(|identity| identity.id() == identifier)
                         .expect("expected to find an identity");
                     identity
-                        .public_keys
-                        .extend(keys.into_iter().map(|key| (key.id, key)));
+                        .public_keys_mut()
+                        .extend(keys.into_iter().map(|key| (key.id(), key)));
                 }
             }
         }
@@ -732,7 +740,12 @@ pub(crate) fn continue_chain_for_strategy(
 
         if strategy.verify_state_transition_results {
             //we need to verify state transitions
-            verify_state_transitions_were_executed(&abci_app, &root_app_hash, &state_transitions);
+            verify_state_transitions_were_executed(
+                &abci_app,
+                &root_app_hash,
+                &state_transitions,
+                platform_version,
+            );
         }
 
         if let Some(query_strategy) = &strategy.query_testing {
@@ -753,6 +766,7 @@ pub(crate) fn continue_chain_for_strategy(
                 &current_identities,
                 &abci_app,
                 StrategyRandomness::RNGEntropy(rng.clone()),
+                platform_version,
             )
         }
 
@@ -788,10 +802,10 @@ pub(crate) fn continue_chain_for_strategy(
             .state
             .read()
             .expect("lock is poisoned")
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .epoch
             .index
     };

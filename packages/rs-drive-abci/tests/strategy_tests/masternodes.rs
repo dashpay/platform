@@ -562,7 +562,7 @@ impl MasternodeListItemWithUpdates {
 
     pub(crate) fn get_state_at_height(&self, height: u32) -> &MasternodeListItem {
         // Find the closest height less than or equal to the given height
-        let closest_height = self.updates.range(..=height).rev().next().map(|(k, _)| *k);
+        let closest_height = self.updates.range(..=height).next_back().map(|(k, _)| *k);
 
         match closest_height {
             Some(h) => &self.updates[&h],

@@ -1,15 +1,18 @@
 use std::collections::BTreeMap;
 
-use dpp::contracts::withdrawals_contract;
-use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
 use dpp::document::Document;
 use dpp::platform_value::Value;
+use dpp::system_data_contracts::withdrawals_contract;
+use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use indexmap::IndexMap;
-use lazy_static::__Deref;
 
+use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::{
-    drive::{query::QuerySerializedDocumentsOutcome, Drive},
+    drive::Drive,
     error::{drive::DriveError, Error},
     query::{DriveQuery, InternalClauses, OrderClause, WhereClause},
 };
@@ -20,8 +23,9 @@ impl Drive {
         &self,
         status: u8,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
-        let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
+        let data_contract_id = withdrawals_contract::ID;
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_fee(
@@ -29,6 +33,7 @@ impl Drive {
                 None,
                 true,
                 transaction,
+                platform_version,
             )?
             .1
             .ok_or_else(|| {
@@ -39,15 +44,15 @@ impl Drive {
 
         let document_type = contract_fetch_info
             .contract
-            .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)?;
+            .document_type_for_name(withdrawal::NAME)?;
 
         let mut where_clauses = BTreeMap::new();
 
         //todo: make this lazy loaded or const
         where_clauses.insert(
-            withdrawals_contract::property_names::STATUS.to_string(),
+            withdrawal::properties::STATUS.to_string(),
             WhereClause {
-                field: withdrawals_contract::property_names::STATUS.to_string(),
+                field: withdrawal::properties::STATUS.to_string(),
                 operator: crate::query::WhereOperator::Equal,
                 value: Value::U8(status),
             },
@@ -56,9 +61,9 @@ impl Drive {
         let mut order_by = IndexMap::new();
 
         order_by.insert(
-            withdrawals_contract::property_names::UPDATED_AT.to_string(),
+            withdrawal::properties::UPDATED_AT.to_string(),
             OrderClause {
-                field: withdrawals_contract::property_names::UPDATED_AT.to_string(),
+                field: withdrawal::properties::UPDATED_AT.to_string(),
                 ascending: true,
             },
         );
@@ -81,26 +86,15 @@ impl Drive {
             block_time_ms: None,
         };
 
-        let QuerySerializedDocumentsOutcome {
-            items,
-            skipped: _,
-            cost: _,
-        } = self.query_documents_as_serialized(drive_query, None, transaction)?;
+        let outcome = self.query_documents(
+            drive_query,
+            None,
+            false,
+            transaction,
+            Some(platform_version.protocol_version),
+        )?;
 
-        let documents = items
-            .iter()
-            .map(|document_cbor| {
-                document_type
-                    .document_from_bytes(document_cbor)
-                    .map_err(|e| {
-                        Error::Drive(DriveError::CorruptedDriveState(format!(
-                            "can't create document from bytes : {e}"
-                        )))
-                    })
-            })
-            .collect::<Result<Vec<Document>, Error>>()?;
-
-        Ok(documents)
+        Ok(outcome.documents_owned())
     }
 
     /// Find one document by it's transactionId field
@@ -108,8 +102,9 @@ impl Drive {
         &self,
         original_transaction_id: &[u8],
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<Document, Error> {
-        let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
+        let data_contract_id = withdrawals_contract::ID;
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_fee(
@@ -117,6 +112,7 @@ impl Drive {
                 None,
                 true,
                 transaction,
+                platform_version,
             )?
             .1
             .ok_or_else(|| {
@@ -127,23 +123,23 @@ impl Drive {
 
         let document_type = contract_fetch_info
             .contract
-            .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)?;
+            .document_type_for_name(withdrawal::NAME)?;
 
         let mut where_clauses = BTreeMap::new();
 
         where_clauses.insert(
-            withdrawals_contract::property_names::TRANSACTION_ID.to_string(),
+            withdrawal::properties::TRANSACTION_ID.to_string(),
             WhereClause {
-                field: withdrawals_contract::property_names::TRANSACTION_ID.to_string(),
+                field: withdrawal::properties::TRANSACTION_ID.to_string(),
                 operator: crate::query::WhereOperator::Equal,
                 value: Value::Bytes(original_transaction_id.to_vec()),
             },
         );
 
         where_clauses.insert(
-            withdrawals_contract::property_names::STATUS.to_string(),
+            withdrawal::properties::STATUS.to_string(),
             WhereClause {
-                field: withdrawals_contract::property_names::STATUS.to_string(),
+                field: withdrawal::properties::STATUS.to_string(),
                 operator: crate::query::WhereOperator::Equal,
                 value: Value::U8(withdrawals_contract::WithdrawalStatus::POOLED as u8),
             },
@@ -160,36 +156,24 @@ impl Drive {
                 equal_clauses: where_clauses,
             },
             offset: None,
-            limit: Some(100),
+            limit: Some(1),
             order_by: IndexMap::new(),
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
         };
 
-        let QuerySerializedDocumentsOutcome {
-            items,
-            skipped: _,
-            cost: _,
-        } = self.query_documents_as_serialized(drive_query, None, transaction)?;
+        let outcome = self.query_documents(
+            drive_query,
+            None,
+            false,
+            transaction,
+            Some(platform_version.protocol_version),
+        )?;
 
-        let documents = items
-            .iter()
-            .map(|document_cbor| {
-                Document::from_bytes(document_cbor, document_type).map_err(|_| {
-                    Error::Drive(DriveError::CorruptedDriveState(
-                        "can't create document from bytes".to_string(),
-                    ))
-                })
-            })
-            .collect::<Result<Vec<Document>, Error>>()?;
-
-        let document = documents
-            .get(0)
-            .ok_or(Error::Drive(DriveError::CorruptedDriveState(
-                "document was not found by transactionId".to_string(),
-            )))?
-            .clone();
+        let document = outcome.documents_owned().pop().ok_or(Error::Drive(
+            DriveError::CorruptedDriveState("document was not found by transactionId".to_string()),
+        ))?;
 
         Ok(document)
     }
@@ -197,21 +181,22 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use dpp::contracts::withdrawals_contract;
     use dpp::prelude::Identifier;
+    use dpp::system_data_contracts::withdrawals_contract;
     use dpp::tests::fixtures::get_withdrawal_document_fixture;
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
     use crate::tests::helpers::setup::{setup_document, setup_system_data_contract};
 
     mod fetch_withdrawal_documents_by_status {
-
-        use dpp::identity::core_script::CoreScript;
-        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
-        use dpp::platform_value::platform_value;
-        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-
         use super::*;
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::identity::core_script::CoreScript;
+        use dpp::platform_value::platform_value;
+        use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::version::PlatformVersion;
+        use dpp::withdrawal::Pooling;
 
         #[test]
         fn test_return_list_of_documents() {
@@ -219,8 +204,13 @@ mod tests {
 
             let transaction = drive.grove.start_transaction();
 
-            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
-                .expect("to load system data contract");
+            let platform_version = PlatformVersion::latest();
+
+            let data_contract = load_system_data_contract(
+                SystemDataContract::Withdrawals,
+                platform_version.protocol_version,
+            )
+            .expect("to load system data contract");
 
             setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 
@@ -228,6 +218,7 @@ mod tests {
                 .fetch_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::QUEUED.into(),
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("to fetch documents by status");
 
@@ -247,11 +238,12 @@ mod tests {
                     "transactionIndex": 1u64,
                 }),
                 None,
+                platform_version.protocol_version,
             )
             .expect("expected withdrawal document");
 
             let document_type = data_contract
-                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+                .document_type_for_name(withdrawal::NAME)
                 .expect("expected to get document type");
 
             setup_document(
@@ -274,6 +266,7 @@ mod tests {
                     "transactionIndex": 2u64,
                 }),
                 None,
+                platform_version.protocol_version,
             )
             .expect("expected withdrawal document");
 
@@ -289,6 +282,7 @@ mod tests {
                 .fetch_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::QUEUED.into(),
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("to fetch documents by status");
 
@@ -298,6 +292,7 @@ mod tests {
                 .fetch_withdrawal_documents_by_status(
                     withdrawals_contract::WithdrawalStatus::POOLED.into(),
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("to fetch documents by status");
 
@@ -306,11 +301,14 @@ mod tests {
     }
 
     mod find_document_by_transaction_id {
-
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::document::DocumentV0Getters;
         use dpp::identity::core_script::CoreScript;
-        use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::platform_value::{platform_value, Bytes32};
+        use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::version::PlatformVersion;
+        use dpp::withdrawal::Pooling;
 
         use super::*;
 
@@ -320,8 +318,13 @@ mod tests {
 
             let transaction = drive.grove.start_transaction();
 
-            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
-                .expect("to load system data contract");
+            let platform_version = PlatformVersion::latest();
+
+            let data_contract = load_system_data_contract(
+                SystemDataContract::Withdrawals,
+                platform_version.protocol_version,
+            )
+            .expect("to load system data contract");
 
             setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 
@@ -340,11 +343,12 @@ mod tests {
                     "transactionId": Bytes32::default(),
                 }),
                 None,
+                platform_version.protocol_version,
             )
             .expect("expected to get withdrawal document");
 
             let document_type = data_contract
-                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+                .document_type_for_name(withdrawal::NAME)
                 .expect("expected to get document type");
 
             setup_document(
@@ -359,10 +363,11 @@ mod tests {
                 .find_withdrawal_document_by_transaction_id(
                     Bytes32::default().as_slice(),
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("to find document by it's transaction id");
 
-            assert_eq!(found_document.id.to_vec(), document.id.to_vec());
+            assert_eq!(found_document.id().to_vec(), document.id().to_vec());
         }
     }
 }

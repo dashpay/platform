@@ -1,35 +1,45 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::unpaid_epoch;
+
+use crate::execution::types::unpaid_epoch::v0::{UnpaidEpochV0Getters, UnpaidEpochV0Methods};
+use crate::execution::types::unpaid_epoch::UnpaidEpoch;
 use crate::platform_types::platform::Platform;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::document::DocumentV0Getters;
+use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::AddToIdentityBalance;
-use drive::fee::credits::Credits;
+
 use drive::grovedb::Transaction;
 
-impl<CoreRPCLike> Platform<CoreRPCLike> {
+impl<C> Platform<C> {
     /// Adds operations to the op batch which distribute the fees from an unpaid epoch pool
     /// to the total fees to be paid out to proposers and divides amongst masternode reward shares.
     ///
     /// Returns the number of proposers to be paid out.
-    pub(in crate::execution::platform_events::fee_pool_outwards_distribution) fn add_epoch_pool_to_proposers_payout_operations_v0(
+    pub(super) fn add_epoch_pool_to_proposers_payout_operations_v0(
         &self,
-        unpaid_epoch: &unpaid_epoch::v0::UnpaidEpoch,
+        unpaid_epoch: &UnpaidEpoch,
         core_block_rewards: Credits,
         transaction: &Transaction,
         batch: &mut Vec<DriveOperation>,
+        platform_version: &PlatformVersion,
     ) -> Result<u16, Error> {
         let mut drive_operations = vec![];
-        let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index)?;
+        let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index())?;
 
         let storage_and_processing_fees = self
             .drive
-            .get_epoch_total_credits_for_distribution(&unpaid_epoch_tree, Some(transaction))
+            .get_epoch_total_credits_for_distribution(
+                &unpaid_epoch_tree,
+                Some(transaction),
+                platform_version,
+            )
             .map_err(Error::Drive)?;
 
         let total_payouts = storage_and_processing_fees
@@ -45,7 +55,12 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         let proposers = self
             .drive
-            .get_epoch_proposers(&unpaid_epoch_tree, None, Some(transaction))
+            .get_epoch_proposers(
+                &unpaid_epoch_tree,
+                None,
+                Some(transaction),
+                platform_version,
+            )
             .map_err(Error::Drive)?;
 
         let proposers_len = proposers.len() as u16;
@@ -62,18 +77,21 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
             let mut masternode_payout_leftover = total_masternode_payout;
 
-            let documents = self
-                .fetch_reward_shares_list_for_masternode_v0(&proposer_tx_hash, Some(transaction))?;
+            let documents = self.fetch_reward_shares_list_for_masternode(
+                &proposer_tx_hash,
+                Some(transaction),
+                platform_version,
+            )?;
 
             for document in documents {
                 let pay_to_id = document
-                    .properties
+                    .properties()
                     .get_identifier("payToId")
                     .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
                 // TODO this shouldn't be a percentage we need to update masternode share contract
                 let share_percentage: u64 = document
-                    .properties
+                    .properties()
                     .get("percentage")
                     .ok_or(Error::Execution(ExecutionError::DriveMissingData(
                         "percentage property is missing".to_string(),
@@ -133,6 +151,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             drive_operations,
             &BlockInfo::default(),
             Some(transaction),
+            platform_version,
         )?;
 
         batch.push(DriveOperation::GroveDBOpBatch(operations));
@@ -145,16 +164,18 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 mod tests {
     use super::*;
 
-    use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
-
     mod add_epoch_pool_to_proposers_payout_operations {
         use super::*;
-        use crate::execution::types::unpaid_epoch::v0::UnpaidEpoch;
+        use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0;
         use crate::test::helpers::{
             fee_pools::create_test_masternode_share_identities_and_documents,
             setup::TestPlatformBuilder,
         };
+        use dpp::block::block_info::BlockInfo;
+        use dpp::identity::accessors::IdentityGettersV0;
         use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+        use drive::common::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
+        use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use drive::drive::batch::GroveDbOpBatch;
         use drive::fee_pools::epochs::operations_factory::EpochOperations;
         use rust_decimal::Decimal;
@@ -165,10 +186,15 @@ mod tests {
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
+
+            let platform_read_guard = platform.state.read().unwrap();
+            let platform_version = platform_read_guard
+                .current_platform_version()
+                .expect("platform_version");
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
-            let contract = platform.create_mn_shares_contract(Some(&transaction));
+            let contract = platform.create_mn_shares_contract(Some(&transaction), platform_version);
 
             let proposers_count = 10u16;
             let processing_fees = 10000;
@@ -203,7 +229,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let pro_tx_hashes =
@@ -213,6 +239,7 @@ mod tests {
                     proposers_count,
                     Some(68), //random number
                     Some(&transaction),
+                    platform_version,
                 );
 
             let share_identities_and_documents =
@@ -222,11 +249,12 @@ mod tests {
                     &pro_tx_hashes,
                     Some(55),
                     Some(&transaction),
+                    platform_version,
                 );
 
             let mut batch = vec![];
 
-            let unpaid_epoch = UnpaidEpoch {
+            let unpaid_epoch = UnpaidEpochV0 {
                 epoch_index: 0,
                 start_block_height: 1,
                 next_epoch_start_block_height: 11,
@@ -237,16 +265,23 @@ mod tests {
 
             let proposers_paid_count = platform
                 .add_epoch_pool_to_proposers_payout_operations_v0(
-                    &unpaid_epoch,
+                    &unpaid_epoch.into(),
                     0,
                     &transaction,
                     &mut batch,
+                    platform_version,
                 )
                 .expect("should distribute fees");
 
             platform
                 .drive
-                .apply_drive_operations(batch, true, &BlockInfo::default(), Some(&transaction))
+                .apply_drive_operations(
+                    batch,
+                    true,
+                    &BlockInfo::default(),
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should apply batch");
 
             assert_eq!(proposers_paid_count, 10);
@@ -263,7 +298,7 @@ mod tests {
 
             let shares_percentage_with_precision: u64 = share_identities_and_documents[0]
                 .1
-                .properties
+                .properties()
                 .get_integer("percentage")
                 .expect("should have percentage field");
 
@@ -279,7 +314,7 @@ mod tests {
 
             let share_identities = share_identities_and_documents
                 .iter()
-                .map(|(identity, _)| identity.id.to_buffer())
+                .map(|(identity, _)| identity.id().to_buffer())
                 .collect();
 
             let refetched_share_identities_balances = platform
