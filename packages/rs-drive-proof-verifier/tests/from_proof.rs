@@ -333,7 +333,7 @@ test_maybe_from_proof! {
 
 // Multiple data contracts
 
-// One contract requested and found
+// One contract, with history enabled, requested and found
 test_maybe_from_proof! {
     data_contracts_1_ok,
     grpc::GetDataContractsRequest,
@@ -341,6 +341,16 @@ test_maybe_from_proof! {
     DataContracts,
     "vectors/data_contracts_1_ok.json",
     Ok(1)
+}
+
+// Two contracts, with history enabled, requested and found
+test_maybe_from_proof! {
+    data_contracts_2_ok,
+    grpc::GetDataContractsRequest,
+    grpc::GetDataContractsResponse,
+    DataContracts,
+    "vectors/data_contracts_2_ok.json",
+    Ok(2)
 }
 
 // One contract (without history) requested and found

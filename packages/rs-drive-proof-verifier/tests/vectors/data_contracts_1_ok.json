@@ -11,7 +11,7 @@
             "core_chain_locked_height": 1551,
             "time_ms": "1692701480628",
             "protocol_version": 1,
-            "chain_id": "devnet"
+            "chain_id": "dashmate_local_1"
         },
         "result": {
             "proof": {
