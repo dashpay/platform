@@ -34,5 +34,5 @@ pub trait TransportClient: Send {
     type Error: CanRetry + Send;
 
     /// Build client using peer's url.
-    fn with_uri(uri: Uri, allow_insecure: bool) -> Self;
+    fn with_uri(uri: Uri) -> Self;
 }

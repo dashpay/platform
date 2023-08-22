@@ -1,7 +1,5 @@
 //! Listing of gRPC requests used in DAPI.
 
-mod self_signed;
-
 use std::time::Duration;
 
 use dapi_grpc::core::v0::{self as core_proto, core_client::CoreClient};
@@ -19,29 +17,16 @@ type CoreGrpcClient = CoreClient<Channel>;
 impl TransportClient for PlatformGrpcClient {
     type Error = tonic::Status;
 
-    fn with_uri(uri: Uri, allow_insecure: bool) -> Self {
-        let channel = if allow_insecure {
-            Channel::builder(uri)
-                .connect_with_connector_lazy(self_signed::INSECURE_CONNECTOR.clone())
-        } else {
-            Channel::builder(uri).connect_lazy()
-        };
-        PlatformGrpcClient::new(channel)
+    fn with_uri(uri: Uri) -> Self {
+        PlatformGrpcClient::new(Channel::builder(uri).connect_lazy())
     }
 }
 
 impl TransportClient for CoreGrpcClient {
     type Error = tonic::Status;
 
-    fn with_uri(uri: Uri, allow_insecure: bool) -> Self {
-        let channel = if allow_insecure {
-            Channel::builder(uri)
-                .connect_with_connector_lazy(self_signed::INSECURE_CONNECTOR.clone())
-        } else {
-            Channel::builder(uri).connect_lazy()
-        };
-
-        CoreGrpcClient::new(channel)
+    fn with_uri(uri: Uri) -> Self {
+        CoreGrpcClient::new(Channel::builder(uri).connect_lazy())
     }
 }
 
