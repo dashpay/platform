@@ -1,11 +1,11 @@
-use dapi_grpc::platform::v0::{self as grpc, GetIdentityRequest, GetIdentityResponse};
+use dapi_grpc::platform::v0::{self as grpc};
 use dpp::{
     identity::PartialIdentity,
     prelude::{DataContract, Identity},
 };
 use drive_proof_verifier::proof::from_proof::{
     DataContractHistory, DataContracts, FromProof, Identities, IdentitiesByPublicKeyHashes,
-    IdentityBalance, IdentityBalanceAndRevision,
+    IdentityBalance, IdentityBalanceAndRevision, Length,
 };
 
 include!("utils.rs");
@@ -244,7 +244,6 @@ test_maybe_from_proof! {
 }
 
 // Identity balance and revision
-
 test_maybe_from_proof! {
     identity_balance_and_revision_ok,
     grpc::GetIdentityRequest,
@@ -334,7 +333,7 @@ test_maybe_from_proof! {
 
 // Multiple data contracts
 
-// One contract requested and found
+// One contract, with history enabled, requested and found
 test_maybe_from_proof! {
     data_contracts_1_ok,
     grpc::GetDataContractsRequest,
@@ -344,22 +343,63 @@ test_maybe_from_proof! {
     Ok(1)
 }
 
-// One contract out of 2 requested exists
+// Two contracts, with history enabled, requested and found
 test_maybe_from_proof! {
-    data_contracts_1_of_2,
+    data_contracts_2_ok,
     grpc::GetDataContractsRequest,
     grpc::GetDataContractsResponse,
     DataContracts,
-    "vectors/data_contracts_1_of_2.json",
+    "vectors/data_contracts_2_ok.json",
+    Ok(2)
+}
+
+// One contract (without history) requested and found
+test_maybe_from_proof! {
+    data_contracts_no_history_1_ok,
+    grpc::GetDataContractsRequest,
+    grpc::GetDataContractsResponse,
+    DataContracts,
+    "vectors/data_contracts_no_history_1_ok.json",
     Ok(1)
 }
 
+// Two contracts (without history) requested and found
 test_maybe_from_proof! {
-    data_contracts_not_found,
+    data_contracts_no_history_2_ok,
     grpc::GetDataContractsRequest,
     grpc::GetDataContractsResponse,
     DataContracts,
-    "vectors/data_contracts_not_found.json",
+    "vectors/data_contracts_no_history_2_ok.json",
+    Ok(2)
+}
+
+// 2 contracts: with and without history, requested and found
+test_maybe_from_proof! {
+    data_contracts_mixed_2_ok,
+    grpc::GetDataContractsRequest,
+    grpc::GetDataContractsResponse,
+    DataContracts,
+    "vectors/data_contracts_mixed_2_ok.json",
+    Ok(2)
+}
+
+// Two existing contracts, one with history and one without, out of 3 requested
+test_maybe_from_proof! {
+    data_contracts_mixed_2_of_3,
+    grpc::GetDataContractsRequest,
+    grpc::GetDataContractsResponse,
+    DataContracts,
+    "vectors/data_contracts_mixed_2_of_3.json",
+    Ok(2)
+}
+
+// One data contract requested and not found
+test_maybe_from_proof! {
+    data_contracts_1_not_found,
+    grpc::GetDataContractsRequest,
+    grpc::GetDataContractsResponse,
+    DataContracts,
+    "vectors/data_contracts_1_not_found.json",
     Ok(0)
 }
 
@@ -387,20 +427,6 @@ enum TestedObject {
     IdentitiesByPublicKeyHashes(IdentitiesByPublicKeyHashes),
     PartialIdentity(PartialIdentity),
 }
-/// Determine number of non-None elements
-trait Length {
-    /// Return number of non-None elements in the data structure
-    fn count_some(&self) -> usize;
-}
-
-impl<T: Length> Length for Option<T> {
-    fn count_some(&self) -> usize {
-        match self {
-            None => 0,
-            Some(i) => i.count_some(),
-        }
-    }
-}
 
 impl Length for TestedObject {
     fn count_some(&self) -> usize {
@@ -419,18 +445,7 @@ impl Length for TestedObject {
     }
 }
 
-impl<T> Length for Vec<Option<T>> {
-    fn count_some(&self) -> usize {
-        self.into_iter()
-            .map(|v| v.as_ref().map(|_t| 1).unwrap_or(0))
-            .sum()
-    }
-}
-
-impl<K, T> Length for Vec<(K, Option<T>)> {
-    fn count_some(&self) -> usize {
-        self.into_iter()
-            .map(|(_k, v)| v.as_ref().map(|_t| 1).unwrap_or(0))
-            .sum()
-    }
+#[test]
+fn run_test() {
+    data_contracts_no_history_1_ok()
 }

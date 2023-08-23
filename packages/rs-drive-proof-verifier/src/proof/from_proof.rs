@@ -14,7 +14,7 @@ use super::verify::verify_tenderdash_proof;
 pub type Identities = Vec<Option<Identity>>;
 pub type IdentitiesByPublicKeyHashes = Vec<([u8; 20], Option<Identity>)>;
 pub type DataContractHistory = BTreeMap<u64, DataContract>;
-pub type DataContracts = Vec<Option<DataContract>>;
+pub type DataContracts = BTreeMap<[u8; 32], Option<DataContract>>;
 pub type IdentityBalance = u64;
 pub type IdentityBalanceAndRevision = (u64, Revision);
 pub type Documents = Vec<Document>;
@@ -35,6 +35,7 @@ pub trait FromProof<Req, Resp> {
     ///
     /// * `Ok(Some(object))` when the requested object was found in the proof.
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
+    /// For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof(
         request: &Req,
@@ -492,35 +493,36 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
             .as_ref()
             .ok_or(Error::EmptyResponseMetadata)?;
 
-        let contract_ids = request
+        // Load some info from request
+        let ids = request
             .ids
             .iter()
             .map(|id| {
-                Identifier::from_bytes(id).map_err(|e| Error::ProtocolError {
+                id.clone()
+                    .try_into()
+                    .map_err(|_e| Error::RequestDecodeError {
+                        error: format!("wrong id size: expected: {}, got: {}", 32, id.len()),
+                    })
+            })
+            .collect::<Result<Vec<[u8; 32]>, Error>>()?;
+
+        // Extract content from proof and verify Drive/GroveDB proofs
+        let (root_hash, contracts) =
+            Drive::verify_contracts(&proof.grovedb_proof, false, ids.as_slice()).map_err(|e| {
+                Error::DriveError {
                     error: e.to_string(),
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+                }
+            })?;
 
-        let maybe_contracts = contract_ids
-            .iter()
-            .map(|id| {
-                // Extract content from proof and verify Drive/GroveDB proofs
-                let (root_hash, maybe_contract) =
-                    Drive::verify_contract(&proof.grovedb_proof, None, false, id.into_buffer())
-                        .map_err(|e| Error::DriveError {
-                            error: e.to_string(),
-                        })?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
-                verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
+        let maybe_contracts = if contracts.count_some() > 0 {
+            Some(contracts)
+        } else {
+            None
+        };
 
-                Ok(maybe_contract)
-            })
-            .collect::<Result<DataContracts, Error>>()?;
-
-        todo!("Need to implement Drive::verify_contracts()");
-        #[allow(unreachable_code)]
-        Ok(Some(maybe_contracts))
+        Ok(maybe_contracts)
     }
 }
 
@@ -626,4 +628,37 @@ fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
     };
 
     Ok(i)
+}
+
+/// Determine number of non-None elements
+pub trait Length {
+    /// Return number of non-None elements in the data structure
+    fn count_some(&self) -> usize;
+}
+
+impl<T: Length> Length for Option<T> {
+    fn count_some(&self) -> usize {
+        match self {
+            None => 0,
+            Some(i) => i.count_some(),
+        }
+    }
+}
+
+impl<T> Length for Vec<Option<T>> {
+    fn count_some(&self) -> usize {
+        self.into_iter().filter(|v| v.is_some()).count()
+    }
+}
+
+impl<K, T> Length for Vec<(K, Option<T>)> {
+    fn count_some(&self) -> usize {
+        self.into_iter().filter(|(_, v)| v.is_some()).count()
+    }
+}
+
+impl<K, T> Length for BTreeMap<K, Option<T>> {
+    fn count_some(&self) -> usize {
+        self.into_iter().filter(|(_, v)| v.is_some()).count()
+    }
 }
