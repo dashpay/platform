@@ -5,6 +5,7 @@ use dapi_grpc::platform::v0::{self as platform};
 use dpp::document::Document;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::{DataContract, Identifier, Identity, Revision};
+use dpp::version::PlatformVersion;
 pub use drive::drive::verify::RootHash;
 use drive::drive::Drive;
 use drive::query::DriveQuery;
@@ -19,7 +20,9 @@ pub type IdentityBalance = u64;
 pub type IdentityBalanceAndRevision = (u64, Revision);
 pub type Documents = Vec<Document>;
 
-// #[cfg(feature = "mockall")]
+lazy_static::lazy_static! {
+    pub static ref PLATFORM_VERSION: PlatformVersion = PlatformVersion::latest().to_owned();
+}
 
 /// Create an object based on proof received from DAPI
 pub trait FromProof<Req, Resp> {
@@ -132,6 +135,7 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityResponse> for 
             &proof.grovedb_proof,
             false,
             id.into_buffer(),
+            &PLATFORM_VERSION,
         )
         .map_err(|e| Error::DriveError {
             error: e.to_string(),
@@ -179,11 +183,14 @@ impl
                 })?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
-        let (root_hash, maybe_identity) =
-            Drive::verify_full_identity_by_public_key_hash(&proof.grovedb_proof, public_key_hash)
-                .map_err(|e| Error::DriveError {
-                error: e.to_string(),
-            })?;
+        let (root_hash, maybe_identity) = Drive::verify_full_identity_by_public_key_hash(
+            &proof.grovedb_proof,
+            public_key_hash,
+            &PLATFORM_VERSION,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
@@ -229,6 +236,7 @@ impl FromProof<platform::GetIdentitiesRequest, platform::GetIdentitiesResponse> 
                     &proof.grovedb_proof,
                     false,
                     id.into_buffer(),
+                    &PLATFORM_VERSION,
                 )
                 .map_err(|e| Error::DriveError {
                     error: e.to_string(),
@@ -281,6 +289,7 @@ impl FromProof<platform::GetIdentityKeysRequest, platform::GetIdentityKeysRespon
             &proof.grovedb_proof,
             false,
             id.into_buffer(),
+            &PLATFORM_VERSION,
         )
         .map_err(|e| Error::DriveError {
             error: e.to_string(),
@@ -331,6 +340,7 @@ impl
             Drive::verify_full_identities_by_public_key_hashes(
                 &proof.grovedb_proof,
                 &identity_public_key_hashes,
+                &PLATFORM_VERSION,
             )
             .map_err(|e| Error::DriveError {
                 error: e.to_string(),
@@ -374,6 +384,7 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceRespons
             &proof.grovedb_proof,
             id.into_buffer(),
             false,
+            &PLATFORM_VERSION,
         )
         .map_err(|e| Error::DriveError {
             error: e.to_string(),
@@ -417,6 +428,7 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceAndRevi
             &proof.grovedb_proof,
             false,
             id.into_buffer(),
+            &PLATFORM_VERSION,
         )
         .map_err(|e| Error::DriveError {
             error: e.to_string(),
@@ -426,7 +438,9 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceAndRevi
 
         todo!("Needs Drive::verify_identity_balance_and_revision_for_identity_id()");
         #[allow(unreachable_code)]
-        Ok(maybe_identity.map(|i| (i.balance, i.revision)))
+        Ok(maybe_identity.map(|i| match i {
+            Identity::V0(i) => (i.balance, i.revision),
+        }))
     }
 }
 
@@ -458,12 +472,16 @@ impl FromProof<platform::GetDataContractRequest, platform::GetDataContractRespon
         })?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
-        let (root_hash, maybe_contract) =
-            Drive::verify_contract(&proof.grovedb_proof, None, false, id.into_buffer()).map_err(
-                |e| Error::DriveError {
-                    error: e.to_string(),
-                },
-            )?;
+        let (root_hash, maybe_contract) = Drive::verify_contract(
+            &proof.grovedb_proof,
+            None,
+            false,
+            id.into_buffer(),
+            &PLATFORM_VERSION,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
@@ -507,12 +525,15 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
             .collect::<Result<Vec<[u8; 32]>, Error>>()?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
-        let (root_hash, contracts) =
-            Drive::verify_contracts(&proof.grovedb_proof, false, ids.as_slice()).map_err(|e| {
-                Error::DriveError {
-                    error: e.to_string(),
-                }
-            })?;
+        let (root_hash, contracts) = Drive::verify_contracts(
+            &proof.grovedb_proof,
+            false,
+            ids.as_slice(),
+            &PLATFORM_VERSION,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
@@ -555,8 +576,8 @@ impl FromProof<platform::GetDataContractHistoryRequest, platform::GetDataContrac
             error: e.to_string(),
         })?;
 
-        let limit = u32_to_u16_opt(request.limit)?;
-        let offset = u32_to_u16_opt(request.offset)?;
+        let limit = u32_to_u16_opt(request.limit.unwrap_or_default())?;
+        let offset = u32_to_u16_opt(request.offset.unwrap_or_default())?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_history) = Drive::verify_contract_history(
@@ -565,6 +586,7 @@ impl FromProof<platform::GetDataContractHistoryRequest, platform::GetDataContrac
             request.start_at_ms,
             limit,
             offset,
+            &PLATFORM_VERSION,
         )
         .map_err(|e| Error::DriveError {
             error: e.to_string(),
@@ -596,12 +618,11 @@ impl<'dq> FromProof<DriveQuery<'dq>, platform::GetDocumentsResponse> for Documen
             .as_ref()
             .ok_or(Error::EmptyResponseMetadata)?;
 
-        let (root_hash, documents) =
-            request
-                .verify_proof(&proof.grovedb_proof)
-                .map_err(|e| Error::DriveError {
-                    error: e.to_string(),
-                })?;
+        let (root_hash, documents) = request
+            .verify_proof(&proof.grovedb_proof, &PLATFORM_VERSION)
+            .map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 

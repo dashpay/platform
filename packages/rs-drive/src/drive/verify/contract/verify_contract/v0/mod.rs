@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use crate::drive::contract::paths::{
     contract_keeping_history_storage_path, contract_root_path, contract_root_path_vec,
     contract_storage_path_vec,
@@ -8,6 +10,8 @@ use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::error::Error::GroveDB;
 use dpp::prelude::DataContract;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use platform_version::version::PlatformVersion;
 
 use crate::common::decode;
 use crate::error::drive::DriveError;
@@ -118,7 +122,13 @@ impl Drive {
                         // just return error
                         Err(e)
                     } else {
-                        Self::verify_contract(proof, Some(true), is_proof_subset, contract_id)
+                        Self::verify_contract(
+                            proof,
+                            Some(true),
+                            is_proof_subset,
+                            contract_id,
+                            platform_version,
+                        )
                     }
                 }
             }
@@ -154,6 +164,7 @@ impl Drive {
         proof: &[u8],
         _is_proof_subset: bool, //this will be used later
         contract_ids: &[[u8; 32]],
+        platform_version: &PlatformVersion,
     ) -> Result<(RootHash, BTreeMap<[u8; 32], Option<DataContract>>), Error> {
         let request_len = contract_ids.len();
 
@@ -168,7 +179,8 @@ impl Drive {
         let mut returned_root_hash = None;
 
         for contract_id in contract_ids {
-            let (root_hash, contract) = Self::verify_contract(proof, None, true, *contract_id)?;
+            let (root_hash, contract) =
+                Self::verify_contract(proof, None, true, *contract_id, platform_version)?;
             returned_root_hash = Some(root_hash);
             contracts.insert(*contract_id, contract);
         }
@@ -234,76 +246,5 @@ impl Drive {
         // }).collect::<Result<BTreeMap<[u8; 32], Option<DataContract>>, Error>>()?;
 
         Ok((returned_root_hash.unwrap(), contracts))
-    }
-
-    /// Verifies that the contract's history is included in the proof.
-    ///
-    /// # Parameters
-    ///
-    /// - `proof`: A byte slice representing the proof to be verified.
-    /// - `contract_id`: The contract's unique identifier.
-    /// - `start_at_date`: The start date for the contract's history.
-    /// - `limit`: An optional limit for the number of items to be retrieved.
-    /// - `offset`: An optional offset for the items to be retrieved.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` with a tuple of `RootHash` and `Option<BTreeMap<u64, DataContract>>`. The `Option<BTreeMap<u64, DataContract>>`
-    /// represents a mapping from dates to contracts if it exists.
-    ///
-    /// # Errors
-    ///
-    /// Returns an `Error` if:
-    ///
-    /// - The proof is corrupted.
-    /// - The GroveDb query fails.
-    /// - The contract serialization fails.
-    pub fn verify_contract_history(
-        proof: &[u8],
-        contract_id: [u8; 32],
-        start_at_date: u64,
-        limit: Option<u16>,
-        offset: Option<u16>,
-    ) -> Result<(RootHash, Option<BTreeMap<u64, DataContract>>), Error> {
-        let path_query =
-            Self::fetch_contract_history_query(contract_id, start_at_date, limit, offset)?;
-
-        let (root_hash, mut proved_key_values) = GroveDb::verify_query(proof, &path_query)?;
-
-        let mut contracts: BTreeMap<u64, DataContract> = BTreeMap::new();
-        for (path, key, maybe_element) in proved_key_values.drain(..) {
-            if path != contract_storage_path_vec(&contract_id) {
-                return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct path for the historical contract".to_string(),
-                )));
-            }
-
-            let date = decode::decode_u64(&key).map_err(|_| {
-                Error::Drive(DriveError::CorruptedContractPath(
-                    "contract key is not a valid u64",
-                ))
-            })?;
-
-            let maybe_contract = maybe_element
-                .map(|element| {
-                    element
-                        .into_item_bytes()
-                        .map_err(Error::GroveDB)
-                        .and_then(|bytes| {
-                            DataContract::deserialize_no_limit(&bytes).map_err(Error::Protocol)
-                        })
-                })
-                .transpose()?;
-
-            if let Some(contract) = maybe_contract {
-                contracts.insert(date, contract);
-            } else {
-                return Err(Error::Drive(DriveError::CorruptedContractPath(
-                    "expected a contract at this path",
-                )));
-            }
-        }
-
-        Ok((root_hash, Some(contracts)))
     }
 }

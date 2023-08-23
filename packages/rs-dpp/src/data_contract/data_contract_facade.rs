@@ -58,7 +58,7 @@ impl DataContractFacade {
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         self.factory
-            .create_from_object(raw_data_contract)
+            .create_from_object(raw_data_contract,false)
     }
 
     /// Create Data Contract from buffer
@@ -67,7 +67,7 @@ impl DataContractFacade {
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        self.factory.create_from_buffer(buffer)
+        self.factory.create_from_buffer(buffer,false)
     }
 
     #[cfg(feature = "state-transitions")]

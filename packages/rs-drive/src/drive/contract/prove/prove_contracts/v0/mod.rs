@@ -1,8 +1,9 @@
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use dpp::version::PlatformVersion;
-use grovedb::TransactionArg;
+use grovedb::{TransactionArg, Element};
 
 impl Drive {
     /// Proves the existence of the specified contracts.
@@ -31,14 +32,6 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        let contracts_query = Self::fetch_contracts_query(contract_ids)?;
-        self.grove_get_proved_path_query(
-            &contracts_query,
-            false,
-            transaction,
-            &mut vec![],
-            &platform_version.drive,
-        )
         let contracts_query = Self::fetch_non_historical_contracts_query(contract_ids);
 
         // we first need to fetch all contracts
@@ -46,6 +39,7 @@ impl Drive {
             &contracts_query,
             transaction,
             &mut vec![],
+            &platform_version.drive,
         )?;
         // We have 3 options
         // If the contract is non existing -> treat it as non historical
@@ -91,6 +85,12 @@ impl Drive {
             historical_contracts.as_slice(),
         )?;
 
-        self.grove_get_proved_path_query(&contracts_query, true, transaction, &mut vec![])
+        self.grove_get_proved_path_query(
+            &contracts_query,
+            true,
+            transaction,
+            &mut vec![],
+            &platform_version.drive,
+        )
     }
 }

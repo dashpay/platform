@@ -54,12 +54,12 @@ impl Drive {
             let (path, key, maybe_element) = &proved_key_values.remove(0);
             if path != &balance_path() {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct path in balances",
+                    "we did not get back an element for the correct path in balances".to_string(),
                 )));
             }
             if key != &identity_id {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct key in balances",
+                    "we did not get back an element for the correct key in balances".to_string(),
                 )));
             }
 

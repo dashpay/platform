@@ -5,14 +5,15 @@ use crate::identifier::IdentifierWrapper;
 use crate::identity::errors::InvalidIdentityError;
 
 use crate::identity::identity::IdentityWasm;
-use crate::identity::state_transition::{AssetLockProofWasm, InstantAssetLockProofWasm};
 use crate::identity::state_transition::ChainAssetLockProofWasm;
 use crate::identity::state_transition::IdentityCreditTransferTransitionWasm;
+use crate::identity::state_transition::{AssetLockProofWasm, InstantAssetLockProofWasm};
 
 use crate::{
-    with_js_error, identity::state_transition::IdentityCreateTransitionWasm,
-    identity::state_transition::IdentityTopUpTransitionWasm, identity::state_transition::IdentityUpdateTransitionWasm,
-    identity::state_transition::create_asset_lock_proof_from_wasm_instance
+    identity::state_transition::create_asset_lock_proof_from_wasm_instance,
+    identity::state_transition::IdentityCreateTransitionWasm,
+    identity::state_transition::IdentityTopUpTransitionWasm,
+    identity::state_transition::IdentityUpdateTransitionWasm, with_js_error,
 };
 use dpp::dashcore::{consensus, InstantLock, Transaction};
 
@@ -24,10 +25,10 @@ use std::convert::TryInto;
 use std::sync::Arc;
 
 use crate::utils::{with_serde_to_platform_value, WithJsError};
-use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
 use dpp::identity::identity_factory::IdentityFactory;
 use dpp::version::PlatformVersion;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(js_name=IdentityFactory)]
 pub struct IdentityFactoryWasm(IdentityFactory);
@@ -41,9 +42,7 @@ impl From<IdentityFactory> for IdentityFactoryWasm {
 #[wasm_bindgen(js_class=IdentityFactory)]
 impl IdentityFactoryWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        protocol_version: u32,
-    ) -> Result<IdentityFactoryWasm, JsValue> {
+    pub fn new(protocol_version: u32) -> Result<IdentityFactoryWasm, JsValue> {
         let factory = IdentityFactory::new(protocol_version);
         Ok(factory.into())
     }
@@ -54,8 +53,7 @@ impl IdentityFactoryWasm {
         id: IdentifierWrapper,
         public_keys: js_sys::Array,
     ) -> Result<IdentityWasm, JsValue> {
-        let public_keys =
-            super::factory_utils::parse_public_keys(public_keys)?;
+        let public_keys = super::factory_utils::parse_public_keys(public_keys)?;
 
         self.0
             .create(id.into(), public_keys)
@@ -103,9 +101,7 @@ impl IdentityFactoryWasm {
             Default::default()
         };
 
-        let result = self
-            .0
-            .create_from_buffer(buffer.clone());
+        let result = self.0.create_from_buffer(buffer.clone());
 
         match result {
             Ok(identity) => Ok(identity.into()),
@@ -149,11 +145,8 @@ impl IdentityFactoryWasm {
         })?;
 
         Ok(
-            IdentityFactory::create_chain_asset_lock_proof(
-                core_chain_locked_height,
-                out_point,
-            )
-            .into(),
+            IdentityFactory::create_chain_asset_lock_proof(core_chain_locked_height, out_point)
+                .into(),
         )
     }
 

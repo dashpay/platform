@@ -51,12 +51,14 @@ impl Drive {
             let (path, key, maybe_element) = proved_key_values.remove(0);
             if path != unique_key_hashes_tree_path_vec() {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct path in unique key hashes",
+                    "we did not get back an element for the correct path in unique key hashes"
+                        .to_string(),
                 )));
             }
             if key != public_key_hash {
                 return Err(Error::Proof(ProofError::CorruptedProof(
-                    "we did not get back an element for the correct key in unique key hashes",
+                    "we did not get back an element for the correct key in unique key hashes"
+                        .to_string(),
                 )));
             }
             let identity_id = maybe_element

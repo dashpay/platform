@@ -62,7 +62,7 @@ impl Drive {
                     keys.insert(key.id(), key);
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "we received an absence proof for a key but didn't request one",
+                        "we received an absence proof for a key but didn't request one".to_string(),
                     )));
                 }
             } else {
