@@ -1,7 +1,8 @@
 use wasm_bindgen::prelude::*;
 
+use dpp::dash_platform_protocol::{DashPlatformProtocol, StateTransitionFactory};
+use dpp::state_transition::StateTransition;
 use dpp::version::LATEST_VERSION;
-use dpp::DashPlatformProtocol;
 
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::identity::identity_facade::IdentityFacadeWasm;
@@ -9,6 +10,14 @@ use crate::identity::identity_facade::IdentityFacadeWasm;
 #[wasm_bindgen(js_name=DashPlatformProtocol)]
 pub struct DashPlatformProtocolWasm(DashPlatformProtocol);
 
+#[wasm_bindgen(js_name=StateTransitionFactory)]
+pub struct StateTransitionFactoryWasm(StateTransitionFactory);
+
+impl From<&StateTransitionFactory> for StateTransitionFactoryWasm {
+    fn from(factory: &StateTransitionFactory) -> Self {
+        Self(factory.to_owned())
+    }
+}
 static mut LOGGER_INITIALIZED: bool = false;
 
 #[wasm_bindgen(js_class=DashPlatformProtocol)]
@@ -48,11 +57,11 @@ impl DashPlatformProtocolWasm {
     pub fn identity(&self) -> IdentityFacadeWasm {
         self.0.identities().into()
     }
-    //
-    // #[wasm_bindgen(getter = stateTransition)]
-    // pub fn state_transition(&self) -> StateTransitionFacadeWasm {
-    //     self.state_transition.clone()
-    // }
+
+    #[wasm_bindgen(getter = stateTransition)]
+    pub fn state_transition(&self) -> StateTransitionFactoryWasm {
+        self.0.state_transition().into()
+    }
     //
     // #[wasm_bindgen(getter = protocolVersion)]
     // pub fn protocol_version(&self) -> u32 {

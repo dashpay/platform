@@ -21,6 +21,7 @@ use crate::util::hash::{hash_to_vec, ripemd160_sha256};
 mod serialization;
 pub mod state_transitions;
 mod traits;
+
 // pub mod state_transition_fee;
 
 pub use traits::*;
