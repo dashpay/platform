@@ -1,8 +1,11 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::{block_execution_outcome, block_proposal};
 use crate::rpc::core::CoreRPCLike;
 use dpp::validation::ValidationResult;
+use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
 mod v0;
@@ -40,7 +43,29 @@ where
         transaction: &Transaction,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-        //todo: use protocol version to decide
-        self.run_block_proposal_v0(block_proposal, transaction)
+        let state = self.state.read().expect("expected to get state");
+        let current_protocol_version = state.current_protocol_version_in_consensus();
+        drop(state);
+        let platform_version = PlatformVersion::get(current_protocol_version)?;
+        let epoch_info = self.gather_epoch_info(&block_proposal, transaction, platform_version)?;
+
+        match platform_version
+            .drive_abci
+            .methods
+            .engine
+            .run_block_proposal
+        {
+            0 => self.run_block_proposal_v0(
+                block_proposal,
+                epoch_info.into(),
+                transaction,
+                platform_version,
+            ),
+            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "run_block_proposal".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
     }
 }

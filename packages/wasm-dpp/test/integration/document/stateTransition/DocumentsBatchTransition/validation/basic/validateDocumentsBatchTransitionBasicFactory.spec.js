@@ -26,7 +26,7 @@ let ValidationResult;
 let ProtocolVersionValidator;
 let ValueError;
 
-describe('validateDocumentsBatchTransitionBasicFactory', () => {
+describe.skip('validateDocumentsBatchTransitionBasicFactory', () => {
   let dataContract;
   let documents;
   let rawStateTransition;

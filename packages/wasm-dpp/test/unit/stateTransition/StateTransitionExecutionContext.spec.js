@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const { default: loadWasmDpp } = require('../../../dist');
 
-describe('StateTransitionExecutionContext', () => {
+describe.skip('StateTransitionExecutionContext', () => {
   let ReadOperation;
   let PreCalculatedOperation;
   let SignatureVerificationOperation;

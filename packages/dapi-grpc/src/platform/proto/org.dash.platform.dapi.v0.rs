@@ -684,10 +684,10 @@ pub struct GetDataContractHistoryRequest {
     #[prost(bytes = "vec", tag = "1")]
     #[serde(with = "crate::deserialization::base64string")]
     pub id: ::prost::alloc::vec::Vec<u8>,
-    #[prost(uint32, tag = "2")]
-    pub limit: u32,
-    #[prost(uint32, tag = "3")]
-    pub offset: u32,
+    #[prost(message, optional, tag = "2")]
+    pub limit: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub offset: ::core::option::Option<u32>,
     #[prost(uint64, tag = "4")]
     #[serde(with = "crate::deserialization::from_to_string")]
     pub start_at_ms: u64,

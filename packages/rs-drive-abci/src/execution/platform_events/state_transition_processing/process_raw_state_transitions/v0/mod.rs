@@ -4,12 +4,14 @@ use crate::execution::types::execution_result::ExecutionResult::{
 };
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::platform_types::platform::{Platform, PlatformRef};
-use crate::platform_types::platform_state;
+use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::fee::fee_result::FeeResult;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::fee::result::FeeResult;
+
+use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
@@ -40,12 +42,13 @@ where
     /// This function may return an `Error` variant if there is a problem with deserializing the raw
     /// state transitions, processing state transitions, or executing events.
     ///
-    pub(crate) fn process_raw_state_transitions_v0(
+    pub(super) fn process_raw_state_transitions_v0(
         &self,
         raw_state_transitions: &Vec<Vec<u8>>,
-        block_platform_state: &platform_state::v0::PlatformState,
+        block_platform_state: &PlatformState,
         block_info: &BlockInfo,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<(FeeResult, Vec<(Vec<u8>, ExecTxResult)>), Error> {
         let state_transitions = StateTransition::deserialize_many(raw_state_transitions)?;
         let mut aggregate_fee_result = FeeResult::default();
@@ -64,7 +67,7 @@ where
 
                 let execution_result = if state_transition_execution_event.is_valid() {
                     let execution_event = state_transition_execution_event.into_data()?;
-                    self.execute_event_v0(execution_event, block_info, transaction)?
+                    self.execute_event(execution_event, block_info, transaction, platform_version)?
                 } else {
                     ConsensusExecutionError(SimpleConsensusValidationResult::new_with_errors(
                         state_transition_execution_event.errors,

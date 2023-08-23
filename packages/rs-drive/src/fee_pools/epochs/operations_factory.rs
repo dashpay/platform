@@ -33,16 +33,20 @@
 //!
 
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::fee_pools::pools_vec_path;
+use crate::drive::credit_pools::paths::pools_vec_path;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::credits::{Creditable, Credits};
+
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::fee_pools::epochs::epoch_key_constants::{
     KEY_FEE_MULTIPLIER, KEY_POOL_PROCESSING_FEES, KEY_POOL_STORAGE_FEES, KEY_PROPOSERS,
     KEY_START_BLOCK_CORE_HEIGHT, KEY_START_BLOCK_HEIGHT, KEY_START_TIME,
 };
 use crate::fee_pools::epochs::paths::EpochProposers;
+use dpp::balances::credits::Creditable;
 use dpp::block::epoch::Epoch;
+use dpp::fee::Credits;
+use dpp::version::PlatformVersion;
 use grovedb::batch::GroveDbOp;
 use grovedb::{Element, TransactionArg};
 
@@ -55,6 +59,7 @@ pub trait EpochOperations {
         proposer_pro_tx_hash: &[u8; 32],
         cached_previous_block_count: Option<u64>,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<GroveDbOp, Error>;
     /// Adds to the groveDB op batch operations to insert an empty tree into the epoch
     fn add_init_empty_without_storage_operations(&self, batch: &mut GroveDbOpBatch);
@@ -117,13 +122,19 @@ impl EpochOperations for Epoch {
         proposer_pro_tx_hash: &[u8; 32],
         cached_previous_block_count: Option<u64>,
         transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<GroveDbOp, Error> {
         // get current proposer's block count
         let proposed_block_count = if let Some(block_count) = cached_previous_block_count {
             block_count
         } else {
             drive
-                .get_epochs_proposer_block_count(self, proposer_pro_tx_hash, transaction)
+                .get_epochs_proposer_block_count(
+                    self,
+                    proposer_pro_tx_hash,
+                    transaction,
+                    platform_version,
+                )
                 .or_else(|e| match e {
                     Error::GroveDB(grovedb::Error::PathKeyNotFound(_)) => Ok(0u64),
                     _ => Err(e),
@@ -292,6 +303,7 @@ mod tests {
     use super::*;
     use crate::tests::helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use chrono::Utc;
+    use dpp::version::PlatformVersion;
 
     mod increment_proposer_block_count_operation {
         use super::*;
@@ -300,6 +312,8 @@ mod tests {
         fn test_increment_block_count_to_1_if_proposers_tree_is_not_committed() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
+
+            let platform_version = PlatformVersion::first();
 
             let pro_tx_hash: [u8; 32] = rand::random();
 
@@ -316,16 +330,22 @@ mod tests {
                         &pro_tx_hash,
                         Some(0),
                         Some(&transaction),
+                        platform_version,
                     )
                     .expect("should increment proposer block count operations"),
             );
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let stored_block_count = drive
-                .get_epochs_proposer_block_count(&epoch, &pro_tx_hash, Some(&transaction))
+                .get_epochs_proposer_block_count(
+                    &epoch,
+                    &pro_tx_hash,
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should get proposer block count");
 
             assert_eq!(stored_block_count, 1);
@@ -335,6 +355,8 @@ mod tests {
         fn test_existing_block_count_is_incremented() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
+
+            let platform_version = PlatformVersion::first();
 
             let pro_tx_hash: [u8; 32] = rand::random();
 
@@ -346,7 +368,7 @@ mod tests {
 
             // Apply proposers tree
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let mut batch = GroveDbOpBatch::new();
@@ -355,7 +377,7 @@ mod tests {
 
             // Apply proposer block count
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let mut batch = GroveDbOpBatch::new();
@@ -367,16 +389,22 @@ mod tests {
                         &pro_tx_hash,
                         None,
                         Some(&transaction),
+                        platform_version,
                     )
                     .expect("should update proposer block count"),
             );
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let stored_block_count = drive
-                .get_epochs_proposer_block_count(&epoch, &pro_tx_hash, Some(&transaction))
+                .get_epochs_proposer_block_count(
+                    &epoch,
+                    &pro_tx_hash,
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should get proposer block count");
 
             assert_eq!(stored_block_count, 2);
@@ -391,6 +419,8 @@ mod tests {
             let drive = setup_drive(None);
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::first();
+
             let epoch = Epoch::new(1042).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
@@ -399,7 +429,8 @@ mod tests {
                 .add_init_empty_operations(&mut batch)
                 .expect("should init empty epoch");
 
-            let result = drive.grove_apply_batch(batch, false, Some(&transaction));
+            let result =
+                drive.grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive);
 
             assert!(matches!(
                 result,
@@ -412,6 +443,8 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::first();
+
             let epoch = Epoch::new(1042).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
@@ -421,11 +454,15 @@ mod tests {
                 .expect("should init empty epoch");
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let storage_fee = drive
-                .get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction))
+                .get_epoch_storage_credits_for_distribution(
+                    &epoch,
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("expected to get storage credits in epoch pool");
 
             assert_eq!(storage_fee, 0);
@@ -439,6 +476,8 @@ mod tests {
         fn test_values_are_set() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
+
+            let platform_version = PlatformVersion::first();
 
             let epoch = Epoch::new(1042).unwrap();
 
@@ -462,39 +501,43 @@ mod tests {
             );
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let stored_multiplier = drive
-                .get_epoch_fee_multiplier(&epoch, Some(&transaction))
+                .get_epoch_fee_multiplier(&epoch, Some(&transaction), platform_version)
                 .expect("should get multiplier");
 
             assert_eq!(stored_multiplier, multiplier);
 
             let stored_start_time = drive
-                .get_epoch_start_time(&epoch, Some(&transaction))
+                .get_epoch_start_time(&epoch, Some(&transaction), platform_version)
                 .expect("should get start time");
 
             assert_eq!(stored_start_time, start_time);
 
             let stored_block_height = drive
-                .get_epoch_start_block_height(&epoch, Some(&transaction))
+                .get_epoch_start_block_height(&epoch, Some(&transaction), platform_version)
                 .expect("should get start block height");
 
             assert_eq!(stored_block_height, start_block_height);
 
             let stored_block_core_height = drive
-                .get_epoch_start_block_core_height(&epoch, Some(&transaction))
+                .get_epoch_start_block_core_height(&epoch, Some(&transaction), platform_version)
                 .expect("should get start block core height");
 
             assert_eq!(stored_block_core_height, start_block_core_height);
 
             drive
-                .get_epoch_processing_credits_for_distribution(&epoch, Some(&transaction))
+                .get_epoch_processing_credits_for_distribution(
+                    &epoch,
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect_err("should not get processing fee");
 
             let proposers = drive
-                .get_epoch_proposers(&epoch, Some(1), Some(&transaction))
+                .get_epoch_proposers(&epoch, Some(1), Some(&transaction), platform_version)
                 .expect("should get proposers");
 
             assert_eq!(proposers, vec!());
@@ -509,6 +552,8 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::first();
+
             let epoch = Epoch::new(0).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
@@ -517,7 +562,7 @@ mod tests {
 
             // Apply init current
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let mut batch = GroveDbOpBatch::new();
@@ -525,7 +570,7 @@ mod tests {
             epoch.add_mark_as_paid_operations(&mut batch);
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let result = drive
@@ -539,16 +584,22 @@ mod tests {
 
             assert!(matches!(result, Err(grovedb::Error::PathKeyNotFound(_))));
 
-            let result =
-                drive.get_epoch_processing_credits_for_distribution(&epoch, Some(&transaction));
+            let result = drive.get_epoch_processing_credits_for_distribution(
+                &epoch,
+                Some(&transaction),
+                platform_version,
+            );
 
             assert!(matches!(
                 result,
                 Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
             ));
 
-            let result =
-                drive.get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction));
+            let result = drive.get_epoch_storage_credits_for_distribution(
+                &epoch,
+                Some(&transaction),
+                platform_version,
+            );
 
             assert!(matches!(
                 result,
@@ -565,6 +616,8 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::first();
+
             let pro_tx_hash: [u8; 32] = rand::random();
             let block_count = 42;
 
@@ -577,11 +630,16 @@ mod tests {
             batch.push(epoch.update_proposer_block_count_operation(&pro_tx_hash, block_count));
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let stored_block_count = drive
-                .get_epochs_proposer_block_count(&epoch, &pro_tx_hash, Some(&transaction))
+                .get_epochs_proposer_block_count(
+                    &epoch,
+                    &pro_tx_hash,
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should get proposer block count");
 
             assert_eq!(stored_block_count, block_count);
@@ -593,6 +651,8 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure();
         let transaction = drive.grove.start_transaction();
 
+        let platform_version = PlatformVersion::first();
+
         let epoch_tree = Epoch::new(0).unwrap();
 
         let start_time_ms: u64 = Utc::now().timestamp_millis() as u64;
@@ -602,11 +662,11 @@ mod tests {
         batch.push(epoch_tree.update_start_time_operation(start_time_ms));
 
         drive
-            .grove_apply_batch(batch, false, Some(&transaction))
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
             .expect("should apply batch");
 
         let actual_start_time_ms = drive
-            .get_epoch_start_time(&epoch_tree, Some(&transaction))
+            .get_epoch_start_time(&epoch_tree, Some(&transaction), platform_version)
             .expect("should get start time");
 
         assert_eq!(start_time_ms, actual_start_time_ms);
@@ -617,6 +677,8 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure();
         let transaction = drive.grove.start_transaction();
 
+        let platform_version = PlatformVersion::first();
+
         let epoch = Epoch::new(0).unwrap();
 
         let start_block_height = 1;
@@ -624,11 +686,11 @@ mod tests {
         let op = epoch.update_start_block_height_operation(start_block_height);
 
         drive
-            .grove_apply_operation(op, false, Some(&transaction))
+            .grove_apply_operation(op, false, Some(&transaction), &platform_version.drive)
             .expect("should apply batch");
 
         let actual_start_block_height = drive
-            .get_epoch_start_block_height(&epoch, Some(&transaction))
+            .get_epoch_start_block_height(&epoch, Some(&transaction), platform_version)
             .expect("should get start block height");
 
         assert_eq!(start_block_height, actual_start_block_height);
@@ -639,6 +701,8 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure();
         let transaction = drive.grove.start_transaction();
 
+        let platform_version = PlatformVersion::first();
+
         let epoch = Epoch::new(0).unwrap();
 
         let start_block_height = 1;
@@ -646,11 +710,11 @@ mod tests {
         let op = epoch.update_start_block_core_height_operation(start_block_height);
 
         drive
-            .grove_apply_operation(op, false, Some(&transaction))
+            .grove_apply_operation(op, false, Some(&transaction), &platform_version.drive)
             .expect("should apply batch");
 
         let actual_start_block_height = drive
-            .get_epoch_start_block_core_height(&epoch, Some(&transaction))
+            .get_epoch_start_block_core_height(&epoch, Some(&transaction), platform_version)
             .expect("should get start block core height");
 
         assert_eq!(start_block_height, actual_start_block_height);
@@ -664,13 +728,16 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::first();
+
             let epoch = Epoch::new(7000).unwrap();
 
             let op = epoch
                 .update_processing_fee_pool_operation(42)
                 .expect("should return operation");
 
-            let result = drive.grove_apply_operation(op, false, Some(&transaction));
+            let result =
+                drive.grove_apply_operation(op, false, Some(&transaction), &platform_version.drive);
 
             assert!(matches!(
                 result,
@@ -683,6 +750,8 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::first();
+
             let epoch = Epoch::new(0).unwrap();
 
             let processing_fee: u64 = 42;
@@ -692,11 +761,15 @@ mod tests {
                 .expect("should return operation");
 
             drive
-                .grove_apply_operation(op, false, Some(&transaction))
+                .grove_apply_operation(op, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let stored_processing_fee = drive
-                .get_epoch_processing_credits_for_distribution(&epoch, Some(&transaction))
+                .get_epoch_processing_credits_for_distribution(
+                    &epoch,
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should get processing fee");
 
             assert_eq!(stored_processing_fee, processing_fee);
@@ -711,13 +784,16 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::first();
+
             let epoch = Epoch::new(7000).unwrap();
 
             let op = epoch
                 .update_storage_fee_pool_operation(42)
                 .expect("should return operation");
 
-            let result = drive.grove_apply_operation(op, false, Some(&transaction));
+            let result =
+                drive.grove_apply_operation(op, false, Some(&transaction), &platform_version.drive);
 
             assert!(matches!(
                 result,
@@ -730,6 +806,8 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::first();
+
             let epoch = Epoch::new(0).unwrap();
 
             let storage_fee = 42;
@@ -739,11 +817,15 @@ mod tests {
                 .expect("should return operation");
 
             drive
-                .grove_apply_operation(op, false, Some(&transaction))
+                .grove_apply_operation(op, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let stored_storage_fee = drive
-                .get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction))
+                .get_epoch_storage_credits_for_distribution(
+                    &epoch,
+                    Some(&transaction),
+                    platform_version,
+                )
                 .expect("should get storage fee");
 
             assert_eq!(stored_storage_fee, storage_fee);
@@ -758,6 +840,8 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
+            let platform_version = PlatformVersion::first();
+
             let epoch = Epoch::new(0).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
@@ -766,7 +850,7 @@ mod tests {
 
             // Apply proposers tree
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let mut batch = GroveDbOpBatch::new();
@@ -774,7 +858,7 @@ mod tests {
             batch.push(epoch.delete_proposers_tree_operation());
 
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let error = drive
@@ -804,13 +888,15 @@ mod tests {
 
             let epoch = Epoch::new(0).unwrap();
 
+            let platform_version = PlatformVersion::first();
+
             let mut batch = GroveDbOpBatch::new();
 
             batch.push(epoch.init_proposers_tree_operation());
 
             // Apply proposers tree
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let pro_tx_hashes: Vec<[u8; 32]> = (0..10).map(|_| rand::random()).collect();
@@ -823,11 +909,11 @@ mod tests {
 
             // Apply proposers block count updates
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let mut stored_proposers = drive
-                .get_epoch_proposers(&epoch, Some(20), Some(&transaction))
+                .get_epoch_proposers(&epoch, Some(20), Some(&transaction), platform_version)
                 .expect("should get proposers");
 
             let mut awaited_result = pro_tx_hashes
@@ -856,11 +942,11 @@ mod tests {
 
             // Apply proposers deletion
             drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let stored_proposers = drive
-                .get_epoch_proposers(&epoch, Some(20), Some(&transaction))
+                .get_epoch_proposers(&epoch, Some(20), Some(&transaction), platform_version)
                 .expect("should get proposers");
 
             let mut stored_hexes: Vec<String> = stored_proposers

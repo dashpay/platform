@@ -1,0 +1,18 @@
+{
+	"$protocolVersion": 0,
+	"$id": "4veLBZPHDkaCPF9LfZ8fX3JZiS5q5iUVGhdBbaa9ga5E",
+	"$type": "domain",
+	"$dataContractId": "566vcJkmebVCAb2Dkj2yVMSgGFcsshupnQqtsz1RFbcy",
+	"$ownerId": "HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn",
+	"$revision": 1,
+	"label": "user-9999",
+	"records": {
+		"dashUniqueIdentityId": "HBNMY5QWuBVKNFLhgBTC1VmpEnscrmqKPMXpnYSHwhfn"
+	},
+	"preorderSalt": "BzQi567XVqc8wYiVHS887sJtL6MDbxLHNnp+UpTFSB0",
+	"subdomainRules": {
+		"allowSubdomains": false
+	},
+	"normalizedLabel": "user-9999",
+	"normalizedParentDomainName": "dash"
+}

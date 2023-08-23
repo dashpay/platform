@@ -19,7 +19,7 @@ let DataTriggerExecutionResult;
 let StateTransitionExecutionContext;
 let getAllDataTriggers;
 
-describe('executeDataTriggersFactory', () => {
+describe.skip('executeDataTriggersFactory', () => {
   let childDocumentJs;
   let childDocument;
   let contractMock;

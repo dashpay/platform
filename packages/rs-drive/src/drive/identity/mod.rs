@@ -62,17 +62,15 @@ mod insert;
 #[cfg(any(feature = "full", feature = "verify"))]
 /// Module related to Identity Keys
 pub mod key;
+/// Module related to updating of identity
 #[cfg(feature = "full")]
-mod update;
+pub mod update;
 
 #[cfg(feature = "full")]
 pub use withdrawals::paths::add_initial_withdrawal_state_structure_operations;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use fetch::queries::*;
-
-#[cfg(feature = "full")]
-pub(crate) const IDENTITY_KEY: [u8; 1] = [0];
 
 #[cfg(any(feature = "full", feature = "verify"))]
 pub(crate) fn identity_path(identity_id: &[u8]) -> [&[u8]; 2] {
@@ -88,7 +86,8 @@ pub(crate) fn identity_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
 }
 
 #[cfg(feature = "full")]
-pub(crate) fn identity_contract_info_root_path(identity_id: &[u8]) -> [&[u8]; 3] {
+/// The path for the contract info for an identity
+pub fn identity_contract_info_root_path(identity_id: &[u8]) -> [&[u8]; 3] {
     [
         Into::<&[u8; 1]>::into(RootTree::Identities),
         identity_id,
@@ -97,7 +96,8 @@ pub(crate) fn identity_contract_info_root_path(identity_id: &[u8]) -> [&[u8]; 3]
 }
 
 #[cfg(feature = "full")]
-pub(crate) fn identity_contract_info_root_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
+/// The path for the contract info for an identity as a vec
+pub fn identity_contract_info_root_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Identities as u8],
         identity_id.to_vec(),
@@ -106,7 +106,8 @@ pub(crate) fn identity_contract_info_root_path_vec(identity_id: &[u8]) -> Vec<Ve
 }
 
 #[cfg(feature = "full")]
-pub(crate) fn identity_contract_info_path<'a>(
+/// The path for a specific contract info for an identity
+pub fn identity_contract_info_path<'a>(
     identity_id: &'a [u8],
     contract_id: &'a [u8],
 ) -> [&'a [u8]; 4] {
@@ -119,10 +120,8 @@ pub(crate) fn identity_contract_info_path<'a>(
 }
 
 #[cfg(feature = "full")]
-pub(crate) fn identity_contract_info_path_vec(
-    identity_id: &[u8],
-    contract_id: &[u8],
-) -> Vec<Vec<u8>> {
+/// The path for a specific contract info for an identity as a vec
+pub fn identity_contract_info_path_vec(identity_id: &[u8], contract_id: &[u8]) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Identities as u8],
         identity_id.to_vec(),
@@ -141,7 +140,8 @@ pub(crate) fn identity_key_tree_path(identity_id: &[u8]) -> [&[u8]; 3] {
 }
 
 #[cfg(any(feature = "full", feature = "verify"))]
-pub(crate) fn identity_key_tree_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
+/// The path for all identity keys as a vec
+pub fn identity_key_tree_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Identities as u8],
         identity_id.to_vec(),
@@ -150,7 +150,8 @@ pub(crate) fn identity_key_tree_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
 }
 
 #[cfg(feature = "full")]
-pub(crate) fn identity_key_path_vec(identity_id: &[u8], key_id: KeyID) -> Vec<Vec<u8>> {
+/// The path for a specific key as a vec
+pub fn identity_key_path_vec(identity_id: &[u8], key_id: KeyID) -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::Identities as u8],
         identity_id.to_vec(),

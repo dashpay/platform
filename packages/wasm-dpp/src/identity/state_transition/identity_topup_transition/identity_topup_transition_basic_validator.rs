@@ -4,8 +4,6 @@ use dpp::identity::state_transition::asset_lock_proof::{
 };
 use dpp::identity::state_transition::identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator;
 
-use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-
 use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use dpp::ProtocolError;
 

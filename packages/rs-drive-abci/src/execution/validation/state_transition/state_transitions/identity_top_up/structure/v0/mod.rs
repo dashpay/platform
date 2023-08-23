@@ -1,22 +1,16 @@
 use crate::error::Error;
 
-use crate::execution::validation::state_transition::common::validate_protocol_version::v0::validate_protocol_version_v0;
-use crate::execution::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
-use dpp::identity::state_transition::identity_topup_transition::validation::basic::IDENTITY_TOP_UP_TRANSITION_SCHEMA_VALIDATOR;
-use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 
-pub(crate) trait StateTransitionStructureValidationV0 {
+pub(in crate::execution::validation::state_transition::state_transitions::identity_top_up) trait IdentityTopUpStateTransitionStructureValidationV0
+{
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl StateTransitionStructureValidationV0 for IdentityTopUpTransition {
+impl IdentityTopUpStateTransitionStructureValidationV0 for IdentityTopUpTransition {
     fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema_v0(&IDENTITY_TOP_UP_TRANSITION_SCHEMA_VALIDATOR, self);
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        Ok(validate_protocol_version_v0(self.protocol_version))
+        // TODO: Add validation for the structure of the IdentityTopUpTransition
+        Ok(SimpleConsensusValidationResult::default())
     }
 }

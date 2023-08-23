@@ -4,28 +4,27 @@ use crate::drive::batch::{DriveOperation, IdentityOperationType};
 
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::IdentityPublicKey;
 
-use dpp::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
+use crate::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
+use dpp::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for IdentityUpdateTransitionAction {
     fn into_high_level_drive_operations<'a>(
         self,
         _epoch: &Epoch,
+        _platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
-        let IdentityUpdateTransitionAction {
-            add_public_keys,
-            disable_public_keys,
-            public_keys_disabled_at,
-            identity_id,
-            revision,
-            ..
-        } = self;
+        let identity_id = self.identity_id();
+        let revision = self.revision();
+        let public_keys_disabled_at = self.public_keys_disabled_at();
+        let (add_public_keys, disable_public_keys) = self.public_keys_to_add_and_disable_owned();
 
         let (unique_keys, non_unique_keys): (Vec<IdentityPublicKey>, Vec<IdentityPublicKey>) =
             add_public_keys
                 .into_iter()
-                .partition(|key| key.key_type.is_unique_key_type());
+                .partition(|key| key.key_type().is_unique_key_type());
 
         let mut drive_operations = vec![];
 

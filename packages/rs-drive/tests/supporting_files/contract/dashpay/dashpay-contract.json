@@ -1,10 +1,11 @@
 {
-    "$id": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+    "$format_version": "0",
+    "id": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
     "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
-    "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
     "version": 1,
-    "documents": {
+    "documentSchemas": {
         "profile": {
+            "type": "object",
             "indices": [
                 {
                     "properties": [
@@ -12,6 +13,7 @@
                             "$ownerId": "asc"
                         }
                     ],
+                    "name": "&ownerId",
                     "unique": true
                 },
                 {
@@ -22,7 +24,8 @@
                         {
                             "$updatedAt": "asc"
                         }
-                    ]
+                    ],
+                    "name": "&ownerId&updatedAt"
                 }
             ],
             "properties": {
@@ -47,6 +50,7 @@
             "additionalProperties": false
         },
         "contactInfo": {
+            "type": "object",
             "indices": [
                 {
                     "properties": [
@@ -60,7 +64,8 @@
                             "derivationEncryptionKeyIndex": "asc"
                         }
                     ],
-                    "unique": true
+                    "unique": true,
+                    "name": "derivationEncryptionKeyIndex"
                 },
                 {
                     "properties": [
@@ -70,7 +75,8 @@
                         {
                             "$updatedAt": "asc"
                         }
-                    ]
+                    ],
+                    "name": "&ownerId&updatedAt"
                 }
             ],
             "properties": {
@@ -105,6 +111,7 @@
             "additionalProperties": false
         },
         "contactRequest": {
+            "type": "object",
             "documentsMutable": false,
             "indices": [
                 {
@@ -119,7 +126,8 @@
                             "accountReference": "asc"
                         }
                     ],
-                    "unique": true
+                    "unique": true,
+                    "name": "accountReference"
                 },
                 {
                     "properties": [
@@ -129,7 +137,8 @@
                         {
                             "toUserId": "asc"
                         }
-                    ]
+                    ],
+                    "name": "toUserId"
                 },
                 {
                     "properties": [
@@ -139,7 +148,8 @@
                         {
                             "$createdAt": "asc"
                         }
-                    ]
+                    ],
+                    "name": "toUserIdcreatedAt"
                 },
                 {
                     "properties": [
@@ -149,7 +159,8 @@
                         {
                             "$createdAt": "asc"
                         }
-                    ]
+                    ],
+                    "name": "ownerIdcreatedAt"
                 }
             ],
             "properties": {

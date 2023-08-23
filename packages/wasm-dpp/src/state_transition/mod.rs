@@ -1,5 +1,3 @@
-use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-
 use dpp::state_transition::fee::operations::Operation;
 use wasm_bindgen::prelude::*;
 

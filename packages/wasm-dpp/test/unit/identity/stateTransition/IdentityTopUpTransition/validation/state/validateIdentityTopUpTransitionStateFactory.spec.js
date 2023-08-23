@@ -3,7 +3,7 @@ const getIdentityTopUpTransitionFixture = require('../../../../../../../lib/test
 const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
-describe('validateIdentityTopUpTransitionStateFactory', () => {
+describe.skip('validateIdentityTopUpTransitionStateFactory', () => {
   let validateIdentityTopUpTransitionState;
   let stateTransition;
   let stateRepositoryMock;

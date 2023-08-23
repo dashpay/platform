@@ -7,9 +7,8 @@ use crate::errors::consensus::consensus_error::from_consensus_error;
 use dpp::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
-use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::state_transition::validation::validate_state_transition_identity_signature::validate_state_transition_identity_signature;
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
+use dpp::state_transition::state_transition_validation::validate_state_transition_identity_signature::validate_state_transition_identity_signature;
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySignedV0};
 
 use crate::StateTransitionExecutionContextWasm;
 use std::sync::Arc;
@@ -24,7 +23,7 @@ struct StValidator {
 impl StValidator {
     pub async fn validate(
         &self,
-        state_transition: &mut impl StateTransitionIdentitySigned,
+        state_transition: &mut impl StateTransitionIdentitySignedV0,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResultWasm, JsValue> {
         let result = validate_state_transition_identity_signature(

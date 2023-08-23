@@ -33,7 +33,7 @@ hex = "0.4.3"
 indexmap = { version = "1.9.3", features = ["serde"] }
 sha2 = "0.10.6"
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev = "408bef25fd229dbb6b9f1b3d380e2afbc77d812c" }
-dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
+dpp = { path = "../rs-dpp", features = ["abci"] }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
 mockall = { version = "0.11", optional = true }
@@ -44,6 +44,8 @@ clap = { version = "4.1.8", optional = true, features = ["derive"] }
 envy = { version = "0.4.2" }
 dotenvy = { version = "0.15.6", optional = true }
 dapi-grpc = { path = "../dapi-grpc" }
+platform-serialization = { path = "../rs-platform-serialization" }
+platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 tracing-subscriber = { version = "0.3.16", default-features = false, features = [
     "env-filter",
     "ansi",
@@ -73,9 +75,26 @@ tokio = { version = "1", features = [
     "time",
 ] }
 tokio-util = { version = "0.7.8" }
+derive_more = "0.99.17"
 
 [dev-dependencies]
 base64 = "0.20.0"
+platform-version = { path = "../rs-platform-version", features = [
+    "mock-versions",
+] }
+dpp = { path = "../rs-dpp", features = [
+    "abci",
+    "random-documents",
+    "state-transition-signing",
+    "random-identities",
+    "random-public-keys",
+    "random-document-types",
+    "fixtures-and-mocks",
+    "identity-value-conversion",
+    "data-contract-json-conversion",
+    "data-contract-cbor-conversion",
+] }
+drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 
 [features]
 default = ["server"]

@@ -1,5 +1,6 @@
 #[cfg(any(feature = "full", feature = "verify"))]
-use crate::drive::contract::ContractFetchInfo;
+use crate::drive::contract::DataContractFetchInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::TimestampMillis;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -22,16 +23,16 @@ pub struct DriveCache {
     pub protocol_versions_counter: Option<IntMap<ProtocolVersion, u64>>,
 }
 
-/// Data Contract cache that handle both non global and block data
+/// DataContract cache that handle both non global and block data
 #[cfg(feature = "full")]
 pub struct DataContractCache {
-    global_cache: Cache<[u8; 32], Arc<ContractFetchInfo>>,
-    block_cache: Cache<[u8; 32], Arc<ContractFetchInfo>>,
+    global_cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>,
+    block_cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>,
 }
 
 #[cfg(feature = "full")]
 impl DataContractCache {
-    /// Create a new Data Contract cache instance
+    /// Create a new DataContract cache instance
     pub fn new(global_cache_max_capacity: u64, block_cache_max_capacity: u64) -> Self {
         Self {
             global_cache: Cache::new(global_cache_max_capacity),
@@ -39,10 +40,10 @@ impl DataContractCache {
         }
     }
 
-    /// Inserts Data Contract to block cache
+    /// Inserts DataContract to block cache
     /// otherwise to goes to global cache
-    pub fn insert(&mut self, fetch_info: Arc<ContractFetchInfo>, is_block_cache: bool) {
-        let data_contract_id_bytes = fetch_info.contract.id.to_buffer();
+    pub fn insert(&mut self, fetch_info: Arc<DataContractFetchInfo>, is_block_cache: bool) {
+        let data_contract_id_bytes = fetch_info.contract.id().to_buffer();
 
         if is_block_cache {
             self.block_cache.insert(data_contract_id_bytes, fetch_info);
@@ -58,7 +59,7 @@ impl DataContractCache {
         &self,
         contract_id: [u8; 32],
         is_block_cache: bool,
-    ) -> Option<Arc<ContractFetchInfo>> {
+    ) -> Option<Arc<DataContractFetchInfo>> {
         let maybe_fetch_info = if is_block_cache {
             self.block_cache.get(&contract_id)
         } else {
@@ -88,22 +89,29 @@ mod tests {
 
     mod get {
         use super::*;
+        use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+        use dpp::version::PlatformVersion;
 
         #[test]
         fn test_get_from_global_cache_when_block_cache_is_not_requested() {
             let data_contract_cache = DataContractCache::new(10, 10);
 
-            // Create global contract
-            let fetch_info_global = Arc::new(ContractFetchInfo::default());
+            let protocol_version = PlatformVersion::latest().protocol_version;
 
-            let contract_id = fetch_info_global.contract.id.to_buffer();
+            // Create global contract
+            let fetch_info_global = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
+
+            let contract_id = fetch_info_global.contract.id().to_buffer();
 
             data_contract_cache
                 .global_cache
                 .insert(contract_id, Arc::clone(&fetch_info_global));
 
             // Create transactional contract with a new version
-            let mut fetch_info_block = ContractFetchInfo::default();
+            let mut fetch_info_block =
+                DataContractFetchInfo::dpns_contract_fixture(protocol_version);
 
             fetch_info_block.contract.increment_version();
 
@@ -124,9 +132,13 @@ mod tests {
         fn test_get_from_global_cache_when_block_cache_does_not_have_contract() {
             let data_contract_cache = DataContractCache::new(10, 10);
 
-            let fetch_info_global = Arc::new(ContractFetchInfo::default());
+            let protocol_version = PlatformVersion::latest().protocol_version;
 
-            let contract_id = fetch_info_global.contract.id.to_buffer();
+            let fetch_info_global = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
+
+            let contract_id = fetch_info_global.contract.id().to_buffer();
 
             data_contract_cache
                 .global_cache
@@ -143,9 +155,13 @@ mod tests {
         fn test_get_from_block_cache() {
             let data_contract_cache = DataContractCache::new(10, 10);
 
-            let fetch_info_block = Arc::new(ContractFetchInfo::default());
+            let protocol_version = PlatformVersion::latest().protocol_version;
 
-            let contract_id = fetch_info_block.contract.id.to_buffer();
+            let fetch_info_block = Arc::new(DataContractFetchInfo::dpns_contract_fixture(
+                protocol_version,
+            ));
+
+            let contract_id = fetch_info_block.contract.id().to_buffer();
 
             data_contract_cache
                 .block_cache

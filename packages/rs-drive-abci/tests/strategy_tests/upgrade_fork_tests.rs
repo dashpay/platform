@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use dpp::version::PlatformVersion;
     use tenderdash_abci::proto::types::CoreChainLock;
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
@@ -9,10 +11,14 @@ mod tests {
         UpgradingInfo,
     };
     use drive_abci::config::{PlatformConfig, PlatformTestConfig};
+    use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
+    use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
+    use platform_version::version::mocks::v3_test::TEST_PROTOCOL_VERSION_3;
 
     #[test]
     fn run_chain_version_upgrade() {
+        let platform_version = PlatformVersion::first();
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
@@ -25,7 +31,7 @@ mod tests {
             quorum_count: 24,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
-                proposed_protocol_versions_with_weight: vec![(2, 1)],
+                proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
                 upgrade_three_quarters_life: 0.1,
             }),
             core_height_increase: Frequency {
@@ -79,7 +85,7 @@ mod tests {
                 .expect("expected a version counter");
             platform
                 .drive
-                .fetch_versions_with_counter(None)
+                .fetch_versions_with_counter(None, &platform_version.drive)
                 .expect("expected to get versions");
 
             assert_eq!(
@@ -87,10 +93,10 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 0
@@ -100,10 +106,13 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&16), Some(&416)));
+            assert_eq!(
+                (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                (Some(&16), Some(&416))
+            );
             //most nodes were hit (63 were not)
         }
 
@@ -117,10 +126,10 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
 
@@ -161,10 +170,10 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 1
@@ -174,15 +183,15 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
-                2
+                platform.state.read().unwrap().next_epoch_protocol_version(),
+                TEST_PROTOCOL_VERSION_2
             );
             assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-            assert_eq!(counter.get(&2), Some(&157));
+            assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&157));
         }
 
         // we locked in
@@ -192,10 +201,10 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
         let ChainExecutionOutcome { .. } = continue_chain_for_strategy(
@@ -225,10 +234,10 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 2
@@ -238,15 +247,15 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
-                2
+                    .current_protocol_version_in_consensus(),
+                TEST_PROTOCOL_VERSION_2
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
-                2
+                platform.state.read().unwrap().next_epoch_protocol_version(),
+                TEST_PROTOCOL_VERSION_2
             );
             assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-            assert_eq!(counter.get(&2), Some(&120));
+            assert_eq!(counter.get(&TEST_PROTOCOL_VERSION_2), Some(&120));
         }
     }
 
@@ -264,7 +273,7 @@ mod tests {
             quorum_count: 200,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
-                proposed_protocol_versions_with_weight: vec![(2, 1)],
+                proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
                 upgrade_three_quarters_life: 5.0, //it will take many epochs before we get enough nodes
             }),
             core_height_increase: Frequency {
@@ -322,10 +331,10 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 5
@@ -335,18 +344,21 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
+                platform.state.read().unwrap().next_epoch_protocol_version(),
                 1
             );
             let counter = drive_cache
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&35), Some(&64)));
+            assert_eq!(
+                (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                (Some(&35), Some(&64))
+            );
         }
 
         // we did not yet hit the required threshold to upgrade
@@ -357,10 +369,10 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
         let ChainExecutionOutcome {
@@ -397,10 +409,10 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 11
@@ -410,15 +422,18 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
-                2
+                platform.state.read().unwrap().next_epoch_protocol_version(),
+                TEST_PROTOCOL_VERSION_2
             );
             // the counter is for the current voting during that window
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&8), Some(&79)));
+            assert_eq!(
+                (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                (Some(&8), Some(&79))
+            );
         }
 
         // we are now locked in, the current protocol version will change on next epoch
@@ -427,10 +442,10 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
         let ChainExecutionOutcome { .. } = continue_chain_for_strategy(
@@ -456,10 +471,10 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 12
@@ -469,12 +484,12 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
-                2
+                    .current_protocol_version_in_consensus(),
+                TEST_PROTOCOL_VERSION_2
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
-                2
+                platform.state.read().unwrap().next_epoch_protocol_version(),
+                TEST_PROTOCOL_VERSION_2
             );
         }
     }
@@ -493,7 +508,7 @@ mod tests {
             quorum_count: 100,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
-                proposed_protocol_versions_with_weight: vec![(2, 1)],
+                proposed_protocol_versions_with_weight: vec![(TEST_PROTOCOL_VERSION_2, 1)],
                 upgrade_three_quarters_life: 5.0,
             }),
             core_height_increase: Frequency {
@@ -550,10 +565,10 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 4
@@ -563,7 +578,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
         }
@@ -575,10 +590,10 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
         let ChainExecutionOutcome {
@@ -615,10 +630,10 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 11
@@ -628,14 +643,17 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
-                2
+                platform.state.read().unwrap().next_epoch_protocol_version(),
+                TEST_PROTOCOL_VERSION_2
             );
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&18), Some(&111)));
+            assert_eq!(
+                (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                (Some(&18), Some(&111))
+            );
             //not all nodes have upgraded
         }
 
@@ -654,7 +672,7 @@ mod tests {
             quorum_count: 100,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 2,
-                proposed_protocol_versions_with_weight: vec![(1, 9), (2, 1)],
+                proposed_protocol_versions_with_weight: vec![(1, 9), (TEST_PROTOCOL_VERSION_2, 1)],
                 upgrade_three_quarters_life: 0.1,
             }),
             core_height_increase: Frequency {
@@ -672,10 +690,10 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
         config.block_spacing_ms = hour_in_ms / 5; //speed things up
@@ -709,17 +727,20 @@ mod tests {
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&170), Some(&24)));
+            assert_eq!(
+                (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                (Some(&170), Some(&24))
+            );
             //a lot nodes reverted to previous version, however this won't impact things
             assert_eq!(
                 platform
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 12
@@ -729,11 +750,11 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
-                2
+                    .current_protocol_version_in_consensus(),
+                TEST_PROTOCOL_VERSION_2
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
+                platform.state.read().unwrap().next_epoch_protocol_version(),
                 1
             );
         }
@@ -742,10 +763,10 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
         config.block_spacing_ms = hour_in_ms * 4; //let's try to move to next epoch
@@ -771,16 +792,19 @@ mod tests {
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&22), Some(&3)));
+            assert_eq!(
+                (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
+                (Some(&22), Some(&3))
+            );
             assert_eq!(
                 platform
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 13
@@ -790,11 +814,11 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
+                platform.state.read().unwrap().next_epoch_protocol_version(),
                 1
             );
         }
@@ -814,7 +838,11 @@ mod tests {
             quorum_count: 100,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
-                proposed_protocol_versions_with_weight: vec![(1, 3), (2, 95), (3, 4)],
+                proposed_protocol_versions_with_weight: vec![
+                    (1, 3),
+                    (TEST_PROTOCOL_VERSION_2, 95),
+                    (TEST_PROTOCOL_VERSION_3, 4),
+                ],
                 upgrade_three_quarters_life: 0.75,
             }),
             core_height_increase: Frequency {
@@ -871,10 +899,10 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 3
@@ -884,15 +912,19 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
+                    .current_protocol_version_in_consensus(),
                 1
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
-                2
+                platform.state.read().unwrap().next_epoch_protocol_version(),
+                TEST_PROTOCOL_VERSION_2
             );
             assert_eq!(
-                (counter.get(&1), counter.get(&2), counter.get(&3)),
+                (
+                    counter.get(&1),
+                    counter.get(&TEST_PROTOCOL_VERSION_2),
+                    counter.get(&TEST_PROTOCOL_VERSION_3)
+                ),
                 (Some(&2), Some(&69), Some(&3))
             ); //some nodes reverted to previous version
         }
@@ -909,7 +941,10 @@ mod tests {
             quorum_count: 24,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
-                proposed_protocol_versions_with_weight: vec![(2, 3), (3, 150)],
+                proposed_protocol_versions_with_weight: vec![
+                    (TEST_PROTOCOL_VERSION_2, 3),
+                    (TEST_PROTOCOL_VERSION_3, 150),
+                ],
                 upgrade_three_quarters_life: 0.5,
             }),
             core_height_increase: Frequency {
@@ -930,10 +965,10 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_committed_block_info
+            .last_committed_block_info()
             .as_ref()
             .unwrap()
-            .basic_info
+            .basic_info()
             .height
             + 1;
         let ChainExecutionOutcome { .. } = continue_chain_for_strategy(
@@ -963,10 +998,10 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_committed_block_info
+                    .last_committed_block_info()
                     .as_ref()
                     .unwrap()
-                    .basic_info
+                    .basic_info()
                     .epoch
                     .index,
                 4
@@ -976,15 +1011,19 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .current_protocol_version_in_consensus,
-                2
+                    .current_protocol_version_in_consensus(),
+                TEST_PROTOCOL_VERSION_2
             );
             assert_eq!(
-                platform.state.read().unwrap().next_epoch_protocol_version,
-                3
+                platform.state.read().unwrap().next_epoch_protocol_version(),
+                TEST_PROTOCOL_VERSION_3
             );
             assert_eq!(
-                (counter.get(&1), counter.get(&2), counter.get(&3)),
+                (
+                    counter.get(&1),
+                    counter.get(&TEST_PROTOCOL_VERSION_2),
+                    counter.get(&TEST_PROTOCOL_VERSION_3)
+                ),
                 (None, Some(&3), Some(&155))
             );
         }

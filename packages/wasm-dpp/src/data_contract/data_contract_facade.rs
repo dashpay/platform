@@ -13,7 +13,7 @@ use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::utils::{get_bool_from_options, IntoWasm, WithJsError, SKIP_VALIDATION_PROPERTY_NAME};
 use crate::validation::ValidationResultWasm;
 
-use dpp::{Convertible, ProtocolError};
+use dpp::{ ProtocolError};
 use std::sync::Arc;
 
 use wasm_bindgen::prelude::*;

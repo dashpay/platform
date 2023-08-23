@@ -3,6 +3,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::serialization::SerializationError;
 use crate::logging;
 use dashcore_rpc::Error as CoreRpcError;
+use dpp::version::PlatformVersionError;
 use drive::dpp::ProtocolError;
 use drive::error::Error as DriveError;
 use tenderdash_abci::proto::abci::ResponseException;
@@ -47,6 +48,13 @@ pub enum Error {
     /// Error from metrics subsystem
     #[error("metrics: {0}")]
     Metrics(#[from] crate::metrics::Error),
+}
+
+impl From<PlatformVersionError> for Error {
+    fn from(value: PlatformVersionError) -> Self {
+        let platform_error: ProtocolError = value.into();
+        platform_error.into()
+    }
 }
 
 impl From<Error> for ResponseException {

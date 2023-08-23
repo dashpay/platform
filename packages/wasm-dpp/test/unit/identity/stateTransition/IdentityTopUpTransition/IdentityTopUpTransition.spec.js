@@ -1,26 +1,15 @@
 const getIdentityTopUpTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
 const getChainAssetLockProofFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
 
-const { default: loadWasmDpp } = require('../../../../..');
-const { getLatestProtocolVersion, StateTransitionTypes } = require('../../../../..');
+const { IdentityTopUpTransition, InstantAssetLockProof, Identifier } = require('../../../../..');
+const { StateTransitionTypes } = require('../../../../..');
 
 describe('IdentityTopUpTransition', () => {
   let rawStateTransition;
   let stateTransition;
 
-  let IdentityTopUpTransition;
-  let InstantAssetLockProof;
-  let Identifier;
-
-  before(async () => {
-    ({
-      IdentityTopUpTransition, InstantAssetLockProof, Identifier,
-    } = await loadWasmDpp());
-  });
-
   beforeEach(async () => {
     rawStateTransition = (await getIdentityTopUpTransitionFixture()).toObject();
-
     stateTransition = new IdentityTopUpTransition(
       rawStateTransition,
     );
@@ -90,11 +79,11 @@ describe('IdentityTopUpTransition', () => {
       rawStateTransition = stateTransition.toObject();
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityTopUp,
         assetLockProof: rawStateTransition.assetLockProof,
         identityId: rawStateTransition.identityId,
-        signature: undefined,
+        signature: Buffer.alloc(32),
       });
     });
 
@@ -102,7 +91,7 @@ describe('IdentityTopUpTransition', () => {
       rawStateTransition = stateTransition.toObject({ skipSignature: true });
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityTopUp,
         assetLockProof: rawStateTransition.assetLockProof,
         identityId: rawStateTransition.identityId,
@@ -115,11 +104,11 @@ describe('IdentityTopUpTransition', () => {
       const jsonStateTransition = stateTransition.toJSON();
 
       expect(jsonStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityTopUp,
         assetLockProof: stateTransition.getAssetLockProof().toJSON(),
         identityId: new Identifier(rawStateTransition.identityId).toString(),
-        signature: undefined,
+        signature: Buffer.alloc(32).toString('base64'),
       });
     });
   });
