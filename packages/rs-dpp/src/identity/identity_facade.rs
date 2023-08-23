@@ -58,7 +58,7 @@ impl IdentityFacade {
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
-        self.factory.create_from_buffer(buffer)
+        self.factory.create_from_buffer(buffer, skip_validation)
     }
 
     pub fn create_instant_lock_proof(

@@ -19,12 +19,12 @@ mod identifier;
 mod identity;
 mod metadata;
 // mod state_repository;
-// mod state_transition;
+mod state_transition;
 // mod version;
 
 mod utils;
 
-mod bls_adapter;
+pub mod bls_adapter;
 mod buffer;
 mod entropy_generator;
 // mod generate_temporary_ecdsa_private_key;

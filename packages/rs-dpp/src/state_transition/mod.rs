@@ -15,6 +15,8 @@ use crate::{BlsModule, ProtocolError};
 
 mod state_transition_types;
 
+pub mod state_transition_factory;
+
 pub mod errors;
 use crate::util::hash::{hash_to_vec, ripemd160_sha256};
 
@@ -437,7 +439,7 @@ impl StateTransition {
 
     #[cfg(feature = "state-transition-signing")]
     /// Signs data with the private key
-    fn sign_by_private_key(
+    pub fn sign_by_private_key(
         &mut self,
         private_key: &[u8],
         key_type: KeyType,

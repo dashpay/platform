@@ -101,7 +101,9 @@ impl IdentityFactoryWasm {
             Default::default()
         };
 
-        let result = self.0.create_from_buffer(buffer.clone());
+        let result = self
+            .0
+            .create_from_buffer(buffer.clone(), options.skip_validation.unwrap_or(true));
 
         match result {
             Ok(identity) => Ok(identity.into()),

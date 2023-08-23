@@ -29,7 +29,10 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "identity-value-conversion",
     "identity-hashing",
     "factories",
-    "client"
+    "client",
+    "validation",
+    "state-transition-signing",
+    "state-transition-validation"
 ]}
 itertools = { version = "0.10.5" }
 console_error_panic_hook = { version = "0.1.7" }

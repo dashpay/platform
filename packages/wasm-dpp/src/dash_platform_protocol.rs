@@ -1,23 +1,15 @@
 use wasm_bindgen::prelude::*;
 
-use dpp::dash_platform_protocol::{DashPlatformProtocol, StateTransitionFactory};
+use dpp::dash_platform_protocol::DashPlatformProtocol;
 use dpp::state_transition::StateTransition;
 use dpp::version::LATEST_VERSION;
 
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::identity::identity_facade::IdentityFacadeWasm;
+use crate::state_transition::state_transition_factory::StateTransitionFactoryWasm;
 
 #[wasm_bindgen(js_name=DashPlatformProtocol)]
 pub struct DashPlatformProtocolWasm(DashPlatformProtocol);
-
-#[wasm_bindgen(js_name=StateTransitionFactory)]
-pub struct StateTransitionFactoryWasm(StateTransitionFactory);
-
-impl From<&StateTransitionFactory> for StateTransitionFactoryWasm {
-    fn from(factory: &StateTransitionFactory) -> Self {
-        Self(factory.to_owned())
-    }
-}
 static mut LOGGER_INITIALIZED: bool = false;
 
 #[wasm_bindgen(js_class=DashPlatformProtocol)]
