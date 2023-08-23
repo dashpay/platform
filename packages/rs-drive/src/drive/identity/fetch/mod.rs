@@ -32,6 +32,7 @@ use grovedb::{PathQuery, SizedQuery};
 #[cfg(feature = "full")]
 use std::collections::BTreeMap;
 
+mod balance;
 #[cfg(feature = "full")]
 mod fetch_by_public_key_hashes;
 #[cfg(feature = "full")]

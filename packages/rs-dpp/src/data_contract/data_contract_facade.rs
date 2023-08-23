@@ -1,49 +1,42 @@
-use crate::data_contract::contract_config::ContractConfig;
-use crate::data_contract::validation::data_contract_validator::DataContractValidator;
-use crate::data_contract::{CreatedDataContract, DataContract, DataContractFactory};
+use crate::data_contract::{DataContract, DataContractFactory};
 
+use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::prelude::Identifier;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+#[cfg(feature = "state-transitions")]
+use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::util::entropy_generator::EntropyGenerator;
 use crate::validation::SimpleConsensusValidationResult;
-use crate::version::ProtocolVersionValidator;
+use crate::version::FeatureVersion;
 use crate::ProtocolError;
 use platform_value::Value;
-use std::sync::Arc;
 
-use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use super::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-
+/// # Data Contract Facade
+///
+/// This module acts as a simplified, high-level interface to a more complex
+/// body of code. It forwards requests to appropriate subsystems.
+///
+/// ## Versioning
+///
+/// In Dash Platform, facades are not versioned because the interface they
+/// provide remains stable, even when changes occur in the underlying system.
+/// Since these modifications do not affect the facade's interface, versioning
+/// is not necessary. The primary function of the facade is to provide a stable
+/// API to the rest of the system, effectively isolating consumers of the API
+/// from changes in the underlying implementation.
 pub struct DataContractFacade {
     factory: DataContractFactory,
-    data_contract_validator: Arc<DataContractValidator>,
 }
 
 impl DataContractFacade {
     pub fn new(
         protocol_version: u32,
-        protocol_version_validator: Arc<ProtocolVersionValidator>,
-    ) -> Self {
-        let validator = Arc::new(DataContractValidator::new(protocol_version_validator));
-        Self {
-            factory: DataContractFactory::new(protocol_version, validator.clone()),
-            data_contract_validator: validator,
-        }
-    }
-
-    pub fn new_with_entropy_generator(
-        protocol_version: u32,
-        protocol_version_validator: Arc<ProtocolVersionValidator>,
-        entropy_generator: Box<dyn EntropyGenerator>,
-    ) -> Self {
-        let validator = Arc::new(DataContractValidator::new(protocol_version_validator));
-        Self {
-            factory: DataContractFactory::new_with_entropy_generator(
-                protocol_version,
-                validator.clone(),
-                entropy_generator,
-            ),
-            data_contract_validator: validator,
-        }
+        entropy_generator: Option<Box<dyn EntropyGenerator>>,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
+            factory: DataContractFactory::new(protocol_version, entropy_generator)?,
+        })
     }
 
     /// Create Data Contract
@@ -51,7 +44,7 @@ impl DataContractFacade {
         &self,
         owner_id: Identifier,
         documents: Value,
-        config: Option<ContractConfig>,
+        config: Option<Value>,
         definitions: Option<Value>,
     ) -> Result<CreatedDataContract, ProtocolError> {
         self.factory
@@ -59,27 +52,25 @@ impl DataContractFacade {
     }
 
     /// Create Data Contract from plain object
-    pub async fn create_from_object(
+    pub fn create_from_object(
         &self,
         raw_data_contract: Value,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         self.factory
-            .create_from_object(raw_data_contract, skip_validation)
-            .await
+            .create_from_object(raw_data_contract,false)
     }
 
     /// Create Data Contract from buffer
-    pub async fn create_from_buffer(
+    pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        self.factory
-            .create_from_buffer(buffer, skip_validation)
-            .await
+        self.factory.create_from_buffer(buffer,false)
     }
 
+    #[cfg(feature = "state-transitions")]
     /// Create Data Contract Create State Transition
     pub fn create_data_contract_create_transition(
         &self,
@@ -89,6 +80,7 @@ impl DataContractFacade {
             .create_data_contract_create_transition(created_data_contract)
     }
 
+    #[cfg(feature = "state-transitions")]
     /// Create Data Contract Update State Transition
     pub fn create_data_contract_update_transition(
         &self,
@@ -96,13 +88,5 @@ impl DataContractFacade {
     ) -> Result<DataContractUpdateTransition, ProtocolError> {
         self.factory
             .create_data_contract_update_transition(data_contract)
-    }
-
-    /// Validate Data Contract
-    pub async fn validate(
-        &self,
-        data_contract: Value,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        self.data_contract_validator.validate(&data_contract)
     }
 }

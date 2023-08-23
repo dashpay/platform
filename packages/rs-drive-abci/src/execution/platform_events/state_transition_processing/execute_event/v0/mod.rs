@@ -8,6 +8,8 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::PlatformVersion;
+use drive::drive::identity::update::apply_balance_change_outcome::ApplyBalanceChangeOutcomeV0Methods;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
@@ -36,16 +38,21 @@ where
     ///
     /// This function may return an `Error` variant if there is a problem with the drive operations or
     /// an internal error occurs.
-    pub(in crate::execution) fn execute_event_v0(
+    pub(super) fn execute_event_v0(
         &self,
         event: ExecutionEvent,
         block_info: &BlockInfo,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<ExecutionResult, Error> {
         //todo: we need to split out errors
         //  between failed execution and internal errors
-        let validation_result =
-            self.validate_fees_of_event_v0(&event, block_info, Some(transaction))?;
+        let validation_result = self.validate_fees_of_event_v0(
+            &event,
+            block_info,
+            Some(transaction),
+            platform_version,
+        )?;
         match event {
             ExecutionEvent::PaidFromAssetLockDriveEvent {
                 identity,
@@ -60,20 +67,26 @@ where
                     //todo: make this into an atomic event with partial batches
                     let individual_fee_result = self
                         .drive
-                        .apply_drive_operations(operations, true, block_info, Some(transaction))
+                        .apply_drive_operations(
+                            operations,
+                            true,
+                            block_info,
+                            Some(transaction),
+                            platform_version,
+                        )
                         .map_err(Error::Drive)?;
 
-                    let balance_change =
-                        individual_fee_result.into_balance_change(identity.id.to_buffer());
+                    let balance_change = individual_fee_result.into_balance_change(identity.id);
 
                     let outcome = self.drive.apply_balance_change_from_fee_to_identity(
                         balance_change,
                         Some(transaction),
+                        platform_version,
                     )?;
 
                     Ok(SuccessfulPaidExecution(
                         validation_result.into_data()?,
-                        outcome.actual_fee_paid,
+                        outcome.actual_fee_paid_owned(),
                     ))
                 } else {
                     Ok(ConsensusExecutionError(
@@ -83,7 +96,13 @@ where
             }
             ExecutionEvent::FreeDriveEvent { operations } => {
                 self.drive
-                    .apply_drive_operations(operations, true, block_info, Some(transaction))
+                    .apply_drive_operations(
+                        operations,
+                        true,
+                        block_info,
+                        Some(transaction),
+                        platform_version,
+                    )
                     .map_err(Error::Drive)?;
                 Ok(SuccessfulFreeExecution)
             }

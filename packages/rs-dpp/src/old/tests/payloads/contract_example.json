@@ -1,0 +1,16 @@
+{
+	"id": "AoDzJxWSb1gUi2dSmvFeUFpSsjZQRJaqCpn7vCLkwwJj",
+	"version": 5,
+	"ownerId": "7NUbPf231ixt1kVBQsBvSMMBxd7AgPad8KtdtfFGhXDP",
+	"documentSchemas": {
+		"note": {
+      "type": "object",
+			"properties": {
+				"message": {
+					"type": "string"
+				}
+			},
+			"additionalProperties": false
+		}
+	}
+}

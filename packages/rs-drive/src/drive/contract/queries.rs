@@ -69,7 +69,7 @@ impl Drive {
         query.insert_keys(contract_ids.iter().map(|key| key.to_vec()).collect());
         query.set_subquery_key(vec![0]);
         PathQuery::new(
-            vec![Into::<&[u8; 1]>::into(RootTree::ContractDocuments).to_vec()],
+            vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()],
             SizedQuery::new(query, Some(contract_ids.len() as u16), None),
         )
     }

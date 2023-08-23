@@ -7,7 +7,7 @@ use dpp::{
     },
     prelude::{DataContract, DocumentTransition, Identifier},
     state_transition::{
-        StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
+        StateTransitionFieldTypes, StateTransitionIdentitySignedV0, StateTransitionLike,
         StateTransitionType,
     },
     util::json_value::JsonValueExt,
@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::{BinaryData, ReplacementType};
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use wasm_bindgen::prelude::*;
 
@@ -52,7 +52,7 @@ pub struct ToObjectOptions {
 #[wasm_bindgen(js_class=DocumentsBatchTransition)]
 impl DocumentsBatchTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn from_raw_object(
+    pub fn from_object(
         js_raw_transition: JsValue,
         data_contracts: Array,
     ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
@@ -62,7 +62,7 @@ impl DocumentsBatchTransitionWasm {
 
         for contract in data_contracts_array_js.iter() {
             let value = contract.with_serde_to_platform_value()?;
-            let data_contract = DataContract::from_raw_object(value).with_js_error()?;
+            let data_contract = DataContract::from_value(value).with_js_error()?;
             data_contracts.push(data_contract);
         }
 
@@ -81,7 +81,7 @@ impl DocumentsBatchTransitionWasm {
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
 
-        let documents_batch_transition = DocumentsBatchTransition::from_raw_object_with_contracts(
+        let documents_batch_transition = DocumentsBatchTransition::from_object_with_contracts(
             batch_transition_value,
             data_contracts,
         )
@@ -248,7 +248,7 @@ impl DocumentsBatchTransitionWasm {
     pub fn get_modified_ids(&self) -> Array {
         let array = Array::new();
 
-        for id in self.0.get_modified_data_ids() {
+        for id in self.0.modified_data_ids() {
             let id = <IdentifierWrapper as From<Identifier>>::from(id.to_owned());
             array.push(&id.into());
         }
@@ -342,12 +342,12 @@ impl DocumentsBatchTransitionWasm {
     // AbstractStateTransition methods
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn get_protocol_version(&self) -> u32 {
-        self.0.get_protocol_version()
+        self.0.state_transition_protocol_version()
     }
 
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Vec<u8> {
-        self.0.get_signature().to_vec()
+        self.0.signature().to_vec()
     }
 
     #[wasm_bindgen(js_name=setSignature)]

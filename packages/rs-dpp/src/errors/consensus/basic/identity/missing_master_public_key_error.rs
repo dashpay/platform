@@ -19,7 +19,7 @@ DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
 impl MissingMasterPublicKeyError {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 impl From<MissingMasterPublicKeyError> for ConsensusError {

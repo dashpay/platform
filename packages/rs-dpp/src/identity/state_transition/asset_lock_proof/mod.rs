@@ -1,98 +1,137 @@
 use std::convert::{TryFrom, TryInto};
 
-use dashcore::consensus::Decodable;
-use dashcore::hashes::hex::ToHex;
-use dashcore::{OutPoint, Transaction, TxOut};
+use dashcore::{Transaction, TxOut};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
-pub use asset_lock_proof_validator::*;
-pub use asset_lock_public_key_hash_fetcher::*;
-pub use asset_lock_transaction_output_fetcher::*;
-pub use asset_lock_transaction_validator::*;
 pub use bincode::{Decode, Encode};
+use serde::de::Error;
 pub use chain::*;
 pub use instant::*;
 use platform_value::Value;
 
-use crate::identity::errors::{AssetLockOutputNotFoundError, AssetLockTransactionIsNotFoundError};
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::Identifier;
-use crate::state_repository::StateRepositoryLike;
-use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::{DPPError, NonConsensusError, ProtocolError, SerdeParsingError};
+use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
 
-mod asset_lock_proof_validator;
-mod asset_lock_public_key_hash_fetcher;
-mod asset_lock_transaction_output_fetcher;
-mod asset_lock_transaction_validator;
 pub mod chain;
 pub mod instant;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
 #[serde(untagged)]
 pub enum AssetLockProof {
     Instant(#[bincode(with_serde)] InstantAssetLockProof),
     Chain(ChainAssetLockProof),
 }
 
-impl AssetLockProof {
-    /// This fetches the asset lock transaction output from core
-    pub async fn fetch_asset_lock_transaction_output(
-        &self,
-        state_repository: &impl StateRepositoryLike,
-        execution_context: &StateTransitionExecutionContext,
-    ) -> Result<TxOut, DPPError> {
-        match self {
-            AssetLockProof::Instant(asset_lock_proof) => asset_lock_proof
-                .output()
-                .ok_or_else(|| DPPError::from(AssetLockOutputNotFoundError::new()))
-                .cloned(),
-            AssetLockProof::Chain(asset_lock_proof) => {
-                let out_point = OutPoint::from(asset_lock_proof.out_point.to_buffer());
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawAssetLockProof {
+    Instant(RawInstantLock),
+    Chain(ChainAssetLockProof)
+}
 
-                let output_index = out_point.vout as usize;
-                let transaction_hash = out_point.txid;
+impl TryFrom<RawAssetLockProof> for AssetLockProof {
+    type Error = ProtocolError;
 
-                let transaction_data = state_repository
-                    .fetch_transaction(&transaction_hash.to_hex(), Some(execution_context))
-                    .await
-                    .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
+    fn try_from(value: RawAssetLockProof) -> Result<Self, Self::Error> {
+        match value {
+            RawAssetLockProof::Instant(raw_instant_lock) => {
+                let instant_lock = raw_instant_lock.try_into()?;
 
-                if execution_context.is_dry_run() {
-                    return Ok(TxOut {
-                        value: 1000,
-                        ..Default::default()
-                    });
-                }
-
-                let transaction_data = transaction_data
-                    .try_into()
-                    .map_err(|e| DPPError::CoreMessageCorruption(format!("{:?}", e.into())))?;
-
-                if let Some(raw_transaction) = transaction_data.data {
-                    let transaction = Transaction::consensus_decode(raw_transaction.as_slice())
-                        .map_err(|e| {
-                            DPPError::CoreMessageCorruption(format!(
-                                "could not decode transaction {:?}",
-                                e
-                            ))
-                        })?;
-
-                    transaction
-                        .output
-                        .get(output_index)
-                        .cloned()
-                        .ok_or_else(|| AssetLockOutputNotFoundError::new().into())
-                } else {
-                    Err(DPPError::from(AssetLockTransactionIsNotFoundError::new(
-                        transaction_hash,
-                    )))
-                }
+                Ok(AssetLockProof::Instant(instant_lock))
+            }
+            RawAssetLockProof::Chain(chain) => {
+                Ok(AssetLockProof::Chain(chain))
             }
         }
     }
 }
+
+impl<'de> Deserialize<'de> for AssetLockProof {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+    {
+        // Try to parse into IS Lock
+        // let maybe_is_lock = RawInstantLock::deserialize(&deserializer);
+        //
+        // if let Ok(raw_instant_lock) = maybe_is_lock {
+        //     let instant_lock = raw_instant_lock.try_into()
+        //         .map_err(|e: ProtocolError| D::Error::custom(e.to_string()))?;
+        //
+        //     return Ok(AssetLockProof::Instant(instant_lock))
+        // };
+        //
+        //
+        // ChainAssetLockProof::deserialize(deserializer)
+        //     .map(|chain| AssetLockProof::Chain(chain))
+        // // Try to parse into chain lock
+
+
+        let raw = RawAssetLockProof::deserialize(deserializer)?;
+        raw.try_into()
+            .map_err(|e: ProtocolError| D::Error::custom(e.to_string()))
+    }
+}
+//
+// impl AssetLockProof {
+//     /// This fetches the asset lock transaction output from core
+//     pub async fn fetch_asset_lock_transaction_output(
+//         &self,
+//         state_repository: &impl StateRepositoryLike,
+//         execution_context: &StateTransitionExecutionContext,
+//     ) -> Result<TxOut, DPPError> {
+//         match self {
+//             AssetLockProof::Instant(asset_lock_proof) => asset_lock_proof
+//                 .output()
+//                 .ok_or_else(|| DPPError::from(AssetLockOutputNotFoundError::new()))
+//                 .cloned(),
+//             AssetLockProof::Chain(asset_lock_proof) => {
+//                 let out_point = OutPoint::from(asset_lock_proof.out_point.to_buffer());
+//
+//                 let output_index = out_point.vout as usize;
+//                 let transaction_hash = out_point.txid;
+//
+//                 let transaction_data = state_repository
+//                     .fetch_transaction(&transaction_hash.to_hex(), Some(execution_context))
+//                     .await
+//                     .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
+//
+//                 if execution_context.is_dry_run() {
+//                     return Ok(TxOut {
+//                         value: 1000,
+//                         ..Default::default()
+//                     });
+//                 }
+//
+//                 let transaction_data = transaction_data
+//                     .try_into()
+//                     .map_err(|e| DPPError::CoreMessageCorruption(format!("{:?}", e.into())))?;
+//
+//                 if let Some(raw_transaction) = transaction_data.data {
+//                     let transaction = Transaction::consensus_decode(raw_transaction.as_slice())
+//                         .map_err(|e| {
+//                             DPPError::CoreMessageCorruption(format!(
+//                                 "could not decode transaction {:?}",
+//                                 e
+//                             ))
+//                         })?;
+//
+//                     transaction
+//                         .output
+//                         .get(output_index)
+//                         .cloned()
+//                         .ok_or_else(|| AssetLockOutputNotFoundError::new().into())
+//                 } else {
+//                     Err(DPPError::from(AssetLockTransactionIsNotFoundError::new(
+//                         transaction_hash,
+//                     )))
+//                 }
+//             }
+//         }
+//     }
+// }
 
 impl Default for AssetLockProof {
     fn default() -> Self {
@@ -332,41 +371,5 @@ impl TryInto<Value> for &AssetLockProof {
                 platform_value::to_value(chain_proof).map_err(ProtocolError::ValueError)
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::state_repository::FetchTransactionResponse;
-    use crate::{
-        identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof,
-        state_repository::MockStateRepositoryLike,
-    };
-
-    use super::*;
-
-    #[tokio::test]
-    async fn should_return_mocked_data_on_dry_run() {
-        let mut state_repository_mock = MockStateRepositoryLike::new();
-        let asset_lock_proof = &AssetLockProof::Chain(ChainAssetLockProof::new(0, [0u8; 36]));
-        let execution_context = StateTransitionExecutionContext::default();
-
-        state_repository_mock
-            .expect_fetch_transaction()
-            .return_once(|_, _| Ok(FetchTransactionResponse::default()));
-        execution_context.enable_dry_run();
-
-        let result = asset_lock_proof
-            .fetch_asset_lock_transaction_output(&state_repository_mock, &execution_context)
-            .await
-            .expect("the transaction output should be returned");
-
-        assert_eq!(
-            TxOut {
-                value: 1000,
-                ..Default::default()
-            },
-            result
-        );
     }
 }

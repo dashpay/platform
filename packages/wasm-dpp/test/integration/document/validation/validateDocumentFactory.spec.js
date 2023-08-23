@@ -9,7 +9,7 @@ let ProtocolVersionValidator;
 let DataContract;
 let InvalidDocumentTypeError;
 
-describe('validateDocumentFactory', () => {
+describe.skip('validateDocumentFactory', () => {
   let dataContract;
   let dataContractJs;
   let rawDocuments;

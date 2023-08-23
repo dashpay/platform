@@ -1,6 +1,7 @@
 use platform_value::Error as ValueError;
 use thiserror::Error;
 
+use crate::version::FeatureVersion;
 use crate::{
     CompatibleProtocolVersionIsNotDefinedError, DPPError, InvalidVectorSizeError, SerdeParsingError,
 };
@@ -10,6 +11,16 @@ pub enum NonConsensusError {
     /// Value error
     #[error("value error: {0}")]
     ValueError(#[from] ValueError),
+    /// Platform expected some specific versions
+    #[error("non consensus unknown version on {method}, received: {received}")]
+    UnknownVersionMismatch {
+        /// method
+        method: String,
+        /// the allowed versions for this method
+        known_versions: Vec<FeatureVersion>,
+        /// requested core height
+        received: FeatureVersion,
+    },
     #[error("Unexpected serde parsing error: {0:#}")]
     SerdeParsingError(SerdeParsingError),
     #[error(transparent)]

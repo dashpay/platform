@@ -17,7 +17,7 @@ DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
 impl MissingDocumentTransitionTypeError {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 

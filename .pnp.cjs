@@ -3135,7 +3135,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@grpc/proto-loader", "npm:0.5.6"],\
             ["lodash.camelcase", "npm:4.3.0"],\
-            ["protobufjs", "npm:6.11.3"]\
+            ["protobufjs", "npm:6.11.4"]\
           ],\
           "linkType": "HARD"\
         }],\
@@ -3146,7 +3146,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@types/long", "npm:4.0.1"],\
             ["lodash.camelcase", "npm:4.3.0"],\
             ["long", "npm:4.0.0"],\
-            ["protobufjs", "npm:6.11.3"],\
+            ["protobufjs", "npm:6.11.4"],\
             ["yargs", "npm:16.2.0"]\
           ],\
           "linkType": "HARD"\
@@ -15356,10 +15356,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["protobufjs", [\
-        ["npm:6.11.3", {\
-          "packageLocation": "./.yarn/unplugged/protobufjs-npm-6.11.3-566fb31188/node_modules/protobufjs/",\
+        ["npm:6.11.4", {\
+          "packageLocation": "./.yarn/unplugged/protobufjs-npm-6.11.4-af11968b80/node_modules/protobufjs/",\
           "packageDependencies": [\
-            ["protobufjs", "npm:6.11.3"],\
+            ["protobufjs", "npm:6.11.4"],\
             ["@protobufjs/aspromise", "npm:1.1.2"],\
             ["@protobufjs/base64", "npm:1.1.2"],\
             ["@protobufjs/codegen", "npm:2.0.4"],\

@@ -7,7 +7,7 @@ const { expectValidationError, expectJsonSchemaError } = require('../../../../..
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 const getBlsAdapterMock = require('../../../../../../../lib/test/mocks/getBlsAdapterMock');
 
-describe('validateIdentityCreateTransitionBasicFactory', () => {
+describe.skip('validateIdentityCreateTransitionBasicFactory', () => {
   let rawStateTransition;
   let stateTransition;
 

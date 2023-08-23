@@ -38,8 +38,9 @@ mod identity;
 
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
+use crate::state_transition_action::StateTransitionAction;
 use dpp::block::epoch::Epoch;
-use dpp::state_transition::StateTransitionAction;
+use dpp::version::PlatformVersion;
 
 /// A converter that will get High Level Drive Operations from State transitions
 pub trait DriveHighLevelOperationConverter {
@@ -47,39 +48,45 @@ pub trait DriveHighLevelOperationConverter {
     fn into_high_level_drive_operations<'a>(
         self,
         epoch: &Epoch,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error>;
 }
 
-impl DriveHighLevelOperationConverter for StateTransitionAction {
+impl<'s> DriveHighLevelOperationConverter for StateTransitionAction {
     fn into_high_level_drive_operations<'a>(
         self,
         epoch: &Epoch,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<DriveOperation<'a>>, Error> {
         match self {
             StateTransitionAction::DataContractCreateAction(data_contract_create_transition) => {
-                data_contract_create_transition.into_high_level_drive_operations(epoch)
+                data_contract_create_transition
+                    .into_high_level_drive_operations(epoch, platform_version)
             }
             StateTransitionAction::DataContractUpdateAction(data_contract_update_transition) => {
-                data_contract_update_transition.into_high_level_drive_operations(epoch)
+                data_contract_update_transition
+                    .into_high_level_drive_operations(epoch, platform_version)
             }
             StateTransitionAction::DocumentsBatchAction(documents_batch_transition) => {
-                documents_batch_transition.into_high_level_drive_operations(epoch)
+                documents_batch_transition.into_high_level_drive_operations(epoch, platform_version)
             }
             StateTransitionAction::IdentityCreateAction(identity_create_transition) => {
-                identity_create_transition.into_high_level_drive_operations(epoch)
+                identity_create_transition.into_high_level_drive_operations(epoch, platform_version)
             }
             StateTransitionAction::IdentityTopUpAction(identity_top_up_transition) => {
-                identity_top_up_transition.into_high_level_drive_operations(epoch)
+                identity_top_up_transition.into_high_level_drive_operations(epoch, platform_version)
             }
             StateTransitionAction::IdentityCreditWithdrawalAction(
                 identity_credit_withdrawal_transition,
-            ) => identity_credit_withdrawal_transition.into_high_level_drive_operations(epoch),
+            ) => identity_credit_withdrawal_transition
+                .into_high_level_drive_operations(epoch, platform_version),
             StateTransitionAction::IdentityUpdateAction(identity_update_transition) => {
-                identity_update_transition.into_high_level_drive_operations(epoch)
+                identity_update_transition.into_high_level_drive_operations(epoch, platform_version)
             }
             StateTransitionAction::IdentityCreditTransferAction(
                 identity_credit_transfer_transition,
-            ) => identity_credit_transfer_transition.into_high_level_drive_operations(epoch),
+            ) => identity_credit_transfer_transition
+                .into_high_level_drive_operations(epoch, platform_version),
         }
     }
 }

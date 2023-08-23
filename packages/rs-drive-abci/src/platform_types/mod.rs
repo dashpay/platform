@@ -35,18 +35,14 @@ pub mod block_proposal;
 pub mod cleaned_abci_messages;
 /// The commit
 pub mod commit;
-/// Contracts module
-pub mod contracts;
 /// Epoch
-pub mod epoch;
+pub mod epoch_info;
 /// Masternode
 pub mod masternode;
 /// Main platform structs, not versioned
 pub mod platform;
 /// Platform state
 pub mod platform_state;
-/// Querying
-pub mod query;
 /// Required identity public key set for system identities
 pub mod required_identity_public_key_set;
 /// System identity public keys
