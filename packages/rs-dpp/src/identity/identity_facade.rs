@@ -29,10 +29,10 @@ pub struct IdentityFacade {
 }
 
 impl IdentityFacade {
-    pub fn new(protocol_version: u32) -> Result<Self, DashPlatformProtocolInitError> {
-        Ok(Self {
+    pub fn new(protocol_version: u32) -> Self {
+        Self {
             factory: IdentityFactory::new(protocol_version),
-        })
+        }
     }
 
     pub fn create(

@@ -1,5 +1,5 @@
 mod factory_utils;
-// pub mod identity_facade;
+pub mod identity_facade;
 mod identity_factory;
 mod identity_public_key;
 // mod validation;
