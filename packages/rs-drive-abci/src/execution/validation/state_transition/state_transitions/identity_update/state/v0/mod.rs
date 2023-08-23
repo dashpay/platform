@@ -20,10 +20,10 @@ use drive::state_transition_action::StateTransitionAction;
 use drive::grovedb::TransactionArg;
 use dpp::version::DefaultForPlatformVersion;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::common::validate_identity_public_key_contract_bounds::v0::validate_identity_public_keys_contract_bounds_v0;
-use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::v0::validate_identity_public_key_ids_dont_exist_in_state_v0;
-use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_exist_in_state::v0::validate_identity_public_key_ids_exist_in_state_v0;
-use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::v0::validate_unique_identity_public_key_hashes_in_state_v0;
+use crate::execution::validation::state_transition::common::validate_identity_public_key_contract_bounds::validate_identity_public_keys_contract_bounds;
+use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::validate_identity_public_key_ids_dont_exist_in_state;
+use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_exist_in_state::validate_identity_public_key_ids_exist_in_state;
+use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_in_state;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_update) trait IdentityUpdateStateTransitionStateValidationV0
@@ -54,9 +54,10 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
 
         // Now we should check the state of added keys to make sure there aren't any that already exist
         validation_result.add_errors(
-            validate_unique_identity_public_key_hashes_in_state_v0(
+            validate_unique_identity_public_key_hashes_in_state(
                 self.public_keys_to_add(),
                 drive,
+                &mut state_transition_execution_context,
                 tx,
                 platform_version,
             )?
@@ -68,11 +69,12 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
         }
 
         validation_result.add_errors(
-            validate_identity_public_key_ids_dont_exist_in_state_v0(
+            validate_identity_public_key_ids_dont_exist_in_state(
                 self.identity_id(),
                 self.public_keys_to_add(),
                 drive,
                 tx,
+                &mut state_transition_execution_context,
                 platform_version,
             )?
             .errors,
@@ -85,7 +87,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
         // Now we should check to make sure any keys that are added are valid for the contract
         // bounds they refer to
         validation_result.add_errors(
-            validate_identity_public_keys_contract_bounds_v0(
+            validate_identity_public_keys_contract_bounds(
                 self.public_keys_to_add(),
                 drive,
                 tx,
@@ -102,10 +104,11 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
         if !self.public_key_ids_to_disable().is_empty() {
             // We need to validate that all keys removed existed
             validation_result.add_errors(
-                validate_identity_public_key_ids_exist_in_state_v0(
+                validate_identity_public_key_ids_exist_in_state(
                     self.identity_id(),
                     self.public_key_ids_to_disable(),
                     drive,
+                    &mut state_transition_execution_context,
                     tx,
                     platform_version,
                 )?

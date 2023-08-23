@@ -16,11 +16,11 @@ use crate::version::drive_abci_versions::{
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
-    DriveAbciProtocolUpgradeMethodVersions, DriveAbciStateTransitionProcessingMethodVersions,
-    DriveAbciStateTransitionValidationVersion, DriveAbciStateTransitionValidationVersions,
-    DriveAbciStructureVersions, DriveAbciValidationDataTriggerAndBindingVersions,
-    DriveAbciValidationDataTriggerVersions, DriveAbciValidationVersions, DriveAbciVersion,
-    DriveAbciWithdrawalsMethodVersions,
+    DriveAbciProtocolUpgradeMethodVersions, DriveAbciStateTransitionCommonValidationVersions,
+    DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion,
+    DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
+    DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions,
+    DriveAbciValidationVersions, DriveAbciVersion, DriveAbciWithdrawalsMethodVersions,
 };
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
@@ -507,7 +507,13 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
         },
         validation_and_processing: DriveAbciValidationVersions {
             state_transitions: DriveAbciStateTransitionValidationVersions {
-                validate_state_transition_identity_signed: 0,
+                common_validation_methods: DriveAbciStateTransitionCommonValidationVersions {
+                    validate_identity_public_key_contract_bounds: 0,
+                    validate_identity_public_key_ids_dont_exist_in_state: 0,
+                    validate_identity_public_key_ids_exist_in_state: 0,
+                    validate_state_transition_identity_signed: 0,
+                    validate_unique_identity_public_key_hashes_in_state: 0,
+                },
                 identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     structure: 0,
                     identity_signatures: Some(0),
