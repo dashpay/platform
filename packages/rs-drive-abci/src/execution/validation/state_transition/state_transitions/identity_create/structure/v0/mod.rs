@@ -1,7 +1,7 @@
 use crate::error::Error;
-use crate::execution::validation::state_transition::common::validate_identity_public_keys_structure::v0::validate_identity_public_keys_structure_v0;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
@@ -18,6 +18,10 @@ impl IdentityCreateStateTransitionStructureValidationV0 for IdentityCreateTransi
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        validate_identity_public_keys_structure_v0(self.public_keys(), platform_version)
+        IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
+            self.public_keys(),
+            platform_version,
+        )
+        .map_err(Error::Protocol)
     }
 }

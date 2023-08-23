@@ -1,13 +1,16 @@
-use std::collections::{HashSet};
-use dpp::consensus::basic::identity::{DuplicatedIdentityPublicKeyIdBasicError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError};
-use dpp::consensus::ConsensusError;
+use crate::error::Error;
+use dpp::consensus::basic::identity::{
+    DuplicatedIdentityPublicKeyIdBasicError, InvalidIdentityUpdateTransitionDisableKeysError,
+    InvalidIdentityUpdateTransitionEmptyError,
+};
 use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
+use dpp::consensus::ConsensusError;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use crate::error::Error;
-use crate::execution::validation::state_transition::common::validate_identity_public_keys_structure::v0::validate_identity_public_keys_structure_v0;
+use std::collections::HashSet;
 
 const MAX_KEYS_TO_DISABLE: usize = 10;
 
@@ -76,6 +79,10 @@ impl IdentityUpdateStateTransitionStructureValidationV0 for IdentityUpdateTransi
             return Ok(result);
         }
 
-        validate_identity_public_keys_structure_v0(self.public_keys_to_add(), platform_version)
+        IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
+            self.public_keys_to_add(),
+            platform_version,
+        )
+        .map_err(Error::Protocol)
     }
 }

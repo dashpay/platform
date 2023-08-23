@@ -56,6 +56,7 @@ pub struct PublicKeyInCreationMethodVersions {
     pub hash: FeatureVersion,
     pub duplicated_key_ids_witness: FeatureVersion,
     pub duplicated_keys_witness: FeatureVersion,
+    pub validate_identity_public_keys_structure: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

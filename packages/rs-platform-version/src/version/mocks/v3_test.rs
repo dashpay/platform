@@ -687,6 +687,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 hash: 0,
                 duplicated_key_ids_witness: 0,
                 duplicated_keys_witness: 0,
+                validate_identity_public_keys_structure: 0,
             },
         },
         contract_versions: ContractVersions {
