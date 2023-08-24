@@ -2,6 +2,7 @@ mod action_validation;
 mod base_structure;
 mod data_triggers;
 mod state;
+mod transformer;
 
 use dpp::prelude::*;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;

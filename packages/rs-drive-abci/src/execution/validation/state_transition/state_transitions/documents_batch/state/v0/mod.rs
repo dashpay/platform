@@ -4,12 +4,16 @@ use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::StateTransitionAction;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::documents_batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
+use crate::execution::validation::state_transition::documents_batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
+use crate::execution::validation::state_transition::documents_batch::action_validation::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionContext;
 use crate::execution::validation::state_transition::documents_batch::state::v0::data_triggers::execute_data_triggers;
-use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::rpc::core::CoreRPCLike;
 use crate::execution::validation::state_transition::documents_batch::state::v0::validate_documents_batch_transition_state::validate_document_batch_transition_state;
 
@@ -19,48 +23,62 @@ pub mod validate_documents_batch_transition_state;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStateValidationV0
 {
-    fn validate_state_v0<C: CoreRPCLike>(
+    fn validate_state_v0(
         &self,
         action: DocumentsBatchTransitionAction,
-        platform: &PlatformRef<C>,
+        platform: &PlatformStateRef,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
-    fn transform_into_action_v0<C: CoreRPCLike>(
+    fn transform_into_action_v0(
         &self,
-        platform: &PlatformRef<C>,
+        platform: &PlatformStateRef,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
 impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition {
-    fn validate_state_v0<C: CoreRPCLike>(
+    fn validate_state_v0(
         &self,
-        action: DocumentsBatchTransitionAction,
-        platform: &PlatformRef<C>,
-        tx: TransactionArg,
+        state_transition_action: DocumentsBatchTransitionAction,
+        platform: &PlatformStateRef,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::new();
+
         let mut state_transition_execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
-        //todo: we have the action already created, we should use it instead of making another action
+        let owner_id = state_transition_action.owner_id();
 
-        let mut validation_result = validate_document_batch_transition_state(
-            false,
-            &platform.into(),
-            self,
-            tx,
-            &mut state_transition_execution_context,
-        )?;
-
-        // Do not execute data triggers if there are already any state-based errors
-        if !validation_result.is_valid_with_data() {
-            return Ok(validation_result.map(Into::into));
+        // Next we need to validate the structure of all actions (this means with the data contract)
+        for transition in state_transition_action.transitions() {
+            match transition {
+                DocumentTransitionAction::CreateAction(create_action) => {
+                    let result = create_action.validate_state(platform, owner_id, transaction,  platform_version)?;
+                    if !result.is_valid() {
+                        validation_result.add_errors(result.errors);
+                        return Ok(validation_result);
+                    }
+                }
+                DocumentTransitionAction::ReplaceAction(replace_action) => {
+                    let result = replace_action.validate_state(platform, owner_id, transaction, platform_version)?;
+                    if !result.is_valid() {
+                        validation_result.add_errors(result.errors);
+                        return Ok(validation_result);
+                    }
+                }
+                DocumentTransitionAction::DeleteAction(delete_action) => {
+                    let result = delete_action.validate_state(owner_id)?;
+                    if !result.is_valid() {
+                        validation_result.add_errors(result.errors);
+                        return Ok(validation_result);
+                    }
+                }
+            }
         }
-
-        let state_transition_action = validation_result.data.as_ref().unwrap();
 
         let data_trigger_execution_context = DataTriggerExecutionContext {
             platform: &platform.into(),
@@ -77,24 +95,20 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
 
         validation_result.add_errors_into(data_triggers_validation_result.errors);
 
-        Ok(validation_result.map(Into::into))
+        validation_result.set_data(state_transition_action.into());
+
+        Ok(validation_result)
     }
 
-    fn transform_into_action_v0<C: CoreRPCLike>(
+    fn transform_into_action_v0(
         &self,
-        platform: &PlatformRef<C>,
+        platform: &PlatformStateRef,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
         let mut execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
-        let validation_result = validate_document_batch_transition_state(
-            true,
-            &platform.into(),
-            self,
-            tx,
-            &mut execution_context,
-        )?;
+        let validation_result = self.try_into_action_v0(&platform.into(), tx, &mut execution_context)?;
         Ok(validation_result.map(Into::into))
     }
 }

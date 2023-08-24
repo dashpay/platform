@@ -181,28 +181,7 @@ fn validate_document_transitions_within_document_type(
 
     let document_type = data_contract.document_type_for_name(document_type_name)?;
 
-    // we fetch all documents needed for the transitions
-    // for create they should not exist
-    // for replace/patch they should
-    // for delete they should
-    // Validation will come after, but doing one request can be faster.
-    let fetched_documents_validation_result =
-        fetch_documents_for_transitions_knowing_contract_and_document_type(
-            platform.drive,
-            data_contract,
-            document_type,
-            document_transitions,
-            transaction,
-            platform_version,
-        )?;
 
-    if !fetched_documents_validation_result.is_valid() {
-        return Ok(ConsensusValidationResult::new_with_errors(
-            fetched_documents_validation_result.errors,
-        ));
-    }
-
-    let fetched_documents = fetched_documents_validation_result.into_data()?;
 
     let document_transition_actions_result = if !dry_run {
         let document_transition_actions_validation_result = document_transitions
@@ -263,41 +242,9 @@ fn validate_transition<'a>(
         DocumentTransition::Create(document_create_transition) => {
             let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new();
             if !bypass_validation {
-                let validation_result = check_if_timestamps_are_equal(transition);
-                result.merge(validation_result);
 
-                if !result.is_valid() {
-                    return Ok(result);
-                }
 
-                // We do not need to perform these checks on genesis
-                if let Some(latest_block_time_ms) = latest_block_time_ms {
-                    let validation_result = check_created_inside_time_window(
-                        transition,
-                        latest_block_time_ms,
-                        average_block_spacing_ms,
-                        platform_version,
-                    )?;
-                    result.merge(validation_result);
 
-                    if !result.is_valid() {
-                        return Ok(result);
-                    }
-                    let validation_result = check_updated_inside_time_window(
-                        transition,
-                        latest_block_time_ms,
-                        average_block_spacing_ms,
-                        platform_version,
-                    )?;
-                    result.merge(validation_result);
-
-                    if !result.is_valid() {
-                        return Ok(result);
-                    }
-                }
-
-                let validation_result =
-                    check_if_document_is_not_already_present(transition, fetched_documents);
                 result.merge(validation_result);
 
                 if !result.is_valid() {
@@ -310,17 +257,7 @@ fn validate_transition<'a>(
             })?;
 
             if !bypass_validation {
-                let validation_result = platform
-                    .drive
-                    .validate_document_create_transition_action_uniqueness(
-                        &data_contract_fetch_info.contract,
-                        document_type,
-                        &document_create_action,
-                        owner_id,
-                        transaction,
-                        platform_version,
-                    )?;
-                result.merge(validation_result);
+
             }
 
             if result.is_valid() {
@@ -333,19 +270,7 @@ fn validate_transition<'a>(
             let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new();
             let document_replace_action = if !bypass_validation {
                 // We do not need to perform this check on genesis
-                if let Some(latest_block_time_ms) = latest_block_time_ms {
-                    let validation_result = check_updated_inside_time_window(
-                        transition,
-                        latest_block_time_ms,
-                        average_block_spacing_ms,
-                        platform_version,
-                    )?;
-                    result.merge(validation_result);
 
-                    if !result.is_valid() {
-                        return Ok(result);
-                    }
-                }
 
                 let validation_result =
                     check_if_document_can_be_found(transition, fetched_documents);
@@ -359,15 +284,14 @@ fn validate_transition<'a>(
                 };
 
                 // we check the revision first because it is a more common issue
-                let validation_result =
-                    check_revision_is_bumped_by_one(document_replace_transition, original_document);
+
                 result.merge(validation_result);
 
                 if !result.is_valid() {
                     return Ok(result);
                 }
 
-                let validation_result = check_ownership(transition, original_document, &owner_id);
+
                 result.merge(validation_result);
 
                 if !result.is_valid() {
@@ -380,21 +304,11 @@ fn validate_transition<'a>(
                         |_identifier| Ok(data_contract_fetch_info.clone()),
                     )?;
 
-                let validation_result = platform
-                    .drive
-                    .validate_document_replace_transition_action_uniqueness(
-                        &data_contract_fetch_info.contract,
-                        document_type,
-                        &document_replace_action,
-                        owner_id,
-                        transaction,
-                        platform_version,
-                    )?;
+
                 result.merge(validation_result);
                 document_replace_action
             } else {
-                let validation_result =
-                    check_if_document_can_be_found(transition, fetched_documents);
+
                 // There is a case where we updated a just deleted document
                 // In this case we don't care about the created at
                 let original_document_created_at = if validation_result.is_valid() {
@@ -449,57 +363,8 @@ fn validate_transition<'a>(
     }
 }
 
-pub fn check_ownership(
-    document_transition: &DocumentTransition,
-    fetched_document: &Document,
-    owner_id: &Identifier,
-) -> SimpleConsensusValidationResult {
-    let mut result = SimpleConsensusValidationResult::default();
-    if fetched_document.owner_id() != owner_id {
-        result.add_error(ConsensusError::StateError(
-            StateError::DocumentOwnerIdMismatchError(DocumentOwnerIdMismatchError::new(
-                document_transition.base().id(),
-                owner_id.to_owned(),
-                fetched_document.owner_id(),
-            )),
-        ));
-    }
-    result
-}
 
-pub fn check_revision_is_bumped_by_one(
-    document_transition: &DocumentReplaceTransition,
-    original_document: &Document,
-) -> SimpleConsensusValidationResult {
-    let mut result = SimpleConsensusValidationResult::default();
 
-    let revision = document_transition.revision();
-
-    // If there was no previous revision this means that the document_type is not update-able
-    // However this should have been caught earlier
-    let Some(previous_revision) =  original_document.revision() else {
-        result.add_error(ConsensusError::StateError(
-            StateError::InvalidDocumentRevisionError(
-                InvalidDocumentRevisionError::new(
-                    document_transition.base().id(),
-                    None,
-                )
-            )
-        ));
-        return result;
-    };
-    // no need to check bounds here, because it would be impossible to hit the end on a u64
-    let expected_revision = previous_revision + 1;
-    if revision != expected_revision {
-        result.add_error(ConsensusError::StateError(
-            StateError::InvalidDocumentRevisionError(InvalidDocumentRevisionError::new(
-                document_transition.base().id(),
-                Some(previous_revision),
-            )),
-        ))
-    }
-    result
-}
 
 /// We don't want the document id to already be present in the state
 pub fn check_if_document_is_not_already_present(
@@ -519,111 +384,4 @@ pub fn check_if_document_is_not_already_present(
         ))
     }
     result
-}
-
-pub fn check_if_document_can_be_found<'a>(
-    document_transition: &'a DocumentTransition,
-    fetched_documents: &'a [Document],
-) -> ConsensusValidationResult<&'a Document> {
-    let maybe_fetched_document = fetched_documents
-        .iter()
-        .find(|d| d.id() == document_transition.base().id());
-
-    if let Some(document) = maybe_fetched_document {
-        ConsensusValidationResult::new_with_data(document)
-    } else {
-        ConsensusValidationResult::new_with_error(ConsensusError::StateError(
-            StateError::DocumentNotFoundError(DocumentNotFoundError::new(
-                document_transition.base().id(),
-            )),
-        ))
-    }
-}
-
-pub fn check_if_timestamps_are_equal(
-    document_transition: &DocumentTransition,
-) -> SimpleConsensusValidationResult {
-    let mut result = SimpleConsensusValidationResult::default();
-    let created_at = document_transition.created_at();
-    let updated_at = document_transition.updated_at();
-
-    if created_at.is_some() && updated_at.is_some() && updated_at.unwrap() != created_at.unwrap() {
-        result.add_error(ConsensusError::StateError(
-            StateError::DocumentTimestampsMismatchError(DocumentTimestampsMismatchError::new(
-                document_transition.base().id(),
-            )),
-        ));
-    }
-
-    result
-}
-
-pub fn check_created_inside_time_window(
-    document_transition: &DocumentTransition,
-    last_block_ts_millis: TimestampMillis,
-    average_block_spacing_ms: u64,
-    platform_version: &PlatformVersion,
-) -> Result<SimpleConsensusValidationResult, Error> {
-    let mut result = SimpleConsensusValidationResult::default();
-    let created_at = match document_transition.created_at() {
-        Some(t) => t,
-        None => return Ok(result),
-    };
-
-    let window_validation = validate_time_in_block_time_window(
-        last_block_ts_millis,
-        created_at,
-        average_block_spacing_ms,
-        platform_version,
-    )
-    .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
-    if !window_validation.valid {
-        result.add_error(ConsensusError::StateError(
-            StateError::DocumentTimestampWindowViolationError(
-                DocumentTimestampWindowViolationError::new(
-                    String::from("createdAt"),
-                    document_transition.base().id(),
-                    created_at as i64,
-                    window_validation.time_window_start as i64,
-                    window_validation.time_window_end as i64,
-                ),
-            ),
-        ));
-    }
-    Ok(result)
-}
-
-pub fn check_updated_inside_time_window(
-    document_transition: &DocumentTransition,
-    last_block_ts_millis: TimestampMillis,
-    average_block_spacing_ms: u64,
-    platform_version: &PlatformVersion,
-) -> Result<SimpleConsensusValidationResult, Error> {
-    let mut result = SimpleConsensusValidationResult::default();
-    let updated_at = match document_transition.updated_at() {
-        Some(t) => t,
-        None => return Ok(result),
-    };
-
-    let window_validation = validate_time_in_block_time_window(
-        last_block_ts_millis,
-        updated_at,
-        average_block_spacing_ms,
-        platform_version,
-    )
-    .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
-    if !window_validation.valid {
-        result.add_error(ConsensusError::StateError(
-            StateError::DocumentTimestampWindowViolationError(
-                DocumentTimestampWindowViolationError::new(
-                    String::from("updatedAt"),
-                    document_transition.base().id(),
-                    updated_at as i64,
-                    window_validation.time_window_start as i64,
-                    window_validation.time_window_end as i64,
-                ),
-            ),
-        ));
-    }
-    Ok(result)
 }
