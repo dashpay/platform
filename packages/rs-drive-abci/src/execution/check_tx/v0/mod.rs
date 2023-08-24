@@ -305,15 +305,13 @@ mod tests {
             )
             .expect("expected a random document");
 
-        document.set("avatarUrl", "www.pics.com/cat.png".into());
+        document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
         let mut altered_document = document.clone();
 
         altered_document.increment_revision().unwrap();
         altered_document.set("displayName", "Samuel".into());
-        altered_document.set("avatarUrl", "www.pics.com/dog.png".into());
-
-        dbg!(&document);
+        altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
 
         let documents_batch_create_transition =
             DocumentsBatchTransition::new_document_creation_transition_from_document(

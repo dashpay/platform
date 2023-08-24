@@ -10,13 +10,13 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use dpp::version::PlatformVersion;
 use crate::error::Error;
 
-pub(super) trait DocumentCreateTransitionActionValidationV0 {
+pub(super) trait DocumentCreateTransitionActionStructureValidationV0 {
     fn validate_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
-impl DocumentCreateTransitionActionValidationV0 for DocumentCreateTransitionAction {
+impl DocumentCreateTransitionActionStructureValidationV0 for DocumentCreateTransitionAction {
     fn validate_structure_v0(
         &self,
         platform_version: &PlatformVersion,

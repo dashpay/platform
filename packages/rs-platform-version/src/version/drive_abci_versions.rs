@@ -48,6 +48,9 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub document_create_transition_structure_validation: FeatureVersion,
     pub document_delete_transition_structure_validation: FeatureVersion,
     pub document_replace_transition_structure_validation: FeatureVersion,
+    pub document_create_transition_state_validation: FeatureVersion,
+    pub document_delete_transition_state_validation: FeatureVersion,
+    pub document_replace_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
