@@ -185,7 +185,7 @@ impl StateTransitionFactoryWasm {
     pub async fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
-        options: JsValue,
+        _options: JsValue,
     ) -> Result<JsValue, JsValue> {
         // let options: FromObjectOptions = if options.is_object() {
         //     with_js_error!(serde_wasm_bindgen::from_value(options))?

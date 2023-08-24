@@ -4,7 +4,6 @@ use crate::identifier::IdentifierWrapper;
 use crate::identity::IdentityPublicKeyWasm;
 use crate::metadata::MetadataWasm;
 use crate::utils::{IntoWasm, WithJsError};
-use crate::identity::state_transition::create_asset_lock_proof_from_wasm_instance;
 use crate::{utils, with_js_error};
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;

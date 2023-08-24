@@ -1,7 +1,6 @@
 use std::convert::TryInto;
 use std::default::Default;
 
-use dpp::consensus::signature::SignatureError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::__rt::Ref;
@@ -10,7 +9,7 @@ use wasm_bindgen::prelude::*;
 use crate::identifier::IdentifierWrapper;
 
 use crate::{
-    buffer::Buffer, errors::RustConversionError,
+    buffer::Buffer,
     identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm,
     identity::IdentityPublicKeyWasm, utils, with_js_error,
 };
@@ -19,7 +18,6 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
 use crate::utils::{generic_of_js_val, WithJsError};
 
-use dpp::consensus::ConsensusError;
 use dpp::identity::{KeyID, KeyType, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData, ReplacementType, Value};
@@ -31,9 +29,7 @@ use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::StateTransition;
 use dpp::state_transition::StateTransitionIdentitySigned;
-use dpp::{
-    identifier::Identifier, platform_value, state_transition::StateTransitionLike, ProtocolError,
-};
+use dpp::{identifier::Identifier, state_transition::StateTransitionLike};
 
 #[wasm_bindgen(js_name=IdentityUpdateTransition)]
 #[derive(Clone)]
@@ -64,12 +60,12 @@ impl From<IdentityUpdateTransitionWasm> for IdentityUpdateTransition {
     }
 }
 
-pub fn js_value_to_identity_update_transition_object(object: JsValue) -> Result<Value, JsValue> {
-    let parameters: IdentityUpdateTransitionParams =
-        with_js_error!(serde_wasm_bindgen::from_value(object))?;
-
-    platform_value::to_value(parameters).map_err(|e| e.to_string().into())
-}
+// pub fn js_value_to_identity_update_transition_object(object: JsValue) -> Result<Value, JsValue> {
+//     let parameters: IdentityUpdateTransitionParams =
+//         with_js_error!(serde_wasm_bindgen::from_value(object))?;
+//
+//     platform_value::to_value(parameters).map_err(|e| e.to_string().into())
+// }
 
 #[wasm_bindgen(js_class = IdentityUpdateTransition)]
 impl IdentityUpdateTransitionWasm {
