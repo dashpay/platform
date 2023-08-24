@@ -175,6 +175,7 @@ mod tests {
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 
+        use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
         use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
         use dpp::platform_value::platform_value;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
@@ -234,7 +235,7 @@ mod tests {
             };
 
             let result = DataContractUpdateTransition::V0(state_transition)
-                .validate_state(&platform_ref, None)
+                .validate_state(None, &platform_ref, None)
                 .expect("state transition to be validated");
 
             assert!(!result.is_valid());
@@ -305,7 +306,7 @@ mod tests {
             };
 
             let result = DataContractUpdateTransition::V0(state_transition)
-                .validate_state(&platform_ref, None)
+                .validate_state(None, &platform_ref, None)
                 .expect("state transition to be validated");
 
             assert!(result.is_valid());
@@ -445,7 +446,7 @@ mod tests {
             };
 
             let result = state_transition
-                .validate_state(&platform_ref, None)
+                .validate_state(None, &platform_ref, None)
                 .expect("state transition to be validated");
 
             assert!(!result.is_valid());
