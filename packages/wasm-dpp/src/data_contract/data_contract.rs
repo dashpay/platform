@@ -90,12 +90,21 @@ impl Into<DataContract> for DataContractWasm {
 #[wasm_bindgen(js_class=DataContract)]
 impl DataContractWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_parameters: JsValue) -> Result<DataContractWasm, JsValue> {
+    pub fn new(
+        raw_parameters: JsValue,
+        options: Option<js_sys::Object>,
+    ) -> Result<DataContractWasm, JsValue> {
+        let skip_validation = if let Some(opts) = options {
+            get_bool_from_options(opts.into(), SKIP_VALIDATION_PROPERTY_NAME, false)?
+        } else {
+            false
+        };
+
         let platform_version = PlatformVersion::first();
 
         DataContract::from_value(
             raw_parameters.with_serde_to_platform_value()?,
-            true,
+            !skip_validation,
             platform_version,
         )
         .with_js_error()
