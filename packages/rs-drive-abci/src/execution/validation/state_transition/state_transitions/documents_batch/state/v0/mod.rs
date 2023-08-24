@@ -45,6 +45,8 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
         let mut state_transition_execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
+        //todo: we have the action already created, we should use it instead of making another action
+
         let mut validation_result = validate_document_batch_transition_state(
             false,
             &platform.into(),
