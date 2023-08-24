@@ -21,7 +21,18 @@ use crate::identity::{KeyID, TimestampMillis};
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 
 #[derive(
-    Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq, Eq, Ord, PartialOrd, Hash,
+    Default,
+    Debug,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    Clone,
+    PartialEq,
+    Eq,
+    Ord,
+    PartialOrd,
+    Hash,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKeyV0 {
