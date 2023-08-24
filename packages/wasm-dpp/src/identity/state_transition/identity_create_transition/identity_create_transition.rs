@@ -7,8 +7,6 @@ use wasm_bindgen::prelude::*;
 
 use dpp::identity::KeyType;
 use dpp::platform_value::BinaryData;
-use dpp::serialization::PlatformMessageSignable;
-use dpp::signing::*;
 
 use crate::bls_adapter::BlsAdapter;
 

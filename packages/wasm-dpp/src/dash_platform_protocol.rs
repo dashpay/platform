@@ -1,7 +1,6 @@
 use wasm_bindgen::prelude::*;
 
 use dpp::dash_platform_protocol::DashPlatformProtocol;
-use dpp::state_transition::StateTransition;
 use dpp::version::LATEST_VERSION;
 
 use crate::entropy_generator::ExternalEntropyGenerator;
@@ -16,7 +15,7 @@ static mut LOGGER_INITIALIZED: bool = false;
 impl DashPlatformProtocolWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        entropy_generator: ExternalEntropyGenerator,
+        _entropy_generator: ExternalEntropyGenerator,
         maybe_protocol_version: Option<u32>,
     ) -> Result<DashPlatformProtocolWasm, JsValue> {
         // Initialize logger only once to avoid repeating warnings
