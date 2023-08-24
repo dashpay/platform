@@ -10,13 +10,13 @@ use dpp::version::PlatformVersion;
 use crate::error::Error;
 
 pub(super) trait DocumentReplaceTransitionActionValidationV0 {
-    fn validate_v0(
+    fn validate_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 impl DocumentReplaceTransitionActionValidationV0 for DocumentReplaceTransitionAction {
-    fn validate_v0(
+    fn validate_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {

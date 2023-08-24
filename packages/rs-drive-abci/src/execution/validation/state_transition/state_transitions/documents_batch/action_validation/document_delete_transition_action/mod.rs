@@ -8,14 +8,14 @@ use crate::execution::validation::state_transition::documents_batch::action_vali
 
 mod v0;
 pub trait DocumentDeleteTransitionActionValidation {
-    fn validate(
+    fn validate_structure(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
 impl DocumentDeleteTransitionActionValidation for DocumentDeleteTransitionAction {
-    fn validate(
+    fn validate_structure(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -24,9 +24,9 @@ impl DocumentDeleteTransitionActionValidation for DocumentDeleteTransitionAction
             .validation_and_processing
             .state_transitions
             .documents_batch_state_transition
-            .document_delete_transition
+            .document_delete_transition_structure_validation
         {
-            0 => self.validate_v0(platform_version),
+            0 => self.validate_structure_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentDeleteTransitionAction::validate".to_string(),
                 known_versions: vec![0],

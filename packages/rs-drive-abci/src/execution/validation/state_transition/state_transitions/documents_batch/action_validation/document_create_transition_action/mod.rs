@@ -10,14 +10,14 @@ use crate::execution::validation::state_transition::documents_batch::action_vali
 mod v0;
 
 pub trait DocumentCreateTransitionActionValidation {
-    fn validate(
+    fn validate_structure(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
 impl DocumentCreateTransitionActionValidation for DocumentCreateTransitionAction {
-    fn validate(
+    fn validate_structure(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -26,9 +26,9 @@ impl DocumentCreateTransitionActionValidation for DocumentCreateTransitionAction
             .validation_and_processing
             .state_transitions
             .documents_batch_state_transition
-            .document_create_transition
+            .document_create_transition_structure_validation
         {
-            0 => self.validate_v0(platform_version),
+            0 => self.validate_structure_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentCreateTransitionAction::validate".to_string(),
                 known_versions: vec![0],

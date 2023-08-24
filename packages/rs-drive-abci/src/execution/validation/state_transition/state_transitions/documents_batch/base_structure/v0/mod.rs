@@ -67,19 +67,19 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
         for transition in action.transitions() {
             match transition {
                 DocumentTransitionAction::CreateAction(create_action) => {
-                    let result = create_action.validate(platform_version)?;
+                    let result = create_action.validate_structure(platform_version)?;
                     if !result.is_valid() {
                         return Ok(result);
                     }
                 }
                 DocumentTransitionAction::ReplaceAction(replace_action) => {
-                    let result = replace_action.validate(platform_version)?;
+                    let result = replace_action.validate_structure(platform_version)?;
                     if !result.is_valid() {
                         return Ok(result);
                     }
                 }
                 DocumentTransitionAction::DeleteAction(delete_action) => {
-                    let result = delete_action.validate(platform_version)?;
+                    let result = delete_action.validate_structure(platform_version)?;
                     if !result.is_valid() {
                         return Ok(result);
                     }

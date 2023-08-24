@@ -5,13 +5,13 @@ use dpp::version::PlatformVersion;
 use crate::error::Error;
 
 pub(super) trait DocumentDeleteTransitionActionValidationV0 {
-    fn validate_v0(
+    fn validate_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 impl DocumentDeleteTransitionActionValidationV0 for DocumentDeleteTransitionAction {
-    fn validate_v0(
+    fn validate_structure_v0(
         &self,
         _platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
