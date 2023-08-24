@@ -1,0 +1,41 @@
+[
+    {
+        "identity_id": "GSF1dFwLfNZiiKp3nt6pG1y2bIkiOCXiS6+546O9kw8=",
+        "limit": 11,
+        "prove": true,
+        "request_type": {
+            "request": {
+                "specific_keys": {
+                    "key_ids": [
+                        447312228,
+                        2681938691,
+                        2811793709,
+                        460355827
+                    ]
+                }
+            }
+        }
+    },
+    {
+        "metadata": {
+            "height": "654",
+            "core_chain_locked_height": 1759,
+            "time_ms": "1692715734849",
+            "protocol_version": 1,
+            "chain_id": "dashmate_local_15"
+        },
+        "result": {
+            "proof": {
+                "grovedb_proof": "BQHRAQHM5vHXEw9e5B3nIGJuaJggPt2lIy0EIdW+KGYNX9jm5gQBIAAkAgEgn2WlCmdZa3aGIz7NDvWCqFa+KfeLcarKW0WH8vLbYZgA+fmQX0JMH9ItotiS13oIZ9j1Lzaesoho3lj6Ils4qAsQAcmGMiTwAuTiEACbemoawmBAfx5TAFbyge6iwFruUlbFEQJGEhUmL93IyCmAnX5/T4d3/N6s6igeQZ8bxJf0bWLswBABeg/vGcLDxl7WCFamnojQ2AnfxmgnJd6HL8m44z6CxM0RAZUDAcsk+LLX04alrcToq5XxW4cfq0FD9x4Mb0BsL5KWpSAWAm8Zb1KWh3NFU29VWry4OaYyAMAwDpwoA1nzizo5R1FSEALK/IVyGWTp3oEAETKGcJee0C4EH1UkTIa6xFmQKuzquQUgFVGe2wZWhwuU/JP7EAe9htByh9N6rCwDQW75xobMbbGKp3uQuKnr/5DBBbFmx6m13ciFQTnHGQl7s4FOuSuxqxERBSAZNX+RI6nqOGkES/u0IOZgXCKb6mYHr5lV6oyHQGJfXZSxvhVXL6p1LBzWHCverFmbYBy/IJZ54qZBS3PfS39GEAEyVOc7QkBy9kemHTccZExXAZRHrMRPMIlzZS8pekSGFxECuPWaHxqvAt6vEi3wP7/y6zQ2VtnWcCArJB6V6DMfhDUQAZwlwIi7Y4DW+xPXFywzzsdp5puiFME0zqQHz5szDrcuEQKBtH2r5k8UcY2nf7+uHCAVPr6d9oTN6LiLra/Dx6E4lhABs3f1o4KUTWd0pg/Cknp/24VD0polpXG2MVr7tLKg1qER",
+                "quorum_hash": "IOec6pnhAAPQ5DqBNdx4GwfiH1FUq0iC/F9deWNskpA=",
+                "signature": "i/LzcA1nIxEsDvoLW5fYDoBq2LUfZ4R1ZBa1QVxFsu7rYvS6yPF5Ipym+ckzxsIIDUp7EC0atqKjjoVkrAn0sYEnzV+yzdipEGA7grBz0x1V1CiBgHA797BPaLBLkWxL",
+                "round": 0,
+                "block_id_hash": "XepiGmSqqmW2itKpGrxQ6K97ZNsV5hISeMisuyv1/D4=",
+                "quorum_type": 106
+            }
+        }
+    },
+    {
+        "quorum_public_key": "824bb779437ecbc6f8e9bc255a9c1c489b75265293af958b2b12dbdb2885f68097a57dfdfeee6dc78da5ea913d9e7b2b"
+    }
+]

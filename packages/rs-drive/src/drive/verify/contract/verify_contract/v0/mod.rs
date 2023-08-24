@@ -78,9 +78,10 @@ impl Drive {
             }
         };
         if proved_key_values.len() == 0 {
-            return Err(Error::Proof(ProofError::WrongElementCount(
-                "expected one element (even if it is none)",
-            )));
+            return Err(Error::Proof(ProofError::WrongElementCount {
+                expected: 1,
+                got: proved_key_values.len(),
+            }));
         }
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = proved_key_values.remove(0);

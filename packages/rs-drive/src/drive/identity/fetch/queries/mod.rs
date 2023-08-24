@@ -3,7 +3,8 @@ use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 
 use crate::error::Error;
 
-use crate::drive::balances::balance_path_vec;
+use crate::drive::identity::identity_path_vec;
+use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 use crate::error::query::QuerySyntaxError;
 use grovedb::{PathQuery, Query, SizedQuery};
 
@@ -54,6 +55,20 @@ pub struct IdentityDriveQuery {
 }
 
 impl Drive {
+    /// The path query for the revision of an identity
+    pub fn revision_for_identity_id_path_query(identity_id: [u8; 32]) -> PathQuery {
+        let revision_path = identity_path_vec(&identity_id);
+        PathQuery::new_single_key(revision_path, vec![IdentityTreeRevision as u8])
+    }
+
+    /// The path query for the revision and the balance of an identity
+    pub fn revision_and_balance_path_query(identity_id: [u8; 32]) -> PathQuery {
+        let revision_query = Self::revision_for_identity_id_path_query(identity_id);
+        let balance_query = Self::balance_for_identity_id_query(identity_id);
+        PathQuery::merge(vec![&revision_query, &balance_query])
+            .expect("expected to be able to merge path queries")
+    }
+
     /// The query for proving an identity id from a public key hash.
     pub fn identity_id_by_unique_public_key_hash_query(public_key_hash: [u8; 20]) -> PathQuery {
         let unique_key_hashes = unique_key_hashes_tree_path_vec();

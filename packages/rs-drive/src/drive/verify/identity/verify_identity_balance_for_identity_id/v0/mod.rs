@@ -44,11 +44,12 @@ impl Drive {
         identity_id: [u8; 32],
         verify_subset_of_proof: bool,
     ) -> Result<(RootHash, Option<u64>), Error> {
-        let path_query = Self::identity_balance_query(&identity_id);
+        let mut path_query = Self::identity_balance_query(&identity_id);
+        path_query.query.limit = Some(1);
         let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
-            GroveDb::verify_subset_query(proof, &path_query)?
+            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
         } else {
-            GroveDb::verify_query(proof, &path_query)?
+            GroveDb::verify_query_with_absence_proof(proof, &path_query)?
         };
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = &proved_key_values.remove(0);

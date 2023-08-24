@@ -69,6 +69,7 @@ pub mod update;
 #[cfg(feature = "full")]
 pub use withdrawals::paths::add_initial_withdrawal_state_structure_operations;
 
+use crate::drive::identity::IdentityRootStructure::IdentityTreeRevision;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use fetch::queries::*;
 

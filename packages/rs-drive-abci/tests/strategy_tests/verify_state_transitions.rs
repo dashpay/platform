@@ -13,6 +13,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
+use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use prost::Message;
@@ -419,8 +420,11 @@ pub(crate) fn verify_state_transitions_were_executed(
                 // we expect to get an identity that matches the state transition
                 let (root_hash, identity) = Drive::verify_identity_keys_by_identity_id(
                     &response_proof.grovedb_proof,
+                    IdentityKeysRequest::new_all_keys_query(
+                        &identity_update_transition.identity_id.into_buffer(),
+                        None,
+                    ),
                     false,
-                    identity_update_transition.identity_id().into_buffer(),
                     platform_version,
                 )
                 .expect("expected to verify identity keys");
