@@ -8,10 +8,10 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
 use crate::document::errors::*;
 #[cfg(feature = "validation")]
+use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use crate::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
-    PublicKeySecurityLevelNotMetError, StateTransitionError, StateTransitionIsNotSignedError,
-    WrongPublicKeyPurposeError,
+    InvalidSignaturePublicKeyError, PublicKeyMismatchError, PublicKeySecurityLevelNotMetError,
+    StateTransitionError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
 };
 use crate::{
     CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError, NonConsensusError,

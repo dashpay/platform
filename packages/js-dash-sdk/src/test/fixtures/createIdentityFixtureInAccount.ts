@@ -13,6 +13,7 @@ export async function createIdentityFixtureInAccount(account) {
     .identities.getIdentityHDKeyByIndex(identityFixtureIndex, 1);
 
   const publicKeyOne = new IdentityPublicKey({
+    $version: '0',
     id: 0,
     type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
     data: identityMasterPrivateKey.toPublicKey().toBuffer(),
@@ -22,6 +23,7 @@ export async function createIdentityFixtureInAccount(account) {
   });
 
   const publicKeyOneTwo = new IdentityPublicKey({
+    $version: '0',
     id: 1,
     type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
     data: identitySecondPrivateKey.toPublicKey().toBuffer(),

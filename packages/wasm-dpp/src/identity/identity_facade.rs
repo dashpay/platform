@@ -1,24 +1,21 @@
 use std::convert::TryInto;
 
-use std::sync::Arc;
-
 use wasm_bindgen::prelude::*;
 
 use dpp::identity::{Identity, IdentityFacade};
 
-use crate::bls_adapter::BlsAdapter;
 use crate::buffer::Buffer;
 use crate::errors::{from_dpp_err, RustConversionError};
 use crate::identifier::IdentifierWrapper;
 use crate::identity::errors::InvalidIdentityError;
 
 use crate::identity::state_transition::{
-    create_asset_lock_proof_from_wasm_instance, AssetLockProofWasm, ChainAssetLockProofWasm,
+    create_asset_lock_proof_from_wasm_instance, ChainAssetLockProofWasm,
     IdentityCreateTransitionWasm, IdentityCreditTransferTransitionWasm,
     IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, InstantAssetLockProofWasm,
 };
 
-use crate::utils::{ToSerdeJSONExt, WithJsError};
+use crate::utils::WithJsError;
 use crate::with_js_error;
 use dpp::dashcore::{consensus, InstantLock, Transaction};
 

@@ -1,21 +1,21 @@
 use wasm_bindgen::prelude::*;
 
+use dpp::dash_platform_protocol::DashPlatformProtocol;
 use dpp::version::LATEST_VERSION;
-use dpp::DashPlatformProtocol;
 
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::identity::identity_facade::IdentityFacadeWasm;
+use crate::state_transition::state_transition_factory::StateTransitionFactoryWasm;
 
 #[wasm_bindgen(js_name=DashPlatformProtocol)]
 pub struct DashPlatformProtocolWasm(DashPlatformProtocol);
-
 static mut LOGGER_INITIALIZED: bool = false;
 
 #[wasm_bindgen(js_class=DashPlatformProtocol)]
 impl DashPlatformProtocolWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        entropy_generator: ExternalEntropyGenerator,
+        _entropy_generator: ExternalEntropyGenerator,
         maybe_protocol_version: Option<u32>,
     ) -> Result<DashPlatformProtocolWasm, JsValue> {
         // Initialize logger only once to avoid repeating warnings
@@ -49,11 +49,11 @@ impl DashPlatformProtocolWasm {
         // TODO: think if it's possible to avoid cloning
         self.0.identities().into()
     }
-    //
-    // #[wasm_bindgen(getter = stateTransition)]
-    // pub fn state_transition(&self) -> StateTransitionFacadeWasm {
-    //     self.state_transition.clone()
-    // }
+
+    #[wasm_bindgen(getter = stateTransition)]
+    pub fn state_transition(&self) -> StateTransitionFactoryWasm {
+        self.0.state_transition().into()
+    }
     //
     // #[wasm_bindgen(getter = protocolVersion)]
     // pub fn protocol_version(&self) -> u32 {
