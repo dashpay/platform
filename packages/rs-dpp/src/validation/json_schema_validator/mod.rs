@@ -1,17 +1,18 @@
 pub mod methods;
 
+use crate::data_contract::JsonValue;
 use crate::validation::{DataValidator, SimpleConsensusValidationResult};
-use crate::version::PlatformVersion;
 use anyhow::Context;
 use jsonschema::JSONSchema;
-use serde_json::Value as JsonValue;
+use platform_version::version::PlatformVersion;
+use std::sync::RwLock;
 
-// TODO: Remove?
+#[derive(Debug)]
 pub struct JsonSchemaValidator {
-    raw_schema_json: JsonValue,
-    schema: Option<JSONSchema>,
+    validator: RwLock<Option<JSONSchema>>,
 }
 
+// TODO: Remove?
 impl DataValidator for JsonSchemaValidator {
     type Item = JsonValue;
     fn validate(
@@ -21,7 +22,7 @@ impl DataValidator for JsonSchemaValidator {
     ) -> Result<SimpleConsensusValidationResult, crate::ProtocolError> {
         let result = self
             .validate(data, platform_version)
-            .context("error during validating json schema")?; // TODO: Remove?
+            .context("error during validating json schema")?;
         Ok(result)
     }
 }

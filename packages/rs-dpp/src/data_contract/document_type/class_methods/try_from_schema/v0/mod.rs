@@ -1,4 +1,6 @@
 use crate::data_contract::document_type::v0::DocumentTypeV0;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::TryInto;
 
@@ -54,12 +56,21 @@ impl DocumentTypeV0 {
         let root_schema = enrich_with_base_schema(
             schema.clone(),
             schema_defs.map(|defs| Value::from(defs.clone())),
-            &[],
             platform_version,
         )?;
 
         #[cfg(feature = "validation")]
+        let json_schema_validator = StatelessJsonSchemaLazyValidator::new();
+
+        #[cfg(feature = "validation")]
         if validate {
+            // Make sure JSON Schema is compilable
+            let root_json_schema = root_schema
+                .try_to_validating_json()
+                .map_err(ProtocolError::ValueError)?;
+
+            json_schema_validator.compile(&root_json_schema, platform_version)?;
+
             // Validate against JSON Schema
             DOCUMENT_META_SCHEMA_V0
                 .validate(
@@ -309,10 +320,7 @@ impl DocumentTypeV0 {
         // Collect binary and identifier properties
         let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
             &document_properties,
-            &platform_version
-                .dpp
-                .contract_versions
-                .document_type_versions,
+            &platform_version.dpp.contract_versions.document_type,
         )?;
 
         Ok(DocumentTypeV0 {
@@ -328,6 +336,8 @@ impl DocumentTypeV0 {
             documents_keep_history,
             documents_mutable,
             data_contract_id,
+            #[cfg(feature = "validation")]
+            json_schema_validator,
         })
     }
 }

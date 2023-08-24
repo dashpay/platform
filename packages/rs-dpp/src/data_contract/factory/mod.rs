@@ -9,7 +9,9 @@ use crate::ProtocolError;
 use derive_more::From;
 use platform_value::{Identifier, Value};
 
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::data_contract_create_transition::DataContractCreateTransition;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 pub use v0::DataContractFactoryV0;
 

@@ -1,32 +1,57 @@
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
-use crate::identity::{Identity, IdentityPublicKey, IdentityV0, KeyID, TimestampMillis};
+#[cfg(all(feature = "state-transitions", feature = "client"))]
+use crate::identity::{IdentityV0, TimestampMillis};
+
+use crate::identity::{Identity, IdentityPublicKey, KeyID};
 
 use crate::ProtocolError;
 
 use dashcore::{InstantLock, Transaction};
+#[cfg(all(feature = "state-transitions", feature = "client"))]
+use platform_value::Identifier;
 use std::collections::BTreeMap;
 
+#[cfg(all(feature = "identity-serialization", feature = "client"))]
 use crate::consensus::basic::decode::SerializedObjectParsingError;
+#[cfg(all(feature = "identity-serialization", feature = "client"))]
 use crate::consensus::basic::BasicError;
+#[cfg(all(feature = "identity-serialization", feature = "client"))]
 use crate::consensus::ConsensusError;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::accessors::IdentityGettersV0;
-#[cfg(all(feature = "validation", feature = "identity-value-conversion"))]
+#[cfg(feature = "validation")]
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
+#[cfg(all(feature = "identity-serialization", feature = "client"))]
 use crate::serialization::PlatformDeserializable;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::version::PlatformVersion;
-use platform_value::{Identifier, Value};
+#[cfg(any(
+    all(feature = "identity-serialization", feature = "client"),
+    feature = "identity-value-conversion"
+))]
+use platform_value::Value;
 use platform_version::TryIntoPlatformVersioned;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
@@ -70,7 +95,7 @@ impl IdentityFactory {
     pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
-        #[cfg(all(feature = "validation", feature = "identity-value-conversion"))] skip_validation: bool,
+        #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
         let identity: Identity = Identity::deserialize_no_limit(&buffer).map_err(|e| {
             ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
@@ -78,7 +103,7 @@ impl IdentityFactory {
             ))
         })?;
 
-        #[cfg(all(feature = "validation", feature = "identity-value-conversion"))]
+        #[cfg(feature = "validation")]
         if !skip_validation {
             self.validate_identity(&identity.to_cleaned_object()?)?;
         }
@@ -150,7 +175,7 @@ impl IdentityFactory {
             revision: 0,
         });
 
-        let mut identity_create_transition =
+        let identity_create_transition =
             IdentityCreateTransition::V0(IdentityCreateTransitionV0::try_from_identity(
                 identity.clone(),
                 asset_lock_proof,

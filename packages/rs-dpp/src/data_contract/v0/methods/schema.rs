@@ -1,14 +1,15 @@
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::v0::DataContractV0;
-use crate::data_contract::{DataContractMethodsV0, DefinitionName, DocumentName};
+use crate::data_contract::{DefinitionName, DocumentName};
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-impl DataContractMethodsV0 for DataContractV0 {
+impl DataContractSchemaMethodsV0 for DataContractV0 {
     fn set_document_schemas(
         &mut self,
         schemas: BTreeMap<DocumentName, Value>,
@@ -56,7 +57,7 @@ impl DataContractMethodsV0 for DataContractV0 {
     fn document_schemas(&self) -> BTreeMap<DocumentName, &Value> {
         self.document_types
             .iter()
-            .map(|(name, r#type)| (name.to_owned(), r#type.schema()))
+            .map(|(name, document_type)| (name.to_owned(), document_type.schema()))
             .collect()
     }
 

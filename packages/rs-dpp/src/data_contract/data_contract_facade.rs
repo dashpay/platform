@@ -7,8 +7,8 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::util::entropy_generator::EntropyGenerator;
-use crate::validation::SimpleConsensusValidationResult;
-use crate::version::FeatureVersion;
+
+
 use crate::ProtocolError;
 use platform_value::Value;
 

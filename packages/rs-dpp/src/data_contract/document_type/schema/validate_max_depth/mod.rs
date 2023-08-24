@@ -12,7 +12,7 @@ pub fn validate_max_depth(
     match platform_version
         .dpp
         .contract_versions
-        .document_type_versions
+        .document_type
         .schema
         .validate_max_depth
     {

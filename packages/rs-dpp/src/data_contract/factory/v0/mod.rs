@@ -194,8 +194,8 @@ impl DataContractFactoryV0 {
 mod tests {
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
-    use crate::data_contract::serialized_version::v0::property_names;
-    use crate::data_contract::DataContractMethodsV0;
+    use crate::data_contract::schema::DataContractSchemaMethodsV0;
+    
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::StateTransitionLike;
@@ -211,6 +211,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let created_data_contract =
             get_data_contract_fixture(None, platform_version.protocol_version);
+
         let raw_data_contract = created_data_contract
             .data_contract()
             .to_value(platform_version)
@@ -258,6 +259,7 @@ mod tests {
         // id is generated based on entropy which is different every time the `create` call is used
         assert_eq!(data_contract.id().len(), result.id().len());
         assert_ne!(data_contract.id(), result.id());
+        assert_eq!(data_contract.schema_defs(), result.schema_defs());
         assert_eq!(data_contract.document_schemas(), result.document_schemas());
         assert_eq!(data_contract.owner_id(), result.owner_id());
         assert_eq!(data_contract.metadata(), result.metadata());

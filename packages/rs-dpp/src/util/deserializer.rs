@@ -6,7 +6,7 @@ use platform_version::version::FeatureVersion;
 use serde_json::{Map, Number, Value as JsonValue};
 
 use crate::errors::ProtocolError;
-use crate::version::PlatformVersion;
+
 
 pub fn parse_protocol_version(
     protocol_bytes: &[u8],

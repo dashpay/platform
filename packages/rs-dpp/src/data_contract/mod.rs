@@ -232,7 +232,7 @@ impl DataContract {
         Ok(platform_version
             .dpp
             .contract_versions
-            .contract_structure_version
+            .contract_structure
             == data_contract_system_version)
     }
 
@@ -266,7 +266,7 @@ mod tests {
             platform_version
                 .dpp
                 .contract_versions
-                .contract_serialization_version
+                .contract_serialization
                 .default_current_version as u8
         );
 

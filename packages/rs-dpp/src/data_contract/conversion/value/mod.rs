@@ -16,7 +16,7 @@ impl DataContractValueConversionMethodsV0 for DataContract {
         match platform_version
             .dpp
             .contract_versions
-            .contract_structure_version
+            .contract_structure
         {
             0 => Ok(DataContractV0::from_value(raw_object, validate, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
