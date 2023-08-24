@@ -174,7 +174,7 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocumentV0 {
         match platform_version
             .dpp
             .contract_versions
-            .contract_serialization
+            .contract_serialization_version
             .default_current_version
         {
             0 => self.serialize_consume_v0(platform_version),

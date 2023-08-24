@@ -52,9 +52,8 @@ impl StateTransitionActionTransformerV0 for IdentityCreateTransition {
 impl StateTransitionStructureValidationV0 for IdentityCreateTransition {
     fn validate_structure(
         &self,
-        _drive: &Drive,
+        _action: Option<&StateTransitionAction>,
         protocol_version: u32,
-        _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let platform_version = PlatformVersion::get(protocol_version)?;
         match platform_version
@@ -64,7 +63,7 @@ impl StateTransitionStructureValidationV0 for IdentityCreateTransition {
             .identity_create_state_transition
             .structure
         {
-            0 => self.validate_structure_v0(platform_version),
+            0 => self.validate_base_structure_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create transition: validate_structure".to_string(),
                 known_versions: vec![0],
@@ -77,6 +76,7 @@ impl StateTransitionStructureValidationV0 for IdentityCreateTransition {
 impl StateTransitionStateValidationV0 for IdentityCreateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
+        _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {

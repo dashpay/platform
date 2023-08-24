@@ -1419,7 +1419,7 @@ impl From<&BTreeMap<String, Value>> for Value {
     fn from(value: &BTreeMap<String, Value>) -> Self {
         Value::Map(
             value
-                .into_iter()
+                .iter()
                 .map(|(key, value)| (key.into(), value.clone()))
                 .collect(),
         )

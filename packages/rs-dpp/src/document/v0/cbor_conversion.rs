@@ -5,7 +5,6 @@ use crate::document::property_names;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 
-
 use crate::ProtocolError;
 
 use crate::document::serialization_traits::{

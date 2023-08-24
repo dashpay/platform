@@ -21,7 +21,7 @@ impl DocumentType {
         match platform_version
             .dpp
             .contract_versions
-            .document_type
+            .document_type_versions
             .class_method_versions
             .try_from_schema
         {

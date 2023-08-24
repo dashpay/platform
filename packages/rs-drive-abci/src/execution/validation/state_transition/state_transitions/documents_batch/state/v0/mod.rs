@@ -4,6 +4,7 @@ use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::StateTransitionAction;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionContext;
@@ -20,6 +21,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
 {
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
+        action: DocumentsBatchTransitionAction,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
         platform_version: &PlatformVersion,
@@ -35,6 +37,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
 impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition {
     fn validate_state_v0<C: CoreRPCLike>(
         &self,
+        action: DocumentsBatchTransitionAction,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
         platform_version: &PlatformVersion,

@@ -90,7 +90,9 @@ impl DocumentCreateTransitionV0Methods for DocumentCreateTransition {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match self {
-            DocumentCreateTransition::V0(v0) => v0.validate(data_contract, owner_id, platform_version),
+            DocumentCreateTransition::V0(v0) => {
+                v0.validate(data_contract, owner_id, platform_version)
+            }
         }
     }
 }

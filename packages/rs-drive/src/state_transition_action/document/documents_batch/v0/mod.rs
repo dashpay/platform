@@ -1,5 +1,6 @@
 use crate::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::identifier::Identifier;
+use dpp::identity::SecurityLevel;
 
 #[derive(Default, Debug, Clone)]
 pub struct DocumentsBatchTransitionActionV0 {

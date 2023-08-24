@@ -1,5 +1,3 @@
-
-
 use crate::errors::DashPlatformProtocolInitError;
 use crate::identity::IdentityFacade;
 use crate::version::LATEST_VERSION;

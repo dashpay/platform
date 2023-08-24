@@ -19,7 +19,7 @@ impl DataContractJsonConversionMethodsV0 for DataContract {
         match platform_version
             .dpp
             .contract_versions
-            .contract_structure
+            .contract_structure_version
         {
             0 => Ok(DataContractV0::from_json(json_value, validate, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

@@ -4,6 +4,8 @@ use crate::data_contract::document_type::property::DocumentProperty;
 
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::document_type::DocumentTypeRef;
+use crate::identity::SecurityLevel;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub trait DocumentTypeV0Getters {
@@ -43,4 +45,5 @@ pub trait DocumentTypeV0Getters {
 
     /// Returns the data contract id of the document type.
     fn data_contract_id(&self) -> Identifier;
+    fn security_level_requirement(&self) -> SecurityLevel;
 }
