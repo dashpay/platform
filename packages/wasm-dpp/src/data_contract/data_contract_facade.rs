@@ -1,19 +1,20 @@
-use crate::errors::protocol_error::from_protocol_error;
 use std::convert::TryFrom;
 
-use crate::{
-    js_value_to_data_contract_value, DataContractCreateTransitionWasm,
-    DataContractUpdateTransitionWasm, DataContractWasm,
-};
-use dpp::data_contract::{CreatedDataContract, DataContract, DataContractFacade};
+use dpp::data_contract::created_data_contract::CreatedDataContract;
+use dpp::data_contract::DataContract;
+use dpp::data_contract::DataContractFacade;
 use dpp::identifier::Identifier;
-use dpp::version::ProtocolVersionValidator;
 
+use crate::data_contract::state_transition::DataContractCreateTransitionWasm;
+use crate::data_contract::state_transition::DataContractUpdateTransitionWasm;
+use crate::data_contract::DataContractWasm;
 use crate::entropy_generator::ExternalEntropyGenerator;
-use crate::utils::{get_bool_from_options, IntoWasm, WithJsError, SKIP_VALIDATION_PROPERTY_NAME};
-use crate::validation::ValidationResultWasm;
+use crate::errors::protocol_error::from_protocol_error;
+use crate::utils::{
+    get_bool_from_options, IntoWasm, ToSerdeJSONExt, WithJsError, SKIP_VALIDATION_PROPERTY_NAME,
+};
 
-use dpp::{ ProtocolError};
+use dpp::ProtocolError;
 use std::sync::Arc;
 
 use wasm_bindgen::prelude::*;
@@ -23,16 +24,9 @@ use wasm_bindgen::prelude::*;
 pub struct DataContractFacadeWasm(Arc<DataContractFacade>);
 
 impl DataContractFacadeWasm {
-    pub fn new(
-        protocol_version: u32,
-        protocol_version_validator: Arc<ProtocolVersionValidator>,
-        entropy_generator: ExternalEntropyGenerator,
-    ) -> Self {
-        let inner = DataContractFacade::new_with_entropy_generator(
-            protocol_version,
-            protocol_version_validator,
-            Box::new(entropy_generator),
-        );
+    pub fn new(protocol_version: u32, entropy_generator: ExternalEntropyGenerator) -> Self {
+        let inner = DataContractFacade::new(protocol_version, Some(Box::new(entropy_generator)))
+            .expect("should create facade");
 
         Self(Arc::new(inner))
     }
@@ -81,10 +75,9 @@ impl DataContractFacadeWasm {
 
         self.0
             .create_from_object(
-                js_value_to_data_contract_value(js_raw_data_contract)?,
+                js_raw_data_contract.with_serde_to_platform_value()?,
                 skip_validation,
             )
-            .await
             .map(DataContractWasm::from)
             .map_err(from_protocol_error)
     }
@@ -103,7 +96,6 @@ impl DataContractFacadeWasm {
         };
         self.0
             .create_from_buffer(buffer, skip_validation)
-            .await
             .map(Into::into)
             .map_err(from_protocol_error)
     }
@@ -130,28 +122,6 @@ impl DataContractFacadeWasm {
     ) -> Result<DataContractUpdateTransitionWasm, JsValue> {
         self.0
             .create_data_contract_update_transition(data_contract.to_owned().into())
-            .map(Into::into)
-            .map_err(from_protocol_error)
-    }
-
-    /// Validate Data Contract
-    pub async fn validate(
-        &self,
-        js_raw_data_contract: JsValue,
-    ) -> Result<ValidationResultWasm, JsValue> {
-        let raw_data_contract = if let Ok(data_contract_ref) =
-            js_raw_data_contract.to_wasm::<DataContractWasm>("DataContract")
-        {
-            let data_contract: DataContract = data_contract_ref.to_owned().into();
-            data_contract.to_cleaned_object().with_js_error()?
-        } else {
-            js_value_to_data_contract_value(js_raw_data_contract)?
-        };
-
-        self.0
-            .validate(raw_data_contract)
-            .await
-            .map(|v| v.map(|_| JsValue::UNDEFINED))
             .map(Into::into)
             .map_err(from_protocol_error)
     }

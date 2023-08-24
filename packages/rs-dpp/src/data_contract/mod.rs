@@ -28,6 +28,8 @@ pub use factory::*;
 pub mod conversion;
 #[cfg(feature = "client")]
 mod data_contract_facade;
+#[cfg(feature = "client")]
+pub use data_contract_facade::DataContractFacade;
 mod methods;
 pub mod serialized_version;
 pub use methods::*;
