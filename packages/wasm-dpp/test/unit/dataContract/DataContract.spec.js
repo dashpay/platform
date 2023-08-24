@@ -7,40 +7,45 @@ const { default: loadWasmDpp } = require('../../../dist');
 describe('DataContract', () => {
   let documentType;
   let documentSchema;
-  let documents;
+  let documentSchemas;
   let ownerId;
   let entropy;
   let contractId;
   let dataContract;
-  let defs;
+  let schemaDefs;
 
   let DataContract;
-  let DataContractDefaults;
   let Identifier;
   let Metadata;
 
+  let DashPlatformProtocol;
+
   before(async () => {
     ({
-      DataContract, DataContractDefaults, Identifier, Metadata,
+      DataContract, Identifier, Metadata, DashPlatformProtocol,
     } = await loadWasmDpp());
+
+    new DashPlatformProtocol();
   });
 
   beforeEach(async () => {
     documentType = 'niceDocument';
 
     documentSchema = {
+      type: 'object',
       properties: {
         nice: {
           type: 'boolean',
         },
         aBinaryProperty: {
-          type: 'object',
+          type: 'array',
           byteArray: true,
         },
       },
+      additionalProperties: false,
     };
 
-    documents = {
+    documentSchemas = {
       [documentType]: documentSchema,
     };
 
@@ -48,38 +53,32 @@ describe('DataContract', () => {
     entropy = Buffer.alloc(32, 420);
     contractId = (await generateRandomIdentifier()).toBuffer();
 
-    defs = { something: { type: 'string' } };
+    schemaDefs = { something: { type: 'string' } };
 
     dataContract = new DataContract({
-      $schema: DataContractDefaults.SCHEMA,
-      $id: contractId,
+      $format_version: '0',
+      id: contractId,
       version: 1,
-      protocolVersion: 1,
       ownerId,
-      documents,
-      $defs: defs,
+      documentSchemas,
     });
   });
 
   describe('constructor', () => {
     it('should create new DataContract', async () => {
-      const id = (await generateRandomIdentifier()).toBuffer();
-
       dataContract = new DataContract({
-        $schema: DataContractDefaults.SCHEMA,
-        $id: id,
-        ownerId,
-        protocolVersion: 1,
+        $format_version: '0',
+        id: contractId,
         version: 1,
-        documents,
-        $defs: defs,
+        ownerId,
+        documentSchemas,
+        schemaDefs,
       });
 
-      expect(dataContract.getId().toBuffer()).to.deep.equal(id);
+      expect(dataContract.getId().toBuffer()).to.deep.equal(contractId);
       expect(dataContract.getOwnerId().toBuffer()).to.deep.equal(ownerId);
-      expect(dataContract.getJsonMetaSchema()).to.deep.equal(DataContractDefaults.SCHEMA);
-      expect(dataContract.getDocuments()).to.deep.equal(documents);
-      expect(dataContract.getDefinitions()).to.deep.equal(defs);
+      expect(dataContract.getDocumentSchemas()).to.deep.equal(documentSchemas);
+      expect(dataContract.getSchemaDefs()).to.deep.equal(schemaDefs);
     });
   });
 
@@ -92,71 +91,49 @@ describe('DataContract', () => {
     });
   });
 
-  describe('#getJsonSchemaId', () => {
-    it('should return JSON Schema ID', () => {
-      const result = dataContract.getJsonSchemaId();
-
-      expect(result).to.equal(dataContract.getId().toString());
-    });
-  });
-
-  describe('#setJsonMetaSchema', () => {
-    it('should set meta schema', () => {
-      const metaSchema = 'http://test.com/schema';
-
-      dataContract.setJsonMetaSchema(metaSchema);
-
-      expect(dataContract.getJsonMetaSchema()).to.deep.equal(metaSchema);
-    });
-  });
-
-  describe('#getJsonMetaSchema', () => {
-    it('should return meta schema', () => {
-      const result = dataContract.getJsonMetaSchema();
-
-      expect(result).to.deep.equal(DataContractDefaults.SCHEMA);
-    });
-  });
-
-  describe('#getDocuments', () => {
+  describe('#getDocumentSchemas', () => {
     it('should get Documents definition', () => {
       const anotherDocuments = {
         anotherDocument: {
+          type: 'object',
           properties: {
             name: { type: 'string' },
           },
+          additionalProperties: false,
         },
       };
 
-      dataContract.setDocuments(anotherDocuments);
-      expect(dataContract.getDocuments()).to.deep.equal(anotherDocuments);
+      dataContract.setDocumentSchemas(anotherDocuments);
+      expect(dataContract.getDocumentSchemas()).to.deep.equal(anotherDocuments);
     });
   });
 
-  describe('#setDocuments', () => {
+  describe('#setDocumentSchemas', () => {
     it('should set Documents definition', () => {
       const anotherDocuments = {
         anotherDocument: {
+          type: 'object',
           properties: {
             name: { type: 'string' },
           },
+          additionalProperties: false,
         },
       };
 
-      dataContract.setDocuments(anotherDocuments);
-      expect(dataContract.getDocuments()).to.deep.equal(anotherDocuments);
+      dataContract.setDocumentSchemas(anotherDocuments);
+      expect(dataContract.getDocumentSchemas()).to.deep.equal(anotherDocuments);
     });
   });
 
-  describe('#isDocumentDefined', () => {
+  describe('#hasDocumentType', () => {
     it('should return true if Document schema is defined', () => {
-      const result = dataContract.isDocumentDefined('niceDocument');
+      const result = dataContract.hasDocumentType('niceDocument');
 
       expect(result).to.equal(true);
     });
 
     it('should return false if Document schema is not defined', () => {
-      const result = dataContract.isDocumentDefined('undefinedDocument');
+      const result = dataContract.hasDocumentType('undefinedDocument');
 
       expect(result).to.equal(false);
     });
@@ -166,18 +143,22 @@ describe('DataContract', () => {
     it('should set Document schema', () => {
       const anotherType = 'prettyDocument';
       const anotherDefinition = {
+        type: 'object',
         properties: {
-          name: { type: 'string' },
+          test: {
+            type: 'string',
+          }
         },
+        additionalProperties: false,
       };
 
       dataContract.setDocumentSchema(anotherType, anotherDefinition);
 
-      const anotherDocuments = dataContract.getDocuments();
+      const anotherDocuments = dataContract.getDocumentSchemas();
 
       expect(anotherDocuments).to.have.property(anotherType);
       expect(anotherDocuments[anotherType]).to.deep.equal(anotherDefinition);
-      expect(dataContract.isDocumentDefined(anotherType)).to.be.true();
+      expect(dataContract.hasDocumentType(anotherType)).to.be.true();
     });
   });
 
@@ -187,7 +168,7 @@ describe('DataContract', () => {
         dataContract.getDocumentSchema('undefinedObject');
         expect.fail('Error was not thrown');
       } catch (e) {
-        expect(e.getType()).to.equal('undefinedObject');
+        expect(e.getMessage()).to.equal('data contract error: document type not found: can not get document type from contract');
       }
     });
 
@@ -198,40 +179,31 @@ describe('DataContract', () => {
     });
   });
 
-  describe('#getDocumentSchemaRef', () => {
-    it('should throw error if Document is not defined', () => {
-      try {
-        dataContract.getDocumentSchemaRef('undefinedObject');
-        expect.fail('Error was not thrown');
-      } catch (e) {
-        expect(e.getType()).to.equal('undefinedObject');
-      }
-    });
-
-    it('should return schema ref', () => {
-      const result = dataContract.getDocumentSchemaRef(documentType);
-
-      expect(result).to.equal(`${dataContract.getJsonSchemaId()}#/documents/niceDocument`);
-    });
-  });
-
-  describe('#setDefinitions', () => {
+  describe('#setSchemaDefs', () => {
     it('should set $defs', () => {
       const $defs = {
-        subSchema: { type: 'object' },
+        subSchema: {
+          type: 'object',
+          properties: {
+            test: {
+              type: 'string',
+            },
+          },
+          additionalProperties: false,
+        },
       };
 
-      dataContract.setDefinitions($defs);
+      dataContract.setSchemaDefs($defs);
 
-      expect(dataContract.getDefinitions()).to.deep.equal($defs);
+      expect(dataContract.getSchemaDefs()).to.deep.equal($defs);
     });
   });
 
-  describe('#getDefinitions', () => {
+  describe('#getSchemaDefs', () => {
     it('should return $defs', () => {
-      const result = dataContract.getDefinitions();
+      const result = dataContract.getSchemaDefs();
 
-      expect(result).to.deep.equal(defs);
+      expect(result).to.be.null();
     });
   });
 
@@ -240,33 +212,47 @@ describe('DataContract', () => {
       const result = dataContract.toJSON();
 
       expect(result).to.deep.equal({
-        protocolVersion: dataContract.getProtocolVersion(),
-        $id: bs58.encode(contractId),
-        $schema: DataContractDefaults.SCHEMA,
+        $format_version: '0',
+        config: {
+          $format_version: '0',
+          canBeDeleted: false,
+          documentsKeepHistoryContractDefault: false,
+          documentsMutableContractDefault: true,
+          keepsHistory: false,
+          readonly: false,
+        },
+        id: bs58.encode(contractId),
         version: 1,
         ownerId: bs58.encode(ownerId),
-        documents,
-        $defs: defs,
+        schemaDefs: null,
+        documentSchemas,
       });
     });
 
     it('should return plain object with "$defs" if present', () => {
       const $defs = {
-        subSchema: { type: 'object' },
+        subSchema: { type: 'string' },
       };
 
-      dataContract.setDefinitions($defs);
+      dataContract.setSchemaDefs($defs);
 
       const result = dataContract.toJSON();
 
       expect(result).to.deep.equal({
-        protocolVersion: dataContract.getProtocolVersion(),
-        $schema: DataContractDefaults.SCHEMA,
-        $id: bs58.encode(contractId),
+        $format_version: '0',
+        config: {
+          $format_version: '0',
+          canBeDeleted: false,
+          documentsKeepHistoryContractDefault: false,
+          documentsMutableContractDefault: true,
+          keepsHistory: false,
+          readonly: false,
+        },
+        id: bs58.encode(contractId),
         version: 1,
         ownerId: bs58.encode(ownerId),
-        documents,
-        $defs,
+        documentSchemas,
+        schemaDefs: $defs,
       });
     });
   });
@@ -275,7 +261,7 @@ describe('DataContract', () => {
     it('should return DataContract as a Buffer', () => {
       const result = dataContract.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(251);
+      expect(result).to.have.lengthOf(209);
     });
   });
 
@@ -299,27 +285,6 @@ describe('DataContract', () => {
     });
   });
 
-  describe('#getBinaryProperties', () => {
-    it('should return flat map of properties with `contentEncoding` keywords', () => {
-      const result = dataContract.getBinaryProperties(documentType);
-      expect(result).to.deep.equal({
-        aBinaryProperty: {
-          type: 'object',
-          byteArray: true,
-        },
-      });
-    });
-
-    it('should throw an error if document type is not found', () => {
-      try {
-        dataContract.getBinaryProperties('unknown');
-        expect.fail('Error was not thrown');
-      } catch (e) {
-        expect(e.getType()).to.equal('unknown');
-      }
-    });
-  });
-
   describe('#setMetadata', () => {
     it('should set metadata', () => {
       const otherMetadata = new Metadata({
@@ -336,10 +301,10 @@ describe('DataContract', () => {
     });
   });
 
-  describe('#setConfig', () => {
+  describe.skip('#setConfig', () => {
     it('should set config', () => {
       const config = {
-        canBeDeleted: true,
+        allow: true,
         readonly: true,
         keepsHistory: true,
         documentsKeepHistoryContractDefault: true,

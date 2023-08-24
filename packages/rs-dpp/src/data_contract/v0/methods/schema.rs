@@ -76,6 +76,95 @@ impl DataContractMethodsV0 for DataContractV0 {
             .map(|(name, document_type)| (name.to_owned(), document_type.schema().to_owned()))
             .collect();
 
-        self.set_document_schemas(document_schemas, defs, validate, platform_version)
+        self.set_document_schemas(document_schemas, defs.clone(), validate, platform_version)?;
+
+        self.schema_defs = defs;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::data_contract::config::DataContractConfig;
+    use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
+    use crate::data_contract::v0::DataContractV0;
+    use crate::data_contract::DataContractMethodsV0;
+    use platform_value::{platform_value, Identifier};
+
+    #[test]
+    fn should_set_a_new_schema_defs() {
+        let platform_version = PlatformVersion::latest();
+
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+
+        let serialization_format = DataContractInSerializationFormatV0 {
+            id: Identifier::random(),
+            config,
+            version: 0,
+            owner_id: Default::default(),
+            schema_defs: None,
+            document_schemas: Default::default(),
+        };
+
+        let mut data_contract = DataContractV0::try_from_platform_versioned(
+            serialization_format.into(),
+            true,
+            platform_version,
+        )
+        .expect("should create a contract from serialization format");
+
+        let defs = platform_value!({
+            "test": {
+                "type": "string",
+            },
+        });
+
+        let defs_map = Some(defs.into_btree_string_map().expect("should convert to map"));
+
+        data_contract
+            .set_schema_defs(defs_map.clone(), true, platform_version)
+            .expect("should set defs");
+
+        assert_eq!(defs_map.as_ref(), data_contract.schema_defs())
+    }
+
+    fn should_set_empty_schema_defs() {
+        let platform_version = PlatformVersion::latest();
+
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("should create a default config");
+
+        let defs = platform_value!({
+            "test": {
+                "type": "string",
+            },
+        });
+
+        let defs_map = Some(defs.into_btree_string_map().expect("should convert to map"));
+
+        let serialization_format = DataContractInSerializationFormatV0 {
+            id: Identifier::random(),
+            config,
+            version: 0,
+            owner_id: Default::default(),
+            schema_defs: defs_map,
+            document_schemas: Default::default(),
+        };
+
+        let mut data_contract = DataContractV0::try_from_platform_versioned(
+            serialization_format.into(),
+            true,
+            platform_version,
+        )
+        .expect("should create a contract from serialization format");
+
+        data_contract
+            .set_schema_defs(None, true, platform_version)
+            .expect("should set defs");
+
+        assert_eq!(None, data_contract.schema_defs())
     }
 }

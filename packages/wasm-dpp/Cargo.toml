@@ -22,6 +22,8 @@ serde-wasm-bindgen = { git = "https://github.com/QuantumExplorer/serde-wasm-bind
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transition-serde-conversion",
     "state-transition-value-conversion",
+    "data-contract-value-conversion",
+    "data-contract-json-conversion",
     "state-transitions",
     "cbor",
     "platform-value",
