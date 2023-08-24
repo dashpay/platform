@@ -1,8 +1,6 @@
 const getIdentityCreateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
-const getChainAssetLockProofFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
 
 const {
-  IdentityCreateTransition,
   IdentityPublicKeyWithWitness,
   InstantAssetLockProof, Identifier,
   StateTransitionTypes,

@@ -3,14 +3,14 @@ use crate::utils::WithJsError;
 use std::default::Default;
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
+use crate::errors::from_dpp_err;
 use dpp::identity::KeyType;
 use dpp::platform_value::BinaryData;
-use serde_json::Value as JsonValue;
-
-use wasm_bindgen::prelude::*;
-
 use dpp::serialization::ValueConvertible;
 use dpp::state_transition::identity_topup_transition::fields::IDENTIFIER_FIELDS;
+use dpp::version::PlatformVersion;
+use serde_json::Value as JsonValue;
+use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
 
@@ -53,19 +53,13 @@ impl From<IdentityTopUpTransitionWasm> for IdentityTopUpTransition {
 #[wasm_bindgen(js_class = IdentityTopUpTransition)]
 impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_parameters: JsValue) -> Result<IdentityTopUpTransitionWasm, JsValue> {
-        let st_json_string = utils::stringify(&raw_parameters)?;
-        let mut st_platform_value: Value = serde_json::from_str::<JsonValue>(&st_json_string)
-            .map_err(|e| e.to_string())?
-            .into();
+    pub fn new(platform_version: u32) -> Result<IdentityTopUpTransitionWasm, JsValue> {
+        let platform_version =
+            &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        st_platform_value
-            .replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::TextBase58)
-            .map_err(|e| e.to_string())?;
-
-        let identity_create_transition: IdentityTopUpTransition =
-            IdentityTopUpTransition::from_object(st_platform_value).map_err(|e| e.to_string())?;
-        Ok(identity_create_transition.into())
+        IdentityTopUpTransition::default_versioned(&platform_version)
+            .map(Into::into)
+            .map_err(from_dpp_err)
     }
 
     #[wasm_bindgen(js_name=setAssetLockProof)]
@@ -109,6 +103,11 @@ impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(js_name=getIdentityId)]
     pub fn get_identity_id(&self) -> IdentifierWrapper {
         (*self.0.identity_id()).into()
+    }
+
+    #[wasm_bindgen(js_name=setIdentityId)]
+    pub fn set_identity_id(&mut self, identity_id: &IdentifierWrapper) {
+        self.0.set_identity_id(identity_id.to_owned().into());
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
