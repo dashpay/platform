@@ -30,7 +30,9 @@ use crate::state_transition::public_key_in_creation::methods::IdentityPublicKeyI
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
-#[derive(Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKeyInCreationV0 {
     pub id: KeyID,
@@ -80,9 +82,13 @@ impl IdentityPublicKeyInCreationV0Setters for IdentityPublicKeyInCreationV0 {
         self.signature = signature
     }
 
-    fn set_data(&mut self, data: BinaryData) { self.data = data }
+    fn set_data(&mut self, data: BinaryData) {
+        self.data = data
+    }
 
-    fn set_id(&mut self, id: KeyID) { self.id = id }
+    fn set_id(&mut self, id: KeyID) {
+        self.id = id
+    }
 
     fn set_type(&mut self, key_type: KeyType) {
         self.key_type = key_type;
