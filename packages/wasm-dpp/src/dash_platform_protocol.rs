@@ -46,6 +46,7 @@ impl DashPlatformProtocolWasm {
     //
     #[wasm_bindgen(getter = identity)]
     pub fn identity(&self) -> IdentityFacadeWasm {
+        // TODO: think if it's possible to avoid cloning
         self.0.identities().into()
     }
 
