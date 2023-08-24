@@ -18,14 +18,10 @@ describe('DataContract', () => {
   let Identifier;
   let Metadata;
 
-  let DashPlatformProtocol;
-
   before(async () => {
     ({
-      DataContract, Identifier, Metadata, DashPlatformProtocol,
+      DataContract, Identifier, Metadata,
     } = await loadWasmDpp());
-
-    new DashPlatformProtocol();
   });
 
   beforeEach(async () => {
