@@ -13,7 +13,7 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 /// The `DataTrigger` struct contains information about a data trigger, including the data contract ID, the document
 /// type that the trigger handles, the kind of trigger, the action that triggered the trigger, and an optional
 /// identifier for the top-level identity associated with the document.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DataTriggerBindingV0 {
     /// The identifier of the data contract associated with the trigger.
     pub data_contract_id: Identifier,
