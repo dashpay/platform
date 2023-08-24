@@ -1,11 +1,23 @@
 use crate::error::Error;
+use dpp::consensus::basic::document::InvalidDocumentTransitionIdError;
+use dpp::document::Document;
+use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
+use dpp::state_transition::StateTransitionLike;
 
 use dpp::validation::SimpleConsensusValidationResult;
 
 use dpp::version::PlatformVersion;
+
+use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
+use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
+use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
+use crate::execution::validation::state_transition::state_transitions::documents_batch::action_validation::document_create_transition_action::DocumentCreateTransitionActionValidation;
+use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStructureValidationV0
 {
@@ -23,7 +35,57 @@ impl DocumentsBatchStateTransitionStructureValidationV0 for DocumentsBatchTransi
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         // First we should validate the base structure
-        self.validate_base_structure(platform_version)
-            .map_err(Error::Protocol)
+        let result = self
+            .validate_base_structure(platform_version)
+            .map_err(Error::Protocol)?;
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        // We should validate that all newly created documents have valid ids
+        for transition in self.transitions() {
+            if let DocumentTransition::Create(create_transition) = transition {
+                // Validate the ID
+                let generated_document_id = Document::generate_document_id_v0(
+                    create_transition.base().data_contract_id_ref(),
+                    &self.owner_id(),
+                    create_transition.base().document_type_name(),
+                    &create_transition.entropy(),
+                );
+
+                let id = create_transition.base().id();
+                if generated_document_id != id {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidDocumentTransitionIdError::new(generated_document_id, id).into(),
+                    ));
+                }
+            }
+        }
+
+        // Next we need to validate the structure of all actions (this means with the data contract)
+        for transition in action.transitions() {
+            match transition {
+                DocumentTransitionAction::CreateAction(create_action) => {
+                    let result = create_action.validate(platform_version)?;
+                    if !result.is_valid() {
+                        return Ok(result);
+                    }
+                }
+                DocumentTransitionAction::ReplaceAction(replace_action) => {
+                    let result = replace_action.validate(platform_version)?;
+                    if !result.is_valid() {
+                        return Ok(result);
+                    }
+                }
+                DocumentTransitionAction::DeleteAction(delete_action) => {
+                    let result = delete_action.validate(platform_version)?;
+                    if !result.is_valid() {
+                        return Ok(result);
+                    }
+                }
+            }
+        }
+        Ok(SimpleConsensusValidationResult::new())
     }
 }

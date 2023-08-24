@@ -1,0 +1,20 @@
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::validation::SimpleConsensusValidationResult;
+use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
+use dpp::version::PlatformVersion;
+use crate::error::Error;
+
+pub(super) trait DocumentDeleteTransitionActionValidationV0 {
+    fn validate_v0(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error>;
+}
+impl DocumentDeleteTransitionActionValidationV0 for DocumentDeleteTransitionAction {
+    fn validate_v0(
+        &self,
+        _platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        Ok(SimpleConsensusValidationResult::new())
+    }
+}

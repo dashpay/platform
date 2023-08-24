@@ -75,14 +75,6 @@ pub trait DocumentCreateTransitionV0Methods {
     ///
     /// * `data` - An `Option` containing a `BTreeMap<String, Value>` to set.
     fn set_data(&mut self, data: BTreeMap<String, Value>);
-
-    #[cfg(feature = "validation")]
-    fn validate(
-        &self,
-        data_contract: &DataContract,
-        owner_id: Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
 
 impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
@@ -132,78 +124,5 @@ impl DocumentCreateTransitionV0Methods for DocumentCreateTransitionV0 {
 
     fn set_data(&mut self, data: BTreeMap<String, Value>) {
         self.data = data;
-    }
-
-    #[cfg(feature = "validation")]
-    fn validate(
-        &self,
-        data_contract: &DataContract,
-        owner_id: Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        // Make sure that the document type is defined in the contract
-        let document_type_name = self.base().document_type_name();
-
-        let Some(document_type) = data_contract
-            .document_type_optional_for_name(document_type_name) else {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                InvalidDocumentTypeError::new(document_type_name.clone(), data_contract.id()).into(),
-            ));
-        };
-
-        // Validate the ID
-        let generated_document_id = Document::generate_document_id_v0(
-            data_contract.id_ref(),
-            &owner_id,
-            document_type_name,
-            &self.entropy(),
-        );
-
-        let id = self.base().id();
-        if generated_document_id != id {
-            // dbg!(
-            //     "g {} d {} c id {} owner {} dt {} e {}",
-            //     hex::encode(generated_document_id),
-            //     hex::encode(document_id),
-            //     hex::encode(data_contract.id),
-            //     hex::encode(owner_id),
-            //     document_type,
-            //     hex::encode(entropy)
-            // );
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                InvalidDocumentTransitionIdError::new(generated_document_id, id).into(),
-            ));
-        }
-
-        // Make sure that timestamps are present if required
-        let required_fields = document_type.required_fields();
-
-        if required_fields.contains(property_names::CREATED_AT) && self.created_at().is_none() {
-            // TODO: Create a special consensus error for this
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                MissingDocumentTypeError::new().into(),
-            ));
-        }
-
-        if required_fields.contains(property_names::UPDATED_AT) && self.updated_at().is_none() {
-            // TODO: Create a special consensus error for this
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                MissingDocumentTypeError::new().into(),
-            ));
-        }
-
-        if self.created_at().is_some()
-            && self.updated_at().is_some()
-            && self.created_at() != self.updated_at()
-        {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                DocumentTimestampsMismatchError::new(self.base().id()).into(),
-            ));
-        }
-
-        // Validate user defined properties
-        let data = platform_value::to_value(self.data())?;
-
-        data_contract.validate_document_properties(document_type_name, &data, platform_version)
     }
 }

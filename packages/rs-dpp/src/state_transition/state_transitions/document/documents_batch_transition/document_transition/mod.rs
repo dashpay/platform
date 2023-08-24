@@ -60,14 +60,6 @@ pub trait DocumentTransitionV0Methods {
     fn set_data_contract_id(&mut self, id: Identifier);
     fn base_mut(&mut self) -> &mut DocumentBaseTransition;
     fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>>;
-
-    #[cfg(feature = "validation")]
-    fn validate(
-        &self,
-        data_contract: &DataContract,
-        owner_id: Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
@@ -330,20 +322,6 @@ impl DocumentTransitionV0Methods for DocumentTransition {
             DocumentTransition::Create(t) => Some(t.data_mut()),
             DocumentTransition::Replace(t) => Some(t.data_mut()),
             DocumentTransition::Delete(_) => None,
-        }
-    }
-
-    #[cfg(feature = "validation")]
-    fn validate(
-        &self,
-        data_contract: &DataContract,
-        owner_id: Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        match self {
-            DocumentTransition::Create(t) => t.validate(data_contract, owner_id, platform_version),
-            DocumentTransition::Replace(t) => t.validate(data_contract, platform_version),
-            DocumentTransition::Delete(t) => t.validate(data_contract, platform_version),
         }
     }
 }

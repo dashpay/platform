@@ -155,6 +155,7 @@ mod tests {
     use dpp::version::PlatformVersion;
     use dpp::NativeBlsModule;
 
+    use dpp::platform_value::Bytes32;
     use platform_version::TryIntoPlatformVersioned;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -293,11 +294,16 @@ mod tests {
             .document_type_for_name("profile")
             .expect("expected a profile document type");
 
-        let mut document = profile
-            .random_document_with_rng(&mut rng, platform_version)
-            .expect("expected a random document");
+        let entropy = Bytes32::random_with_rng(&mut rng);
 
-        document.set_owner_id(identifier);
+        let mut document = profile
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identifier,
+                entropy,
+                platform_version,
+            )
+            .expect("expected a random document");
 
         let mut altered_document = document.clone();
 
@@ -308,7 +314,7 @@ mod tests {
             DocumentsBatchTransition::new_document_creation_transition_from_document(
                 document,
                 profile,
-                [1; 32],
+                entropy.0,
                 &key,
                 &signer,
                 platform_version,

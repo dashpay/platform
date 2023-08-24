@@ -45,13 +45,6 @@ pub trait DocumentReplaceTransitionV0Methods {
 
     /// Sets the value of the `data` field in the `DocumentReplaceTransitionV0`.
     fn set_data(&mut self, data: BTreeMap<String, Value>);
-
-    #[cfg(feature = "validation")]
-    fn validate(
-        &self,
-        data_contract: &DataContract,
-        platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
 
 impl DocumentReplaceTransitionV0Methods for DocumentReplaceTransitionV0 {
@@ -93,37 +86,5 @@ impl DocumentReplaceTransitionV0Methods for DocumentReplaceTransitionV0 {
 
     fn set_data(&mut self, data: BTreeMap<String, Value>) {
         self.data = data;
-    }
-
-    #[cfg(feature = "validation")]
-    fn validate(
-        &self,
-        data_contract: &DataContract,
-        platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        let document_type_name = self.base().document_type_name();
-
-        // Make sure that the document type is defined in the contract
-        let Some(document_type) = data_contract
-            .document_type_optional_for_name(document_type_name) else {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                InvalidDocumentTypeError::new(document_type_name.clone(), data_contract.id()).into(),
-            ));
-        };
-
-        // Make sure that timestamps are present if required
-        let required_fields = document_type.required_fields();
-
-        if required_fields.contains(property_names::UPDATED_AT) && self.updated_at().is_none() {
-            // TODO: Create a special consensus error for this
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                MissingDocumentTypeError::new().into(),
-            ));
-        }
-
-        // Validate user defined properties
-        let data = platform_value::to_value(self.data())?;
-
-        data_contract.validate_document_properties(document_type_name, &data, platform_version)
     }
 }

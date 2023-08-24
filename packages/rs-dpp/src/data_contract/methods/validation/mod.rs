@@ -33,7 +33,7 @@ impl DataContractValidationMethodsV0 for DataContract {
     fn validate_document_properties(
         &self,
         name: &str,
-        properties: &Value,
+        properties: Value,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version

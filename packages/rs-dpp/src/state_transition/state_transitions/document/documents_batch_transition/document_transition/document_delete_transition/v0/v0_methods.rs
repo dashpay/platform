@@ -16,13 +16,6 @@ pub trait DocumentDeleteTransitionV0Methods {
     ///
     /// * `base` - A value of type `DocumentBaseTransition` to set.
     fn set_base(&mut self, base: DocumentBaseTransition);
-
-    #[cfg(feature = "validation")]
-    fn validate(
-        &self,
-        data_contract: &DataContract,
-        platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
 
 impl DocumentDeleteTransitionV0Methods for DocumentDeleteTransitionV0 {
@@ -36,14 +29,5 @@ impl DocumentDeleteTransitionV0Methods for DocumentDeleteTransitionV0 {
 
     fn set_base(&mut self, base: DocumentBaseTransition) {
         self.base = base
-    }
-
-    #[cfg(feature = "validation")]
-    fn validate(
-        &self,
-        _data_contract: &DataContract,
-        _platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        Ok(SimpleConsensusValidationResult::default())
     }
 }

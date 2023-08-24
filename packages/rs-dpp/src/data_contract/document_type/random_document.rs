@@ -5,6 +5,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
 use rand::prelude::StdRng;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // TODO The factory is used in benchmark and tests. Probably it should be available under the test feature
 /// Functions for creating various types of random documents.
@@ -36,6 +37,14 @@ pub trait CreateRandomDocument {
     fn random_document(
         &self,
         seed: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError>;
+    /// Creates a document with a random id, owner id, and properties using StdRng.
+    fn random_document_with_identifier_and_entropy(
+        &self,
+        rng: &mut StdRng,
+        owner_id: Identifier,
+        entropy: Bytes32,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError>;
     /// Random document with rng
@@ -94,7 +103,6 @@ impl CreateRandomDocument for DocumentType {
     ) -> Result<Vec<Document>, ProtocolError> {
         match self {
             DocumentType::V0(v0) => v0.random_documents_with_rng(count, rng, platform_version),
-            // Add more cases as necessary for other variants
         }
     }
 
@@ -120,7 +128,6 @@ impl CreateRandomDocument for DocumentType {
     ) -> Result<Document, ProtocolError> {
         match self {
             DocumentType::V0(v0) => v0.random_document(seed, platform_version),
-            // Add more cases as necessary for other variants
         }
     }
 
@@ -131,7 +138,6 @@ impl CreateRandomDocument for DocumentType {
     ) -> Result<Document, ProtocolError> {
         match self {
             DocumentType::V0(v0) => v0.random_document_with_rng(rng, platform_version),
-            // Add more cases as necessary for other variants
         }
     }
 
@@ -158,7 +164,6 @@ impl CreateRandomDocument for DocumentType {
     ) -> Result<Vec<Document>, ProtocolError> {
         match self {
             DocumentType::V0(v0) => v0.random_filled_documents(count, seed, platform_version),
-            // Add more cases as necessary for other variants
         }
     }
 
@@ -169,7 +174,6 @@ impl CreateRandomDocument for DocumentType {
     ) -> Result<Document, ProtocolError> {
         match self {
             DocumentType::V0(v0) => v0.random_filled_document(seed, platform_version),
-            // Add more cases as necessary for other variants
         }
     }
 
@@ -180,7 +184,23 @@ impl CreateRandomDocument for DocumentType {
     ) -> Result<Document, ProtocolError> {
         match self {
             DocumentType::V0(v0) => v0.random_filled_document_with_rng(rng, platform_version),
-            // Add more cases as necessary for other variants
+        }
+    }
+
+    fn random_document_with_identifier_and_entropy(
+        &self,
+        rng: &mut StdRng,
+        owner_id: Identifier,
+        entropy: Bytes32,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError> {
+        match self {
+            DocumentType::V0(v0) => v0.random_document_with_identifier_and_entropy(
+                rng,
+                owner_id,
+                entropy,
+                platform_version,
+            ),
         }
     }
 }
@@ -205,7 +225,6 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
     ) -> Result<Vec<Document>, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => v0.random_documents_with_rng(count, rng, platform_version),
-            // Add more cases as necessary for other variants
         }
     }
 
@@ -231,7 +250,6 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
     ) -> Result<Document, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => v0.random_document(seed, platform_version),
-            // Add more cases as necessary for other variants
         }
     }
 
@@ -242,7 +260,6 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
     ) -> Result<Document, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => v0.random_document_with_rng(rng, platform_version),
-            // Add more cases as necessary for other variants
         }
     }
 
@@ -269,7 +286,6 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
     ) -> Result<Vec<Document>, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => v0.random_filled_documents(count, seed, platform_version),
-            // Add more cases as necessary for other variants
         }
     }
 
@@ -280,7 +296,6 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
     ) -> Result<Document, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => v0.random_filled_document(seed, platform_version),
-            // Add more cases as necessary for other variants
         }
     }
 
@@ -291,7 +306,23 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
     ) -> Result<Document, ProtocolError> {
         match self {
             DocumentTypeRef::V0(v0) => v0.random_filled_document_with_rng(rng, platform_version),
-            // Add more cases as necessary for other variants
+        }
+    }
+
+    fn random_document_with_identifier_and_entropy(
+        &self,
+        rng: &mut StdRng,
+        owner_id: Identifier,
+        entropy: Bytes32,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError> {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.random_document_with_identifier_and_entropy(
+                rng,
+                owner_id,
+                entropy,
+                platform_version,
+            ),
         }
     }
 }

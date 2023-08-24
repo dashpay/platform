@@ -2,6 +2,7 @@ use crate::consensus::basic::document::{
     DuplicateDocumentTransitionsWithIdsError, MaxDocumentsTransitionsExceededError,
 };
 use crate::consensus::basic::BasicError;
+use crate::document::Document;
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::{
@@ -9,7 +10,7 @@ use crate::state_transition::documents_batch_transition::document_transition::{
 };
 use crate::state_transition::documents_batch_transition::validation::find_duplicates_by_id::find_duplicates_by_id;
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
-use crate::validation::{SimpleConsensusValidationResult, ValidationResult};
+use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
