@@ -1,6 +1,6 @@
 use dpp::consensus::basic::document::{InvalidDocumentTypeError, MissingDocumentTypeError};
-use dpp::consensus::ConsensusError;
 use dpp::consensus::state::document::document_timestamp_window_violation_error::DocumentTimestampWindowViolationError;
+use dpp::consensus::ConsensusError;
 
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -54,6 +54,9 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
             ));
         }
 
+        // Validate timestamps against block time
+        // we do validation here but not in validate state because it's a cheap validation
+        // and validate state implements expensive validation only
         let latest_block_time_ms = platform.state.last_block_time_ms();
         let average_block_spacing_ms = platform.config.block_spacing_ms;
 

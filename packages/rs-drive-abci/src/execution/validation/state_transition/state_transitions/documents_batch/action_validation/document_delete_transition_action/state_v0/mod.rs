@@ -39,6 +39,7 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
 
         let document_type = contract.document_type_for_name(self.base().document_type_name())?;
 
+        // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
         let original_document = fetch_document_with_id(
             platform.drive,
             contract,
@@ -48,16 +49,15 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
             platform_version,
         )?;
 
-        let Some(original_document) = original_document else {
-            return Ok(        ConsensusValidationResult::new_with_error(ConsensusError::StateError(
+        let Some(document) = original_document else {
+            return Ok(ConsensusValidationResult::new_with_error(ConsensusError::StateError(
                 StateError::DocumentNotFoundError(DocumentNotFoundError::new(
                     self.base().id(),
                 ))
-            ))
-            );
+            )));
         };
 
-        Ok(check_ownership(self, &original_document, &owner_id))
+        Ok(check_ownership(self, &document, &owner_id))
     }
 }
 
