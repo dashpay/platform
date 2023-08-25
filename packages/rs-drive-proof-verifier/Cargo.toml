@@ -14,7 +14,9 @@ bytes = { version = "1.4.0" }
 camino = { version = "1.1.4", optional = true }
 mockall = { version = "0.11", optional = true }
 
-drive = { path = "../rs-drive" }
+drive = { path = "../rs-drive", default-features = false, features = [
+    "verify",
+] }
 dpp = { path = "../rs-dpp" }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci" }
 # tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }

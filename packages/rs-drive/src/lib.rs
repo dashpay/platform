@@ -32,7 +32,7 @@ pub use dpp;
 /// GroveDB module
 #[cfg(feature = "full")]
 pub use grovedb;
-
+#[cfg(feature = "full")]
 mod fee;
 /// State transition action module
 #[cfg(feature = "full")]

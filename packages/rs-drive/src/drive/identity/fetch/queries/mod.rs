@@ -1,3 +1,4 @@
+use crate::drive::balances::balance_path_vec;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 

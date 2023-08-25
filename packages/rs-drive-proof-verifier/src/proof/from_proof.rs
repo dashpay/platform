@@ -6,6 +6,7 @@ use dapi_grpc::platform::v0::{self as platform, key_request_type, KeyRequestType
 use dpp::document::Document;
 use dpp::identity::KeyID;
 use dpp::prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision};
+use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
@@ -245,11 +246,15 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
         tracing::debug!(?identity_id, "checking proof of identity keys");
 
         // Extract content from proof and verify Drive/GroveDB proofs
-        let (root_hash, maybe_identity) =
-            Drive::verify_identity_keys_by_identity_id(&proof.grovedb_proof, key_request, false)
-                .map_err(|e| Error::DriveError {
-                    error: e.to_string(),
-                })?;
+        let (root_hash, maybe_identity) = Drive::verify_identity_keys_by_identity_id(
+            &proof.grovedb_proof,
+            key_request,
+            false,
+            &PLATFORM_VERSION,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
 
         let maybe_keys: Option<IdentityPublicKeys> = if let Some(identity) = maybe_identity {
             if identity.loaded_public_keys.is_empty() {
