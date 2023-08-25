@@ -12,7 +12,7 @@ pub fn enrich_with_base_schema(
     match platform_version
         .dpp
         .contract_versions
-        .document_type
+        .document_type_versions
         .schema
         .enrich_with_base_schema
     {

@@ -44,7 +44,11 @@ impl DataContractV0 {
     ) -> Result<Self, ProtocolError> {
         match value {
             DataContractInSerializationFormat::V0(serialization_format_v0) => {
-                match platform_version.dpp.contract_versions.contract_structure {
+                match platform_version
+                    .dpp
+                    .contract_versions
+                    .contract_structure_version
+                {
                     0 => {
                         let data_contract = DataContractV0::try_from_platform_versioned_v0(
                             serialization_format_v0,

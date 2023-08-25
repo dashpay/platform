@@ -7,6 +7,7 @@ use crate::data_contract::document_type::property::DocumentProperty;
 #[cfg(feature = "validation")]
 pub(in crate::data_contract) use validator::StatelessJsonSchemaLazyValidator;
 
+use crate::identity::SecurityLevel;
 use platform_value::{Identifier, Value};
 
 mod accessors;
@@ -48,6 +49,7 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) documents_keep_history: bool,
     pub(in crate::data_contract) documents_mutable: bool,
     pub(in crate::data_contract) data_contract_id: Identifier,
+    pub(in crate::data_contract) security_level_requirement: SecurityLevel,
     #[cfg(feature = "validation")]
     pub(in crate::data_contract) json_schema_validator: StatelessJsonSchemaLazyValidator,
 }

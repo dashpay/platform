@@ -32,7 +32,7 @@ pub struct DocumentsBatchTransitionVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DocumentsBatchTransitionValidationVersions {
     pub find_duplicates_by_id: FeatureVersion,
-    pub validate: FeatureVersion,
+    pub validate_base_structure: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -109,18 +109,18 @@ pub struct DocumentFeatureVersionBounds {
 #[derive(Clone, Debug, Default)]
 pub struct ContractVersions {
     /// This is how we serialize and deserialize a contract
-    pub contract_serialization: FeatureVersionBounds,
+    pub contract_serialization_version: FeatureVersionBounds,
     /// This is the structure of the Contract as it is defined for code paths
-    pub contract_structure: FeatureVersion,
+    pub contract_structure_version: FeatureVersion,
     pub created_data_contract_structure: FeatureVersion,
     pub config: FeatureVersion,
     pub methods: DataContractMethodVersions,
-    pub document_type: DocumentTypeVersions,
+    pub document_type_versions: DocumentTypeVersions,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DataContractMethodVersions {
-    pub validation: FeatureVersion,
+    pub validate_document: FeatureVersion,
     pub schema: FeatureVersion,
 }
 

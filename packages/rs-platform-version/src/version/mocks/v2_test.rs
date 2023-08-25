@@ -53,7 +53,7 @@ use crate::version::drive_versions::{
 };
 use crate::version::mocks::TEST_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
-use crate::version::{AbciStructureVersion, FeatureVersion, PlatformArchitectureVersion};
+use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
 
 pub const TEST_PROTOCOL_VERSION_2: u32 = (1 << TEST_BYTES) + 2;
 
@@ -565,6 +565,12 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                                 reject_data_trigger: 0,
                             },
                         },
+                        document_create_transition_structure_validation: 0,
+                        document_delete_transition_structure_validation: 0,
+                        document_replace_transition_structure_validation: 0,
+                        document_create_transition_state_validation: 0,
+                        document_delete_transition_state_validation: 0,
+                        document_replace_transition_state_validation: 0,
                     },
             },
             process_state_transition: 0,
@@ -681,25 +687,25 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 documents_batch_transition: DocumentsBatchTransitionVersions {
                     validation: DocumentsBatchTransitionValidationVersions {
                         find_duplicates_by_id: 0,
-                        validate: 0,
+                        validate_base_structure: 0,
                     },
                 },
             },
         },
         contract_versions: ContractVersions {
-            contract_serialization: FeatureVersionBounds {
+            contract_serialization_version: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,
                 default_current_version: 0,
             },
-            contract_structure: 0,
+            contract_structure_version: 0,
             created_data_contract_structure: 0,
             config: 0,
             methods: DataContractMethodVersions {
-                validation: 0,
+                validate_document: 0,
                 schema: 0,
             },
-            document_type: DocumentTypeVersions {
+            document_type_versions: DocumentTypeVersions {
                 index_versions: DocumentTypeIndexVersions {
                     index_levels_from_indices: 0,
                 },
