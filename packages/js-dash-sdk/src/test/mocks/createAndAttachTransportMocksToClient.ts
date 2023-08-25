@@ -53,14 +53,15 @@ async function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
       .platform.dpp.stateTransition.createFromBuffer(stBuffer);
 
     if (interceptedIdentityStateTransition.getType() === stateTransitionTypes.IDENTITY_CREATE) {
-      const identityToResolve = new Identity({
-        protocolVersion: client.platform.dpp.getProtocolVersion(),
-        id: interceptedIdentityStateTransition.getIdentityId().toBuffer(),
-        publicKeys: interceptedIdentityStateTransition
-          .getPublicKeys().map((key) => key.toObject({ skipSignature: true })),
-        balance: interceptedIdentityStateTransition.getAssetLockProof().getOutput().satoshis,
-        revision: 0,
-      });
+      const identityToResolve = await client
+        .platform.dpp.identity.create(
+          interceptedIdentityStateTransition.getIdentityId(),
+          interceptedIdentityStateTransition
+            .getPublicKeys(),
+        );
+
+      identityToResolve.setBalance(interceptedIdentityStateTransition.getAssetLockProof().getOutput().satoshis);
+
       dapiClientMock.platform.getIdentity.withArgs(identityToResolve.getId())
         .resolves(new GetIdentityResponse(
           identityToResolve.toBuffer(),

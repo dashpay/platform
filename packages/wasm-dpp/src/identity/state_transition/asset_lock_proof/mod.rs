@@ -4,29 +4,20 @@ mod instant;
 pub use chain::*;
 pub use instant::*;
 use std::convert::TryInto;
-use std::sync::Arc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::__rt::Ref;
 
-use crate::errors::{from_dpp_err, RustConversionError};
-use dpp::dashcore::consensus;
-use dpp::dashcore::hashes::hex::FromHex;
+use crate::errors::RustConversionError;
+
 use dpp::identity::errors::UnknownAssetLockProofTypeError;
 use wasm_bindgen::prelude::*;
 
-use crate::buffer::Buffer;
-// use crate::errors::dpp_error::from_dpp_error_ref;
 use crate::identifier::IdentifierWrapper;
 use crate::identity::errors::UnknownAssetLockProofTypeErrorWasm;
-// use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
+
 use crate::utils::generic_of_js_val;
-// use crate::validation::ValidationResultWasm;
-// use crate::{Deserialize, StateTransitionExecutionContextWasm};
-use dpp::identity::state_transition::asset_lock_proof::{
-    AssetLockProof,
-    AssetLockProofType,
-    // AssetLockPublicKeyHashFetcher, AssetLockTransactionOutputFetcher, AssetLockTransactionValidator,
-};
+
+use dpp::identity::state_transition::asset_lock_proof::{AssetLockProof, AssetLockProofType};
 use serde::Deserialize;
 
 #[derive(Deserialize, Clone)]

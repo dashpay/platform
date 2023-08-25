@@ -1,7 +1,10 @@
-use crate::utils::{WithJsError};
+use crate::utils::WithJsError;
 
 use std::default::Default;
 
+use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
+use dpp::identity::KeyType;
+use dpp::platform_value::BinaryData;
 use serde_json::Value as JsonValue;
 
 use wasm_bindgen::prelude::*;
@@ -11,24 +14,25 @@ use dpp::state_transition::identity_topup_transition::fields::IDENTIFIER_FIELDS;
 
 use crate::identifier::IdentifierWrapper;
 
-use crate::{buffer::Buffer, identity::state_transition::asset_lock_proof::{
-    ChainAssetLockProofWasm, InstantAssetLockProofWasm,
-}, utils, with_js_error};
-
-use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::{string_encoding, Value, ReplacementType};
-use dpp::serialization::PlatformSerializable;
-use dpp::state_transition::StateTransition;
-use dpp::{
-    identifier::Identifier,
-    identity::state_transition::{
-        asset_lock_proof::AssetLockProof,
+use crate::{
+    buffer::Buffer,
+    identity::state_transition::asset_lock_proof::{
+        ChainAssetLockProofWasm, InstantAssetLockProofWasm,
     },
-    state_transition::StateTransitionLike,
+    utils, with_js_error,
 };
+
+use crate::identity::state_transition::create_asset_lock_proof_from_wasm_instance;
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::{string_encoding, ReplacementType, Value};
+use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use crate::identity::state_transition::create_asset_lock_proof_from_wasm_instance;
+use dpp::state_transition::StateTransition;
+use dpp::{
+    identifier::Identifier, identity::state_transition::asset_lock_proof::AssetLockProof,
+    state_transition::StateTransitionLike,
+};
 
 #[wasm_bindgen(js_name=IdentityTopUpTransition)]
 #[derive(Clone)]
@@ -55,14 +59,12 @@ impl IdentityTopUpTransitionWasm {
             .map_err(|e| e.to_string())?
             .into();
 
-        st_platform_value.replace_at_paths(
-            IDENTIFIER_FIELDS,
-            ReplacementType::TextBase58
-        ).map_err(|e| e.to_string())?;
+        st_platform_value
+            .replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::TextBase58)
+            .map_err(|e| e.to_string())?;
 
         let identity_create_transition: IdentityTopUpTransition =
-            IdentityTopUpTransition::from_object(st_platform_value)
-                .map_err(|e| e.to_string())?;
+            IdentityTopUpTransition::from_object(st_platform_value).map_err(|e| e.to_string())?;
         Ok(identity_create_transition.into())
     }
 
@@ -70,8 +72,7 @@ impl IdentityTopUpTransitionWasm {
     pub fn set_asset_lock_proof(&mut self, asset_lock_proof: JsValue) -> Result<(), JsValue> {
         let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&asset_lock_proof)?;
 
-        self.0
-            .set_asset_lock_proof(asset_lock_proof);
+        self.0.set_asset_lock_proof(asset_lock_proof);
 
         Ok(())
     }
@@ -136,11 +137,7 @@ impl IdentityTopUpTransitionWasm {
             IdentityTopUpTransition::V0(_) => "0",
         };
 
-        js_sys::Reflect::set(
-            &js_object,
-            &"$version".to_owned().into(),
-            &version.into()
-        )?;
+        js_sys::Reflect::set(&js_object, &"$version".to_owned().into(), &version.into())?;
 
         if let Some(signature) = object.signature {
             let signature_value: JsValue = if signature.is_empty() {
@@ -206,14 +203,10 @@ impl IdentityTopUpTransitionWasm {
         }
 
         let version = match self.0 {
-            IdentityTopUpTransition::V0(_) => "0"
+            IdentityTopUpTransition::V0(_) => "0",
         };
 
-        js_sys::Reflect::set(
-            &js_object,
-            &"$version".to_owned().into(),
-            &version.into()
-        )?;
+        js_sys::Reflect::set(&js_object, &"$version".to_owned().into(), &version.into())?;
 
         let asset_lock_proof_json = match object.asset_lock_proof {
             AssetLockProof::Instant(instant_asset_lock_proof) => {
@@ -265,42 +258,43 @@ impl IdentityTopUpTransitionWasm {
         self.0.is_identity_state_transition()
     }
 
-    // #[wasm_bindgen(js_name=signByPrivateKey)]
-    // pub fn sign_by_private_key(
-    //     &mut self,
-    //     private_key: Vec<u8>,
-    //     key_type: u8,
-    //     bls: Option<JsBlsAdapter>,
-    // ) -> Result<(), JsValue> {
-    //     let key_type = key_type
-    //         .try_into()
-    //         .map_err(|e: anyhow::Error| e.to_string())?;
-    //
-    //     if bls.is_none() && key_type == KeyType::BLS12_381 {
-    //         return Err(JsError::new(
-    //             format!("BLS adapter is required for BLS key type '{}'", key_type).as_str(),
-    //         )
-    //         .into());
-    //     }
-    //
-    //     let bls_adapter = if let Some(adapter) = bls {
-    //         BlsAdapter(adapter)
-    //     } else {
-    //         BlsAdapter(JsValue::undefined().into())
-    //     };
-    //
-    //     self.0
-    //         .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
-    //         .with_js_error()
-    // }
-    //
-    // #[wasm_bindgen(js_name=getSignature)]
-    // pub fn get_signature(&self) -> Buffer {
-    //     Buffer::from_bytes(self.0.signature().as_slice())
-    // }
-    //
-    // #[wasm_bindgen(js_name=setSignature)]
-    // pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
-    //     self.0.signature = BinaryData::new(signature.unwrap_or(vec![]))
-    // }
+    #[wasm_bindgen(js_name=signByPrivateKey)]
+    pub fn sign_by_private_key(
+        &mut self,
+        private_key: Vec<u8>,
+        key_type: u8,
+        bls: Option<JsBlsAdapter>,
+    ) -> Result<(), JsValue> {
+        let key_type = key_type
+            .try_into()
+            .map_err(|e: anyhow::Error| e.to_string())?;
+
+        if bls.is_none() && key_type == KeyType::BLS12_381 {
+            return Err(JsError::new(
+                format!("BLS adapter is required for BLS key type '{}'", key_type).as_str(),
+            )
+            .into());
+        }
+
+        let bls_adapter = if let Some(adapter) = bls {
+            BlsAdapter(adapter)
+        } else {
+            BlsAdapter(JsValue::undefined().into())
+        };
+
+        StateTransition::IdentityTopUp(self.0.clone())
+            .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
+            .with_js_error()
+    }
+
+    #[wasm_bindgen(js_name=getSignature)]
+    pub fn get_signature(&self) -> Buffer {
+        Buffer::from_bytes(self.0.signature().as_slice())
+    }
+
+    #[wasm_bindgen(js_name=setSignature)]
+    pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
+        self.0
+            .set_signature(BinaryData::new(signature.unwrap_or(vec![])))
+    }
 }

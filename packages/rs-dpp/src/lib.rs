@@ -28,7 +28,7 @@ pub mod schema;
 pub mod validation;
 
 #[cfg(feature = "client")]
-mod dash_platform_protocol;
+pub mod dash_platform_protocol;
 
 mod bls;
 
