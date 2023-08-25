@@ -54,6 +54,7 @@ fn test_drive_10_serialization(c: &mut Criterion) {
     let platform_version = PlatformVersion::first();
     let contract = json_document_to_contract(
         "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        true,
         platform_version,
     )
     .expect("expected to get contract");
@@ -121,6 +122,7 @@ fn test_drive_10_deserialization(c: &mut Criterion) {
     let platform_version = PlatformVersion::first();
     let contract = json_document_to_contract(
         "tests/supporting_files/contract/dashpay/dashpay-contract.json",
+        true,
         platform_version,
     )
     .expect("expected to get contract");

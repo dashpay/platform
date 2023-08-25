@@ -115,6 +115,10 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
+    if transitions.is_empty() {
+        return Ok(ConsensusValidationResult::new_with_data(vec![]));
+    }
+
     let ids: Vec<Value> = transitions
         .iter()
         .map(|dt| Value::Identifier(dt.get_id().to_buffer()))
@@ -154,4 +158,52 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
     Ok(ConsensusValidationResult::new_with_data(
         documents_outcome.documents_owned(),
     ))
+}
+
+pub(crate) fn fetch_document_with_id(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    id: Identifier,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Option<Document>, Error> {
+    let drive_query = DriveQuery {
+        contract,
+        document_type,
+        internal_clauses: InternalClauses {
+            primary_key_in_clause: None,
+            primary_key_equal_clause: Some(WhereClause {
+                field: "$id".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(id.to_buffer()),
+            }),
+            in_clause: None,
+            range_clause: None,
+            equal_clauses: Default::default(),
+        },
+        offset: None,
+        limit: Some(1),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+    };
+
+    //todo: deal with cost of this operation
+    let documents_outcome = drive.query_documents(
+        drive_query,
+        None,
+        false,
+        transaction,
+        Some(platform_version.protocol_version),
+    )?;
+
+    let mut documents = documents_outcome.documents_owned();
+
+    if documents.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(documents.remove(0)))
+    }
 }

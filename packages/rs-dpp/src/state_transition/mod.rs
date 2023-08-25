@@ -244,11 +244,20 @@ pub enum StateTransition {
 }
 
 impl StateTransition {
+    /// This means we should transform into the action before validation of the structure
+    pub fn requires_state_to_validate_structure(&self) -> bool {
+        matches!(self, StateTransition::DocumentsBatch(_))
+    }
+    /// This means we should transform into the action before validation of the identity and signatures
+    pub fn requires_state_to_validate_identity_and_signatures(&self) -> bool {
+        matches!(self, StateTransition::DocumentsBatch(_))
+    }
+
     pub fn is_identity_signed(&self) -> bool {
-        match self {
-            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => false,
-            _ => true,
-        }
+        !matches!(
+            self,
+            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_)
+        )
     }
 
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {

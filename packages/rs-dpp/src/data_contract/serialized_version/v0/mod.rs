@@ -12,7 +12,6 @@ pub mod property_names {
     pub const ID: &str = "id";
     pub const OWNER_ID: &str = "ownerId";
     pub const VERSION: &str = "version";
-    pub const DOCUMENTS: &str = "documents";
     pub const DEFINITIONS: &str = "$defs";
 }
 

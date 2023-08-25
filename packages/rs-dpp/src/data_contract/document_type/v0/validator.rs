@@ -30,7 +30,7 @@ impl PartialEq for StatelessJsonSchemaLazyValidator {
     }
 
     fn ne(&self, other: &Self) -> bool {
-        self.eq(other) == false
+        !self.eq(other)
     }
 }
 impl Clone for StatelessJsonSchemaLazyValidator {
