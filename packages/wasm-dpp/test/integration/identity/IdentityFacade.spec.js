@@ -37,10 +37,7 @@ describe('IdentityFacade', () => {
 
   describe('#create', () => {
     it('should create Identity', () => {
-      const publicKeys = identity.getPublicKeys()
-        .map((identityPublicKey) => (new IdentityPublicKey({
-          ...identityPublicKey.toObject(),
-        })));
+      const publicKeys = identity.getPublicKeys();
 
       const result = dpp.identity.create(
         instantAssetLockProof.createIdentifier(),
@@ -170,17 +167,11 @@ describe('IdentityFacade', () => {
 
   describe('#createIdentityUpdateTransition', () => {
     it('should create IdentityUpdateTransition from identity id and public keys', () => {
+      const key = new IdentityPublicKeyWithWitness(1);
+      key.setData(Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'));
+
       const publicKeys = {
-        add: [new IdentityPublicKeyWithWitness({
-          $version: '0',
-          id: 3,
-          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-          data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
-          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-          securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
-          readOnly: false,
-          signature: Buffer.alloc(32),
-        })],
+        add: [key],
       };
 
       const stateTransition = dpp.identity
