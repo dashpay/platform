@@ -5,6 +5,7 @@ use crate::data_contract::document_type::property::DocumentProperty;
 use platform_value::{Identifier, Value};
 
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+use crate::identity::SecurityLevel;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub trait DocumentTypeV0Getters {
@@ -50,4 +51,7 @@ pub trait DocumentTypeV0Getters {
 
     /// Returns the decryption key storage requirements
     fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements>;
+
+    /// The security level requirements
+    fn security_level_requirement(&self) -> SecurityLevel;
 }

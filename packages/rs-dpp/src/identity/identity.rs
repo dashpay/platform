@@ -50,12 +50,31 @@ impl Identity {
     #[cfg(feature = "identity-hashing")]
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
+        Ok(hash::hash_to_vec(PlatformSerializable::serialize_to_bytes(
+            self,
+        )?))
+    }
+
+    pub fn default_versioned(
+        platform_version: &PlatformVersion,
+    ) -> Result<Identity, ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_structure_version
+        {
+            0 => Ok(Identity::V0(IdentityV0::default())),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Identity::default_versioned".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
     }
 
     /// Created a new identity based on asset locks and keys
-    pub fn new_with_asset_lock_and_keys(
-        asset_lock_proof: AssetLockProof,
+    pub fn new_with_id_and_keys(
+        id: Identifier,
         public_keys: BTreeMap<KeyID, IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<Identity, ProtocolError> {
@@ -66,7 +85,7 @@ impl Identity {
         {
             0 => {
                 let identity_v0 = IdentityV0 {
-                    id: asset_lock_proof.create_identifier()?,
+                    id,
                     public_keys,
                     balance: 0,
                     revision: 0,
@@ -74,7 +93,7 @@ impl Identity {
                 Ok(identity_v0.into())
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "Identity::new_with_asset_lock_and_keys".to_string(),
+                method: "Identity::new_with_id_and_keys".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

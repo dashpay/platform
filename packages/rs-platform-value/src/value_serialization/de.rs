@@ -124,7 +124,7 @@ impl<'de> de::Visitor<'de> for Visitor {
         Ok(Value::Map(map))
     }
 
-    fn visit_enum<A: de::EnumAccess<'de>>(self, mut acc: A) -> Result<Self::Value, A::Error> {
+    fn visit_enum<A: de::EnumAccess<'de>>(self, acc: A) -> Result<Self::Value, A::Error> {
         use serde::de::VariantAccess;
         struct Inner;
         impl<'de> de::Visitor<'de> for Inner {
@@ -445,7 +445,7 @@ impl<'de> de::Deserializer<'de> for Deserializer<Value> {
     ) -> Result<V::Value, Self::Error> {
         match self.0 {
             Value::EnumU8(x) => {
-                let enum_variant = x.get(0).ok_or_else(|| {
+                let enum_variant = x.first().ok_or_else(|| {
                     de::Error::invalid_length(0, &"at least one variant expected")
                 })?;
                 let variant_name = format!("Variant{}", enum_variant);

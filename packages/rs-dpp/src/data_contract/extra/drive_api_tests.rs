@@ -253,7 +253,7 @@ mod test {
             .set_documents_keep_history_contract_default(true);
 
         let contract = contract
-            .serialize_with_platform_version(platform_version)
+            .serialize_to_bytes_with_platform_version(platform_version)
             .expect("serialization shouldn't fail");
         let deserialized_contract =
             DataContract::versioned_deserialize(contract.as_slice(), false, platform_version)

@@ -1,5 +1,6 @@
-const { default: loadWasmDpp } = require('../../..');
-let { Identity, IdentityPublicKey } = require('../../..');
+const {
+  default: loadWasmDpp, Identity, IdentityPublicKey,
+} = require('../../..');
 const generateRandomIdentifierAsync = require('../utils/generateRandomIdentifierAsync');
 
 let staticId = null;
@@ -8,7 +9,7 @@ let staticId = null;
  * @return {Identity}
  */
 module.exports = async function getIdentityFixture(id = staticId, publicKeys = undefined) {
-  ({ Identity, IdentityPublicKey } = await loadWasmDpp());
+  await loadWasmDpp();
 
   if (!staticId) {
     staticId = await generateRandomIdentifierAsync();
@@ -19,33 +20,21 @@ module.exports = async function getIdentityFixture(id = staticId, publicKeys = u
     id = staticId;
   }
 
-  const preCreatedPublicKeys = [
-    {
-      id: 0,
-      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
-      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-      readOnly: false,
-    },
-    {
-      id: 1,
-      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      data: Buffer.from('A8AK95PYMVX5VQKzOhcVQRCUbc9pyg3RiL7jttEMDU+L', 'base64'),
-      purpose: IdentityPublicKey.PURPOSES.ENCRYPTION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
-      readOnly: false,
-    },
-  ];
+  const key1 = new IdentityPublicKey(1);
+  key1.setData(Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'));
 
-  const rawIdentity = {
-    // TODO: obtain latest version from some wasm binding?
-    protocolVersion: 1,
-    id, // TODO: should be probably id.toBuffer(), but it causes panic in IdentityWasm
-    balance: 10000,
-    revision: 0,
-    publicKeys: publicKeys === undefined ? preCreatedPublicKeys : publicKeys,
-  };
+  const key2 = new IdentityPublicKey(1);
+  key2.setData(Buffer.from('A8AK95PYMVX5VQKzOhcVQRCUbc9pyg3RiL7jttEMDU+L', 'base64'));
+  key2.setId(1);
+  key2.setPurpose(IdentityPublicKey.PURPOSES.ENCRYPTION);
+  key2.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
 
-  return new Identity(rawIdentity);
+  const newPublicKeys = publicKeys || [key1, key2];
+
+  const identity = new Identity(1);
+  identity.setId(id);
+  identity.setPublicKeys(newPublicKeys);
+  identity.setBalance(10000);
+
+  return identity;
 };

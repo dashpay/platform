@@ -4,12 +4,35 @@ use crate::version::{FeatureVersion, FeatureVersionBounds};
 pub struct DPPVersion {
     pub costs: CostVersions,
     pub validation: DPPValidationVersions,
+    // TODO: Should be split by state transition type
     pub state_transition_serialization_versions: StateTransitionSerializationVersions,
     pub state_transition_conversion_versions: StateTransitionConversionVersions,
     pub state_transition_method_versions: StateTransitionMethodVersions,
+    pub state_transitions: StateTransitionVersions,
     pub contract_versions: ContractVersions,
     pub document_versions: DocumentVersions,
     pub identity_versions: IdentityVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct StateTransitionVersions {
+    pub documents: DocumentTransitionVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DocumentTransitionVersions {
+    pub documents_batch_transition: DocumentsBatchTransitionVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DocumentsBatchTransitionVersions {
+    pub validation: DocumentsBatchTransitionValidationVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DocumentsBatchTransitionValidationVersions {
+    pub find_duplicates_by_id: FeatureVersion,
+    pub validate_base_structure: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -36,12 +59,9 @@ pub struct DataContractValidationVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct JsonSchemaValidatorVersions {
-    pub get_schema_compilation_options: FeatureVersion,
     pub new: FeatureVersion,
-    pub new_with_definitions: FeatureVersion,
     pub validate: FeatureVersion,
-    pub validate_data_contract_schema: FeatureVersion,
-    pub validate_schema: FeatureVersion,
+    pub compile: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -93,9 +113,16 @@ pub struct ContractVersions {
     pub contract_serialization_version: FeatureVersionBounds,
     /// This is the structure of the Contract as it is defined for code paths
     pub contract_structure_version: FeatureVersion,
-    pub created_data_contract_structure_version: FeatureVersion,
-    pub config_version: FeatureVersion,
+    pub created_data_contract_structure: FeatureVersion,
+    pub config: FeatureVersion,
+    pub methods: DataContractMethodVersions,
     pub document_type_versions: DocumentTypeVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DataContractMethodVersions {
+    pub validate_document: FeatureVersion,
+    pub schema: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

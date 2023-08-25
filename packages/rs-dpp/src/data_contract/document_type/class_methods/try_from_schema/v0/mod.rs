@@ -1,4 +1,6 @@
 use crate::data_contract::document_type::v0::DocumentTypeV0;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::v0::StatelessJsonSchemaLazyValidator;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::TryInto;
 
@@ -21,6 +23,7 @@ use crate::data_contract::document_type::schema::{
 use crate::data_contract::document_type::schema::enrich_with_base_schema;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
+use crate::identity::SecurityLevel;
 use crate::util::json_schema::resolve_uri;
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
@@ -54,12 +57,21 @@ impl DocumentTypeV0 {
         let root_schema = enrich_with_base_schema(
             schema.clone(),
             schema_defs.map(|defs| Value::from(defs.clone())),
-            &[],
             platform_version,
         )?;
 
         #[cfg(feature = "validation")]
+        let json_schema_validator = StatelessJsonSchemaLazyValidator::new();
+
+        #[cfg(feature = "validation")]
         if validate {
+            // Make sure JSON Schema is compilable
+            let root_json_schema = root_schema
+                .try_to_validating_json()
+                .map_err(ProtocolError::ValueError)?;
+
+            json_schema_validator.compile(&root_json_schema, platform_version)?;
+
             // Validate against JSON Schema
             DOCUMENT_META_SCHEMA_V0
                 .validate(
@@ -315,6 +327,12 @@ impl DocumentTypeV0 {
                 .document_type_versions,
         )?;
 
+        let security_level_requirement = schema
+            .get_optional_integer::<u8>(property_names::SECURITY_LEVEL_REQUIREMENT)?
+            .map(SecurityLevel::try_from)
+            .transpose()?
+            .unwrap_or(SecurityLevel::HIGH);
+
         Ok(DocumentTypeV0 {
             name: String::from(name),
             schema,
@@ -330,6 +348,9 @@ impl DocumentTypeV0 {
             data_contract_id,
             encryption_key_storage_requirements: None, //todo
             decryption_key_storage_requirements: None,
+            security_level_requirement,
+            #[cfg(feature = "validation")]
+            json_schema_validator,
         })
     }
 }

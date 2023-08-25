@@ -4,8 +4,7 @@ use crate::document::property_names;
 
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
-use crate::util::deserializer;
-use crate::util::deserializer::SplitFeatureVersionOutcome;
+
 use crate::ProtocolError;
 
 use crate::document::serialization_traits::{

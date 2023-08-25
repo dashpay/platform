@@ -1,3 +1,5 @@
+// TODO(versioning): restore
+// @ts-ignore
 import { ExtendedDocument } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
@@ -39,6 +41,8 @@ export async function create(
     throw new Error(`Contract ${appName} not found. Ensure contractId ${contractId} is correct.`);
   }
 
+  // TODO(versioning): restore
+  // @ts-ignore
   const document = dpp.document.create(
     dataContract,
     identity.getId(),

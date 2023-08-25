@@ -91,7 +91,8 @@ mod tests {
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::config::v0::DataContractConfigSettersV0;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-    use dpp::data_contract::{DataContract, DataContractMethodsV0};
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+    use dpp::data_contract::DataContract;
     use dpp::platform_value::{platform_value, ValueMapHelper};
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::PlatformVersion;

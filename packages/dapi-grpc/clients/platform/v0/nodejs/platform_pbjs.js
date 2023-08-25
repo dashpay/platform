@@ -594,6 +594,8 @@ $root.org = (function() {
                          * @property {Uint8Array|null} [quorumHash] Proof quorumHash
                          * @property {Uint8Array|null} [signature] Proof signature
                          * @property {number|null} [round] Proof round
+                         * @property {Uint8Array|null} [blockIdHash] Proof blockIdHash
+                         * @property {number|null} [quorumType] Proof quorumType
                          */
 
                         /**
@@ -644,6 +646,22 @@ $root.org = (function() {
                         Proof.prototype.round = 0;
 
                         /**
+                         * Proof blockIdHash.
+                         * @member {Uint8Array} blockIdHash
+                         * @memberof org.dash.platform.dapi.v0.Proof
+                         * @instance
+                         */
+                        Proof.prototype.blockIdHash = $util.newBuffer([]);
+
+                        /**
+                         * Proof quorumType.
+                         * @member {number} quorumType
+                         * @memberof org.dash.platform.dapi.v0.Proof
+                         * @instance
+                         */
+                        Proof.prototype.quorumType = 0;
+
+                        /**
                          * Creates a new Proof instance using the specified properties.
                          * @function create
                          * @memberof org.dash.platform.dapi.v0.Proof
@@ -675,6 +693,10 @@ $root.org = (function() {
                                 writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.signature);
                             if (message.round != null && Object.hasOwnProperty.call(message, "round"))
                                 writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.round);
+                            if (message.blockIdHash != null && Object.hasOwnProperty.call(message, "blockIdHash"))
+                                writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.blockIdHash);
+                            if (message.quorumType != null && Object.hasOwnProperty.call(message, "quorumType"))
+                                writer.uint32(/* id 6, wireType 0 =*/48).uint32(message.quorumType);
                             return writer;
                         };
 
@@ -720,6 +742,12 @@ $root.org = (function() {
                                     break;
                                 case 4:
                                     message.round = reader.uint32();
+                                    break;
+                                case 5:
+                                    message.blockIdHash = reader.bytes();
+                                    break;
+                                case 6:
+                                    message.quorumType = reader.uint32();
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -768,6 +796,12 @@ $root.org = (function() {
                             if (message.round != null && message.hasOwnProperty("round"))
                                 if (!$util.isInteger(message.round))
                                     return "round: integer expected";
+                            if (message.blockIdHash != null && message.hasOwnProperty("blockIdHash"))
+                                if (!(message.blockIdHash && typeof message.blockIdHash.length === "number" || $util.isString(message.blockIdHash)))
+                                    return "blockIdHash: buffer expected";
+                            if (message.quorumType != null && message.hasOwnProperty("quorumType"))
+                                if (!$util.isInteger(message.quorumType))
+                                    return "quorumType: integer expected";
                             return null;
                         };
 
@@ -800,6 +834,13 @@ $root.org = (function() {
                                     message.signature = object.signature;
                             if (object.round != null)
                                 message.round = object.round >>> 0;
+                            if (object.blockIdHash != null)
+                                if (typeof object.blockIdHash === "string")
+                                    $util.base64.decode(object.blockIdHash, message.blockIdHash = $util.newBuffer($util.base64.length(object.blockIdHash)), 0);
+                                else if (object.blockIdHash.length >= 0)
+                                    message.blockIdHash = object.blockIdHash;
+                            if (object.quorumType != null)
+                                message.quorumType = object.quorumType >>> 0;
                             return message;
                         };
 
@@ -839,6 +880,14 @@ $root.org = (function() {
                                         object.signature = $util.newBuffer(object.signature);
                                 }
                                 object.round = 0;
+                                if (options.bytes === String)
+                                    object.blockIdHash = "";
+                                else {
+                                    object.blockIdHash = [];
+                                    if (options.bytes !== Array)
+                                        object.blockIdHash = $util.newBuffer(object.blockIdHash);
+                                }
+                                object.quorumType = 0;
                             }
                             if (message.grovedbProof != null && message.hasOwnProperty("grovedbProof"))
                                 object.grovedbProof = options.bytes === String ? $util.base64.encode(message.grovedbProof, 0, message.grovedbProof.length) : options.bytes === Array ? Array.prototype.slice.call(message.grovedbProof) : message.grovedbProof;
@@ -848,6 +897,10 @@ $root.org = (function() {
                                 object.signature = options.bytes === String ? $util.base64.encode(message.signature, 0, message.signature.length) : options.bytes === Array ? Array.prototype.slice.call(message.signature) : message.signature;
                             if (message.round != null && message.hasOwnProperty("round"))
                                 object.round = message.round;
+                            if (message.blockIdHash != null && message.hasOwnProperty("blockIdHash"))
+                                object.blockIdHash = options.bytes === String ? $util.base64.encode(message.blockIdHash, 0, message.blockIdHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.blockIdHash) : message.blockIdHash;
+                            if (message.quorumType != null && message.hasOwnProperty("quorumType"))
+                                object.quorumType = message.quorumType;
                             return object;
                         };
 
@@ -875,6 +928,7 @@ $root.org = (function() {
                          * @property {number|null} [coreChainLockedHeight] ResponseMetadata coreChainLockedHeight
                          * @property {number|Long|null} [timeMs] ResponseMetadata timeMs
                          * @property {number|null} [protocolVersion] ResponseMetadata protocolVersion
+                         * @property {string|null} [chainId] ResponseMetadata chainId
                          */
 
                         /**
@@ -925,6 +979,14 @@ $root.org = (function() {
                         ResponseMetadata.prototype.protocolVersion = 0;
 
                         /**
+                         * ResponseMetadata chainId.
+                         * @member {string} chainId
+                         * @memberof org.dash.platform.dapi.v0.ResponseMetadata
+                         * @instance
+                         */
+                        ResponseMetadata.prototype.chainId = "";
+
+                        /**
                          * Creates a new ResponseMetadata instance using the specified properties.
                          * @function create
                          * @memberof org.dash.platform.dapi.v0.ResponseMetadata
@@ -956,6 +1018,8 @@ $root.org = (function() {
                                 writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.timeMs);
                             if (message.protocolVersion != null && Object.hasOwnProperty.call(message, "protocolVersion"))
                                 writer.uint32(/* id 4, wireType 0 =*/32).uint32(message.protocolVersion);
+                            if (message.chainId != null && Object.hasOwnProperty.call(message, "chainId"))
+                                writer.uint32(/* id 5, wireType 2 =*/42).string(message.chainId);
                             return writer;
                         };
 
@@ -1001,6 +1065,9 @@ $root.org = (function() {
                                     break;
                                 case 4:
                                     message.protocolVersion = reader.uint32();
+                                    break;
+                                case 5:
+                                    message.chainId = reader.string();
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -1049,6 +1116,9 @@ $root.org = (function() {
                             if (message.protocolVersion != null && message.hasOwnProperty("protocolVersion"))
                                 if (!$util.isInteger(message.protocolVersion))
                                     return "protocolVersion: integer expected";
+                            if (message.chainId != null && message.hasOwnProperty("chainId"))
+                                if (!$util.isString(message.chainId))
+                                    return "chainId: string expected";
                             return null;
                         };
 
@@ -1086,6 +1156,8 @@ $root.org = (function() {
                                     message.timeMs = new $util.LongBits(object.timeMs.low >>> 0, object.timeMs.high >>> 0).toNumber(true);
                             if (object.protocolVersion != null)
                                 message.protocolVersion = object.protocolVersion >>> 0;
+                            if (object.chainId != null)
+                                message.chainId = String(object.chainId);
                             return message;
                         };
 
@@ -1115,6 +1187,7 @@ $root.org = (function() {
                                 } else
                                     object.timeMs = options.longs === String ? "0" : 0;
                                 object.protocolVersion = 0;
+                                object.chainId = "";
                             }
                             if (message.height != null && message.hasOwnProperty("height"))
                                 if (typeof message.height === "number")
@@ -1130,6 +1203,8 @@ $root.org = (function() {
                                     object.timeMs = options.longs === String ? $util.Long.prototype.toString.call(message.timeMs) : options.longs === Number ? new $util.LongBits(message.timeMs.low >>> 0, message.timeMs.high >>> 0).toNumber(true) : message.timeMs;
                             if (message.protocolVersion != null && message.hasOwnProperty("protocolVersion"))
                                 object.protocolVersion = message.protocolVersion;
+                            if (message.chainId != null && message.hasOwnProperty("chainId"))
+                                object.chainId = message.chainId;
                             return object;
                         };
 
@@ -10364,8 +10439,8 @@ $root.org = (function() {
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IGetDataContractHistoryRequest
                          * @property {Uint8Array|null} [id] GetDataContractHistoryRequest id
-                         * @property {number|null} [limit] GetDataContractHistoryRequest limit
-                         * @property {number|null} [offset] GetDataContractHistoryRequest offset
+                         * @property {google.protobuf.IUInt32Value|null} [limit] GetDataContractHistoryRequest limit
+                         * @property {google.protobuf.IUInt32Value|null} [offset] GetDataContractHistoryRequest offset
                          * @property {number|Long|null} [startAtMs] GetDataContractHistoryRequest startAtMs
                          * @property {boolean|null} [prove] GetDataContractHistoryRequest prove
                          */
@@ -10395,19 +10470,19 @@ $root.org = (function() {
 
                         /**
                          * GetDataContractHistoryRequest limit.
-                         * @member {number} limit
+                         * @member {google.protobuf.IUInt32Value|null|undefined} limit
                          * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
                          * @instance
                          */
-                        GetDataContractHistoryRequest.prototype.limit = 0;
+                        GetDataContractHistoryRequest.prototype.limit = null;
 
                         /**
                          * GetDataContractHistoryRequest offset.
-                         * @member {number} offset
+                         * @member {google.protobuf.IUInt32Value|null|undefined} offset
                          * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
                          * @instance
                          */
-                        GetDataContractHistoryRequest.prototype.offset = 0;
+                        GetDataContractHistoryRequest.prototype.offset = null;
 
                         /**
                          * GetDataContractHistoryRequest startAtMs.
@@ -10452,9 +10527,9 @@ $root.org = (function() {
                             if (message.id != null && Object.hasOwnProperty.call(message, "id"))
                                 writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.id);
                             if (message.limit != null && Object.hasOwnProperty.call(message, "limit"))
-                                writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.limit);
+                                $root.google.protobuf.UInt32Value.encode(message.limit, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                             if (message.offset != null && Object.hasOwnProperty.call(message, "offset"))
-                                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.offset);
+                                $root.google.protobuf.UInt32Value.encode(message.offset, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                             if (message.startAtMs != null && Object.hasOwnProperty.call(message, "startAtMs"))
                                 writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.startAtMs);
                             if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
@@ -10497,10 +10572,10 @@ $root.org = (function() {
                                     message.id = reader.bytes();
                                     break;
                                 case 2:
-                                    message.limit = reader.uint32();
+                                    message.limit = $root.google.protobuf.UInt32Value.decode(reader, reader.uint32());
                                     break;
                                 case 3:
-                                    message.offset = reader.uint32();
+                                    message.offset = $root.google.protobuf.UInt32Value.decode(reader, reader.uint32());
                                     break;
                                 case 4:
                                     message.startAtMs = reader.uint64();
@@ -10546,12 +10621,16 @@ $root.org = (function() {
                             if (message.id != null && message.hasOwnProperty("id"))
                                 if (!(message.id && typeof message.id.length === "number" || $util.isString(message.id)))
                                     return "id: buffer expected";
-                            if (message.limit != null && message.hasOwnProperty("limit"))
-                                if (!$util.isInteger(message.limit))
-                                    return "limit: integer expected";
-                            if (message.offset != null && message.hasOwnProperty("offset"))
-                                if (!$util.isInteger(message.offset))
-                                    return "offset: integer expected";
+                            if (message.limit != null && message.hasOwnProperty("limit")) {
+                                var error = $root.google.protobuf.UInt32Value.verify(message.limit);
+                                if (error)
+                                    return "limit." + error;
+                            }
+                            if (message.offset != null && message.hasOwnProperty("offset")) {
+                                var error = $root.google.protobuf.UInt32Value.verify(message.offset);
+                                if (error)
+                                    return "offset." + error;
+                            }
                             if (message.startAtMs != null && message.hasOwnProperty("startAtMs"))
                                 if (!$util.isInteger(message.startAtMs) && !(message.startAtMs && $util.isInteger(message.startAtMs.low) && $util.isInteger(message.startAtMs.high)))
                                     return "startAtMs: integer|Long expected";
@@ -10578,10 +10657,16 @@ $root.org = (function() {
                                     $util.base64.decode(object.id, message.id = $util.newBuffer($util.base64.length(object.id)), 0);
                                 else if (object.id.length >= 0)
                                     message.id = object.id;
-                            if (object.limit != null)
-                                message.limit = object.limit >>> 0;
-                            if (object.offset != null)
-                                message.offset = object.offset >>> 0;
+                            if (object.limit != null) {
+                                if (typeof object.limit !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDataContractHistoryRequest.limit: object expected");
+                                message.limit = $root.google.protobuf.UInt32Value.fromObject(object.limit);
+                            }
+                            if (object.offset != null) {
+                                if (typeof object.offset !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDataContractHistoryRequest.offset: object expected");
+                                message.offset = $root.google.protobuf.UInt32Value.fromObject(object.offset);
+                            }
                             if (object.startAtMs != null)
                                 if ($util.Long)
                                     (message.startAtMs = $util.Long.fromValue(object.startAtMs)).unsigned = true;
@@ -10617,8 +10702,8 @@ $root.org = (function() {
                                     if (options.bytes !== Array)
                                         object.id = $util.newBuffer(object.id);
                                 }
-                                object.limit = 0;
-                                object.offset = 0;
+                                object.limit = null;
+                                object.offset = null;
                                 if ($util.Long) {
                                     var long = new $util.Long(0, 0, true);
                                     object.startAtMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
@@ -10629,9 +10714,9 @@ $root.org = (function() {
                             if (message.id != null && message.hasOwnProperty("id"))
                                 object.id = options.bytes === String ? $util.base64.encode(message.id, 0, message.id.length) : options.bytes === Array ? Array.prototype.slice.call(message.id) : message.id;
                             if (message.limit != null && message.hasOwnProperty("limit"))
-                                object.limit = message.limit;
+                                object.limit = $root.google.protobuf.UInt32Value.toObject(message.limit, options);
                             if (message.offset != null && message.hasOwnProperty("offset"))
-                                object.offset = message.offset;
+                                object.offset = $root.google.protobuf.UInt32Value.toObject(message.offset, options);
                             if (message.startAtMs != null && message.hasOwnProperty("startAtMs"))
                                 if (typeof message.startAtMs === "number")
                                     object.startAtMs = options.longs === String ? String(message.startAtMs) : message.startAtMs;

@@ -7,14 +7,14 @@ use dpp::version::PlatformVersion;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create) trait IdentityCreateStateTransitionStructureValidationV0
 {
-    fn validate_structure_v0(
+    fn validate_base_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
 impl IdentityCreateStateTransitionStructureValidationV0 for IdentityCreateTransition {
-    fn validate_structure_v0(
+    fn validate_base_structure_v0(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {

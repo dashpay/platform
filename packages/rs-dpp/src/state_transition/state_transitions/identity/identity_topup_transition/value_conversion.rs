@@ -9,8 +9,11 @@ use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_transition::state_transitions::identity_topup_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
+use crate::serialization::ValueConvertible;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
+
+impl<'a> ValueConvertible<'a> for IdentityTopUpTransition {}
 
 impl<'a> StateTransitionValueConvert<'a> for IdentityTopUpTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

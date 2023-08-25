@@ -8,6 +8,7 @@ use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, Docu
 use platform_value::{Identifier, Value};
 
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+use crate::identity::SecurityLevel;
 use std::collections::{BTreeMap, BTreeSet};
 pub use v0::*;
 
@@ -101,6 +102,12 @@ impl DocumentTypeV0Getters for DocumentType {
             DocumentType::V0(v0) => v0.decryption_key_storage_requirements(),
         }
     }
+
+    fn security_level_requirement(&self) -> SecurityLevel {
+        match self {
+            DocumentType::V0(v0) => v0.security_level_requirement(),
+        }
+    }
 }
 
 impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
@@ -182,6 +189,7 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
+
     fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
         match self {
             DocumentTypeRef::V0(v0) => v0.encryption_key_storage_requirements(),
@@ -191,6 +199,12 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
     fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
         match self {
             DocumentTypeRef::V0(v0) => v0.decryption_key_storage_requirements(),
+        }
+    }
+
+    fn security_level_requirement(&self) -> SecurityLevel {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.security_level_requirement(),
         }
     }
 }
@@ -283,6 +297,12 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
     fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.decryption_key_storage_requirements(),
+        }
+    }
+
+    fn security_level_requirement(&self) -> SecurityLevel {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.security_level_requirement(),
         }
     }
 }

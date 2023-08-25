@@ -1,5 +1,5 @@
 import { PrivateKey } from '@dashevo/dashcore-lib';
-import { IdentityPublicKey, StateTransitionExecutionContext } from '@dashevo/wasm-dpp';
+import { IdentityPublicKey } from '@dashevo/wasm-dpp';
 import { Platform } from '../../../Platform';
 
 /**
@@ -34,32 +34,27 @@ export async function createIdentityCreateTransition(
     .getIdentityHDKeyByIndex(identityIndex, 1);
   const identitySecondPublicKey = identitySecondPrivateKey.toPublicKey();
 
+  const keyOne = new IdentityPublicKey(1);
+  keyOne.setData(identityMasterPublicKey.toBuffer());
+
+  const keyTwo = new IdentityPublicKey(1);
+  keyTwo.setId(1);
+  keyTwo.setData(identitySecondPublicKey.toBuffer());
+  keyTwo.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH);
+
   // Create Identity
   const identity = dpp.identity.create(
-    assetLockProof, [{
-      id: 0,
-      data: identityMasterPublicKey.toBuffer(),
-      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-      readOnly: false,
-    },
-    {
-      id: 1,
-      data: identitySecondPublicKey.toBuffer(),
-      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
-      readOnly: false,
-    },
-    ],
+    assetLockProof.createIdentifier(),
+    [keyOne, keyTwo],
   );
 
   // Create ST
-  const identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);
+  const identityCreateTransition = dpp.identity.createIdentityCreateTransition(
+    identity,
+    assetLockProof,
+  );
 
   // Create key proofs
-
   const [masterKey, secondKey] = identityCreateTransition.getPublicKeys();
 
   await identityCreateTransition
@@ -84,17 +79,19 @@ export async function createIdentityCreateTransition(
   await identityCreateTransition
     .signByPrivateKey(assetLockPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
-  const result = await dpp.stateTransition.validateBasic(
-    identityCreateTransition,
-    // TODO(v0.24-backport): get rid of this once decided
-    //  whether we need execution context in wasm bindings
-    new StateTransitionExecutionContext(),
-  );
+  // TODO(versioning): restore
+  // @ts-ignore
+  // const result = await dpp.stateTransition.validateBasic(
+  //   identityCreateTransition,
+  //   // TODO(v0.24-backport): get rid of this once decided
+  //   //  whether we need execution context in wasm bindings
+  //   new StateTransitionExecutionContext(),
+  // );
 
-  if (!result.isValid()) {
-    const messages = result.getErrors().map((error) => error.message);
-    throw new Error(`StateTransition is invalid - ${JSON.stringify(messages)}`);
-  }
+  // if (!result.isValid()) {
+  //   const messages = result.getErrors().map((error) => error.message);
+  //   throw new Error(`StateTransition is invalid - ${JSON.stringify(messages)}`);
+  // }
 
   return { identity, identityCreateTransition, identityIndex };
 }

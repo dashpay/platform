@@ -29,7 +29,7 @@ pub(super) fn validate_unique_identity_public_key_hashes_in_state_v0(
 
     let key_ids_map = identity_public_keys_with_witness
         .iter()
-        .map(|key| Ok((key.hash(platform_version)?, key.id())))
+        .map(|key| Ok((key.hash()?, key.id())))
         .collect::<Result<HashMap<[u8; 20], KeyID>, ProtocolError>>()?;
 
     let duplicates = drive.has_any_of_unique_public_key_hashes(

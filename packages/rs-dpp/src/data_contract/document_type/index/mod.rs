@@ -44,7 +44,6 @@ impl Index {
             value1 == value2
         })
     }
-
     /// The field names of the index
     pub fn property_names(&self) -> Vec<String> {
         self.properties

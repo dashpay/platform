@@ -14,6 +14,7 @@ use crate::document::extended_document::v0::ExtendedDocumentV0;
 
 #[cfg(feature = "document-json-conversion")]
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
+use crate::validation::SimpleConsensusValidationResult;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
@@ -202,6 +203,17 @@ impl ExtendedDocument {
     pub fn get(&self, path: &str) -> Option<&Value> {
         match self {
             ExtendedDocument::V0(v0) => v0.get(path),
+        }
+    }
+
+    #[cfg(feature = "validation")]
+    /// Validates the extended document against the data contract
+    pub fn validate(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        match self {
+            ExtendedDocument::V0(v0) => v0.validate(platform_version),
         }
     }
 }

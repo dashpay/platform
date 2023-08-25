@@ -57,7 +57,7 @@ pub(super) fn derive_platform_serialize_enum(
     //         .iter()
     //         .map(|v| {
     //             let ident = &v.ident;
-    //             quote! { #name::#ident(inner) => #crate_name::serialization::PlatformSerializable::serialize_with_platform_version(inner, platform_version) }
+    //             quote! { #name::#ident(inner) => #crate_name::serialization::PlatformSerializable::serialize_to_bytes_with_platform_version(inner, platform_version) }
     //         })
     //         .collect::<Vec<_>>();
     //
@@ -72,7 +72,7 @@ pub(super) fn derive_platform_serialize_enum(
     //         .iter()
     //         .map(|v| {
     //             let ident = &v.ident;
-    //             quote! { #name::#ident(inner) => #crate_name::serialization::PlatformSerializable::serialize_consume_with_platform_version(inner, platform_version) }
+    //             quote! { #name::#ident(inner) => #crate_name::serialization::PlatformSerializable::serialize_consume_to_bytes_with_platform_version(inner, platform_version) }
     //         })
     //         .collect::<Vec<_>>();
     //
@@ -121,12 +121,12 @@ pub(super) fn derive_platform_serialize_enum(
             {
                 type Error = #error_type;
 
-                fn serialize(&self) -> Result<Vec<u8>, Self::Error> {
+                fn serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
                     #config
                     bincode::encode_to_vec(self, config)#limit_err
                 }
 
-                fn serialize_consume(self) -> Result<Vec<u8>, Self::Error> {
+                fn serialize_consume_to_bytes(self) -> Result<Vec<u8>, Self::Error> {
                     #config
                     bincode::encode_to_vec(self, config)#limit_err
                 }
@@ -137,12 +137,12 @@ pub(super) fn derive_platform_serialize_enum(
              impl #impl_generics #crate_name::serialization::PlatformSerializableWithPlatformVersion for #name #ty_generics #where_clause {
                 type Error = #error_type;
 
-                fn serialize_with_platform_version(&self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, #error_type> {
+                fn serialize_to_bytes_with_platform_version(&self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, #error_type> {
                     #config
                         platform_serialization::platform_encode_to_vec(self, config, platform_version)#limit_err
                 }
 
-                fn serialize_consume_with_platform_version(self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, #error_type> {
+                fn serialize_consume_to_bytes_with_platform_version(self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, #error_type> {
                     #config
                         platform_serialization::platform_encode_to_vec(self, config, platform_version)#limit_err
                 }

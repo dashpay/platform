@@ -64,12 +64,4 @@ impl JsonSchemaErrorWasm {
     pub fn message(&self) -> String {
         self.inner.to_string()
     }
-
-    #[wasm_bindgen(js_name=serialize)]
-    pub fn serialize(&self) -> Result<Buffer, JsError> {
-        let bytes = PlatformSerializable::serialize(&ConsensusError::from(self.inner.clone()))
-            .map_err(JsError::from)?;
-
-        Ok(Buffer::from_bytes(bytes.as_slice()))
-    }
 }

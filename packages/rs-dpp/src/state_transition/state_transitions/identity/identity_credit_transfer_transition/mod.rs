@@ -1,5 +1,5 @@
 pub mod accessors;
-mod fields;
+pub mod fields;
 mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
@@ -20,6 +20,7 @@ use bincode::{Decode, Encode};
 use derive_more::From;
 use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 use serde::{Deserialize, Serialize};
 
@@ -49,6 +50,25 @@ pub type IdentityCreditTransferTransitionLatest = IdentityCreditTransferTransiti
 pub enum IdentityCreditTransferTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(IdentityCreditTransferTransitionV0),
+}
+
+impl IdentityCreditTransferTransition {
+    pub fn default_versioned(platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_structure_version
+        {
+            0 => Ok(IdentityCreditTransferTransition::V0(
+                IdentityCreditTransferTransitionV0::default(),
+            )),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "IdentityCreditTransferTransitionV0::default_versioned".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
 }
 
 impl StateTransitionFieldTypes for IdentityCreditTransferTransition {

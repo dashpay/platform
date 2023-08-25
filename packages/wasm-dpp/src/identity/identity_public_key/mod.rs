@@ -13,7 +13,8 @@ use dpp::identity::identity_public_key::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::platform_value::{BinaryData, ReplacementType, Value};
 use dpp::serialization::ValueConvertible;
-
+use dpp::state_transition::public_key_in_creation::v0::BINARY_DATA_FIELDS;
+use dpp::version::PlatformVersion;
 mod purpose;
 pub use purpose::*;
 
@@ -32,24 +33,13 @@ pub struct IdentityPublicKeyWasm(IdentityPublicKey);
 #[wasm_bindgen(js_class = IdentityPublicKey)]
 impl IdentityPublicKeyWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyWasm, JsValue> {
-        let public_key_json_string = utils::stringify(&raw_public_key)?;
-        let public_key_json: JsonValue =
-            serde_json::from_str(&public_key_json_string).map_err(|e| e.to_string())?;
+    pub fn new(platform_version: u32) -> Result<IdentityPublicKeyWasm, JsValue> {
+        let platform_version =
+            &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        let mut public_key_platform_value: Value = public_key_json.into();
-        // Patch the binary data fields to be base64 encoded because of a bug in serde_wasm_bindgen
-        public_key_platform_value
-            .replace_at_paths(
-                dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
-                ReplacementType::TextBase64,
-            )
-            .map_err(|e| e.to_string())?;
-
-        let raw_public_key: IdentityPublicKey =
-            IdentityPublicKey::from_object(public_key_platform_value).map_err(|e| e.to_string())?;
-
-        Ok(IdentityPublicKeyWasm(raw_public_key))
+        IdentityPublicKey::default_versioned(&platform_version)
+            .map(Into::into)
+            .map_err(from_dpp_err)
     }
 
     #[wasm_bindgen(js_name=getId)]

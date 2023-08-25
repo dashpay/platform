@@ -1,5 +1,5 @@
 pub mod accessors;
-mod fields;
+pub mod fields;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 pub mod methods;
@@ -19,6 +19,7 @@ use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
 use serde::{Deserialize, Serialize};
 
@@ -46,6 +47,25 @@ use serde::{Deserialize, Serialize};
 pub enum IdentityTopUpTransition {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(IdentityTopUpTransitionV0),
+}
+
+impl IdentityTopUpTransition {
+    pub fn default_versioned(platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_structure_version
+        {
+            0 => Ok(IdentityTopUpTransition::V0(
+                IdentityTopUpTransitionV0::default(),
+            )),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "IdentityTopUpTransition::default_versioned".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
 }
 
 impl StateTransitionFieldTypes for IdentityTopUpTransition {
