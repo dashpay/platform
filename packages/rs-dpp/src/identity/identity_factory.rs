@@ -8,7 +8,6 @@ use crate::identity::{Identity, IdentityPublicKey, KeyID};
 use crate::ProtocolError;
 
 use dashcore::{InstantLock, Transaction};
-#[cfg(all(feature = "state-transitions", feature = "client"))]
 use platform_value::Identifier;
 use std::collections::BTreeMap;
 
