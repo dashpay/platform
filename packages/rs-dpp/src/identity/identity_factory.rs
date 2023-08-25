@@ -51,7 +51,7 @@ use crate::version::PlatformVersion;
     feature = "identity-value-conversion"
 ))]
 use platform_value::Value;
-use platform_version::TryIntoPlatformVersioned;
+use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
 
