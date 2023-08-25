@@ -1402,7 +1402,7 @@ dependencies = [
  "base64 0.21.2",
  "bytes",
  "camino",
- "dapi-grpc 0.25.0-dev.6",
+ "dapi-grpc 0.25.0-dev.6 (git+https://github.com/dashpay/platform?branch=rs-dapi-client)",
  "derive_more",
  "dpp",
  "drive",

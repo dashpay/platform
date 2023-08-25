@@ -8,7 +8,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 uniffi = { git = "https://github.com/mozilla/uniffi-rs", optional = true }
-dapi-grpc = { path = "../dapi-grpc" }
+# TODO uncomment once we solve the client
+# dapi-grpc = { path = "../dapi-grpc" }
+dapi-grpc = { git = "https://github.com/dashpay/platform", branch = "rs-dapi-client" }
+
 thiserror = { version = "1.0.39" }
 bytes = { version = "1.4.0" }
 camino = { version = "1.1.4", optional = true }
@@ -34,6 +37,7 @@ base64 = { version = "0.21.0" }
 # Dependencies for examples
 rs-dapi-client = { git = "https://github.com/dashpay/platform", branch = "rs-dapi-client" }
 tokio = { version = "1.32.0", features = ["macros"] }
+dapi-grpc = { git = "https://github.com/dashpay/platform", branch = "rs-dapi-client" }
 
 [build-dependencies]
 
