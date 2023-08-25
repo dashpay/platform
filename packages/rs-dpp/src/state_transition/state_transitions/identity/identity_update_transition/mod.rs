@@ -1,5 +1,5 @@
 pub mod accessors;
-mod fields;
+pub mod fields;
 mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;

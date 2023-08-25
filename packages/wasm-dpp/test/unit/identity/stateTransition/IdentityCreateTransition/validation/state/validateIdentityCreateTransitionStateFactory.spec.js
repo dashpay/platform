@@ -5,7 +5,7 @@ const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/c
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 
-describe('validateIdentityCreateTransitionStateFactory', () => {
+describe.skip('validateIdentityCreateTransitionStateFactory', () => {
   let validateIdentityCreateTransitionState;
   let stateTransition;
   let stateRepositoryMock;

@@ -60,18 +60,6 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
-    fn identifier_paths(&self) -> BTreeSet<String> {
-        match self {
-            DataContract::V0(v0) => v0.identifier_paths(),
-        }
-    }
-
-    fn binary_paths(&self) -> BTreeSet<String> {
-        match self {
-            DataContract::V0(v0) => v0.binary_paths(),
-        }
-    }
-
     fn metadata(&self) -> Option<&Metadata> {
         match self {
             DataContract::V0(v0) => v0.metadata(),

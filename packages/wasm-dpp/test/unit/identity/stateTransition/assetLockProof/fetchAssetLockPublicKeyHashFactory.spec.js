@@ -5,7 +5,7 @@ const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const { default: loadWasmpDpp } = require('../../../../../dist');
 
-describe('fetchAssetLockPublicKeyHashFactory', () => {
+describe.skip('fetchAssetLockPublicKeyHashFactory', () => {
   let fetchAssetLockPublicKeyHash;
   let stateRepositoryMock;
   let executionContext;

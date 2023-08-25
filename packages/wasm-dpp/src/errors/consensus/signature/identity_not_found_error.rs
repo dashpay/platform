@@ -6,7 +6,8 @@ use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
 use crate::identifier::IdentifierWrapper;
-
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
+use dpp::version::PlatformVersion;
 #[wasm_bindgen(js_name=IdentityNotFoundError)]
 pub struct IdentityNotFoundErrorWasm {
     inner: IdentityNotFoundError,
@@ -45,7 +46,7 @@ impl IdentityNotFoundErrorWasm {
     #[wasm_bindgen(js_name=serialize)]
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
-            .serialize()
+            .serialize_with_platform_version(PlatformVersion::first())
             .map_err(JsError::from)?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))

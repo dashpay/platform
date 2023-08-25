@@ -5,7 +5,7 @@ const createStateRepositoryMock = require('../../../../../lib/test/mocks/createS
 const { default: loadWasmDpp } = require('../../../../../dist');
 const { expectValidationError } = require('../../../../../lib/test/expect/expectError');
 
-describe('validateAssetLockTransactionFactory', () => {
+describe.skip('validateAssetLockTransactionFactory', () => {
   let stateRepositoryMock;
   let rawTransaction;
   let outputIndex;

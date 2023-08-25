@@ -47,6 +47,7 @@ impl VersionAttributes {
     }
 }
 
+// TODO serialize_consume and serialize aren't actually adding
 /// This proc macro derives the `PlatformSerialize` trait for the input data structure.
 /// The derived trait implementation will provide methods to serialize the data into a binary format, with some customization options.
 /// The `platform_error_type` attribute specifies the error type to be used in the `Result` types of the serialization methods.

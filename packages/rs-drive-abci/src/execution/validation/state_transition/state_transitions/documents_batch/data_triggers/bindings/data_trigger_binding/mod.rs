@@ -13,7 +13,7 @@ pub use v0::*;
 
 mod v0;
 
-#[derive(Debug, Clone, From)]
+#[derive(Clone, From)]
 pub enum DataTriggerBinding {
     V0(DataTriggerBindingV0),
 }

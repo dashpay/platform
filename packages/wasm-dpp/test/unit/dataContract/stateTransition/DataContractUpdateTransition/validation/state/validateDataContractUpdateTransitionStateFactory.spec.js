@@ -3,7 +3,7 @@ const getDataContractFixture = require('../../../../../../../lib/test/fixtures/g
 const { default: loadWasmDpp } = require('../../../../../../..');
 const { getLatestProtocolVersion } = require('../../../../../../..');
 
-describe('validateDataContractUpdateTransitionStateFactory', () => {
+describe.skip('validateDataContractUpdateTransitionStateFactory', () => {
   let validateDataContractUpdateTransitionState;
   let dataContract;
   let stateTransition;

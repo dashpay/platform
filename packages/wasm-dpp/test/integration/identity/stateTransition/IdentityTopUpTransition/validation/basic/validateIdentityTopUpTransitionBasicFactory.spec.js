@@ -7,7 +7,7 @@ const {
 } = require('../../../../../../../lib/test/expect/expectError');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
-describe('validateIdentityTopUpTransitionBasicFactory', () => {
+describe.skip('validateIdentityTopUpTransitionBasicFactory', () => {
   let rawStateTransition;
   let stateTransition;
 

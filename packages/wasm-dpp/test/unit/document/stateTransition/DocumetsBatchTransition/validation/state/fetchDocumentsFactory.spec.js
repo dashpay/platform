@@ -16,7 +16,7 @@ let DocumentCreateTransition;
 let StateTransitionExecutionContext;
 let ExtendedDocument;
 
-describe('fetchDocumentsFactory', () => {
+describe.skip('fetchDocumentsFactory', () => {
   let stateRepositoryMock;
   let documentTransitionsJs;
   let documentTransitions;

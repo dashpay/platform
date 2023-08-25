@@ -16,7 +16,8 @@ module.exports = async function getIdentityCreateTransitionFixture(
 ) {
   ({ IdentityTopUpTransition } = await loadWasmDpp());
   const rawStateTransition = {
-    protocolVersion: 1,
+    $version: '0',
+    signature: Buffer.alloc(32),
     type: 3,
     assetLockProof: (await getInstantAssetLockProofFixture(oneTimePrivateKey)).toObject(),
     identityId: await generateRandomIdentifier(),

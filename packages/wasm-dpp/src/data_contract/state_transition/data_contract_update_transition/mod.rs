@@ -79,12 +79,12 @@ impl DataContractUpdateTransitionWasm {
         self.0.data_contract().clone().into()
     }
 
-    #[wasm_bindgen(js_name=setDataContractConfig)]
-    pub fn set_data_contract_config(&mut self, config: JsValue) -> Result<(), JsValue> {
-        let res = serde_wasm_bindgen::from_value(config);
-        self.0.data_contract.config = res.unwrap();
-        Ok(())
-    }
+    // #[wasm_bindgen(js_name=setDataContractConfig)]
+    // pub fn set_data_contract_config(&mut self, config: JsValue) -> Result<(), JsValue> {
+    //     let res = serde_wasm_bindgen::from_value(config);
+    //     self.0.data_contract.config = res.unwrap();
+    //     Ok(())
+    // }
 
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn get_protocol_version(&self) -> u32 {
