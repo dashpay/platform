@@ -5,7 +5,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
@@ -59,6 +59,9 @@ where
         state_cache.set_last_committed_block_info(Some(extended_block_info));
 
         state_cache.set_initialization_information(None);
+
+        //todo: verify this with an update
+        PlatformVersion::set_current(PlatformVersion::get(platform_version.protocol_version)?);
 
         // Persist ephemeral data
         self.store_ephemeral_state(&state_cache, transaction, platform_version)?;

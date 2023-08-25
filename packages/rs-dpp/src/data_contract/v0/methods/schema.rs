@@ -91,7 +91,6 @@ mod test {
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
     use crate::data_contract::v0::DataContractV0;
-    use crate::data_contract::DataContractMethodsV0;
     use platform_value::{platform_value, Identifier};
 
     #[test]
