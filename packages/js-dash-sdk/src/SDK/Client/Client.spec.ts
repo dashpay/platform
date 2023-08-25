@@ -247,18 +247,12 @@ describe('Dash - Client', function suite() {
 
       const privateKey = new PrivateKey(privateKeyFixture);
 
-      const publicKeysToAdd = [
-        new IdentityPublicKeyWithWitness({
-          $version: '0',
-          id: 3,
-          type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-          data: privateKey.toPublicKey().toBuffer(),
-          purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-          securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
-          readOnly: false,
-          signature: Buffer.alloc(0),
-        }),
-      ];
+      const key = new IdentityPublicKeyWithWitness(1);
+      key.setId(3);
+      key.setData(privateKey.toPublicKey().toBuffer());
+      key.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.CRITICAL);
+
+      const publicKeysToAdd = [key];
       const publicKeysToDisable = [identity.getPublicKeys()[0]];
 
       // Updating the identity

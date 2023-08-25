@@ -43,6 +43,12 @@ pub enum KeyType {
     EDDSA_25519_HASH160 = 4,
 }
 
+impl Default for KeyType {
+    fn default() -> Self {
+        KeyType::ECDSA_SECP256K1
+    }
+}
+
 lazy_static! {
     static ref KEY_TYPE_SIZES: HashMap<KeyType, usize> = vec![
         (KeyType::ECDSA_SECP256K1, 33),

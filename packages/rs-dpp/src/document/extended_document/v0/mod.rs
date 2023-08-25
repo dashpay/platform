@@ -25,12 +25,15 @@ use std::collections::BTreeMap;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::document::extended_document_property_names::DATA_CONTRACT;
+#[cfg(feature = "validation")]
+use crate::data_contract::validation::DataContractValidationMethodsV0;
 #[cfg(feature = "document-json-conversion")]
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
 #[cfg(feature = "document-value-conversion")]
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
+#[cfg(feature = "validation")]
+use crate::validation::SimpleConsensusValidationResult;
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "document-json-conversion")]
@@ -76,6 +79,8 @@ pub struct ExtendedDocumentV0 {
     )]
     pub document: Document,
 
+    // TODO: We should remove it from here, or at least keep a ref
+    //  also there is no point to keep both contract and its ID
     /// The data contract associated with the document.
     #[cfg_attr(
         all(
@@ -425,6 +430,21 @@ impl ExtendedDocumentV0 {
     /// Retrieves field specified by path
     pub fn get(&self, path: &str) -> Option<&Value> {
         self.properties().get_optional_at_path(path).ok().flatten()
+    }
+
+    // TODO: We probably should validate extended document on creation and during modification
+    //  instead of have a dedicated method. That would be more Rust way approach
+    #[cfg(feature = "validation")]
+    /// Validate external document
+    pub fn validate(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        self.data_contract.validate_document(
+            &self.document_type_name,
+            &self.document,
+            platform_version,
+        )
     }
 }
 

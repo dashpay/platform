@@ -1,15 +1,15 @@
-use crate::data_contract::errors::DataContractError;
 
-use crate::document::property_names::{CREATED_AT, UPDATED_AT};
+
+
 use crate::document::Document;
 
-use crate::prelude::{DataContract, Revision};
+use crate::prelude::{DataContract};
 
 use crate::ProtocolError;
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+
+
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::deserialize::v0::ExtendedDocumentPlatformDeserializationMethodsV0;
 use crate::document::serialization_traits::serialize::v0::ExtendedDocumentPlatformSerializationMethodsV0;

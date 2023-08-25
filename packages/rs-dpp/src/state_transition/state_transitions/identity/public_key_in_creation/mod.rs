@@ -6,6 +6,7 @@ use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::PlatformSignable;
 
+use platform_version::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 
 pub mod accessors;
@@ -30,6 +31,23 @@ mod version;
 pub enum IdentityPublicKeyInCreation {
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
     V0(IdentityPublicKeyInCreationV0),
+}
+
+impl IdentityPublicKeyInCreation {
+    pub fn default_versioned(platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_key_structure_version
+        {
+            0 => Ok(IdentityPublicKeyInCreationV0::default().into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "IdentityPublicKeyInCreation::default_versioned".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
 }
 
 impl From<&IdentityPublicKeyInCreation> for IdentityPublicKey {

@@ -6,7 +6,8 @@ use std::convert::TryFrom;
 pub use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use dpp::data_contract::{DataContract, DataContractMethodsV0, DocumentName, JsonValue};
+use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+use dpp::data_contract::{DataContract, DocumentName, JsonValue};
 use dpp::platform_value::{Bytes32, Value};
 
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};

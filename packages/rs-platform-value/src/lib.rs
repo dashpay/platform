@@ -30,6 +30,7 @@ pub use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
 use std::collections::BTreeMap;
 
+
 pub type Hash256 = [u8; 32];
 
 pub use btreemap_extensions::btreemap_field_replacement::{
@@ -1414,6 +1415,17 @@ where
     }
 }
 
+impl From<&BTreeMap<String, Value>> for Value {
+    fn from(value: &BTreeMap<String, Value>) -> Self {
+        Value::Map(
+            value
+                .iter()
+                .map(|(key, value)| (key.into(), value.clone()))
+                .collect(),
+        )
+    }
+}
+
 impl<T> From<BTreeMap<T, Value>> for Value
 where
     T: Into<Value>,
@@ -1448,6 +1460,12 @@ impl From<Option<Value>> for Value {
             None => Value::Null,
             Some(value) => value,
         }
+    }
+}
+
+impl From<&String> for Value {
+    fn from(value: &String) -> Self {
+        Value::Text(value.clone())
     }
 }
 
