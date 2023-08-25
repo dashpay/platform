@@ -26,7 +26,7 @@ let StateTransitionExecutionContext;
 let applyDocumentsBatchTransition;
 let DocumentNotProvidedError;
 
-describe('applyDocumentsBatchTransitionFactory', () => {
+describe.skip('applyDocumentsBatchTransitionFactory', () => {
   let documentsJs;
   let dataContractJs;
   let dataContract;

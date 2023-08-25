@@ -1,9 +1,7 @@
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::{
-    identifier::Identifier,
-    identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
-    state_transition::StateTransitionLike,
-};
+use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
+use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::{identifier::Identifier, state_transition::StateTransitionLike};
 use serde::Deserialize;
 use std::default::Default;
 
@@ -16,7 +14,6 @@ pub struct ToObjectOptions {
 #[derive(Default)]
 pub struct ToObject {
     pub transition_type: u8,
-    pub protocol_version: u32,
     pub identity_id: Identifier,
     pub asset_lock_proof: AssetLockProof,
     pub signature: Option<Vec<u8>>,
@@ -24,13 +21,12 @@ pub struct ToObject {
 
 pub fn to_object_struct(
     transition: &IdentityTopUpTransition,
-    options: ToObjectOptions,
+    options: &ToObjectOptions,
 ) -> ToObject {
     let mut to_object = ToObject {
         transition_type: transition.state_transition_type() as u8,
-        protocol_version: transition.state_transition_protocol_version(),
-        identity_id: *transition.get_identity_id(),
-        asset_lock_proof: transition.get_asset_lock_proof().to_owned(),
+        identity_id: *transition.identity_id(),
+        asset_lock_proof: transition.asset_lock_proof().to_owned(),
         signature: None,
     };
 

@@ -38,7 +38,7 @@ impl StateTransitionLike for IdentityCreditTransferTransitionV0 {
     }
     /// Returns ID of the created contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
-        vec![self.identity_id]
+        vec![self.identity_id, self.recipient_id]
     }
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {

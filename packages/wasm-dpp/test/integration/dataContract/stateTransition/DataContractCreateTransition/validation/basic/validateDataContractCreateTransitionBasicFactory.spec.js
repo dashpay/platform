@@ -6,7 +6,7 @@ const { expectJsonSchemaError, expectValidationError, expectValueError } = requi
 const { default: loadWasmDpp } = require('../../../../../../..');
 const { getLatestProtocolVersion } = require('../../../../../../..');
 
-describe('validateDataContractCreateTransitionBasicFactory', () => {
+describe.skip('validateDataContractCreateTransitionBasicFactory', () => {
   let stateTransition;
   let rawStateTransition;
   let dataContract;

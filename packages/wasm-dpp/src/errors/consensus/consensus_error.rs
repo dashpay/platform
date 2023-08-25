@@ -2,7 +2,7 @@ use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm, JsonSchemaErrorWasm,
     UnsupportedProtocolVersionErrorWasm, UnsupportedVersionErrorWasm,
 };
-use dpp::consensus::ConsensusError as DPPConsensusError;
+use dpp::consensus::{ConsensusError as DPPConsensusError, ConsensusError};
 use std::ops::Deref;
 
 use crate::errors::consensus::basic::identity::{
@@ -196,8 +196,8 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         //         DataTriggerInvalidResultErrorWasm::from(e).into()
         //     }
         // },
-        // TODO(v0.24-backport): this error seems to be used only in drive executor. Do we need binding for it?
-        StateError::DataTriggerActionError(_) => JsError::new("Data Trigger action error").into(),
+        // TODO(versioning): restore
+        // StateError::DataTriggerActionError(_) => JsError::new("Data Trigger action error").into(),
         StateError::IdentityAlreadyExistsError(e) => {
             let wasm_error: IdentityAlreadyExistsErrorWasm = e.into();
             wasm_error.into()
@@ -215,6 +215,8 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::DataContractConfigUpdateError(e) => {
             DataContractConfigUpdateErrorWasm::from(e).into()
         }
+        // TODO(versioning): restore
+        _ => todo!(),
     }
 }
 
@@ -379,6 +381,8 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             NotImplementedIdentityCreditWithdrawalTransitionPoolingErrorWasm::from(e).into()
         }
         IncompatibleRe2PatternError(err) => IncompatibleRe2PatternErrorWasm::from(err).into(),
+        // TODO(versioning): cover other errors
+        _ => todo!(),
     }
 }
 

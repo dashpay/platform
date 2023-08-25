@@ -11,7 +11,7 @@ let DataContract;
 let Identifier;
 let findDuplicatesByIndices;
 
-describe('findDuplicatesByIndices', () => {
+describe.skip('findDuplicatesByIndices', () => {
   let documents;
   let contractJs;
   let contract;

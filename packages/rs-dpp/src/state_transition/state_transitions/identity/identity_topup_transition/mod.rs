@@ -1,5 +1,5 @@
 pub mod accessors;
-mod fields;
+pub mod fields;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 pub mod methods;

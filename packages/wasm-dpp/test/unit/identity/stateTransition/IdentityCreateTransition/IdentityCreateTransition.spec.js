@@ -1,22 +1,22 @@
 const getIdentityCreateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
 const getChainAssetLockProofFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
 
-const { default: loadWasmDpp } = require('../../../../..');
-const { getLatestProtocolVersion, StateTransitionTypes } = require('../../../../..');
+const {
+  IdentityCreateTransition,
+  IdentityPublicKeyWithWitness,
+  KeyType,
+  KeyPurpose,
+  KeySecurityLevel,
+  InstantAssetLockProof, Identifier,
+  getLatestProtocolVersion, StateTransitionTypes,
+} = require('../../../../..');
 
 describe('IdentityCreateTransition', () => {
   let rawStateTransition;
   let stateTransition;
 
-  let IdentityCreateTransition;
-  let InstantAssetLockProof;
-  let KeyType;
-  let KeyPurpose;
-  let KeySecurityLevel;
-  let Identifier;
-  let IdentityPublicKeyWithWitness;
-
   const mockRawPublicKey = (params = {}) => ({
+    $version: '0',
     id: 0,
     type: KeyType.ECDSA_SECP256K1,
     data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
@@ -25,17 +25,6 @@ describe('IdentityCreateTransition', () => {
     signature: Buffer.alloc(32).fill(1),
     readOnly: false,
     ...params,
-  });
-
-  before(async () => {
-    ({
-      IdentityCreateTransition,
-      IdentityPublicKeyWithWitness,
-      KeyType,
-      KeyPurpose,
-      KeySecurityLevel,
-      InstantAssetLockProof, Identifier,
-    } = await loadWasmDpp());
   });
 
   beforeEach(async () => {
@@ -158,11 +147,11 @@ describe('IdentityCreateTransition', () => {
       rawStateTransition = stateTransition.toObject();
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityCreate,
         assetLockProof: rawStateTransition.assetLockProof,
         publicKeys: rawStateTransition.publicKeys,
-        signature: undefined,
+        signature: Buffer.alloc(32),
       });
     });
 
@@ -170,7 +159,7 @@ describe('IdentityCreateTransition', () => {
       rawStateTransition = stateTransition.toObject({ skipSignature: true });
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityCreate,
         assetLockProof: rawStateTransition.assetLockProof,
         publicKeys: rawStateTransition.publicKeys,
@@ -183,11 +172,11 @@ describe('IdentityCreateTransition', () => {
       const jsonStateTransition = stateTransition.toJSON();
 
       expect(jsonStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityCreate,
         assetLockProof: stateTransition.getAssetLockProof().toJSON(),
         publicKeys: stateTransition.getPublicKeys().map((k) => k.toJSON()),
-        signature: undefined,
+        signature: Buffer.alloc(32).toString('base64'),
       });
     });
   });

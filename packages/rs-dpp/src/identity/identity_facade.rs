@@ -3,7 +3,6 @@ use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
@@ -29,28 +28,29 @@ pub struct IdentityFacade {
 }
 
 impl IdentityFacade {
-    pub fn new(protocol_version: u32) -> Result<Self, DashPlatformProtocolInitError> {
-        Ok(Self {
+    pub fn new(protocol_version: u32) -> Self {
+        Self {
             factory: IdentityFactory::new(protocol_version),
-        })
+        }
     }
 
     pub fn create(
         &self,
-        asset_lock_proof: AssetLockProof,
+        id: Identifier,
         public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     ) -> Result<Identity, ProtocolError> {
-        self.factory.create(asset_lock_proof, public_keys)
+        self.factory.create(id, public_keys)
     }
 
-    pub fn create_from_object(
-        &self,
-        raw_identity: Value,
-        skip_validation: bool,
-    ) -> Result<Identity, ProtocolError> {
-        self.factory
-            .create_from_object(raw_identity, skip_validation)
-    }
+    // TODO(versioning): not used anymore?
+    // pub fn create_from_object(
+    //     &self,
+    //     raw_identity: Value,
+    //     skip_validation: bool,
+    // ) -> Result<Identity, ProtocolError> {
+    //     self.factory
+    //         .create_from_object(raw_identity)
+    // }
 
     pub fn create_from_buffer(
         &self,
@@ -84,10 +84,9 @@ impl IdentityFacade {
         &self,
         identity: Identity,
         asset_lock_proof: AssetLockProof,
-        platform_version: &PlatformVersion,
     ) -> Result<IdentityCreateTransition, ProtocolError> {
         self.factory
-            .create_identity_create_transition(identity, asset_lock_proof, platform_version)
+            .create_identity_create_transition(identity, asset_lock_proof)
     }
 
     #[cfg(feature = "state-transitions")]

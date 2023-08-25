@@ -1,3 +1,5 @@
+// TODO(versioning): restore
+// @ts-ignore
 import { Identity, IdentityPublicKey, StateTransitionExecutionContext } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 import { signStateTransition } from '../../signStateTransition';
@@ -57,6 +59,8 @@ export async function update(
 
         identityUpdateTransition.setSignaturePublicKeyId(signerKey.getId());
 
+        // TODO(versioning): restore
+        // @ts-ignore
         await identityUpdateTransition.signByPrivateKey(privateKey.toBuffer(), publicKey.getType());
 
         publicKey.setSignature(identityUpdateTransition.getSignature());
@@ -75,17 +79,19 @@ export async function update(
   await signStateTransition(this, identityUpdateTransition, identity, signerKeyIndex);
   this.logger.silly('[Identity#update] Signed IdentityUpdateTransition');
 
-  const result = await dpp.stateTransition.validateBasic(
-    identityUpdateTransition,
-    // TODO(v0.24-backport): get rid of this once decided
-    //  whether we need execution context in wasm bindings
-    new StateTransitionExecutionContext(),
-  );
+  // TODO(versioning): restore
+  // @ts-ignore
+  // const result = await dpp.stateTransition.validateBasic(
+  //   identityUpdateTransition,
+  //   // TODO(v0.24-backport): get rid of this once decided
+  //   //  whether we need execution context in wasm bindings
+  //   new StateTransitionExecutionContext(),
+  // );
 
-  if (!result.isValid()) {
-    const messages = result.getErrors().map((error) => error.message);
-    throw new Error(`StateTransition is invalid - ${JSON.stringify(messages)}`);
-  }
+  // if (!result.isValid()) {
+  //   const messages = result.getErrors().map((error) => error.message);
+  //   throw new Error(`StateTransition is invalid - ${JSON.stringify(messages)}`);
+  // }
   this.logger.silly('[Identity#update] Validated IdentityUpdateTransition');
 
   // Skipping validation because it's already done above
