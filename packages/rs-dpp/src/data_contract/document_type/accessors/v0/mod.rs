@@ -4,7 +4,6 @@ use crate::data_contract::document_type::property::DocumentProperty;
 
 use platform_value::{Identifier, Value};
 
-
 use crate::identity::SecurityLevel;
 use std::collections::{BTreeMap, BTreeSet};
 

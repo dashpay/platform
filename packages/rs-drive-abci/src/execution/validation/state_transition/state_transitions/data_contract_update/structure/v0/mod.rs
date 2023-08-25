@@ -6,7 +6,6 @@ use dpp::state_transition::data_contract_update_transition::DataContractUpdateTr
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
-
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_update) trait DataContractUpdateStateTransitionStructureValidationV0 {
     fn validate_base_structure_v0(&self, platform_version: &PlatformVersion) -> Result<SimpleConsensusValidationResult, Error>;
 }

@@ -265,7 +265,7 @@ impl StateTransition {
             Ok(hash_to_vec(self.signable_bytes()?))
         } else {
             Ok(hash_to_vec(
-                crate::serialization::PlatformSerializable::serialize(self)?,
+                crate::serialization::PlatformSerializable::serialize_to_bytes(self)?,
             ))
         }
     }
@@ -633,7 +633,7 @@ impl StateTransition {
 //         if skip_signature {
 //             Ok(hash::hash_to_vec(self.signable_bytes()?))
 //         } else {
-//             Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
+//             Ok(hash::hash_to_vec(PlatformSerializable::serialize_to_bytes(self)?))
 //         }
 //     }
 //

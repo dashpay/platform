@@ -139,9 +139,7 @@ mod test {
         dashcore::hashes::sha256, dashcore::hashes::Hash, dashcore_rpc_json::QuorumType,
     };
     use dpp::bls_signatures::PublicKey;
-    
-    
-    
+
     use tenderdash_abci::proto::types::{BlockId, PartSetHeader, StateId};
     use tenderdash_abci::signatures::{SignBytes, SignDigest};
 

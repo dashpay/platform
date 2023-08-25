@@ -1,5 +1,3 @@
-
-
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;

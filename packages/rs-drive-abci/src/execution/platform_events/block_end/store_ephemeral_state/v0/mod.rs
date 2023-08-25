@@ -31,7 +31,7 @@ where
         transaction: &Transaction,
     ) -> Result<(), Error> {
         // we need to serialize the platform state
-        let serialized_platform_state = platform_state.serialize()?;
+        let serialized_platform_state = platform_state.serialize_to_bytes()?;
 
         // next we need to store this data in grovedb
         //todo:: maybe this should be in actual state
