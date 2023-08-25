@@ -1,22 +1,19 @@
-use crate::consensus::basic::document::{
-    InvalidDocumentTransitionIdError, InvalidDocumentTypeError, MissingDocumentTypeError,
-};
-use crate::consensus::basic::BasicError;
-use crate::consensus::state::document::document_timestamps_mismatch_error::DocumentTimestampsMismatchError;
-use crate::data_contract::accessors::v0::DataContractV0Getters;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-#[cfg(feature = "validation")]
-use crate::data_contract::validation::DataContractValidationMethodsV0;
-use crate::data_contract::DataContract;
-use crate::document::{property_names, Document};
+
+
+
+
+
+
+
+
 use crate::identity::TimestampMillis;
-use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransitionV0;
-use crate::validation::SimpleConsensusValidationResult;
-use crate::ProtocolError;
-use platform_value::{Identifier, Value};
-use platform_version::version::PlatformVersion;
+
+
+use platform_value::{Value};
+
 use std::collections::BTreeMap;
 
 pub trait DocumentCreateTransitionV0Methods {

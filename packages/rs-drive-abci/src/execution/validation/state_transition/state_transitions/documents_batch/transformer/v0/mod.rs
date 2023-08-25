@@ -6,23 +6,22 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
-use dpp::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
+
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
-use dpp::consensus::state::document::document_timestamp_window_violation_error::DocumentTimestampWindowViolationError;
-use dpp::consensus::state::document::document_timestamps_mismatch_error::DocumentTimestampsMismatchError;
+
+
 use dpp::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::DocumentTypeRef;
+
 
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{
     consensus::ConsensusError,
-    prelude::{Identifier, TimestampMillis},
+    prelude::{Identifier},
     validation::ConsensusValidationResult,
-    ProtocolError,
 };
 
 use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition};
@@ -36,11 +35,11 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
 use drive::state_transition_action::document::documents_batch::v0::DocumentsBatchTransitionActionV0;
-use dpp::validation::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
+
 use dpp::version::{PlatformVersion};
 use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+
 use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
@@ -318,7 +317,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
     ) -> Result<ConsensusValidationResult<DocumentTransitionAction>, Error> {
         match transition {
             DocumentTransition::Create(document_create_transition) => {
-                let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new();
+                let result = ConsensusValidationResult::<DocumentTransitionAction>::new();
 
                 let document_create_action = DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(document_create_transition, |_identifier| {
                 Ok(data_contract_fetch_info.clone())

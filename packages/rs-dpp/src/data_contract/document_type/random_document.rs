@@ -5,7 +5,7 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
 use rand::prelude::StdRng;
-use std::time::{SystemTime, UNIX_EPOCH};
+
 
 // TODO The factory is used in benchmark and tests. Probably it should be available under the test feature
 /// Functions for creating various types of random documents.

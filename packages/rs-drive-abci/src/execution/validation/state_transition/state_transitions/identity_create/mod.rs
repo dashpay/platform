@@ -21,7 +21,7 @@ use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::Drive;
+
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 

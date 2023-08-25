@@ -53,7 +53,7 @@ use crate::version::drive_versions::{
 };
 use crate::version::mocks::TEST_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
-use crate::version::{AbciStructureVersion, FeatureVersion, PlatformArchitectureVersion};
+use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
 
 pub const TEST_PROTOCOL_VERSION_3: u32 = (1 << TEST_BYTES) + 3;
 

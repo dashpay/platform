@@ -2,7 +2,7 @@ use crate::consensus::basic::document::{
     DuplicateDocumentTransitionsWithIdsError, MaxDocumentsTransitionsExceededError,
 };
 use crate::consensus::basic::BasicError;
-use crate::document::Document;
+
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::{

@@ -52,7 +52,7 @@ use crate::version::drive_versions::{
     DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions, DriveVersion,
 };
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
-use crate::version::{AbciStructureVersion, FeatureVersion, PlatformArchitectureVersion};
+use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
 
 pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     protocol_version: 1,

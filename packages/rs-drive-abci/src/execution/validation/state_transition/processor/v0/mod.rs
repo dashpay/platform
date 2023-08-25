@@ -1,5 +1,5 @@
-use dpp::data_contract::errors::DataContractNotPresentError;
-use dpp::identifier::Identifier;
+
+
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
@@ -8,7 +8,7 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::ProtocolError;
+
 use dpp::serialization::Signable;
 use dpp::state_transition::{StateTransition};
 use drive::state_transition_action::StateTransitionAction;
@@ -18,7 +18,7 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{GetDataContractFn, ValidateStateTransitionIdentitySignature};
+use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
 use crate::execution::validation::state_transition::state_transitions::identity_update::identity_and_signatures::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_create::identity_and_signatures::v0::IdentityCreateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_top_up::identity_retrieval::v0::IdentityTopUpStateTransitionIdentityRetrievalV0;

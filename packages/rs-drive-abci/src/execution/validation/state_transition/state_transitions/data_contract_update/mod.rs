@@ -3,7 +3,7 @@ mod structure;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
-use drive::drive::Drive;
+
 use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
@@ -177,13 +177,13 @@ mod tests {
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 
-        use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+        
         use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
         use dpp::platform_value::platform_value;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-        use dpp::state_transition::StateTransitionType;
+        
         use dpp::version::TryFromPlatformVersioned;
-        use platform_version::version::{LATEST_PLATFORM_VERSION, LATEST_VERSION};
+        use platform_version::version::{LATEST_PLATFORM_VERSION};
         use platform_version::TryIntoPlatformVersioned;
 
         #[test]

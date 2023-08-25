@@ -1,5 +1,5 @@
 use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
-use hex::ToHex;
+
 
 use dpp::document::Document;
 use dpp::identity::PartialIdentity;
@@ -49,7 +49,7 @@ pub(crate) fn verify_state_transitions_were_executed(
         .enumerate()
         .map(|(num, state_transition)| {
             if let StateTransition::DocumentsBatch(batch) = state_transition {
-                let first = batch.transitions().first().unwrap();
+                let _first = batch.transitions().first().unwrap();
 
                 // dbg!(batch.transitions().len(), hex::encode(first.base().id()), state.height(), first.to_string());
             }

@@ -1,4 +1,4 @@
-use dpp::document::Document;
+
 use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;

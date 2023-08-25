@@ -14,9 +14,9 @@ use crate::execution::validation::state_transition::documents_batch::action_vali
 use crate::execution::validation::state_transition::documents_batch::action_validation::document_replace_transition_action::DocumentReplaceTransitionActionValidation;
 use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionContext;
 use crate::execution::validation::state_transition::documents_batch::state::v0::data_triggers::execute_data_triggers;
-use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
+use crate::platform_types::platform::{PlatformStateRef};
 use crate::execution::validation::state_transition::state_transitions::documents_batch::transformer::v0::DocumentsBatchTransitionTransformerV0;
-use crate::rpc::core::CoreRPCLike;
+
 mod data_triggers;
 pub mod fetch_documents;
 
@@ -48,7 +48,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::new();
 
-        let mut state_transition_execution_context =
+        let state_transition_execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
         let owner_id = state_transition_action.owner_id();

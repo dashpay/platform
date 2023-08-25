@@ -4,7 +4,7 @@ use bincode::{Decode, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 
-use crate::prelude::{DataContract, Identifier};
+use crate::prelude::{Identifier};
 use document_base_transition::DocumentBaseTransition;
 
 pub mod action_type;
@@ -21,12 +21,12 @@ pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
 use platform_value::Value;
-use platform_version::version::PlatformVersion;
-use crate::ProtocolError;
+
+
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
-use crate::validation::SimpleConsensusValidationResult;
+
 
 pub const PROPERTY_ACTION: &str = "$action";
 

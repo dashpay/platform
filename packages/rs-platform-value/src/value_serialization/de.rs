@@ -124,7 +124,7 @@ impl<'de> de::Visitor<'de> for Visitor {
         Ok(Value::Map(map))
     }
 
-    fn visit_enum<A: de::EnumAccess<'de>>(self, mut acc: A) -> Result<Self::Value, A::Error> {
+    fn visit_enum<A: de::EnumAccess<'de>>(self, acc: A) -> Result<Self::Value, A::Error> {
         use serde::de::VariantAccess;
         struct Inner;
         impl<'de> de::Visitor<'de> for Inner {

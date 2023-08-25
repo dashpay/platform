@@ -9,7 +9,7 @@ use dpp::data_contract::validation::DataContractValidationMethodsV0;
 use dpp::document::extended_document::property_names;
 use dpp::identity::TimestampMillis;
 use dpp::ProtocolError;
-use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
+use dpp::validation::{SimpleConsensusValidationResult};
 use dpp::validation::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};

@@ -5,7 +5,7 @@ mod structure;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
-use drive::drive::Drive;
+
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 

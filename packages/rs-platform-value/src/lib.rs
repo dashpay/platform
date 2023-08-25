@@ -29,7 +29,7 @@ mod value_serialization;
 pub use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
 use std::collections::BTreeMap;
-use std::ops::Deref;
+
 
 pub type Hash256 = [u8; 32];
 

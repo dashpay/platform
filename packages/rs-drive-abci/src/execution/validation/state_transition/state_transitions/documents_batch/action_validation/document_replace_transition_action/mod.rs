@@ -1,5 +1,5 @@
 use dpp::identifier::Identifier;
-use dpp::ProtocolError;
+
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
 use dpp::version::PlatformVersion;
