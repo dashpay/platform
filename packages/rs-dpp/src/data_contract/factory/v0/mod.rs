@@ -103,7 +103,7 @@ impl DataContractFactoryV0 {
         match platform_version
             .dpp
             .contract_versions
-            .contract_structure
+            .contract_structure_version
         {
             0 => Ok(
                 DataContractV0::from_value(data_contract_object, validate, platform_version)?
