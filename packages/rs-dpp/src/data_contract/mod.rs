@@ -237,9 +237,9 @@ impl DataContract {
     }
 
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(
-            self.serialize_to_bytes_with_platform_version(platform_version)?,
-        ))
+        Ok(hash_to_vec(self.serialize_to_bytes_with_platform_version(
+            platform_version,
+        )?))
     }
 }
 

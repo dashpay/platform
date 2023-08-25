@@ -1,4 +1,3 @@
-
 use crate::data_contract::config::DataContractConfig;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;

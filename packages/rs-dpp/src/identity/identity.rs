@@ -50,7 +50,9 @@ impl Identity {
     #[cfg(feature = "identity-hashing")]
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash_to_vec(PlatformSerializable::serialize_to_bytes(self)?))
+        Ok(hash::hash_to_vec(PlatformSerializable::serialize_to_bytes(
+            self,
+        )?))
     }
 
     /// Created a new identity based on asset locks and keys

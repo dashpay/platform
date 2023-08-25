@@ -30,7 +30,6 @@ pub use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
 use std::collections::BTreeMap;
 
-
 pub type Hash256 = [u8; 32];
 
 pub use btreemap_extensions::btreemap_field_replacement::{
