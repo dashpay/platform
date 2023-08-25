@@ -226,16 +226,10 @@ describe('IdentityFactory', () => {
     it('should create IdentityUpdateTransition', () => {
       const revision = 1;
       const disablePublicKeys = [identity.getPublicKeyById(0)];
-      const addPublicKeys = [new IdentityPublicKeyWithWitness({
-        $version: '0',
-        id: 0,
-        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: false,
-        signature: Buffer.alloc(32),
-      })];
+      const key = new IdentityPublicKeyWithWitness(1);
+      key.setData(Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'));
+
+      const addPublicKeys = [key];
 
       const stateTransition = factory
         .createIdentityUpdateTransition(
