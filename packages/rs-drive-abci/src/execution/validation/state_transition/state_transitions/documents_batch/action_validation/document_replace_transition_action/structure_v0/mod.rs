@@ -78,8 +78,6 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
     }
 }
 
-
-
 fn check_updated_inside_time_window(
     document_transition: &DocumentReplaceTransitionAction,
     last_block_ts_millis: TimestampMillis,
@@ -98,7 +96,7 @@ fn check_updated_inside_time_window(
         average_block_spacing_ms,
         platform_version,
     )
-        .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
+    .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
     if !window_validation.valid {
         result.add_error(ConsensusError::StateError(
             StateError::DocumentTimestampWindowViolationError(

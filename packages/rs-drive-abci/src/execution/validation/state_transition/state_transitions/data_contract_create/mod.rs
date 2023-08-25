@@ -15,7 +15,7 @@ use crate::error::Error;
 
 use crate::execution::validation::state_transition::data_contract_create::state::v0::DataContractCreateStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::data_contract_create::structure::v0::DataContractCreatedStateTransitionStructureValidationV0;
-use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::processor::v0::{
@@ -28,6 +28,7 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        _validate: bool,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
@@ -52,6 +53,7 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
 impl StateTransitionStructureValidationV0 for DataContractCreateTransition {
     fn validate_structure(
         &self,
+        _platform: &PlatformStateRef,
         _action: Option<&StateTransitionAction>,
         protocol_version: u32,
     ) -> Result<SimpleConsensusValidationResult, Error> {

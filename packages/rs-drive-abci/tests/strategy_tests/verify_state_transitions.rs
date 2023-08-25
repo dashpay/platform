@@ -1,4 +1,5 @@
 use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
+use hex::ToHex;
 
 use dpp::document::Document;
 use dpp::identity::PartialIdentity;
@@ -19,6 +20,11 @@ use prost::Message;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
+use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransition;
 use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransition;
@@ -40,17 +46,30 @@ pub(crate) fn verify_state_transitions_were_executed(
     //actions are easier to transform to queries
     let actions = state_transitions
         .iter()
-        .map(|state_transition| {
-            state_transition
-                .transform_into_action(&platform, None)
-                .expect("expected state transitions to validate")
-                .into_data()
-                .unwrap_or_else(|_| {
-                    panic!(
-                        "expected state transitions to be valid {:?}",
-                        state_transition
-                    )
-                })
+        .enumerate()
+        .map(|(num, state_transition)| {
+            if let StateTransition::DocumentsBatch(batch) = state_transition {
+                let first = batch.transitions().first().unwrap();
+
+                // dbg!(batch.transitions().len(), hex::encode(first.base().id()), state.height(), first.to_string());
+            }
+
+            let consensus_validation_result = state_transition
+                .transform_into_action(&platform, false, None)
+                .expect("expected state transitions to validate");
+
+            if !consensus_validation_result.is_valid() {
+                panic!(
+                    "expected state transition {:?} to be valid, errors are {:?}",
+                    num, consensus_validation_result.errors
+                )
+            }
+            consensus_validation_result.into_data().unwrap_or_else(|_| {
+                panic!(
+                    "expected state transitions to be valid {:?}",
+                    state_transition
+                )
+            })
         })
         .collect::<Vec<_>>();
 
@@ -201,6 +220,15 @@ pub(crate) fn verify_state_transitions_were_executed(
                         document_id: document_transition_action.base().id().into_buffer(),
                         block_time_ms: None, //None because we want latest
                     };
+
+                    dbg!(
+                        platform.state.height(),
+                        document_transition_action.action_type(),
+                        document_transition_action
+                            .base()
+                            .id()
+                            .to_string(Encoding::Base58)
+                    );
 
                     let (root_hash, document) = query
                         .verify_proof(

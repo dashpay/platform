@@ -1,4 +1,5 @@
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::StateTransitionAction;
@@ -14,12 +15,10 @@ use crate::execution::validation::state_transition::documents_batch::action_vali
 use crate::execution::validation::state_transition::documents_batch::data_triggers::DataTriggerExecutionContext;
 use crate::execution::validation::state_transition::documents_batch::state::v0::data_triggers::execute_data_triggers;
 use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
+use crate::execution::validation::state_transition::state_transitions::documents_batch::transformer::v0::DocumentsBatchTransitionTransformerV0;
 use crate::rpc::core::CoreRPCLike;
-use crate::execution::validation::state_transition::documents_batch::state::v0::validate_documents_batch_transition_state::validate_document_batch_transition_state;
-
 mod data_triggers;
 pub mod fetch_documents;
-pub mod validate_documents_batch_transition_state;
 
 pub(in crate::execution::validation::state_transition::state_transitions::documents_batch) trait DocumentsBatchStateTransitionStateValidationV0
 {
@@ -34,6 +33,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::docume
     fn transform_into_action_v0(
         &self,
         platform: &PlatformStateRef,
+        validate: bool,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -57,21 +57,36 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
         for transition in state_transition_action.transitions() {
             match transition {
                 DocumentTransitionAction::CreateAction(create_action) => {
-                    let result = create_action.validate_state(platform, owner_id, transaction,  platform_version)?;
+                    let result = create_action.validate_state(
+                        platform,
+                        owner_id,
+                        transaction,
+                        platform_version,
+                    )?;
                     if !result.is_valid() {
                         validation_result.add_errors(result.errors);
                         return Ok(validation_result);
                     }
                 }
                 DocumentTransitionAction::ReplaceAction(replace_action) => {
-                    let result = replace_action.validate_state(platform, owner_id, transaction, platform_version)?;
+                    let result = replace_action.validate_state(
+                        platform,
+                        owner_id,
+                        transaction,
+                        platform_version,
+                    )?;
                     if !result.is_valid() {
                         validation_result.add_errors(result.errors);
                         return Ok(validation_result);
                     }
                 }
                 DocumentTransitionAction::DeleteAction(delete_action) => {
-                    let result = delete_action.validate_state(owner_id)?;
+                    let result = delete_action.validate_state(
+                        platform,
+                        owner_id,
+                        transaction,
+                        platform_version,
+                    )?;
                     if !result.is_valid() {
                         validation_result.add_errors(result.errors);
                         return Ok(validation_result);
@@ -81,8 +96,8 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
         }
 
         let data_trigger_execution_context = DataTriggerExecutionContext {
-            platform: &platform.into(),
-            transaction: tx,
+            platform,
+            transaction,
             owner_id: &self.owner_id(),
             state_transition_execution_context: &state_transition_execution_context,
         };
@@ -103,12 +118,14 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
     fn transform_into_action_v0(
         &self,
         platform: &PlatformStateRef,
+        validate: bool,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
         let mut execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
-        let validation_result = self.try_into_action_v0(&platform.into(), tx, &mut execution_context)?;
+        let validation_result =
+            self.try_into_action_v0(platform, validate, tx, &mut execution_context)?;
         Ok(validation_result.map(Into::into))
     }
 }

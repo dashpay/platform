@@ -16,6 +16,7 @@ mod structure_v0;
 pub trait DocumentReplaceTransitionActionValidation {
     fn validate_structure(
         &self,
+        platform: &PlatformStateRef,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
@@ -31,6 +32,7 @@ pub trait DocumentReplaceTransitionActionValidation {
 impl DocumentReplaceTransitionActionValidation for DocumentReplaceTransitionAction {
     fn validate_structure(
         &self,
+        platform: &PlatformStateRef,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match platform_version
@@ -40,7 +42,7 @@ impl DocumentReplaceTransitionActionValidation for DocumentReplaceTransitionActi
             .documents_batch_state_transition
             .document_replace_transition_structure_validation
         {
-            0 => self.validate_structure_v0(platform_version),
+            0 => self.validate_structure_v0(platform, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentReplaceTransitionAction::validate_structure".to_string(),
                 known_versions: vec![0],

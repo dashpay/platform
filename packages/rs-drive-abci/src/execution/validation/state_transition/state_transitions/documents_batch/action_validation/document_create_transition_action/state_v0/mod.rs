@@ -30,7 +30,6 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-
         let contract_fetch_info = self.base().data_contract_fetch_info();
 
         let contract = &contract_fetch_info.contract;
@@ -38,24 +37,21 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
         let document_type = contract.document_type_for_name(self.base().document_type_name())?;
 
         // We should check to see if a document already exists in the state
-        let already_existing_document =
-            fetch_document_with_id(
-                platform.drive,
-                contract,
-                document_type,
-                self.base().id(),
-                transaction,
-                platform_version,
-            )?;
+        let already_existing_document = fetch_document_with_id(
+            platform.drive,
+            contract,
+            document_type,
+            self.base().id(),
+            transaction,
+            platform_version,
+        )?;
 
         if already_existing_document.is_some() {
             return Ok(ConsensusValidationResult::new_with_error(
-                ConsensusError::StateError(
-                    StateError::DocumentAlreadyPresentError(DocumentAlreadyPresentError::new(
-                        self.base().id(),
-                    )),
-                ))
-            );
+                ConsensusError::StateError(StateError::DocumentAlreadyPresentError(
+                    DocumentAlreadyPresentError::new(self.base().id()),
+                )),
+            ));
         }
 
         // we also need to validate that the new document wouldn't conflict with any other document
@@ -69,6 +65,7 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
                 owner_id,
                 transaction,
                 platform_version,
-            ).map_err(Error::Drive)
+            )
+            .map_err(Error::Drive)
     }
 }

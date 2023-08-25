@@ -9,52 +9,55 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
 use dpp::version::PlatformVersion;
+use drive::grovedb::TransactionArg;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 use crate::error::Error;
+use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_document_with_id;
+use crate::platform_types::platform::PlatformStateRef;
 
 pub(super) trait DocumentDeleteTransitionActionStateValidationV0 {
     fn validate_state_v0(
         &self,
-        fetched_documents: &[Document],
+        platform: &PlatformStateRef,
         owner_id: Identifier,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitionAction {
     fn validate_state_v0(
         &self,
-        fetched_documents: &[Document],
+        platform: &PlatformStateRef,
         owner_id: Identifier,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let validation_result =
-            check_if_document_can_be_found(self, fetched_documents);
+        let contract_fetch_info = self.base().data_contract_fetch_info();
 
-        if !validation_result.is_valid_with_data() {
-            return Ok(SimpleConsensusValidationResult::new_with_errors(validation_result.errors));
-        }
+        let contract = &contract_fetch_info.contract;
 
-        let original_document = validation_result.into_data()?;
+        let document_type = contract.document_type_for_name(self.base().document_type_name())?;
 
-        Ok(check_ownership(self, original_document, &owner_id))
-    }
-}
+        let original_document = fetch_document_with_id(
+            platform.drive,
+            contract,
+            document_type,
+            self.base().id(),
+            transaction,
+            platform_version,
+        )?;
 
-pub fn check_if_document_can_be_found<'a>(
-    document_transition: &'a DocumentDeleteTransitionAction,
-    fetched_documents: &'a [Document],
-) -> ConsensusValidationResult<&'a Document> {
-    let maybe_fetched_document = fetched_documents
-        .iter()
-        .find(|d| d.id() == document_transition.base().id());
+        let Some(original_document) = original_document else {
+            return Ok(        ConsensusValidationResult::new_with_error(ConsensusError::StateError(
+                StateError::DocumentNotFoundError(DocumentNotFoundError::new(
+                    self.base().id(),
+                ))
+            ))
+            );
+        };
 
-    if let Some(document) = maybe_fetched_document {
-        ConsensusValidationResult::new_with_data(document)
-    } else {
-        ConsensusValidationResult::new_with_error(ConsensusError::StateError(
-            StateError::DocumentNotFoundError(DocumentNotFoundError::new(
-                document_transition.base().id(),
-            )),
-        ))
+        Ok(check_ownership(self, &original_document, &owner_id))
     }
 }
 

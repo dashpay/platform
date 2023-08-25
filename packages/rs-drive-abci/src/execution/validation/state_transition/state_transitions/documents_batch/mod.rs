@@ -16,7 +16,7 @@ use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::documents_batch::base_structure::v0::DocumentsBatchStateTransitionStructureValidationV0;
@@ -32,6 +32,7 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        validate: bool,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
@@ -43,7 +44,7 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
             .documents_batch_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform, tx),
+            0 => self.transform_into_action_v0(&platform.into(), validate, tx),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -56,6 +57,7 @@ impl StateTransitionActionTransformerV0 for DocumentsBatchTransition {
 impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
     fn validate_structure(
         &self,
+        platform: &PlatformStateRef,
         action: Option<&StateTransitionAction>,
         protocol_version: u32,
     ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -75,7 +77,11 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
                 let StateTransitionAction::DocumentsBatchAction(documents_batch_transition_action) = action else  {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution("action must be a documents batch transition action")));
                 };
-                self.validate_structure_v0(documents_batch_transition_action, platform_version)
+                self.validate_structure_v0(
+                    platform,
+                    documents_batch_transition_action,
+                    platform_version,
+                )
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: base structure".to_string(),
@@ -113,7 +119,7 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
                 };
                 self.validate_state_v0(
                     documents_batch_transition_action,
-                    platform,
+                    &platform.into(),
                     tx,
                     platform_version,
                 )

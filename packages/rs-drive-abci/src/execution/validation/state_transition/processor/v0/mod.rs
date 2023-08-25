@@ -3,7 +3,7 @@ use dpp::identifier::Identifier;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::identity::PartialIdentity;
@@ -34,7 +34,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
 
     let action = if state_transition.requires_state_to_validate_structure() {
         let state_transition_action_result =
-            state_transition.transform_into_action(platform, transaction)?;
+            state_transition.transform_into_action(platform, true, transaction)?;
         if !state_transition_action_result.is_valid_with_data() {
             return Ok(
                 ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
@@ -49,6 +49,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
 
     // Validating structure
     let result = state_transition.validate_structure(
+        &platform.into(),
         action.as_ref(),
         platform.state.current_protocol_version_in_consensus(),
     )?;
@@ -61,7 +62,7 @@ pub(in crate::execution) fn process_state_transition_v0<'a, C: CoreRPCLike>(
             Some(action)
         } else {
             let state_transition_action_result =
-                state_transition.transform_into_action(platform, transaction)?;
+                state_transition.transform_into_action(platform, true, transaction)?;
             if !state_transition_action_result.is_valid_with_data() {
                 return Ok(
                     ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
@@ -143,6 +144,7 @@ pub(crate) trait StateTransitionStructureValidationV0 {
     /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
     fn validate_structure(
         &self,
+        platform: &PlatformStateRef,
         action: Option<&StateTransitionAction>,
         protocol_version: u32,
     ) -> Result<SimpleConsensusValidationResult, Error>;
@@ -177,25 +179,34 @@ pub(crate) trait StateTransitionStateValidationV0:
 impl StateTransitionStructureValidationV0 for StateTransition {
     fn validate_structure(
         &self,
+        platform: &PlatformStateRef,
         action: Option<&StateTransitionAction>,
         protocol_version: u32,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
             StateTransition::DataContractCreate(st) => {
-                st.validate_structure(action, protocol_version)
+                st.validate_structure(platform, action, protocol_version)
             }
             StateTransition::DataContractUpdate(st) => {
-                st.validate_structure(action, protocol_version)
+                st.validate_structure(platform, action, protocol_version)
             }
-            StateTransition::IdentityCreate(st) => st.validate_structure(action, protocol_version),
-            StateTransition::IdentityUpdate(st) => st.validate_structure(action, protocol_version),
-            StateTransition::IdentityTopUp(st) => st.validate_structure(action, protocol_version),
+            StateTransition::IdentityCreate(st) => {
+                st.validate_structure(platform, action, protocol_version)
+            }
+            StateTransition::IdentityUpdate(st) => {
+                st.validate_structure(platform, action, protocol_version)
+            }
+            StateTransition::IdentityTopUp(st) => {
+                st.validate_structure(platform, action, protocol_version)
+            }
             StateTransition::IdentityCreditWithdrawal(st) => {
-                st.validate_structure(action, protocol_version)
+                st.validate_structure(platform, action, protocol_version)
             }
-            StateTransition::DocumentsBatch(st) => st.validate_structure(action, protocol_version),
+            StateTransition::DocumentsBatch(st) => {
+                st.validate_structure(platform, action, protocol_version)
+            }
             StateTransition::IdentityCreditTransfer(st) => {
-                st.validate_structure(action, protocol_version)
+                st.validate_structure(platform, action, protocol_version)
             }
         }
     }

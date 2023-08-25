@@ -115,6 +115,10 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
+    if transitions.is_empty() {
+        return Ok(ConsensusValidationResult::new_with_data(vec![]));
+    }
+
     let ids: Vec<Value> = transitions
         .iter()
         .map(|dt| Value::Identifier(dt.get_id().to_buffer()))
@@ -155,7 +159,6 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
         documents_outcome.documents_owned(),
     ))
 }
-
 
 pub(crate) fn fetch_document_with_id(
     drive: &Drive,
@@ -203,6 +206,4 @@ pub(crate) fn fetch_document_with_id(
     } else {
         Ok(Some(documents.remove(0)))
     }
-
-
 }

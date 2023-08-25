@@ -109,7 +109,6 @@ impl DocumentCreateTransitionActionStructureValidationV0 for DocumentCreateTrans
     }
 }
 
-
 fn check_if_timestamps_are_equal(
     document_transition: &DocumentCreateTransitionAction,
 ) -> SimpleConsensusValidationResult {
@@ -127,7 +126,6 @@ fn check_if_timestamps_are_equal(
 
     result
 }
-
 
 fn check_created_inside_time_window(
     document_transition: &DocumentCreateTransitionAction,
@@ -147,7 +145,7 @@ fn check_created_inside_time_window(
         average_block_spacing_ms,
         platform_version,
     )
-        .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
+    .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
     if !window_validation.valid {
         result.add_error(ConsensusError::StateError(
             StateError::DocumentTimestampWindowViolationError(
@@ -182,7 +180,7 @@ fn check_updated_inside_time_window(
         average_block_spacing_ms,
         platform_version,
     )
-        .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
+    .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
     if !window_validation.valid {
         result.add_error(ConsensusError::StateError(
             StateError::DocumentTimestampWindowViolationError(

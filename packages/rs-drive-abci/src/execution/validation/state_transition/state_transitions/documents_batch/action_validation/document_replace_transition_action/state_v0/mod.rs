@@ -25,7 +25,6 @@ impl DocumentReplaceTransitionActionStateValidationV0 for DocumentReplaceTransit
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-
         let contract_fetch_info = self.base().data_contract_fetch_info();
 
         let contract = &contract_fetch_info.contract;
@@ -41,7 +40,7 @@ impl DocumentReplaceTransitionActionStateValidationV0 for DocumentReplaceTransit
                 owner_id,
                 transaction,
                 platform_version,
-            ).map_err(Error::Drive)
-
+            )
+            .map_err(Error::Drive)
     }
 }

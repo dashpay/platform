@@ -379,7 +379,6 @@ mod tests {
                 &transaction,
             )
             .expect("expected to execute document_create tx");
-        dbg!(&validation_result);
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
         platform

@@ -13,7 +13,7 @@ use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::identity_update::state::v0::IdentityUpdateStateTransitionStateValidationV0;
@@ -29,6 +29,7 @@ impl StateTransitionActionTransformerV0 for IdentityUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        _validate: bool,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
@@ -53,6 +54,7 @@ impl StateTransitionActionTransformerV0 for IdentityUpdateTransition {
 impl StateTransitionStructureValidationV0 for IdentityUpdateTransition {
     fn validate_structure(
         &self,
+        _platform: &PlatformStateRef,
         _action: Option<&StateTransitionAction>,
         protocol_version: u32,
     ) -> Result<SimpleConsensusValidationResult, Error> {
