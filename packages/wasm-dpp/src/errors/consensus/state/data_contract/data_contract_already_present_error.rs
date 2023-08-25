@@ -45,7 +45,7 @@ impl DataContractAlreadyPresentErrorWasm {
     #[wasm_bindgen(js_name=serialize)]
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
-            .serialize_with_platform_version(PlatformVersion::first())
+            .serialize_to_bytes_with_platform_version(PlatformVersion::first())
             .map_err(JsError::from)?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))

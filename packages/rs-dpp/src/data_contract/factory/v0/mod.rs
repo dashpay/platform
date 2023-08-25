@@ -301,7 +301,7 @@ mod tests {
         let data_contract = created_data_contract.data_contract_owned();
 
         let serialized_data_contract = data_contract
-            .serialize_with_platform_version(platform_version)
+            .serialize_to_bytes_with_platform_version(platform_version)
             .expect("should be serialized to buffer");
         let result = factory
             .create_from_buffer(serialized_data_contract, false)

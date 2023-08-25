@@ -285,7 +285,7 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
         let bytes =
-            PlatformSerializable::serialize(&StateTransition::IdentityUpdate(self.0.clone()))
+            PlatformSerializable::serialize_to_bytes(&StateTransition::IdentityUpdate(self.0.clone()))
                 .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }

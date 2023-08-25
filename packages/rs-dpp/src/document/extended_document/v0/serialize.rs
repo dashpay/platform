@@ -38,7 +38,7 @@ impl ExtendedDocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
         buffer.append(
             &mut self
                 .data_contract
-                .serialize_with_platform_version(platform_version)?,
+                .serialize_to_bytes_with_platform_version(platform_version)?,
         );
         buffer.push(self.document_type_name.len() as u8);
         buffer.extend(self.document_type_name.as_bytes());
@@ -73,7 +73,7 @@ impl ExtendedDocumentPlatformSerializationMethodsV0 for ExtendedDocumentV0 {
         let mut buffer: Vec<u8> = 0.encode_var_vec(); //version 0
 
         buffer
-            .append(&mut data_contract.serialize_consume_with_platform_version(platform_version)?);
+            .append(&mut data_contract.serialize_consume_to_bytes_with_platform_version(platform_version)?);
         buffer.push(document_type_name.len() as u8);
         buffer.append(&mut document_type_name.into_bytes());
         buffer.append(&mut serialized_document);

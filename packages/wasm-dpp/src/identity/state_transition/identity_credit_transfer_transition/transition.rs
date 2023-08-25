@@ -165,7 +165,7 @@ impl IdentityCreditTransferTransitionWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes = PlatformSerializable::serialize(&StateTransition::IdentityCreditTransfer(
+        let bytes = PlatformSerializable::serialize_to_bytes(&StateTransition::IdentityCreditTransfer(
             self.0.clone(),
         ))
         .with_js_error()?;

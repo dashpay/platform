@@ -52,7 +52,7 @@ impl PlatformStateForSaving {
 impl PlatformSerializable for PlatformState {
     type Error = Error;
 
-    fn serialize(&self) -> Result<Vec<u8>, Self::Error> {
+    fn serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
         let platform_version = PlatformVersion::get(self.current_protocol_version_in_consensus())?;
         let config = config::standard().with_big_endian().with_no_limit();
         let platform_state_for_saving: PlatformStateForSaving =
@@ -65,7 +65,7 @@ impl PlatformSerializable for PlatformState {
 
 // The version we should deserialize this into is determined by the actual saved state
 impl PlatformDeserializable for PlatformState {
-    fn deserialize_no_limit(data: &[u8]) -> Result<Self, ProtocolError>
+    fn deserialize_from_bytes_no_limit(data: &[u8]) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {

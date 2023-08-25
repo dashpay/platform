@@ -361,7 +361,7 @@ impl DataContractWasm {
 
         let bytes = self
             .inner
-            .serialize_with_platform_version(platform_version)
+            .serialize_to_bytes_with_platform_version(platform_version)
             .with_js_error()?;
 
         Ok(Buffer::from_bytes(&bytes))

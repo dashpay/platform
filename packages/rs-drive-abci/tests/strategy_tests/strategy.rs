@@ -232,7 +232,7 @@ impl Strategy {
             if let OperationType::Document(doc_op) = &op.op_type {
                 let serialize = doc_op
                     .contract
-                    .serialize_with_platform_version(platform_version)
+                    .serialize_to_bytes_with_platform_version(platform_version)
                     .expect("expected to serialize");
                 drive
                     .apply_contract_with_serialization(

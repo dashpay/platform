@@ -50,6 +50,7 @@ use crate::version::PlatformVersion;
     feature = "identity-value-conversion"
 ))]
 use platform_value::Value;
+#[cfg(feature = "validation")]
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
@@ -96,7 +97,7 @@ impl IdentityFactory {
         buffer: Vec<u8>,
         #[cfg(feature = "validation")] skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
-        let identity: Identity = Identity::deserialize_no_limit(&buffer).map_err(|e| {
+        let identity: Identity = Identity::deserialize_from_bytes_no_limit(&buffer).map_err(|e| {
             ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
                 SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
             ))

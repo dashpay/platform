@@ -152,11 +152,11 @@ mod tests {
         .into();
 
         // Serialize into a vector
-        let encoded = PlatformSerializable::serialize(&block_info).expect("expected to serialize");
+        let encoded = PlatformSerializable::serialize_to_bytes(&block_info).expect("expected to serialize");
 
         // Deserialize from the vector
         let decoded: ExtendedBlockInfo =
-            PlatformDeserializable::deserialize(&encoded).expect("expected to deserialize");
+            PlatformDeserializable::deserialize_from_bytes(&encoded).expect("expected to deserialize");
 
         assert_eq!(block_info, decoded);
     }

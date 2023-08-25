@@ -230,7 +230,7 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes = PlatformSerializable::serialize(&self.inner.clone()).with_js_error()?;
+        let bytes = PlatformSerializable::serialize_to_bytes(&self.inner.clone()).with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
@@ -278,7 +278,7 @@ impl IdentityWasm {
     #[wasm_bindgen(js_name=fromBuffer)]
     pub fn from_buffer(buffer: Vec<u8>) -> Result<IdentityWasm, JsValue> {
         let identity: Identity =
-            PlatformDeserializable::deserialize(buffer.as_slice()).with_js_error()?;
+            PlatformDeserializable::deserialize_from_bytes(buffer.as_slice()).with_js_error()?;
         Ok(identity.into())
     }
 }
