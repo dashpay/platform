@@ -5,8 +5,8 @@ use crate::error::Error;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
+use grovedb_storage::worst_case_costs::WorstKeyLength;
 use std::collections::HashSet;
-use storage::worst_case_costs::WorstKeyLength;
 
 /// Path key info
 #[derive(Clone)]

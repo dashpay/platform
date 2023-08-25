@@ -2,10 +2,10 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::GroveError;
-use costs::OperationCost;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::{GroveDbOp, OpsByLevelPath};
 use grovedb::TransactionArg;
+use grovedb_costs::OperationCost;
 
 impl Drive {
     /// Applies the given groveDB operations batch.

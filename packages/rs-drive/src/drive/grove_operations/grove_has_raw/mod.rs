@@ -9,7 +9,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 
 use grovedb::TransactionArg;
-use path::SubtreePath;
+use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Checks whether an element exists in groveDB at the specified path and key.

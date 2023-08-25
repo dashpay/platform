@@ -3,7 +3,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use grovedb::{Element, TransactionArg};
-use path::SubtreePath;
+use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Pushes the `OperationCost` of inserting an element in groveDB where the path key does not yet exist
