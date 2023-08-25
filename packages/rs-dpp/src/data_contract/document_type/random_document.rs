@@ -6,7 +6,6 @@ use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
 use rand::prelude::StdRng;
 
-
 // TODO The factory is used in benchmark and tests. Probably it should be available under the test feature
 /// Functions for creating various types of random documents.
 pub trait CreateRandomDocument {

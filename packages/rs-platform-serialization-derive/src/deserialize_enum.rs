@@ -198,7 +198,7 @@ pub(super) fn derive_platform_deserialize_enum(
     } else {
         quote! {
             impl #impl_generics #crate_name::serialization::PlatformDeserializable for #name #ty_generics #where_clause {
-                        fn deserialize(
+                        fn deserialize_from_bytes(
                             data: &[u8]
                         ) -> Result<Self, ProtocolError>
                         where
@@ -207,7 +207,7 @@ pub(super) fn derive_platform_deserialize_enum(
                             bincode::decode_from_slice(&data, config).map(|(a,_)| a)#map_err
                         }
 
-                        fn deserialize_no_limit(
+                        fn deserialize_from_bytes_no_limit(
                             data: &[u8]
                         ) -> Result<Self, ProtocolError>
                         where

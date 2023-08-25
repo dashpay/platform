@@ -88,11 +88,11 @@ pub(super) fn derive_platform_deserialize_struct(
         quote! {
             impl #impl_generics #crate_name::serialization::PlatformDeserializable for #name #ty_generics #where_clause
             {
-                fn deserialize(bytes: &[u8]) -> Result<Self, #error_type> {
+                fn deserialize_from_bytes(bytes: &[u8]) -> Result<Self, #error_type> {
                     #deserialize_into
                 }
 
-                fn deserialize_no_limit(bytes: &[u8]) -> Result<Self, #error_type> {
+                fn deserialize_from_bytes_no_limit(bytes: &[u8]) -> Result<Self, #error_type> {
                     #deserialize_into
                 }
             }

@@ -63,7 +63,7 @@ mod tests {
         let consensus_error: ConsensusError = error.clone().into();
 
         let _cbor = consensus_error
-            .serialize_with_platform_version(LATEST_PLATFORM_VERSION)
+            .serialize_to_bytes_with_platform_version(LATEST_PLATFORM_VERSION)
             .expect("should serialize");
 
         // let value = Value::try_from(&consensus_error).expect("should convert to value");

@@ -10,7 +10,7 @@ pub struct StateTransitionFactory;
 
 impl StateTransitionFactory {
     pub fn create_from_buffer(&self, buffer: &[u8]) -> Result<StateTransition, ProtocolError> {
-        StateTransition::deserialize(buffer).map_err(|e| {
+        StateTransition::deserialize_from_bytes(buffer).map_err(|e| {
             ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
                 SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
             ))

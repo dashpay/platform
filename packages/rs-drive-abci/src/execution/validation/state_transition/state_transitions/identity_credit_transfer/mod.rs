@@ -6,7 +6,6 @@ use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
 
-
 use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;

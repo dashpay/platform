@@ -174,9 +174,10 @@ impl IdentityTopUpTransitionWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes =
-            PlatformSerializable::serialize(&StateTransition::IdentityTopUp(self.0.clone()))
-                .with_js_error()?;
+        let bytes = PlatformSerializable::serialize_to_bytes(&StateTransition::IdentityTopUp(
+            self.0.clone(),
+        ))
+        .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 

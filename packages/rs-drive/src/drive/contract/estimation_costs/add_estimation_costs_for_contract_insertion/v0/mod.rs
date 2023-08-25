@@ -79,7 +79,7 @@ impl Drive {
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
                             contract
-                                .serialize_with_platform_version(platform_version)
+                                .serialize_to_bytes_with_platform_version(platform_version)
                                 .unwrap()
                                 .len() as u32, //todo: fix this
                             storage_flags,
