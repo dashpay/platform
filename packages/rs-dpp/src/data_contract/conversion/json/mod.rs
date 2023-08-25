@@ -16,7 +16,11 @@ impl DataContractJsonConversionMethodsV0 for DataContract {
     where
         Self: Sized,
     {
-        match platform_version.dpp.contract_versions.contract_structure {
+        match platform_version
+            .dpp
+            .contract_versions
+            .contract_structure_version
+        {
             0 => Ok(DataContractV0::from_json(json_value, validate, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::from_json_object".to_string(),

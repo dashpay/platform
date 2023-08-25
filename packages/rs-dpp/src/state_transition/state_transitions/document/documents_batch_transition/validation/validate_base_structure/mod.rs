@@ -1,16 +1,13 @@
-use crate::data_contract::DataContract;
 use crate::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
-use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
 
 mod v0;
 
 impl DocumentsBatchTransition {
-    pub fn validate<'d>(
+    pub fn validate_base_structure<'d>(
         &self,
-        get_data_contract: impl Fn(Identifier) -> Result<Option<&'d DataContract>, ProtocolError>,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version
@@ -19,9 +16,9 @@ impl DocumentsBatchTransition {
             .documents
             .documents_batch_transition
             .validation
-            .validate
+            .validate_base_structure
         {
-            0 => self.validate_v0(get_data_contract, platform_version),
+            0 => self.validate_base_structure_v0(platform_version),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::validate".to_string(),
                 known_versions: vec![0],

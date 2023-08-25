@@ -3,7 +3,7 @@ mod structure;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
-use drive::drive::Drive;
+
 use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
@@ -18,7 +18,7 @@ use crate::execution::validation::state_transition::processor::v0::{
     StateTransitionStateValidationV0, StateTransitionStructureValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
@@ -26,6 +26,7 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        _validate: bool,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
@@ -50,9 +51,9 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
 impl StateTransitionStructureValidationV0 for DataContractUpdateTransition {
     fn validate_structure(
         &self,
-        _drive: &Drive,
+        _platform: &PlatformStateRef,
+        _action: Option<&StateTransitionAction>,
         protocol_version: u32,
-        _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let platform_version = PlatformVersion::get(protocol_version)?;
         match platform_version
@@ -62,7 +63,7 @@ impl StateTransitionStructureValidationV0 for DataContractUpdateTransition {
             .contract_update_state_transition
             .structure
         {
-            0 => self.validate_structure_v0(platform_version),
+            0 => self.validate_base_structure_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: validate_structure".to_string(),
                 known_versions: vec![0],
@@ -75,6 +76,7 @@ impl StateTransitionStructureValidationV0 for DataContractUpdateTransition {
 impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
+        _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -175,12 +177,13 @@ mod tests {
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 
+        
         use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
         use dpp::platform_value::platform_value;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-        use dpp::state_transition::StateTransitionType;
+        
         use dpp::version::TryFromPlatformVersioned;
-        use platform_version::version::{LATEST_PLATFORM_VERSION, LATEST_VERSION};
+        use platform_version::version::{LATEST_PLATFORM_VERSION};
         use platform_version::TryIntoPlatformVersioned;
 
         #[test]
@@ -234,7 +237,7 @@ mod tests {
             };
 
             let result = DataContractUpdateTransition::V0(state_transition)
-                .validate_state(&platform_ref, None)
+                .validate_state(None, &platform_ref, None)
                 .expect("state transition to be validated");
 
             assert!(!result.is_valid());
@@ -305,7 +308,7 @@ mod tests {
             };
 
             let result = DataContractUpdateTransition::V0(state_transition)
-                .validate_state(&platform_ref, None)
+                .validate_state(None, &platform_ref, None)
                 .expect("state transition to be validated");
 
             assert!(result.is_valid());
@@ -421,7 +424,7 @@ mod tests {
             data_contract.increment_version();
             data_contract
                 .set_document_schema(
-                    "niceDocument".into(),
+                    "niceDocument",
                     updated_document_type.into(),
                     true,
                     LATEST_PLATFORM_VERSION,
@@ -445,7 +448,7 @@ mod tests {
             };
 
             let result = state_transition
-                .validate_state(&platform_ref, None)
+                .validate_state(None, &platform_ref, None)
                 .expect("state transition to be validated");
 
             assert!(!result.is_valid());

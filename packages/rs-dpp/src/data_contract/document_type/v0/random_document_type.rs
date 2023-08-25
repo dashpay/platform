@@ -102,6 +102,7 @@ use crate::data_contract::document_type::v0::{DocumentTypeV0, StatelessJsonSchem
 use crate::data_contract::document_type::{
     DocumentProperty, DocumentPropertyType, DocumentType, Index,
 };
+use crate::identity::SecurityLevel;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
@@ -235,7 +236,7 @@ impl DocumentTypeV0 {
             &PlatformVersion::latest()
                 .dpp
                 .contract_versions
-                .document_type,
+                .document_type_versions,
         )?;
 
         // TODO: It might not work properly
@@ -252,6 +253,7 @@ impl DocumentTypeV0 {
             documents_keep_history,
             documents_mutable,
             data_contract_id,
+            security_level_requirement: SecurityLevel::HIGH,
             json_schema_validator: StatelessJsonSchemaLazyValidator::new(),
         })
     }

@@ -27,6 +27,7 @@ pub trait StateTransitionActionTransformerV0 {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        validate: bool,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -35,17 +36,26 @@ impl StateTransitionActionTransformerV0 for StateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        validate: bool,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
-            StateTransition::DataContractCreate(st) => st.transform_into_action(platform, tx),
-            StateTransition::DataContractUpdate(st) => st.transform_into_action(platform, tx),
-            StateTransition::IdentityCreate(st) => st.transform_into_action(platform, tx),
-            StateTransition::IdentityUpdate(st) => st.transform_into_action(platform, tx),
-            StateTransition::IdentityTopUp(st) => st.transform_into_action(platform, tx),
-            StateTransition::IdentityCreditWithdrawal(st) => st.transform_into_action(platform, tx),
-            StateTransition::DocumentsBatch(st) => st.transform_into_action(platform, tx),
-            StateTransition::IdentityCreditTransfer(st) => st.transform_into_action(platform, tx),
+            StateTransition::DataContractCreate(st) => {
+                st.transform_into_action(platform, validate, tx)
+            }
+            StateTransition::DataContractUpdate(st) => {
+                st.transform_into_action(platform, validate, tx)
+            }
+            StateTransition::IdentityCreate(st) => st.transform_into_action(platform, validate, tx),
+            StateTransition::IdentityUpdate(st) => st.transform_into_action(platform, validate, tx),
+            StateTransition::IdentityTopUp(st) => st.transform_into_action(platform, validate, tx),
+            StateTransition::IdentityCreditWithdrawal(st) => {
+                st.transform_into_action(platform, validate, tx)
+            }
+            StateTransition::DocumentsBatch(st) => st.transform_into_action(platform, validate, tx),
+            StateTransition::IdentityCreditTransfer(st) => {
+                st.transform_into_action(platform, validate, tx)
+            }
         }
     }
 }

@@ -1,13 +1,9 @@
 use std::collections::BTreeMap;
-use platform_value::{Identifier, Value};
-use platform_version::version::PlatformVersion;
-use crate::data_contract::DataContract;
+use platform_value::{Value};
 use crate::identity::TimestampMillis;
-use crate::ProtocolError;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 use crate::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use crate::validation::SimpleConsensusValidationResult;
 
 impl DocumentCreateTransitionV0Methods for DocumentCreateTransition {
     fn base(&self) -> &DocumentBaseTransition {
@@ -79,20 +75,6 @@ impl DocumentCreateTransitionV0Methods for DocumentCreateTransition {
     fn set_data(&mut self, data: BTreeMap<String, Value>) {
         match self {
             DocumentCreateTransition::V0(v0) => v0.data = data,
-        }
-    }
-
-    #[cfg(feature = "validation")]
-    fn validate(
-        &self,
-        data_contract: &DataContract,
-        owner_id: Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        match self {
-            DocumentCreateTransition::V0(v0) => {
-                v0.validate(data_contract, owner_id, platform_version)
-            }
         }
     }
 }

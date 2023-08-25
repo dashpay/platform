@@ -29,7 +29,7 @@ mod value_serialization;
 pub use crate::value_map::{ValueMap, ValueMapHelper};
 pub use error::Error;
 use std::collections::BTreeMap;
-use std::ops::Deref;
+
 
 pub type Hash256 = [u8; 32];
 
@@ -1419,7 +1419,7 @@ impl From<&BTreeMap<String, Value>> for Value {
     fn from(value: &BTreeMap<String, Value>) -> Self {
         Value::Map(
             value
-                .into_iter()
+                .iter()
                 .map(|(key, value)| (key.into(), value.clone()))
                 .collect(),
         )

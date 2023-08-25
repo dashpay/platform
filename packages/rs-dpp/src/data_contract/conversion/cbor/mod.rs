@@ -15,7 +15,11 @@ impl DataContractCborConversionMethodsV0 for DataContract {
         validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        match platform_version.dpp.contract_versions.contract_structure {
+        match platform_version
+            .dpp
+            .contract_versions
+            .contract_structure_version
+        {
             0 => Ok(DataContractV0::from_cbor_with_id(
                 cbor_bytes,
                 contract_id,
@@ -36,7 +40,11 @@ impl DataContractCborConversionMethodsV0 for DataContract {
         validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        match platform_version.dpp.contract_versions.contract_structure {
+        match platform_version
+            .dpp
+            .contract_versions
+            .contract_structure_version
+        {
             0 => Ok(DataContractV0::from_cbor(cbor_bytes, validate, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::from_cbor".to_string(),
