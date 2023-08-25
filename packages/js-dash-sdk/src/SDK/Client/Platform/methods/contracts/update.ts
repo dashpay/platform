@@ -25,6 +25,8 @@ export default async function update(
 
   updatedDataContract.incrementVersion();
 
+  // TODO(versioning): restore
+  // @ts-ignore
   const dataContractUpdateTransition = dpp.dataContract
     .createDataContractUpdateTransition(updatedDataContract);
 
