@@ -36,6 +36,7 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
 
         let document_type = contract.document_type_for_name(self.base().document_type_name())?;
 
+        // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
         // We should check to see if a document already exists in the state
         let already_existing_document = fetch_document_with_id(
             platform.drive,

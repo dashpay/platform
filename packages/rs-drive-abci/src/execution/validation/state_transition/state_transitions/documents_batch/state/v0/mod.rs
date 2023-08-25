@@ -55,43 +55,19 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
 
         // Next we need to validate the structure of all actions (this means with the data contract)
         for transition in state_transition_action.transitions() {
-            match transition {
-                DocumentTransitionAction::CreateAction(create_action) => {
-                    let result = create_action.validate_state(
-                        platform,
-                        owner_id,
-                        transaction,
-                        platform_version,
-                    )?;
-                    if !result.is_valid() {
-                        validation_result.add_errors(result.errors);
-                        return Ok(validation_result);
-                    }
-                }
-                DocumentTransitionAction::ReplaceAction(replace_action) => {
-                    let result = replace_action.validate_state(
-                        platform,
-                        owner_id,
-                        transaction,
-                        platform_version,
-                    )?;
-                    if !result.is_valid() {
-                        validation_result.add_errors(result.errors);
-                        return Ok(validation_result);
-                    }
-                }
-                DocumentTransitionAction::DeleteAction(delete_action) => {
-                    let result = delete_action.validate_state(
-                        platform,
-                        owner_id,
-                        transaction,
-                        platform_version,
-                    )?;
-                    if !result.is_valid() {
-                        validation_result.add_errors(result.errors);
-                        return Ok(validation_result);
-                    }
-                }
+            let transition_validation_result = match transition {
+                DocumentTransitionAction::CreateAction(create_action) => create_action
+                    .validate_state(platform, owner_id, transaction, platform_version)?,
+                DocumentTransitionAction::ReplaceAction(replace_action) => replace_action
+                    .validate_state(platform, owner_id, transaction, platform_version)?,
+                DocumentTransitionAction::DeleteAction(delete_action) => delete_action
+                    .validate_state(platform, owner_id, transaction, platform_version)?,
+            };
+
+            if !transition_validation_result.is_valid() {
+                validation_result.add_errors(transition_validation_result.errors);
+
+                return Ok(validation_result);
             }
         }
 
