@@ -277,9 +277,10 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes =
-            PlatformSerializable::serialize(&StateTransition::IdentityUpdate(self.0.clone()))
-                .with_js_error()?;
+        let bytes = PlatformSerializable::serialize_to_bytes(&StateTransition::IdentityUpdate(
+            self.0.clone(),
+        ))
+        .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
@@ -415,9 +416,16 @@ impl IdentityUpdateTransitionWasm {
             BlsAdapter(JsValue::undefined().into())
         };
 
-        StateTransition::IdentityUpdate(self.0.clone())
+        // TODO: not the best approach because it involves cloning the transition
+        // Probably it worth to return `sign_by_private_key` per state transition
+        let mut wrapper = StateTransition::IdentityUpdate(self.0.clone());
+        wrapper
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
-            .with_js_error()
+            .with_js_error()?;
+
+        self.0.set_signature(wrapper.signature().to_owned());
+
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=setSignaturePublicKeyId)]

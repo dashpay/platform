@@ -102,7 +102,7 @@ impl Drive {
             } else if path == identity_keys_path {
                 if let Some(element) = maybe_element {
                     let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
-                    let key = IdentityPublicKey::deserialize(&item_bytes)?;
+                    let key = IdentityPublicKey::deserialize_from_bytes(&item_bytes)?;
                     keys.insert(key.id(), key);
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(

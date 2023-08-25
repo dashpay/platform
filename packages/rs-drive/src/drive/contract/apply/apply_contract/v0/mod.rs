@@ -50,7 +50,7 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         self.apply_contract_with_serialization(
             contract,
-            contract.serialize_with_platform_version(platform_version)?,
+            contract.serialize_to_bytes_with_platform_version(platform_version)?,
             block_info,
             apply,
             storage_flags,
@@ -74,7 +74,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let serialized_contract = contract
-            .serialize_with_platform_version(platform_version)
+            .serialize_to_bytes_with_platform_version(platform_version)
             .map_err(Error::Protocol)?;
         self.apply_contract_with_serialization_operations(
             contract,

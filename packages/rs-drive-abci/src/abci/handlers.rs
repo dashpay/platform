@@ -596,7 +596,7 @@ where
 
                 let (code, info) = if let Some(validation_error) = validation_error {
                     let serialized_error = platform_value!(validation_error
-                        .serialize_with_platform_version(platform_version)
+                        .serialize_to_bytes_with_platform_version(platform_version)
                         .map_err(|e| ResponseException::from(Error::Protocol(e)))?);
 
                     let error_data = json!({

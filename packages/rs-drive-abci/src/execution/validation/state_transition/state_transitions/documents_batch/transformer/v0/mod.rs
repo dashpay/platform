@@ -10,19 +10,13 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
 
-
 use dpp::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
-
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::validation::SimpleConsensusValidationResult;
-use dpp::{
-    consensus::ConsensusError,
-    prelude::{Identifier},
-    validation::ConsensusValidationResult,
-};
+use dpp::{consensus::ConsensusError, prelude::Identifier, validation::ConsensusValidationResult};
 
 use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition};
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -36,9 +30,9 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::document::documents_batch::DocumentsBatchTransitionAction;
 use drive::state_transition_action::document::documents_batch::v0::DocumentsBatchTransitionActionV0;
 
-use dpp::version::{PlatformVersion};
-use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::documents_batch::state::v0::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
+use dpp::version::PlatformVersion;
+use drive::grovedb::TransactionArg;
 
 use dpp::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use drive::drive::contract::DataContractFetchInfo;
@@ -226,9 +220,9 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error> {
-        // // We use temporary execution context without dry run,
-        // // because despite the dryRun, we need to get the
-        // // data contract to proceed with following logic
+        // We use temporary execution context without dry run,
+        // because despite the dryRun, we need to get the
+        // data contract to proceed with following logic
         // let tmp_execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
         //
         // execution_context.add_operations(tmp_execution_context.operations_slice());
@@ -245,11 +239,11 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
             .copied()
             .collect::<Vec<_>>();
 
-        // we fetch all documents needed for the transitions
-        // for create they should not exist
-        // for replace/patch they should
-        // for delete they should
-        // Validation will come after, but doing one request can be faster.
+        // We fetch documents only for replace transitions
+        // since we need them to create transition actions
+        // Below we also perform state validation for replace transitions only
+        // other transitions are validated in their validate_state functions
+        // TODO: Think more about this architecture
         let fetched_documents_validation_result =
             fetch_documents_for_transitions_knowing_contract_and_document_type(
                 platform.drive,
