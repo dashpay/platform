@@ -8,26 +8,28 @@ use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
 
+use crate::data_contract::DataContractWasm;
 use crate::identifier::IdentifierWrapper;
 use crate::lodash::lodash_set;
 use crate::utils::WithJsError;
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
 use crate::with_js_error;
-use crate::DataContractWasm;
-
+use dpp::document::DocumentV0Getters;
 pub mod errors;
 pub use state_transition::*;
-pub mod document_facade;
+// pub mod document_facade;
 mod extended_document;
-mod factory;
-pub mod fetch_and_validate_data_contract;
+// mod factory;
+// pub mod fetch_and_validate_data_contract;
 pub mod generate_document_id;
 pub mod state_transition;
-mod validator;
+// mod validator;
 
-pub use document_batch_transition::DocumentsBatchTransitionWasm;
+// pub use document_batch_transition::DocumentsBatchTransitionWasm;
 
-use dpp::document::{Document, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS, IDENTIFIER_FIELDS};
+use dpp::document::{
+    Document, DocumentV0Setters, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS, IDENTIFIER_FIELDS,
+};
 
 pub use extended_document::ExtendedDocumentWasm;
 
@@ -38,9 +40,8 @@ use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
 use dpp::{platform_value, ProtocolError};
-pub use factory::DocumentFactoryWASM;
+
 use serde_json::Value as JsonValue;
-pub use validator::DocumentValidatorWasm;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
 #[serde(rename_all = "camelCase")]
@@ -101,43 +102,45 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=getId)]
     pub fn get_id(&self) -> IdentifierWrapper {
-        self.0.id.into()
+        self.0.id().into()
     }
 
     #[wasm_bindgen(js_name=setId)]
     pub fn set_id(&mut self, js_id: IdentifierWrapper) {
-        self.0.id = js_id.into();
+        self.0.set_id(js_id.into());
     }
 
     #[wasm_bindgen(js_name=setOwnerId)]
     pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
-        self.0.owner_id = owner_id.into();
+        self.0.set_owner_id(owner_id.into());
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        self.0.owner_id.into()
+        self.0.owner_id().into()
     }
 
     #[wasm_bindgen(js_name=setRevision)]
     pub fn set_revision(&mut self, revision: Option<u32>) {
         // TODO: JS feeding Number here (u32). Is it okay to cast u32 to u64?
-        self.0.revision = revision.map(|r| r as u64);
+        self.0.set_revision(revision.map(|r| r as u64));
     }
 
     #[wasm_bindgen(js_name=getRevision)]
     pub fn get_revision(&self) -> Option<u32> {
         // TODO: JS tests expecting Number (u32). Is it okay to cast u64 to u32 here?
-        self.0.revision.map(|r| r as u32)
+        self.0.revision().map(|r| r as u32)
     }
 
     #[wasm_bindgen(js_name=setData)]
     pub fn set_data(&mut self, d: JsValue) -> Result<(), JsValue> {
         let properties_as_value = d.with_serde_to_platform_value()?;
-        self.0.properties = properties_as_value
-            .into_btree_string_map()
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
+        self.0.set_properties(
+            properties_as_value
+                .into_btree_string_map()
+                .map_err(ProtocolError::ValueError)
+                .with_js_error()?,
+        );
         Ok(())
     }
 
@@ -145,7 +148,7 @@ impl DocumentWasm {
     pub fn get_data(&mut self) -> Result<JsValue, JsValue> {
         let json_value: JsonValue = self
             .0
-            .properties
+            .properties()
             .to_json_value()
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
@@ -198,25 +201,27 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=setCreatedAt)]
     pub fn set_created_at(&mut self, created_at: Option<js_sys::Date>) {
-        self.0.created_at = created_at.map(|timestamp| timestamp.get_time() as TimestampMillis);
+        self.0
+            .set_created_at(created_at.map(|timestamp| timestamp.get_time() as TimestampMillis));
     }
 
     #[wasm_bindgen(js_name=setUpdatedAt)]
     pub fn set_updated_at(&mut self, updated_at: Option<js_sys::Date>) {
-        self.0.updated_at = updated_at.map(|timestamp| timestamp.get_time() as TimestampMillis);
+        self.0
+            .set_updated_at(updated_at.map(|timestamp| timestamp.get_time() as TimestampMillis));
     }
 
     #[wasm_bindgen(js_name=getCreatedAt)]
     pub fn get_created_at(&self) -> Option<js_sys::Date> {
         self.0
-            .created_at
+            .created_at()
             .map(|v| js_sys::Date::new(&JsValue::from_f64(v as f64)))
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn get_updated_at(&self) -> Option<js_sys::Date> {
         self.0
-            .updated_at
+            .updated_at()
             .map(|v| js_sys::Date::new(&JsValue::from_f64(v as f64)))
     }
 
@@ -356,7 +361,7 @@ pub(crate) fn raw_document_from_js_value(
     let mut raw_document = js_raw_document.with_serde_to_platform_value()?;
 
     let document_type_name = raw_document
-        .get_str(property_names::DOCUMENT_TYPE)
+        .get_str(property_names::DOCUMENT_TYPE_NAME)
         .map_err(ProtocolError::ValueError)
         .with_js_error()?;
 

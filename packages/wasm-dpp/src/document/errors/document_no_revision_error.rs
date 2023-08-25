@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+use crate::data_contract::DataContractWasm;
 use crate::DocumentWasm;
 
 use super::*;

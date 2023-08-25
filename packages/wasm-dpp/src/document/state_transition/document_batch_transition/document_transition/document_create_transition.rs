@@ -1,7 +1,7 @@
 use std::convert;
 use std::convert::TryInto;
 
-use dpp::document::document_transition::document_base_transition::JsonValue;
+use serde_json::Value as JsonValue;
 
 use dpp::platform_value::btreemap_extensions::{
     BTreeValueMapHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
@@ -9,11 +9,13 @@ use dpp::platform_value::btreemap_extensions::{
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::prelude::Revision;
+use dpp::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 use dpp::{
-    document::document_transition::{
-        self, document_create_transition, DocumentCreateTransition, DocumentTransitionObjectLike,
-    },
+    document::INITIAL_REVISION,
     prelude::{DataContract, Identifier},
+    state_transition::documents_batch_transition::{
+        document_create_transition, DocumentsBatchTransition,
+    },
     util::json_schema::JsonSchemaExt,
     ProtocolError,
 };
@@ -22,12 +24,14 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     buffer::Buffer,
-    document_batch_transition::document_transition::to_object,
+    document::document_batch_transition::document_transition::to_object,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{ToSerdeJSONExt, WithJsError},
-    BinaryType, DataContractWasm,
 };
+
+use crate::data_contract::DataContractWasm;
+use crate::document::BinaryType;
 
 #[wasm_bindgen(js_name=DocumentCreateTransition)]
 #[derive(Debug, Clone)]
@@ -57,7 +61,7 @@ impl DocumentCreateTransitionWasm {
         let data_contract: DataContract = data_contract.clone().into();
         let mut value = raw_object.with_serde_to_platform_value_map()?;
         let document_type = value
-            .get_string(dpp::document::extended_document::property_names::DOCUMENT_TYPE)
+            .get_string(dpp::document::extended_document::property_names::DOCUMENT_TYPE_NAME)
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
 
@@ -96,7 +100,7 @@ impl DocumentCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getRevision)]
     pub fn revision(&self) -> Revision {
-        document_transition::INITIAL_REVISION
+        INITIAL_REVISION
     }
 
     // AbstractDocumentTransitionMethods
@@ -230,10 +234,10 @@ impl DocumentCreateTransitionWasm {
             options,
             identifiers_paths
                 .into_iter()
-                .chain(document_create_transition::IDENTIFIER_FIELDS),
+                .chain(document_create_transition::v0::IDENTIFIER_FIELDS),
             binary_paths
                 .into_iter()
-                .chain(document_create_transition::BINARY_FIELDS),
+                .chain(document_create_transition::v0::BINARY_FIELDS),
         )
     }
 

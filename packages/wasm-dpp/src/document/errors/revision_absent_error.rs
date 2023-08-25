@@ -1,4 +1,4 @@
-use crate::ExtendedDocumentWasm;
+use crate::document::extended_document::ExtendedDocumentWasm;
 use thiserror::Error;
 
 use super::*;

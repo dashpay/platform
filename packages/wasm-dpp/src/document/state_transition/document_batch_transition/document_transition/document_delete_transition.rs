@@ -1,12 +1,14 @@
-use dpp::document::document_transition::{
-    document_delete_transition, DocumentDeleteTransition, DocumentTransitionObjectLike,
+use dpp::state_transition::documents_batch_transition::{
+    document_delete_transition, DocumentDeleteTransition,
 };
+
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    document_batch_transition::document_transition::to_object, identifier::IdentifierWrapper,
-    utils::WithJsError, DataContractWasm,
+    data_contract::DataContractWasm,
+    document::document_batch_transition::document_transition::to_object,
+    identifier::IdentifierWrapper, utils::WithJsError,
 };
 
 #[wasm_bindgen(js_name=DocumentDeleteTransition)]
@@ -39,7 +41,7 @@ impl DocumentDeleteTransitionWasm {
         to_object(
             self.inner.to_object().with_js_error()?,
             options,
-            document_delete_transition::IDENTIFIER_FIELDS,
+            document_delete_transition::v0::IDENTIFIER_FIELDS,
             [],
         )
     }

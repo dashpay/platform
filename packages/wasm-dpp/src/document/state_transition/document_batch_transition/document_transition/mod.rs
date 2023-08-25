@@ -8,12 +8,13 @@ pub use document_replace_transition::*;
 
 use dpp::platform_value::Value;
 use dpp::prelude::TimestampMillis;
+use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::{
-    document::document_transition::{
-        DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-        DocumentTransitionExt, DocumentTransitionObjectLike,
+    prelude::Identifier,
+    state_transition::documents_batch_transition::{
+        document_transition::DocumentTransition, DocumentCreateTransition,
+        DocumentDeleteTransition, DocumentReplaceTransition,
     },
-    prelude::{DocumentTransition, Identifier},
     util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
     ProtocolError,
 };

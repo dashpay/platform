@@ -1,5 +1,5 @@
-use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::document::{ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS};
+use serde_json::Value as JsonValue;
 
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::{Identifier, Revision, TimestampMillis};
@@ -14,13 +14,15 @@ use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
+use crate::data_contract::DataContractWasm;
 use crate::document::BinaryType;
+use crate::document::{ConversionOptions, DocumentWasm};
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
+use crate::metadata::MetadataWasm;
 use crate::utils::{with_serde_to_platform_value, IntoWasm, ToSerdeJSONExt, WithJsError};
-use crate::{with_js_error, ConversionOptions, DocumentWasm};
-use crate::{DataContractWasm, MetadataWasm};
+use crate::with_js_error;
 
 #[wasm_bindgen(js_name=ExtendedDocument)]
 #[derive(Debug, Clone, Serialize, Deserialize)]

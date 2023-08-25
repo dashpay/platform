@@ -1,4 +1,4 @@
-use crate::ExtendedDocumentWasm;
+use crate::document::extended_document::ExtendedDocumentWasm;
 use dpp::document::ExtendedDocument;
 use itertools::Itertools;
 use thiserror::Error;
