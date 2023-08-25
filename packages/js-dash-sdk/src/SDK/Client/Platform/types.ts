@@ -1,3 +1,5 @@
+// TODO(versioning): restore
+// @ts-ignore
 import { Identifier, ExtendedDocument } from '@dashevo/wasm-dpp';
 
 /**

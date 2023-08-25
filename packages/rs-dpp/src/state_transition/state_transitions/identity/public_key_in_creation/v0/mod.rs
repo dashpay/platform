@@ -79,6 +79,30 @@ impl IdentityPublicKeyInCreationV0Setters for IdentityPublicKeyInCreationV0 {
     fn set_signature(&mut self, signature: BinaryData) {
         self.signature = signature
     }
+
+    fn set_data(&mut self, data: BinaryData) {
+        self.data = data
+    }
+
+    fn set_id(&mut self, id: KeyID) {
+        self.id = id
+    }
+
+    fn set_type(&mut self, key_type: KeyType) {
+        self.key_type = key_type;
+    }
+
+    fn set_security_level(&mut self, security_level: SecurityLevel) {
+        self.security_level = security_level;
+    }
+
+    fn set_purpose(&mut self, purpose: Purpose) {
+        self.purpose = purpose;
+    }
+
+    fn set_read_only(&mut self, read_only: bool) {
+        self.read_only = read_only;
+    }
 }
 
 impl IdentityPublicKeyInCreationMethodsV0 for IdentityPublicKeyInCreationV0 {

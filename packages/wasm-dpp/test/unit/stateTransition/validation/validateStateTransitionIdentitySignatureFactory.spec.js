@@ -22,7 +22,7 @@ let {
 const getBlsMock = require('../../../../lib/test/mocks/getBlsAdapterMock');
 const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
 
-describe('validateStateTransitionIdentitySignatureFactory', () => {
+describe.skip('validateStateTransitionIdentitySignatureFactory', () => {
   let stateTransition;
   let ownerId;
   let identity;

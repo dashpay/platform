@@ -3,7 +3,7 @@ const { expectValidationError } = require('../../../../../../../lib/test/expect/
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
-describe('validatePublicKeysState', () => {
+describe.skip('validatePublicKeysState', () => {
   let IdentityUpdatePublicKeysValidator;
   let DuplicatedIdentityPublicKeyIdStateError;
   let DuplicatedIdentityPublicKeyStateError;

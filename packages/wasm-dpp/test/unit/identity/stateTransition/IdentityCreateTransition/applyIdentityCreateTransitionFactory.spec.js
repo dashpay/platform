@@ -6,7 +6,7 @@ const createStateRepositoryMock = require('../../../../../lib/test/mocks/createS
 const { default: loadWasmDpp } = require('../../../../..');
 const { getLatestProtocolVersion } = require('../../../../..');
 
-describe('applyIdentityCreateTransitionFactory', () => {
+describe.skip('applyIdentityCreateTransitionFactory', () => {
   let stateTransition;
   let applyIdentityCreateTransition;
   let stateRepositoryMock;

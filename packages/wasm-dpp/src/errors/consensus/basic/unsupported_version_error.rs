@@ -41,13 +41,4 @@ impl UnsupportedVersionErrorWasm {
     pub fn message(&self) -> String {
         self.inner.to_string()
     }
-
-    #[wasm_bindgen(js_name = serialize)]
-    pub fn serialize(&self) -> Result<Buffer, JsError> {
-        let bytes = ConsensusError::from(self.inner.clone())
-            .serialize()
-            .map_err(|e| JsError::from(e))?;
-
-        Ok(Buffer::from_bytes(bytes.as_slice()))
-    }
 }

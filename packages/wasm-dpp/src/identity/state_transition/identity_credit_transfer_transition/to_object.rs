@@ -1,10 +1,9 @@
 use dpp::identity::KeyID;
-use dpp::state_transition::StateTransitionIdentitySignedV0;
-use dpp::{
-    identifier::Identifier,
-    identity::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition,
-    state_transition::StateTransitionLike,
-};
+
+use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+use dpp::state_transition::StateTransitionIdentitySigned;
+use dpp::{identifier::Identifier, state_transition::StateTransitionLike};
 use serde::Deserialize;
 use std::default::Default;
 
@@ -17,7 +16,6 @@ pub struct ToObjectOptions {
 #[derive(Default)]
 pub struct ToObject {
     pub transition_type: u8,
-    pub protocol_version: u32,
     pub identity_id: Identifier,
     pub recipient_id: Identifier,
     pub amount: u64,
@@ -30,19 +28,18 @@ pub fn to_object_struct(
     options: ToObjectOptions,
 ) -> ToObject {
     let mut to_object = ToObject {
-        transition_type: transition.get_type() as u8,
-        protocol_version: transition.get_protocol_version(),
-        identity_id: *transition.get_identity_id(),
-        recipient_id: *transition.get_recipient_id(),
-        amount: transition.get_amount(),
+        transition_type: transition.state_transition_type() as u8,
+        identity_id: transition.identity_id(),
+        recipient_id: transition.recipient_id(),
+        amount: transition.amount(),
         ..ToObject::default()
     };
 
     if !options.skip_signature.unwrap_or(false) {
-        let signature = Some(transition.get_signature().to_vec());
+        let signature = Some(transition.signature().to_vec());
         if let Some(signature) = &signature {
             if !signature.is_empty() {
-                to_object.signature_public_key_id = transition.get_signature_public_key_id()
+                to_object.signature_public_key_id = Some(transition.signature_public_key_id())
             }
         }
         to_object.signature = signature;
