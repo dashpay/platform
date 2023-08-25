@@ -271,7 +271,7 @@ impl StateTransition {
     }
 
     /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
+    pub fn signature(&self) -> &BinaryData {
         call_method!(self, signature)
     }
 
