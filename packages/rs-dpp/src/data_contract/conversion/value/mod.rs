@@ -13,11 +13,7 @@ impl DataContractValueConversionMethodsV0 for DataContract {
         validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        match platform_version
-            .dpp
-            .contract_versions
-            .contract_structure_version
-        {
+        match platform_version.dpp.contract_versions.contract_structure {
             0 => Ok(DataContractV0::from_value(raw_object, validate, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::from_object".to_string(),

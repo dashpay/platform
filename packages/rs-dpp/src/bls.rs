@@ -23,7 +23,7 @@ pub trait BlsModule {
 pub struct NativeBlsModule;
 
 #[cfg(not(target_arch = "wasm32"))]
-impl BlsModule for NativeBlsModule { 
+impl BlsModule for NativeBlsModule {
     fn validate_public_key(&self, pk: &[u8]) -> Result<(), PublicKeyValidationError> {
         match PublicKey::from_bytes(pk) {
             Ok(_) => Ok(()),

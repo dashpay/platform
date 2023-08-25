@@ -4,7 +4,7 @@ use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-pub trait DataContractMethodsV0 {
+pub trait DataContractSchemaMethodsV0 {
     fn set_document_schemas(
         &mut self,
         schemas: BTreeMap<DocumentName, Value>,

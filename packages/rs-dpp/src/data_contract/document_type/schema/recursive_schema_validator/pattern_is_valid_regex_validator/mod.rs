@@ -16,7 +16,7 @@ pub fn pattern_is_valid_regex_validator(
     match platform_version
         .dpp
         .contract_versions
-        .document_type_versions
+        .document_type
         .schema
         .recursive_schema_validator_versions
         .pattern_is_valid_regex_validator

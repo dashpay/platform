@@ -4,6 +4,9 @@ use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 
+#[cfg(feature = "validation")]
+pub(in crate::data_contract) use validator::StatelessJsonSchemaLazyValidator;
+
 use platform_value::{Identifier, Value};
 
 mod accessors;
@@ -11,6 +14,8 @@ mod accessors;
 pub mod random_document;
 #[cfg(feature = "random-document-types")]
 pub mod random_document_type;
+#[cfg(feature = "validation")]
+mod validator;
 
 // TODO: Is this needed?
 pub const CONTRACT_DOCUMENTS_PATH_HEIGHT: u16 = 4;
@@ -43,4 +48,6 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) documents_keep_history: bool,
     pub(in crate::data_contract) documents_mutable: bool,
     pub(in crate::data_contract) data_contract_id: Identifier,
+    #[cfg(feature = "validation")]
+    pub(in crate::data_contract) json_schema_validator: StatelessJsonSchemaLazyValidator,
 }
