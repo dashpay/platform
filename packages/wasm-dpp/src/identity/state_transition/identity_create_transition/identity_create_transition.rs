@@ -5,10 +5,11 @@ use std::default::Default;
 use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::prelude::*;
 
+use crate::bls_adapter::BlsAdapter;
+use crate::errors::from_dpp_err;
 use dpp::identity::KeyType;
 use dpp::platform_value::BinaryData;
-
-use crate::bls_adapter::BlsAdapter;
+use dpp::version::PlatformVersion;
 
 use crate::identifier::IdentifierWrapper;
 
@@ -57,15 +58,13 @@ impl From<IdentityCreateTransitionWasm> for IdentityCreateTransition {
 #[wasm_bindgen(js_class = IdentityCreateTransition)]
 impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_parameters: JsValue) -> Result<IdentityCreateTransitionWasm, JsValue> {
-        let st_json_string = utils::stringify(&raw_parameters)?;
-        let st_platform_value: Value = serde_json::from_str::<JsonValue>(&st_json_string)
-            .map_err(|e| e.to_string())?
-            .into();
+    pub fn new(platform_version: u32) -> Result<IdentityCreateTransitionWasm, JsValue> {
+        let platform_version =
+            &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        let identity_create_transition: IdentityCreateTransition =
-            IdentityCreateTransition::from_object(st_platform_value).map_err(|e| e.to_string())?;
-        Ok(identity_create_transition.into())
+        IdentityCreateTransition::default_versioned(&platform_version)
+            .map(Into::into)
+            .map_err(from_dpp_err)
     }
 
     #[wasm_bindgen(js_name=setAssetLockProof)]

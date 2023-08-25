@@ -74,6 +74,9 @@ impl DocumentCreateTransitionActionStructureValidationV0 for DocumentCreateTrans
             return Ok(validation_result);
         }
 
+        // Validate timestamps against block time
+        // we do validation here but not in validate state because it's a cheap validation
+        // and validate state implements expensive validation only
         let latest_block_time_ms = platform.state.last_block_time_ms();
         let average_block_spacing_ms = platform.config.block_spacing_ms;
 

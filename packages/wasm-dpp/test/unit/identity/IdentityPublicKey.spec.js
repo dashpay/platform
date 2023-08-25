@@ -5,25 +5,26 @@ describe('IdentityPublicKey', () => {
   let publicKey;
 
   beforeEach(() => {
+    const keyData = Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64');
+
     rawPublicKey = {
-      $version: '0',
       id: 0,
       type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
+      data: keyData,
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
       readOnly: false,
     };
-    publicKey = new IdentityPublicKey(rawPublicKey);
+
+    publicKey = new IdentityPublicKey(1);
+    publicKey.setData(keyData);
   });
 
   describe('#constructor', () => {
     it('should set variables from raw model', () => {
-      const instance = new IdentityPublicKey(rawPublicKey);
-
-      expect(instance.getId()).to.equal(rawPublicKey.id);
-      expect(instance.getType()).to.equal(rawPublicKey.type);
-      expect(instance.getData()).to.deep.equal(rawPublicKey.data);
+      expect(publicKey.getId()).to.equal(rawPublicKey.id);
+      expect(publicKey.getType()).to.equal(rawPublicKey.type);
+      expect(publicKey.getData()).to.deep.equal(rawPublicKey.data);
     });
   });
 
@@ -143,18 +144,9 @@ describe('IdentityPublicKey', () => {
     });
 
     it('should return data in case ECDSA_HASH160', () => {
-      rawPublicKey = {
-        $version: '0',
-        id: 0,
-        type: IdentityPublicKey.TYPES.ECDSA_HASH160,
-        data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTdi', 'base64'),
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: false,
-        disabledAt: 123,
-      };
-
-      publicKey = new IdentityPublicKey(rawPublicKey);
+      publicKey = new IdentityPublicKey(1);
+      publicKey.setType(IdentityPublicKey.TYPES.ECDSA_HASH160);
+      publicKey.setData(Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTdi', 'base64'));
 
       const result = publicKey.hash();
 
@@ -164,18 +156,9 @@ describe('IdentityPublicKey', () => {
     });
 
     it('should return original public key hash in case BLS12_381', () => {
-      rawPublicKey = {
-        $version: '0',
-        id: 0,
-        type: IdentityPublicKey.TYPES.BLS12_381,
-        data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: false,
-        disabledAt: 123,
-      };
-
-      publicKey = new IdentityPublicKey(rawPublicKey);
+      publicKey = new IdentityPublicKey(1);
+      publicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
+      publicKey.setData(Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'));
 
       const result = publicKey.hash();
 
@@ -185,18 +168,9 @@ describe('IdentityPublicKey', () => {
     });
 
     it('should return data in case BIP13_SCRIPT_HASH', () => {
-      rawPublicKey = {
-        $version: '0',
-        id: 0,
-        type: IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH,
-        data: Buffer.from('54c557e07dde5bb6cb791c7a540e0a4796f5e97e', 'hex'),
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: false,
-        disabledAt: 123,
-      };
-
-      publicKey = new IdentityPublicKey(rawPublicKey);
+      publicKey = new IdentityPublicKey(1);
+      publicKey.setType(IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH);
+      publicKey.setData(Buffer.from('54c557e07dde5bb6cb791c7a540e0a4796f5e97e', 'hex'));
 
       const result = publicKey.hash();
 

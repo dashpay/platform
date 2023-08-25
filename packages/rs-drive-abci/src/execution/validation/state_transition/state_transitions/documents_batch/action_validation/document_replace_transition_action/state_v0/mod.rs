@@ -31,6 +31,9 @@ impl DocumentReplaceTransitionActionStateValidationV0 for DocumentReplaceTransit
 
         let document_type = contract.document_type_for_name(self.base().document_type_name())?;
 
+        // The rest of state validation is actually happening in documents batch transition transformer
+        // TODO: Think more about this architecture
+
         platform
             .drive
             .validate_document_replace_transition_action_uniqueness(

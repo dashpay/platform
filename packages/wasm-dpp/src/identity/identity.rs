@@ -13,6 +13,7 @@ use dpp::platform_value::{ReplacementType, Value};
 use dpp::serialization::PlatformDeserializable;
 use dpp::serialization::PlatformSerializable;
 use dpp::serialization::ValueConvertible;
+use dpp::version::PlatformVersion;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
@@ -42,20 +43,13 @@ impl From<Identity> for IdentityWasm {
 #[wasm_bindgen(js_class=Identity)]
 impl IdentityWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_identity: JsValue) -> Result<IdentityWasm, JsValue> {
-        let identity_json_string = utils::stringify(&raw_identity)?;
-        let identity_json: JsonValue =
-            serde_json::from_str(&identity_json_string).map_err(|e| e.to_string())?;
+    pub fn new(platform_version: u32) -> Result<IdentityWasm, JsValue> {
+        let platform_version =
+            &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        let identity_platform_value: Value = identity_json.into();
-
-        let identity: Identity =
-            Identity::from_object(identity_platform_value).map_err(from_dpp_err)?;
-
-        Ok(IdentityWasm {
-            inner: identity,
-            metadata: None,
-        })
+        Identity::default_versioned(&platform_version)
+            .map(Into::into)
+            .map_err(from_dpp_err)
     }
 
     #[wasm_bindgen(js_name=getId)]
@@ -247,11 +241,7 @@ impl IdentityWasm {
             .insert(public_key.get_id(), public_key.into());
     }
 
-    // The method `addPublicKeys()` takes an variadic array of `IdentityPublicKeyWasm` as an input. But elements of the array
-    // are available ONLY as `JsValue`. WASM-bindgen uses output from `toJSON()` to store WASM-object as `JsValue`.
-    // `toJSON()` converts binary data to `base64` or `base58`. Therefore we need to use `from_json_object()` constructor to
-    // to convert strings back into bytes and get `IdentityPublicKeyWasm`
-    #[wasm_bindgen(js_name=addPublicKeys, variadic)]
+    #[wasm_bindgen(js_name=addPublicKeys)]
     pub fn add_public_keys(&mut self, public_keys: js_sys::Array) -> Result<(), JsValue> {
         if public_keys.length() == 0 {
             return Err(format!("Setting public keys failed. The input ('{}') is invalid. You must use array of PublicKeys", public_keys.to_string()).into());

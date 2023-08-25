@@ -220,9 +220,9 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error> {
-        // // We use temporary execution context without dry run,
-        // // because despite the dryRun, we need to get the
-        // // data contract to proceed with following logic
+        // We use temporary execution context without dry run,
+        // because despite the dryRun, we need to get the
+        // data contract to proceed with following logic
         // let tmp_execution_context = StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
         //
         // execution_context.add_operations(tmp_execution_context.operations_slice());
@@ -239,11 +239,11 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
             .copied()
             .collect::<Vec<_>>();
 
-        // we fetch all documents needed for the transitions
-        // for create they should not exist
-        // for replace/patch they should
-        // for delete they should
-        // Validation will come after, but doing one request can be faster.
+        // We fetch documents only for replace transitions
+        // since we need them to create transition actions
+        // Below we also perform state validation for replace transitions only
+        // other transitions are validated in their validate_state functions
+        // TODO: Think more about this architecture
         let fetched_documents_validation_result =
             fetch_documents_for_transitions_knowing_contract_and_document_type(
                 platform.drive,

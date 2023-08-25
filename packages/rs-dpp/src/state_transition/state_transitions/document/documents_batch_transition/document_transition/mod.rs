@@ -234,6 +234,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         }
     }
 
+    // TODO: it's confusing to set a value and internally it's not setting if your variant doesn't have it.
     fn set_created_at(&mut self, timestamp_millis: Option<TimestampMillis>) {
         match self {
             DocumentTransition::Create(ref mut t) => t.set_created_at(timestamp_millis),
