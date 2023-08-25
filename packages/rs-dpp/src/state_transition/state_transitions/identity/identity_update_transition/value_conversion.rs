@@ -9,9 +9,9 @@ use crate::state_transition::identity_update_transition::IdentityUpdateTransitio
 use crate::state_transition::state_transitions::identity_update_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
+use crate::serialization::ValueConvertible;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
-use crate::serialization::ValueConvertible;
 
 impl<'a> ValueConvertible<'a> for IdentityUpdateTransition {}
 impl<'a> StateTransitionValueConvert<'a> for IdentityUpdateTransition {

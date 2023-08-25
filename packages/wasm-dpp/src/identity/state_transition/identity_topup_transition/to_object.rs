@@ -1,12 +1,9 @@
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
-use dpp::{
-    identifier::Identifier,
-    state_transition::StateTransitionLike,
-};
-use serde::Deserialize;
-use std::default::Default;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+use dpp::{identifier::Identifier, state_transition::StateTransitionLike};
+use serde::Deserialize;
+use std::default::Default;
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]

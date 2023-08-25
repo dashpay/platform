@@ -1,24 +1,17 @@
+use crate::data_contract::JsonValue;
 use crate::validation::JsonSchemaValidator;
-use crate::version::PlatformVersion;
-use crate::DashPlatformProtocolInitError;
-use serde_json::Value as JsonValue;
+use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
 
 impl JsonSchemaValidator {
-    pub(super) fn new_v0(
-        schema_json: JsonValue,
+    pub(super) fn new_compiled_v0(
+        json_schema: &JsonValue,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, DashPlatformProtocolInitError> {
-        let mut json_schema_validator = Self {
-            raw_schema_json: schema_json,
-            schema: None,
-        };
+    ) -> Result<Self, ProtocolError> {
+        let validator = Self::new();
 
-        let mut compilation_options = Self::get_schema_compilation_options(platform_version);
-        let json_schema = compilation_options
-            .with_draft(jsonschema::Draft::Draft202012)
-            .compile(&json_schema_validator.raw_schema_json)?;
-        json_schema_validator.schema = Some(json_schema);
+        validator.compile(json_schema, platform_version)?;
 
-        Ok(json_schema_validator)
+        Ok(validator)
     }
 }

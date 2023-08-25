@@ -16,13 +16,13 @@ use dpp::withdrawal::Pooling;
 const MIN_WITHDRAWAL_AMOUNT: u64 = 1000;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_credit_withdrawal) trait IdentityCreditWithdrawalStateTransitionStructureValidationV0 {
-    fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;
+    fn validate_base_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
 impl IdentityCreditWithdrawalStateTransitionStructureValidationV0
     for IdentityCreditWithdrawalTransition
 {
-    fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
+    fn validate_base_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
         let mut result = SimpleConsensusValidationResult::default();
 
         if self.amount() < MIN_WITHDRAWAL_AMOUNT {
