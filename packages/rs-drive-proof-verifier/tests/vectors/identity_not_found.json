@@ -5,24 +5,24 @@
     },
     {
         "metadata": {
-            "height": "303",
-            "core_chain_locked_height": 1632,
-            "time_ms": "1692711919981",
+            "height": "818",
+            "core_chain_locked_height": 1859,
+            "time_ms": "1692971551478",
             "protocol_version": 1,
-            "chain_id": "dashmate_local_15"
+            "chain_id": "dashmate_local_55"
         },
         "result": {
             "proof": {
-                "grovedb_proof": "AcYCAebR3OeIKf8qoGdxXcJ/p8x5GyUBlX/4VTcPjQ/VbOORBAEgACQCASCfZaUKZ1lrdoYjPs0O9YKoVr4p94txqspbRYfy8tthmAABH0mGyrw49a8y4oVc5Gh4hMQ5EpMUSvyWi8N9qRDEaxABpr2MEZ2pKGwfCVi1XcIOsdQzm5cGlbwDwZxsrjp8PeMRAqVD7GVZqc8X1J+a6my2QCQJnm+yQEtQH+QBefdHXNpuEAEeG5o15N9lXypAqtZEVtpc/Gw5Ck9hQ1RMXnHzous8qwQBYAAtBAEgn2WlCmdZa3aGIz7NDvWCqFa+KfeLcarKW0WH8vLbYZj97C2kNkkAAAAAzOJFtlc/oDq4KZDQRErLva3zAYs+h+h5UIqgutgRcC8QAejILIFRTS0J7VOvcIWqghpqxVwEJzhsABQddEJnIky0EREB8wIBO1BAUMa8hYlSegqosyRTLtlGPiw+ClwrVkCBa+15rQkCgbR9q+ZPFHGNp3+/rhwgFT6+nfaEzei4i62vw8ehOJYQATk8j7+UaXTRPTsz3uVmF9OzXHSoa+6mATXEqxZVabfIAlHvsndN+L/y7VB8G+s8v0IONJsjoAC4BDB/tbkfWF5NEAF+Ezci5Prtrr2ma5NeZrMl9O56p31hzox7wdjs0TuHJQUg9m6ZTLAVZp/dG1hDlFu9lGdgjmm8xPp2jqWnJb7gC7rJUfUGB4q0fg9cgAFKbf6YnVfoAvzpWouXe024NnRm1xAFIPdXUj634ZXBNxcuLTIZywCVrPZBUf0nGv0mAqDBj66cAIH0FIJpZSVgLkRYj7c3br7ihQOp/DsEkMvtkXBTRJ0CJkHOw19wwq8HB5ljkR2fmwkUMP9sc6MrApIdfWjIWmwQAfzSoq8f0TY5+58PixzFIan4RXCExPRI2IiGxFuak6TdEREREQLzAgG5Zh4c59PSYNQ4iHneaSqn8Dd4RZNtWR05lC4jCzGjbgLIaUC5PRYEMoQrfMJnG3PgKokrA37sdKCgo7Hxar/TcRAB9qMSF3+npCdj0BBGuZgaxDh9jZgT4/8OLY5iG1Bw/aQCSonh45TtDqy5bKWLKAxc4QS1ND6W+q9i6cM43qiqF+MQAes2ZyeOmpUVEGNaZRDtN8oxOEL/qIAbQUxgdq13G3amBSD2bplMsBVmn90bWEOUW72UZ2COabzE+naOpaclvuALupzvj61YogQxmazSaq+b2h+tnlr8AVI5n6Xrv00KkmshEAUg91dSPrfhlcE3Fy4tMhnLAJWs9kFR/Sca/SYCoMGPrpyL9VvPWNkEkRWmsmKctlV6f+ja/fq0tzF4CTROgQpWqQKfMRh2gVI6m4Ftc/BMZfle0ryefKC+DLYN590xmwjZRxABJn6Vj4BN/N2xydfZl43dBNFJ+nV0Ub63PRNdHJ0HXkkRERER",
-                "quorum_hash": "B1RFYrDldTXApw1S4o7QVah3BID5bTqm/lKEHf1Y3AY=",
-                "signature": "t4apx8bsqiW9XVOb2udrjhl6rwNpb1qyiSLAo4CmGzojUDOaBcsOIIzuU+/1T9KZCOg4qhOV7vwjYKg62mfj+rYyYrUf34hyXsQ2+By3ex2Wl8CnXQBl393Wae4ihePy",
+                "grovedb_proof": "AcICASlv+GKSwH7W3jmq1g+IikRV4l8UZmzCnen+LXSVCrF3BAEgACQCASCfZaUKZ1lrdoYjPs0O9YKoVr4p94txqspbRYfy8tthmAB+uVnirDkO3CPSW5qFdoZkpNw4Yr+vEUfPYlPQv65HNhABsTQ144Lu8riMZWPjZoyHU74dINTpHK7jFPNh6Uec7oIRAhETH8SABLWPQmvtZManrO/2FD3/KB0GgQKhS7pwA+fuEAEpuGuSrsb8EM6t/LF19a6RkT44qQabc60bImlSaf9IOgQBYAApBAEgn2WlCmdZa3aGIz7NDvWCqFa+KfeLcarKW0WH8vLbYZj8jJuscQADIMxE/Hyfq1b/JFow+phuxSIk6XBXyYAS1HiCGzrB8hABBUpqkugmn3EGeAqYGA/dCyLct35dB26OQ4+fk/ik1J0REQGOAgH9VEDOGQonT8RJxoLrbI8mW+Hy04hA2BhzSfdypJhYFwIUw7kr31P0Oxj591dRzn8ezhFE2vMgg3KEbd4ezbvNNBABGXqZN1kNiIDLBoEinFg9dbEcr1510NEsCgvhGtsA8fQCSC4j2V9UCVWHjBRsHQr37m58WTqCZRlQ3qHfefqqp38QAWI/BwiJYljjDB8amF1R8l6yMzwn8flz/Say0fmP/YVAAnPvehJDyEH3yheM9qKSHoXg5IxWN8DGXK4lyEMa1EpvEAUg8JgCb6rpV1fferLUZECCK5zNOoenSb0o+W3o/LZbBSKrVnrjld/SNthtObS7eAir5yq0y5P82/ebfcoDoqiJDxEREQKOAgGSh4snuGvOC5jRYKljdNCd9fD6Qp4s+ZzK+eWicOP+ywLIaUC5PRYEMoQrfMJnG3PgKokrA37sdKCgo7Hxar/TcRABGPjSqx9xMLGvJLSaDoTQBRB5MmG5Upyd7SKghhKGkHQCGLLp95xZcV6Qiu+VLICVSn685tPtSYzPgIi2nyVkfmgQAVvb9liEu0IyoSs4i4udGEHrBj0yqY+jrLJ1rf1KwjJQAoa6eXCyY7MR/c0d1pcLbip4EjiEMUNmAEp+VP+4zWPuEAUg8JgCb6rpV1fferLUZECCK5zNOoenSb0o+W3o/LZbBSLfyVhgG1EBUGI4sYwRWhdakmAgTaFob2iMehHbzcnPnBEREQ==",
+                "quorum_hash": "CMG5T6xskmrmRFCJdisxDSdCXELXBT/os8TuRCV37ZU=",
+                "signature": "kVlm2QI0L2gyppLwp7BLwrlUv3GLSi8TP6o6LXS/S3EkDRLVClBsRfZSGmb7k6QKCNgA+9soIP2MDoKD0IDFmx8visT8nVH2Y/CiO3TNVLTokwS8P9brblyiuL67wQN+",
                 "round": 0,
-                "block_id_hash": "N/uWwlh3yGOYrl0iBktW+RNhdIOmBdHeUlK9K+RvmlI=",
+                "block_id_hash": "C7X6tQdTVCSp+0uG+P7+8tPTAxP4FoJpF4NSFmy1T60=",
                 "quorum_type": 106
             }
         }
     },
     {
-        "quorum_public_key": "804fd1c11b3974861f8c43cf3451775c591d83ffcb60e6c8cd78e0ecb76d412159a0d4d9752d56b7d516ae4179ab2b23"
+        "quorum_public_key": "b49aac747e525f386cc337a352b87e88f4f290ead7a719f25723e093f22574d678b81596e35dfe0533bfd24133421946"
     }
 ]
