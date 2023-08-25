@@ -6,8 +6,8 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
-use costs::{CostResult, CostsExt, OperationCost};
 use dpp::block::epoch::Epoch;
+use grovedb_costs::{CostResult, CostsExt, OperationCost};
 
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
