@@ -9,8 +9,8 @@ extern crate core;
 // pub use metadata::*;
 // pub use state_transition::*;
 
-// mod dash_platform_protocol;
-// mod data_contract;
+mod dash_platform_protocol;
+mod data_contract;
 // mod data_contract_factory;
 // mod data_trigger;
 // mod document;
@@ -19,14 +19,14 @@ mod identifier;
 mod identity;
 mod metadata;
 // mod state_repository;
-// mod state_transition;
+mod state_transition;
 // mod version;
 
 mod utils;
 
-mod bls_adapter;
+pub mod bls_adapter;
 mod buffer;
-// mod entropy_generator;
+mod entropy_generator;
 // mod generate_temporary_ecdsa_private_key;
 // mod lodash;
 // mod protocol_version;

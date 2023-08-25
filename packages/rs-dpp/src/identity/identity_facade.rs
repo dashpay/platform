@@ -29,10 +29,10 @@ pub struct IdentityFacade {
 }
 
 impl IdentityFacade {
-    pub fn new(protocol_version: u32) -> Result<Self, DashPlatformProtocolInitError> {
-        Ok(Self {
+    pub fn new(protocol_version: u32) -> Self {
+        Self {
             factory: IdentityFactory::new(protocol_version),
-        })
+        }
     }
 
     pub fn create(
@@ -58,7 +58,7 @@ impl IdentityFacade {
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
-        self.factory.create_from_buffer(buffer, false)
+        self.factory.create_from_buffer(buffer, skip_validation)
     }
 
     pub fn create_instant_lock_proof(
