@@ -201,7 +201,7 @@ pub(crate) fn fetch_document_with_id(
 
     let mut documents = documents_outcome.documents_owned();
 
-    if documents.len() == 0 {
+    if documents.is_empty() {
         Ok(None)
     } else {
         Ok(Some(documents.remove(0)))

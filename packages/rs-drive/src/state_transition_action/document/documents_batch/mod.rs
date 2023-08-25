@@ -53,7 +53,7 @@ impl DocumentsBatchTransitionAction {
 
             let document_type = data_contract_info
                 .contract
-                .document_type_for_name(&document_type_name)?;
+                .document_type_for_name(document_type_name)?;
 
             let document_security_level = document_type.security_level_requirement();
 

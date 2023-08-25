@@ -329,7 +329,7 @@ impl DocumentTypeV0 {
 
         let security_level_requirement = schema
             .get_optional_integer::<u8>(property_names::SECURITY_LEVEL_REQUIREMENT)?
-            .map(|security_level_number| SecurityLevel::try_from(security_level_number))
+            .map(SecurityLevel::try_from)
             .transpose()?
             .unwrap_or(SecurityLevel::HIGH);
 

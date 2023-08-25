@@ -424,7 +424,7 @@ mod tests {
             data_contract.increment_version();
             data_contract
                 .set_document_schema(
-                    "niceDocument".into(),
+                    "niceDocument",
                     updated_document_type.into(),
                     true,
                     LATEST_PLATFORM_VERSION,

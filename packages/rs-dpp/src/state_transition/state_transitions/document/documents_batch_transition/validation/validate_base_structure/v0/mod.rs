@@ -51,7 +51,7 @@ impl DocumentsBatchTransition {
 
         for transitions in document_transitions_by_contracts.values() {
             // Make sure we don't have duplicate transitions
-            let duplicate_transitions = find_duplicates_by_id(&transitions, platform_version)?;
+            let duplicate_transitions = find_duplicates_by_id(transitions, platform_version)?;
 
             if !duplicate_transitions.is_empty() {
                 let references: Vec<(String, [u8; 32])> = duplicate_transitions
