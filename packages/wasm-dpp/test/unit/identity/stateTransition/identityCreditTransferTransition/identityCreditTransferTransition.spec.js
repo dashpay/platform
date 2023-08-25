@@ -1,27 +1,16 @@
 const getIdentityCreditTransferTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityCreditTransferTransitionFixture');
 
-const { default: loadWasmDpp } = require('../../../../..');
-const { getLatestProtocolVersion, StateTransitionTypes } = require('../../../../..');
+const {
+  Identifier, StateTransitionTypes,
+} = require('../../../../..');
 
 describe('IdentityCreditTransferTransition', () => {
   let rawStateTransition;
   let stateTransition;
 
-  let IdentityCreditTransferTransition;
-  let Identifier;
-
-  before(async () => {
-    ({
-      IdentityCreditTransferTransition, Identifier,
-    } = await loadWasmDpp());
-  });
-
   beforeEach(async () => {
-    rawStateTransition = (await getIdentityCreditTransferTransitionFixture()).toObject();
-
-    stateTransition = new IdentityCreditTransferTransition(
-      rawStateTransition,
-    );
+    stateTransition = await getIdentityCreditTransferTransitionFixture();
+    rawStateTransition = stateTransition.toObject();
   });
 
   describe('#constructor', () => {
@@ -72,8 +61,8 @@ describe('IdentityCreditTransferTransition', () => {
         identityId: rawStateTransition.identityId,
         recipientId: rawStateTransition.recipientId,
         amount: rawStateTransition.amount,
-        signature: Buffer.alloc(32).fill(0),
-        signaturePublicKeyId: 0,
+        signature: undefined,
+        signaturePublicKeyId: undefined,
       });
     });
 
@@ -100,8 +89,8 @@ describe('IdentityCreditTransferTransition', () => {
         identityId: new Identifier(rawStateTransition.identityId).toString(),
         recipientId: new Identifier(rawStateTransition.recipientId).toString(),
         amount: rawStateTransition.amount,
-        signature: Buffer.alloc(32).fill(0).toString('base64'),
-        signaturePublicKeyId: 0,
+        signature: undefined,
+        signaturePublicKeyId: undefined,
       });
     });
   });

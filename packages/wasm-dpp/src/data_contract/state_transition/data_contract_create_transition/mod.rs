@@ -100,7 +100,7 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
         let bytes =
-            PlatformSerializable::serialize(&StateTransition::DataContractCreate(self.0.clone()))
+            PlatformSerializable::serialize_to_bytes(&StateTransition::DataContractCreate(self.0.clone()))
                 .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
@@ -108,7 +108,7 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(js_name=fromBuffer)]
     pub fn from_buffer(buffer: Vec<u8>) -> Result<DataContractCreateTransitionWasm, JsValue> {
         let state_transition: StateTransition =
-            PlatformDeserializable::deserialize(&buffer).with_js_error()?;
+            PlatformDeserializable::deserialize_from_bytes(&buffer).with_js_error()?;
         match state_transition {
             StateTransition::DataContractCreate(dct) => Ok(dct.into()),
             _ => Err(JsValue::from_str("Invalid state transition type")),

@@ -90,7 +90,7 @@ pub enum DataContract {
 impl PlatformSerializableWithPlatformVersion for DataContract {
     type Error = ProtocolError;
 
-    fn serialize_with_platform_version(
+    fn serialize_to_bytes_with_platform_version(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
@@ -104,7 +104,7 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
         })
     }
 
-    fn serialize_consume_with_platform_version(
+    fn serialize_consume_to_bytes_with_platform_version(
         self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
@@ -239,9 +239,9 @@ impl DataContract {
     }
 
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(
-            self.serialize_with_platform_version(platform_version)?,
-        ))
+        Ok(hash_to_vec(self.serialize_to_bytes_with_platform_version(
+            platform_version,
+        )?))
     }
 }
 
@@ -261,7 +261,7 @@ mod tests {
             .expect("expected dashpay contract");
         let platform_version = PlatformVersion::latest();
         let serialized = data_contract
-            .serialize_with_platform_version(platform_version)
+            .serialize_to_bytes_with_platform_version(platform_version)
             .expect("expected to serialize data contract");
         assert_eq!(
             serialized[0],

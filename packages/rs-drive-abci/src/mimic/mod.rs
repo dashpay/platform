@@ -81,7 +81,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         let next_validators_hash: [u8; 32] = rng.gen(); // We fake a block hash for the test
         let serialized_state_transitions = state_transitions
             .into_iter()
-            .map(|st| st.serialize().map_err(Error::Protocol))
+            .map(|st| st.serialize_to_bytes().map_err(Error::Protocol))
             .collect::<Result<Vec<Vec<u8>>, Error>>()?;
 
         let BlockInfo {

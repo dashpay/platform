@@ -1,29 +1,32 @@
 use crate::consensus::ConsensusError;
 use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
-use crate::{NonConsensusError, SerdeParsingError};
+use crate::ProtocolError;
+
 use serde_json::Value as JsonValue;
 
 impl JsonSchemaValidator {
     pub(super) fn validate_v0(
         &self,
-        object: &JsonValue,
-    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
+        instance: &JsonValue,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let validator_guard = self.validator.read().unwrap();
+
+        let Some(validator) = validator_guard.as_ref() else {
+            return Err(ProtocolError::Generic(
+                "validator is not compiled".to_string(),
+            ));
+        };
+
         // TODO: create better error messages
-        let res = self
-            .schema
-            .as_ref()
-            .ok_or_else(|| SerdeParsingError::new("Expected schema to be initialized"))?
-            .validate(object);
+        let result = validator.validate(instance);
 
-        let mut validation_result = SimpleConsensusValidationResult::default();
-
-        match res {
-            Ok(_) => Ok(validation_result),
+        match result {
+            Ok(_) => Ok(SimpleConsensusValidationResult::default()),
             Err(validation_errors) => {
                 let errors: Vec<ConsensusError> =
                     validation_errors.map(ConsensusError::from).collect();
-                validation_result.add_errors(errors);
-                Ok(validation_result)
+
+                Ok(SimpleConsensusValidationResult::new_with_errors(errors))
             }
         }
     }

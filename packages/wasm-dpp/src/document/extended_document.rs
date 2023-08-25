@@ -326,7 +326,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes = PlatformSerializable::serialize(&self.0.clone()).with_js_error()?;
+        let bytes = PlatformSerializable::serialize_to_bytes(&self.0.clone()).with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
