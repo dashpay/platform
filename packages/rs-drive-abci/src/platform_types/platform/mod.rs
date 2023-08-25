@@ -17,9 +17,10 @@ use dashcore_rpc::dashcore::BlockHash;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform_state::PlatformState;
 use dpp::serialization::PlatformDeserializable;
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::error::Error::GroveDB;
 use serde_json::json;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 /// Platform is not versioned as it holds the main logic, we could not switch from one structure
 /// configuration of the Platform struct to another without a software upgrade
@@ -151,6 +152,8 @@ impl Platform<MockCoreRPCLike> {
 
         let recreated_state = PlatformState::deserialize_no_limit(&serialized_platform_state)?;
 
+        PlatformVersion::set_current(PlatformVersion::get(recreated_state.current_protocol_version_in_consensus())?);
+
         let mut state_cache = self.state.write().unwrap();
         *state_cache = recreated_state;
         Ok(true)
@@ -207,6 +210,8 @@ impl<C> Platform<C> {
     {
         let platform_state = PlatformState::deserialize_no_limit(&serialized_platform_state)?;
 
+        PlatformVersion::set_current(PlatformVersion::get(platform_state.current_protocol_version_in_consensus())?);
+
         let platform: Platform<C> = Platform {
             drive,
             state: RwLock::new(platform_state),
@@ -229,14 +234,16 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let state = PlatformState::default_with_protocol_versions(
+        let platform_state = PlatformState::default_with_protocol_versions(
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
         );
 
+        PlatformVersion::set_current(PlatformVersion::get(current_protocol_version_in_consensus)?);
+
         Ok(Platform {
             drive,
-            state: RwLock::new(state),
+            state: RwLock::new(platform_state),
             config,
             block_execution_context: RwLock::new(None),
             core_rpc,

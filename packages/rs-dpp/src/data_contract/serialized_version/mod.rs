@@ -52,7 +52,7 @@ impl TryFromPlatformVersioned<DataContractV0> for DataContractInSerializationFor
         match platform_version
             .dpp
             .contract_versions
-            .contract_serialization_version
+            .contract_serialization
             .default_current_version
         {
             0 => {
@@ -78,7 +78,7 @@ impl TryFromPlatformVersioned<&DataContractV0> for DataContractInSerializationFo
         match platform_version
             .dpp
             .contract_versions
-            .contract_serialization_version
+            .contract_serialization
             .default_current_version
         {
             0 => {
@@ -105,7 +105,7 @@ impl TryFromPlatformVersioned<&DataContract> for DataContractInSerializationForm
         match platform_version
             .dpp
             .contract_versions
-            .contract_serialization_version
+            .contract_serialization
             .default_current_version
         {
             0 => {
@@ -131,7 +131,7 @@ impl TryFromPlatformVersioned<DataContract> for DataContractInSerializationForma
         match platform_version
             .dpp
             .contract_versions
-            .contract_serialization_version
+            .contract_serialization
             .default_current_version
         {
             0 => {
@@ -155,11 +155,7 @@ impl DataContract {
     ) -> Result<Self, ProtocolError> {
         match value {
             DataContractInSerializationFormat::V0(serialization_format_v0) => {
-                match platform_version
-                    .dpp
-                    .contract_versions
-                    .contract_structure_version
-                {
+                match platform_version.dpp.contract_versions.contract_structure {
                     0 => {
                         let data_contract = DataContractV0::try_from_platform_versioned_v0(
                             serialization_format_v0,

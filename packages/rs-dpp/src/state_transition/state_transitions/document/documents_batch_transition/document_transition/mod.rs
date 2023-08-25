@@ -4,7 +4,7 @@ use bincode::{Decode, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 
-use crate::prelude::Identifier;
+use crate::prelude::{DataContract, Identifier};
 use document_base_transition::DocumentBaseTransition;
 
 pub mod action_type;
@@ -21,9 +21,12 @@ pub use document_create_transition::DocumentCreateTransition;
 pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
+use crate::ProtocolError;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use crate::state_transition::state_transitions::document::documents_batch_transition::document_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
+use crate::validation::SimpleConsensusValidationResult;
 
 pub const PROPERTY_ACTION: &str = "$action";
 
@@ -57,6 +60,14 @@ pub trait DocumentTransitionV0Methods {
     fn set_data_contract_id(&mut self, id: Identifier);
     fn base_mut(&mut self) -> &mut DocumentBaseTransition;
     fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>>;
+
+    #[cfg(feature = "validation")]
+    fn validate(
+        &self,
+        data_contract: &DataContract,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
@@ -217,11 +228,43 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         }
     }
 
-    fn base_mut(&mut self) -> &mut DocumentBaseTransition {
+    fn created_at(&self) -> Option<TimestampMillis> {
         match self {
-            DocumentTransition::Create(t) => t.base_mut(),
-            DocumentTransition::Replace(t) => t.base_mut(),
-            DocumentTransition::Delete(t) => t.base_mut(),
+            DocumentTransition::Create(t) => t.created_at(),
+            DocumentTransition::Replace(_) => None,
+            DocumentTransition::Delete(_) => None,
+        }
+    }
+
+    fn updated_at(&self) -> Option<TimestampMillis> {
+        match self {
+            DocumentTransition::Create(t) => t.updated_at(),
+            DocumentTransition::Replace(t) => t.updated_at(),
+            DocumentTransition::Delete(_) => None,
+        }
+    }
+
+    fn set_created_at(&mut self, timestamp_millis: Option<TimestampMillis>) {
+        match self {
+            DocumentTransition::Create(ref mut t) => t.set_created_at(timestamp_millis),
+            DocumentTransition::Replace(_) => {}
+            DocumentTransition::Delete(_) => {}
+        }
+    }
+
+    fn set_updated_at(&mut self, timestamp_millis: Option<TimestampMillis>) {
+        match self {
+            DocumentTransition::Create(ref mut t) => t.set_updated_at(timestamp_millis),
+            DocumentTransition::Replace(ref mut t) => t.set_updated_at(timestamp_millis),
+            DocumentTransition::Delete(_) => {}
+        }
+    }
+
+    fn get_dynamic_property(&self, path: &str) -> Option<&Value> {
+        match self {
+            DocumentTransition::Create(t) => t.data().get(path),
+            DocumentTransition::Replace(t) => t.data().get(path),
+            DocumentTransition::Delete(_) => None,
         }
     }
 
@@ -237,58 +280,10 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         self.base().data_contract_id()
     }
 
-    fn updated_at(&self) -> Option<TimestampMillis> {
-        match self {
-            DocumentTransition::Create(t) => t.updated_at(),
-            DocumentTransition::Replace(t) => t.updated_at(),
-            DocumentTransition::Delete(_) => None,
-        }
-    }
-
-    fn set_updated_at(&mut self, timestamp_millis: Option<TimestampMillis>) {
-        match self {
-            DocumentTransition::Create(ref mut t) => t.set_updated_at(timestamp_millis),
-            DocumentTransition::Replace(ref mut t) => t.set_updated_at(timestamp_millis),
-            DocumentTransition::Delete(_) => {}
-        }
-    }
-
-    fn created_at(&self) -> Option<TimestampMillis> {
-        match self {
-            DocumentTransition::Create(t) => t.created_at(),
-            DocumentTransition::Replace(_) => None,
-            DocumentTransition::Delete(_) => None,
-        }
-    }
-
-    fn set_created_at(&mut self, timestamp_millis: Option<TimestampMillis>) {
-        match self {
-            DocumentTransition::Create(ref mut t) => t.set_created_at(timestamp_millis),
-            DocumentTransition::Replace(_) => {}
-            DocumentTransition::Delete(_) => {}
-        }
-    }
-
-    fn get_dynamic_property(&self, path: &str) -> Option<&Value> {
-        match self {
-            DocumentTransition::Create(t) => t.data().get(path),
-            DocumentTransition::Replace(t) => t.data().get(path),
-            DocumentTransition::Delete(_) => None,
-        }
-    }
-
     fn data(&self) -> Option<&BTreeMap<String, Value>> {
         match self {
             DocumentTransition::Create(t) => Some(t.data()),
             DocumentTransition::Replace(t) => Some(t.data()),
-            DocumentTransition::Delete(_) => None,
-        }
-    }
-
-    fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>> {
-        match self {
-            DocumentTransition::Create(t) => Some(t.data_mut()),
-            DocumentTransition::Replace(t) => Some(t.data_mut()),
             DocumentTransition::Delete(_) => None,
         }
     }
@@ -320,5 +315,35 @@ impl DocumentTransitionV0Methods for DocumentTransition {
 
     fn set_data_contract_id(&mut self, id: Identifier) {
         self.base_mut().set_data_contract_id(id)
+    }
+
+    fn base_mut(&mut self) -> &mut DocumentBaseTransition {
+        match self {
+            DocumentTransition::Create(t) => t.base_mut(),
+            DocumentTransition::Replace(t) => t.base_mut(),
+            DocumentTransition::Delete(t) => t.base_mut(),
+        }
+    }
+
+    fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>> {
+        match self {
+            DocumentTransition::Create(t) => Some(t.data_mut()),
+            DocumentTransition::Replace(t) => Some(t.data_mut()),
+            DocumentTransition::Delete(_) => None,
+        }
+    }
+
+    #[cfg(feature = "validation")]
+    fn validate(
+        &self,
+        data_contract: &DataContract,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        match self {
+            DocumentTransition::Create(t) => t.validate(data_contract, owner_id, platform_version),
+            DocumentTransition::Replace(t) => t.validate(data_contract, platform_version),
+            DocumentTransition::Delete(t) => t.validate(data_contract, platform_version),
+        }
     }
 }

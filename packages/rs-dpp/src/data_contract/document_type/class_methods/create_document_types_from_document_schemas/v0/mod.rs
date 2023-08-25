@@ -22,7 +22,7 @@ impl DocumentTypeV0 {
             let document_type = match platform_version
                 .dpp
                 .contract_versions
-                .document_type_versions
+                .document_type
                 .structure_version
             {
                 0 => DocumentType::try_from_schema(

@@ -1,10 +1,14 @@
 use std::collections::BTreeMap;
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
+use crate::data_contract::DataContract;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
+use crate::ProtocolError;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::state_transition::documents_batch_transition::document_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use crate::state_transition::documents_batch_transition::document_transition::DocumentReplaceTransition;
+use crate::validation::SimpleConsensusValidationResult;
 
 impl DocumentReplaceTransitionV0Methods for DocumentReplaceTransition {
     fn base(&self) -> &DocumentBaseTransition {
@@ -64,6 +68,17 @@ impl DocumentReplaceTransitionV0Methods for DocumentReplaceTransition {
     fn set_data(&mut self, data: BTreeMap<String, Value>) {
         match self {
             DocumentReplaceTransition::V0(v0) => v0.data = data,
+        }
+    }
+
+    #[cfg(feature = "validation")]
+    fn validate(
+        &self,
+        data_contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        match self {
+            DocumentReplaceTransition::V0(v0) => v0.validate(data_contract, platform_version),
         }
     }
 }

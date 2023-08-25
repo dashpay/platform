@@ -14,7 +14,7 @@ pub fn traversal_validator(
     match platform_version
         .dpp
         .contract_versions
-        .document_type_versions
+        .document_type
         .schema
         .recursive_schema_validator_versions
         .traversal_validator
