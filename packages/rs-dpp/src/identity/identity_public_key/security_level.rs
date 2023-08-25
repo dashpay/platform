@@ -29,6 +29,12 @@ pub enum SecurityLevel {
     MEDIUM = 3,
 }
 
+impl Default for SecurityLevel {
+    fn default() -> Self {
+        SecurityLevel::MASTER
+    }
+}
+
 #[cfg(feature = "cbor")]
 impl Into<CborValue> for SecurityLevel {
     fn into(self) -> CborValue {

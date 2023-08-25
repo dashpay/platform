@@ -2,13 +2,12 @@ const getInstantAssetLockProofFixture = require('../../../lib/test/fixtures/getI
 const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
 const {
-  default: loadWasmDpp, Identity, IdentityFactory, IdentityValidator,
+  Identity, IdentityFactory,
   InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
   IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyWithWitness,
   InvalidIdentityError, UnsupportedProtocolVersionError,
 } = require('../../..');
 const { IdentityPublicKey, SerializedObjectParsingError } = require('../../..');
-const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('IdentityFactory', () => {
   let factory;
@@ -39,12 +38,9 @@ describe('IdentityFactory', () => {
 
   describe('#create', () => {
     it('should create Identity from asset lock transaction, output index, proof and public keys', () => {
-      const publicKeys = identity
-        .getPublicKeys()
-        .map((identityPublicKey) => (new IdentityPublicKey({
-          ...identityPublicKey.toObject(),
-          readonly: true,
-        })));
+      const publicKeys = identity.getPublicKeys();
+      publicKeys.forEach((key) => key.setReadOnly(true));
+      identity.setPublicKeys(publicKeys);
 
       const result = factory.create(
         instantAssetLockProof.createIdentifier(),
@@ -230,16 +226,10 @@ describe('IdentityFactory', () => {
     it('should create IdentityUpdateTransition', () => {
       const revision = 1;
       const disablePublicKeys = [identity.getPublicKeyById(0)];
-      const addPublicKeys = [new IdentityPublicKeyWithWitness({
-        $version: '0',
-        id: 0,
-        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: false,
-        signature: Buffer.alloc(32),
-      })];
+      const key = new IdentityPublicKeyWithWitness(1);
+      key.setData(Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'));
+
+      const addPublicKeys = [key];
 
       const stateTransition = factory
         .createIdentityUpdateTransition(

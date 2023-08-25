@@ -30,7 +30,9 @@ use crate::state_transition::public_key_in_creation::methods::IdentityPublicKeyI
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
-#[derive(Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq)]
+#[derive(
+    Default, Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKeyInCreationV0 {
     pub id: KeyID,
