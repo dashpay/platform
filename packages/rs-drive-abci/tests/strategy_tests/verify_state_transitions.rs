@@ -1,6 +1,5 @@
 use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
 
-
 use dpp::document::Document;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
@@ -222,14 +221,14 @@ pub(crate) fn verify_state_transitions_were_executed(
                         block_time_ms: None, //None because we want latest
                     };
 
-                    dbg!(
-                        platform.state.height(),
-                        document_transition_action.action_type(),
-                        document_transition_action
-                            .base()
-                            .id()
-                            .to_string(Encoding::Base58)
-                    );
+                    // dbg!(
+                    //     platform.state.height(),
+                    //     document_transition_action.action_type(),
+                    //     document_transition_action
+                    //         .base()
+                    //         .id()
+                    //         .to_string(Encoding::Base58)
+                    // );
 
                     let (root_hash, document) = query
                         .verify_proof(

@@ -265,13 +265,13 @@ impl StateTransition {
             Ok(hash_to_vec(self.signable_bytes()?))
         } else {
             Ok(hash_to_vec(
-                crate::serialization::PlatformSerializable::serialize(self)?,
+                crate::serialization::PlatformSerializable::serialize_to_bytes(self)?,
             ))
         }
     }
 
     /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
+    pub fn signature(&self) -> &BinaryData {
         call_method!(self, signature)
     }
 
@@ -633,7 +633,7 @@ impl StateTransition {
 //         if skip_signature {
 //             Ok(hash::hash_to_vec(self.signable_bytes()?))
 //         } else {
-//             Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
+//             Ok(hash::hash_to_vec(PlatformSerializable::serialize_to_bytes(self)?))
 //         }
 //     }
 //

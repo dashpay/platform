@@ -127,9 +127,9 @@ mod tests {
             .expect("expected a random key")
             .0
             .into();
-        let serialized = key.serialize().expect("expected to serialize key");
+        let serialized = key.serialize_to_bytes().expect("expected to serialize key");
         let unserialized: IdentityPublicKey =
-            PlatformDeserializable::deserialize(serialized.as_slice())
+            PlatformDeserializable::deserialize_from_bytes(serialized.as_slice())
                 .expect("expected to deserialize key");
         assert_eq!(key, unserialized)
     }

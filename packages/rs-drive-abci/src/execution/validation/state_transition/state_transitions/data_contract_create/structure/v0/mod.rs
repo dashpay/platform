@@ -6,7 +6,7 @@ use dpp::state_transition::data_contract_create_transition::accessors::DataContr
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
-
+use dpp::ProtocolError;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_create) trait DataContractCreatedStateTransitionStructureValidationV0 {
     fn validate_base_structure_v0(&self, platform_version: &PlatformVersion) -> Result<SimpleConsensusValidationResult, Error>;
@@ -17,11 +17,24 @@ impl DataContractCreatedStateTransitionStructureValidationV0 for DataContractCre
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        DataContract::try_from_platform_versioned(
+        // Validate data contract
+        let result = DataContract::try_from_platform_versioned(
             self.data_contract().clone(),
             true,
             platform_version,
-        )?;
+        );
+
+        // Return validation result if any consensus errors happened
+        // during data contract validation
+        match result {
+            Err(ProtocolError::ConsensusError(consensus_error)) => {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    *consensus_error,
+                ))
+            }
+            Err(protocol_error) => return Err(protocol_error.into()),
+            Ok(_) => {}
+        }
 
         // Validate data contract id
         let generated_id = DataContract::generate_data_contract_id_v0(

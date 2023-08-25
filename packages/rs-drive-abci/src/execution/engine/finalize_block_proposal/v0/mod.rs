@@ -28,7 +28,6 @@ use crate::platform_types::block_execution_outcome;
 use crate::platform_types::cleaned_abci_messages::cleaned_block::v0::CleanedBlock;
 use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
 
-
 use crate::platform_types::commit::Commit;
 use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;

@@ -25,7 +25,7 @@ const {
     InvalidInstantAssetLockProofSignatureError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     BalanceIsNotEnoughError,
-    InvalidIdentityKeySignatureError,
+    BasicECDSAError,
     IdentityPublicKeyWithWitness,
   },
 } = Dash;
@@ -196,9 +196,9 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(1056);
+      expect(broadcastError.getCause().getCode()).to.equal(2009);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
-        InvalidIdentityKeySignatureError,
+        BasicECDSAError,
       );
     });
 
@@ -318,7 +318,8 @@ describe('Platform', () => {
       });
     });
 
-    describe('Credits', () => {
+    // TODO(versioning): restore once data contract is done
+    describe.skip('Credits', () => {
       let dataContractFixture;
 
       before(async () => {

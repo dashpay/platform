@@ -289,7 +289,7 @@ impl QueryStrategy {
                         .identities
                         .into_iter()
                         .map(|serialized| {
-                            Identity::deserialize(&serialized)
+                            Identity::deserialize_from_bytes(&serialized)
                                 .expect("expected to deserialize identity")
                                 .id()
                         })

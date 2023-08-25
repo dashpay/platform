@@ -6,7 +6,6 @@ use dpp::state_transition::data_contract_create_transition::DataContractCreateTr
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
-
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 

@@ -21,7 +21,7 @@ mod tests {
             get_data_contract_fixture(Some(identity.id()), platform_version.protocol_version)
                 .data_contract_owned();
         let bytes = contract
-            .serialize_with_platform_version(LATEST_PLATFORM_VERSION)
+            .serialize_to_bytes_with_platform_version(LATEST_PLATFORM_VERSION)
             .expect("expected to serialize");
         let recovered_contract =
             DataContract::versioned_deserialize(&bytes, false, platform_version)
