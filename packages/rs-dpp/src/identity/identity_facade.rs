@@ -3,7 +3,6 @@ use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};

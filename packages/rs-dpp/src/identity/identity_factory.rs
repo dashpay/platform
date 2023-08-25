@@ -151,10 +151,8 @@ impl IdentityFactory {
         identity: Identity,
         asset_lock_proof: AssetLockProof,
     ) -> Result<IdentityCreateTransition, ProtocolError> {
-        let transition = IdentityCreateTransitionV0::try_from_identity_v0(
-            identity,
-            asset_lock_proof,
-        )?;
+        let transition =
+            IdentityCreateTransitionV0::try_from_identity_v0(identity, asset_lock_proof)?;
 
         Ok(IdentityCreateTransition::V0(transition))
     }
@@ -173,11 +171,9 @@ impl IdentityFactory {
             revision: 0,
         });
 
-        let mut identity_create_transition =
-            IdentityCreateTransition::V0(IdentityCreateTransitionV0::try_from_identity_v0(
-                identity.clone(),
-                asset_lock_proof,
-            )?);
+        let mut identity_create_transition = IdentityCreateTransition::V0(
+            IdentityCreateTransitionV0::try_from_identity_v0(identity.clone(), asset_lock_proof)?,
+        );
         Ok((identity, identity_create_transition))
     }
 

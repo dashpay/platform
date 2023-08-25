@@ -80,9 +80,13 @@ impl IdentityPublicKeyInCreationV0Setters for IdentityPublicKeyInCreationV0 {
         self.signature = signature
     }
 
-    fn set_data(&mut self, data: BinaryData) { self.data = data }
+    fn set_data(&mut self, data: BinaryData) {
+        self.data = data
+    }
 
-    fn set_id(&mut self, id: KeyID) { self.id = id }
+    fn set_id(&mut self, id: KeyID) {
+        self.id = id
+    }
 
     fn set_type(&mut self, key_type: KeyType) {
         self.key_type = key_type;

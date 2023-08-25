@@ -32,7 +32,7 @@ mod test {
     use crate::state_transition::{
         JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
     };
-    
+
     use dpp::util::json_value::JsonValueExt;
     use platform_value::Bytes32;
 

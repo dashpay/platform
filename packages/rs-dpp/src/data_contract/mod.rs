@@ -229,10 +229,7 @@ impl DataContract {
         data_contract_system_version: FeatureVersion,
     ) -> Result<bool, ProtocolError> {
         let platform_version = PlatformVersion::get(protocol_version)?;
-        Ok(platform_version
-            .dpp
-            .contract_versions
-            .contract_structure
+        Ok(platform_version.dpp.contract_versions.contract_structure
             == data_contract_system_version)
     }
 

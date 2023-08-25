@@ -8,7 +8,6 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::util::entropy_generator::EntropyGenerator;
 
-
 use crate::ProtocolError;
 use platform_value::Value;
 

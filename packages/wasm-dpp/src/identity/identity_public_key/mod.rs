@@ -41,10 +41,9 @@ impl IdentityPublicKeyWasm {
         // Patch Base64 fields because enum deserializer doing it wrong
         // https://github.com/serde-rs/serde/issues/2172
         let mut public_key_platform_value: Value = public_key_json.into();
-        public_key_platform_value.replace_at_paths(
-            BINARY_DATA_FIELDS,
-            ReplacementType::TextBase64
-        ).map_err(|e| e.to_string())?;
+        public_key_platform_value
+            .replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::TextBase64)
+            .map_err(|e| e.to_string())?;
 
         let raw_public_key: IdentityPublicKey =
             IdentityPublicKey::from_object(public_key_platform_value).map_err(|e| e.to_string())?;

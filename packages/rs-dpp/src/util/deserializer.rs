@@ -7,7 +7,6 @@ use serde_json::{Map, Number, Value as JsonValue};
 
 use crate::errors::ProtocolError;
 
-
 pub fn parse_protocol_version(
     protocol_bytes: &[u8],
     json_map: &mut Map<String, JsonValue>,
