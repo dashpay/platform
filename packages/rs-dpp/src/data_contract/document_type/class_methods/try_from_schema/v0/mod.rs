@@ -23,6 +23,7 @@ use crate::data_contract::document_type::schema::{
 use crate::data_contract::document_type::schema::enrich_with_base_schema;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
+use crate::identity::SecurityLevel;
 use crate::util::json_schema::resolve_uri;
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::DOCUMENT_META_SCHEMA_V0;
@@ -320,8 +321,17 @@ impl DocumentTypeV0 {
         // Collect binary and identifier properties
         let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
             &document_properties,
-            &platform_version.dpp.contract_versions.document_type,
+            &platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions,
         )?;
+
+        let security_level_requirement = schema
+            .get_optional_integer::<u8>(property_names::SECURITY_LEVEL_REQUIREMENT)?
+            .map(SecurityLevel::try_from)
+            .transpose()?
+            .unwrap_or(SecurityLevel::HIGH);
 
         Ok(DocumentTypeV0 {
             name: String::from(name),
@@ -336,6 +346,7 @@ impl DocumentTypeV0 {
             documents_keep_history,
             documents_mutable,
             data_contract_id,
+            security_level_requirement,
             #[cfg(feature = "validation")]
             json_schema_validator,
         })

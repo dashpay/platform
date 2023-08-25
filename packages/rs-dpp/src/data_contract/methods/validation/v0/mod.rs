@@ -24,7 +24,7 @@ pub trait DataContractValidationMethodsV0 {
     fn validate_document_properties(
         &self,
         name: &str,
-        value: &Value,
+        value: Value,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
@@ -33,7 +33,7 @@ impl DataContract {
     pub(super) fn validate_document_properties_v0(
         &self,
         name: &str,
-        value: &Value,
+        value: Value,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let document_type = self.document_type_for_name(name)?;
@@ -60,7 +60,7 @@ impl DataContract {
         }
 
         let json_value = value
-            .try_to_validating_json()
+            .try_into_validating_json()
             .map_err(ProtocolError::ValueError)?;
 
         validator.validate(&json_value, platform_version)
@@ -99,8 +99,6 @@ impl DataContract {
         }
 
         // Validate user defined properties
-        let properties = platform_value::to_value(document.properties())?;
-
-        self.validate_document_properties_v0(name, &properties, platform_version)
+        self.validate_document_properties_v0(name, document.properties().into(), platform_version)
     }
 }

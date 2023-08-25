@@ -20,8 +20,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::accessors::IdentityGettersV0;
-#[cfg(feature = "validation")]
-use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
+
 #[cfg(all(feature = "identity-serialization", feature = "client"))]
 use crate::serialization::PlatformDeserializable;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
@@ -52,7 +51,7 @@ use crate::version::PlatformVersion;
     feature = "identity-value-conversion"
 ))]
 use platform_value::Value;
-use platform_version::TryIntoPlatformVersioned;
+use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
 

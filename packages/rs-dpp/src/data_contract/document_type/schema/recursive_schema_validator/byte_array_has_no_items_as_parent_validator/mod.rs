@@ -16,7 +16,7 @@ pub fn byte_array_has_no_items_as_parent_validator(
     match platform_version
         .dpp
         .contract_versions
-        .document_type
+        .document_type_versions
         .schema
         .recursive_schema_validator_versions
         .byte_array_has_no_items_as_parent_validator
