@@ -1,0 +1,43 @@
+[
+    {
+        "identity_id": "8JgCb6rpV1fferLUZECCK5zNOoenSb0o+W3o/LZbBSI=",
+        "limit": 11,
+        "prove": true,
+        "request_type": {
+            "request": {
+                "specific_keys": {
+                    "key_ids": [
+                        0,
+                        1,
+                        2,
+                        2681938691,
+                        2811793709,
+                        460355827
+                    ]
+                }
+            }
+        }
+    },
+    {
+        "metadata": {
+            "height": "915",
+            "core_chain_locked_height": 1896,
+            "time_ms": "1692972671778",
+            "protocol_version": 1,
+            "chain_id": "dashmate_local_55"
+        },
+        "result": {
+            "proof": {
+                "grovedb_proof": "AmMDAQAALAApAAAAAAAAIQL+9eJXn9PZBIKF3gKHRLWwHIw17WQoz8TJi9OwTomR9AAAAwEBACwAKQABAAIAACEDUe3yq6j3qq9OsLSJ6WOtkRgJ6V3gGlB6ZHp4zdNX8d8AABABkAEByBSnRARdTPC4j63X8U/4pFCuPZHxm2jsPS34LIDK5ggEAQEABQIBAQEA3fKsoEzvx6lxyvY+uZPwM7xJCs9fP/H1axRZ3YNI6JgQAm8lnhTTi7hs+/JvUqztSgbImTCrVLa6A9gRWWs7pzmuEAFGGXui0dia5l8OOLQgcWbSttUgFMxwTFZwgr8dvWX53xEBmQIB/VRAzhkKJ0/EScaC62yPJlvh8tOIQNgYc0n3cqSYWBcCFMO5K99T9DsY+fdXUc5/Hs4RRNrzIINyhG3eHs27zTQQARl6mTdZDYiAywaBIpxYPXWxHK9eddDRLAoL4RrbAPH0AkguI9lfVAlVh4wUbB0K9+5ufFk6gmUZUN6h33n6qqd/EAFiPwcIiWJY4wwfGphdUfJesjM8J/H5c/0mstH5j/2FQAJz73oSQ8hB98oXjPaikh6F4OSMVjfAxlyuJchDGtRKbxAEIPCYAm+q6VdX33qy1GRAgiuczTqHp0m9KPlt6Py2WwUiAAkCAQECAQMAAACrVnrjld/SNthtObS7eAir5yq0y5P82/ebfcoDoqiJDxEREQHRAQEpb/hiksB+1t45qtYPiIpEVeJfFGZswp3p/i10lQqxdwQBIAAkAgEgn2WlCmdZa3aGIz7NDvWCqFa+KfeLcarKW0WH8vLbYZgAfrlZ4qw5Dtwj0luahXaGZKTcOGK/rxFHz2JT0L+uRzYQAZNV+Nxh++4yZg+8EPI8ovLogopp2/n7edW2DZqkfY9nEQIREx/EgAS1j0Jr7WTGp6zv9hQ9/ygdBoECoUu6cAPn7hABcSeWtknKtPfDAWnAr7Lk58nuYSyjYloFuPM8Xj0jiP4R",
+                "quorum_hash": "OjOfEVl62cIx180ZNUnwONa0kA6Wc2tT4uQNDVXSPUA=",
+                "signature": "h/PNS2b+uqZvQ3WyaJ5pG/7Oe5fsEHlHi5VDBrLyU9X/bL3wF3crCO0k1lxx9uc/EsaKNb431xZU9lI3gQZXXBa2Q01pJXlcWBRzIpbW8rjGDoQ8pih1loyDoJvb0Iex",
+                "round": 0,
+                "block_id_hash": "Risk+jAquW2HoflKTckrEV3BxVCnnymPFl/WdYOfmtg=",
+                "quorum_type": 106
+            }
+        }
+    },
+    {
+        "quorum_public_key": "9194595dd139f213213e2d6fa21d5d2ccdfcb21142084d2caeb962605d903418a8f56d9acc81326ad71963e00ab39437"
+    }
+]

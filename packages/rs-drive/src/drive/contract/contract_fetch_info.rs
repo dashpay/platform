@@ -8,6 +8,7 @@ use dpp::system_data_contracts::load_system_data_contract;
 use dpp::tests::fixtures::get_dashpay_contract_fixture;
 #[cfg(feature = "fixtures-and-mocks")]
 use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+#[cfg(feature = "fixtures-and-mocks")]
 use dpp::tests::fixtures::get_masternode_reward_shares_data_contract_fixture;
 
 #[cfg(any(feature = "full", feature = "verify"))]

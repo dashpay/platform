@@ -1,11 +1,8 @@
 use dapi_grpc::platform::v0::{self as grpc};
-use dpp::{
-    identity::PartialIdentity,
-    prelude::{DataContract, Identity},
-};
+use dpp::prelude::{DataContract, Identity};
 use drive_proof_verifier::proof::from_proof::{
-    DataContractHistory, DataContracts, FromProof, Identities, IdentitiesByPublicKeyHashes,
-    IdentityBalance, IdentityBalanceAndRevision, Length,
+    DataContractHistory, DataContracts, FromProof, IdentityBalance, IdentityBalanceAndRevision,
+    IdentityPublicKeys, Length,
 };
 
 include!("utils.rs");
@@ -173,56 +170,6 @@ test_maybe_from_proof! {
     Ok(0)
 }
 
-// get identities
-test_maybe_from_proof! {
-    identities_1_ok,
-    grpc::GetIdentitiesRequest,
-    grpc::GetIdentitiesResponse,
-    Identities,
-    "vectors/identities_1_ok.json",
-    Ok(1) // cannot write a match like `Ok(Some(Vec[None]))`
-}
-
-// One of two identities exists
-test_maybe_from_proof! {
-    identities_1_of_2,
-    grpc::GetIdentitiesRequest,
-    grpc::GetIdentitiesResponse,
-    Identities,
-    "vectors/identities_1_of_2.json",
-    Ok(1) // cannot write a match like `Ok(Some(Vec[None]))`
-}
-
-test_maybe_from_proof! {
-    identities_not_found,
-    grpc::GetIdentitiesRequest,
-    grpc::GetIdentitiesResponse,
-    Identities,
-    "vectors/identities_not_found.json",
-    Ok(0) // cannot write a match like `Ok(Some(Vec[None]))`
-}
-
-// identities by pubkeys
-
-// Two pubkeys provided, both point to the same object
-test_maybe_from_proof! {
-    identities_by_pubkeys_2_of_2_same_id,
-    grpc::GetIdentitiesByPublicKeyHashesRequest,
-    grpc::GetIdentitiesByPublicKeyHashesResponse,
-    IdentitiesByPublicKeyHashes,
-    "vectors/identities_by_pubkeys_2_of_2_same_id.json",
-    Ok(2)
-}
-
-test_maybe_from_proof! {
-    identities_by_pubkeys_not_found,
-    grpc::GetIdentitiesByPublicKeyHashesRequest,
-    grpc::GetIdentitiesByPublicKeyHashesResponse,
-    IdentitiesByPublicKeyHashes,
-    "vectors/identities_by_pubkeys_not_found.json",
-    Ok(0)
-}
-
 // Identity Balance
 
 test_maybe_from_proof! {
@@ -265,11 +212,11 @@ test_maybe_from_proof! {
 // Identity keys
 
 test_maybe_from_proof! {
-    identity_keys_not_found,
+    identity_keys_identity_not_found,
     grpc::GetIdentityKeysRequest,
     grpc::GetIdentityKeysResponse,
-    PartialIdentity,
-    "vectors/identity_keys_not_found.json",
+    IdentityPublicKeys,
+    "vectors/identity_keys_identity_not_found.json",
     Ok(0)
 }
 
@@ -277,18 +224,27 @@ test_maybe_from_proof! {
     identity_keys_ok,
     grpc::GetIdentityKeysRequest,
     grpc::GetIdentityKeysResponse,
-    PartialIdentity,
+    IdentityPublicKeys,
     "vectors/identity_keys_ok.json",
-    Ok(1)
+    Ok(2)
 }
 
 test_maybe_from_proof! {
-    identity_keys_good_id_wrong_keys,
+    identity_keys_good_identity_wrong_keys,
     grpc::GetIdentityKeysRequest,
     grpc::GetIdentityKeysResponse,
-    PartialIdentity,
-    "vectors/identity_keys_good_id_wrong_keys.json",
+    IdentityPublicKeys,
+    "vectors/identity_keys_good_identity_wrong_keys.json",
     Ok(0)
+}
+
+test_maybe_from_proof! {
+    identity_keys_2_of_6_ok,
+    grpc::GetIdentityKeysRequest,
+    grpc::GetIdentityKeysResponse,
+    IdentityPublicKeys,
+    "vectors/identity_keys_2_of_6_ok.json",
+    Ok(2)
 }
 
 // Data Contract
@@ -423,9 +379,7 @@ enum TestedObject {
     Identity(Identity),
     IdentityBalance(IdentityBalance),
     IdentityBalanceAndRevision(IdentityBalanceAndRevision),
-    Identities(Identities),
-    IdentitiesByPublicKeyHashes(IdentitiesByPublicKeyHashes),
-    PartialIdentity(PartialIdentity),
+    IdentityPublicKeys(IdentityPublicKeys),
 }
 
 impl Length for TestedObject {
@@ -438,9 +392,7 @@ impl Length for TestedObject {
             Identity(_d) => 1,
             IdentityBalance(_d) => 1,
             IdentityBalanceAndRevision(_d) => 1,
-            Identities(d) => d.count_some(),
-            IdentitiesByPublicKeyHashes(d) => d.count_some(),
-            PartialIdentity(_d) => 1,
+            IdentityPublicKeys(d) => d.count_some(),
         }
     }
 }
@@ -448,4 +400,9 @@ impl Length for TestedObject {
 #[test]
 fn run_test() {
     data_contracts_no_history_1_ok()
+}
+
+#[test]
+pub fn test_ok() {
+    identity_keys_good_identity_wrong_keys()
 }

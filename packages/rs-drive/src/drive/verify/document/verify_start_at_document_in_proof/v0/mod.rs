@@ -73,9 +73,10 @@ impl<'a> DriveQuery<'a> {
                     .transpose()?;
                 Ok((root_hash, document))
             }
-            0 => Err(Error::Proof(ProofError::WrongElementCount(
-                "expected one document for start at, got none",
-            ))),
+            0 => Err(Error::Proof(ProofError::WrongElementCount {
+                expected: 1,
+                got: 0,
+            })),
             _ => Err(Error::Proof(ProofError::TooManyElements(
                 "expected one document for start at",
             ))),

@@ -454,27 +454,35 @@ impl<'a> DriveQuery<'a> {
             })
             .transpose()?;
 
-        let order_by: IndexMap<String, OrderClause> = query_document
-            .remove("orderBy")
-            .map_or(vec![], |id_cbor| {
-                if let Value::Array(clauses) = id_cbor {
-                    clauses
-                        .iter()
-                        .filter_map(|order_clause| {
-                            if let Value::Array(clauses_components) = order_clause {
-                                OrderClause::from_components(clauses_components).ok()
-                            } else {
-                                None
-                            }
-                        })
-                        .collect()
-                } else {
-                    vec![]
-                }
-            })
-            .iter()
-            .map(|order_clause| Ok((order_clause.field.clone(), order_clause.to_owned())))
-            .collect::<Result<IndexMap<String, OrderClause>, Error>>()?;
+        let order_by: IndexMap<String, OrderClause> =
+            query_document
+                .remove("orderBy")
+                .map_or(Ok(IndexMap::new()), |id_cbor| {
+                    if let Value::Array(clauses) = id_cbor {
+                        clauses
+                            .into_iter()
+                            .filter_map(|order_clause| {
+                                if let Value::Array(clauses_components) = order_clause {
+                                    let order_clause =
+                                        OrderClause::from_components(&clauses_components)
+                                            .map_err(Error::GroveDB);
+                                    match order_clause {
+                                        Ok(order_clause) => {
+                                            Some(Ok((order_clause.field.clone(), order_clause)))
+                                        }
+                                        Err(err) => Some(Err(err)),
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect::<Result<IndexMap<String, OrderClause>, Error>>()
+                    } else {
+                        Err(Error::Query(QuerySyntaxError::InvalidOrderByProperties(
+                            "order clauses must be an array",
+                        )))
+                    }
+                })?;
 
         if !query_document.is_empty() {
             return Err(Error::Query(QuerySyntaxError::Unsupported(
