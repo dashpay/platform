@@ -8,7 +8,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
 
-use path::SubtreePath;
+use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Retrieves a u64 value from GroveDB that was originally encoded as a varint.

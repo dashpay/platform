@@ -37,11 +37,13 @@ use crate::drive::flags::StorageFlags::{
     MultiEpoch, MultiEpochOwned, SingleEpoch, SingleEpochOwned,
 };
 #[cfg(feature = "full")]
-use costs::storage_cost::removal::StorageRemovedBytes::SectionedStorageRemoval;
-#[cfg(feature = "full")]
-use costs::storage_cost::removal::{StorageRemovalPerEpochByIdentifier, StorageRemovedBytes};
-#[cfg(feature = "full")]
 use grovedb::ElementFlags;
+#[cfg(feature = "full")]
+use grovedb_costs::storage_cost::removal::StorageRemovedBytes::SectionedStorageRemoval;
+#[cfg(feature = "full")]
+use grovedb_costs::storage_cost::removal::{
+    StorageRemovalPerEpochByIdentifier, StorageRemovedBytes,
+};
 #[cfg(feature = "full")]
 use integer_encoding::VarInt;
 #[cfg(feature = "full")]

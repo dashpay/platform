@@ -8,7 +8,7 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::operations::delete::DeleteUpTreeOptions;
 use grovedb::{GroveDb, TransactionArg};
-use storage::rocksdb_storage::RocksDbStorage;
+use grovedb_storage::rocksdb_storage::RocksDbStorage;
 
 impl Drive {
     /// Pushes a "delete up tree while empty" operation to `drive_operations`.
