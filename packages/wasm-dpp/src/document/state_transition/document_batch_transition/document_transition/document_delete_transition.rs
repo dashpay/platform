@@ -10,6 +10,8 @@ use crate::{
     document::document_batch_transition::document_transition::to_object,
     identifier::IdentifierWrapper, utils::WithJsError,
 };
+use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
 
 #[wasm_bindgen(js_name=DocumentDeleteTransition)]
 #[derive(Debug, Clone)]
@@ -57,12 +59,12 @@ impl DocumentDeleteTransitionWasm {
     // AbstractDocumentTransition
     #[wasm_bindgen(js_name=getId)]
     pub fn id(&self) -> IdentifierWrapper {
-        self.inner.base.id.into()
+        self.inner.base().id().into()
     }
 
     #[wasm_bindgen(js_name=getType)]
     pub fn document_type(&self) -> String {
-        self.inner.base.document_type_name.clone()
+        self.inner.base().document_type_name().clone()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -72,7 +74,7 @@ impl DocumentDeleteTransitionWasm {
 
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> IdentifierWrapper {
-        self.inner.base.data_contract.id.into()
+        self.inner.base().data_contract_id().into()
     }
 
     #[wasm_bindgen(js_name=get)]

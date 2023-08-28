@@ -8,6 +8,7 @@ pub use document_replace_transition::*;
 
 use dpp::platform_value::Value;
 use dpp::prelude::TimestampMillis;
+use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::{
     prelude::Identifier,
@@ -48,7 +49,7 @@ impl DocumentTransitionWasm {
 
     #[wasm_bindgen(js_name=getAction)]
     pub fn get_action(&self) -> u8 {
-        self.0.get_action().into()
+        self.0.action_type() as u8
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -58,7 +59,7 @@ impl DocumentTransitionWasm {
 
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn get_data_contract_id(&self) -> IdentifierWrapper {
-        self.0.get_data_contract_id().to_owned().into()
+        self.0.data_contract_id().to_owned().into()
     }
 
     #[wasm_bindgen(js_name=setDataContractId)]
@@ -70,7 +71,7 @@ impl DocumentTransitionWasm {
 
     #[wasm_bindgen(js_name=getRevision)]
     pub fn get_revision(&self) -> JsValue {
-        if let Some(revision) = self.0.get_revision() {
+        if let Some(revision) = self.0.revision() {
             (revision as f64).into()
         } else {
             JsValue::NULL
@@ -79,7 +80,7 @@ impl DocumentTransitionWasm {
 
     #[wasm_bindgen(js_name=getCreatedAt)]
     pub fn get_created_at(&self) -> JsValue {
-        if let Some(created_at) = self.0.get_created_at() {
+        if let Some(created_at) = self.0.created_at() {
             js_sys::Date::new(&JsValue::from_f64(created_at as f64)).into()
         } else {
             JsValue::NULL
@@ -88,7 +89,7 @@ impl DocumentTransitionWasm {
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn get_updated_at(&self) -> JsValue {
-        if let Some(updated_at) = self.0.get_updated_at() {
+        if let Some(updated_at) = self.0.updated_at() {
             js_sys::Date::new(&JsValue::from_f64(updated_at as f64)).into()
         } else {
             JsValue::NULL
@@ -111,7 +112,7 @@ impl DocumentTransitionWasm {
 
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&self) -> Result<JsValue, JsValue> {
-        if let Some(data) = self.0.get_data() {
+        if let Some(data) = self.0.data() {
             let (identifier_paths, binary_paths) = self
                 .0
                 .get_data_contract()

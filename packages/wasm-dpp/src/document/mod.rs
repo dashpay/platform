@@ -14,6 +14,7 @@ use crate::lodash::lodash_set;
 use crate::utils::WithJsError;
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
 use crate::with_js_error;
+use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::DocumentV0Getters;
 pub mod errors;
 pub use state_transition::*;

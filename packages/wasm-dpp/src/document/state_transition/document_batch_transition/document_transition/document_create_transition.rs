@@ -9,6 +9,8 @@ use dpp::platform_value::btreemap_extensions::{
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::prelude::Revision;
+use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 use dpp::{
     document::INITIAL_REVISION,
@@ -81,20 +83,20 @@ impl DocumentCreateTransitionWasm {
     // DocumentCreateTransition
     #[wasm_bindgen(js_name=getEntropy)]
     pub fn entropy(&self) -> Vec<u8> {
-        self.inner.entropy.to_vec()
+        self.inner.entropy().to_vec()
     }
 
     #[wasm_bindgen(js_name=getCreatedAt)]
     pub fn created_at(&self) -> Option<js_sys::Date> {
         self.inner
-            .created_at
+            .created_at()
             .map(|timestamp| js_sys::Date::new(&JsValue::from_f64(timestamp as f64)))
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn updated_at(&self) -> Option<js_sys::Date> {
         self.inner
-            .updated_at
+            .updated_at()
             .map(|timestamp| js_sys::Date::new(&JsValue::from_f64(timestamp as f64)))
     }
 
@@ -106,17 +108,17 @@ impl DocumentCreateTransitionWasm {
     // AbstractDocumentTransitionMethods
     #[wasm_bindgen(js_name=getId)]
     pub fn id(&self) -> IdentifierWrapper {
-        self.inner.base.id.into()
+        self.inner.base().id().into()
     }
 
     #[wasm_bindgen(js_name=getType)]
     pub fn document_type(&self) -> String {
-        self.inner.base.document_type_name.clone()
+        self.inner.base().document_type_name().clone()
     }
 
     #[wasm_bindgen(js_name=getAction)]
     pub fn action(&self) -> u8 {
-        self.inner.base.action as u8
+        self.inner.base().action as u8
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -126,16 +128,12 @@ impl DocumentCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> IdentifierWrapper {
-        self.inner.base.data_contract.id.into()
+        self.inner.base().data_contract_id().into()
     }
 
     #[wasm_bindgen]
     pub fn get(&self, path: String) -> Result<JsValue, JsValue> {
-        let document_data = if let Some(ref data) = self.inner.data {
-            data
-        } else {
-            return Ok(JsValue::undefined());
-        };
+        let document_data = self.inner.data();
 
         let value = if let Ok(value) = document_data.get_at_path(&path) {
             value.clone()
@@ -252,7 +250,7 @@ impl DocumentCreateTransitionWasm {
     // AbstractDataDocumentTransition
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&self) -> Result<JsValue, JsValue> {
-        let json_data = if let Some(ref data) = self.inner.data {
+        let json_data = if let Some(ref data) = self.inner.data() {
             data.to_json_value()
                 .map_err(ProtocolError::ValueError)
                 .with_js_error()?

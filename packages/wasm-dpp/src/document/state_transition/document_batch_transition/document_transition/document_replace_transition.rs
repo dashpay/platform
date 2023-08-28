@@ -18,6 +18,8 @@ use dpp::{
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
+use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 
 use crate::{
     buffer::Buffer,
@@ -75,18 +77,18 @@ impl DocumentReplaceTransitionWasm {
 
     #[wasm_bindgen(js_name=getAction)]
     pub fn action(&self) -> u8 {
-        self.inner.base.action as u8
+        self.inner.base().action as u8
     }
 
     #[wasm_bindgen(js_name=getRevision)]
     pub fn revision(&self) -> Revision {
-        self.inner.revision
+        self.inner.revision()
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn updated_at(&self) -> Option<js_sys::Date> {
         self.inner
-            .updated_at
+            .updated_at()
             .map(|timestamp| js_sys::Date::new(&JsValue::from_f64(timestamp as f64)))
     }
 
@@ -96,7 +98,7 @@ impl DocumentReplaceTransitionWasm {
             .inner
             .base
             .data_contract
-            .get_identifiers_and_binary_paths(&self.inner.base.document_type_name)
+            .get_identifiers_and_binary_paths(&self.inner.base().document_type_name())
             .with_js_error()?;
 
         to_object(
@@ -120,7 +122,7 @@ impl DocumentReplaceTransitionWasm {
     // AbstractDataDocumentTransition
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&self) -> Result<JsValue, JsValue> {
-        let data = if let Some(ref data) = self.inner.data {
+        let data = if let Some(ref data) = self.inner.data() {
             data
         } else {
             return Ok(JsValue::undefined());
@@ -129,7 +131,7 @@ impl DocumentReplaceTransitionWasm {
         let js_value = data.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;
         let (identifier_paths, binary_paths) = self
             .inner
-            .base
+            .base()
             .data_contract
             .get_identifiers_and_binary_paths(&self.inner.base.document_type_name)
             .with_js_error()?;
@@ -159,12 +161,12 @@ impl DocumentReplaceTransitionWasm {
     // AbstractDocumentTransition
     #[wasm_bindgen(js_name=getId)]
     pub fn id(&self) -> IdentifierWrapper {
-        self.inner.base.id.into()
+        self.inner.base().id().into()
     }
 
     #[wasm_bindgen(js_name=getType)]
     pub fn document_type(&self) -> String {
-        self.inner.base.document_type_name.clone()
+        self.inner.base().document_type_name().clone()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -174,12 +176,12 @@ impl DocumentReplaceTransitionWasm {
 
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> IdentifierWrapper {
-        self.inner.base.data_contract.id.into()
+        self.inner.base().data_contract_id().into()
     }
 
     #[wasm_bindgen(js_name=get)]
     pub fn get(&self, path: String) -> Result<JsValue, JsValue> {
-        let document_data = if let Some(ref data) = self.inner.data {
+        let document_data = if let Some(ref data) = self.inner.data() {
             data
         } else {
             return Ok(JsValue::undefined());
