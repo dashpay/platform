@@ -318,8 +318,7 @@ describe('Platform', () => {
       });
     });
 
-    // TODO(versioning): restore once data contract is done
-    describe.skip('Credits', () => {
+    describe('Credits', () => {
       let dataContractFixture;
 
       before(async () => {
