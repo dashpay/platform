@@ -7,14 +7,14 @@ use std::collections::HashMap;
 use crate::errors::protocol_error::from_protocol_error;
 use dpp::data_contract::JsonValue;
 use dpp::platform_value::Value;
-use dpp::serialization::PlatformDeserializable;
-use dpp::serialization::PlatformSerializable;
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::{JsonStateTransitionSerializationOptions, StateTransitionJsonConvert};
 use dpp::state_transition::{StateTransition, StateTransitionValueConvert};
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 use dpp::{state_transition::StateTransitionLike, ProtocolError};
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
@@ -99,9 +99,10 @@ impl DataContractCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes =
-            PlatformSerializable::serialize_to_bytes(&StateTransition::DataContractCreate(self.0.clone()))
-                .with_js_error()?;
+        let bytes = PlatformSerializable::serialize_to_bytes(&StateTransition::DataContractCreate(
+            self.0.clone(),
+        ))
+        .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
@@ -145,9 +146,10 @@ impl DataContractCreateTransitionWasm {
             .0
             .to_cleaned_object(skip_signature.unwrap_or(false))
             .map_err(from_protocol_error)?;
-        serde_object
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| e.into())
+
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+
+        serde_object.serialize(&serializer).map_err(|e| e.into())
     }
 
     #[wasm_bindgen]

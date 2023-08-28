@@ -17,11 +17,19 @@ use crate::utils::{
 use dpp::ProtocolError;
 use std::sync::Arc;
 
+use crate::identity::identity_facade::IdentityFacadeWasm;
+use dpp::identity::IdentityFacade;
 use wasm_bindgen::prelude::*;
+
+impl From<DataContractFacade> for DataContractFacadeWasm {
+    fn from(facade: DataContractFacade) -> Self {
+        Self(Arc::new(facade))
+    }
+}
 
 #[wasm_bindgen(js_name=DataContractFacade)]
 #[derive(Clone)]
-pub struct DataContractFacadeWasm(Arc<DataContractFacade>);
+pub struct DataContractFacadeWasm(pub(crate) Arc<DataContractFacade>);
 
 impl DataContractFacadeWasm {
     pub fn new(protocol_version: u32, entropy_generator: ExternalEntropyGenerator) -> Self {
