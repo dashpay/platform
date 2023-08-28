@@ -760,6 +760,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -792,16 +802,6 @@ name = "core-foundation-sys"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e496a50fda8aacccc86d7529e2c1e0892dbd0f898a6b5645b5561b89c3210efa"
-
-[[package]]
-name = "costs"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fb887722c14432a18fbab82afb2f245bceb7fca0#fb887722c14432a18fbab82afb2f245bceb7fca0"
-dependencies = [
- "integer-encoding",
- "intmap",
- "thiserror",
-]
 
 [[package]]
 name = "cpufeatures"
@@ -1218,12 +1218,14 @@ dependencies = [
  "byteorder",
  "chrono",
  "ciborium",
- "costs",
  "criterion",
  "derive_more",
  "dpp",
  "enum-map",
  "grovedb",
+ "grovedb-costs",
+ "grovedb-path",
+ "grovedb-storage",
  "hex",
  "indexmap 1.9.3",
  "integer-encoding",
@@ -1233,7 +1235,6 @@ dependencies = [
  "mockall",
  "moka",
  "nohash-hasher",
- "path",
  "platform-version",
  "rand",
  "rust_decimal",
@@ -1241,7 +1242,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlparser",
- "storage",
  "tempfile",
  "thiserror",
 ]
@@ -1735,24 +1735,97 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "grovedb"
-version = "0.12.2"
-source = "git+https://github.com/dashpay/grovedb?rev=fb887722c14432a18fbab82afb2f245bceb7fca0#fb887722c14432a18fbab82afb2f245bceb7fca0"
+version = "1.0.0-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2450b5791de217465b03891586fa847bea3b761362233504e201f72d19bb7449"
 dependencies = [
  "bincode 1.3.3",
- "costs",
+ "grovedb-costs",
+ "grovedb-merk",
+ "grovedb-path",
+ "grovedb-storage",
+ "grovedb-visualize",
  "hex",
  "indexmap 1.9.3",
  "integer-encoding",
  "intmap",
  "itertools",
- "merk",
  "nohash-hasher",
- "path",
  "serde",
- "storage",
  "tempfile",
  "thiserror",
- "visualize",
+]
+
+[[package]]
+name = "grovedb-costs"
+version = "1.0.0-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5d0318f90811a3001b9c37aeeb2bf5243a760ccb87b35b640578f27fd0b017b"
+dependencies = [
+ "integer-encoding",
+ "intmap",
+ "thiserror",
+]
+
+[[package]]
+name = "grovedb-merk"
+version = "1.0.0-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24a2c2282ad812281faff6ec45d2c9fa126727b3281be9951732d6173f32731f"
+dependencies = [
+ "blake3",
+ "byteorder",
+ "colored",
+ "ed",
+ "failure",
+ "grovedb-costs",
+ "grovedb-path",
+ "grovedb-storage",
+ "grovedb-visualize",
+ "hex",
+ "indexmap 1.9.3",
+ "integer-encoding",
+ "jemallocator",
+ "num_cpus",
+ "rand",
+ "thiserror",
+ "time 0.3.26",
+]
+
+[[package]]
+name = "grovedb-path"
+version = "1.0.0-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62b0ae650cd3e696e8016f3390c074719eba19a96bcb6b4e075567b5ca62678b"
+
+[[package]]
+name = "grovedb-storage"
+version = "1.0.0-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7752c194cf97445cdc037cfea754fc363153bcc85fee0b02996d4e87c5d880aa"
+dependencies = [
+ "blake3",
+ "grovedb-costs",
+ "grovedb-path",
+ "grovedb-visualize",
+ "hex",
+ "integer-encoding",
+ "lazy_static",
+ "num_cpus",
+ "rocksdb",
+ "strum",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "grovedb-visualize"
+version = "1.0.0-rc.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b36deef35537c149ed523baee2a0ae9d0d09a8f3b025bca3d17fcbea573f9c08"
+dependencies = [
+ "hex",
+ "itertools",
 ]
 
 [[package]]
@@ -2077,9 +2150,9 @@ dependencies = [
 
 [[package]]
 name = "js-sys"
-version = "0.3.64"
+version = "0.3.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5f195fe497f702db0f318b07fdd68edb16955aed830df8363d837542f8f935a"
+checksum = "2f37a4a5928311ac501dee68b3c7613a1037d0edb30c8e5427bd832d55d1b790"
 dependencies = [
  "wasm-bindgen",
 ]
@@ -2288,30 +2361,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a634b1c61a95585bd15607c6ab0c4e5b226e695ff2800ba0cdccddf208c406c"
 dependencies = [
  "autocfg",
-]
-
-[[package]]
-name = "merk"
-version = "0.12.2"
-source = "git+https://github.com/dashpay/grovedb?rev=fb887722c14432a18fbab82afb2f245bceb7fca0#fb887722c14432a18fbab82afb2f245bceb7fca0"
-dependencies = [
- "blake3",
- "byteorder",
- "colored",
- "costs",
- "ed",
- "failure",
- "hex",
- "indexmap 1.9.3",
- "integer-encoding",
- "jemallocator",
- "num_cpus",
- "path",
- "rand",
- "storage",
- "thiserror",
- "time 0.3.26",
- "visualize",
 ]
 
 [[package]]
@@ -2683,11 +2732,6 @@ name = "paste"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de3145af08024dea9fa9914f381a17b8fc6034dfb00f3a84013f7ff43f29ed4c"
-
-[[package]]
-name = "path"
-version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fb887722c14432a18fbab82afb2f245bceb7fca0#fb887722c14432a18fbab82afb2f245bceb7fca0"
 
 [[package]]
 name = "peeking_take_while"
@@ -3552,6 +3596,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-wasm-bindgen"
+version = "0.5.0"
+source = "git+https://github.com/QuantumExplorer/serde-wasm-bindgen?branch=feat/not_human_readable#121d1f7fbf62cb97f74b91626a1b23851098cc82"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "serde_bytes"
 version = "0.11.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3758,25 +3812,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9907f54bd0f7b6ce72c2be1e570a614819ee08e3deb66d90480df341d8a12a8"
 dependencies = [
  "log",
-]
-
-[[package]]
-name = "storage"
-version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fb887722c14432a18fbab82afb2f245bceb7fca0#fb887722c14432a18fbab82afb2f245bceb7fca0"
-dependencies = [
- "blake3",
- "costs",
- "hex",
- "integer-encoding",
- "lazy_static",
- "num_cpus",
- "path",
- "rocksdb",
- "strum",
- "tempfile",
- "thiserror",
- "visualize",
 ]
 
 [[package]]
@@ -4503,15 +4538,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b522f715ead3537dc57c9907899a08e461a8f1e87fc8414a4a89bbd9854289ff"
 
 [[package]]
-name = "visualize"
-version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=fb887722c14432a18fbab82afb2f245bceb7fca0#fb887722c14432a18fbab82afb2f245bceb7fca0"
-dependencies = [
- "hex",
- "itertools",
-]
-
-[[package]]
 name = "waker-fn"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4550,9 +4576,9 @@ checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 
 [[package]]
 name = "wasm-bindgen"
-version = "0.2.87"
+version = "0.2.86"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7706a72ab36d8cb1f80ffbf0e071533974a60d0a308d01a5d0375bf60499a342"
+checksum = "5bba0e8cb82ba49ff4e229459ff22a191bbe9a1cb3a341610c9c33efc27ddf73"
 dependencies = [
  "cfg-if",
  "wasm-bindgen-macro",
@@ -4560,9 +4586,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-backend"
-version = "0.2.87"
+version = "0.2.86"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ef2b6d3c510e9625e5fe6f509ab07d66a760f0885d858736483c32ed7809abd"
+checksum = "19b04bc93f9d6bdee709f6bd2118f57dd6679cf1176a1af464fca3ab0d66d8fb"
 dependencies = [
  "bumpalo",
  "log",
@@ -4574,10 +4600,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasm-bindgen-macro"
-version = "0.2.87"
+name = "wasm-bindgen-futures"
+version = "0.4.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dee495e55982a3bd48105a7b947fd2a9b4a8ae3010041b9e0faab3f9cd028f1d"
+checksum = "2d1985d03709c53167ce907ff394f5316aa22cb4e12761295c5dc57dacb6297e"
+dependencies = [
+ "cfg-if",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
+name = "wasm-bindgen-macro"
+version = "0.2.86"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14d6b024f1a526bb0234f52840389927257beb670610081360e5a03c5df9c258"
 dependencies = [
  "quote",
  "wasm-bindgen-macro-support",
@@ -4585,9 +4623,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro-support"
-version = "0.2.87"
+version = "0.2.86"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54681b18a46765f095758388f2d0cf16eb8d4169b639ab575a8f5693af210c7b"
+checksum = "e128beba882dd1eb6200e1dc92ae6c5dbaa4311aa7bb211ca035779e5efc39f8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4598,15 +4636,48 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-shared"
-version = "0.2.87"
+version = "0.2.86"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca6ad05a4870b2bf5fe995117d3728437bd27d7cd5f06f13c17443ef369775a1"
+checksum = "ed9d5b4305409d1fc9482fee2d7f9bcbf24b3972bf59817ef757e23982242a93"
+
+[[package]]
+name = "wasm-dpp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "console_error_panic_hook",
+ "dpp",
+ "itertools",
+ "js-sys",
+ "log",
+ "num_enum",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "thiserror",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-logger",
+ "web-sys",
+]
+
+[[package]]
+name = "wasm-logger"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "074649a66bb306c8f2068c9016395fa65d8e08d2affcbf95acf3c24c3ab19718"
+dependencies = [
+ "log",
+ "wasm-bindgen",
+ "web-sys",
+]
 
 [[package]]
 name = "web-sys"
-version = "0.3.64"
+version = "0.3.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b85cbef8c220a6abc02aefd892dfc0fc23afb1c6a426316ec33253a3877249b"
+checksum = "3bdd9ef4e984da1187bf8110c5cf5b845fbc87a23602cdf912386a76fcd3a7c2"
 dependencies = [
  "js-sys",
  "wasm-bindgen",

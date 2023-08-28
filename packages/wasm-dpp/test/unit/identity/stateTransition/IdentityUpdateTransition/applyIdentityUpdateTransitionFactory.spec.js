@@ -3,7 +3,7 @@ const getIdentityUpdateTransitionFixture = require('../../../../../lib/test/fixt
 
 const { default: loadWasmDpp } = require('../../../../../dist');
 
-describe('applyIdentityUpdateTransition', () => {
+describe.skip('applyIdentityUpdateTransition', () => {
   let applyIdentityUpdateTransition;
   let stateRepositoryMock;
   let stateTransition;

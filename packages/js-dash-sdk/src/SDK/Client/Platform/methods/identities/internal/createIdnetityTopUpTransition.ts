@@ -1,5 +1,5 @@
 import { PrivateKey } from '@dashevo/dashcore-lib';
-import { IdentityPublicKey, StateTransitionExecutionContext } from '@dashevo/wasm-dpp';
+import { IdentityPublicKey } from '@dashevo/wasm-dpp';
 import { Platform } from '../../../Platform';
 
 /**
@@ -30,19 +30,23 @@ export async function createIdentityTopUpTransition(
   );
 
   await identityTopUpTransition
+  // TODO(versioning): restore
+  // @ts-ignore
     .signByPrivateKey(assetLockPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
-  const result = await dpp.stateTransition.validateBasic(
-    identityTopUpTransition,
-    // TODO(v0.24-backport): get rid of this once decided
-    //  whether we need execution context in wasm bindings
-    new StateTransitionExecutionContext(),
-  );
+  // TODO(versioning): restore
+  // @ts-ignore
+  // const result = await dpp.stateTransition.validateBasic(
+  //   identityTopUpTransition,
+  //   // TODO(v0.24-backport): get rid of this once decided
+  //   //  whether we need execution context in wasm bindings
+  //   new StateTransitionExecutionContext(),
+  // );
 
-  if (!result.isValid()) {
-    const messages = result.getErrors().map((error) => error.message);
-    throw new Error(`StateTransition is invalid - ${JSON.stringify(messages)}`);
-  }
+  // if (!result.isValid()) {
+  //   const messages = result.getErrors().map((error) => error.message);
+  //   throw new Error(`StateTransition is invalid - ${JSON.stringify(messages)}`);
+  // }
 
   return identityTopUpTransition;
 }

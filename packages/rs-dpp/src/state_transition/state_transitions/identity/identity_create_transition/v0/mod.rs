@@ -60,7 +60,7 @@ struct IdentityCreateTransitionV0Inner {
     public_keys: Vec<IdentityPublicKeyInCreation>,
     asset_lock_proof: AssetLockProof,
     // Generic identity ST fields
-    protocol_version: u32,
+    // protocol_version: u32,
     signature: BinaryData,
 }
 
@@ -71,7 +71,6 @@ impl TryFrom<IdentityCreateTransitionV0Inner> for IdentityCreateTransitionV0 {
         let IdentityCreateTransitionV0Inner {
             public_keys,
             asset_lock_proof,
-            protocol_version: _,
             signature,
         } = value;
         let identity_id = asset_lock_proof.create_identifier()?;
@@ -87,7 +86,7 @@ impl TryFrom<IdentityCreateTransitionV0Inner> for IdentityCreateTransitionV0 {
 //todo: there shouldn't be a default
 
 impl IdentityCreateTransitionV0 {
-    fn try_from_identity_v0(
+    pub fn try_from_identity_v0(
         identity: Identity,
         asset_lock_proof: AssetLockProof,
     ) -> Result<Self, ProtocolError> {

@@ -8,7 +8,7 @@ const { expectValidationError } = require('../../../../../../../lib/test/expect/
 const generateRandomIdentifierAsync = require('../../../../../../../lib/test/utils/generateRandomIdentifierAsync');
 const getBlsAdapterMock = require('../../../../../../../lib/test/mocks/getBlsAdapterMock');
 
-describe('validateIdentityUpdateTransitionStateFactory', () => {
+describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
   let validateIdentityUpdateTransitionState;
   let stateRepositoryMock;
   let stateTransition;

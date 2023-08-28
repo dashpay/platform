@@ -2,9 +2,9 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
-use costs::CostContext;
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 use grovedb::{PathQuery, TransactionArg};
+use grovedb_costs::CostContext;
 
 impl Drive {
     /// Gets the return value and the cost of a groveDB path query.

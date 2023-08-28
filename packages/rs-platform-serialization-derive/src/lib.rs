@@ -47,6 +47,7 @@ impl VersionAttributes {
     }
 }
 
+// TODO serialize_consume and serialize aren't actually adding
 /// This proc macro derives the `PlatformSerialize` trait for the input data structure.
 /// The derived trait implementation will provide methods to serialize the data into a binary format, with some customization options.
 /// The `platform_error_type` attribute specifies the error type to be used in the `Result` types of the serialization methods.
@@ -75,9 +76,7 @@ impl VersionAttributes {
 /// The derived trait will include these methods:
 ///
 /// - `serialize`: This method serializes the data into a `Vec<u8>`. If the `limit` is specified, it will enforce the limit on the serialized size.
-/// - `serialize_with_prefix_version`: This method is similar to `serialize`, but it also includes a version prefix in the serialized data.
 /// - `serialize_consume`: This method is similar to `serialize`, but it takes `self` by value.
-/// - `serialize_consume_with_prefix_version`: This method is similar to `serialize_with_prefix_version`, but it takes `self` by value.
 ///
 /// The implementation uses the `bincode` library for serialization. The configuration of `bincode` is set to use big endian and to limit the size according to the `limit` attribute. If the `limit` attribute is not set, the size is unlimited.
 ///

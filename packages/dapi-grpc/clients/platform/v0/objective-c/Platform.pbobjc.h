@@ -990,9 +990,13 @@ GPB_FINAL @interface GetDataContractHistoryRequest : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
 
-@property(nonatomic, readwrite) uint32_t limit;
+@property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *limit;
+/** Test to see if @c limit has been set. */
+@property(nonatomic, readwrite) BOOL hasLimit;
 
-@property(nonatomic, readwrite) uint32_t offset;
+@property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Value *offset;
+/** Test to see if @c offset has been set. */
+@property(nonatomic, readwrite) BOOL hasOffset;
 
 @property(nonatomic, readwrite) uint64_t startAtMs;
 

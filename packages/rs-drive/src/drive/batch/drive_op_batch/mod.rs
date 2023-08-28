@@ -283,7 +283,7 @@ mod tests {
             element,
             Element::Item(
                 contract
-                    .serialize_with_platform_version(platform_version)
+                    .serialize_to_bytes_with_platform_version(platform_version)
                     .expect("expected to serialize contract"),
                 None
             )
@@ -542,7 +542,7 @@ mod tests {
             element,
             Element::Item(
                 contract
-                    .serialize_with_platform_version(platform_version)
+                    .serialize_to_bytes_with_platform_version(platform_version)
                     .expect("expected to serialize contract"),
                 None
             )

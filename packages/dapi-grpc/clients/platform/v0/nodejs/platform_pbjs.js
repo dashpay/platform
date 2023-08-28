@@ -10439,8 +10439,8 @@ $root.org = (function() {
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IGetDataContractHistoryRequest
                          * @property {Uint8Array|null} [id] GetDataContractHistoryRequest id
-                         * @property {number|null} [limit] GetDataContractHistoryRequest limit
-                         * @property {number|null} [offset] GetDataContractHistoryRequest offset
+                         * @property {google.protobuf.IUInt32Value|null} [limit] GetDataContractHistoryRequest limit
+                         * @property {google.protobuf.IUInt32Value|null} [offset] GetDataContractHistoryRequest offset
                          * @property {number|Long|null} [startAtMs] GetDataContractHistoryRequest startAtMs
                          * @property {boolean|null} [prove] GetDataContractHistoryRequest prove
                          */
@@ -10470,19 +10470,19 @@ $root.org = (function() {
 
                         /**
                          * GetDataContractHistoryRequest limit.
-                         * @member {number} limit
+                         * @member {google.protobuf.IUInt32Value|null|undefined} limit
                          * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
                          * @instance
                          */
-                        GetDataContractHistoryRequest.prototype.limit = 0;
+                        GetDataContractHistoryRequest.prototype.limit = null;
 
                         /**
                          * GetDataContractHistoryRequest offset.
-                         * @member {number} offset
+                         * @member {google.protobuf.IUInt32Value|null|undefined} offset
                          * @memberof org.dash.platform.dapi.v0.GetDataContractHistoryRequest
                          * @instance
                          */
-                        GetDataContractHistoryRequest.prototype.offset = 0;
+                        GetDataContractHistoryRequest.prototype.offset = null;
 
                         /**
                          * GetDataContractHistoryRequest startAtMs.
@@ -10527,9 +10527,9 @@ $root.org = (function() {
                             if (message.id != null && Object.hasOwnProperty.call(message, "id"))
                                 writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.id);
                             if (message.limit != null && Object.hasOwnProperty.call(message, "limit"))
-                                writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.limit);
+                                $root.google.protobuf.UInt32Value.encode(message.limit, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                             if (message.offset != null && Object.hasOwnProperty.call(message, "offset"))
-                                writer.uint32(/* id 3, wireType 0 =*/24).uint32(message.offset);
+                                $root.google.protobuf.UInt32Value.encode(message.offset, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                             if (message.startAtMs != null && Object.hasOwnProperty.call(message, "startAtMs"))
                                 writer.uint32(/* id 4, wireType 0 =*/32).uint64(message.startAtMs);
                             if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
@@ -10572,10 +10572,10 @@ $root.org = (function() {
                                     message.id = reader.bytes();
                                     break;
                                 case 2:
-                                    message.limit = reader.uint32();
+                                    message.limit = $root.google.protobuf.UInt32Value.decode(reader, reader.uint32());
                                     break;
                                 case 3:
-                                    message.offset = reader.uint32();
+                                    message.offset = $root.google.protobuf.UInt32Value.decode(reader, reader.uint32());
                                     break;
                                 case 4:
                                     message.startAtMs = reader.uint64();
@@ -10621,12 +10621,16 @@ $root.org = (function() {
                             if (message.id != null && message.hasOwnProperty("id"))
                                 if (!(message.id && typeof message.id.length === "number" || $util.isString(message.id)))
                                     return "id: buffer expected";
-                            if (message.limit != null && message.hasOwnProperty("limit"))
-                                if (!$util.isInteger(message.limit))
-                                    return "limit: integer expected";
-                            if (message.offset != null && message.hasOwnProperty("offset"))
-                                if (!$util.isInteger(message.offset))
-                                    return "offset: integer expected";
+                            if (message.limit != null && message.hasOwnProperty("limit")) {
+                                var error = $root.google.protobuf.UInt32Value.verify(message.limit);
+                                if (error)
+                                    return "limit." + error;
+                            }
+                            if (message.offset != null && message.hasOwnProperty("offset")) {
+                                var error = $root.google.protobuf.UInt32Value.verify(message.offset);
+                                if (error)
+                                    return "offset." + error;
+                            }
                             if (message.startAtMs != null && message.hasOwnProperty("startAtMs"))
                                 if (!$util.isInteger(message.startAtMs) && !(message.startAtMs && $util.isInteger(message.startAtMs.low) && $util.isInteger(message.startAtMs.high)))
                                     return "startAtMs: integer|Long expected";
@@ -10653,10 +10657,16 @@ $root.org = (function() {
                                     $util.base64.decode(object.id, message.id = $util.newBuffer($util.base64.length(object.id)), 0);
                                 else if (object.id.length >= 0)
                                     message.id = object.id;
-                            if (object.limit != null)
-                                message.limit = object.limit >>> 0;
-                            if (object.offset != null)
-                                message.offset = object.offset >>> 0;
+                            if (object.limit != null) {
+                                if (typeof object.limit !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDataContractHistoryRequest.limit: object expected");
+                                message.limit = $root.google.protobuf.UInt32Value.fromObject(object.limit);
+                            }
+                            if (object.offset != null) {
+                                if (typeof object.offset !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDataContractHistoryRequest.offset: object expected");
+                                message.offset = $root.google.protobuf.UInt32Value.fromObject(object.offset);
+                            }
                             if (object.startAtMs != null)
                                 if ($util.Long)
                                     (message.startAtMs = $util.Long.fromValue(object.startAtMs)).unsigned = true;
@@ -10692,8 +10702,8 @@ $root.org = (function() {
                                     if (options.bytes !== Array)
                                         object.id = $util.newBuffer(object.id);
                                 }
-                                object.limit = 0;
-                                object.offset = 0;
+                                object.limit = null;
+                                object.offset = null;
                                 if ($util.Long) {
                                     var long = new $util.Long(0, 0, true);
                                     object.startAtMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
@@ -10704,9 +10714,9 @@ $root.org = (function() {
                             if (message.id != null && message.hasOwnProperty("id"))
                                 object.id = options.bytes === String ? $util.base64.encode(message.id, 0, message.id.length) : options.bytes === Array ? Array.prototype.slice.call(message.id) : message.id;
                             if (message.limit != null && message.hasOwnProperty("limit"))
-                                object.limit = message.limit;
+                                object.limit = $root.google.protobuf.UInt32Value.toObject(message.limit, options);
                             if (message.offset != null && message.hasOwnProperty("offset"))
-                                object.offset = message.offset;
+                                object.offset = $root.google.protobuf.UInt32Value.toObject(message.offset, options);
                             if (message.startAtMs != null && message.hasOwnProperty("startAtMs"))
                                 if (typeof message.startAtMs === "number")
                                     object.startAtMs = options.longs === String ? String(message.startAtMs) : message.startAtMs;

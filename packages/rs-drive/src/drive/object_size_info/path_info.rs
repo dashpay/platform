@@ -1,7 +1,7 @@
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 
-use storage::worst_case_costs::WorstKeyLength;
+use grovedb_storage::worst_case_costs::WorstKeyLength;
 
 use DriveKeyInfo::{Key, KeyRef, KeySize};
 use PathInfo::{PathFixedSizeIterator, PathIterator, PathWithSizes};

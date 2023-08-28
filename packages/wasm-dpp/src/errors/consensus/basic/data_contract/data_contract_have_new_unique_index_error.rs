@@ -3,6 +3,7 @@ use dpp::consensus::basic::data_contract::DataContractHaveNewUniqueIndexError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformSerializable;
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractHaveNewUniqueIndexError)]
@@ -36,14 +37,5 @@ impl DataContractHaveNewUniqueIndexErrorWasm {
     #[wasm_bindgen(getter)]
     pub fn message(&self) -> String {
         self.inner.to_string()
-    }
-
-    #[wasm_bindgen(js_name=serialize)]
-    pub fn serialize(&self) -> Result<Buffer, JsError> {
-        let bytes = ConsensusError::from(self.inner.clone())
-            .serialize()
-            .map_err(JsError::from)?;
-
-        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }
