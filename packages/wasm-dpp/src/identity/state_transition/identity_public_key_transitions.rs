@@ -7,6 +7,7 @@ use dpp::state_transition::public_key_in_creation::accessors::{
 };
 use dpp::state_transition::public_key_in_creation::v0::BINARY_DATA_FIELDS;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use js_sys::Reflect::delete_property;
 pub use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::TryInto;
@@ -176,6 +177,10 @@ impl IdentityPublicKeyWithWitnessWasm {
                 &JsValue::from_str("signature"),
                 &JsValue::from(signature_buffer),
             )?;
+        } else {
+            let js_object = js_sys::Object::from(js_object);
+            delete_property(&js_object, &JsValue::from_str("signature"));
+            return Ok(js_object.into());
         }
 
         Ok(js_object)
