@@ -3448,8 +3448,6 @@ name = "rs-sdk"
 version = "0.1.0"
 dependencies = [
  "dapi-grpc",
- "dpp",
- "thiserror",
 ]
 
 [[package]]

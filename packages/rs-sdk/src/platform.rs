@@ -1,19 +1,17 @@
 //! Platform DAPI requests.
 
-mod broadcast_state_transition;
-mod get_consensus_params;
-mod get_data_contract;
-mod get_data_contract_history;
-mod get_documents;
-mod get_identities_by_public_key_hashes;
-mod get_identity;
-mod wait_for_state_transition_result;
+// TODO: rs-sdk should define a proper user-facing API hiding transport and serialization
+// details, however we don't have any data model yet, so for now it will re-export proto
+// generated types. Later these re-exports could be swapped with actual rs-sdk's requests
+// and while it will change the substance, the API structure will remain the same.
 
-pub use broadcast_state_transition::BroadcastStateTransitionRequest;
-pub use get_consensus_params::GetConsensusParamsRequest;
-pub use get_data_contract::GetDataContractRequest;
-pub use get_data_contract_history::GetDataContractHistoryRequest;
-pub use get_documents::GetDocumentsRequest;
-pub use get_identities_by_public_key_hashes::GetIdentitiesByPublicKeyHashesRequest;
-pub use get_identity::GetIdentityRequest;
-pub use wait_for_state_transition_result::WaitForStateTransitionResultRequest;
+use dapi_grpc::platform::v0::{self as platform_proto};
+
+pub use platform_proto::BroadcastStateTransitionRequest;
+pub use platform_proto::GetConsensusParamsRequest;
+pub use platform_proto::GetDataContractHistoryRequest;
+pub use platform_proto::GetDataContractRequest;
+pub use platform_proto::GetDocumentsRequest;
+pub use platform_proto::GetIdentitiesByPublicKeyHashesRequest;
+pub use platform_proto::GetIdentityRequest;
+pub use platform_proto::WaitForStateTransitionResultRequest;
