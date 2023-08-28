@@ -1,9 +1,10 @@
 use std::{fs::File, path::PathBuf};
 
-#[derive(serde::Deserialize, Debug)]
-struct QuorumInfo {
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+struct TestMetadata {
     #[serde(with = "dapi_grpc::deserialization::hexstring")]
     quorum_public_key: Vec<u8>,
+    data_contract: Option<dpp::prelude::DataContract>,
 }
 
 pub fn load<Req, Resp>(
@@ -22,7 +23,7 @@ where
         .join(file);
 
     let f = File::open(path).unwrap();
-    let (req, resp, quorum): (Req, Resp, QuorumInfo) = serde_json::from_reader(f).unwrap();
+    let (req, resp, quorum): (Req, Resp, TestMetadata) = serde_json::from_reader(f).unwrap();
 
     // println!("req: {:?}\nresp: {:?}\nquorum: {:?}\n", req, resp, quorum);
 

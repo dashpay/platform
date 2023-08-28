@@ -36,10 +36,12 @@ serde_json = { version = "1.0.103" }
 derive_more = { version = "0.99.16" }
 base64 = { version = "0.21.0" }
 
+drive-abci = { path = "../rs-drive-abci", default-features = false }
 # Dependencies for examples
 rs-dapi-client = { git = "https://github.com/dashpay/platform", branch = "rs-dapi-client" }
 tokio = { version = "1.32.0", features = ["macros"] }
 dapi-grpc = { git = "https://github.com/dashpay/platform", branch = "rs-dapi-client" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev = "408bef25fd229dbb6b9f1b3d380e2afbc77d812c" }
 
 [build-dependencies]
 
