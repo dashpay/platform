@@ -1,7 +1,7 @@
 // Entry point for DAPI.
 const dotenv = require('dotenv');
 const grpc = require('@grpc/grpc-js');
-const loadBLS = require('@dashevo/bls');
+// const loadBLS = require('@dashevo/bls');
 
 const {
   server: {
@@ -30,7 +30,7 @@ const rpcServer = require('../lib/rpcServer/server');
 const DriveClient = require('../lib/externalApis/drive/DriveClient');
 const dashCoreRpcClient = require('../lib/externalApis/dashcore/rpc');
 const BlockchainListener = require('../lib/externalApis/tenderdash/BlockchainListener');
-const DriveStateRepository = require('../lib/dpp/DriveStateRepository');
+// const DriveStateRepository = require('../lib/dpp/DriveStateRepository');
 
 const coreHandlersFactory = require(
   '../lib/grpcServer/handlers/core/coreHandlersFactory',
@@ -41,7 +41,7 @@ const platformHandlersFactory = require(
 
 async function main() {
   await loadWasmDpp();
-  const blsSignatures = await loadBLS();
+  // const blsSignatures = await loadBLS();
 
   /* Application start */
   const configValidationResult = validateConfig(config);
@@ -69,8 +69,8 @@ async function main() {
     port: config.tendermintCore.port,
   });
 
-  const dppForParsingContracts = new DashPlatformProtocol(blsSignatures, {});
-  const driveStateRepository = new DriveStateRepository(driveClient, dppForParsingContracts);
+  // const dppForParsingContracts = new DashPlatformProtocol(null, 1);
+  // const driveStateRepository = new DriveStateRepository(driveClient, dppForParsingContracts);
 
   log.info(`Connecting to Tenderdash on ${config.tendermintCore.host}:${config.tendermintCore.port}`);
 
@@ -97,7 +97,7 @@ async function main() {
   });
   log.info(`JSON RPC server is listening on port ${config.rpcServer.port}`);
 
-  const dpp = new DashPlatformProtocol(blsSignatures, driveStateRepository);
+  const dpp = new DashPlatformProtocol(null, 1);
 
   // Start GRPC server
   log.info('Starting GRPC server');
