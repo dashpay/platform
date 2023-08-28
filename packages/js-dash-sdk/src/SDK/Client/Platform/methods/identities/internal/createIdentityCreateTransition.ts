@@ -34,28 +34,18 @@ export async function createIdentityCreateTransition(
     .getIdentityHDKeyByIndex(identityIndex, 1);
   const identitySecondPublicKey = identitySecondPrivateKey.toPublicKey();
 
+  const keyOne = new IdentityPublicKey(1);
+  keyOne.setData(identityMasterPublicKey.toBuffer());
+
+  const keyTwo = new IdentityPublicKey(1);
+  keyTwo.setId(1);
+  keyTwo.setData(identitySecondPublicKey.toBuffer());
+  keyTwo.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH);
+
   // Create Identity
   const identity = dpp.identity.create(
     assetLockProof.createIdentifier(),
-    [new IdentityPublicKey({
-      $version: '0',
-      id: 0,
-      data: identityMasterPublicKey.toBuffer(),
-      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-      readOnly: false,
-    }),
-    new IdentityPublicKey({
-      $version: '0',
-      id: 1,
-      data: identitySecondPublicKey.toBuffer(),
-      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
-      readOnly: false,
-    }),
-    ],
+    [keyOne, keyTwo],
   );
 
   // Create ST
@@ -65,7 +55,6 @@ export async function createIdentityCreateTransition(
   );
 
   // Create key proofs
-
   const [masterKey, secondKey] = identityCreateTransition.getPublicKeys();
 
   await identityCreateTransition

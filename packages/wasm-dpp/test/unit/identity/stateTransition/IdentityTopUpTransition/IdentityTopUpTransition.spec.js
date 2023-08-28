@@ -9,10 +9,8 @@ describe('IdentityTopUpTransition', () => {
   let stateTransition;
 
   beforeEach(async () => {
-    rawStateTransition = (await getIdentityTopUpTransitionFixture()).toObject();
-    stateTransition = new IdentityTopUpTransition(
-      rawStateTransition,
-    );
+    stateTransition = await getIdentityTopUpTransitionFixture();
+    rawStateTransition = stateTransition.toObject();
   });
 
   describe('#constructor', () => {
@@ -23,13 +21,6 @@ describe('IdentityTopUpTransition', () => {
       expect(stateTransition.getIdentityId().toBuffer()).to.be.deep.equal(
         rawStateTransition.identityId,
       );
-    });
-
-    it('should create instance with chain asset lock proof', () => {
-      rawStateTransition.assetLockProof = getChainAssetLockProofFixture().toObject();
-      stateTransition = new IdentityTopUpTransition(rawStateTransition);
-      expect(stateTransition.getAssetLockProof().toObject())
-        .to.deep.equal(rawStateTransition.assetLockProof);
     });
   });
 
@@ -83,7 +74,7 @@ describe('IdentityTopUpTransition', () => {
         type: StateTransitionTypes.IdentityTopUp,
         assetLockProof: rawStateTransition.assetLockProof,
         identityId: rawStateTransition.identityId,
-        signature: Buffer.alloc(32),
+        signature: undefined,
       });
     });
 
@@ -108,7 +99,7 @@ describe('IdentityTopUpTransition', () => {
         type: StateTransitionTypes.IdentityTopUp,
         assetLockProof: stateTransition.getAssetLockProof().toJSON(),
         identityId: new Identifier(rawStateTransition.identityId).toString(),
-        signature: Buffer.alloc(32).toString('base64'),
+        signature: undefined,
       });
     });
   });

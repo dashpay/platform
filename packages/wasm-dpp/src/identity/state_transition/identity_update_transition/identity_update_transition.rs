@@ -18,6 +18,7 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
 use crate::utils::{generic_of_js_val, WithJsError};
 
+use crate::errors::from_dpp_err;
 use dpp::identity::{KeyID, KeyType, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData, ReplacementType, Value};
@@ -29,6 +30,7 @@ use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::StateTransition;
 use dpp::state_transition::StateTransitionIdentitySigned;
+use dpp::version::PlatformVersion;
 use dpp::{identifier::Identifier, state_transition::StateTransitionLike};
 
 #[wasm_bindgen(js_name=IdentityUpdateTransition)]
@@ -70,22 +72,13 @@ impl From<IdentityUpdateTransitionWasm> for IdentityUpdateTransition {
 #[wasm_bindgen(js_class = IdentityUpdateTransition)]
 impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_parameters: JsValue) -> Result<IdentityUpdateTransitionWasm, JsValue> {
-        let st_json_string = utils::stringify(&raw_parameters)?;
-        let mut st_platform_value: Value = serde_json::from_str::<JsonValue>(&st_json_string)
-            .map_err(|e| e.to_string())?
-            .into();
+    pub fn new(platform_version: u32) -> Result<IdentityUpdateTransitionWasm, JsValue> {
+        let platform_version =
+            &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        st_platform_value
-            .replace_at_paths(
-                dpp::state_transition::identity_update_transition::fields::IDENTIFIER_FIELDS,
-                ReplacementType::TextBase58,
-            )
-            .map_err(|e| e.to_string())?;
-
-        let identity_update_transition: IdentityUpdateTransition =
-            IdentityUpdateTransition::from_object(st_platform_value).map_err(|e| e.to_string())?;
-        Ok(identity_update_transition.into())
+        IdentityUpdateTransition::default_versioned(&platform_version)
+            .map(Into::into)
+            .map_err(from_dpp_err)
     }
 
     #[wasm_bindgen(js_name=setPublicKeysToAdd)]
@@ -240,7 +233,7 @@ impl IdentityUpdateTransitionWasm {
             js_sys::Reflect::set(
                 &js_object,
                 &"publicKeysDisabledAt".to_owned().into(),
-                &(timestamp as u32).into(),
+                &js_sys::Date::new(&JsValue::from_f64(timestamp as f64)).into(),
             )?;
         }
 
@@ -284,9 +277,10 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes =
-            PlatformSerializable::serialize(&StateTransition::IdentityUpdate(self.0.clone()))
-                .with_js_error()?;
+        let bytes = PlatformSerializable::serialize_to_bytes(&StateTransition::IdentityUpdate(
+            self.0.clone(),
+        ))
+        .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
@@ -333,7 +327,7 @@ impl IdentityUpdateTransitionWasm {
             js_sys::Reflect::set(
                 &js_object,
                 &"publicKeysDisabledAt".to_owned().into(),
-                &(timestamp as u32).into(),
+                &JsValue::from_f64(timestamp as f64),
             )?;
         }
 
@@ -422,9 +416,16 @@ impl IdentityUpdateTransitionWasm {
             BlsAdapter(JsValue::undefined().into())
         };
 
-        StateTransition::IdentityUpdate(self.0.clone())
+        // TODO: not the best approach because it involves cloning the transition
+        // Probably it worth to return `sign_by_private_key` per state transition
+        let mut wrapper = StateTransition::IdentityUpdate(self.0.clone());
+        wrapper
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
-            .with_js_error()
+            .with_js_error()?;
+
+        self.0.set_signature(wrapper.signature().to_owned());
+
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=setSignaturePublicKeyId)]

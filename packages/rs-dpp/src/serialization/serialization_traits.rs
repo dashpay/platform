@@ -13,14 +13,14 @@ pub trait Signable {
 
 pub trait PlatformSerializable {
     type Error;
-    fn serialize(&self) -> Result<Vec<u8>, Self::Error>;
+    fn serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error>;
 
     /// If the trait is not used just do a simple serialize
-    fn serialize_consume(self) -> Result<Vec<u8>, Self::Error>
+    fn serialize_consume_to_bytes(self) -> Result<Vec<u8>, Self::Error>
     where
         Self: Sized,
     {
-        self.serialize()
+        self.serialize_to_bytes()
     }
 }
 
@@ -33,50 +33,32 @@ pub trait PlatformSerializableWithPlatformVersion {
     /// which are the different ways to serialize the concept of a data contract.
     /// The data contract would call versioned_serialize. There should be a converted for each
     /// Data contract Version towards each DataContractSerializationFormat
-    fn serialize_with_platform_version(
+    fn serialize_to_bytes_with_platform_version(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Self::Error>;
 
     /// If the trait is not used just do a simple serialize
-    fn serialize_consume_with_platform_version(
+    fn serialize_consume_to_bytes_with_platform_version(
         self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Self::Error>
     where
         Self: Sized,
     {
-        self.serialize_with_platform_version(platform_version)
-    }
-}
-
-pub trait PlatformSerializableWithPrefixVersion {
-    fn serialize_with_prefix_version(
-        &self,
-        feature_version: FeatureVersion,
-    ) -> Result<Vec<u8>, ProtocolError>;
-
-    /// If the trait is not used just do a simple serialize
-    fn serialize_consume_with_prefix_version(
-        self,
-        feature_version: FeatureVersion,
-    ) -> Result<Vec<u8>, ProtocolError>
-    where
-        Self: Sized,
-    {
-        self.serialize_with_prefix_version(feature_version)
+        self.serialize_to_bytes_with_platform_version(platform_version)
     }
 }
 
 pub trait PlatformDeserializable {
-    fn deserialize(data: &[u8]) -> Result<Self, ProtocolError>
+    fn deserialize_from_bytes(data: &[u8]) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
-        Self::deserialize_no_limit(data)
+        Self::deserialize_from_bytes_no_limit(data)
     }
 
-    fn deserialize_no_limit(data: &[u8]) -> Result<Self, ProtocolError>
+    fn deserialize_from_bytes_no_limit(data: &[u8]) -> Result<Self, ProtocolError>
     where
         Self: Sized;
 }

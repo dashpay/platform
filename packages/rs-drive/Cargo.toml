@@ -42,27 +42,10 @@ rust_decimal = { version = "1.2.5", optional = true }
 rust_decimal_macros = { version = "1.25.0", optional = true }
 lazy_static = { version = "1.4.0", optional = true }
 mockall = { version = "0.11", optional = true }
-
-
-[dependencies.grovedb]
-git = "https://github.com/dashpay/grovedb"
-rev = "fb887722c14432a18fbab82afb2f245bceb7fca0"
-optional = true
-default-features = false
-
-[dependencies.storage]
-git = "https://github.com/dashpay/grovedb"
-rev = "fb887722c14432a18fbab82afb2f245bceb7fca0"
-optional = true
-
-[dependencies.costs]
-git = "https://github.com/dashpay/grovedb"
-rev = "fb887722c14432a18fbab82afb2f245bceb7fca0"
-optional = true
-
-[dependencies.path]
-git = "https://github.com/dashpay/grovedb"
-rev = "fb887722c14432a18fbab82afb2f245bceb7fca0"
+grovedb = { version = "1.0.0-rc.1", optional = true}
+grovedb-costs = { version = "1.0.0-rc.1", optional = true}
+grovedb-path = { version = "1.0.0-rc.1"}
+grovedb-storage = { version = "1.0.0-rc.1", optional = true}
 
 [dev-dependencies]
 criterion = "0.3.5"
@@ -79,9 +62,9 @@ default = ["full"]
 fixtures-and-mocks = ["mockall"]
 full = [
     "fixtures-and-mocks",
-    "grovedb/full",
-    "storage",
-    "costs",
+    "grovedb/estimated_costs",
+    "grovedb-storage",
+    "grovedb-costs",
     "bs58",
     "base64",
     "hex",
@@ -95,4 +78,4 @@ full = [
     "rust_decimal_macros",
     "lazy_static",
 ]
-verify = ["grovedb/verify", "costs"]
+verify = ["grovedb/verify", "grovedb-costs"]

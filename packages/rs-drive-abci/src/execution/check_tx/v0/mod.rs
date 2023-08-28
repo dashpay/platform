@@ -31,7 +31,7 @@ where
         transaction: &Transaction,
     ) -> Result<ExecutionResult, Error> {
         let state_transition =
-            StateTransition::deserialize(raw_tx.as_slice()).map_err(Error::Protocol)?;
+            StateTransition::deserialize_from_bytes(raw_tx.as_slice()).map_err(Error::Protocol)?;
         let state_read_guard = self.state.read().unwrap();
         let platform_ref = PlatformRef {
             drive: &self.drive,
@@ -74,7 +74,8 @@ where
         &self,
         raw_tx: &[u8],
     ) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
-        let state_transition = StateTransition::deserialize(raw_tx).map_err(Error::Protocol)?;
+        let state_transition =
+            StateTransition::deserialize_from_bytes(raw_tx).map_err(Error::Protocol)?;
         let state_read_guard = self.state.read().unwrap();
         let platform_ref = PlatformRef {
             drive: &self.drive,
@@ -155,6 +156,7 @@ mod tests {
     use dpp::version::PlatformVersion;
     use dpp::NativeBlsModule;
 
+    use dpp::platform_value::Bytes32;
     use platform_version::TryIntoPlatformVersioned;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -199,7 +201,7 @@ mod tests {
             .sign(&key, private_key.as_slice(), &NativeBlsModule)
             .expect("expected to sign transition");
         let serialized = create_contract_state_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("serialized state transition");
         platform
             .drive
@@ -273,7 +275,7 @@ mod tests {
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("serialized state transition");
 
         let dashpay =
@@ -286,29 +288,37 @@ mod tests {
             .sign(&key, private_key.as_slice(), &NativeBlsModule)
             .expect("expected to sign transition");
         let data_contract_create_serialized_transition = create_contract_state_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("expected data contract create serialized state transition");
 
         let profile = dashpay_contract
             .document_type_for_name("profile")
             .expect("expected a profile document type");
 
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
         let mut document = profile
-            .random_document_with_rng(&mut rng, platform_version)
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identifier,
+                entropy,
+                platform_version,
+            )
             .expect("expected a random document");
 
-        document.set_owner_id(identifier);
+        document.set("avatarUrl", "http://test.com/bob.jpg".into());
 
         let mut altered_document = document.clone();
 
         altered_document.increment_revision().unwrap();
         altered_document.set("displayName", "Samuel".into());
+        altered_document.set("avatarUrl", "http://test.com/cat.jpg".into());
 
         let documents_batch_create_transition =
             DocumentsBatchTransition::new_document_creation_transition_from_document(
                 document,
                 profile,
-                [1; 32],
+                entropy.0,
                 &key,
                 &signer,
                 platform_version,
@@ -319,7 +329,7 @@ mod tests {
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("expected documents batch serialized state transition");
 
         let documents_batch_update_transition =
@@ -336,7 +346,7 @@ mod tests {
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_update_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("expected documents batch serialized state transition");
 
         platform
@@ -440,7 +450,7 @@ mod tests {
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("serialized state transition");
 
         platform
@@ -486,7 +496,7 @@ mod tests {
             .expect("expected an identity create transition");
 
         let identity_top_up_serialized_transition = identity_top_up_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("serialized state transition");
 
         let validation_result = platform
@@ -568,7 +578,7 @@ mod tests {
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("serialized state transition");
 
         platform
@@ -614,7 +624,7 @@ mod tests {
             .expect("expected an identity create transition");
 
         let identity_top_up_serialized_transition = identity_top_up_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("serialized state transition");
 
         let validation_result = platform
@@ -720,7 +730,7 @@ mod tests {
             .expect("expected an identity create transition");
 
         let identity_top_up_serialized_transition = identity_top_up_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("serialized state transition");
 
         let validation_result = platform
@@ -789,7 +799,7 @@ mod tests {
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("serialized state transition");
 
         platform
@@ -835,7 +845,7 @@ mod tests {
             .expect("expected an identity create transition");
 
         let identity_top_up_serialized_transition = identity_top_up_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("serialized state transition");
 
         let validation_result = platform
@@ -899,7 +909,7 @@ mod tests {
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("serialized state transition");
 
         let validation_result = platform
@@ -1004,7 +1014,7 @@ mod tests {
         update_transition.set_signature(signature.to_vec().into());
 
         let update_transition_bytes = update_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("expected to serialize");
 
         let validation_result = platform

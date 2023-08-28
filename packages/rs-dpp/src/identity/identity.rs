@@ -50,7 +50,26 @@ impl Identity {
     #[cfg(feature = "identity-hashing")]
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
+        Ok(hash::hash_to_vec(PlatformSerializable::serialize_to_bytes(
+            self,
+        )?))
+    }
+
+    pub fn default_versioned(
+        platform_version: &PlatformVersion,
+    ) -> Result<Identity, ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_structure_version
+        {
+            0 => Ok(Identity::V0(IdentityV0::default())),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Identity::default_versioned".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
     }
 
     /// Created a new identity based on asset locks and keys

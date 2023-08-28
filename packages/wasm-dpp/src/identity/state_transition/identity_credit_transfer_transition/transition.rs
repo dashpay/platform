@@ -4,9 +4,11 @@ use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 use std::default::Default;
 
+use dpp::version::PlatformVersion;
 use wasm_bindgen::prelude::*;
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
+use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
 use crate::{buffer::Buffer, utils, with_js_error};
 use dpp::identifier::Identifier;
@@ -39,20 +41,13 @@ impl From<IdentityCreditTransferTransitionWasm> for IdentityCreditTransferTransi
 #[wasm_bindgen(js_class = IdentityCreditTransferTransition)]
 impl IdentityCreditTransferTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_parameters: JsValue) -> Result<IdentityCreditTransferTransitionWasm, JsValue> {
-        let st_json_string = utils::stringify(&raw_parameters)?;
-        let mut st_platform_value: Value = serde_json::from_str::<JsonValue>(&st_json_string)
-            .map_err(|e| e.to_string())?
-            .into();
+    pub fn new(platform_version: u32) -> Result<IdentityCreditTransferTransitionWasm, JsValue> {
+        let platform_version =
+            &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        st_platform_value
-            .replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::TextBase58)
-            .map_err(|e| e.to_string())?;
-
-        let identity_credit_transfer_transition: IdentityCreditTransferTransition =
-            IdentityCreditTransferTransition::from_object(st_platform_value)
-                .map_err(|e| e.to_string())?;
-        Ok(identity_credit_transfer_transition.into())
+        IdentityCreditTransferTransition::default_versioned(&platform_version)
+            .map(Into::into)
+            .map_err(from_dpp_err)
     }
 
     #[wasm_bindgen(js_name=getType)]
@@ -83,6 +78,16 @@ impl IdentityCreditTransferTransitionWasm {
     #[wasm_bindgen(js_name=getRecipientId)]
     pub fn get_recipient_id(&self) -> IdentifierWrapper {
         self.0.recipient_id().into()
+    }
+
+    #[wasm_bindgen(js_name=setIdentityId)]
+    pub fn set_identity_id(&mut self, identity_id: &IdentifierWrapper) {
+        self.0.set_identity_id(identity_id.into());
+    }
+
+    #[wasm_bindgen(js_name=setRecipientId)]
+    pub fn set_recipient_id(&mut self, recipient_id: &IdentifierWrapper) {
+        self.0.set_recipient_id(recipient_id.into());
     }
 
     #[wasm_bindgen(js_name=getAmount)]
@@ -165,9 +170,9 @@ impl IdentityCreditTransferTransitionWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes = PlatformSerializable::serialize(&StateTransition::IdentityCreditTransfer(
-            self.0.clone(),
-        ))
+        let bytes = PlatformSerializable::serialize_to_bytes(
+            &StateTransition::IdentityCreditTransfer(self.0.clone()),
+        )
         .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
@@ -286,9 +291,16 @@ impl IdentityCreditTransferTransitionWasm {
             BlsAdapter(JsValue::undefined().into())
         };
 
-        StateTransition::IdentityCreditTransfer(self.0.clone())
+        // TODO: not the best approach because it involves cloning the transition
+        // Probably it worth to return `sign_by_private_key` per state transition
+        let mut wrapper = StateTransition::IdentityCreditTransfer(self.0.clone());
+        wrapper
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
-            .with_js_error()
+            .with_js_error()?;
+
+        self.0.set_signature(wrapper.signature().to_owned());
+
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=getSignature)]

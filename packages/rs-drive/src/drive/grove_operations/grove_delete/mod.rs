@@ -7,7 +7,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 
 use grovedb::TransactionArg;
-use path::SubtreePath;
+use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Handles the deletion of an element in GroveDB at the specified path and key.
