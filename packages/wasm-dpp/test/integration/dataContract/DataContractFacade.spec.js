@@ -19,7 +19,7 @@ describe('DataContractFacade', () => {
 
   before(async () => {
     ({
-      DashPlatformProtocol, DataContract, ValidationResult,
+      DashPlatformProtocol, DataContract, ValidationResult, DataContractFactory,
       DataContractCreateTransition, DataContractUpdateTransition,
     } = await loadWasmDpp());
   });
