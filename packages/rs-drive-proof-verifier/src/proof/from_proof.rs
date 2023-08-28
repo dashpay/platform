@@ -1,23 +1,26 @@
 use std::collections::BTreeMap;
 
 use crate::Error;
-use dapi_grpc::platform::v0::{self as platform};
+use dapi_grpc::platform::v0::get_identities_keys_request::security_level_map::KeyKindRequestType as GrpcKeyKind;
+use dapi_grpc::platform::v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType};
 use dpp::document::Document;
-use dpp::identity::PartialIdentity;
-use dpp::prelude::{DataContract, Identifier, Identity, Revision};
+use dpp::identity::KeyID;
+use dpp::prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision};
 use dpp::version::PlatformVersion;
+use drive::drive::identity::key::fetch::{
+    IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
+};
 pub use drive::drive::verify::RootHash;
 use drive::drive::Drive;
 use drive::query::DriveQuery;
 
 use super::verify::verify_tenderdash_proof;
 
-pub type Identities = Vec<Option<Identity>>;
-pub type IdentitiesByPublicKeyHashes = Vec<([u8; 20], Option<Identity>)>;
 pub type DataContractHistory = BTreeMap<u64, DataContract>;
 pub type DataContracts = BTreeMap<[u8; 32], Option<DataContract>>;
 pub type IdentityBalance = u64;
 pub type IdentityBalanceAndRevision = (u64, Revision);
+pub type IdentityPublicKeys = BTreeMap<KeyID, Option<IdentityPublicKey>>;
 pub type Documents = Vec<Document>;
 
 lazy_static::lazy_static! {
@@ -25,7 +28,8 @@ lazy_static::lazy_static! {
 }
 
 /// Create an object based on proof received from DAPI
-pub trait FromProof<Req, Resp> {
+pub trait FromProof<Req> {
+    type Response;
     /// Parse and verify the received proof and retrieve the requested object, if any.
     ///
     /// # Arguments
@@ -42,7 +46,7 @@ pub trait FromProof<Req, Resp> {
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof(
         request: &Req,
-        response: &Resp,
+        response: &Self::Response,
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error>
     where
@@ -67,7 +71,7 @@ pub trait FromProof<Req, Resp> {
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn from_proof(
         request: &Req,
-        response: &Resp,
+        response: &Self::Response,
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Self, Error>
     where
@@ -106,7 +110,9 @@ pub trait QuorumInfoProvider: Send + Sync {
 }
 
 #[cfg_attr(feature = "mock", mockall::automock)]
-impl FromProof<platform::GetIdentityRequest, platform::GetIdentityResponse> for Identity {
+impl FromProof<platform::GetIdentityRequest> for Identity {
+    type Response = platform::GetIdentityResponse;
+
     fn maybe_from_proof(
         request: &platform::GetIdentityRequest,
         response: &platform::GetIdentityResponse,
@@ -148,12 +154,9 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityResponse> for 
 }
 
 // TODO: figure out how to deal with mock::automock
-impl
-    FromProof<
-        platform::GetIdentityByPublicKeyHashesRequest,
-        platform::GetIdentityByPublicKeyHashesResponse,
-    > for Identity
-{
+impl FromProof<platform::GetIdentityByPublicKeyHashesRequest> for Identity {
+    type Response = platform::GetIdentityByPublicKeyHashesResponse;
+
     fn maybe_from_proof(
         request: &platform::GetIdentityByPublicKeyHashesRequest,
         response: &platform::GetIdentityByPublicKeyHashesResponse,
@@ -199,68 +202,12 @@ impl
 }
 
 #[cfg_attr(feature = "mock", mockall::automock)]
-impl FromProof<platform::GetIdentitiesRequest, platform::GetIdentitiesResponse> for Identities {
-    fn maybe_from_proof(
-        request: &platform::GetIdentitiesRequest,
-        response: &platform::GetIdentitiesResponse,
-        provider: Box<dyn QuorumInfoProvider>,
-    ) -> Result<Option<Self>, Error> {
-        // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
-            platform::get_identities_response::Result::Proof(p) => p,
-            platform::get_identities_response::Result::Identities(_) => {
-                return Err(Error::NoProofInResult)
-            }
-        };
+impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
+    type Response = platform::GetIdentityKeysResponse;
 
-        let mtd = response
-            .metadata
-            .as_ref()
-            .ok_or(Error::EmptyResponseMetadata)?;
-
-        let identity_ids = request
-            .ids
-            .iter()
-            .map(|id| {
-                Identifier::from_bytes(id).map_err(|e| Error::ProtocolError {
-                    error: e.to_string(),
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let maybe_identities = identity_ids
-            .iter()
-            .map(|id| {
-                // Extract content from proof and verify Drive/GroveDB proofs
-                let (root_hash, maybe_identity) = Drive::verify_full_identity_by_identity_id(
-                    &proof.grovedb_proof,
-                    false,
-                    id.into_buffer(),
-                    &PLATFORM_VERSION,
-                )
-                .map_err(|e| Error::DriveError {
-                    error: e.to_string(),
-                })?;
-
-                verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
-
-                Ok(maybe_identity)
-            })
-            .collect::<Result<Identities, Error>>()?;
-
-        todo!("Needs Drive::verify_full_identities_by_identity_ids()");
-
-        Ok(Some(maybe_identities))
-    }
-}
-
-#[cfg_attr(feature = "mock", mockall::automock)]
-impl FromProof<platform::GetIdentityKeysRequest, platform::GetIdentityKeysResponse>
-    for PartialIdentity
-{
     fn maybe_from_proof(
         request: &platform::GetIdentityKeysRequest,
-        response: &platform::GetIdentityKeysResponse,
+        response: &Self::Response,
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
@@ -277,88 +224,129 @@ impl FromProof<platform::GetIdentityKeysRequest, platform::GetIdentityKeysRespon
             .ok_or(Error::EmptyResponseMetadata)?;
 
         // Load some info from request
-        let id =
-            Identifier::from_bytes(&request.identity_id).map_err(|e| Error::ProtocolError {
+        let identity_id = Identifier::from_bytes(&request.identity_id)
+            .map_err(|e| Error::ProtocolError {
                 error: e.to_string(),
-            })?;
+            })?
+            .into_buffer();
 
-        tracing::debug!(?id, "checking proof of identity keys");
+        let key_request = match parse_key_request_type(&request.request_type)? {
+            KeyRequestType::SpecificKeys(specific_keys) => {
+                IdentityKeysRequest::new_specific_keys_query(&identity_id, specific_keys)
+            }
+            KeyRequestType::AllKeys => IdentityKeysRequest::new_all_keys_query(&identity_id, None),
+            KeyRequestType::SearchKey(criteria) => IdentityKeysRequest {
+                identity_id,
+                request_type: KeyRequestType::SearchKey(criteria),
+                limit: Some(1),
+                offset: None,
+            },
+        };
+
+        tracing::debug!(?identity_id, "checking proof of identity keys");
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_identity_keys_by_identity_id(
             &proof.grovedb_proof,
+            key_request,
             false,
-            id.into_buffer(),
             &PLATFORM_VERSION,
         )
         .map_err(|e| Error::DriveError {
             error: e.to_string(),
         })?;
 
+        let maybe_keys: Option<IdentityPublicKeys> = if let Some(identity) = maybe_identity {
+            if identity.loaded_public_keys.is_empty() {
+                None
+            } else {
+                let mut keys = identity
+                    .loaded_public_keys
+                    .into_iter()
+                    .map(|(k, v)| (k, Some(v.clone())))
+                    .collect::<IdentityPublicKeys>();
+
+                let mut not_found = identity
+                    .not_found_public_keys
+                    .into_iter()
+                    .map(|k| (k, None))
+                    .collect::<IdentityPublicKeys>();
+
+                keys.append(&mut not_found);
+
+                Some(keys)
+            }
+        } else {
+            None
+        };
+
         verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
-        Ok(maybe_identity)
+        Ok(maybe_keys)
     }
 }
 
-// TODO: figure out how to deal with mock::automock
-impl
-    FromProof<
-        platform::GetIdentitiesByPublicKeyHashesRequest,
-        platform::GetIdentitiesByPublicKeyHashesResponse,
-    > for IdentitiesByPublicKeyHashes
-{
-    fn maybe_from_proof(
-        request: &platform::GetIdentitiesByPublicKeyHashesRequest,
-        response: &platform::GetIdentitiesByPublicKeyHashesResponse,
-        provider: Box<dyn QuorumInfoProvider>,
-    ) -> Result<Option<Self>, Error> {
-        // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
-            platform::get_identities_by_public_key_hashes_response::Result::Proof(p) => p,
-            platform::get_identities_by_public_key_hashes_response::Result::Identities(_) => {
-                return Err(Error::NoProofInResult)
-            }
-        };
+fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestType, Error> {
+    let key_request_type = request
+        .to_owned()
+        .ok_or(Error::RequestDecodeError {
+            error: "missing key request type".to_string(),
+        })?
+        .request
+        .ok_or(Error::RequestDecodeError {
+            error: "empty request field in key request type".to_string(),
+        })?;
 
-        let mtd = response
-            .metadata
-            .as_ref()
-            .ok_or(Error::EmptyResponseMetadata)?;
+    let request_type = match key_request_type {
+        key_request_type::Request::AllKeys(_) => KeyRequestType::AllKeys,
+        key_request_type::Request::SpecificKeys(specific_keys) => {
+            KeyRequestType::SpecificKeys(specific_keys.key_ids)
+        }
+        key_request_type::Request::SearchKey(search_key) => {
+            let purpose = search_key
+                .purpose_map
+                .iter()
+                .map(|(k, v)| {
+                    let v=  v.security_level_map
+                            .iter()
+                            .map(|(level, kind)| {
+                                let kt = match GrpcKeyKind::from_i32(*kind) {
+                                    Some(GrpcKeyKind::CurrentKeyOfKindRequest) => {
+                                        Ok(KeyKindRequestType::CurrentKeyOfKindRequest)
+                                    }
+                                    None => Err(Error::RequestDecodeError {
+                                        error: format!("missing requested key type: {}", *kind),
+                                    }),
+                                };
 
-        let identity_public_key_hashes = request
-            .public_key_hashes
-            .iter()
-            .map(|pk_hash| {
-                pk_hash.to_vec().try_into().map_err(|_| Error::DriveError {
-                    error: "Invalid public key hash length".to_string(),
+                                match kt  {
+                                    Err(e) => Err(e),
+                                    Ok(d) => Ok((*level as u8, d))
+                                }
+                            })
+                            .collect::<Result<BTreeMap<SecurityLevelU8,KeyKindRequestType>,Error>>();
+
+                            match v {
+                                Err(e) =>Err(e),
+                                Ok(d) => Ok(((*k as u8),d)),
+                            }
                 })
-            })
-            .collect::<Result<Vec<[u8; 20]>, Error>>()?;
+                .collect::<Result<BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>,Error>>()?;
 
-        let (root_hash, maybe_identities_with_public_key_hashes) =
-            Drive::verify_full_identities_by_public_key_hashes(
-                &proof.grovedb_proof,
-                &identity_public_key_hashes,
-                &PLATFORM_VERSION,
-            )
-            .map_err(|e| Error::DriveError {
-                error: e.to_string(),
-            })?;
+            KeyRequestType::SearchKey(purpose)
+        }
+    };
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
-
-        Ok(Some(maybe_identities_with_public_key_hashes))
-    }
+    Ok(request_type)
 }
 
 #[cfg_attr(feature = "mock", mockall::automock)]
-impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceResponse>
-    for IdentityBalance
-{
+impl FromProof<platform::GetIdentityRequest> for IdentityBalance {
+    type Response = platform::GetIdentityBalanceResponse;
+
     fn maybe_from_proof(
         request: &platform::GetIdentityRequest,
-        response: &platform::GetIdentityBalanceResponse,
+        response: &Self::Response,
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
@@ -397,12 +385,12 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceRespons
 }
 
 #[cfg_attr(feature = "mock", mockall::automock)]
-impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceAndRevisionResponse>
-    for IdentityBalanceAndRevision
-{
+impl FromProof<platform::GetIdentityRequest> for IdentityBalanceAndRevision {
+    type Response = platform::GetIdentityBalanceAndRevisionResponse;
+
     fn maybe_from_proof(
         request: &platform::GetIdentityRequest,
-        response: &platform::GetIdentityBalanceAndRevisionResponse,
+        response: &Self::Response,
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
@@ -424,33 +412,29 @@ impl FromProof<platform::GetIdentityRequest, platform::GetIdentityBalanceAndRevi
         })?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
-        let (root_hash, maybe_identity) = Drive::verify_full_identity_by_identity_id(
-            &proof.grovedb_proof,
-            false,
-            id.into_buffer(),
-            &PLATFORM_VERSION,
-        )
-        .map_err(|e| Error::DriveError {
-            error: e.to_string(),
-        })?;
+        let (root_hash, maybe_identity) =
+            Drive::verify_identity_balance_and_revision_for_identity_id(
+                &proof.grovedb_proof,
+                id.into_buffer(),
+                false,
+            )
+            .map_err(|e| Error::DriveError {
+                error: e.to_string(),
+            })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
 
-        todo!("Needs Drive::verify_identity_balance_and_revision_for_identity_id()");
-        #[allow(unreachable_code)]
-        Ok(maybe_identity.map(|i| match i {
-            Identity::V0(i) => (i.balance, i.revision),
-        }))
+        Ok(maybe_identity)
     }
 }
 
 #[cfg_attr(feature = "mock", mockall::automock)]
-impl FromProof<platform::GetDataContractRequest, platform::GetDataContractResponse>
-    for DataContract
-{
+impl FromProof<platform::GetDataContractRequest> for DataContract {
+    type Response = platform::GetDataContractResponse;
+
     fn maybe_from_proof(
         request: &platform::GetDataContractRequest,
-        response: &platform::GetDataContractResponse,
+        response: &Self::Response,
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
@@ -490,12 +474,12 @@ impl FromProof<platform::GetDataContractRequest, platform::GetDataContractRespon
 }
 
 #[cfg_attr(feature = "mock", mockall::automock)]
-impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResponse>
-    for DataContracts
-{
+impl FromProof<platform::GetDataContractsRequest> for DataContracts {
+    type Response = platform::GetDataContractsResponse;
+
     fn maybe_from_proof(
         request: &platform::GetDataContractsRequest,
-        response: &platform::GetDataContractsResponse,
+        response: &Self::Response,
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata
@@ -547,12 +531,12 @@ impl FromProof<platform::GetDataContractsRequest, platform::GetDataContractsResp
     }
 }
 
-impl FromProof<platform::GetDataContractHistoryRequest, platform::GetDataContractHistoryResponse>
-    for DataContractHistory
-{
+impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory {
+    type Response = platform::GetDataContractHistoryResponse;
+
     fn maybe_from_proof(
         request: &platform::GetDataContractHistoryRequest,
-        response: &platform::GetDataContractHistoryResponse,
+        response: &Self::Response,
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error>
     where
@@ -599,10 +583,12 @@ impl FromProof<platform::GetDataContractHistoryRequest, platform::GetDataContrac
 }
 
 // #[cfg_attr(feature = "mock", mockall::automock)]
-impl<'dq> FromProof<DriveQuery<'dq>, platform::GetDocumentsResponse> for Documents {
+impl<'dq> FromProof<DriveQuery<'dq>> for Documents {
+    type Response = platform::GetDocumentsResponse;
+
     fn maybe_from_proof(
         request: &DriveQuery<'dq>,
-        response: &platform::GetDocumentsResponse,
+        response: &Self::Response,
         provider: Box<dyn QuorumInfoProvider>,
     ) -> Result<Option<Self>, Error> {
         // Parse response to read proof and metadata

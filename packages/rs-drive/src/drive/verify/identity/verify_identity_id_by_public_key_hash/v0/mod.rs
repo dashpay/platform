@@ -38,15 +38,14 @@ impl Drive {
         is_proof_subset: bool,
         public_key_hash: [u8; 20],
     ) -> Result<(RootHash, Option<[u8; 32]>), Error> {
-        let path_query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
+        let mut path_query = Self::identity_id_by_unique_public_key_hash_query(public_key_hash);
+        path_query.query.limit = Some(1);
         let (root_hash, mut proved_key_values) = if is_proof_subset {
-            GroveDb::verify_subset_query(proof, &path_query)?
+            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
         } else {
-            GroveDb::verify_query(proof, &path_query)?
+            GroveDb::verify_query_with_absence_proof(proof, &path_query)?
         };
-        if proved_key_values.is_empty() {
-            return Ok((root_hash, None));
-        }
+
         if proved_key_values.len() == 1 {
             let (path, key, maybe_element) = proved_key_values.remove(0);
             if path != unique_key_hashes_tree_path_vec() {

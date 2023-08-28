@@ -47,9 +47,9 @@ impl Drive {
     ) -> Result<(RootHash, T), Error> {
         let path_query = Self::identity_ids_by_unique_public_key_hash_query(public_key_hashes);
         let (root_hash, proved_key_values) = if is_proof_subset {
-            GroveDb::verify_subset_query(proof, &path_query)?
+            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
         } else {
-            GroveDb::verify_query(proof, &path_query)?
+            GroveDb::verify_query_with_absence_proof(proof, &path_query)?
         };
         if proved_key_values.len() == public_key_hashes.len() {
             let values = proved_key_values
@@ -79,9 +79,10 @@ impl Drive {
                 .collect::<Result<T, Error>>()?;
             Ok((root_hash, values))
         } else {
-            Err(Error::Proof(ProofError::WrongElementCount(
-                "expected one identity id",
-            )))
+            Err(Error::Proof(ProofError::WrongElementCount {
+                expected: public_key_hashes.len(),
+                got: proved_key_values.len(),
+            }))
         }
     }
 }
