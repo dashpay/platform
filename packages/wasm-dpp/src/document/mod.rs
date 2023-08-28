@@ -45,6 +45,7 @@ use dpp::{platform_value, ProtocolError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::serialization_traits::DocumentPlatformValueMethodsV0;
+use dpp::version::PlatformVersion;
 use serde_json::Value as JsonValue;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
@@ -99,7 +100,8 @@ impl DocumentWasm {
             .with_js_error()?;
         // The binary paths are not being converted, because they always should be a `Buffer`. `Buffer` is always an Array
 
-        let document = Document::from_platform_value(raw_document).with_js_error()?;
+        let document = Document::from_platform_value(raw_document, PlatformVersion::first())
+            .with_js_error()?;
 
         Ok(document.into())
     }

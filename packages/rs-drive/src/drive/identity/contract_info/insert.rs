@@ -36,7 +36,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// Returns a `Result` containing a vector of low-level Drive operations (`LowLevelDriveOperation`) 
+    /// Returns a `Result` containing a vector of low-level Drive operations (`LowLevelDriveOperation`)
     /// or an error (`Error`) if any issue occurs during processing.
     ///
     /// # Example

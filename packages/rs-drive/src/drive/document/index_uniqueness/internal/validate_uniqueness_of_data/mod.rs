@@ -18,12 +18,12 @@ use std::collections::BTreeMap;
 
 /// Represents a request to determine the uniqueness of data.
 /// This structure is defined to handle index uniqueness within a document.
-/// The purpose is to encapsulate all the required parameters to determine 
+/// The purpose is to encapsulate all the required parameters to determine
 /// if a particular data is unique or not.
 ///
-/// **Note**: Modifications to this structure are discouraged due to its close coupling 
+/// **Note**: Modifications to this structure are discouraged due to its close coupling
 /// with index uniqueness methods. Any change here might necessitate changes across
-/// all those methods. Given the likely infrequent need for changes, this design choice 
+/// all those methods. Given the likely infrequent need for changes, this design choice
 /// is deemed acceptable.
 pub(in crate::drive::document::index_uniqueness) struct UniquenessOfDataRequest<'a> {
     /// Reference to the associated data contract.

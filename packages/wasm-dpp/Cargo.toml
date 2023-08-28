@@ -37,6 +37,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transition-validation",
     "extended-document",
     "document-value-conversion",
+    "document-json-conversion",
     "state-transition-json-conversion"
 ]}
 itertools = { version = "0.10.5" }

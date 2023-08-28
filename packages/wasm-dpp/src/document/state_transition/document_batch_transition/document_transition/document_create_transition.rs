@@ -12,6 +12,7 @@ use dpp::prelude::Revision;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
+use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 use dpp::{
     document::INITIAL_REVISION,
     prelude::{DataContract, Identifier},
@@ -118,7 +119,7 @@ impl DocumentCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getAction)]
     pub fn action(&self) -> u8 {
-        self.inner.base().action as u8
+        DocumentTransitionActionType::Create as u8
     }
 
     #[wasm_bindgen(js_name=getDataContract)]

@@ -12,6 +12,7 @@ use crate::{
 };
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 
 #[wasm_bindgen(js_name=DocumentDeleteTransition)]
 #[derive(Debug, Clone)]
@@ -35,7 +36,7 @@ impl From<DocumentDeleteTransitionWasm> for DocumentDeleteTransition {
 impl DocumentDeleteTransitionWasm {
     #[wasm_bindgen(js_name=getAction)]
     pub fn action(&self) -> u8 {
-        self.inner.base.action as u8
+        DocumentTransitionActionType::Delete as u8
     }
 
     #[wasm_bindgen(js_name=toObject)]

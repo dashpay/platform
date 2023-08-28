@@ -8,6 +8,8 @@ use dpp::prelude::{Identifier, Revision, TimestampMillis};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::JsonValueExt;
 
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::serialization::PlatformSerializable;
 use dpp::version::PlatformVersion;
@@ -330,7 +332,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let value = self.0.to_json().with_js_error()?;
+        let value = self.0.to_json(PlatformVersion::first()).with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
         with_js_error!(value.serialize(&serializer))
@@ -338,14 +340,16 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes: Vec<u8> =
-            PlatformSerializable::serialize_to_bytes(&self.0.clone()).with_js_error()?;
+        let bytes: Vec<u8> = self
+            .0
+            .serialize_to_bytes(PlatformVersion::first())
+            .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
     #[wasm_bindgen(js_name=hash)]
     pub fn hash(&self) -> Result<Buffer, JsValue> {
-        let bytes = self.0.hash().with_js_error()?;
+        let bytes = self.0.hash(PlatformVersion::first()).with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
@@ -356,21 +360,16 @@ impl ExtendedDocumentWasm {
 }
 
 impl ExtendedDocumentWasm {
-    fn get_binary_type_of_path(&self, path: &String) -> BinaryType {
-        let maybe_binary_properties = self
-            .0
-            .data_contract
-            .get_binary_properties(&self.0.document_type_name());
+    fn get_binary_type_of_path(&self, path: &String) -> Result<BinaryType, JsValue> {
+        let document_type = self.0.document_type().with_js_error()?;
 
-        if let Ok(binary_properties) = maybe_binary_properties {
-            if let Some(data) = binary_properties.get(path) {
-                if data.is_type_of_identifier() {
-                    return BinaryType::Identifier;
-                }
-                return BinaryType::Buffer;
-            }
+        if document_type.binary_paths().contains(&path) {
+            Ok(BinaryType::Buffer)
+        } else if document_type.identifier_paths().contains(&path) {
+            Ok(BinaryType::Identifier)
+        } else {
+            Ok(BinaryType::None)
         }
-        BinaryType::None
     }
 }
 

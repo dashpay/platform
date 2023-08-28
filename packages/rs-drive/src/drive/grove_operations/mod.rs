@@ -216,7 +216,7 @@ impl BatchInsertTreeApplyType {
     /// Converts the current `BatchInsertTreeApplyType` into a corresponding `DirectQueryType`.
     ///
     /// # Returns
-    /// 
+    ///
     /// - A variant of `DirectQueryType::StatelessDirectQuery` if the current type is `BatchInsertTreeApplyType::StatelessBatchInsertTree`.
     /// - `DirectQueryType::StatefulDirectQuery` if the current type is `BatchInsertTreeApplyType::StatefulBatchInsertTree`.
     ///
@@ -263,7 +263,7 @@ impl BatchInsertApplyType {
     /// Converts the current `BatchInsertApplyType` into a corresponding `DirectQueryType`.
     ///
     /// # Returns
-    /// 
+    ///
     /// - A variant of `DirectQueryType::StatelessDirectQuery` if the current type is `BatchInsertApplyType::StatelessBatchInsert`.
     /// - `DirectQueryType::StatefulDirectQuery` if the current type is `BatchInsertApplyType::StatefulBatchInsert`.
     ///
@@ -343,17 +343,17 @@ impl From<DirectQueryType> for QueryType {
 }
 
 impl DirectQueryType {
-    /// Converts the current `DirectQueryType` into a corresponding `QueryType` 
+    /// Converts the current `DirectQueryType` into a corresponding `QueryType`
     /// while associating it with the given reference sizes.
     ///
     /// # Parameters
     ///
-    /// * `reference_sizes`: A vector of `u32` values representing the reference sizes 
+    /// * `reference_sizes`: A vector of `u32` values representing the reference sizes
     ///   associated with the query.
     ///
     /// # Returns
-    /// 
-    /// - A variant of `QueryType::StatelessQuery` with the provided reference sizes if 
+    ///
+    /// - A variant of `QueryType::StatelessQuery` with the provided reference sizes if
     ///   the current type is `DirectQueryType::StatelessDirectQuery`.
     /// - `QueryType::StatefulQuery` if the current type is `DirectQueryType::StatefulDirectQuery`.
     ///

@@ -39,9 +39,9 @@ impl<'a> From<&ValidationError<'a>> for JsonSchemaErrorData {
                 .add_param("additionalProperties", unexpected.clone().into())
                 .build(),
             ValidationErrorKind::AnyOf => builder.set_keyword("anyOf").build(),
-            ValidationErrorKind::BacktrackLimitExceeded { .. } => builder
-                .set_keyword("backtrackLimitExceeded")
-                .build(),
+            ValidationErrorKind::BacktrackLimitExceeded { .. } => {
+                builder.set_keyword("backtrackLimitExceeded").build()
+            }
             ValidationErrorKind::Constant { expected_value } => builder
                 .set_keyword("const")
                 .add_param("allowedValue", expected_value.clone())
@@ -76,27 +76,19 @@ impl<'a> From<&ValidationError<'a>> for JsonSchemaErrorData {
 
                 builder.set_keyword(keyword).build()
             }
-            ValidationErrorKind::FileNotFound { .. } => {
-                builder.set_keyword("fileNotFound").build()
-            }
+            ValidationErrorKind::FileNotFound { .. } => builder.set_keyword("fileNotFound").build(),
             ValidationErrorKind::Format { format } => builder
                 .set_keyword("format")
                 .add_param("format", format.to_string().into())
                 .build(),
-            ValidationErrorKind::FromUtf8 { .. } => {
-                builder.set_keyword("fromUtf8").build()
-            }
+            ValidationErrorKind::FromUtf8 { .. } => builder.set_keyword("fromUtf8").build(),
             ValidationErrorKind::Utf8 { .. } => builder.set_keyword("utf8").build(),
-            ValidationErrorKind::JSONParse { .. } => {
-                builder.set_keyword("JSONParse").build()
-            }
+            ValidationErrorKind::JSONParse { .. } => builder.set_keyword("JSONParse").build(),
             ValidationErrorKind::InvalidReference { reference } => builder
                 .set_keyword("invalidReference")
                 .add_param("invalidReference", reference.clone().into())
                 .build(),
-            ValidationErrorKind::InvalidURL { .. } => {
-                builder.set_keyword("invalidURL").build()
-            }
+            ValidationErrorKind::InvalidURL { .. } => builder.set_keyword("invalidURL").build(),
             ValidationErrorKind::MaxItems { limit } => builder
                 .set_keyword("maxItems")
                 .add_param("maxItems", Value::from(*limit))
@@ -140,9 +132,7 @@ impl<'a> From<&ValidationError<'a>> for JsonSchemaErrorData {
             ValidationErrorKind::OneOfMultipleValid => {
                 builder.set_keyword("oneOfMultipleValid").build()
             }
-            ValidationErrorKind::OneOfNotValid => {
-                builder.set_keyword("oneOfNotValid").build()
-            }
+            ValidationErrorKind::OneOfNotValid => builder.set_keyword("oneOfNotValid").build(),
             ValidationErrorKind::Pattern { pattern } => builder
                 .set_keyword("pattern")
                 .add_param("pattern", pattern.clone().into())
@@ -175,14 +165,9 @@ impl<'a> From<&ValidationError<'a>> for JsonSchemaErrorData {
                         .collect::<Vec<Value>>()
                         .into(),
                 };
-                builder
-                    .set_keyword("type")
-                    .add_param("type", val)
-                    .build()
+                builder.set_keyword("type").add_param("type", val).build()
             }
-            ValidationErrorKind::UniqueItems => {
-                builder.set_keyword("uniqueItems").build()
-            }
+            ValidationErrorKind::UniqueItems => builder.set_keyword("uniqueItems").build(),
             ValidationErrorKind::UnknownReferenceScheme { scheme } => builder
                 .set_keyword("unknownReferenceScheme")
                 .add_param("unknownReferenceScheme", scheme.clone().into())

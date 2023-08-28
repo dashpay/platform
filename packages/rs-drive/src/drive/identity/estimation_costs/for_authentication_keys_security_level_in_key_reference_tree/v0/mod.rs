@@ -13,10 +13,10 @@ use dpp::identity::SecurityLevel;
 use std::collections::HashMap;
 
 impl Drive {
-    /// Adds estimation costs for authentication keys based on the security level in 
+    /// Adds estimation costs for authentication keys based on the security level in
     /// the key reference tree (version 0).
     ///
-    /// This function provides a mechanism to estimate the costs of authentication keys 
+    /// This function provides a mechanism to estimate the costs of authentication keys
     /// in the key reference tree based on a given security level.
     ///
     /// # Parameters
@@ -28,7 +28,7 @@ impl Drive {
     ///
     /// # Notes
     ///
-    /// The function has a hardcoded estimation of `ApproximateElements(4)`, which implies 
+    /// The function has a hardcoded estimation of `ApproximateElements(4)`, which implies
     /// an estimation that each security level will have approximately four keys.
     /// This is a preliminary estimate and might be revisited in future versions or updates.
     ///
