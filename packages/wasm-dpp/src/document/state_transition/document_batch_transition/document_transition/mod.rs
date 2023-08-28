@@ -6,6 +6,7 @@ pub use document_create_transition::*;
 pub use document_delete_transition::*;
 pub use document_replace_transition::*;
 
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::platform_value::Value;
 use dpp::prelude::TimestampMillis;
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
@@ -44,7 +45,7 @@ impl DocumentTransitionWasm {
 
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> String {
-        self.0.get_document_type().to_owned()
+        self.0.document_type_name().to_owned()
     }
 
     #[wasm_bindgen(js_name=getAction)]
@@ -54,7 +55,7 @@ impl DocumentTransitionWasm {
 
     #[wasm_bindgen(js_name=getDataContract)]
     pub fn get_data_contract(&self) -> DataContractWasm {
-        self.0.get_data_contract().to_owned().into()
+        self.0.data_contract().to_owned().into()
     }
 
     #[wasm_bindgen(js_name=getDataContractId)]
@@ -115,8 +116,8 @@ impl DocumentTransitionWasm {
         if let Some(data) = self.0.data() {
             let (identifier_paths, binary_paths) = self
                 .0
-                .get_data_contract()
-                .get_identifiers_and_binary_paths(self.0.get_document_type())
+                .data_contract()
+                .get_identifiers_and_binary_paths(self.0.document_type_name())
                 .with_js_error()?;
 
             let js_value = to_object(
@@ -213,21 +214,23 @@ impl DocumentTransitionWasm {
 }
 
 impl DocumentTransitionWasm {
-    fn get_binary_type_of_path(&self, path: impl AsRef<str>) -> BinaryType {
-        let maybe_binary_properties = self
-            .0
-            .get_data_contract()
-            .get_binary_properties(self.0.get_document_type());
+    fn get_binary_type_of_path(
+        &self,
+        path: impl AsRef<str>,
+        data_contract: DataContractWasm,
+    ) -> Result<BinaryType, JsValue> {
+        let document_type = data_contract
+            .inner()
+            .document_type_for_name(self.0.document_type_name().as_str())
+            .with_js_error()?;
 
-        if let Ok(binary_properties) = maybe_binary_properties {
-            if let Some(data) = binary_properties.get(path.as_ref()) {
-                if data.is_type_of_identifier() {
-                    return BinaryType::Identifier;
-                }
-                return BinaryType::Buffer;
-            }
+        if document_type.binary_paths().contains(&path) {
+            Ok(BinaryType::Buffer)
+        } else if document_type.identifier_paths().contains(&path) {
+            Ok(BinaryType::Identifier)
+        } else {
+            Ok(BinaryType::None)
         }
-        BinaryType::None
     }
 }
 

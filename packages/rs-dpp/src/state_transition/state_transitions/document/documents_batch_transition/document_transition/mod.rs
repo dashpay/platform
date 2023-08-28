@@ -44,7 +44,7 @@ pub trait DocumentTransitionV0Methods {
     ///  get the id
     fn get_id(&self) -> Identifier;
     /// get the document type
-    fn get_document_type(&self) -> &String;
+    fn document_type_name(&self) -> &String;
     /// get the data contract id
     fn data_contract_id(&self) -> Identifier;
     /// get the data of the transition if exits
@@ -263,7 +263,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         self.base().id()
     }
 
-    fn get_document_type(&self) -> &String {
+    fn document_type_name(&self) -> &String {
         self.base().document_type_name()
     }
 

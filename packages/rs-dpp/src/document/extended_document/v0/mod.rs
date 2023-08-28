@@ -232,7 +232,7 @@ impl ExtendedDocumentV0 {
         Self::from_untrusted_platform_value(raw_document.into(), data_contract, platform_version)
     }
 
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "document-value-conversion")]
     /// Create an extended document from a trusted platform value object where fields are already in
     /// the proper format for the contract.
     ///
@@ -277,7 +277,7 @@ impl ExtendedDocumentV0 {
         Ok(extended_document)
     }
 
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "document-value-conversion")]
     /// Create an extended document from an untrusted platform value object where fields might not
     /// be in the proper format for the contract.
     ///

@@ -1,4 +1,4 @@
-use crate::document::extended_document::ExtendedDocumentWasm;
+use crate::document::DocumentWasm;
 use thiserror::Error;
 
 use super::*;
@@ -7,13 +7,13 @@ use super::*;
 #[derive(Error, Debug)]
 #[error("Trying to update an immutable document")]
 pub struct TryingToReplaceImmutableDocumentError {
-    extended_document: ExtendedDocumentWasm,
+    document: DocumentWasm,
 }
 
 #[wasm_bindgen]
 impl TryingToReplaceImmutableDocumentError {
     #[wasm_bindgen(constructor)]
-    pub fn new(extended_document: ExtendedDocumentWasm) -> Self {
-        TryingToReplaceImmutableDocumentError { extended_document }
+    pub fn new(document: DocumentWasm) -> Self {
+        TryingToReplaceImmutableDocumentError { document }
     }
 }

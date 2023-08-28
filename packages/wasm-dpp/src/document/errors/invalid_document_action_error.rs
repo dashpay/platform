@@ -3,10 +3,11 @@ use dpp::state_transition::documents_batch_transition::document_transition::Docu
 use thiserror::Error;
 
 use super::*;
+use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
 
 #[wasm_bindgen]
 #[derive(Error, Debug)]
-#[error("Invalid Document action: '{}'", document_transition.action())]
+#[error("Invalid Document action: '{:?}'", document_transition.action_type())]
 pub struct InvalidDocumentActionError {
     document_transition: DocumentTransition,
 }
@@ -26,3 +27,6 @@ impl InvalidDocumentActionError {
         }
     }
 }
+
+#[test]
+fn data_contract_create_check_tx() {}

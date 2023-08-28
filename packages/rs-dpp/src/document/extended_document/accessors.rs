@@ -84,9 +84,9 @@ impl ExtendedDocument {
     }
 
     /// Returns the identifier of the associated data contract.
-    pub fn data_contract_id(&self) -> &Identifier {
+    pub fn data_contract_id(&self) -> Identifier {
         match self {
-            ExtendedDocument::V0(v0) => &v0.data_contract_id,
+            ExtendedDocument::V0(v0) => v0.data_contract_id,
         }
     }
 

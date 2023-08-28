@@ -29,6 +29,7 @@ use crate::{
     utils::{ToSerdeJSONExt, WithJsError},
     BinaryType, DataContractWasm,
 };
+use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 
 #[wasm_bindgen(js_name=DocumentReplaceTransition)]
 #[derive(Debug, Clone)]
@@ -77,7 +78,7 @@ impl DocumentReplaceTransitionWasm {
 
     #[wasm_bindgen(js_name=getAction)]
     pub fn action(&self) -> u8 {
-        self.inner.base().action as u8
+        DocumentTransitionActionType::Replace as u8
     }
 
     #[wasm_bindgen(js_name=getRevision)]
@@ -133,7 +134,7 @@ impl DocumentReplaceTransitionWasm {
             .inner
             .base()
             .data_contract
-            .get_identifiers_and_binary_paths(&self.inner.base.document_type_name)
+            .get_identifiers_and_binary_paths(&self.inner.base().document_type_name())
             .with_js_error()?;
 
         for path in identifier_paths {

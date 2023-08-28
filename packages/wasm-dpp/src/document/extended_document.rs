@@ -10,6 +10,7 @@ use dpp::util::json_value::JsonValueExt;
 
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::serialization::PlatformSerializable;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -64,15 +65,16 @@ impl ExtendedDocumentWasm {
         let document = ExtendedDocument::from_untrusted_platform_value(
             raw_document,
             js_data_contract.to_owned().into(),
+            PlatformVersion::first(),
         )
         .with_js_error()?;
 
         Ok(document.into())
     }
 
-    #[wasm_bindgen(js_name=getProtocolVersion)]
-    pub fn get_protocol_version(&self) -> u32 {
-        self.0.feature_version
+    #[wasm_bindgen(js_name=getFeatureVersion)]
+    pub fn get_feature_version(&self) -> u16 {
+        self.0.feature_version()
     }
 
     #[wasm_bindgen(js_name=getId)]
@@ -102,7 +104,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=getDataContract)]
     pub fn get_data_contract(&self) -> DataContractWasm {
-        self.0.data_contract.clone().into()
+        self.0.data_contract().clone().into()
     }
 
     #[wasm_bindgen(js_name=setDataContractId)]
@@ -336,7 +338,8 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes = PlatformSerializable::serialize_to_bytes(&self.0.clone()).with_js_error()?;
+        let bytes: Vec<u8> =
+            PlatformSerializable::serialize_to_bytes(&self.0.clone()).with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 

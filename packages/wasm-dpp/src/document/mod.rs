@@ -42,6 +42,9 @@ use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
 use dpp::{platform_value, ProtocolError};
 
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use serde_json::Value as JsonValue;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Default)]
@@ -79,17 +82,17 @@ impl DocumentWasm {
             ))
             .with_js_error()?;
 
-        let (identifier_paths, _) = js_data_contract
+        let document_type = js_data_contract
             .inner()
-            .get_identifiers_and_binary_paths(document_type_name.as_str())
+            .document_type_for_name(document_type_name.as_str())
             .with_js_error()?;
+
+        let identifier_paths = document_type.identifier_paths().iter().map(|s| s.as_str());
 
         // TODO: figure out a better way to replace identifiers
         raw_document
             .replace_at_paths(
-                identifier_paths
-                    .into_iter()
-                    .chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS),
+                identifier_paths.chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS),
                 ReplacementType::Identifier,
             )
             .map_err(ProtocolError::ValueError)
@@ -315,20 +318,19 @@ impl DocumentWasm {
         path: &String,
         data_contract: &DataContractWasm,
         document_type_name: String,
-    ) -> BinaryType {
-        let maybe_binary_properties = data_contract
+    ) -> Result<BinaryType, JsValue> {
+        let document_type = data_contract
             .inner()
-            .get_binary_properties(document_type_name.as_str());
+            .document_type_for_name(document_type_name.as_str())
+            .with_js_error()?;
 
-        if let Ok(binary_properties) = maybe_binary_properties {
-            if let Some(data) = binary_properties.get(path) {
-                if data.is_type_of_identifier() {
-                    return BinaryType::Identifier;
-                }
-                return BinaryType::Buffer;
-            }
+        if document_type.binary_paths().contains(path) {
+            Ok(BinaryType::Buffer)
+        } else if document_type.identifier_paths().contains(path) {
+            Ok(BinaryType::Identifier)
+        } else {
+            Ok(BinaryType::None)
         }
-        BinaryType::None
     }
 }
 

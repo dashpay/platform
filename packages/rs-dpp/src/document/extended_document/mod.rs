@@ -106,6 +106,80 @@ impl ExtendedDocument {
         ))
     }
 
+    #[cfg(feature = "document-value-conversion")]
+    /// Create an extended document from a trusted platform value object where fields are already in
+    /// the proper format for the contract.
+    ///
+    /// # Arguments
+    ///
+    /// * `document_value` - A `Value` representing the document value.
+    /// * `data_contract` - A `DataContract` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ProtocolError` if there is an error processing the trusted platform value.
+    pub fn from_trusted_platform_value(
+        document_value: Value,
+        data_contract: DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .document_versions
+            .extended_document_structure_version
+        {
+            0 => Ok(ExtendedDocument::V0(
+                ExtendedDocumentV0::from_trusted_platform_value(
+                    document_value,
+                    data_contract,
+                    platform_version,
+                )?,
+            )),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "ExtendedDocument::from_trusted_platform_value".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "document-value-conversion")]
+    /// Create an extended document from an untrusted platform value object where fields might not
+    /// be in the proper format for the contract.
+    ///
+    /// # Arguments
+    ///
+    /// * `document_value` - A `Value` representing the document value.
+    /// * `data_contract` - A `DataContract` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ProtocolError` if there is an error processing the untrusted platform value.
+    pub fn from_untrusted_platform_value(
+        document_value: Value,
+        data_contract: DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .document_versions
+            .extended_document_structure_version
+        {
+            0 => Ok(ExtendedDocument::V0(
+                ExtendedDocumentV0::from_untrusted_platform_value(
+                    document_value,
+                    data_contract,
+                    platform_version,
+                )?,
+            )),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "ExtendedDocument::from_untrusted_platform_value".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
     /// Convert the extended document to a JSON object.
     ///
     /// This function is a passthrough to the `to_json` method.
