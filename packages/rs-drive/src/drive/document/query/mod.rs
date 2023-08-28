@@ -79,6 +79,7 @@ use dpp::version::PlatformVersionCurrentVersion;
 // }
 
 #[cfg(feature = "fixtures-and-mocks")]
+/// Outcome of a serialized documents query
 pub struct QuerySerializedDocumentsOutcome {
     /// returned items
     pub items: Vec<Vec<u8>>,
