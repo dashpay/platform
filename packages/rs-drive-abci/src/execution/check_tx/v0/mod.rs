@@ -157,9 +157,9 @@ mod tests {
     use dpp::NativeBlsModule;
 
     use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
+    use dpp::platform_value::Bytes32;
     use dpp::system_data_contracts::dashpay_contract;
     use dpp::system_data_contracts::SystemDataContract::Dashpay;
-    use dpp::platform_value::Bytes32;
     use platform_version::TryIntoPlatformVersioned;
     use rand::rngs::StdRng;
     use rand::SeedableRng;

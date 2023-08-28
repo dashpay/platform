@@ -47,6 +47,10 @@ use dpp::prelude::IdentityPublicKey;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
 
+use crate::drive::identity::identity_contract_info_group_path_vec;
+use crate::drive::identity::key::fetch::KeyRequestType::{
+    ContractBoundKey, ContractDocumentTypeBoundKey,
+};
 #[cfg(feature = "full")]
 use grovedb::query_result_type::{
     Key, Path, PathKeyOptionalElementTrio, QueryResultElement, QueryResultElements,
@@ -63,8 +67,6 @@ use integer_encoding::VarInt;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::ops::RangeFull;
-use crate::drive::identity::identity_contract_info_group_path_vec;
-use crate::drive::identity::key::fetch::KeyRequestType::{ContractBoundKey, ContractDocumentTypeBoundKey};
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// The kind of keys you are requesting
@@ -90,9 +92,9 @@ pub enum KeyRequestType {
     /// Search for keys on an identity
     SearchKey(BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>),
     /// Search for contract bound keys
-    ContractBoundKey([u8;32], KeyKindRequestType),
+    ContractBoundKey([u8; 32], KeyKindRequestType),
     /// Search for contract bound keys
-    ContractDocumentTypeBoundKey([u8;32], String, KeyKindRequestType),
+    ContractDocumentTypeBoundKey([u8; 32], String, KeyKindRequestType),
 }
 
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -792,13 +794,13 @@ impl IdentityKeysRequest {
                 }
             }
             ContractBoundKey(contract_id, key_request_type) => {
-                let query_keys_path =  identity_contract_info_group_path_vec(
-                    &identity_id,
-                    &contract_id,
-                );
+                let query_keys_path =
+                    identity_contract_info_group_path_vec(&identity_id, &contract_id);
                 let query = match key_request_type {
-                    CurrentKeyOfKindRequest => Query::new_single_key(vec![0]);
-                    AllKeysOfKindRequest => Query::new_single_query_item(QueryItem::RangeFull(RangeFull))
+                    CurrentKeyOfKindRequest => Query::new_single_key(vec![0]),
+                    AllKeysOfKindRequest => {
+                        Query::new_single_query_item(QueryItem::RangeFull(RangeFull))
+                    }
                 };
                 PathQuery {
                     path: query_keys_path,
@@ -810,7 +812,22 @@ impl IdentityKeysRequest {
                 }
             }
             ContractDocumentTypeBoundKey(contract_id, document_type, key_request_type) => {
-
+                let query_keys_path =
+                    identity_contract_info_group_path_vec(&identity_id, &contract_id);
+                let query = match key_request_type {
+                    CurrentKeyOfKindRequest => Query::new_single_key(vec![0]),
+                    AllKeysOfKindRequest => {
+                        Query::new_single_query_item(QueryItem::RangeFull(RangeFull))
+                    }
+                };
+                PathQuery {
+                    path: query_keys_path,
+                    query: SizedQuery {
+                        query,
+                        limit,
+                        offset,
+                    },
+                }
             }
         }
     }

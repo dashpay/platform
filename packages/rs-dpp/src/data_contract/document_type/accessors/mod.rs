@@ -189,7 +189,6 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
-
     fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
         match self {
             DocumentTypeRef::V0(v0) => v0.encryption_key_storage_requirements(),
