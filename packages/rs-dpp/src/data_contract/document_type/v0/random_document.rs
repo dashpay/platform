@@ -119,6 +119,20 @@ impl CreateRandomDocument for DocumentTypeV0 {
     }
 
     /// Creates a document with a random id, owner id, and properties using StdRng.
+    fn random_document_with_identifier_and_entropy(
+        &self,
+        rng: &mut StdRng,
+        owner_id: Identifier,
+        entropy: Bytes32,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, ProtocolError> {
+        let now = SystemTime::now();
+        let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+        let milliseconds = duration_since_epoch.as_millis() as u64;
+        self.random_document_with_params(owner_id, entropy, milliseconds, rng, platform_version)
+    }
+
+    /// Creates a document with a random id, owner id, and properties using StdRng.
     fn random_document_with_rng(
         &self,
         rng: &mut StdRng,

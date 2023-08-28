@@ -6,7 +6,6 @@ use dpp::consensus::signature::{
 };
 
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::documents_batch_transition::fields::DEFAULT_SECURITY_LEVEL;
 
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
 use crate::execution::types::execution_operation::ExecutionOperation;
@@ -17,9 +16,8 @@ use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
-use dpp::identifier::Identifier;
+use crate::error::execution::ExecutionError;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::state_transition::documents_batch_transition::get_security_level_requirement;
 use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::StateTransition;
 use dpp::validation::ConsensusValidationResult;
@@ -33,13 +31,12 @@ use dpp::{
     NativeBlsModule,
 };
 use drive::dpp::identity::KeyType;
-use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::StateTransitionAction;
 use lazy_static::lazy_static;
 use std::collections::HashSet;
-use std::sync::Arc;
 
 lazy_static! {
     static ref SUPPORTED_KEY_TYPES: HashSet<KeyType> = {
@@ -55,13 +52,11 @@ pub trait ValidateStateTransitionIdentitySignatureV0<'a> {
     fn validate_state_transition_identity_signed_v0(
         &self,
         drive: &Drive,
+        action: Option<&StateTransitionAction>,
         request_revision: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
-        get_data_contract: Option<
-            impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-        >,
     ) -> Result<ConsensusValidationResult<PartialIdentity>, Error>;
 }
 
@@ -69,13 +64,11 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
     fn validate_state_transition_identity_signed_v0(
         &self,
         drive: &Drive,
+        action: Option<&StateTransitionAction>,
         request_revision: bool,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
-        get_data_contract: Option<
-            impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
-        >,
     ) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {
         let mut validation_result = ConsensusValidationResult::<PartialIdentity>::default();
 
@@ -88,28 +81,16 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
         let owner_id = self.owner_id();
 
         let security_levels = match self {
-            StateTransition::DocumentsBatch(batch_transition) => {
-                let get_data_contract =
-                    get_data_contract.ok_or(ProtocolError::CorruptedCodeExecution(
-                        "must supply get_data_contract when signing a documents batch transition"
-                            .to_string(),
-                    ))?;
-                batch_transition.contract_based_security_level_requirement(
-                    |identifier, document_type_name| {
-                        let data_contract_info = get_data_contract(identifier)?;
-
-                        let document_type = data_contract_info
-                            .contract
-                            .document_type_for_name(&document_type_name)?;
-
-                        let document_security_level = get_security_level_requirement(
-                            document_type.schema(),
-                            DEFAULT_SECURITY_LEVEL,
-                        );
-
-                        Ok(document_security_level)
-                    },
-                )
+            StateTransition::DocumentsBatch(_) => {
+                let action = action.ok_or(ProtocolError::CorruptedCodeExecution(
+                    "we expect a state transition action when validating the signature of the documents batch transition".to_string(),
+                ))?;
+                let StateTransitionAction::DocumentsBatchAction(documents_batch_action) = action else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "we expect a documents batch state transition action when validating the signature of the documents batch transition",
+                    )));
+                };
+                documents_batch_action.contract_based_security_level_requirement()
             }
             _ => self
                 .security_level_requirement()

@@ -2,7 +2,6 @@ use dashcore::{InstantLock, Transaction};
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
@@ -20,8 +19,8 @@ use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_transition::identity_update_transition::IdentityUpdateTransition;
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::validation::SimpleConsensusValidationResult;
-use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError, ProtocolError};
+
+use crate::{DashPlatformProtocolInitError, ProtocolError};
 
 #[derive(Clone)]
 pub struct IdentityFacade {
@@ -29,10 +28,10 @@ pub struct IdentityFacade {
 }
 
 impl IdentityFacade {
-    pub fn new(protocol_version: u32) -> Result<Self, DashPlatformProtocolInitError> {
-        Ok(Self {
+    pub fn new(protocol_version: u32) -> Self {
+        Self {
             factory: IdentityFactory::new(protocol_version),
-        })
+        }
     }
 
     pub fn create(
@@ -58,7 +57,7 @@ impl IdentityFacade {
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
-        self.factory.create_from_buffer(buffer, false)
+        self.factory.create_from_buffer(buffer, skip_validation)
     }
 
     pub fn create_instant_lock_proof(

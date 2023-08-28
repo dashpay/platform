@@ -1266,11 +1266,15 @@ export class GetDataContractHistoryRequest extends jspb.Message {
   getId_asB64(): string;
   setId(value: Uint8Array | string): void;
 
-  getLimit(): number;
-  setLimit(value: number): void;
+  hasLimit(): boolean;
+  clearLimit(): void;
+  getLimit(): google_protobuf_wrappers_pb.UInt32Value | undefined;
+  setLimit(value?: google_protobuf_wrappers_pb.UInt32Value): void;
 
-  getOffset(): number;
-  setOffset(value: number): void;
+  hasOffset(): boolean;
+  clearOffset(): void;
+  getOffset(): google_protobuf_wrappers_pb.UInt32Value | undefined;
+  setOffset(value?: google_protobuf_wrappers_pb.UInt32Value): void;
 
   getStartAtMs(): number;
   setStartAtMs(value: number): void;
@@ -1291,8 +1295,8 @@ export class GetDataContractHistoryRequest extends jspb.Message {
 export namespace GetDataContractHistoryRequest {
   export type AsObject = {
     id: Uint8Array | string,
-    limit: number,
-    offset: number,
+    limit?: google_protobuf_wrappers_pb.UInt32Value.AsObject,
+    offset?: google_protobuf_wrappers_pb.UInt32Value.AsObject,
     startAtMs: number,
     prove: boolean,
   }

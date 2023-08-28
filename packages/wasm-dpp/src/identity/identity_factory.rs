@@ -1,4 +1,3 @@
-use crate::bls_adapter::BlsAdapter;
 use crate::buffer::Buffer;
 use crate::errors::{from_dpp_err, RustConversionError};
 use crate::identifier::IdentifierWrapper;
@@ -7,7 +6,7 @@ use crate::identity::errors::InvalidIdentityError;
 use crate::identity::identity::IdentityWasm;
 use crate::identity::state_transition::ChainAssetLockProofWasm;
 use crate::identity::state_transition::IdentityCreditTransferTransitionWasm;
-use crate::identity::state_transition::{AssetLockProofWasm, InstantAssetLockProofWasm};
+use crate::identity::state_transition::InstantAssetLockProofWasm;
 
 use crate::{
     identity::state_transition::create_asset_lock_proof_from_wasm_instance,
@@ -22,11 +21,9 @@ use dpp::prelude::Identity;
 use serde::Deserialize;
 use std::convert::TryInto;
 
-use std::sync::Arc;
-
-use crate::utils::{with_serde_to_platform_value, WithJsError};
+use crate::utils::WithJsError;
 use dpp::identity::identity_factory::IdentityFactory;
-use dpp::version::PlatformVersion;
+
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
@@ -101,7 +98,9 @@ impl IdentityFactoryWasm {
             Default::default()
         };
 
-        let result = self.0.create_from_buffer(buffer.clone());
+        let result = self
+            .0
+            .create_from_buffer(buffer.clone(), options.skip_validation.unwrap_or(true));
 
         match result {
             Ok(identity) => Ok(identity.into()),
@@ -154,7 +153,7 @@ impl IdentityFactoryWasm {
     pub fn create_identity_create_transition(
         &self,
         identity: &IdentityWasm,
-        asset_lock_proof: JsValue,
+        asset_lock_proof: &JsValue,
     ) -> Result<IdentityCreateTransitionWasm, JsValue> {
         let asset_lock_proof = create_asset_lock_proof_from_wasm_instance(&asset_lock_proof)?;
 

@@ -12,19 +12,19 @@ use dpp::util::json_value::JsonValueExt;
 #[derive(Clone, Debug)]
 pub struct MetadataWasm(Metadata);
 
-impl std::convert::From<Metadata> for MetadataWasm {
+impl From<Metadata> for MetadataWasm {
     fn from(v: Metadata) -> Self {
         MetadataWasm(v)
     }
 }
 
-impl std::convert::From<&MetadataWasm> for Metadata {
+impl From<&MetadataWasm> for Metadata {
     fn from(v: &MetadataWasm) -> Self {
         v.0.clone()
     }
 }
 
-impl std::convert::Into<Metadata> for MetadataWasm {
+impl Into<Metadata> for MetadataWasm {
     fn into(self) -> Metadata {
         self.0
     }

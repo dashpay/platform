@@ -15,12 +15,15 @@ use crate::{BlsModule, ProtocolError};
 
 mod state_transition_types;
 
+pub mod state_transition_factory;
+
 pub mod errors;
 use crate::util::hash::{hash_to_vec, ripemd160_sha256};
 
 mod serialization;
 pub mod state_transitions;
 mod traits;
+
 // pub mod state_transition_fee;
 
 pub use traits::*;
@@ -241,11 +244,20 @@ pub enum StateTransition {
 }
 
 impl StateTransition {
+    /// This means we should transform into the action before validation of the structure
+    pub fn requires_state_to_validate_structure(&self) -> bool {
+        matches!(self, StateTransition::DocumentsBatch(_))
+    }
+    /// This means we should transform into the action before validation of the identity and signatures
+    pub fn requires_state_to_validate_identity_and_signatures(&self) -> bool {
+        matches!(self, StateTransition::DocumentsBatch(_))
+    }
+
     pub fn is_identity_signed(&self) -> bool {
-        match self {
-            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => false,
-            _ => true,
-        }
+        !matches!(
+            self,
+            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_)
+        )
     }
 
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
@@ -253,13 +265,13 @@ impl StateTransition {
             Ok(hash_to_vec(self.signable_bytes()?))
         } else {
             Ok(hash_to_vec(
-                crate::serialization::PlatformSerializable::serialize(self)?,
+                crate::serialization::PlatformSerializable::serialize_to_bytes(self)?,
             ))
         }
     }
 
     /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
+    pub fn signature(&self) -> &BinaryData {
         call_method!(self, signature)
     }
 
@@ -436,7 +448,7 @@ impl StateTransition {
 
     #[cfg(feature = "state-transition-signing")]
     /// Signs data with the private key
-    fn sign_by_private_key(
+    pub fn sign_by_private_key(
         &mut self,
         private_key: &[u8],
         key_type: KeyType,
@@ -621,7 +633,7 @@ impl StateTransition {
 //         if skip_signature {
 //             Ok(hash::hash_to_vec(self.signable_bytes()?))
 //         } else {
-//             Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
+//             Ok(hash::hash_to_vec(PlatformSerializable::serialize_to_bytes(self)?))
 //         }
 //     }
 //

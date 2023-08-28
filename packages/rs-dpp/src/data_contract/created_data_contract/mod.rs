@@ -79,7 +79,7 @@ impl CreatedDataContract {
         match platform_version
             .dpp
             .contract_versions
-            .created_data_contract_structure_version
+            .created_data_contract_structure
         {
             0 => Ok(CreatedDataContractV0 {
                 data_contract,
@@ -103,7 +103,7 @@ impl CreatedDataContract {
         match platform_version
             .dpp
             .contract_versions
-            .created_data_contract_structure_version
+            .created_data_contract_structure
         {
             0 => Ok(
                 CreatedDataContractV0::from_object(raw_object, validate, platform_version)?.into(),

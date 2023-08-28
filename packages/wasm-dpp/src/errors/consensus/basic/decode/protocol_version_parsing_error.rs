@@ -3,7 +3,8 @@ use dpp::bincode::Decode;
 use dpp::consensus::basic::decode::ProtocolVersionParsingError;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::errors::consensus::ConsensusError;
-use dpp::serialization::PlatformSerializable;
+use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use dpp::version::PlatformVersion;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=ProtocolVersionParsingError)]
@@ -39,5 +40,14 @@ impl ProtocolVersionParsingErrorWasm {
     #[wasm_bindgen(getter)]
     pub fn message(&self) -> String {
         self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize_to_bytes_with_platform_version(PlatformVersion::first())
+            .map_err(JsError::from)?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

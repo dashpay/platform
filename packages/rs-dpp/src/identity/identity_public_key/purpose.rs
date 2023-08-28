@@ -36,6 +36,12 @@ pub enum Purpose {
     VOTING = 5,
 }
 
+impl Default for Purpose {
+    fn default() -> Self {
+        Purpose::AUTHENTICATION
+    }
+}
+
 impl TryFrom<u8> for Purpose {
     type Error = anyhow::Error;
     fn try_from(value: u8) -> Result<Self, Self::Error> {

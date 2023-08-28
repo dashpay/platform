@@ -94,7 +94,7 @@ pub(super) fn derive_platform_serialize_struct(
         match platform_serialize_into.clone() {
             Some(inner) => quote! {
                 let inner: #inner = self.clone().into();
-                inner.serialize_with_platform_version(platform_version)
+                inner.serialize_to_bytes_with_platform_version(platform_version)
             },
             None => quote! {
                         #config
@@ -105,7 +105,7 @@ pub(super) fn derive_platform_serialize_struct(
         match platform_serialize_into.clone() {
             Some(inner) => quote! {
                 let inner: #inner = self.clone().into();
-                inner.serialize()
+                inner.serialize_to_bytes()
             },
             None => quote! {
                         #config
@@ -118,7 +118,7 @@ pub(super) fn derive_platform_serialize_struct(
         match platform_serialize_into {
             Some(inner) => quote! {
                 let inner: #inner = self.into();
-                inner.serialize_consume_with_platform_version(platform_version)
+                inner.serialize_consume_to_bytes_with_platform_version(platform_version)
             },
             None => quote! {
                     #config
@@ -129,7 +129,7 @@ pub(super) fn derive_platform_serialize_struct(
         match platform_serialize_into {
             Some(inner) => quote! {
                 let inner: #inner = self.into();
-                inner.serialize_consume()
+                inner.serialize_consume_to_bytes()
             },
             None => quote! {
                     #config
@@ -152,11 +152,11 @@ pub(super) fn derive_platform_serialize_struct(
             {
                 type Error = #error_type;
 
-                fn serialize(&self) -> Result<Vec<u8>, Self::Error> {
+                fn serialize_to_bytes(&self) -> Result<Vec<u8>, Self::Error> {
                     #serialize_into
                 }
 
-                fn serialize_consume(self) -> Result<Vec<u8>, Self::Error> {
+                fn serialize_consume_to_bytes(self) -> Result<Vec<u8>, Self::Error> {
                     #serialize_into_consume
                 }
             }
@@ -168,11 +168,11 @@ pub(super) fn derive_platform_serialize_struct(
             {
                 type Error = #error_type;
 
-                fn serialize_with_platform_version(&self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, Self::Error> {
+                fn serialize_to_bytes_with_platform_version(&self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, Self::Error> {
                     #serialize_into
                 }
 
-                fn serialize_consume_with_platform_version(self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, Self::Error> {
+                fn serialize_consume_to_bytes_with_platform_version(self, platform_version: &#crate_name::version::PlatformVersion) -> Result<Vec<u8>, Self::Error> {
                     #serialize_into_consume
                 }
             }

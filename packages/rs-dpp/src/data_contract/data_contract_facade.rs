@@ -7,8 +7,7 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::util::entropy_generator::EntropyGenerator;
-use crate::validation::SimpleConsensusValidationResult;
-use crate::version::FeatureVersion;
+
 use crate::ProtocolError;
 use platform_value::Value;
 
@@ -58,7 +57,7 @@ impl DataContractFacade {
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         self.factory
-            .create_from_object(raw_data_contract,false)
+            .create_from_object(raw_data_contract, skip_validation)
     }
 
     /// Create Data Contract from buffer
@@ -67,7 +66,7 @@ impl DataContractFacade {
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        self.factory.create_from_buffer(buffer,false)
+        self.factory.create_from_buffer(buffer, skip_validation)
     }
 
     #[cfg(feature = "state-transitions")]

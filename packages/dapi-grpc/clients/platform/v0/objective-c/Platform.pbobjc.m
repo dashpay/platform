@@ -2722,16 +2722,16 @@ typedef struct GetDataContractsResponse_DataContracts__storage_ {
 @implementation GetDataContractHistoryRequest
 
 @dynamic id_p;
-@dynamic limit;
-@dynamic offset;
+@dynamic hasLimit, limit;
+@dynamic hasOffset, offset;
 @dynamic startAtMs;
 @dynamic prove;
 
 typedef struct GetDataContractHistoryRequest__storage_ {
   uint32_t _has_storage_[1];
-  uint32_t limit;
-  uint32_t offset;
   NSData *id_p;
+  GPBUInt32Value *limit;
+  GPBUInt32Value *offset;
   uint64_t startAtMs;
 } GetDataContractHistoryRequest__storage_;
 
@@ -2752,21 +2752,21 @@ typedef struct GetDataContractHistoryRequest__storage_ {
       },
       {
         .name = "limit",
-        .dataTypeSpecific.clazz = Nil,
+        .dataTypeSpecific.clazz = GPBObjCClass(GPBUInt32Value),
         .number = GetDataContractHistoryRequest_FieldNumber_Limit,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetDataContractHistoryRequest__storage_, limit),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeUInt32,
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
       },
       {
         .name = "offset",
-        .dataTypeSpecific.clazz = Nil,
+        .dataTypeSpecific.clazz = GPBObjCClass(GPBUInt32Value),
         .number = GetDataContractHistoryRequest_FieldNumber_Offset,
         .hasIndex = 2,
         .offset = (uint32_t)offsetof(GetDataContractHistoryRequest__storage_, offset),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeUInt32,
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
       },
       {
         .name = "startAtMs",

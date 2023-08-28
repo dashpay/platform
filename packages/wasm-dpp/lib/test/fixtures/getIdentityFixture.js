@@ -1,5 +1,5 @@
 const {
-  default: loadWasmDpp, Identity, IdentityPublicKey, IdentityFactory,
+  default: loadWasmDpp, Identity, IdentityPublicKey,
 } = require('../../..');
 const generateRandomIdentifierAsync = require('../utils/generateRandomIdentifierAsync');
 
@@ -20,33 +20,21 @@ module.exports = async function getIdentityFixture(id = staticId, publicKeys = u
     id = staticId;
   }
 
-  const newPublicKeys = publicKeys || [
-    new IdentityPublicKey({
-      $version: '0',
-      id: 0,
-      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
-      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-      readOnly: false,
-    }),
-    new IdentityPublicKey({
-      $version: '0',
-      id: 1,
-      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      data: Buffer.from('A8AK95PYMVX5VQKzOhcVQRCUbc9pyg3RiL7jttEMDU+L', 'base64'),
-      purpose: IdentityPublicKey.PURPOSES.ENCRYPTION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MEDIUM,
-      readOnly: false,
-    }),
-  ];
+  const key1 = new IdentityPublicKey(1);
+  key1.setData(Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'));
 
-  const identityFactory = new IdentityFactory(1);
-  const identity = identityFactory.create(
-    id,
-    newPublicKeys,
-  );
+  const key2 = new IdentityPublicKey(1);
+  key2.setData(Buffer.from('A8AK95PYMVX5VQKzOhcVQRCUbc9pyg3RiL7jttEMDU+L', 'base64'));
+  key2.setId(1);
+  key2.setPurpose(IdentityPublicKey.PURPOSES.ENCRYPTION);
+  key2.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
 
+  const newPublicKeys = publicKeys || [key1, key2];
+
+  const identity = new Identity(1);
+  identity.setId(id);
+  identity.setPublicKeys(newPublicKeys);
   identity.setBalance(10000);
+
   return identity;
 };
