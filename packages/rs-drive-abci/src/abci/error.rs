@@ -46,7 +46,6 @@ pub enum AbciError {
     BadCommitSignature(String),
 
     /// Error returned by Tenderdash-abci library
-    #[cfg(feature = "server")]
     #[error("tenderdash: {0}")]
     Tenderdash(#[from] tenderdash_abci::Error),
 

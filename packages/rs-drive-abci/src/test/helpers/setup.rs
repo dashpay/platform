@@ -35,6 +35,7 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::platform_types::platform::Platform;
+#[cfg(any(feature = "mocks", test))]
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::fixture::abci::static_system_identity_public_keys_v0;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
