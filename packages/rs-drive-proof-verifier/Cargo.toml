@@ -42,6 +42,7 @@ rs-dapi-client = { git = "https://github.com/dashpay/platform", branch = "rs-dap
 tokio = { version = "1.32.0", features = ["macros"] }
 dapi-grpc = { git = "https://github.com/dashpay/platform", branch = "rs-dapi-client" }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev = "408bef25fd229dbb6b9f1b3d380e2afbc77d812c" }
+async-trait = { version = "0.1.73" }
 
 [build-dependencies]
 

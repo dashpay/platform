@@ -44,13 +44,13 @@ pub trait FromProof<Req> {
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
     /// For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
-    fn maybe_from_proof(
+    fn maybe_from_proof<'a>(
         request: &Req,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider>,
+        provider: Box<dyn QuorumInfoProvider + 'a>,
     ) -> Result<Option<Self>, Error>
     where
-        Self: Sized;
+        Self: Sized + 'a;
 
     /// Retrieve the requested object from the proof.
     ///
@@ -69,13 +69,13 @@ pub trait FromProof<Req> {
     /// * `Ok(object)` when the requested object was found in the proof.
     /// * `Err(Error::DocumentMissingInProof)` when the requested object was not found in the proof.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
-    fn from_proof(
+    fn from_proof<'a>(
         request: &Req,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider>,
+        provider: Box<dyn QuorumInfoProvider + 'a>,
     ) -> Result<Self, Error>
     where
-        Self: Sized,
+        Self: Sized + 'a,
     {
         Self::maybe_from_proof(request, response, provider)?.ok_or(Error::DocumentMissingInProof)
     }
@@ -113,11 +113,14 @@ pub trait QuorumInfoProvider: Send + Sync {
 impl FromProof<platform::GetIdentityRequest> for Identity {
     type Response = platform::GetIdentityResponse;
 
-    fn maybe_from_proof(
+    fn maybe_from_proof<'a>(
         request: &platform::GetIdentityRequest,
         response: &platform::GetIdentityResponse,
-        provider: Box<dyn QuorumInfoProvider>,
-    ) -> Result<Option<Self>, Error> {
+        provider: Box<dyn QuorumInfoProvider + 'a>,
+    ) -> Result<Option<Self>, Error>
+    where
+        Identity: Sized + 'a,
+    {
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_response::Result::Proof(p) => p,
@@ -157,11 +160,14 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
 impl FromProof<platform::GetIdentityByPublicKeyHashesRequest> for Identity {
     type Response = platform::GetIdentityByPublicKeyHashesResponse;
 
-    fn maybe_from_proof(
+    fn maybe_from_proof<'a>(
         request: &platform::GetIdentityByPublicKeyHashesRequest,
         response: &platform::GetIdentityByPublicKeyHashesResponse,
-        provider: Box<dyn QuorumInfoProvider>,
-    ) -> Result<Option<Self>, Error> {
+        provider: Box<dyn QuorumInfoProvider + 'a>,
+    ) -> Result<Option<Self>, Error>
+    where
+        Identity: 'a,
+    {
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_by_public_key_hashes_response::Result::Proof(p) => p,
@@ -205,11 +211,14 @@ impl FromProof<platform::GetIdentityByPublicKeyHashesRequest> for Identity {
 impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
     type Response = platform::GetIdentityKeysResponse;
 
-    fn maybe_from_proof(
+    fn maybe_from_proof<'a>(
         request: &platform::GetIdentityKeysRequest,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider>,
-    ) -> Result<Option<Self>, Error> {
+        provider: Box<dyn QuorumInfoProvider + 'a>,
+    ) -> Result<Option<Self>, Error>
+    where
+        IdentityPublicKeys: 'a,
+    {
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_keys_response::Result::Proof(p) => p,
@@ -344,11 +353,14 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
 impl FromProof<platform::GetIdentityRequest> for IdentityBalance {
     type Response = platform::GetIdentityBalanceResponse;
 
-    fn maybe_from_proof(
+    fn maybe_from_proof<'a>(
         request: &platform::GetIdentityRequest,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider>,
-    ) -> Result<Option<Self>, Error> {
+        provider: Box<dyn QuorumInfoProvider + 'a>,
+    ) -> Result<Option<Self>, Error>
+    where
+        IdentityBalance: 'a,
+    {
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_balance_response::Result::Proof(p) => p,
@@ -388,11 +400,14 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalance {
 impl FromProof<platform::GetIdentityRequest> for IdentityBalanceAndRevision {
     type Response = platform::GetIdentityBalanceAndRevisionResponse;
 
-    fn maybe_from_proof(
+    fn maybe_from_proof<'a>(
         request: &platform::GetIdentityRequest,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider>,
-    ) -> Result<Option<Self>, Error> {
+        provider: Box<dyn QuorumInfoProvider + 'a>,
+    ) -> Result<Option<Self>, Error>
+    where
+        IdentityBalanceAndRevision: 'a,
+    {
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_balance_and_revision_response::Result::Proof(p) => p,
@@ -432,11 +447,14 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalanceAndRevision {
 impl FromProof<platform::GetDataContractRequest> for DataContract {
     type Response = platform::GetDataContractResponse;
 
-    fn maybe_from_proof(
+    fn maybe_from_proof<'a>(
         request: &platform::GetDataContractRequest,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider>,
-    ) -> Result<Option<Self>, Error> {
+        provider: Box<dyn QuorumInfoProvider + 'a>,
+    ) -> Result<Option<Self>, Error>
+    where
+        DataContract: 'a,
+    {
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_data_contract_response::Result::Proof(p) => p,
@@ -477,11 +495,14 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
 impl FromProof<platform::GetDataContractsRequest> for DataContracts {
     type Response = platform::GetDataContractsResponse;
 
-    fn maybe_from_proof(
+    fn maybe_from_proof<'a>(
         request: &platform::GetDataContractsRequest,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider>,
-    ) -> Result<Option<Self>, Error> {
+        provider: Box<dyn QuorumInfoProvider + 'a>,
+    ) -> Result<Option<Self>, Error>
+    where
+        DataContracts: 'a,
+    {
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_data_contracts_response::Result::Proof(p) => p,
@@ -534,13 +555,13 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
 impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory {
     type Response = platform::GetDataContractHistoryResponse;
 
-    fn maybe_from_proof(
+    fn maybe_from_proof<'a>(
         request: &platform::GetDataContractHistoryRequest,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider>,
+        provider: Box<dyn QuorumInfoProvider + 'a>,
     ) -> Result<Option<Self>, Error>
     where
-        Self: Sized,
+        Self: Sized + 'a,
     {
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
@@ -586,11 +607,14 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
 impl<'dq> FromProof<DriveQuery<'dq>> for Documents {
     type Response = platform::GetDocumentsResponse;
 
-    fn maybe_from_proof(
+    fn maybe_from_proof<'a>(
         request: &DriveQuery<'dq>,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider>,
-    ) -> Result<Option<Self>, Error> {
+        provider: Box<dyn QuorumInfoProvider + 'a>,
+    ) -> Result<Option<Self>, Error>
+    where
+        Self: 'a,
+    {
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_documents_response::Result::Proof(p) => p,

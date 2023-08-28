@@ -1,12 +1,13 @@
 use std::{fs::File, path::PathBuf};
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
-struct TestMetadata {
+pub struct TestMetadata {
     #[serde(with = "dapi_grpc::deserialization::hexstring")]
-    quorum_public_key: Vec<u8>,
-    data_contract: Option<dpp::prelude::DataContract>,
+    pub quorum_public_key: Vec<u8>,
+    pub data_contract: Option<dpp::prelude::DataContract>,
 }
 
+#[allow(unused)]
 pub fn load<Req, Resp>(
     file: &str,
 ) -> (
@@ -35,6 +36,7 @@ where
     (req, resp, provider)
 }
 
+#[allow(unused)]
 pub fn enable_logs() {
     tracing_subscriber::fmt::fmt()
         .pretty()

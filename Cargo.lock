@@ -1389,6 +1389,7 @@ dependencies = [
 name = "drive-proof-verifier"
 version = "0.25.0-dev"
 dependencies = [
+ "async-trait",
  "base64 0.21.2",
  "bytes",
  "camino",
