@@ -9,7 +9,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 
 use grovedb::{Element, TransactionArg};
-use path::SubtreePath;
+use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Handles the retrieval of a raw element from GroveDB at the specified path and key.
