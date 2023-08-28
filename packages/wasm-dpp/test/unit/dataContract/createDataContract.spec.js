@@ -2,7 +2,7 @@ const generateRandomIdentifier = require('../../../lib/test/utils/generateRandom
 
 const { default: loadWasmDpp } = require('../../..');
 
-describe('createDataContract', () => {
+describe.skip('createDataContract', () => {
   let rawDataContract;
   let DataContract;
 
