@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
-use path::SubtreePath;
+use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Retrieves the total value from a sum tree within groveDB at the specified path and key.

@@ -7,8 +7,8 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::operations::delete::DeleteOptions;
 use grovedb::{GroveDb, TransactionArg};
-use path::SubtreePath;
-use storage::rocksdb_storage::RocksDbStorage;
+use grovedb_path::SubtreePath;
+use grovedb_storage::rocksdb_storage::RocksDbStorage;
 
 impl Drive {
     /// Pushes a "delete element" operation to `drive_operations`.
