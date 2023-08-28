@@ -47,6 +47,12 @@ pub struct AddressList {
     base_ban_period: time::Duration,
 }
 
+impl Default for AddressList {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AddressList {
     /// Creates an empty [AddressList] with default base ban time.
     pub fn new() -> Self {

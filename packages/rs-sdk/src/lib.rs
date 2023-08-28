@@ -3,4 +3,3 @@
 #[deny(missing_docs)]
 
 mod platform;
-mod core;

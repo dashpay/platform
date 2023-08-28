@@ -18,6 +18,7 @@ members = [
     "packages/dpns-contract",
     "packages/data-contracts",
     "packages/rs-drive-proof-verifier",
-#    "packages/wasm-dpp",
+    "packages/wasm-dpp",
     "packages/rs-dapi-client",
+    "packages/rs-sdk",
 ]

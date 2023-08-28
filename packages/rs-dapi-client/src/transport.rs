@@ -1,7 +1,6 @@
 //! Transport options that DAPI requests use under the hood.
 
 pub(crate) mod grpc;
-pub(crate) mod json_rpc;
 
 use futures::future::BoxFuture;
 use http::Uri;

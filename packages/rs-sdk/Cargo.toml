@@ -6,6 +6,6 @@ edition = "2021"
 [dependencies]
 dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
 thiserror = "1.0.41"
-drive = { path = "../rs-drive", no-default-features = true, features = ["verify"] }
-ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
+# drive = { path = "../rs-drive", no-default-features = true, features = ["verify"] }
+# ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
 dpp = { path = "../rs-dpp" }

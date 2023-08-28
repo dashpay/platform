@@ -35,11 +35,16 @@ impl CanRetry for tonic::Status {
         let code = self.code();
 
         use tonic::Code::*;
-        match code {
-            Ok | DataLoss | Cancelled | Unknown | DeadlineExceeded | ResourceExhausted
-            | Aborted | Internal => true,
-            _ => false,
-        }
+        matches!(
+            code,
+            Ok | DataLoss
+                | Cancelled
+                | Unknown
+                | DeadlineExceeded
+                | ResourceExhausted
+                | Aborted
+                | Internal
+        )
     }
 }
 

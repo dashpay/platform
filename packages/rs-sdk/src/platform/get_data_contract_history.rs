@@ -19,8 +19,8 @@ impl From<GetDataContractHistoryRequest> for platform_proto::GetDataContractHist
     fn from(dapi_request: GetDataContractHistoryRequest) -> Self {
         platform_proto::GetDataContractHistoryRequest {
             id: dapi_request.id,
-            limit: dapi_request.limit,
-            offset: dapi_request.offset,
+            limit: Some(dapi_request.limit),
+            offset: Some(dapi_request.offset),
             start_at_ms: dapi_request.start_at_ms,
             prove: true,
         }

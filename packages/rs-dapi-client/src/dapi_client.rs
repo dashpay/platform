@@ -46,8 +46,8 @@ impl DapiClient {
     }
 
     /// Execute the [DapiRequest].
-    pub(crate) async fn execute<'c, R>(
-        &'c mut self,
+    pub(crate) async fn execute<R>(
+        &mut self,
         request: R,
         settings: RequestSettings,
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
