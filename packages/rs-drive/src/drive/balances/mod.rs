@@ -30,7 +30,6 @@
 //! This module defines functions within the Drive struct related to balances.
 //! Functions include inserting verifying balances between various trees.
 //!
-//!
 
 #[cfg(feature = "full")]
 mod add_to_system_credits;
@@ -73,11 +72,13 @@ pub fn total_credits_path() -> [&'static [u8]; 2] {
     ]
 }
 
+/// The path for the balances tree
 #[cfg(any(feature = "full", feature = "verify"))]
 pub(crate) fn balance_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(RootTree::Balances)]
 }
 
+/// The path for the balances tree
 #[cfg(any(feature = "full", feature = "verify"))]
 pub(crate) fn balance_path_vec() -> Vec<Vec<u8>> {
     vec![Into::<&[u8; 1]>::into(RootTree::Balances).to_vec()]
