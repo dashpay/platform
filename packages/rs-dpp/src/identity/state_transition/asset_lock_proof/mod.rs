@@ -5,10 +5,10 @@ use dashcore::{Transaction, TxOut};
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub use bincode::{Decode, Encode};
-use serde::de::Error;
 pub use chain::*;
 pub use instant::*;
 use platform_value::Value;
+use serde::de::Error;
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::Identifier;
@@ -28,7 +28,7 @@ pub enum AssetLockProof {
 #[serde(untagged)]
 enum RawAssetLockProof {
     Instant(RawInstantLock),
-    Chain(ChainAssetLockProof)
+    Chain(ChainAssetLockProof),
 }
 
 impl TryFrom<RawAssetLockProof> for AssetLockProof {
@@ -41,17 +41,15 @@ impl TryFrom<RawAssetLockProof> for AssetLockProof {
 
                 Ok(AssetLockProof::Instant(instant_lock))
             }
-            RawAssetLockProof::Chain(chain) => {
-                Ok(AssetLockProof::Chain(chain))
-            }
+            RawAssetLockProof::Chain(chain) => Ok(AssetLockProof::Chain(chain)),
         }
     }
 }
 
 impl<'de> Deserialize<'de> for AssetLockProof {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         // Try to parse into IS Lock
         // let maybe_is_lock = RawInstantLock::deserialize(&deserializer);
@@ -67,7 +65,6 @@ impl<'de> Deserialize<'de> for AssetLockProof {
         // ChainAssetLockProof::deserialize(deserializer)
         //     .map(|chain| AssetLockProof::Chain(chain))
         // // Try to parse into chain lock
-
 
         let raw = RawAssetLockProof::deserialize(deserializer)?;
         raw.try_into()

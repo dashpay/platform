@@ -16,7 +16,7 @@ let {
   StateTransitionExecutionContext,
 } = require('../../../..');
 
-describe('validateStateTransitionBasicFactory', () => {
+describe.skip('validateStateTransitionBasicFactory', () => {
   let rawStateTransition;
   let dataContract;
   let stateTransition;

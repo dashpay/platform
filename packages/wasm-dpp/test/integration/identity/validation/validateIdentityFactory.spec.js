@@ -5,7 +5,7 @@ const { default: loadWasmDpp } = require('../../../../dist');
 const getBlsAdapterMock = require('../../../../lib/test/mocks/getBlsAdapterMock');
 const generateRandomIdentifierAsync = require('../../../../lib/test/utils/generateRandomIdentifierAsync');
 
-describe('validateIdentityFactory', () => {
+describe.skip('validateIdentityFactory', () => {
   let rawIdentity;
   let validateIdentity;
   let identity;

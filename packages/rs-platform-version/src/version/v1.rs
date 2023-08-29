@@ -1,12 +1,13 @@
 use crate::version::dpp_versions::{
-    ContractVersions, CostVersions, DPPValidationVersions, DPPVersion,
+    ContractVersions, CostVersions, DPPValidationVersions, DPPVersion, DataContractMethodVersions,
     DataContractValidationVersions, DocumentFeatureVersionBounds, DocumentMethodVersions,
-    DocumentTypeClassMethodVersions, DocumentTypeIndexVersions, DocumentTypeMethodVersions,
-    DocumentTypeSchemaVersions, DocumentTypeVersions, DocumentVersions,
+    DocumentTransitionVersions, DocumentTypeClassMethodVersions, DocumentTypeIndexVersions,
+    DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeVersions, DocumentVersions,
+    DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
     IdentityKeyTypeMethodVersions, IdentityVersions, JsonSchemaValidatorVersions,
     PublicKeyInCreationMethodVersions, RecursiveSchemaValidatorVersions,
     StateTransitionConversionVersions, StateTransitionMethodVersions,
-    StateTransitionSerializationVersions,
+    StateTransitionSerializationVersions, StateTransitionVersions,
 };
 use crate::version::drive_abci_versions::{
     DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
@@ -561,6 +562,12 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                                 reject_data_trigger: 0,
                             },
                         },
+                        document_create_transition_structure_validation: 0,
+                        document_delete_transition_structure_validation: 0,
+                        document_replace_transition_structure_validation: 0,
+                        document_create_transition_state_validation: 0,
+                        document_delete_transition_state_validation: 0,
+                        document_replace_transition_state_validation: 0,
                     },
             },
             process_state_transition: 0,
@@ -573,12 +580,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
         validation: DPPValidationVersions {
             validate_time_in_block_time_window: 0,
             json_schema_validator: JsonSchemaValidatorVersions {
-                get_schema_compilation_options: 0,
                 new: 0,
-                new_with_definitions: 0,
                 validate: 0,
-                validate_data_contract_schema: 0,
-                validate_schema: 0,
+                compile: 0,
             },
             data_contract: DataContractValidationVersions {
                 validate: 0,
@@ -675,6 +679,16 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 duplicated_keys_witness: 0,
             },
         },
+        state_transitions: StateTransitionVersions {
+            documents: DocumentTransitionVersions {
+                documents_batch_transition: DocumentsBatchTransitionVersions {
+                    validation: DocumentsBatchTransitionValidationVersions {
+                        find_duplicates_by_id: 0,
+                        validate_base_structure: 0,
+                    },
+                },
+            },
+        },
         contract_versions: ContractVersions {
             contract_serialization_version: FeatureVersionBounds {
                 min_version: 0,
@@ -682,8 +696,12 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 default_current_version: 0,
             },
             contract_structure_version: 0,
-            created_data_contract_structure_version: 0,
-            config_version: 0,
+            created_data_contract_structure: 0,
+            config: 0,
+            methods: DataContractMethodVersions {
+                validate_document: 0,
+                schema: 0,
+            },
             document_type_versions: DocumentTypeVersions {
                 index_versions: DocumentTypeIndexVersions {
                     index_levels_from_indices: 0,

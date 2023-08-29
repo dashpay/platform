@@ -90,6 +90,21 @@ impl IdentityPublicKey {
             }),
         }
     }
+
+    pub fn default_versioned(platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .identity_versions
+            .identity_key_structure_version
+        {
+            0 => Ok(IdentityPublicKeyV0::default().into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "IdentityPublicKey::default_versioned".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -112,9 +127,9 @@ mod tests {
             .expect("expected a random key")
             .0
             .into();
-        let serialized = key.serialize().expect("expected to serialize key");
+        let serialized = key.serialize_to_bytes().expect("expected to serialize key");
         let unserialized: IdentityPublicKey =
-            PlatformDeserializable::deserialize(serialized.as_slice())
+            PlatformDeserializable::deserialize_from_bytes(serialized.as_slice())
                 .expect("expected to deserialize key");
         assert_eq!(key, unserialized)
     }

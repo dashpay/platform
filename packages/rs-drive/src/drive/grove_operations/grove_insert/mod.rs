@@ -7,7 +7,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::operations::insert::InsertOptions;
 use grovedb::{Element, TransactionArg};
-use path::SubtreePath;
+use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Inserts an element into groveDB at the specified path and key.

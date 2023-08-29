@@ -66,7 +66,7 @@ impl Drive {
 
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let contract_bytes = contract.serialize_with_platform_version(platform_version)?;
+        let contract_bytes = contract.serialize_to_bytes_with_platform_version(platform_version)?;
 
         // Since we can update the contract by definition it already has storage flags
         let storage_flags = Some(StorageFlags::new_single_epoch(

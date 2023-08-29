@@ -1,3 +1,5 @@
+// TODO(versioning): restore
+// @ts-ignore
 import { Identity, DataContract, DataContractCreateTransition } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 import broadcastStateTransition from '../../broadcastStateTransition';
@@ -21,6 +23,8 @@ export default async function publish(
 
   const { dpp } = this;
 
+  // TODO(versioning): restore
+  // @ts-ignore
   const dataContractCreateTransition = dpp.dataContract
     .createDataContractCreateTransition(dataContract);
 

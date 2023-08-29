@@ -12,7 +12,7 @@ use crate::execution::validation::state_transition::processor::v0::{
     StateTransitionStateValidationV0, StateTransitionStructureValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
-use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 
 use crate::rpc::core::CoreRPCLike;
 
@@ -21,7 +21,7 @@ use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use drive::drive::Drive;
+
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 
@@ -29,6 +29,7 @@ impl StateTransitionActionTransformerV0 for IdentityCreateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        _validate: bool,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -52,9 +53,9 @@ impl StateTransitionActionTransformerV0 for IdentityCreateTransition {
 impl StateTransitionStructureValidationV0 for IdentityCreateTransition {
     fn validate_structure(
         &self,
-        _drive: &Drive,
+        _platform: &PlatformStateRef,
+        _action: Option<&StateTransitionAction>,
         protocol_version: u32,
-        _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let platform_version = PlatformVersion::get(protocol_version)?;
         match platform_version
@@ -64,7 +65,7 @@ impl StateTransitionStructureValidationV0 for IdentityCreateTransition {
             .identity_create_state_transition
             .structure
         {
-            0 => self.validate_structure_v0(platform_version),
+            0 => self.validate_base_structure_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create transition: validate_structure".to_string(),
                 known_versions: vec![0],
@@ -77,6 +78,7 @@ impl StateTransitionStructureValidationV0 for IdentityCreateTransition {
 impl StateTransitionStateValidationV0 for IdentityCreateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
+        _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {

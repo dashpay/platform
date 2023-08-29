@@ -3,11 +3,11 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::CalculatedCostOperation;
-use costs::CostContext;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, GroveDb, TransactionArg};
-use path::SubtreePath;
+use grovedb_costs::CostContext;
+use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Gets the element at the given path from groveDB.

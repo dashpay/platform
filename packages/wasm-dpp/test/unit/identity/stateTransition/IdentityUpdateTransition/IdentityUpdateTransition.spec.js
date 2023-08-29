@@ -1,7 +1,7 @@
 const getIdentityUpdateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 
 const { IdentityPublicKey, Identifier, IdentityPublicKeyWithWitness } = require('../../../../..');
-const { getLatestProtocolVersion, StateTransitionTypes } = require('../../../../..');
+const { StateTransitionTypes } = require('../../../../..');
 const generateRandomIdentifierAsync = require('../../../../../lib/test/utils/generateRandomIdentifierAsync');
 
 describe('IdentityUpdateTransition', () => {
@@ -63,24 +63,18 @@ describe('IdentityUpdateTransition', () => {
     it('should return public keys to add', () => {
       expect(stateTransition.getPublicKeysToAdd().map((key) => key.toObject()))
         .to.deep.equal(
-          rawStateTransition.addPublicKeys
-            .map((rawPublicKey) => new IdentityPublicKeyWithWitness(rawPublicKey).toObject()),
+          rawStateTransition.addPublicKeys,
         );
     });
   });
 
   describe('#setPublicKeysToAdd', () => {
     it('should set public keys to add', () => {
-      const publicKeys = [new IdentityPublicKeyWithWitness({
-        $version: '0',
-        id: 0,
-        type: IdentityPublicKey.TYPES.BLS12_381,
-        purpose: 0,
-        securityLevel: 0,
-        readOnly: true,
-        signature: Buffer.alloc(32),
-        data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
-      })];
+      const key = new IdentityPublicKeyWithWitness(1);
+      key.setType(IdentityPublicKey.TYPES.BLS12_381);
+      key.setData(Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'));
+
+      const publicKeys = [key];
 
       stateTransition.setPublicKeysToAdd(publicKeys);
 
@@ -108,7 +102,7 @@ describe('IdentityUpdateTransition', () => {
   describe('#getPublicKeysDisabledAt', () => {
     it('should return time to disable public keys', () => {
       expect(stateTransition.getPublicKeysDisabledAt())
-        .to.deep.equal(new Date(rawStateTransition.publicKeysDisabledAt));
+        .to.deep.equal(rawStateTransition.publicKeysDisabledAt);
     });
   });
 
@@ -129,7 +123,7 @@ describe('IdentityUpdateTransition', () => {
       expect(rawStateTransition).to.deep.equal({
         $version: '0',
         type: StateTransitionTypes.IdentityUpdate,
-        signature: Buffer.alloc(32),
+        signature: undefined,
         identityId: rawStateTransition.identityId,
         revision: rawStateTransition.revision,
         publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt,
@@ -163,7 +157,7 @@ describe('IdentityUpdateTransition', () => {
       expect(rawStateTransition).to.deep.equal({
         $version: '0',
         type: StateTransitionTypes.IdentityUpdate,
-        signature: Buffer.alloc(32),
+        signature: undefined,
         identityId: rawStateTransition.identityId,
         revision: rawStateTransition.revision,
         signaturePublicKeyId: 0,
@@ -178,10 +172,10 @@ describe('IdentityUpdateTransition', () => {
       expect(jsonStateTransition).to.deep.equal({
         $version: '0',
         type: StateTransitionTypes.IdentityUpdate,
-        signature: Buffer.alloc(32).toString('base64'),
+        signature: undefined,
         identityId: stateTransition.getIdentityId().toString(),
         revision: rawStateTransition.revision,
-        publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt,
+        publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt.getTime(),
         addPublicKeys: stateTransition.getPublicKeysToAdd().map((k) => k.toJSON()),
         disablePublicKeys: rawStateTransition.disablePublicKeys,
         signaturePublicKeyId: 0,

@@ -7,7 +7,7 @@ use crate::error::Error;
 use dpp::balances::total_credits_balance::TotalCreditsBalance;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
-use path::SubtreePath;
+use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Verify that the sum tree identity credits + pool credits + refunds are equal to the

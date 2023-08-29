@@ -1372,7 +1372,9 @@ proto.org.dash.platform.dapi.v0.Proof.toObject = function(includeInstance, msg) 
     grovedbProof: msg.getGrovedbProof_asB64(),
     quorumHash: msg.getQuorumHash_asB64(),
     signature: msg.getSignature_asB64(),
-    round: jspb.Message.getFieldWithDefault(msg, 4, 0)
+    round: jspb.Message.getFieldWithDefault(msg, 4, 0),
+    blockIdHash: msg.getBlockIdHash_asB64(),
+    quorumType: jspb.Message.getFieldWithDefault(msg, 6, 0)
   };
 
   if (includeInstance) {
@@ -1424,6 +1426,14 @@ proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader = function(msg
     case 4:
       var value = /** @type {number} */ (reader.readUint32());
       msg.setRound(value);
+      break;
+    case 5:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setBlockIdHash(value);
+      break;
+    case 6:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setQuorumType(value);
       break;
     default:
       reader.skipField();
@@ -1479,6 +1489,20 @@ proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter = function(message
   if (f !== 0) {
     writer.writeUint32(
       4,
+      f
+    );
+  }
+  f = message.getBlockIdHash_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      5,
+      f
+    );
+  }
+  f = message.getQuorumType();
+  if (f !== 0) {
+    writer.writeUint32(
+      6,
       f
     );
   }
@@ -1629,6 +1653,66 @@ proto.org.dash.platform.dapi.v0.Proof.prototype.setRound = function(value) {
 };
 
 
+/**
+ * optional bytes block_id_hash = 5;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.Proof.prototype.getBlockIdHash = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 5, ""));
+};
+
+
+/**
+ * optional bytes block_id_hash = 5;
+ * This is a type-conversion wrapper around `getBlockIdHash()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.Proof.prototype.getBlockIdHash_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getBlockIdHash()));
+};
+
+
+/**
+ * optional bytes block_id_hash = 5;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getBlockIdHash()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.Proof.prototype.getBlockIdHash_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getBlockIdHash()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.Proof} returns this
+ */
+proto.org.dash.platform.dapi.v0.Proof.prototype.setBlockIdHash = function(value) {
+  return jspb.Message.setProto3BytesField(this, 5, value);
+};
+
+
+/**
+ * optional uint32 quorum_type = 6;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.Proof.prototype.getQuorumType = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 6, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.Proof} returns this
+ */
+proto.org.dash.platform.dapi.v0.Proof.prototype.setQuorumType = function(value) {
+  return jspb.Message.setProto3IntField(this, 6, value);
+};
+
+
 
 
 
@@ -1664,7 +1748,8 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject = function(includeInst
     height: jspb.Message.getFieldWithDefault(msg, 1, 0),
     coreChainLockedHeight: jspb.Message.getFieldWithDefault(msg, 2, 0),
     timeMs: jspb.Message.getFieldWithDefault(msg, 3, 0),
-    protocolVersion: jspb.Message.getFieldWithDefault(msg, 4, 0)
+    protocolVersion: jspb.Message.getFieldWithDefault(msg, 4, 0),
+    chainId: jspb.Message.getFieldWithDefault(msg, 5, "")
   };
 
   if (includeInstance) {
@@ -1716,6 +1801,10 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader = f
     case 4:
       var value = /** @type {number} */ (reader.readUint32());
       msg.setProtocolVersion(value);
+      break;
+    case 5:
+      var value = /** @type {string} */ (reader.readString());
+      msg.setChainId(value);
       break;
     default:
       reader.skipField();
@@ -1771,6 +1860,13 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter = funct
   if (f !== 0) {
     writer.writeUint32(
       4,
+      f
+    );
+  }
+  f = message.getChainId();
+  if (f.length > 0) {
+    writer.writeString(
+      5,
       f
     );
   }
@@ -1846,6 +1942,24 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getProtocolVersion = 
  */
 proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setProtocolVersion = function(value) {
   return jspb.Message.setProto3IntField(this, 4, value);
+};
+
+
+/**
+ * optional string chain_id = 5;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getChainId = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 5, ""));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setChainId = function(value) {
+  return jspb.Message.setProto3StringField(this, 5, value);
 };
 
 
@@ -10088,8 +10202,8 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.toObject
 proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.toObject = function(includeInstance, msg) {
   var f, obj = {
     id: msg.getId_asB64(),
-    limit: jspb.Message.getFieldWithDefault(msg, 2, 0),
-    offset: jspb.Message.getFieldWithDefault(msg, 3, 0),
+    limit: (f = msg.getLimit()) && google_protobuf_wrappers_pb.UInt32Value.toObject(includeInstance, f),
+    offset: (f = msg.getOffset()) && google_protobuf_wrappers_pb.UInt32Value.toObject(includeInstance, f),
     startAtMs: jspb.Message.getFieldWithDefault(msg, 4, 0),
     prove: jspb.Message.getBooleanFieldWithDefault(msg, 5, false)
   };
@@ -10133,11 +10247,13 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.deserializeBinaryF
       msg.setId(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint32());
+      var value = new google_protobuf_wrappers_pb.UInt32Value;
+      reader.readMessage(value,google_protobuf_wrappers_pb.UInt32Value.deserializeBinaryFromReader);
       msg.setLimit(value);
       break;
     case 3:
-      var value = /** @type {number} */ (reader.readUint32());
+      var value = new google_protobuf_wrappers_pb.UInt32Value;
+      reader.readMessage(value,google_protobuf_wrappers_pb.UInt32Value.deserializeBinaryFromReader);
       msg.setOffset(value);
       break;
     case 4:
@@ -10185,17 +10301,19 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.serializeBinaryToW
     );
   }
   f = message.getLimit();
-  if (f !== 0) {
-    writer.writeUint32(
+  if (f != null) {
+    writer.writeMessage(
       2,
-      f
+      f,
+      google_protobuf_wrappers_pb.UInt32Value.serializeBinaryToWriter
     );
   }
   f = message.getOffset();
-  if (f !== 0) {
-    writer.writeUint32(
+  if (f != null) {
+    writer.writeMessage(
       3,
-      f
+      f,
+      google_protobuf_wrappers_pb.UInt32Value.serializeBinaryToWriter
     );
   }
   f = message.getStartAtMs();
@@ -10258,38 +10376,76 @@ proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.setId = 
 
 
 /**
- * optional uint32 limit = 2;
- * @return {number}
+ * optional google.protobuf.UInt32Value limit = 2;
+ * @return {?proto.google.protobuf.UInt32Value}
  */
 proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.getLimit = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+  return /** @type{?proto.google.protobuf.UInt32Value} */ (
+    jspb.Message.getWrapperField(this, google_protobuf_wrappers_pb.UInt32Value, 2));
 };
 
 
 /**
- * @param {number} value
+ * @param {?proto.google.protobuf.UInt32Value|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.setLimit = function(value) {
+  return jspb.Message.setWrapperField(this, 2, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
  * @return {!proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest} returns this
  */
-proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.setLimit = function(value) {
-  return jspb.Message.setProto3IntField(this, 2, value);
+proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.clearLimit = function() {
+  return this.setLimit(undefined);
 };
 
 
 /**
- * optional uint32 offset = 3;
- * @return {number}
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.hasLimit = function() {
+  return jspb.Message.getField(this, 2) != null;
+};
+
+
+/**
+ * optional google.protobuf.UInt32Value offset = 3;
+ * @return {?proto.google.protobuf.UInt32Value}
  */
 proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.getOffset = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 3, 0));
+  return /** @type{?proto.google.protobuf.UInt32Value} */ (
+    jspb.Message.getWrapperField(this, google_protobuf_wrappers_pb.UInt32Value, 3));
 };
 
 
 /**
- * @param {number} value
+ * @param {?proto.google.protobuf.UInt32Value|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.setOffset = function(value) {
+  return jspb.Message.setWrapperField(this, 3, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
  * @return {!proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest} returns this
  */
-proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.setOffset = function(value) {
-  return jspb.Message.setProto3IntField(this, 3, value);
+proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.clearOffset = function() {
+  return this.setOffset(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.prototype.hasOffset = function() {
+  return jspb.Message.getField(this, 3) != null;
 };
 
 

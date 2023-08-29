@@ -217,12 +217,14 @@ export class Platform {
     if (!this.dpp) {
       await Platform.initializeDppModule();
 
-      const bls = await getBlsAdapter();
-      const stateRepository = new StateRepository(this.client);
+      // TODO(versioning): restore
+      // @ts-ignore
+      // const bls = await getBlsAdapter();
+      // const stateRepository = new StateRepository(this.client);
 
       this.dpp = new DashPlatformProtocol(
-        bls,
-        stateRepository,
+        // bls,
+        // stateRepository,
         {
           generate: () => crypto.randomBytes(32),
         },

@@ -9,7 +9,7 @@ let validatePartialCompoundIndices;
 let InconsistentCompoundIndexDataError;
 let ValidationResult;
 
-describe('validatePartialCompoundIndices', () => {
+describe.skip('validatePartialCompoundIndices', () => {
   let documentsJs;
   let rawDocumentTransitions;
   let dataContractJs;

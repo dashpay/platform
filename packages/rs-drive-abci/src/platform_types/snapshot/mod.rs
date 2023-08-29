@@ -4,7 +4,7 @@ use drive::error::drive::DriveError;
 use drive::error::Error::{Drive, GroveDB};
 use drive::grovedb::GroveDb;
 use std::mem::take;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tenderdash_abci::proto::abci;
 use tenderdash_abci::proto::abci::response_offer_snapshot;
 
@@ -118,9 +118,9 @@ impl Manager {
         if height == 0 || height % self.freq != 0 {
             return Ok(());
         }
-        let mut checkpoint_path = self.checkpoints_path.to_owned();
-        checkpoint_path.push('/');
-        checkpoint_path.push_str(height.to_string().as_str());
+        let mut checkpoint_path: PathBuf = [self.checkpoints_path.clone(), height.to_string()]
+            .iter()
+            .collect();
         grove
             .create_checkpoint(&checkpoint_path)
             .map_err(|e| Error::Drive(GroveDB(e)))?;
@@ -133,7 +133,7 @@ impl Manager {
         let snapshot = Snapshot {
             height,
             version: 0,
-            path: checkpoint_path,
+            path: checkpoint_path.to_str().unwrap().to_string(),
             hash: root_hash as [u8; 32],
             metadata: vec![],
         };

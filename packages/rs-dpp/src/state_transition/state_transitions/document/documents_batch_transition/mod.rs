@@ -24,6 +24,8 @@ mod json_conversion;
 pub mod methods;
 mod state_transition_like;
 mod v0;
+#[cfg(feature = "validation")]
+mod validation;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;

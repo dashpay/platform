@@ -5,8 +5,8 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::{Element, TransactionArg};
+use grovedb_path::SubtreePath;
 use integer_encoding::VarInt;
-use path::SubtreePath;
 
 impl Drive {
     /// grove_get_direct_u64 is a helper function to get a

@@ -13,6 +13,39 @@ use dpp::identity::SecurityLevel;
 use std::collections::HashMap;
 
 impl Drive {
+    /// Adds estimation costs for authentication keys based on the security level in 
+    /// the key reference tree (version 0).
+    ///
+    /// This function provides a mechanism to estimate the costs of authentication keys 
+    /// in the key reference tree based on a given security level.
+    ///
+    /// # Parameters
+    ///
+    /// * `identity_id`: A 32-byte array representing the identity ID.
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap` that stores
+    ///   estimated layer information based on the key information path.
+    /// * `security_level`: The security level associated with the authentication keys.
+    ///
+    /// # Notes
+    ///
+    /// The function has a hardcoded estimation of `ApproximateElements(4)`, which implies 
+    /// an estimation that each security level will have approximately four keys.
+    /// This is a preliminary estimate and might be revisited in future versions or updates.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let drive = Drive::new(...); // Initialize Drive
+    /// let identity_id = [0u8; 32]; // Replace with actual identity ID
+    /// let mut estimated_info = HashMap::new(); // Estimated layer information map
+    /// let security_level = SecurityLevel::...; // Define the security level
+    ///
+    /// drive.add_estimation_costs_for_authentication_keys_security_level_in_key_reference_tree_v0(
+    ///     identity_id,
+    ///     &mut estimated_info,
+    ///     security_level,
+    /// );
+    /// ```
     pub(super) fn add_estimation_costs_for_authentication_keys_security_level_in_key_reference_tree_v0(
         identity_id: [u8; 32],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,

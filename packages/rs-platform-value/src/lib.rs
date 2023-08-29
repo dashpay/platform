@@ -1414,6 +1414,17 @@ where
     }
 }
 
+impl From<&BTreeMap<String, Value>> for Value {
+    fn from(value: &BTreeMap<String, Value>) -> Self {
+        Value::Map(
+            value
+                .iter()
+                .map(|(key, value)| (key.into(), value.clone()))
+                .collect(),
+        )
+    }
+}
+
 impl<T> From<BTreeMap<T, Value>> for Value
 where
     T: Into<Value>,
@@ -1448,6 +1459,12 @@ impl From<Option<Value>> for Value {
             None => Value::Null,
             Some(value) => value,
         }
+    }
+}
+
+impl From<&String> for Value {
+    fn from(value: &String) -> Self {
+        Value::Text(value.clone())
     }
 }
 
