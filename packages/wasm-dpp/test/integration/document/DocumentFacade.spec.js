@@ -5,15 +5,24 @@ const getDocumentsFixture = require('../../../lib/test/fixtures/js/getDocumentsF
 const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 const getDocumentTransitionsFixture = require('../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
-const { default: loadWasmDpp } = require('../../../dist');
+const {
+  ExtendedDocument,
+  DataContract,
+  Identifier,
+  ValidationResult,
+  DocumentsBatchTransition,
+  DashPlatformProtocol,
+  DataContractNotPresentError,
+} = require('../../../dist');
+const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
-let ExtendedDocument;
-let DataContract;
-let Identifier;
-let ValidationResult;
-let DocumentsBatchTransition;
-let DashPlatformProtocol;
-let DataContractNotPresentError;
+// let ExtendedDocument;
+// let DataContract;
+// let Identifier;
+// let ValidationResult;
+// let DocumentsBatchTransition;
+// let DashPlatformProtocol;
+// let DataContractNotPresentError;
 
 describe('DocumentFacade', () => {
   let dpp;
@@ -25,20 +34,17 @@ describe('DocumentFacade', () => {
   let stateRepositoryMock;
 
   beforeEach(async function beforeEach() {
-    ({
-      ExtendedDocument,
-      DataContract,
-      Identifier,
-      ValidationResult,
-      DocumentsBatchTransition,
-      DashPlatformProtocol,
-      DataContractNotPresentError,
-    } = await loadWasmDpp());
-
     const ownerIdJs = generateRandomIdentifier();
     ownerId = new Identifier(ownerIdJs.toBuffer());
     const dataContractJs = getDataContractFixture(ownerIdJs);
-    dataContract = new DataContract(dataContractJs.toObject());
+    const dataContractObject = dataContractJs.toObject();
+    dataContract = new DataContract({
+      $format_version: '0',
+      id: dataContractObject.$id,
+      version: 1,
+      ownerId: dataContractObject.ownerId,
+      documentSchemas: dataContractObject.documents,
+    });
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
