@@ -1,5 +1,6 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::document_factory::DocumentFactory;
+use platform_value::Bytes32;
 use platform_version::version::PlatformVersion;
 
 use crate::document::Document;
@@ -14,7 +15,7 @@ pub fn get_document_transitions_fixture<'a>(
     documents: impl IntoIterator<
         Item = (
             DocumentTransitionActionType,
-            Vec<(Document, DocumentTypeRef<'a>)>,
+            Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
         ),
     >,
 ) -> Vec<DocumentTransition> {
