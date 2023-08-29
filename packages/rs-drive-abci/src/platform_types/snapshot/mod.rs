@@ -11,6 +11,8 @@ const DEFAULT_FREQ: i64 = 3;
 
 const DEFAULT_NUMBER_OF_SNAPSHOTS: usize = 10;
 
+const CHUNK_SIZE_16MB: usize = 16 * 1024 * 1024;
+
 /// Snapshot entity
 #[derive(Clone, Encode, Decode, PartialEq, Debug)]
 pub struct Snapshot {
@@ -128,6 +130,10 @@ impl Manager {
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?;
         Ok(())
+    }
+
+    pub(crate) fn load_snapshot_chunk(&self, grove: &GroveDb, chunk_id: string) -> Result<Vec<u8>, Error> {
+        grove.get_chunk(chunk_id, Some(CHUNK_SIZE_16MB)).map_err(|e| Error::Drive(GroveDB(e)))
     }
 }
 

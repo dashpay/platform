@@ -52,6 +52,7 @@ use tenderdash_abci::proto::abci::{
     ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
     ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
+    RequestLoadSnapshotChunk, ResponseLoadSnapshotChunk,
 };
 use tenderdash_abci::proto::types::VoteExtensionType;
 
@@ -746,6 +747,32 @@ where
 
         Ok(response)
     }
+
+    fn load_snapshot_chunk(
+        &self,
+        request: RequestLoadSnapshotChunk,
+    ) -> Result<ResponseLoadSnapshotChunk, ResponseException> {
+        let mut manager = self.snapshot_manager.borrow_mut();
+        match manager.as_mut() {
+            Some(manager) => {
+                tracing::debug!("Loading snapshot chunk");
+                match manager.load_snapshot_chunk(
+                    &self.platform.drive.grove,
+                    request.chunk_id,
+                ) {
+                    Ok(result) => Ok(ResponseLoadSnapshotChunk {
+                        chunk: result,
+                    }),
+                    Err(e) => Err(ResponseException::from(e)),
+                }
+            }
+            None => {
+                tracing::warn!("Snapshot manager is not configured");
+                Ok(Default::default())
+            }
+        }
+    }
+
 }
 //
 // #[cfg(test)]
