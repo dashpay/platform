@@ -20,9 +20,9 @@ module.exports = async function getDocumentsFixture(
     dataContract = await getDataContractFixture();
   }
 
-  ({ DocumentFactory, DocumentValidator, ProtocolVersionValidator } = await loadWasmDpp());
+  ({ DocumentFactory } = await loadWasmDpp());
 
-  const documentValidator = new DocumentValidator(new ProtocolVersionValidator());
+  // const documentValidator = new DocumentValidator(new ProtocolVersionValidator());
   const entropyGenerator = {
     generate() {
       return crypto.randomBytes(32);

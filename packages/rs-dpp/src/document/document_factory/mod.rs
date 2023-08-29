@@ -36,13 +36,13 @@ pub enum DocumentFactory {
 
 impl DocumentFactory {
     /// Create a new document factory knowing versions
-    pub fn new(protocol_version: u32, data_contract: DataContract) -> Result<Self, ProtocolError> {
+    pub fn new(protocol_version: u32) -> Result<Self, ProtocolError> {
         let platform_version = PlatformVersion::get(protocol_version)?;
         match platform_version
             .platform_architecture
             .document_factory_structure_version
         {
-            0 => Ok(DocumentFactoryV0::new(protocol_version, data_contract).into()),
+            0 => Ok(DocumentFactoryV0::new(protocol_version).into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentFactory::new".to_string(),
                 known_versions: vec![0],
@@ -53,7 +53,6 @@ impl DocumentFactory {
 
     pub fn new_with_entropy_generator(
         protocol_version: u32,
-        data_contract: DataContract,
         entropy_generator: Box<dyn EntropyGenerator>,
     ) -> Result<Self, ProtocolError> {
         let platform_version = PlatformVersion::get(protocol_version)?;
@@ -63,7 +62,6 @@ impl DocumentFactory {
         {
             0 => Ok(DocumentFactoryV0::new_with_entropy_generator(
                 protocol_version,
-                data_contract,
                 entropy_generator,
             )
             .into()),
@@ -75,33 +73,31 @@ impl DocumentFactory {
         }
     }
 
-    pub fn data_contract(&self) -> &DataContract {
-        match self {
-            DocumentFactory::V0(v0) => &v0.data_contract,
-        }
-    }
-
     pub fn create_document(
         &self,
+        data_contract: &DataContract,
         owner_id: Identifier,
         document_type_name: String,
         data: Value,
     ) -> Result<Document, ProtocolError> {
         match self {
-            DocumentFactory::V0(v0) => v0.create_document(owner_id, document_type_name, data),
+            DocumentFactory::V0(v0) => {
+                v0.create_document(data_contract, owner_id, document_type_name, data)
+            }
         }
     }
 
     #[cfg(feature = "extended-document")]
     pub fn create_extended_document(
         &self,
+        data_contract: &DataContract,
         owner_id: Identifier,
         document_type_name: String,
         data: Value,
     ) -> Result<ExtendedDocument, ProtocolError> {
         match self {
             DocumentFactory::V0(v0) => {
-                v0.create_extended_document(owner_id, document_type_name, data)
+                v0.create_extended_document(data_contract, owner_id, document_type_name, data)
             }
         }
     }
@@ -118,6 +114,23 @@ impl DocumentFactory {
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         match self {
             DocumentFactory::V0(v0) => v0.create_state_transition(documents_iter),
+        }
+    }
+
+    pub fn create_extended_from_document_buffer(
+        &self,
+        buffer: &[u8],
+        document_type_name: &str,
+        data_contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<ExtendedDocument, ProtocolError> {
+        match self {
+            DocumentFactory::V0(v0) => v0.create_extended_from_document_buffer(
+                buffer,
+                document_type_name,
+                data_contract,
+                platform_version,
+            ),
         }
     }
 }

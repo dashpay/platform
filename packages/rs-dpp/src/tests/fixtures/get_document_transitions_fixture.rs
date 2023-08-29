@@ -19,9 +19,8 @@ pub fn get_document_transitions_fixture<'a>(
     >,
 ) -> Vec<DocumentTransition> {
     let protocol_version = PlatformVersion::latest().protocol_version;
-    let data_contract = get_data_contract_fixture(None, protocol_version).data_contract_owned();
-    let document_factory = DocumentFactory::new(protocol_version, data_contract.clone())
-        .expect("expected to get document factory");
+    let document_factory =
+        DocumentFactory::new(protocol_version).expect("expected to get document factory");
 
     document_factory
         .create_state_transition(documents)

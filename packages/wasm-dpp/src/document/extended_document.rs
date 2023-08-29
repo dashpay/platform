@@ -86,7 +86,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=setId)]
     pub fn set_id(&mut self, js_id: IdentifierWrapper) {
-        self.0.document().set_id(js_id.into());
+        self.0.document_mut().set_id(js_id.into());
     }
 
     #[wasm_bindgen(js_name=getType)]
@@ -123,7 +123,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=setOwnerId)]
     pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
-        self.0.document().set_owner_id(owner_id.into());
+        self.0.document_mut().set_owner_id(owner_id.into());
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -134,7 +134,9 @@ impl ExtendedDocumentWasm {
     #[wasm_bindgen(js_name=setRevision)]
     pub fn set_revision(&mut self, rev: Option<u32>) {
         // TODO: js feeds Number (u32). Is casting revision to u64 safe?
-        self.0.document().set_revision(rev.map(|r| r as Revision));
+        self.0
+            .document_mut()
+            .set_revision(rev.map(|r| r as Revision));
     }
 
     #[wasm_bindgen(js_name=getRevision)]
@@ -163,7 +165,7 @@ impl ExtendedDocumentWasm {
     #[wasm_bindgen(js_name=setData)]
     pub fn set_data(&mut self, d: JsValue) -> Result<(), JsValue> {
         let properties_as_value = d.with_serde_to_platform_value()?;
-        self.0.document().set_properties(
+        self.0.document_mut().set_properties(
             properties_as_value
                 .into_btree_string_map()
                 .map_err(ProtocolError::ValueError)
@@ -227,24 +229,16 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=setCreatedAt)]
     pub fn set_created_at(&mut self, ts: Option<js_sys::Date>) {
-        if let Some(ts) = ts {
-            self.0
-                .document()
-                .set_created_at(Some(ts.get_time() as TimestampMillis));
-        } else {
-            self.0.document().set_created_at(None);
-        }
+        self.0
+            .document_mut()
+            .set_created_at(ts.map(|t| t.get_time() as TimestampMillis));
     }
 
     #[wasm_bindgen(js_name=setUpdatedAt)]
     pub fn set_updated_at(&mut self, ts: Option<js_sys::Date>) {
-        if let Some(ts) = ts {
-            self.0
-                .document()
-                .set_updated_at(Some(ts.get_time() as TimestampMillis));
-        } else {
-            self.0.document().set_updated_at(None);
-        }
+        self.0
+            .document_mut()
+            .set_updated_at(ts.map(|t| t.get_time() as TimestampMillis));
     }
 
     #[wasm_bindgen(js_name=getCreatedAt)]
