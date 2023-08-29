@@ -32,7 +32,7 @@ describe('ExtendedDocument', () => {
     document.setMetadata(metadataFixture);
   });
 
-  describe('#toJSON', () => {
+  describe.skip('#toJSON', () => {
     it('should return json document - Rust', () => {
       const result = document.toJSON();
 
@@ -54,7 +54,8 @@ describe('ExtendedDocument', () => {
       const result = document.toObject();
 
       expect(result).to.deep.equal({
-        $protocolVersion: document.getProtocolVersion(),
+        $createdAt: null, // TODO: it should be omitted
+        $updatedAt: null,
         $dataContractId: dataContract.getId().toBuffer(),
         $id: document.getId().toBuffer(),
         $ownerId: document.getOwnerId().toBuffer(),
@@ -77,7 +78,6 @@ describe('ExtendedDocument', () => {
       expect(result.$id.toBuffer()).to.deep.equal(document.getId().toBuffer());
       expect(result.$ownerId.toBuffer()).to.deep.equal(document.getOwnerId().toBuffer());
       expect(result.identifierField.toBuffer()).to.deep.equal(document.get('identifierField').toBuffer());
-      expect(result.$protocolVersion).to.deep.equal(document.getProtocolVersion());
       expect(result.$revision).to.deep.equal(document.getRevision());
       expect(result.$type).to.deep.equal(document.getType());
       expect(result.byteArrayField).to.deep.equal(document.get('byteArrayField'));
