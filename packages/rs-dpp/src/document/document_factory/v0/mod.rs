@@ -161,32 +161,32 @@ impl DocumentFactoryV0 {
         documents_iter: impl IntoIterator<
             Item = (
                 DocumentTransitionActionType,
-                Vec<(Document, DocumentTypeRef<'a>)>,
+                Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
             ),
         >,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
         let documents: Vec<(
             DocumentTransitionActionType,
-            Vec<(Document, DocumentTypeRef)>,
+            Vec<(Document, DocumentTypeRef, Bytes32)>,
         )> = documents_iter.into_iter().collect();
         let mut flattened_documents_iter = documents.iter().flat_map(|(_, v)| v).peekable();
 
-        let Some((first_document, _)) = flattened_documents_iter.peek() else {
+        let Some((first_document, _, _)) = flattened_documents_iter.peek() else {
             return Err(DocumentError::NoDocumentsSuppliedError.into());
         };
 
         let owner_id = first_document.owner_id();
 
         let is_the_same_owner =
-            flattened_documents_iter.all(|(document, _)| document.owner_id() == owner_id);
+            flattened_documents_iter.all(|(document, _, _)| document.owner_id() == owner_id);
         if !is_the_same_owner {
             return Err(DocumentError::MismatchOwnerIdsError {
                 documents: documents
                     .into_iter()
                     .flat_map(|(_, v)| {
                         v.into_iter()
-                            .map(|(document, _)| document)
+                            .map(|(document, _, _)| document)
                             .collect::<Vec<_>>()
                     })
                     .collect(),
@@ -198,15 +198,22 @@ impl DocumentFactoryV0 {
             .into_iter()
             .map(|(action, documents)| match action {
                 DocumentTransitionActionType::Create => {
-                    let entropy = self.entropy_generator.generate()?;
-                    Self::document_create_transitions(documents, entropy, platform_version)
+                    Self::document_create_transitions(documents, platform_version)
                 }
-                DocumentTransitionActionType::Delete => {
-                    Self::document_delete_transitions(documents, platform_version)
-                }
-                DocumentTransitionActionType::Replace => {
-                    Self::document_replace_transitions(documents, platform_version)
-                }
+                DocumentTransitionActionType::Delete => Self::document_delete_transitions(
+                    documents
+                        .into_iter()
+                        .map(|(document, document_type, _)| (document, document_type))
+                        .collect(),
+                    platform_version,
+                ),
+                DocumentTransitionActionType::Replace => Self::document_replace_transitions(
+                    documents
+                        .into_iter()
+                        .map(|(document, document_type, _)| (document, document_type))
+                        .collect(),
+                    platform_version,
+                ),
             })
             .collect::<Result<Vec<_>, ProtocolError>>()?
             .into_iter()
@@ -319,13 +326,12 @@ impl DocumentFactoryV0 {
     // // }
     //
     fn document_create_transitions(
-        documents: Vec<(Document, DocumentTypeRef)>,
-        entropy: [u8; 32],
+        documents: Vec<(Document, DocumentTypeRef, Bytes32)>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
             .into_iter()
-            .map(|(document, document_type)| {
+            .map(|(document, document_type, entropy)| {
                 if document_type.documents_mutable() {
                     //we need to have revisions
                     let Some(revision) = document.revision() else {
@@ -343,7 +349,7 @@ impl DocumentFactoryV0 {
                 Ok(DocumentCreateTransition::from_document(
                     document,
                     document_type,
-                    entropy,
+                    entropy.to_buffer(),
                     platform_version,
                     None,
                     None,
