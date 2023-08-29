@@ -132,8 +132,14 @@ impl Manager {
         Ok(())
     }
 
-    pub(crate) fn load_snapshot_chunk(&self, grove: &GroveDb, chunk_id: string) -> Result<Vec<u8>, Error> {
-        grove.get_chunk(chunk_id, Some(CHUNK_SIZE_16MB)).map_err(|e| Error::Drive(GroveDB(e)))
+    pub(crate) fn load_snapshot_chunk(
+        &self,
+        grove: &GroveDb,
+        chunk_id: string,
+    ) -> Result<Vec<u8>, Error> {
+        grove
+            .get_chunk(chunk_id, Some(CHUNK_SIZE_16MB))
+            .map_err(|e| Error::Drive(GroveDB(e)))
     }
 }
 

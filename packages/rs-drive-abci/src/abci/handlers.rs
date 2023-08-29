@@ -49,10 +49,10 @@ use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{self as proto, ExtendVoteExtension, ResponseException};
 use tenderdash_abci::proto::abci::{
-    ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
-    RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
-    ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
-    RequestLoadSnapshotChunk, ResponseLoadSnapshotChunk,
+    ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestLoadSnapshotChunk,
+    RequestPrepareProposal, RequestProcessProposal, RequestQuery, ResponseCheckTx,
+    ResponseFinalizeBlock, ResponseInitChain, ResponseLoadSnapshotChunk, ResponsePrepareProposal,
+    ResponseProcessProposal, ResponseQuery, TxRecord,
 };
 use tenderdash_abci::proto::types::VoteExtensionType;
 
@@ -756,13 +756,8 @@ where
         match manager.as_mut() {
             Some(manager) => {
                 tracing::debug!("Loading snapshot chunk");
-                match manager.load_snapshot_chunk(
-                    &self.platform.drive.grove,
-                    request.chunk_id,
-                ) {
-                    Ok(result) => Ok(ResponseLoadSnapshotChunk {
-                        chunk: result,
-                    }),
+                match manager.load_snapshot_chunk(&self.platform.drive.grove, request.chunk_id) {
+                    Ok(result) => Ok(ResponseLoadSnapshotChunk { chunk: result }),
                     Err(e) => Err(ResponseException::from(e)),
                 }
             }
@@ -772,7 +767,6 @@ where
             }
         }
     }
-
 }
 //
 // #[cfg(test)]
