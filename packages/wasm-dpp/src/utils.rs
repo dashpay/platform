@@ -297,6 +297,8 @@ pub(crate) fn consensus_errors_from_buffers(
             )
             .to_vec()
         })
-        .map(|error_bytes| ConsensusError::deserialize(&error_bytes.to_vec()).with_js_error())
+        .map(|error_bytes| {
+            ConsensusError::deserialize_from_bytes(&error_bytes.to_vec()).with_js_error()
+        })
         .collect::<Result<Vec<ConsensusError>, JsValue>>()
 }

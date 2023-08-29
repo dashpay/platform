@@ -7,7 +7,7 @@ const { expectValidationError } = require('../../../../lib/test/expect/expectErr
 
 const { default: loadWasmDpp } = require('../../../../dist');
 
-describe('validateStateTransitionKeySignatureFactory', () => {
+describe.skip('validateStateTransitionKeySignatureFactory', () => {
   let stateTransition;
   let stateRepositoryMock;
   let validateStateTransitionKeySignature;

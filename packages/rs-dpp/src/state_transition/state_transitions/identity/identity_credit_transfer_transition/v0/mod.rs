@@ -63,8 +63,9 @@ mod test {
     ) where
         <T as PlatformSerializable>::Error: std::fmt::Debug,
     {
-        let serialized = T::serialize(&transition).expect("expected to serialize");
-        let deserialized = T::deserialize(serialized.as_slice()).expect("expected to deserialize");
+        let serialized = T::serialize_to_bytes(&transition).expect("expected to serialize");
+        let deserialized =
+            T::deserialize_from_bytes(serialized.as_slice()).expect("expected to deserialize");
         assert_eq!(transition, deserialized);
     }
 

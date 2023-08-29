@@ -3,7 +3,7 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
-use syn::{parse_macro_input, Attribute, Data, DeriveInput, Fields, Ident, LitInt, LitStr, Type};
+use syn::{parse_macro_input, Attribute, Data, DeriveInput, Ident, LitStr};
 #[proc_macro_derive(
     PlatformVersioned,
     attributes(platform_version_path, platform_version_path_bounds)

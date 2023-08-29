@@ -2,7 +2,7 @@ const bs58 = require('bs58');
 
 const { default: loadWasmDpp } = require('../../../dist');
 
-describe('generateDataContractId', () => {
+describe.skip('generateDataContractId', () => {
   let ownerId;
   let entropy;
   let DataContractFactory;

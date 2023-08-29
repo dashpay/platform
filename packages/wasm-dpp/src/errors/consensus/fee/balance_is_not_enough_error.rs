@@ -4,6 +4,8 @@ use dpp::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::serialization::PlatformSerializable;
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
+use dpp::version::PlatformVersion;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=BalanceIsNotEnoughError)]
@@ -44,5 +46,14 @@ impl BalanceIsNotEnoughErrorWasm {
     #[wasm_bindgen(getter)]
     pub fn message(&self) -> String {
         self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize_to_bytes_with_platform_version(PlatformVersion::first())
+            .map_err(JsError::from)?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

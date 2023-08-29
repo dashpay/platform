@@ -29,7 +29,7 @@
 
 //! Deterministic Root Hash Tests
 
-use path::SubtreePath;
+use grovedb_path::SubtreePath;
 
 #[cfg(feature = "full")]
 use std::borrow::Cow;

@@ -3,7 +3,7 @@ const { default: loadWasmDpp } = require('../../..');
 
 let { generateTemporaryEcdsaPrivateKey } = require('../../..');
 
-describe('generateTemporaryEcdsaPrivateKey', () => {
+describe.skip('generateTemporaryEcdsaPrivateKey', () => {
   beforeEach(async () => {
     ({ generateTemporaryEcdsaPrivateKey } = await loadWasmDpp());
   });

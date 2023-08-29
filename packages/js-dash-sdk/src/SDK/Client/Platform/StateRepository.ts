@@ -1,3 +1,5 @@
+// TODO(versioning): restore
+// @ts-ignore
 import { DataContract, Identity, Identifier } from '@dashevo/wasm-dpp';
 import Client from '../Client';
 

@@ -1,19 +1,22 @@
 //todo: move this file to transition
 use dpp::dashcore::anyhow;
-use serde_json::Value as JsonValue;
 use dpp::platform_value::{BinaryData, ReplacementType, Value};
-use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-pub use serde::{Deserialize, Serialize};
-use std::convert::{TryFrom, TryInto};
-use wasm_bindgen::prelude::*;
 use dpp::serialization::ValueConvertible;
-use dpp::state_transition::public_key_in_creation::accessors::{IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters};
+use dpp::state_transition::public_key_in_creation::accessors::{
+    IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
+};
 use dpp::state_transition::public_key_in_creation::v0::BINARY_DATA_FIELDS;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use js_sys::Reflect::delete_property;
+pub use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+use std::convert::TryInto;
+use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
 use crate::utils::WithJsError;
 use crate::{buffer::Buffer, utils, with_js_error};
-
+use dpp::version::PlatformVersion;
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct ToObjectOptions {
@@ -27,21 +30,13 @@ pub struct IdentityPublicKeyWithWitnessWasm(IdentityPublicKeyInCreation);
 #[wasm_bindgen(js_class = IdentityPublicKeyWithWitness)]
 impl IdentityPublicKeyWithWitnessWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyWithWitnessWasm, JsValue> {
-        let public_key_json_string = utils::stringify(&raw_public_key)?;
-        let public_key_json: JsonValue =
-            serde_json::from_str(&public_key_json_string).map_err(|e| e.to_string())?;
+    pub fn new(platform_version: u32) -> Result<IdentityPublicKeyWithWitnessWasm, JsValue> {
+        let platform_version =
+            &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        let mut public_key_platform_value: Value = public_key_json.into();
-        public_key_platform_value.replace_at_paths(
-            BINARY_DATA_FIELDS,
-            ReplacementType::TextBase64
-        ).map_err(|e| e.to_string())?;
-
-        let raw_public_key: IdentityPublicKeyInCreation =
-            IdentityPublicKeyInCreation::from_object(public_key_platform_value).map_err(|e| e.to_string())?;
-
-        Ok(IdentityPublicKeyWithWitnessWasm(raw_public_key))
+        IdentityPublicKeyInCreation::default_versioned(&platform_version)
+            .map(Into::into)
+            .map_err(from_dpp_err)
     }
 
     #[wasm_bindgen(js_name=getId)]
@@ -61,9 +56,11 @@ impl IdentityPublicKeyWithWitnessWasm {
 
     #[wasm_bindgen(js_name=setType)]
     pub fn set_type(&mut self, key_type: u8) -> Result<(), JsValue> {
-        self.0.set_type(key_type
-            .try_into()
-            .map_err(|e: anyhow::Error| e.to_string())?);
+        self.0.set_type(
+            key_type
+                .try_into()
+                .map_err(|e: anyhow::Error| e.to_string())?,
+        );
         Ok(())
     }
 
@@ -80,9 +77,11 @@ impl IdentityPublicKeyWithWitnessWasm {
 
     #[wasm_bindgen(js_name=setPurpose)]
     pub fn set_purpose(&mut self, purpose: u8) -> Result<(), JsValue> {
-        self.0.set_purpose(purpose
-            .try_into()
-            .map_err(|e: anyhow::Error| e.to_string())?);
+        self.0.set_purpose(
+            purpose
+                .try_into()
+                .map_err(|e: anyhow::Error| e.to_string())?,
+        );
         Ok(())
     }
 
@@ -93,9 +92,11 @@ impl IdentityPublicKeyWithWitnessWasm {
 
     #[wasm_bindgen(js_name=setSecurityLevel)]
     pub fn set_security_level(&mut self, security_level: u8) -> Result<(), JsValue> {
-        self.0.set_security_level(security_level
-            .try_into()
-            .map_err(|e: anyhow::Error| e.to_string())?);
+        self.0.set_security_level(
+            security_level
+                .try_into()
+                .map_err(|e: anyhow::Error| e.to_string())?,
+        );
         Ok(())
     }
 
@@ -176,6 +177,10 @@ impl IdentityPublicKeyWithWitnessWasm {
                 &JsValue::from_str("signature"),
                 &JsValue::from(signature_buffer),
             )?;
+        } else {
+            let js_object = js_sys::Object::from(js_object);
+            delete_property(&js_object, &JsValue::from_str("signature"))?;
+            return Ok(js_object.into());
         }
 
         Ok(js_object)

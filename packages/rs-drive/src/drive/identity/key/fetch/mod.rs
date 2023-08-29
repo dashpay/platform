@@ -182,7 +182,7 @@ fn element_to_identity_public_key(element: Element) -> Result<IdentityPublicKey,
         )))
     };
 
-    IdentityPublicKey::deserialize(value.as_slice()).map_err(Error::Protocol)
+    IdentityPublicKey::deserialize_from_bytes(value.as_slice()).map_err(Error::Protocol)
 }
 
 #[cfg(feature = "full")]

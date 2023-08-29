@@ -232,7 +232,7 @@ impl Strategy {
             if let OperationType::Document(doc_op) = &op.op_type {
                 let serialize = doc_op
                     .contract
-                    .serialize_with_platform_version(platform_version)
+                    .serialize_to_bytes_with_platform_version(platform_version)
                     .expect("expected to serialize");
                 drive
                     .apply_contract_with_serialization(
@@ -384,6 +384,8 @@ impl Strategy {
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut operations = vec![];
         let mut finalize_block_operations = vec![];
+        let mut replaced = vec![];
+        let mut deleted = vec![];
         for op in &self.operations {
             if op.frequency.check_hit(rng) {
                 let count = rng.gen_range(op.frequency.times_per_block_range.clone());
@@ -483,8 +485,14 @@ impl Strategy {
                             .expect("expect to execute query")
                             .documents_owned();
 
+                        items.retain(|item| !deleted.contains(&item.id()));
+
+                        items.retain(|item| !replaced.contains(&item.id()));
+
                         if !items.is_empty() {
                             let document = items.remove(0);
+
+                            deleted.push(document.id());
 
                             //todo: fix this into a search key request for the following
                             //let search_key_request = BTreeMap::from([(Purpose::AUTHENTICATION as u8, BTreeMap::from([(SecurityLevel::HIGH as u8, AllKeysOfKindRequest)]))]);
@@ -561,8 +569,14 @@ impl Strategy {
                             .expect("expect to execute query")
                             .documents_owned();
 
+                        items.retain(|item| !deleted.contains(&item.id()));
+
+                        items.retain(|item| !replaced.contains(&item.id()));
+
                         if !items.is_empty() {
                             let document = items.remove(0);
+
+                            replaced.push(document.id());
 
                             //todo: fix this into a search key request for the following
                             //let search_key_request = BTreeMap::from([(Purpose::AUTHENTICATION as u8, BTreeMap::from([(SecurityLevel::HIGH as u8, AllKeysOfKindRequest)]))]);

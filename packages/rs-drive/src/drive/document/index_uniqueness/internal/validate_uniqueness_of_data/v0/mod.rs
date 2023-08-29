@@ -15,7 +15,25 @@ use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
 impl Drive {
-    /// Internal method validating uniqueness
+    /// Validates the uniqueness of data for version 0.
+    ///
+    /// This method checks if a given data, within the context of its associated contract and
+    /// document type, is unique. If an index is not flagged as unique, it is considered non-problematic.
+    /// If all required fields for uniqueness are present and the data is found to be unique,
+    /// it returns a successful validation result.
+    ///
+    /// # Arguments
+    ///
+    /// * `request`: The data and related metadata to be checked for uniqueness.
+    /// * `transaction`: The transaction associated with this check.
+    /// * `platform_version`: The version of the platform being used.
+    ///
+    /// # Returns
+    ///
+    /// A `Result<SimpleConsensusValidationResult, Error>`, which either:
+    ///
+    /// * Contains a validation result indicating if the data is unique or not, or
+    /// * An error that occurred during the operation.
     pub(super) fn validate_uniqueness_of_data_v0(
         &self,
         request: UniquenessOfDataRequest,

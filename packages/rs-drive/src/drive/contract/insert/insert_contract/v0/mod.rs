@@ -42,7 +42,7 @@ impl Drive {
         };
 
         let contract_element = Element::Item(
-            contract.serialize_with_platform_version(platform_version)?,
+            contract.serialize_to_bytes_with_platform_version(platform_version)?,
             StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
         );
 

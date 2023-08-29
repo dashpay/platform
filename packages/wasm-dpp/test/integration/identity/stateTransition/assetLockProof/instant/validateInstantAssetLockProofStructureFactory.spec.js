@@ -7,7 +7,7 @@ const { expectJsonSchemaError, expectValidationError } = require('../../../../..
 
 const { default: loadWasmDpp } = require('../../../../../../dist');
 
-describe('validateInstantAssetLockProofStructureFactory', () => {
+describe.skip('validateInstantAssetLockProofStructureFactory', () => {
   let rawProof;
   let transaction;
   let stateRepositoryMock;

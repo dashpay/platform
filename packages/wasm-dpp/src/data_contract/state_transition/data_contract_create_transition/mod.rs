@@ -1,33 +1,28 @@
-mod apply;
-mod validation;
+// mod validation;
 
 use std::collections::HashMap;
 
-pub use apply::*;
-pub use validation::*;
+// pub use validation::*;
 
-use dpp::consensus::signature::SignatureError;
-use dpp::consensus::ConsensusError;
-use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
-use dpp::state_transition::StateTransition;
-use dpp::{
-    data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
-    platform_value,
-    state_transition::{
-        StateTransitionFieldTypes, StateTransitionIdentitySignedV0, StateTransitionLike,
-    },
-    ProtocolError,
-};
-use serde::{Deserialize, Serialize};
+use crate::errors::protocol_error::from_protocol_error;
+use dpp::data_contract::JsonValue;
+use dpp::platform_value::Value;
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::StateTransitionIdentitySigned;
+use dpp::state_transition::{JsonStateTransitionSerializationOptions, StateTransitionJsonConvert};
+use dpp::state_transition::{StateTransition, StateTransitionValueConvert};
+use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
+use dpp::{state_transition::StateTransitionLike, ProtocolError};
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-use crate::errors::protocol_error::from_protocol_error;
-use crate::utils::WithJsError;
-use crate::{
-    buffer::Buffer, identifier::IdentifierWrapper, with_js_error, DataContractParameters,
-    DataContractWasm, IdentityPublicKeyWasm,
-};
+use crate::data_contract::DataContractWasm;
+use crate::identity::IdentityPublicKeyWasm;
+use crate::utils::{ToSerdeJSONExt, WithJsError};
+use crate::{buffer::Buffer, identifier::IdentifierWrapper, with_js_error};
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name=DataContractCreateTransition)]
@@ -45,49 +40,32 @@ impl From<DataContractCreateTransitionWasm> for DataContractCreateTransition {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DataContractCreateTransitionParameters {
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    data_contract: Option<DataContractParameters>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    entropy: Option<Vec<u8>>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    signature: Option<Vec<u8>>,
-    #[serde(flatten)]
-    extra: HashMap<String, serde_json::Value>,
-}
-
 #[wasm_bindgen(js_class=DataContractCreateTransition)]
 impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_parameters: JsValue) -> Result<DataContractCreateTransitionWasm, JsValue> {
-        let parameters: DataContractCreateTransitionParameters =
-            with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
-        let transition_object = platform_value::to_value(parameters)
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
-        DataContractCreateTransition::from_object(transition_object)
-            .map(Into::into)
-            .with_js_error()
+    pub fn new(value: JsValue) -> Result<DataContractCreateTransitionWasm, JsValue> {
+        let platform_value = PlatformVersion::first();
+
+        DataContractCreateTransition::from_object(
+            value.with_serde_to_platform_value()?,
+            platform_value,
+        )
+        .map(Into::into)
+        .with_js_error()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
     pub fn get_data_contract(&self) -> DataContractWasm {
-        self.0.data_contract().clone().into()
+        DataContractWasm::try_from_serialization_format(self.0.data_contract().clone(), false)
+            .expect("should convert from serialziation format")
     }
 
-    #[wasm_bindgen(js_name=setDataContractConfig)]
-    pub fn set_data_contract_config(&mut self, config: JsValue) -> Result<(), JsValue> {
-        let res = serde_wasm_bindgen::from_value(config);
-        self.0.data_contract.config = res.unwrap();
-        Ok(())
-    }
-
-    #[wasm_bindgen(js_name=getProtocolVersion)]
-    pub fn get_protocol_version(&self) -> u32 {
-        self.0.state_transition_protocol_version()
-    }
+    // #[wasm_bindgen(js_name=setDataContractConfig)]
+    // pub fn set_data_contract_config(&mut self, config: JsValue) -> Result<(), JsValue> {
+    //     let res = serde_wasm_bindgen::from_value(config);
+    //     self.0.data_contract.config = res.unwrap();
+    //     Ok(())
+    // }
 
     #[wasm_bindgen(js_name=getEntropy)]
     pub fn get_entropy(&self) -> Buffer {
@@ -96,37 +74,43 @@ impl DataContractCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        (*self.0.get_owner_id()).into()
+        self.0.owner_id().into()
     }
 
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> u32 {
         self.0.state_transition_type() as u32
     }
-
-    #[wasm_bindgen(js_name=toJSON)]
-    pub fn to_json(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        Ok(self
-            .0
-            .to_json(skip_signature.unwrap_or(false))
-            .with_js_error()?
-            .serialize(&serializer)
-            .expect("JSON is a valid object"))
-    }
+    //
+    // #[wasm_bindgen(js_name=toJSON)]
+    // pub fn to_json(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
+    //     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    //
+    //     let options = JsonStateTransitionSerializationOptions {
+    //         skip_signature: skip_signature.unwrap_or(false),
+    //         ..Default::default()
+    //     };
+    //
+    //     let platform_version = PlatformVersion::first();
+    //
+    //     let json: Value = self.0.to_json(options).with_js_error()?.into();
+    //
+    //     Ok(json.serialize(&serializer).expect("JSON is a valid object"))
+    // }
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes =
-            PlatformSerializable::serialize(&StateTransition::DataContractCreate(self.0.clone()))
-                .with_js_error()?;
+        let bytes = PlatformSerializable::serialize_to_bytes(&StateTransition::DataContractCreate(
+            self.0.clone(),
+        ))
+        .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
     #[wasm_bindgen(js_name=fromBuffer)]
     pub fn from_buffer(buffer: Vec<u8>) -> Result<DataContractCreateTransitionWasm, JsValue> {
         let state_transition: StateTransition =
-            PlatformDeserializable::deserialize(&buffer).with_js_error()?;
+            PlatformDeserializable::deserialize_from_bytes(&buffer).with_js_error()?;
         match state_transition {
             StateTransition::DataContractCreate(dct) => Ok(dct.into()),
             _ => Err(JsValue::from_str("Invalid state transition type")),
@@ -163,9 +147,10 @@ impl DataContractCreateTransitionWasm {
             .0
             .to_cleaned_object(skip_signature.unwrap_or(false))
             .map_err(from_protocol_error)?;
-        serde_object
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| e.into())
+
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+
+        serde_object.serialize(&serializer).map_err(|e| e.into())
     }
 
     #[wasm_bindgen]
@@ -176,40 +161,49 @@ impl DataContractCreateTransitionWasm {
         bls: JsBlsAdapter,
     ) -> Result<(), JsValue> {
         let bls_adapter = BlsAdapter(bls);
-
-        self.0
+        // TODO: come up with a better way to set signature to the binding.
+        let mut state_transition = StateTransition::DataContractCreate(self.0.clone());
+        state_transition
             .sign(
                 &identity_public_key.to_owned().into(),
                 &private_key,
                 &bls_adapter,
             )
-            .with_js_error()
+            .with_js_error()?;
+
+        let signature = state_transition.signature().to_owned();
+        let signature_public_key_id = state_transition.signature_public_key_id().unwrap_or(0);
+
+        self.0.set_signature(signature);
+        self.0.set_signature_public_key_id(signature_public_key_id);
+
+        Ok(())
     }
 
-    #[wasm_bindgen(js_name=verifySignature)]
-    pub fn verify_signature(
-        &self,
-        identity_public_key: &IdentityPublicKeyWasm,
-        bls: JsBlsAdapter,
-    ) -> Result<bool, JsValue> {
-        let bls_adapter = BlsAdapter(bls);
-
-        let verification_result = self
-            .0
-            .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
-
-        match verification_result {
-            Ok(()) => Ok(true),
-            Err(protocol_error) => match &protocol_error {
-                ProtocolError::ConsensusError(err) => match err.as_ref() {
-                    ConsensusError::SignatureError(
-                        SignatureError::InvalidStateTransitionSignatureError { .. },
-                    ) => Ok(false),
-                    _ => Err(protocol_error),
-                },
-                _ => Err(protocol_error),
-            },
-        }
-        .with_js_error()
-    }
+    // #[wasm_bindgen(js_name=verifySignature)]
+    // pub fn verify_signature(
+    //     &self,
+    //     identity_public_key: &IdentityPublicKeyWasm,
+    //     bls: JsBlsAdapter,
+    // ) -> Result<bool, JsValue> {
+    //     let bls_adapter = BlsAdapter(bls);
+    //
+    //     let verification_result = self
+    //         .0
+    //         .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+    //
+    //     match verification_result {
+    //         Ok(()) => Ok(true),
+    //         Err(protocol_error) => match &protocol_error {
+    //             ProtocolError::ConsensusError(err) => match err.as_ref() {
+    //                 ConsensusError::SignatureError(
+    //                     SignatureError::InvalidStateTransitionSignatureError { .. },
+    //                 ) => Ok(false),
+    //                 _ => Err(protocol_error),
+    //             },
+    //             _ => Err(protocol_error),
+    //         },
+    //     }
+    //     .with_js_error()
+    // }
 }

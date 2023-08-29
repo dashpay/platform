@@ -117,6 +117,7 @@ fn set_updated_at(dt: &mut DocumentTransition, ts: Option<TimestampMillis>) {
     }
 }
 
+// TODO: it's confusing to set a value and internally it's not setting if your variant doesn't have it.
 fn set_created_at(dt: &mut DocumentTransition, ts: Option<TimestampMillis>) {
     match dt {
         DocumentTransition::Create(ref mut t) => t.created_at = ts,

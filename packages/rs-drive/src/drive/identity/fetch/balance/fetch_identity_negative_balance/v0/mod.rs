@@ -12,6 +12,7 @@ use grovedb::Element::Item;
 use grovedb::TransactionArg;
 
 impl Drive {
+    /// Fetches the Identity's negative balance operations from the backing store.
     pub(super) fn fetch_identity_negative_balance_operations_v0(
         &self,
         identity_id: [u8; 32],

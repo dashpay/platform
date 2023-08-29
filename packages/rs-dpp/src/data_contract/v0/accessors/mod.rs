@@ -49,32 +49,6 @@ impl DataContractV0Getters for DataContractV0 {
         &self.document_types
     }
 
-    fn identifier_paths(&self) -> BTreeSet<String> {
-        self.document_types
-            .iter()
-            .map(|(document_name, document_type)| {
-                document_type
-                    .identifier_paths()
-                    .iter()
-                    .map(|path| format!("{}.{}", document_name, path))
-                    .collect()
-            })
-            .collect()
-    }
-
-    fn binary_paths(&self) -> BTreeSet<String> {
-        self.document_types
-            .iter()
-            .map(|(document_name, document_type)| {
-                document_type
-                    .binary_paths()
-                    .iter()
-                    .map(|path| format!("{}.{}", document_name, path))
-                    .collect()
-            })
-            .collect()
-    }
-
     fn metadata(&self) -> Option<&Metadata> {
         self.metadata.as_ref()
     }
