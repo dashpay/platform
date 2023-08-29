@@ -10,6 +10,7 @@ use dpp::ed25519_dalek::ed25519::signature::SignerMut;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::state_transition::{StateTransition, StateTransitionValueConvert};
 use dpp::version::PlatformVersion;
 use dpp::{
@@ -167,14 +168,23 @@ impl DataContractUpdateTransitionWasm {
         bls: JsBlsAdapter,
     ) -> Result<(), JsValue> {
         let bls_adapter = BlsAdapter(bls);
-
-        StateTransition::DataContractUpdate(self.0.clone())
+        // TODO: come up with a better way to set signature to the binding.
+        let mut state_transition = StateTransition::DataContractUpdate(self.0.clone());
+        state_transition
             .sign(
                 &identity_public_key.to_owned().into(),
                 &private_key,
                 &bls_adapter,
             )
-            .with_js_error()
+            .with_js_error()?;
+
+        let signature = state_transition.signature().to_owned();
+        let signature_public_key_id = state_transition.signature_public_key_id().unwrap_or(0);
+
+        self.0.set_signature(signature);
+        self.0.set_signature_public_key_id(signature_public_key_id);
+
+        Ok(())
     }
     //
     // #[wasm_bindgen(js_name=verifySignature)]
