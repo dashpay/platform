@@ -9,6 +9,7 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::Element;
 
 impl Drive {
+    /// Generates a vector of operations for inserting key to storage.
     pub(super) fn insert_key_to_storage_operations_v0(
         &self,
         identity_id: [u8; 32],
@@ -17,7 +18,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
-        let serialized_identity_key = identity_key.serialize().map_err(Error::Protocol)?;
+        let serialized_identity_key = identity_key.serialize_to_bytes().map_err(Error::Protocol)?;
         // Now lets insert the public key
         let identity_key_tree = identity_key_tree_path(identity_id.as_slice());
 

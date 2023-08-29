@@ -5,14 +5,14 @@ mod structure;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
-use drive::drive::Drive;
+
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
-use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::identity_top_up::state::v0::IdentityTopUpStateTransitionStateValidationV0;
@@ -28,6 +28,7 @@ impl StateTransitionActionTransformerV0 for IdentityTopUpTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        _validate: bool,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version =
@@ -52,9 +53,9 @@ impl StateTransitionActionTransformerV0 for IdentityTopUpTransition {
 impl StateTransitionStructureValidationV0 for IdentityTopUpTransition {
     fn validate_structure(
         &self,
-        _drive: &Drive,
+        _platform: &PlatformStateRef,
+        _action: Option<&StateTransitionAction>,
         protocol_version: u32,
-        _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let platform_version = PlatformVersion::get(protocol_version)?;
         match platform_version
@@ -64,7 +65,7 @@ impl StateTransitionStructureValidationV0 for IdentityTopUpTransition {
             .identity_top_up_state_transition
             .structure
         {
-            0 => self.validate_structure_v0(),
+            0 => self.validate_base_structure_v0(),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity top up transition: validate_structure".to_string(),
                 known_versions: vec![0],
@@ -77,6 +78,7 @@ impl StateTransitionStructureValidationV0 for IdentityTopUpTransition {
 impl StateTransitionStateValidationV0 for IdentityTopUpTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
+        _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {

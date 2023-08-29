@@ -79,12 +79,12 @@ impl DataContractUpdateTransitionWasm {
         self.0.data_contract().clone().into()
     }
 
-    #[wasm_bindgen(js_name=setDataContractConfig)]
-    pub fn set_data_contract_config(&mut self, config: JsValue) -> Result<(), JsValue> {
-        let res = serde_wasm_bindgen::from_value(config);
-        self.0.data_contract.config = res.unwrap();
-        Ok(())
-    }
+    // #[wasm_bindgen(js_name=setDataContractConfig)]
+    // pub fn set_data_contract_config(&mut self, config: JsValue) -> Result<(), JsValue> {
+    //     let res = serde_wasm_bindgen::from_value(config);
+    //     self.0.data_contract.config = res.unwrap();
+    //     Ok(())
+    // }
 
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn get_protocol_version(&self) -> u32 {
@@ -115,7 +115,7 @@ impl DataContractUpdateTransitionWasm {
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
         let bytes =
-            PlatformSerializable::serialize(&StateTransition::DataContractUpdate(self.0.clone()))
+            PlatformSerializable::serialize_to_bytes(&StateTransition::DataContractUpdate(self.0.clone()))
                 .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
@@ -123,7 +123,7 @@ impl DataContractUpdateTransitionWasm {
     #[wasm_bindgen(js_name=fromBuffer)]
     pub fn from_buffer(buffer: Vec<u8>) -> Result<DataContractUpdateTransitionWasm, JsValue> {
         let state_transition: StateTransition =
-            PlatformDeserializable::deserialize(&buffer).with_js_error()?;
+            PlatformDeserializable::deserialize_from_bytes(&buffer).with_js_error()?;
         match state_transition {
             StateTransition::DataContractUpdate(dct) => Ok(dct.into()),
             _ => Err(JsValue::from_str("Invalid state transition type")),

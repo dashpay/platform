@@ -2,7 +2,7 @@ use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm, JsonSchemaErrorWasm,
     UnsupportedProtocolVersionErrorWasm, UnsupportedVersionErrorWasm,
 };
-use dpp::consensus::ConsensusError as DPPConsensusError;
+use dpp::consensus::{ConsensusError as DPPConsensusError, ConsensusError};
 use std::ops::Deref;
 
 use crate::errors::consensus::basic::identity::{
@@ -215,6 +215,8 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::DataContractConfigUpdateError(e) => {
             DataContractConfigUpdateErrorWasm::from(e).into()
         }
+        // TODO(versioning): restore
+        _ => todo!(),
     }
 }
 
@@ -380,7 +382,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         IncompatibleRe2PatternError(err) => IncompatibleRe2PatternErrorWasm::from(err).into(),
         // TODO(versioning): cover other errors
-        _ => todo!()
+        _ => todo!(),
     }
 }
 

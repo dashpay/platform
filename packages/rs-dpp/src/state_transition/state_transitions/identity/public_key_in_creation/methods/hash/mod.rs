@@ -11,9 +11,7 @@ impl IdentityPublicKeyInCreation {
         }
     }
 
-    pub fn hash_as_vec(
-        &self,
-    ) -> Result<Vec<u8>, ProtocolError> {
+    pub fn hash_as_vec(&self) -> Result<Vec<u8>, ProtocolError> {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => self.hash_v0().map(|hash| hash.to_vec()),
         }

@@ -1,5 +1,5 @@
 use crate::block::block_info::BlockInfo;
-use crate::block::extended_block_info::ExtendedBlockInfo;
+
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 

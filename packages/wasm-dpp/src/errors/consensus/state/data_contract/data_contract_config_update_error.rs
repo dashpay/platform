@@ -2,8 +2,8 @@ use crate::identifier::IdentifierWrapper;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 
-use wasm_bindgen::prelude::*;
 use dpp::consensus::ConsensusError;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractConfigUpdateError)]
 pub struct DataContractConfigUpdateErrorWasm {

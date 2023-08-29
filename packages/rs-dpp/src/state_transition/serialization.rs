@@ -8,7 +8,7 @@ impl StateTransition {
     ) -> Result<Vec<Self>, ProtocolError> {
         raw_state_transitions
             .iter()
-            .map(|raw_state_transition| Self::deserialize(raw_state_transition))
+            .map(|raw_state_transition| Self::deserialize_from_bytes(raw_state_transition))
             .collect()
     }
 }
@@ -71,9 +71,11 @@ mod tests {
         );
 
         let state_transition: StateTransition = identity_create_transition.into();
-        let bytes = state_transition.serialize().expect("expected to serialize");
-        let recovered_state_transition =
-            StateTransition::deserialize(&bytes).expect("expected to deserialize state transition");
+        let bytes = state_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+            .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
 
@@ -91,9 +93,11 @@ mod tests {
             signature: [1u8; 65].to_vec().into(),
         };
         let state_transition: StateTransition = identity_topup_transition.into();
-        let bytes = state_transition.serialize().expect("expected to serialize");
-        let recovered_state_transition =
-            StateTransition::deserialize(&bytes).expect("expected to deserialize state transition");
+        let bytes = state_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+            .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
 
@@ -155,9 +159,11 @@ mod tests {
         state_transition
             .sign_by_private_key(private_key.as_slice(), public_key.key_type(), &bls)
             .expect("expected to sign IdentityUpdateTransition");
-        let bytes = state_transition.serialize().expect("expected to serialize");
-        let recovered_state_transition =
-            StateTransition::deserialize(&bytes).expect("expected to deserialize state transition");
+        let bytes = state_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+            .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
 
@@ -219,9 +225,11 @@ mod tests {
         state_transition
             .sign_by_private_key(private_key.as_slice(), public_key.key_type(), &bls)
             .expect("expected to sign IdentityUpdateTransition");
-        let bytes = state_transition.serialize().expect("expected to serialize");
-        let recovered_state_transition =
-            StateTransition::deserialize(&bytes).expect("expected to deserialize state transition");
+        let bytes = state_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+            .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
 
@@ -242,9 +250,11 @@ mod tests {
             signature: [1u8; 65].to_vec().into(),
         };
         let state_transition: StateTransition = identity_credit_withdrawal_transition.into();
-        let bytes = state_transition.serialize().expect("expected to serialize");
-        let recovered_state_transition =
-            StateTransition::deserialize(&bytes).expect("expected to deserialize state transition");
+        let bytes = state_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+            .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
 
@@ -262,9 +272,11 @@ mod tests {
             .try_into_platform_versioned(platform_version)
             .expect("expected to transform into a DataContractCreateTransition");
         let state_transition: StateTransition = data_contract_create_transition.into();
-        let bytes = state_transition.serialize().expect("expected to serialize");
-        let recovered_state_transition =
-            StateTransition::deserialize(&bytes).expect("expected to deserialize state transition");
+        let bytes = state_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+            .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
 
@@ -287,9 +299,11 @@ mod tests {
                 signature: [1u8; 65].to_vec().into(),
             });
         let state_transition: StateTransition = data_contract_update_transition.into();
-        let bytes = state_transition.serialize().expect("expected to serialize");
-        let recovered_state_transition =
-            StateTransition::deserialize(&bytes).expect("expected to deserialize state transition");
+        let bytes = state_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+            .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
 
@@ -325,9 +339,11 @@ mod tests {
         }
         .into();
         let state_transition: StateTransition = documents_batch_transition.into();
-        let bytes = state_transition.serialize().expect("expected to serialize");
-        let recovered_state_transition =
-            StateTransition::deserialize(&bytes).expect("expected to deserialize state transition");
+        let bytes = state_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+        let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
+            .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
     }
 }

@@ -3,7 +3,7 @@ const PrivateKey = require('@dashevo/dashcore-lib/lib/privatekey');
 const getInstantAssetLockProofFixture = require('./getInstantAssetLockProofFixture');
 
 const { default: loadWasmDpp } = require('../../..');
-const { IdentityCreateTransition, IdentityPublicKey } = require('../../..');
+const { IdentityCreateTransition, IdentityPublicKeyWithWitness } = require('../../..');
 
 /**
  * @param {PrivateKey} oneTimePrivateKey
@@ -15,25 +15,15 @@ module.exports = async function getIdentityCreateTransitionFixture(
 ) {
   await loadWasmDpp();
 
-  const assetLockProof = (await getInstantAssetLockProofFixture(oneTimePrivateKey)).toObject();
-  const rawStateTransition = {
-    signature: Buffer.alloc(32),
-    $version: '0',
-    type: 2,
-    assetLockProof,
-    publicKeys: [
-      {
-        $version: '0',
-        id: 0,
-        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: false,
-        signature: Buffer.alloc(32),
-      },
-    ],
-  };
+  const assetLockProof = await getInstantAssetLockProofFixture(oneTimePrivateKey);
 
-  return new IdentityCreateTransition(rawStateTransition);
+  const stateTransition = new IdentityCreateTransition(1);
+  stateTransition.setAssetLockProof(assetLockProof);
+
+  const publicKey = new IdentityPublicKeyWithWitness(1);
+  publicKey.setData(Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'));
+
+  stateTransition.setPublicKeys([publicKey]);
+
+  return stateTransition;
 };

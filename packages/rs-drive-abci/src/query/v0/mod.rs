@@ -141,7 +141,7 @@ impl<C> Platform<C> {
                         .map_err(QueryError::Drive)
                         .and_then(|identity| identity
                             .map(|identity| identity
-                                .serialize_consume()
+                                .serialize_consume_to_bytes()
                                 .map_err(QueryError::Protocol))
                             .transpose()))
                     .unwrap_or_default();
@@ -197,7 +197,7 @@ impl<C> Platform<C> {
                                         ProtocolError,
                                     >(
                                         get_identities_response::IdentityValue {
-                                            value: identity.serialize_consume()?
+                                            value: identity.serialize_consume_to_bytes()?
                                         }
                                     ))
                                     .transpose()?,
@@ -418,7 +418,7 @@ impl<C> Platform<C> {
                     .map(|contract| {
                         contract
                             .contract
-                            .serialize_with_platform_version(platform_version)
+                            .serialize_to_bytes_with_platform_version(platform_version)
                     })
                     .transpose()?;
                     GetDataContractResponse {
@@ -482,7 +482,7 @@ impl<C> Platform<C> {
                                             get_data_contracts_response::DataContractValue {
                                                 value: contract
                                                     .contract
-                                                    .serialize_with_platform_version(
+                                                    .serialize_to_bytes_with_platform_version(
                                                         platform_version
                                                     )?
                                             }
@@ -582,7 +582,7 @@ impl<C> Platform<C> {
                             get_data_contract_history_response::DataContractHistoryEntry {
                                 date: date_in_seconds,
                                 value: data_contract
-                                    .serialize_with_platform_version(platform_version)?
+                                    .serialize_to_bytes_with_platform_version(platform_version)?
                             }
                         ))
                         .collect());
@@ -775,7 +775,7 @@ impl<C> Platform<C> {
                             platform_version
                         ));
                     let serialized_identity = check_validation_result_with_data!(maybe_identity
-                        .map(|identity| identity.serialize_consume())
+                        .map(|identity| identity.serialize_consume_to_bytes())
                         .transpose());
                     GetIdentityByPublicKeyHashesResponse {
                         metadata: Some(metadata),
@@ -835,7 +835,9 @@ impl<C> Platform<C> {
                         ));
                     let identities = check_validation_result_with_data!(identities
                         .into_values()
-                        .filter_map(|maybe_identity| Some(maybe_identity?.serialize_consume()))
+                        .filter_map(|maybe_identity| Some(
+                            maybe_identity?.serialize_consume_to_bytes()
+                        ))
                         .collect::<Result<Vec<Vec<u8>>, ProtocolError>>());
                     GetIdentitiesByPublicKeyHashesResponse {
                         result: Some(
@@ -938,7 +940,8 @@ mod test {
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
 
         use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-        use dpp::data_contract::{DataContract, DataContractMethodsV0};
+        use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+        use dpp::data_contract::DataContract;
         use dpp::platform_value::platform_value;
         use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
         use dpp::tests::fixtures::get_data_contract_fixture;

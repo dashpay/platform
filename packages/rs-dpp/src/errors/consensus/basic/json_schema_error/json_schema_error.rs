@@ -9,7 +9,7 @@ use serde_json::Value as JsonValue;
 use thiserror::Error;
 
 #[derive(Error, Debug, Serialize, Deserialize, Clone, Encode, Decode)]
-#[error("JsonSchemaError: keyword: {keyword}, instance_path: {instance_path}, schema_path:{schema_path}")]
+#[error("JsonSchemaError: {error_summary}, path: {instance_path}")]
 pub struct JsonSchemaError {
     /*
 
@@ -30,11 +30,12 @@ impl<'a> From<ValidationError<'a>> for JsonSchemaError {
             keyword,
             params,
             property_name,
+            error_message,
         } = JsonSchemaErrorData::from(&validation_error);
 
         Self {
             keyword,
-            error_summary: "".to_string(),
+            error_summary: error_message,
             instance_path: validation_error.instance_path.to_string(),
             schema_path: validation_error.schema_path.to_string(),
             params: JsonValue::Object(params).into(),

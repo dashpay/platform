@@ -3,8 +3,7 @@ const PrivateKey = require('@dashevo/dashcore-lib/lib/privatekey');
 const getInstantAssetLockProofFixture = require('./getInstantAssetLockProofFixture');
 const generateRandomIdentifier = require('../utils/generateRandomIdentifierAsync');
 
-const { default: loadWasmDpp } = require('../../..');
-let { IdentityTopUpTransition } = require('../../..');
+const { IdentityTopUpTransition, default: loadWasmDpp } = require('../../..');
 
 /**
  * @param {PrivateKey} oneTimePrivateKey
@@ -14,14 +13,11 @@ let { IdentityTopUpTransition } = require('../../..');
 module.exports = async function getIdentityCreateTransitionFixture(
   oneTimePrivateKey = new PrivateKey(),
 ) {
-  ({ IdentityTopUpTransition } = await loadWasmDpp());
-  const rawStateTransition = {
-    $version: '0',
-    signature: Buffer.alloc(32),
-    type: 3,
-    assetLockProof: (await getInstantAssetLockProofFixture(oneTimePrivateKey)).toObject(),
-    identityId: await generateRandomIdentifier(),
-  };
+  await loadWasmDpp();
 
-  return new IdentityTopUpTransition(rawStateTransition);
+  const stateTransition = new IdentityTopUpTransition(1);
+  stateTransition.setIdentityId(await generateRandomIdentifier());
+  stateTransition.setAssetLockProof(await getInstantAssetLockProofFixture(oneTimePrivateKey));
+
+  return stateTransition;
 };

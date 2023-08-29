@@ -3,6 +3,7 @@ use dpp::consensus::basic::data_contract::DataContractHaveNewUniqueIndexError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformSerializable;
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractHaveNewUniqueIndexError)]
