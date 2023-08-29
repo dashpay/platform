@@ -72,13 +72,21 @@ pub use withdrawals::paths::add_initial_withdrawal_state_structure_operations;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use fetch::queries::*;
 
+<<<<<<< HEAD
 /// Identity path
+=======
+/// identity path
+>>>>>>> 6ac041d9e (feat: add docs)
 #[cfg(any(feature = "full", feature = "verify"))]
 pub(crate) fn identity_path(identity_id: &[u8]) -> [&[u8]; 2] {
     [Into::<&[u8; 1]>::into(RootTree::Identities), identity_id]
 }
 
+<<<<<<< HEAD
 /// Identity path vector
+=======
+/// identity path vec
+>>>>>>> 6ac041d9e (feat: add docs)
 #[cfg(any(feature = "full", feature = "verify"))]
 pub(crate) fn identity_path_vec(identity_id: &[u8]) -> Vec<Vec<u8>> {
     vec![
@@ -132,6 +140,7 @@ pub fn identity_contract_info_path_vec(identity_id: &[u8], contract_id: &[u8]) -
     ]
 }
 
+/// identity key tree path
 #[cfg(any(feature = "full", feature = "verify"))]
 /// Identity key tree path
 pub(crate) fn identity_key_tree_path(identity_id: &[u8]) -> [&[u8]; 3] {
@@ -163,6 +172,7 @@ pub fn identity_key_path_vec(identity_id: &[u8], key_id: KeyID) -> Vec<Vec<u8>> 
     ]
 }
 
+/// identity key location within identity vec
 #[cfg(feature = "full")]
 /// Identity key location within identity vector
 pub(crate) fn identity_key_location_within_identity_vec(encoded_key_id: &[u8]) -> Vec<Vec<u8>> {
@@ -172,6 +182,7 @@ pub(crate) fn identity_key_location_within_identity_vec(encoded_key_id: &[u8]) -
     ]
 }
 
+/// identity query keys tree path
 #[cfg(feature = "full")]
 /// Identity query keys tree path
 pub(crate) fn identity_query_keys_tree_path(identity_id: &[u8]) -> [&[u8]; 3] {
@@ -182,6 +193,7 @@ pub(crate) fn identity_query_keys_tree_path(identity_id: &[u8]) -> [&[u8]; 3] {
     ]
 }
 
+/// identity query keys tree path vec
 #[cfg(any(feature = "full", feature = "verify"))]
 /// Identity query keys tree path vector
 pub(crate) fn identity_query_keys_tree_path_vec(identity_id: [u8; 32]) -> Vec<Vec<u8>> {
@@ -192,6 +204,7 @@ pub(crate) fn identity_query_keys_tree_path_vec(identity_id: [u8; 32]) -> Vec<Ve
     ]
 }
 
+/// identity query keys purpose tree path
 #[cfg(feature = "full")]
 /// Identity query keys purpose tree path
 pub(crate) fn identity_query_keys_purpose_tree_path<'a>(
@@ -206,6 +219,7 @@ pub(crate) fn identity_query_keys_purpose_tree_path<'a>(
     ]
 }
 
+/// identity query keys purpose tree path vec
 #[cfg(feature = "full")]
 /// Identity query keys purpose tree path vec
 pub(crate) fn identity_query_keys_purpose_tree_path_vec(
@@ -220,6 +234,7 @@ pub(crate) fn identity_query_keys_purpose_tree_path_vec(
     ]
 }
 
+/// identity query keys security level tree path vec
 #[cfg(feature = "full")]
 /// Identity query keys security level tree path vec
 pub(crate) fn identity_query_keys_security_level_tree_path_vec(
@@ -235,6 +250,7 @@ pub(crate) fn identity_query_keys_security_level_tree_path_vec(
     ]
 }
 
+/// identity query keys full tree path
 #[cfg(feature = "full")]
 /// Identity query keys full tree path
 pub(crate) fn identity_query_keys_full_tree_path<'a>(

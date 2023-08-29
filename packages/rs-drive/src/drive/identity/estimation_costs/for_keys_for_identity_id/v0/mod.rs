@@ -13,6 +13,7 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 impl Drive {
+<<<<<<< HEAD
     /// Adds estimation costs for keys associated with a specific identity ID (version 0).
     ///
     /// This function provides a mechanism to estimate the costs of keys within the drive 
@@ -48,6 +49,12 @@ impl Drive {
     ///     &mut estimated_info,
     /// );
     /// ```
+=======
+    /// Adds estimation costs for keys for a given identity id.
+    ///
+    /// This method operates on the provided HashMap, `estimated_costs_only_with_layer_info`, and adds
+    /// new entries to it, representing the estimated costs for different layers of the keys tree related to the specified identity id.
+>>>>>>> 6ac041d9e (feat: add docs)
     pub(super) fn add_estimation_costs_for_keys_for_identity_id_v0(
         identity_id: [u8; 32],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,

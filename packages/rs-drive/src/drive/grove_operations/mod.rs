@@ -166,6 +166,7 @@ fn push_drive_operation_result_optional<T>(
     }
     value.map_err(Error::GroveDB)
 }
+<<<<<<< HEAD
 /// Is subtree?
 pub type IsSubTree = bool;
 /// Is sum subtree?
@@ -176,16 +177,33 @@ pub type IsSumTree = bool;
 /// Batch delete apply type
 pub enum BatchDeleteApplyType {
     /// Stateless batch delete
+=======
+/// is subtree?
+pub type IsSubTree = bool;
+/// is sum subtree?
+pub type IsSumSubTree = bool;
+/// is sum tree?
+pub type IsSumTree = bool;
+
+/// batch delete apply type
+pub enum BatchDeleteApplyType {
+    /// stateless batch delete
+>>>>>>> 6ac041d9e (feat: add docs)
     StatelessBatchDelete {
         is_sum_tree: bool,
         estimated_value_size: u32,
     },
+<<<<<<< HEAD
     /// Stateful batch delete
+=======
+    /// stateful batch delete
+>>>>>>> 6ac041d9e (feat: add docs)
     StatefulBatchDelete {
         is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
     },
 }
 
+<<<<<<< HEAD
 /// Batch delete up tree apply type
 pub enum BatchDeleteUpTreeApplyType {
     /// Stateless batch delete
@@ -193,26 +211,45 @@ pub enum BatchDeleteUpTreeApplyType {
         estimated_layer_info: IntMap<EstimatedLayerInformation>,
     },
     /// Stateful batch delete
+=======
+/// batch delete up tree apply type
+pub enum BatchDeleteUpTreeApplyType {
+    /// stateless batch delete
+    StatelessBatchDelete {
+        estimated_layer_info: IntMap<EstimatedLayerInformation>,
+    },
+    /// stateful batch delete
+>>>>>>> 6ac041d9e (feat: add docs)
     StatefulBatchDelete {
         is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
     },
 }
 
+/// batch insert tree apply type
 #[derive(Clone, Copy)]
 /// Batch insert tree apply type
 pub enum BatchInsertTreeApplyType {
+<<<<<<< HEAD
     /// Stateless batch insert tree
+=======
+    /// stateless batch insert tree
+>>>>>>> 6ac041d9e (feat: add docs)
     StatelessBatchInsertTree {
         in_tree_using_sums: bool,
         is_sum_tree: bool,
         flags_len: FlagsLen,
     },
+<<<<<<< HEAD
     /// Stateful batch insert tree
+=======
+    /// stateful batch insert tree
+>>>>>>> 6ac041d9e (feat: add docs)
     StatefulBatchInsertTree,
 }
 
 /// Represents the types for batch insert operations in a tree structure.
 impl BatchInsertTreeApplyType {
+<<<<<<< HEAD
     /// Converts the current `BatchInsertTreeApplyType` into a corresponding `DirectQueryType`.
     ///
     /// # Returns
@@ -231,6 +268,9 @@ impl BatchInsertTreeApplyType {
     ///
     /// let query_type = batch_type.to_direct_query_type();
     /// ```
+=======
+    /// to direct query type
+>>>>>>> 6ac041d9e (feat: add docs)
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
@@ -248,18 +288,29 @@ impl BatchInsertTreeApplyType {
     }
 }
 
+<<<<<<< HEAD
 /// Batch insert apply type
 pub enum BatchInsertApplyType {
     /// Stateless batch insert
+=======
+/// batch insert apply type
+pub enum BatchInsertApplyType {
+    /// stateless
+>>>>>>> 6ac041d9e (feat: add docs)
     StatelessBatchInsert {
         in_tree_using_sums: bool,
         target: QueryTarget,
     },
+<<<<<<< HEAD
     /// Stateful batch insert
+=======
+    /// stateful
+>>>>>>> 6ac041d9e (feat: add docs)
     StatefulBatchInsert,
 }
 
 impl BatchInsertApplyType {
+<<<<<<< HEAD
     /// Converts the current `BatchInsertApplyType` into a corresponding `DirectQueryType`.
     ///
     /// # Returns
@@ -277,6 +328,9 @@ impl BatchInsertApplyType {
     ///
     /// let query_type = batch_type.to_direct_query_type();
     /// ```
+=======
+    /// to direct query type
+>>>>>>> 6ac041d9e (feat: add docs)
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {
             BatchInsertApplyType::StatelessBatchInsert {
@@ -291,18 +345,29 @@ impl BatchInsertApplyType {
     }
 }
 
+<<<<<<< HEAD
 /// Flags length
+=======
+/// flags length
+>>>>>>> 6ac041d9e (feat: add docs)
 pub type FlagsLen = u32;
 
+/// query target
 #[derive(Clone, Copy)]
 /// Query target
 pub enum QueryTarget {
+    /// tree
     QueryTargetTree(FlagsLen, IsSumTree),
+    /// value
     QueryTargetValue(u32),
 }
 
 impl QueryTarget {
+<<<<<<< HEAD
     /// Length
+=======
+    /// get query target length
+>>>>>>> 6ac041d9e (feat: add docs)
     pub(crate) fn len(&self) -> u32 {
         match self {
             QueryTarget::QueryTargetTree(flags_len, is_sum_tree) => {
@@ -314,15 +379,24 @@ impl QueryTarget {
     }
 }
 
+/// direct query type
 #[derive(Clone, Copy)]
 /// Direct query type
 pub enum DirectQueryType {
+<<<<<<< HEAD
     /// Stateless direct query
+=======
+    /// stateless
+>>>>>>> 6ac041d9e (feat: add docs)
     StatelessDirectQuery {
         in_tree_using_sums: bool,
         query_target: QueryTarget,
     },
+<<<<<<< HEAD
     /// Stateful direct query
+=======
+    /// stateful
+>>>>>>> 6ac041d9e (feat: add docs)
     StatefulDirectQuery,
 }
 
@@ -343,6 +417,7 @@ impl From<DirectQueryType> for QueryType {
 }
 
 impl DirectQueryType {
+<<<<<<< HEAD
     /// Converts the current `DirectQueryType` into a corresponding `QueryType` 
     /// while associating it with the given reference sizes.
     ///
@@ -368,6 +443,9 @@ impl DirectQueryType {
     /// let ref_sizes = vec![100, 200, 300];
     /// let query_type = direct_query.add_reference_sizes(ref_sizes);
     /// ```
+=======
+    /// add reference sizes to direct query type
+>>>>>>> 6ac041d9e (feat: add docs)
     #[allow(dead_code)]
     pub(crate) fn add_reference_sizes(self, reference_sizes: Vec<u32>) -> QueryType {
         match self {
@@ -384,16 +462,27 @@ impl DirectQueryType {
     }
 }
 
+<<<<<<< HEAD
 /// Query type
 #[derive(Clone)]
 pub enum QueryType {
     /// Stateless query
+=======
+/// query type (sam is downgraded from A+ manager to A- for making me do all these docs)
+#[derive(Clone)]
+pub enum QueryType {
+    /// stateless
+>>>>>>> 6ac041d9e (feat: add docs)
     StatelessQuery {
         in_tree_using_sums: bool,
         query_target: QueryTarget,
         estimated_reference_sizes: Vec<u32>,
     },
+<<<<<<< HEAD
     /// Stateful query
+=======
+    /// stateful
+>>>>>>> 6ac041d9e (feat: add docs)
     StatefulQuery,
 }
 

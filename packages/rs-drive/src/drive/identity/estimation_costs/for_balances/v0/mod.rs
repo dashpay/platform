@@ -28,6 +28,7 @@ use std::collections::HashMap;
 // 1 element flags option
 
 impl Drive {
+<<<<<<< HEAD
     /// Adds estimation costs for balances in Drive for version 0.
     ///
     /// This function provides a mechanism to estimate the costs of balances 
@@ -55,6 +56,12 @@ impl Drive {
     ///
     /// drive.add_estimation_costs_for_balances_v0(&mut estimated_info);
     /// ```
+=======
+    /// Adds estimation costs for balances.
+    ///
+    /// It operates on the provided HashMap, `estimated_costs_only_with_layer_info`, and adds
+    /// new entries to it, representing the estimated costs for different layers of the balance tree.
+>>>>>>> 6ac041d9e (feat: add docs)
     pub(super) fn add_estimation_costs_for_balances_v0(
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
