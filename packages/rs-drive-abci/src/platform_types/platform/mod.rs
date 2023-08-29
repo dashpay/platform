@@ -6,12 +6,12 @@ use drive::drive::Drive;
 use std::cell::RefCell;
 use std::fmt::{Debug, Formatter};
 
+#[cfg(any(feature = "mocks", test))]
+use crate::rpc::core::MockCoreRPCLike;
+use dashcore_rpc::dashcore::hashes::hex::FromHex;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use std::path::Path;
 use std::sync::RwLock;
-
-use crate::rpc::core::MockCoreRPCLike;
-use dashcore_rpc::dashcore::hashes::hex::FromHex;
 
 use dashcore_rpc::dashcore::BlockHash;
 
@@ -119,6 +119,7 @@ impl Platform<DefaultCoreRPC> {
     }
 }
 
+#[cfg(any(feature = "mocks", test))]
 impl Platform<MockCoreRPCLike> {
     /// Open Platform with Drive and block execution context and mock core rpc.
     pub fn open<P: AsRef<Path>>(
@@ -144,11 +145,13 @@ impl Platform<MockCoreRPCLike> {
 
     /// Recreate the state from the backing store
     pub fn recreate_state(&self, _platform_version: &PlatformVersion) -> Result<bool, Error> {
-        let Some(serialized_platform_state) = self.drive
+        let Some(serialized_platform_state) = self
+            .drive
             .grove
             .get_aux(b"saved_state", None)
             .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))? else {
+            .map_err(|e| Error::Drive(GroveDB(e)))?
+        else {
             return Ok(false);
         };
 
