@@ -179,7 +179,7 @@ impl IdentityPublicKeyWithWitnessWasm {
             )?;
         } else {
             let js_object = js_sys::Object::from(js_object);
-            delete_property(&js_object, &JsValue::from_str("signature"));
+            delete_property(&js_object, &JsValue::from_str("signature"))?;
             return Ok(js_object.into());
         }
 
