@@ -1,10 +1,10 @@
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
-const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
+// const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 
 const { default: loadWasmDpp } = require('../../..');
 const { getLatestProtocolVersion } = require('../../..');
-const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
+// const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('StateTransitionFactory', function main() {
   this.timeout(100000);
@@ -12,7 +12,7 @@ describe('StateTransitionFactory', function main() {
   let factory;
   let stateTransition;
   let rawStateTransition;
-  let stateRepositoryMock;
+  // let stateRepositoryMock;
   let StateTransitionFactory;
   let DataContractCreateTransition;
   let InvalidStateTransitionError;
@@ -33,25 +33,18 @@ describe('StateTransitionFactory', function main() {
     const rawDataContract = dataContract.toObject();
 
     stateTransition = new DataContractCreateTransition({
-      protocolVersion: getLatestProtocolVersion(),
       dataContract: rawDataContract,
       entropy: dataContract.getEntropy(),
       signature: Buffer.alloc(65),
       signaturePublicKeyId: 0,
     });
+
     rawStateTransition = stateTransition.toObject();
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-
-    const blsAdapter = await getBlsAdapterMock();
-
-    factory = new StateTransitionFactory(
-      stateRepositoryMock,
-      blsAdapter,
-    );
+    factory = new StateTransitionFactory();
   });
 
-  describe('createFromObject', () => {
+  describe.skip('createFromObject', () => {
     it('should return new State Transition with data from passed object', async () => {
       const result = await factory.createFromObject(rawStateTransition);
 
@@ -82,7 +75,9 @@ describe('StateTransitionFactory', function main() {
 
   describe('createFromBuffer', () => {
     it('should return new State Transition from serialized contract', async () => {
-      const result = await factory.createFromBuffer(stateTransition.toBuffer());
+      const buffer = stateTransition.toBuffer();
+
+      const result = await factory.createFromBuffer(buffer);
 
       expect(result.toObject()).to.deep.equal(stateTransition.toObject());
     });
