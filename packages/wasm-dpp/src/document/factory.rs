@@ -9,11 +9,13 @@ use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 use crate::document::errors::InvalidActionNameError;
+use crate::document::platform_value::Bytes32;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::prelude::ExtendedDocument;
+use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 use dpp::version::PlatformVersion;
 use std::convert::TryFrom;
@@ -114,11 +116,11 @@ impl DocumentFactoryWASM {
 
         let documents: Vec<(
             DocumentTransitionActionType,
-            Vec<(Document, DocumentTypeRef)>,
+            Vec<(Document, DocumentTypeRef, Bytes32)>,
         )> = documents_by_action
             .iter()
             .map(|(action_type, documents)| {
-                let documents_with_refs: Vec<(Document, DocumentTypeRef)> = documents
+                let documents_with_refs: Vec<(Document, DocumentTypeRef, Bytes32)> = documents
                     .iter()
                     .map(|extended_document| {
                         (
@@ -127,6 +129,7 @@ impl DocumentFactoryWASM {
                                 .data_contract()
                                 .document_type_for_name(extended_document.document_type_name())
                                 .expect("should be able to get document type"),
+                            extended_document.entropy().to_owned(),
                         )
                     })
                     .collect();
