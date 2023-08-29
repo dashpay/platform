@@ -39,7 +39,7 @@ export default async function broadcast(
 
   this.logger.silly('[Document#broadcast] Created documents batch transition');
 
-  await signStateTransition(this, documentsBatchTransition, identity, 1);
+  await signStateTransition(this, documentsBatchTransition, identity, 2);
 
   // Broadcast state transition also wait for the result to be obtained
   await broadcastStateTransition(this, documentsBatchTransition);

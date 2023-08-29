@@ -5,7 +5,7 @@ use crate::data_contract::DataContract;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use derive_more::From;
-use platform_value::{Identifier, Value};
+use platform_value::{Bytes32, Identifier, Value};
 
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
@@ -108,7 +108,7 @@ impl DocumentFactory {
         documents_iter: impl IntoIterator<
             Item = (
                 DocumentTransitionActionType,
-                Vec<(Document, DocumentTypeRef<'a>)>,
+                Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
             ),
         >,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
