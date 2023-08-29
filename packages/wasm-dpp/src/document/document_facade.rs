@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use wasm_bindgen::{prelude::*, JsValue};
 
+use crate::document::factory::DocumentFactoryWASM;
 use crate::{
     utils::{get_class_name, IntoWasm},
-    DataContractWasm, DocumentFactoryWASM, DocumentValidatorWasm, DocumentsBatchTransitionWasm,
-    ExtendedDocumentWasm,
+    DataContractWasm, ExtendedDocumentWasm,
 };
+
+use crate::document::state_transition::document_batch_transition::DocumentsBatchTransitionWasm;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name=DocumentFacade)]
@@ -23,7 +25,6 @@ impl DocumentFacadeWasm {
         // data_contract_fetcher_and_validator: Arc<DataContractFetcherAndValidatorWasm>,
     ) -> Self {
         Self {
-            validator: document_validator,
             factory: document_factory,
             // data_contract_fetcher_and_validator,
         }
@@ -33,15 +34,9 @@ impl DocumentFacadeWasm {
 #[wasm_bindgen(js_class=DocumentFacade)]
 impl DocumentFacadeWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        document_validator: DocumentValidatorWasm,
-        document_factory: DocumentFactoryWASM,
-        data_contract_fetcher_and_validator: DataContractFetcherAndValidatorWasm,
-    ) -> Self {
+    pub fn new(document_factory: DocumentFactoryWASM) -> Self {
         Self {
-            validator: Arc::new(document_validator),
             factory: Arc::new(document_factory),
-            data_contract_fetcher_and_validator: Arc::new(data_contract_fetcher_and_validator),
         }
     }
 
