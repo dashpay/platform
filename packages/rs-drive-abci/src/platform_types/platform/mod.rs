@@ -3,8 +3,8 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive::drive::Drive;
-use std::fmt::{Debug, Formatter};
 use std::cell::RefCell;
+use std::fmt::{Debug, Formatter};
 
 use drive::drive::defaults::PROTOCOL_VERSION;
 use std::path::Path;
@@ -18,9 +18,9 @@ use dashcore_rpc::dashcore::BlockHash;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::snapshot::Manager;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
-use crate::platform_types::snapshot::Manager;
 use drive::error::Error::GroveDB;
 use serde_json::json;
 
