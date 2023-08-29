@@ -1,17 +1,14 @@
 const crypto = require('crypto');
 const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 
-const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 const getInstantAssetLockProofFixture = require('../../../lib/test/fixtures/getInstantAssetLockProofFixture');
 const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
-const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 const {
   Identity, InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
   IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyWithWitness,
   DashPlatformProtocol, ValidationResult,
 } = require('../../..');
-const { IdentityPublicKey } = require('../../..');
 
 describe('IdentityFacade', () => {
   let dpp;

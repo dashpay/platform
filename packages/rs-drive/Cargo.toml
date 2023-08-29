@@ -3,10 +3,10 @@ name = "drive"
 description = "Dash drive built on top of GroveDB"
 version = "0.24.0-dev.1"
 authors = [
-    "Samuel Westrich <sam@dash.org>",
-    "Ivan Shumkov <ivan@shumkov.ru>",
-    "Djavid Gabibiyan <djavid@dash.org>",
-    "Wisdom Ogwu <wisdom@dash.org",
+  "Samuel Westrich <sam@dash.org>",
+  "Ivan Shumkov <ivan@shumkov.ru>",
+  "Djavid Gabibiyan <djavid@dash.org>",
+  "Wisdom Ogwu <wisdom@dash.org",
 ]
 edition = "2021"
 license = "MIT"

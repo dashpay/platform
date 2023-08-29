@@ -10,6 +10,7 @@ use wasm_bindgen::prelude::*;
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
 use crate::identifier::IdentifierWrapper;
+use crate::identity::IdentityPublicKeyWasm;
 use crate::{buffer::Buffer, utils, with_js_error};
 use dpp::identifier::Identifier;
 use dpp::identity::KeyType;
@@ -19,9 +20,8 @@ use dpp::serialization::{PlatformSerializable, ValueConvertible};
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::fields::IDENTIFIER_FIELDS;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-use dpp::state_transition::StateTransition;
 use dpp::state_transition::StateTransitionLike;
-
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
 #[wasm_bindgen(js_name=IdentityCreditTransferTransition)]
 #[derive(Clone)]
 pub struct IdentityCreditTransferTransitionWasm(IdentityCreditTransferTransition);
@@ -314,20 +314,31 @@ impl IdentityCreditTransferTransitionWasm {
             .set_signature(BinaryData::new(signature.unwrap_or(vec![])))
     }
 
-    // #[wasm_bindgen]
-    // pub fn sign(
-    //     &mut self,
-    //     identity_public_key: &IdentityPublicKeyWasm,
-    //     private_key: Vec<u8>,
-    //     bls: JsBlsAdapter,
-    // ) -> Result<(), JsValue> {
-    //     let bls_adapter = BlsAdapter(bls);
-    //     self.0
-    //         .sign(
-    //             &identity_public_key.to_owned().into(),
-    //             &private_key,
-    //             &bls_adapter,
-    //         )
-    //         .with_js_error()
-    // }
+    #[wasm_bindgen]
+    pub fn sign(
+        &mut self,
+        identity_public_key: &IdentityPublicKeyWasm,
+        private_key: Vec<u8>,
+        bls: JsBlsAdapter,
+    ) -> Result<(), JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+
+        // TODO: come up with a better way to set signature to the binding.
+        let mut state_transition = StateTransition::IdentityCreditTransfer(self.0.clone());
+        state_transition
+            .sign(
+                &identity_public_key.to_owned().into(),
+                &private_key,
+                &bls_adapter,
+            )
+            .with_js_error()?;
+
+        let signature = state_transition.signature().to_owned();
+        let signature_public_key_id = state_transition.signature_public_key_id().unwrap_or(0);
+
+        self.0.set_signature(signature);
+        self.0.set_signature_public_key_id(signature_public_key_id);
+
+        Ok(())
+    }
 }

@@ -75,11 +75,11 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
 use dpp::dashcore::blockdata::opcodes::Class::NoOp;
-use drive::drive::Drive;
-use drive::grovedb::GroveDb;
 use dpp::fee::SignedCredits;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use drive::drive::Drive;
+use drive::grovedb::GroveDb;
 use serde_json::Map;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
