@@ -28,7 +28,7 @@ module.exports = async function getDocumentsFixture(
       return crypto.randomBytes(32);
     },
   };
-  const factory = new DocumentFactory(1, documentValidator, {}, entropyGenerator);
+  const factory = new DocumentFactory(1, entropyGenerator);
 
   if (!ownerId) {
     ownerId = await generateRandomIdentifierAsync();
