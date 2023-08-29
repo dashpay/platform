@@ -1,3 +1,4 @@
+use crate::data_contract::{DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm};
 use crate::errors::from_dpp_err;
 use crate::identity::state_transition::{
     IdentityCreateTransitionWasm, IdentityCreditTransferTransitionWasm,
@@ -29,12 +30,12 @@ impl StateTransitionFactoryWasm {
     ) -> Result<JsValue, JsValue> {
         match result {
             Ok(state_transition) => match state_transition {
-                // StateTransition::DataContractCreate(st) => {
-                //     Ok(DataContractCreateTransitionWasm::from(st).into())
-                // }
-                // StateTransition::DataContractUpdate(st) => {
-                //     Ok(DataContractUpdateTransitionWasm::from(st).into())
-                // }
+                StateTransition::DataContractCreate(st) => {
+                    Ok(DataContractCreateTransitionWasm::from(st).into())
+                }
+                StateTransition::DataContractUpdate(st) => {
+                    Ok(DataContractUpdateTransitionWasm::from(st).into())
+                }
                 StateTransition::IdentityCreate(st) => {
                     Ok(IdentityCreateTransitionWasm::from(st).into())
                 }
