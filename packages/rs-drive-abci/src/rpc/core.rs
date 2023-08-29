@@ -8,7 +8,6 @@ use dashcore_rpc::dashcore_rpc_json::{
 use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dpp::dashcore::InstantLock;
-use mockall::{automock, predicate::*};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -20,7 +19,7 @@ pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;
 /// Core height must be of type u32 (Platform heights are u64)
 pub type CoreHeight = u32;
 /// Core RPC interface
-#[automock]
+#[cfg_attr(any(feature = "mocks", test), mockall::automock)]
 pub trait CoreRPCLike {
     /// Get block hash by height
     fn get_block_hash(&self, height: CoreHeight) -> Result<BlockHash, Error>;

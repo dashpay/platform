@@ -10,6 +10,7 @@ use dpp::platform_value::Value;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::state_transition::{JsonStateTransitionSerializationOptions, StateTransitionJsonConvert};
 use dpp::state_transition::{StateTransition, StateTransitionValueConvert};
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
@@ -160,32 +161,25 @@ impl DataContractCreateTransitionWasm {
         bls: JsBlsAdapter,
     ) -> Result<(), JsValue> {
         let bls_adapter = BlsAdapter(bls);
-
-        StateTransition::DataContractCreate(self.0.clone())
+        // TODO: come up with a better way to set signature to the binding.
+        let mut state_transition = StateTransition::DataContractCreate(self.0.clone());
+        state_transition
             .sign(
                 &identity_public_key.to_owned().into(),
                 &private_key,
                 &bls_adapter,
             )
-            .with_js_error()
+            .with_js_error()?;
+
+        let signature = state_transition.signature().to_owned();
+        let signature_public_key_id = state_transition.signature_public_key_id().unwrap_or(0);
+
+        self.0.set_signature(signature);
+        self.0.set_signature_public_key_id(signature_public_key_id);
+
+        Ok(())
     }
-    //
-    // #[wasm_bindgen]
-    // pub fn sign(
-    //   &mut self,
-    //   identity_public_key: &IdentityPublicKeyWasm,
-    //   private_key: Vec<u8>,
-    //   bls: JsBlsAdapter,
-    // ) -> Result<(), JsValue> {
-    //   let bls_adapter = BlsAdapter(bls);
-    //   StateTransition::IdentityUpdate(self.0.clone())
-    //     .sign(
-    //       &identity_public_key.to_owned().into(),
-    //       &private_key,
-    //       &bls_adapter,
-    //     )
-    //     .with_js_error()
-    // }
+
     // #[wasm_bindgen(js_name=verifySignature)]
     // pub fn verify_signature(
     //     &self,
