@@ -179,6 +179,7 @@ impl DataContractCreateTransitionWasm {
 
         Ok(())
     }
+
     // #[wasm_bindgen(js_name=verifySignature)]
     // pub fn verify_signature(
     //     &self,

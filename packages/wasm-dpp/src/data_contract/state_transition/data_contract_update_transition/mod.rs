@@ -168,7 +168,6 @@ impl DataContractUpdateTransitionWasm {
         bls: JsBlsAdapter,
     ) -> Result<(), JsValue> {
         let bls_adapter = BlsAdapter(bls);
-
         // TODO: come up with a better way to set signature to the binding.
         let mut state_transition = StateTransition::DataContractUpdate(self.0.clone());
         state_transition
