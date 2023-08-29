@@ -292,14 +292,14 @@ describe('DocumentFactory', () => {
         replace: [newDocument],
       });
 
-      // const replaceDocuments = stateTransition.getTransitions()
-      //   .filter((t) => t.getAction() === 1);
-      // const createDocuments = stateTransition.getTransitions()
-      //   .filter((t) => t.getAction() === 0);
+      const replaceDocuments = stateTransition.getTransitions()
+        .filter((t) => t.getAction() === 1);
+      const createDocuments = stateTransition.getTransitions()
+        .filter((t) => t.getAction() === 0);
 
-      // expect(replaceDocuments[0].getId()).to.deep.equal(newDocument.getId());
-      // expect(replaceDocuments[0].getRevision()).to.deep.equal(2);
-      // expect(createDocuments).to.have.lengthOf(documents.length);
+      expect(replaceDocuments[0].getId()).to.deep.equal(newDocument.getId());
+      expect(replaceDocuments[0].getRevision()).to.deep.equal(1);
+      expect(createDocuments).to.have.lengthOf(documents.length);
     });
   });
 });

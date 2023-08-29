@@ -299,7 +299,7 @@ pub(crate) fn to_object<'a>(
     let js_value = value.serialize(&serializer)?;
 
     for path in identifiers_paths.into_iter() {
-        if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
+        if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path.clone()) {
             let buffer = Buffer::from_bytes_owned(bytes);
             if !options.skip_identifiers_conversion {
                 lodash_set(&js_value, path, buffer.into());

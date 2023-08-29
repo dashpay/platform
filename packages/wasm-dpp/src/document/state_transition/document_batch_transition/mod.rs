@@ -13,6 +13,8 @@ use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::{BinaryData, ReplacementType};
 use dpp::serialization::PlatformSerializable;
+use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::StateTransition;
 use wasm_bindgen::prelude::*;
@@ -26,9 +28,11 @@ use crate::{
     IdentityPublicKeyWasm,
 };
 
+use document_transition::DocumentTransitionWasm;
+
 use dpp::state_transition::StateTransitionIdentitySigned;
 
-// pub mod document_transition;
+pub mod document_transition;
 // pub mod validation;
 
 #[derive(Clone, Debug)]
@@ -95,18 +99,18 @@ impl DocumentsBatchTransitionWasm {
         self.0.owner_id().to_owned().into()
     }
 
-    // #[wasm_bindgen(js_name=getTransitions)]
-    // pub fn get_transitions(&self) -> js_sys::Array {
-    //     let array = js_sys::Array::new();
-    //     let transitions = self.0.get_transitions();
-    //
-    //     for tr in transitions.iter().cloned() {
-    //         let transition: DocumentTransitionWasm = tr.into();
-    //         array.push(&transition.into());
-    //     }
-    //
-    //     array
-    // }
+    #[wasm_bindgen(js_name=getTransitions)]
+    pub fn get_transitions(&self) -> js_sys::Array {
+        let array = js_sys::Array::new();
+        let transitions = self.0.transitions();
+
+        for tr in transitions.iter().cloned() {
+            let transition: DocumentTransitionWasm = tr.into();
+            array.push(&transition.into());
+        }
+
+        array
+    }
 
     // #[wasm_bindgen(js_name=setTransitions)]
     // pub fn set_transitions(&mut self, js_transitions: Array) -> Result<(), JsValue> {
@@ -119,7 +123,7 @@ impl DocumentsBatchTransitionWasm {
     //         transitions.push(transition)
     //     }
     //
-    //     self.0.transitions = transitions;
+    //     // self.0.set_transitions(transitions);
     //     Ok(())
     // }
 
