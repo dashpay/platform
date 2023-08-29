@@ -303,7 +303,11 @@ impl DocumentWasm {
             .with_js_error()?;
         let bytes = self
             .0
-            .hash(data_contract.inner(), document_type)
+            .hash(
+                data_contract.inner(),
+                document_type,
+                PlatformVersion::first(),
+            )
             .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
@@ -347,12 +351,12 @@ pub(crate) fn document_data_to_bytes(
         .get_identifiers_and_binary_paths_owned(document_type)
         .with_js_error()?;
     document
-        .properties
+        .properties()
         .replace_at_paths(identifier_paths, ReplacementType::Identifier)
         .map_err(ProtocolError::ValueError)
         .with_js_error()?;
     document
-        .properties
+        .properties()
         .replace_at_paths(binary_paths, ReplacementType::BinaryBytes)
         .map_err(ProtocolError::ValueError)
         .with_js_error()?;

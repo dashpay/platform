@@ -7,6 +7,7 @@ pub use document_delete_transition::*;
 pub use document_replace_transition::*;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::Value;
 use dpp::prelude::TimestampMillis;
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
@@ -133,8 +134,8 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=get)]
-    pub fn get(&self, path: &str) -> JsValue {
-        let binary_type = self.get_binary_type_of_path(path);
+    pub fn get(&self, path: &str, data_contract: &DataContractWasm) -> JsValue {
+        let binary_type = self.get_binary_type_of_path(path, data_contract);
 
         if let Some(value) = self.0.get_dynamic_property(path) {
             match binary_type {
@@ -162,17 +163,18 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self, options: &JsValue) -> Result<JsValue, JsValue> {
+    pub fn to_object(
+        &self,
+        options: &JsValue,
+        data_contract: &DataContractWasm,
+    ) -> Result<JsValue, JsValue> {
         match self.0 {
-            DocumentTransition::Create(ref t) => {
-                DocumentCreateTransitionWasm::from(t.to_owned()).to_object(options)
-            }
-            DocumentTransition::Replace(ref t) => {
-                DocumentReplaceTransitionWasm::from(t.to_owned()).to_object(options)
-            }
-            DocumentTransition::Delete(ref t) => {
-                DocumentDeleteTransitionWasm::from(t.to_owned()).to_object(options)
-            }
+            DocumentTransition::Create(ref t) => DocumentCreateTransitionWasm::from(t.to_owned())
+                .to_object(options, data_contract.inner()),
+            DocumentTransition::Replace(ref t) => DocumentReplaceTransitionWasm::from(t.to_owned())
+                .to_object(options, data_contract.inner()),
+            DocumentTransition::Delete(ref t) => DocumentDeleteTransitionWasm::from(t.to_owned())
+                .to_object(options, data_contract.inner()),
         }
     }
 

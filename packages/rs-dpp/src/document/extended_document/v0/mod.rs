@@ -430,6 +430,28 @@ impl ExtendedDocumentV0 {
         Ok(self.document.properties_mut().insert_at_path(path, value)?)
     }
 
+    /// Set the value under given path.
+    /// The path supports syntax from `lodash` JS lib. Example: "root.people[0].name".
+    /// If parents are not present they will be automatically created
+    pub fn set_untrusted(&mut self, path: &str, value: Value) -> Result<(), ProtocolError> {
+        let document_type = self.document_type()?;
+
+        let identifiers = document_type.identifier_paths();
+        let binary_paths = document_type.binary_paths();
+
+        if identifiers.contains(path) {
+            let value =
+                ReplacementType::Identifier.replace_for_bytes(value.to_identifier_bytes()?)?;
+            self.set(path, value)
+        } else if binary_paths.contains(path) {
+            let value =
+                ReplacementType::BinaryBytes.replace_for_bytes(value.to_identifier_bytes()?)?;
+            self.set(path, value)
+        } else {
+            self.set(path, value)
+        }
+    }
+
     /// Retrieves field specified by path
     pub fn get(&self, path: &str) -> Option<&Value> {
         self.properties().get_optional_at_path(path).ok().flatten()

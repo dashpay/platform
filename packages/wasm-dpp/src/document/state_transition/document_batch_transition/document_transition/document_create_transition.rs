@@ -3,6 +3,8 @@ use std::convert::TryInto;
 
 use serde_json::Value as JsonValue;
 
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::btreemap_extensions::{
     BTreeValueMapHelper, BTreeValueMapPathHelper, BTreeValueMapReplacementPathHelper,
 };
@@ -122,18 +124,13 @@ impl DocumentCreateTransitionWasm {
         DocumentTransitionActionType::Create as u8
     }
 
-    #[wasm_bindgen(js_name=getDataContract)]
-    pub fn data_contract(&self) -> DataContractWasm {
-        self.inner.base.data_contract.clone().into()
-    }
-
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> IdentifierWrapper {
         self.inner.base().data_contract_id().into()
     }
 
     #[wasm_bindgen]
-    pub fn get(&self, path: String) -> Result<JsValue, JsValue> {
+    pub fn get(&self, path: String, data_contract: &DataContractWasm) -> Result<JsValue, JsValue> {
         let document_data = self.inner.data();
 
         let value = if let Ok(value) = document_data.get_at_path(&path) {
@@ -177,12 +174,13 @@ impl DocumentCreateTransitionWasm {
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
         let js_value = json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;
-        let (identifier_paths, binary_paths) = self
-            .inner
-            .base
-            .data_contract
-            .get_identifiers_and_binary_paths(&self.inner.base.document_type_name)
+
+        let document_type = data_contract
+            .inner()
+            .document_type_for_name(self.inner.base().document_type_name())
             .with_js_error()?;
+        let identifier_paths = document_type.identifier_paths();
+        let binary_paths = document_type.binary_paths();
 
         for property_path in identifier_paths {
             if property_path.starts_with(&path) {

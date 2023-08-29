@@ -271,6 +271,18 @@ impl ExtendedDocument {
         }
     }
 
+    /// Set the value under the given path.
+    /// The path should be checked against the contract's document type and the value's type
+    /// should be modified accordingly.
+    /// For example we could go from a base 64 string to bytes.
+    ///
+    /// This function is a passthrough to the `set_untrusted` method.
+    pub fn set_untrusted(&mut self, path: &str, value: Value) -> Result<(), ProtocolError> {
+        match self {
+            ExtendedDocument::V0(v0) => v0.set_untrusted(path, value),
+        }
+    }
+
     /// Retrieve the field specified by the path.
     ///
     /// This function is a passthrough to the `get` method.

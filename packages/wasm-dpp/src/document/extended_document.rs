@@ -188,18 +188,8 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=set)]
     pub fn set(&mut self, path: String, js_value_to_set: JsValue) -> Result<(), JsValue> {
-        let (identifier_paths, binary_paths) =
-            self.0.get_identifiers_and_binary_paths().with_js_error()?;
         let mut value: Value = js_value_to_set.with_serde_to_platform_value()?;
-        value
-            .replace_to_binary_types_when_setting_with_path(
-                path.as_str(),
-                identifier_paths,
-                binary_paths,
-            )
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
-        self.0.set(&path, value).with_js_error()
+        self.0.set_untrusted(&path, value).with_js_error()
     }
 
     #[wasm_bindgen(js_name=get)]
@@ -300,13 +290,17 @@ impl ExtendedDocumentWasm {
         };
         let mut value = self.0.to_json_object_for_validation().with_js_error()?;
 
-        let (identifiers_paths, binary_paths) =
-            self.0.get_identifiers_and_binary_paths().with_js_error()?;
+        let document_type = self.0.document_type().with_js_error()?;
+
+        let identifier_paths = document_type.identifier_paths();
+        let binary_paths = document_type.binary_paths();
+
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_value = value.serialize(&serializer)?;
 
-        for path in identifiers_paths
-            .into_iter()
+        for path in identifier_paths
+            .iter()
+            .map(|s| s.as_str())
             .chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS)
         {
             if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
@@ -363,9 +357,9 @@ impl ExtendedDocumentWasm {
     fn get_binary_type_of_path(&self, path: &String) -> Result<BinaryType, JsValue> {
         let document_type = self.0.document_type().with_js_error()?;
 
-        if document_type.binary_paths().contains(&path) {
+        if document_type.binary_paths().contains(path) {
             Ok(BinaryType::Buffer)
-        } else if document_type.identifier_paths().contains(&path) {
+        } else if document_type.identifier_paths().contains(path) {
             Ok(BinaryType::Identifier)
         } else {
             Ok(BinaryType::None)
