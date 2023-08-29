@@ -18,7 +18,7 @@ let randomOwnerId = null;
 module.exports = async function getDataContractFixture(
   ownerId = randomOwnerId,
 ) {
-  const { DataContractFactory, DataContractValidator, Identifier } = await Platform
+  const { DataContractFactory, Identifier } = await Platform
     .initializeDppModule();
 
   if (!randomOwnerId) {
@@ -128,7 +128,6 @@ module.exports = async function getDataContractFixture(
     },
   };
 
-  const dataContractValidator = new DataContractValidator();
   const entropyGenerator = {
     generate() {
       return crypto.randomBytes(32);
@@ -136,7 +135,6 @@ module.exports = async function getDataContractFixture(
   };
   const factory = new DataContractFactory(
     protocolVersion.latestVersion,
-    dataContractValidator,
     entropyGenerator,
   );
 

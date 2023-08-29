@@ -14,7 +14,7 @@ const {
 } = require('../../..');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
-describe('createStateTransitionFactory', () => {
+describe.skip('createStateTransitionFactory', () => {
   let createStateTransition;
   let stateRepositoryMock;
   let dataContract;

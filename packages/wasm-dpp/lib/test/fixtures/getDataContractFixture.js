@@ -13,7 +13,7 @@ let randomOwnerId = null;
  * @return {Promise<DataContract>}
  */
 module.exports = async function getDataContractFixture(ownerId = randomOwnerId) {
-  ({ DataContractFactory, DataContractValidator } = await loadWasmDpp());
+  ({ DataContractFactory } = await loadWasmDpp());
 
   if (!randomOwnerId) {
     randomOwnerId = await generateRandomIdentifierAsync();
@@ -250,7 +250,6 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
     },
   };
 
-  const dataContractValidator = new DataContractValidator();
   const entropyGenerator = {
     generate() {
       return crypto.randomBytes(32);
@@ -258,7 +257,6 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
   };
   const factory = new DataContractFactory(
     protocolVersion.latestVersion,
-    dataContractValidator,
     entropyGenerator,
   );
 

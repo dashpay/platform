@@ -16,6 +16,7 @@ use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use dpp::version::PlatformVersion;
 use dpp::{platform_value, ProtocolError};
@@ -392,6 +393,17 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name=clone)]
     pub fn deep_clone(&self) -> Self {
         self.clone()
+    }
+
+    pub(crate) fn try_from_serialization_format(
+        value: DataContractInSerializationFormat,
+        validate: bool,
+    ) -> Result<Self, JsValue> {
+        let platform_version = PlatformVersion::first();
+
+        DataContract::try_from_platform_versioned(value, validate, platform_version)
+            .with_js_error()
+            .map(Into::into)
     }
 }
 

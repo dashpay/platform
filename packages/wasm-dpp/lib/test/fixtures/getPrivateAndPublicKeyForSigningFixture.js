@@ -8,16 +8,14 @@ module.exports = async function getPrivateAndPublicKeyForSigningFixture(privateK
   const privateKey = new PrivateKey(privateKeyHex);
   const publicKey = privateKey.toPublicKey();
 
-  const rawPublicKey = {
-    id: 2,
-    type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-    data: publicKey.toBuffer(),
-    purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-    securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
-    readOnly: false,
-  };
+  const identityPublicKey = new IdentityPublicKey(1);
 
-  const identityPublicKey = new IdentityPublicKey(rawPublicKey);
+  identityPublicKey.setId(2);
+  identityPublicKey.setType(IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+  identityPublicKey.setData(publicKey.toBuffer());
+  identityPublicKey.setPurpose(IdentityPublicKey.PURPOSES.AUTHENTICATION);
+  identityPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.CRITICAL);
+  identityPublicKey.setReadOnly(false);
 
   return { privateKey: Buffer.from(privateKeyHex, 'hex'), identityPublicKey };
 };

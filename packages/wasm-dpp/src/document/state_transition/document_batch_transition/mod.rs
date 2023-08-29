@@ -269,13 +269,25 @@ impl DocumentsBatchTransitionWasm {
         private_key: &[u8],
         bls: JsBlsAdapter,
     ) -> Result<(), JsValue> {
-        self.0
+        let bls_adapter = BlsAdapter(bls);
+
+        // TODO: come up with a better way to set signature to the binding.
+        let mut state_transition = StateTransition::DocumentsBatch(self.0.clone());
+        state_transition
             .sign(
                 &identity_public_key.to_owned().into(),
-                private_key,
-                &BlsAdapter(bls),
+                &private_key,
+                &bls_adapter,
             )
-            .with_js_error()
+            .with_js_error()?;
+
+        let signature = state_transition.signature().to_owned();
+        let signature_public_key_id = state_transition.signature_public_key_id().unwrap_or(0);
+
+        self.0.set_signature(signature);
+        self.0.set_signature_public_key_id(signature_public_key_id);
+
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=verifyPublicKeyLevelAndPurpose)]
@@ -372,9 +384,10 @@ impl DocumentsBatchTransitionWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes =
-            PlatformSerializable::serialize_to_bytes(&StateTransition::DocumentsBatch(self.0.clone()))
-                .with_js_error()?;
+        let bytes = PlatformSerializable::serialize_to_bytes(&StateTransition::DocumentsBatch(
+            self.0.clone(),
+        ))
+        .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
