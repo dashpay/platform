@@ -11,6 +11,8 @@ const DEFAULT_FREQ: i64 = 3;
 
 const DEFAULT_NUMBER_OF_SNAPSHOTS: usize = 10;
 
+const SNAPSHOT_VERSION: u16 = 1;
+
 /// Snapshot entity
 #[derive(Clone, Encode, Decode, PartialEq, Debug)]
 pub struct Snapshot {
@@ -93,7 +95,7 @@ impl Manager {
 
         let snapshot = Snapshot {
             height,
-            version: 0,
+            version: SNAPSHOT_VERSION,
             path: checkpoint_path.to_str().unwrap().to_string(),
             hash: root_hash as [u8; 32],
             metadata: vec![],
