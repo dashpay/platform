@@ -27,7 +27,6 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the path query generation or proof generation fails.
-
     pub(super) fn prove_identities_all_keys_v0(
         &self,
         identity_ids: &[[u8; 32]],

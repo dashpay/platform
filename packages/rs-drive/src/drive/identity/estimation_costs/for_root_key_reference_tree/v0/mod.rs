@@ -15,6 +15,7 @@ impl Drive {
     ///
     /// This method operates on the provided HashMap, `estimated_costs_only_with_layer_info`, and adds
     /// new entries to it, representing the estimated costs for the root key reference tree of the specified identity id.
+<<<<<<< HEAD
     ///
     /// # Parameters
     /// - `identity_id`: An array of 32 bytes representing the unique identity id.
@@ -26,6 +27,8 @@ impl Drive {
     ///
     /// # Errors
     /// This function will return an error if the method version doesn't match any known versions.
+=======
+>>>>>>> 6ac041d9e (feat: add docs)
     pub(super) fn add_estimation_costs_for_root_key_reference_tree_v0(
         identity_id: [u8; 32],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
