@@ -7,6 +7,7 @@ use dpp::state_transition::state_transitions::identity::identity_credit_withdraw
 use dpp::withdrawal::Pooling;
 
 impl IdentityCreditWithdrawalTransitionActionV0 {
+    /// from identity credit withdrawal
     pub fn from_identity_credit_withdrawal(
         identity_credit_withdrawal: &IdentityCreditWithdrawalTransitionV0,
         creation_time_ms: u64,

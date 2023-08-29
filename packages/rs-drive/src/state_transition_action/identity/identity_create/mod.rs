@@ -1,4 +1,6 @@
+/// transformer
 pub mod transformer;
+/// v0
 pub mod v0;
 
 use crate::state_transition_action::identity::identity_create::v0::{
@@ -10,34 +12,37 @@ use dpp::platform_value::{Bytes36, Identifier};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
+/// action
 #[derive(Debug, Clone, From)]
 pub enum IdentityCreateTransitionAction {
+    /// v0
     V0(IdentityCreateTransitionActionV0),
 }
 
+/// action
 impl IdentityCreateTransitionAction {
-    // Public Keys
+    /// Public Keys
     pub fn public_keys(&self) -> &Vec<IdentityPublicKey> {
         match self {
             IdentityCreateTransitionAction::V0(transition) => &transition.public_keys,
         }
     }
 
-    // Initial Balance Amount
+    /// Initial Balance Amount
     pub fn initial_balance_amount(&self) -> u64 {
         match self {
             IdentityCreateTransitionAction::V0(transition) => transition.initial_balance_amount,
         }
     }
 
-    // Identity Id
+    /// Identity Id
     pub fn identity_id(&self) -> Identifier {
         match self {
             IdentityCreateTransitionAction::V0(transition) => transition.identity_id,
         }
     }
 
-    // Asset Lock Outpoint
+    /// Asset Lock Outpoint
     pub fn asset_lock_outpoint(&self) -> Bytes36 {
         match self {
             IdentityCreateTransitionAction::V0(transition) => transition.asset_lock_outpoint,
@@ -61,13 +66,16 @@ impl From<&IdentityCreateTransitionAction> for PartialIdentity {
     }
 }
 
+/// action
 pub trait IdentityFromIdentityCreateTransitionAction {
+    /// try from
     fn try_from_identity_create_transition_action(
         value: IdentityCreateTransitionAction,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
+    /// try from borrowed
     fn try_from_borrowed_identity_create_transition_action(
         value: &IdentityCreateTransitionAction,
         platform_version: &PlatformVersion,

@@ -60,6 +60,8 @@ impl Drive {
         }
     }
 
+    /// Balances are stored in the balance tree under the identity's id
+    /// This gets operations based on apply flag (stateful vs stateless)
     pub(crate) fn add_to_identity_balance_operations(
         &self,
         identity_id: [u8; 32],

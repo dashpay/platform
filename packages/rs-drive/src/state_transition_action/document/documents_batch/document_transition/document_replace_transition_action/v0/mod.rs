@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 
+/// document replace transition action v0
 #[derive(Debug, Clone)]
 pub struct DocumentReplaceTransitionActionV0 {
     /// Document Base Transition
@@ -25,16 +26,25 @@ pub struct DocumentReplaceTransitionActionV0 {
     pub data: BTreeMap<String, Value>,
 }
 
+/// document replace transition action accessors v0
 pub trait DocumentReplaceTransitionActionAccessorsV0 {
+    /// base
     fn base(&self) -> &DocumentBaseTransitionAction;
+    /// base owned
     fn base_owned(self) -> DocumentBaseTransitionAction;
+    /// revision
     fn revision(&self) -> Revision;
+    /// created at
     fn created_at(&self) -> Option<TimestampMillis>;
+    /// updated at
     fn updated_at(&self) -> Option<TimestampMillis>;
+    /// data
     fn data(&self) -> &BTreeMap<String, Value>;
+    /// data owned
     fn data_owned(self) -> BTreeMap<String, Value>;
 }
 
+/// document from replace transition v0
 pub trait DocumentFromReplaceTransitionV0 {
     /// Attempts to create a new `Document` from the given `DocumentReplaceTransitionAction` reference and `owner_id`.
     ///
