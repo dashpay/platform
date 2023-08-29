@@ -272,8 +272,8 @@ describe('Dash - Client', function suite() {
       expect(interceptedIdentityStateTransition.getType())
         .to.be.equal(stateTransitionTypes.IDENTITY_UPDATE);
       const publicKeysAdded = interceptedIdentityStateTransition.getPublicKeysToAdd();
-      expect(publicKeysAdded.map((key) => key.toObject({ skipSignature: true })))
-        .to.deep.equal(publicKeysToAdd.map((key) => key.toObject({ skipSignature: true })));
+      expect(publicKeysAdded.map((key) => key.toObject(true)))
+        .to.deep.equal(publicKeysToAdd.map((key) => key.toObject(true)));
       const publicKeysDisabled = interceptedIdentityStateTransition.getPublicKeyIdsToDisable();
       expect(publicKeysDisabled).to.deep.equal(publicKeysToDisable.map((key) => key.getId()));
     });

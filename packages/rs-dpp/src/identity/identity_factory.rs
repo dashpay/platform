@@ -20,7 +20,7 @@ use crate::consensus::ConsensusError;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::accessors::IdentityGettersV0;
 
-#[cfg(feature = "validation")]
+#[cfg(all(feature = "validation", feature = "identity-value-conversion"))]
 use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 #[cfg(all(feature = "identity-serialization", feature = "client"))]
 use crate::serialization::PlatformDeserializable;
@@ -113,7 +113,7 @@ impl IdentityFactory {
     }
 
     //todo: this should be changed into identity.validate()
-    #[cfg(feature = "validation")]
+    #[cfg(all(feature = "validation", feature = "identity-value-conversion"))]
     pub fn validate_identity(&self, _raw_identity: &Value) -> Result<(), ProtocolError> {
         //todo: reenable
         // let result = self

@@ -54,8 +54,8 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
     "std",
     "registry",
     "tracing-log",
-], optional = true }
-atty = { version = "0.2.14", optional = true }
+], optional = false }
+atty = { version = "0.2.14", optional = false }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci" }
 # tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }
 anyhow = { version = "1.0.70" }
@@ -94,11 +94,13 @@ dpp = { path = "../rs-dpp", features = [
     "data-contract-json-conversion",
     "data-contract-cbor-conversion",
 ] }
-drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
+drive = { path = "../rs-drive" }
 
 [features]
-default = ["server"]
-server = ["clap", "dotenvy", "tracing-subscriber", "atty", "mockall"]
+default = ["server", "mocks"]
+server = ["clap", "dotenvy"]
+mocks = ["mockall", "drive/fixtures-and-mocks"]
+
 
 [[bin]]
 name = "drive-abci"

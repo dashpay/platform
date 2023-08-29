@@ -18,6 +18,7 @@ use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
+    /// Generates a vector of operations for inserting key searchable references.
     pub(super) fn insert_key_searchable_references_operations_v0(
         &self,
         identity_id: [u8; 32],
