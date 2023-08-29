@@ -8,6 +8,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionActionV0;
 
 impl DocumentCreateTransitionActionV0 {
+    /// try from document create transition with contract lookup
     pub fn try_from_document_create_transition_with_contract_lookup(
         value: DocumentCreateTransitionV0,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
@@ -30,6 +31,7 @@ impl DocumentCreateTransitionActionV0 {
         })
     }
 
+    /// try from ...
     pub fn try_from_borrowed_document_create_transition_with_contract_lookup(
         value: &DocumentCreateTransitionV0,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,

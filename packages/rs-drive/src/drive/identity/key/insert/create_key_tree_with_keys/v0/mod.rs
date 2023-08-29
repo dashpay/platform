@@ -12,6 +12,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
 
 impl Drive {
+    /// Generates a vector of operations for creating a new identity key tree with the given keys.
     pub(super) fn create_key_tree_with_keys_operations_v0(
         &self,
         identity_id: [u8; 32],

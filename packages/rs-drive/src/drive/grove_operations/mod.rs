@@ -166,40 +166,53 @@ fn push_drive_operation_result_optional<T>(
     }
     value.map_err(Error::GroveDB)
 }
+/// is subtree?
 pub type IsSubTree = bool;
+/// is sum subtree?
 pub type IsSumSubTree = bool;
+/// is sum tree?
 pub type IsSumTree = bool;
 
+/// batch delete apply type
 pub enum BatchDeleteApplyType {
+    /// stateless batch delete
     StatelessBatchDelete {
         is_sum_tree: bool,
         estimated_value_size: u32,
     },
+    /// stateful batch delete
     StatefulBatchDelete {
         is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
     },
 }
 
+/// batch delete up tree apply type
 pub enum BatchDeleteUpTreeApplyType {
+    /// stateless batch delete
     StatelessBatchDelete {
         estimated_layer_info: IntMap<EstimatedLayerInformation>,
     },
+    /// stateful batch delete
     StatefulBatchDelete {
         is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
     },
 }
 
+/// batch insert tree apply type
 #[derive(Clone, Copy)]
 pub enum BatchInsertTreeApplyType {
+    /// stateless batch insert tree
     StatelessBatchInsertTree {
         in_tree_using_sums: bool,
         is_sum_tree: bool,
         flags_len: FlagsLen,
     },
+    /// stateful batch insert tree
     StatefulBatchInsertTree,
 }
 
 impl BatchInsertTreeApplyType {
+    /// to direct query type
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
@@ -217,15 +230,19 @@ impl BatchInsertTreeApplyType {
     }
 }
 
+/// batch insert apply type
 pub enum BatchInsertApplyType {
+    /// stateless
     StatelessBatchInsert {
         in_tree_using_sums: bool,
         target: QueryTarget,
     },
+    /// stateful
     StatefulBatchInsert,
 }
 
 impl BatchInsertApplyType {
+    /// to direct query type
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {
             BatchInsertApplyType::StatelessBatchInsert {
@@ -240,15 +257,20 @@ impl BatchInsertApplyType {
     }
 }
 
+/// flags length
 pub type FlagsLen = u32;
 
+/// query target
 #[derive(Clone, Copy)]
 pub enum QueryTarget {
+    /// tree
     QueryTargetTree(FlagsLen, IsSumTree),
+    /// value
     QueryTargetValue(u32),
 }
 
 impl QueryTarget {
+    /// get query target length
     pub(crate) fn len(&self) -> u32 {
         match self {
             QueryTarget::QueryTargetTree(flags_len, is_sum_tree) => {
@@ -260,12 +282,15 @@ impl QueryTarget {
     }
 }
 
+/// direct query type
 #[derive(Clone, Copy)]
 pub enum DirectQueryType {
+    /// stateless
     StatelessDirectQuery {
         in_tree_using_sums: bool,
         query_target: QueryTarget,
     },
+    /// stateful
     StatefulDirectQuery,
 }
 
@@ -286,6 +311,7 @@ impl From<DirectQueryType> for QueryType {
 }
 
 impl DirectQueryType {
+    /// add reference sizes to direct query type
     #[allow(dead_code)]
     pub(crate) fn add_reference_sizes(self, reference_sizes: Vec<u32>) -> QueryType {
         match self {
@@ -302,13 +328,16 @@ impl DirectQueryType {
     }
 }
 
+/// query type (sam is downgraded from A+ manager to A- for making me do all these docs)
 #[derive(Clone)]
 pub enum QueryType {
+    /// stateless
     StatelessQuery {
         in_tree_using_sums: bool,
         query_target: QueryTarget,
         estimated_reference_sizes: Vec<u32>,
     },
+    /// stateful
     StatefulQuery,
 }
 

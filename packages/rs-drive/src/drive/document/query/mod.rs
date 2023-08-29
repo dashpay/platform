@@ -78,6 +78,7 @@ use dpp::version::PlatformVersionCurrentVersion;
 //     pub cost: u64,
 // }
 
+/// Query serialized documents outcome
 #[cfg(feature = "fixtures-and-mocks")]
 pub struct QuerySerializedDocumentsOutcome {
     /// returned items

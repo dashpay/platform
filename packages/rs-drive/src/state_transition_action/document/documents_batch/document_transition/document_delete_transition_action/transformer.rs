@@ -7,6 +7,7 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::document_delete_transition_action::{DocumentDeleteTransitionAction, DocumentDeleteTransitionActionV0};
 
 impl DocumentDeleteTransitionAction {
+    /// from
     pub fn from_document_create_transition_with_contract_lookup(
         value: DocumentDeleteTransition,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
@@ -16,6 +17,7 @@ impl DocumentDeleteTransitionAction {
         }
     }
 
+    /// from borrowed
     pub fn from_document_borrowed_create_transition_with_contract_lookup(
         value: &DocumentDeleteTransition,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,

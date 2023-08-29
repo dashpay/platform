@@ -13,6 +13,10 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 impl Drive {
+    /// Adds estimation costs for negative credit for a given identity id.
+    ///
+    /// This method operates on the provided HashMap, `estimated_costs_only_with_layer_info`, and adds
+    /// new entries to it, representing the estimated costs for different layers of the identity tree related to the specified identity id.
     pub(super) fn add_estimation_costs_for_negative_credit_v0(
         identity_id: [u8; 32],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,

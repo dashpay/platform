@@ -13,6 +13,10 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 impl Drive {
+    /// This function adds estimation costs for an updated revision.
+    ///
+    /// It expects an identity in the form of an array of bytes, and a mutable reference to a HashMap containing
+    /// the estimated costs with layer info. Additionally, it takes a reference to the drive version.
     pub(super) fn add_estimation_costs_for_update_revision_v0(
         identity_id: [u8; 32],
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,

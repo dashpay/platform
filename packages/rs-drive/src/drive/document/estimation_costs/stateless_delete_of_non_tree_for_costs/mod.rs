@@ -15,6 +15,10 @@ use grovedb::{EstimatedLayerInformation, EstimatedLayerSizes};
 use std::collections::HashMap;
 
 impl Drive {
+    /// Deletes an element in a stateless manner for computing costs.
+    ///
+    /// This function performs a stateless delete operation, specifically for 
+    /// computing costs in GroveDB.
     pub(crate) fn stateless_delete_of_non_tree_for_costs(
         element_estimated_sizes: EstimatedLayerSizes,
         key_info_path: &KeyInfoPath,
