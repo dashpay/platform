@@ -4,6 +4,7 @@ use drive::error::drive::DriveError;
 use drive::error::Error::{Drive, GroveDB};
 use drive::grovedb::GroveDb;
 use std::path::{Path, PathBuf};
+use tenderdash_abci::proto::abci;
 
 const SNAPSHOT_KEY: &[u8] = b"snapshots";
 
@@ -26,6 +27,17 @@ pub struct Snapshot {
     pub hash: [u8; 32],
     /// Metadata
     pub metadata: Vec<u8>,
+}
+
+impl From<Snapshot> for abci::Snapshot {
+    fn from(snapshot: Snapshot) -> Self {
+        abci::Snapshot {
+            height: snapshot.height as u64,
+            version: snapshot.version as u32,
+            hash: snapshot.hash.into(),
+            metadata: snapshot.metadata,
+        }
+    }
 }
 
 /// Snapshot manager is responsible for creating and managing snapshots to keep only the certain
