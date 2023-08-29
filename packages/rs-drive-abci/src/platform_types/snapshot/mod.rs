@@ -233,6 +233,5 @@ mod tests {
         manager
             .offer_snapshot(&grove, snapshot_2000.clone(), app_hash.clone())
             .unwrap();
-        fs::remove_dir_all(grove_dir.path()).unwrap();
     }
 }
