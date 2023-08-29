@@ -26,6 +26,17 @@ macro_rules! get_proof {
 
 #[async_trait]
 pub trait TestVector {
+    /// Generate a test vector for a given request and response.
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - The request sent to the RPC server.
+    /// * `response` - The response received from the RPC server.
+    /// * `proof` - The proof received from the RPC server.
+    ///
+    /// # Returns
+    ///
+    /// A JSON string containing the test vector.
     async fn test_vector<I, O>(
         &self,
         request: I,
