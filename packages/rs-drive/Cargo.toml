@@ -24,7 +24,7 @@ sqlparser = { version = "0.13.0" }
 thiserror = { version = "1.0.30" }
 moka = { version = "0.11.1", features = ["future", "futures-util"] }
 nohash-hasher = { version = "0.2.0" }
-dpp = { path = "../rs-dpp", features = ["drive", "cbor"]}
+dpp = { path = "../rs-dpp", features = ["drive", "cbor"] }
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 derive_more = "0.99.17"
 
@@ -42,16 +42,47 @@ rust_decimal = { version = "1.2.5", optional = true }
 rust_decimal_macros = { version = "1.25.0", optional = true }
 lazy_static = { version = "1.4.0", optional = true }
 mockall = { version = "0.11", optional = true }
-grovedb = { version = "1.0.0-rc.1", optional = true}
-grovedb-costs = { version = "1.0.0-rc.1", optional = true}
-grovedb-path = { version = "1.0.0-rc.1"}
-grovedb-storage = { version = "1.0.0-rc.1", optional = true}
+
+# TODO: as soon as we get a release with "wipe" operation, needs to replace the revision commit on the version
+[dependencies.grovedb]
+git = "https://github.com/dashpay/grovedb"
+rev = "cc1b577227525b2cfa9114590283b1a4a4d91661"
+optional = true
+default-features = false
+
+[dependencies.grovedb_storage]
+package = "grovedb-storage"
+git = "https://github.com/dashpay/grovedb"
+rev = "cc1b577227525b2cfa9114590283b1a4a4d91661"
+optional = true
+
+[dependencies.grovedb_costs]
+package = "grovedb-costs"
+git = "https://github.com/dashpay/grovedb"
+rev = "cc1b577227525b2cfa9114590283b1a4a4d91661"
+optional = true
+
+[dependencies.grovedb_path]
+package = "grovedb-path"
+git = "https://github.com/dashpay/grovedb"
+rev = "cc1b577227525b2cfa9114590283b1a4a4d91661"
 
 [dev-dependencies]
 criterion = "0.3.5"
-platform-version = { path = "../rs-platform-version", features = ["mock-versions"]}
-dpp = { path = "../rs-dpp", features = ["drive", "document-cbor-conversion", "random-documents", "random-identities",
-  "random-public-keys", "fixtures-and-mocks", "system_contracts", "factories", "data-contract-json-conversion"]}
+platform-version = { path = "../rs-platform-version", features = [
+    "mock-versions",
+] }
+dpp = { path = "../rs-dpp", features = [
+    "drive",
+    "document-cbor-conversion",
+    "random-documents",
+    "random-identities",
+    "random-public-keys",
+    "fixtures-and-mocks",
+    "system_contracts",
+    "factories",
+    "data-contract-json-conversion",
+] }
 
 [[bench]]
 name = "benchmarks"
@@ -59,15 +90,12 @@ harness = false
 
 [features]
 default = ["full"]
-fixtures-and-mocks = ["mockall"]
+fixtures-and-mocks = ["mockall", "dpp/fixtures-and-mocks"]
 full = [
     "fixtures-and-mocks",
     "grovedb/estimated_costs",
-    "grovedb-storage",
-    "grovedb-costs",
-    "grovedb/estimated_costs",
-    "storage",
-    "costs",
+    "grovedb_storage",
+    "grovedb_costs",
     "bs58",
     "base64",
     "hex",
@@ -81,4 +109,4 @@ full = [
     "rust_decimal_macros",
     "lazy_static",
 ]
-verify = ["grovedb/verify", "grovedb-costs"]
+verify = ["grovedb/verify", "grovedb_costs"]
