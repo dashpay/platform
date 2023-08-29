@@ -188,12 +188,12 @@ impl DocumentFactoryWASM {
     //     buffer: Vec<u8>,
     //     options: &JsValue,
     // ) -> Result<ExtendedDocumentWasm, JsValue> {
-    //     let options: FactoryOptions = if !options.is_undefined() && options.is_object() {
-    //         let raw_options = options.with_serde_to_json_value()?;
-    //         serde_json::from_value(raw_options).with_js_error()?
-    //     } else {
-    //         Default::default()
-    //     };
+    //     // let options: FactoryOptions = if !options.is_undefined() && options.is_object() {
+    //     //     let raw_options = options.with_serde_to_json_value()?;
+    //     //     serde_json::from_value(raw_options).with_js_error()?
+    //     // } else {
+    //     //     Default::default()
+    //     // };
     //
     //     let document = self
     //         .0
