@@ -230,7 +230,7 @@ impl DocumentWasm {
             .updated_at()
             .map(|v| js_sys::Date::new(&JsValue::from_f64(v as f64)))
     }
-    //
+
     // #[wasm_bindgen(js_name=toObject)]
     // pub fn to_object(
     //     &self,
