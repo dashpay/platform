@@ -49,9 +49,10 @@ use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{self as proto, ExtendVoteExtension, ResponseException};
 use tenderdash_abci::proto::abci::{
-    ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
-    RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
-    ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
+    ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestLoadSnapshotChunk,
+    RequestPrepareProposal, RequestProcessProposal, RequestQuery, ResponseCheckTx,
+    ResponseFinalizeBlock, ResponseInitChain, ResponseLoadSnapshotChunk, ResponsePrepareProposal,
+    ResponseProcessProposal, ResponseQuery, TxRecord,
 };
 use tenderdash_abci::proto::types::VoteExtensionType;
 
@@ -745,6 +746,26 @@ where
         tracing::trace!(method = "query", ?request, ?response);
 
         Ok(response)
+    }
+
+    fn load_snapshot_chunk(
+        &self,
+        request: RequestLoadSnapshotChunk,
+    ) -> Result<ResponseLoadSnapshotChunk, ResponseException> {
+        let mut manager = self.snapshot_manager.borrow_mut();
+        match manager.as_mut() {
+            Some(manager) => {
+                tracing::debug!("Loading snapshot chunk");
+                match manager.load_snapshot_chunk(&self.platform.drive.grove, request.chunk_id) {
+                    Ok(result) => Ok(ResponseLoadSnapshotChunk { chunk: result }),
+                    Err(e) => Err(ResponseException::from(e)),
+                }
+            }
+            None => {
+                tracing::warn!("Snapshot manager is not configured");
+                Ok(Default::default())
+            }
+        }
     }
 }
 //
