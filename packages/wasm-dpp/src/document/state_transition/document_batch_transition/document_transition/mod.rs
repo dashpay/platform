@@ -80,6 +80,11 @@ impl DocumentTransitionWasm {
         }
     }
 
+    #[wasm_bindgen(js_name=setRevision)]
+    pub fn set_revision(&mut self, revision: u32) {
+        self.0.set_revision(revision as u64);
+    }
+
     #[wasm_bindgen(js_name=getCreatedAt)]
     pub fn get_created_at(&self) -> JsValue {
         if let Some(created_at) = self.0.created_at() {
