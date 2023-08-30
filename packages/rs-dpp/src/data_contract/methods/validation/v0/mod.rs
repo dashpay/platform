@@ -36,7 +36,12 @@ impl DataContract {
         value: Value,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        let document_type = self.document_type_for_name(name)?;
+        let Some(document_type) = self
+            .document_type_optional_for_name(name) else {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidDocumentTypeError::new(name.to_owned(), self.id()).into(),
+            ));
+        };
 
         let validator = match document_type {
             DocumentTypeRef::V0(v0) => v0.json_schema_validator.deref(),
