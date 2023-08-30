@@ -131,7 +131,7 @@ mod test {
 
     use dpp::document::{DocumentV0Getters, DocumentV0Setters};
     use dpp::platform_value;
-    use dpp::platform_value::platform_value;
+    use dpp::platform_value::{Bytes32, platform_value};
     use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
     use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::dashpay::create_contact_request_data_trigger;
@@ -176,7 +176,7 @@ mod test {
 
         let document_transitions = get_document_transitions_fixture([(
             DocumentTransitionActionType::Create,
-            vec![(contact_request_document, document_type)],
+            vec![(contact_request_document, document_type, Bytes32::default())],
         )]);
         let document_transition = document_transitions
             .get(0)
@@ -263,7 +263,7 @@ mod test {
 
         let document_transitions = get_document_transitions_fixture([(
             DocumentTransitionActionType::Create,
-            vec![(contact_request_document, document_type)],
+            vec![(contact_request_document, document_type, Bytes32::default())],
         )]);
         let document_transition = document_transitions
             .get(0)
@@ -374,7 +374,7 @@ mod test {
 
         let document_transitions = get_document_transitions_fixture([(
             DocumentTransitionActionType::Create,
-            vec![(contact_request_document, document_type)],
+            vec![(contact_request_document, document_type, Bytes32::default())],
         )]);
         let document_transition = document_transitions
             .get(0)
