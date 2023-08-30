@@ -298,7 +298,7 @@ describe('DocumentFactory', () => {
         .filter((t) => t.getAction() === 0);
 
       expect(replaceDocuments[0].getId()).to.deep.equal(newDocument.getId());
-      expect(replaceDocuments[0].getRevision()).to.deep.equal(1);
+      expect(replaceDocuments[0].getRevision()).to.deep.equal(2);
       expect(createDocuments).to.have.lengthOf(documents.length);
     });
   });
