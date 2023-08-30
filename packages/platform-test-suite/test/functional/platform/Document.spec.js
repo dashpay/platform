@@ -58,8 +58,7 @@ describe('Platform', () => {
       }
     });
 
-    // TODO(versioning): restore - crashes drive with "check tx system error"
-    it.skip('should fail to create new document with an unknown type', async () => {
+    it('should fail to create new document with an unknown type', async () => {
       // Add undefined document type for
       client.getApps().get('customContracts').contract.setDocumentSchema('undefinedType', {
         type: 'object',
@@ -274,7 +273,6 @@ describe('Platform', () => {
       expect(proof.round).to.be.greaterThanOrEqual(0);
     });
 
-    // TODO(versioning): fix - some issue with revision
     it('should fail to update document with timestamp in violated time frame', async () => {
       const [storedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',
@@ -300,7 +298,7 @@ describe('Platform', () => {
 
       documentsBatchTransition.setTransitions(transitions);
       const signedTransition = await signStateTransition(
-        client.platform, documentsBatchTransition, identity, 2,
+        client.platform, documentsBatchTransition, identity, 1,
       );
 
       try {

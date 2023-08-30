@@ -44,12 +44,12 @@ export async function createIdentityCreateTransition(
   const keyTwo = new IdentityPublicKey(1);
   keyTwo.setId(1);
   keyTwo.setData(identitySecondPublicKey.toBuffer());
-  keyTwo.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.CRITICAL);
+  keyTwo.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH);
 
   const keyThree = new IdentityPublicKey(1);
   keyThree.setId(2);
   keyThree.setData(identityThirdPublicKey.toBuffer());
-  keyThree.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH);
+  keyThree.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.CRITICAL);
 
   // Create Identity
   const identity = dpp.identity.create(
