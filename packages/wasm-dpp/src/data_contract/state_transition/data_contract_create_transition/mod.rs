@@ -6,6 +6,8 @@ use std::collections::HashMap;
 
 use crate::errors::protocol_error::from_protocol_error;
 use dpp::data_contract::JsonValue;
+use dpp::errors::consensus::signature::SignatureError;
+use dpp::errors::consensus::ConsensusError;
 use dpp::platform_value::Value;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
@@ -180,30 +182,29 @@ impl DataContractCreateTransitionWasm {
         Ok(())
     }
 
-    // #[wasm_bindgen(js_name=verifySignature)]
-    // pub fn verify_signature(
-    //     &self,
-    //     identity_public_key: &IdentityPublicKeyWasm,
-    //     bls: JsBlsAdapter,
-    // ) -> Result<bool, JsValue> {
-    //     let bls_adapter = BlsAdapter(bls);
-    //
-    //     let verification_result = self
-    //         .0
-    //         .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
-    //
-    //     match verification_result {
-    //         Ok(()) => Ok(true),
-    //         Err(protocol_error) => match &protocol_error {
-    //             ProtocolError::ConsensusError(err) => match err.as_ref() {
-    //                 ConsensusError::SignatureError(
-    //                     SignatureError::InvalidStateTransitionSignatureError { .. },
-    //                 ) => Ok(false),
-    //                 _ => Err(protocol_error),
-    //             },
-    //             _ => Err(protocol_error),
-    //         },
-    //     }
-    //     .with_js_error()
-    // }
+    #[wasm_bindgen(js_name=verifySignature)]
+    pub fn verify_signature(
+        &self,
+        identity_public_key: &IdentityPublicKeyWasm,
+        bls: JsBlsAdapter,
+    ) -> Result<bool, JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+
+        let verification_result = StateTransition::DataContractCreate(self.0.clone())
+            .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+
+        match verification_result {
+            Ok(()) => Ok(true),
+            Err(protocol_error) => match &protocol_error {
+                ProtocolError::ConsensusError(err) => match err.as_ref() {
+                    ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError { .. },
+                    ) => Ok(false),
+                    _ => Err(protocol_error),
+                },
+                _ => Err(protocol_error),
+            },
+        }
+        .with_js_error()
+    }
 }
