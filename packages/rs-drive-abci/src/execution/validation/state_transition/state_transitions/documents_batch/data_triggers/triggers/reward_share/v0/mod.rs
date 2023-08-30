@@ -205,7 +205,7 @@ mod test {
     use dpp::document::{Document, DocumentV0Setters};
     use dpp::identity::Identity;
 
-    use dpp::platform_value::{Identifier, Value};
+    use dpp::platform_value::{Bytes32, Identifier, Value};
     use dpp::tests::fixtures::{
         get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
     };
@@ -301,7 +301,7 @@ mod test {
             .expect("expected the rewards document type");
         let document_transitions = get_document_transitions_fixture([(
             DocumentTransitionActionType::Create,
-            vec![(documents[0].clone(), document_type)],
+            vec![(documents[0].clone(), document_type, Bytes32::default())],
         )]);
 
         let document_create_transition = document_transitions[0]
