@@ -23,7 +23,7 @@ describe.skip('DocumentsBatchTransition', () => {
 
   beforeEach(async () => {
     ({
-      ProtocolVersionValidator, DocumentValidator, DocumentFactory, DataContract,
+      ProtocolVersionValidator, DocumentValidator, DocumentFactory,
       ExtendedDocument,
     } = await loadWasmDpp());
   });

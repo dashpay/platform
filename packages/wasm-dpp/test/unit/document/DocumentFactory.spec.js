@@ -41,7 +41,7 @@ describe('DocumentFactory', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(async function beforeEach() {
+  beforeEach(async () => {
     dataContract = await getDataContractFixture();
     dataContractId = dataContract.getId();
 

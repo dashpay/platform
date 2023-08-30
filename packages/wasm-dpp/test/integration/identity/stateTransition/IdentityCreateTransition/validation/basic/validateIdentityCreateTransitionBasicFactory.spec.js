@@ -54,7 +54,7 @@ describe.skip('validateIdentityCreateTransitionBasicFactory', () => {
     );
   });
 
-  beforeEach(async function () {
+  beforeEach(async function beforeEach() {
     this.timeout(20000);
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.verifyInstantLock.resolves(true);

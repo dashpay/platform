@@ -5,9 +5,8 @@ const { default: loadWasmDpp } = require('../..');
 
 describe('DashPlatformProtocol', () => {
   let dpp;
-  let stateRepositoryMock;
 
-  beforeEach(async function beforeEach() {
+  beforeEach(async () => {
     await loadWasmDpp();
 
     dpp = new DashPlatformProtocol(

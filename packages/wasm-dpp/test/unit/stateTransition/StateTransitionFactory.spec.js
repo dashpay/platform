@@ -3,7 +3,6 @@ const getDataContractFixture = require('../../../lib/test/fixtures/getDataContra
 // const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 
 const { default: loadWasmDpp } = require('../../..');
-const { getLatestProtocolVersion } = require('../../..');
 // const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('StateTransitionFactory', function main() {
@@ -27,7 +26,7 @@ describe('StateTransitionFactory', function main() {
     } = await loadWasmDpp());
   });
 
-  beforeEach(async function beforeEach() {
+  beforeEach(async () => {
     const dataContract = await getDataContractFixture();
 
     const rawDataContract = dataContract.toObject();

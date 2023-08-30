@@ -78,8 +78,8 @@ describe('IdentityUpdateTransition', () => {
 
       stateTransition.setPublicKeysToAdd(publicKeys);
 
-      expect(stateTransition.addPublicKeys.map((key) => key.toObject()))
-        .to.have.deep.members(publicKeys.map((key) => key.toObject()));
+      expect(stateTransition.addPublicKeys.map((k) => k.toObject()))
+        .to.have.deep.members(publicKeys.map((k) => k.toObject()));
     });
   });
 

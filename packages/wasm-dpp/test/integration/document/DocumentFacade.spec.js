@@ -3,7 +3,6 @@ const generateRandomIdentifier = require('../../../lib/test/fixtures/js/generate
 const getDataContractFixture = require('../../../lib/test/fixtures/js/getDataContractFixture');
 const getDocumentsFixture = require('../../../lib/test/fixtures/js/getDocumentsFixture');
 const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
-const getDocumentTransitionsFixture = require('../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
 const {
   ExtendedDocument,

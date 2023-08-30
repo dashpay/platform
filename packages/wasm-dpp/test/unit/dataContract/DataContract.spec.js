@@ -143,7 +143,7 @@ describe('DataContract', () => {
         properties: {
           test: {
             type: 'string',
-          }
+          },
         },
         additionalProperties: false,
       };

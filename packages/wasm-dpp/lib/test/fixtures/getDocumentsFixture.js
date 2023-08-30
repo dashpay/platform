@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const getDataContractFixture = require('./getDataContractFixture');
 
 const { default: loadWasmDpp } = require('../../..');
-let { DocumentFactory, DocumentValidator, ProtocolVersionValidator } = require('../../..');
+let { DocumentFactory } = require('../../..');
 const generateRandomIdentifierAsync = require('../utils/generateRandomIdentifierAsync');
 
 let ownerId;
