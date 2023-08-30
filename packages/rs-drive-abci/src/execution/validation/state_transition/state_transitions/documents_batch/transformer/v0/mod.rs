@@ -440,6 +440,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                     InvalidDocumentRevisionError::new(
                         document_transition.base().id(),
                         None,
+                        revision
                     )
                 )
             ));
@@ -452,6 +453,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 StateError::InvalidDocumentRevisionError(InvalidDocumentRevisionError::new(
                     document_transition.base().id(),
                     Some(previous_revision),
+                    revision,
                 )),
             ))
         }

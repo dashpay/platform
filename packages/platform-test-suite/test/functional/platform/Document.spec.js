@@ -275,7 +275,7 @@ describe('Platform', () => {
     });
 
     // TODO(versioning): fix - some issue with revision
-    it.skip('should fail to update document with timestamp in violated time frame', async () => {
+    it('should fail to update document with timestamp in violated time frame', async () => {
       const [storedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',
         { where: [['$id', '==', document.getId()]] },
@@ -295,6 +295,7 @@ describe('Platform', () => {
       await waitForSTPropagated();
 
       const transitions = documentsBatchTransition.getTransitions();
+      transitions[0].setRevision(transitions[0].getRevision() + 1);
       transitions[0].setUpdatedAt(updatedAt);
 
       documentsBatchTransition.setTransitions(transitions);

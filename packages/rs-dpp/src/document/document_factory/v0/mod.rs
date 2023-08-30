@@ -15,6 +15,7 @@ use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier, Value};
 
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+use crate::document::document_methods::DocumentMethodsV0;
 #[cfg(feature = "extended-document")]
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -381,7 +382,7 @@ impl DocumentFactoryV0 {
                     .into());
                 };
 
-                document.set_revision(document.revision().map(|revision| revision + 1));
+                document.increment_revision()?;
                 document.set_updated_at(Some(Utc::now().timestamp_millis() as TimestampMillis));
 
                 Ok(DocumentReplaceTransition::from_document(
