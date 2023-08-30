@@ -12,6 +12,7 @@ use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::prelude::Revision;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentTransitionObjectLike;
 use dpp::state_transition::documents_batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::documents_batch_transition::document_create_transition::DocumentCreateTransition;
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
@@ -65,18 +66,18 @@ impl DocumentCreateTransitionWasm {
     ) -> Result<DocumentCreateTransitionWasm, JsValue> {
         let data_contract: DataContract = data_contract.clone().into();
         let mut value = raw_object.with_serde_to_platform_value_map()?;
-        let document_type = value
-            .get_string(dpp::document::extended_document::property_names::DOCUMENT_TYPE_NAME)
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
-
-        let (identifier_paths, _): (Vec<_>, Vec<_>) = data_contract
-            .get_identifiers_and_binary_paths_owned(document_type.as_str())
-            .with_js_error()?;
-        value
-            .replace_at_paths(identifier_paths, ReplacementType::Identifier)
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
+        // let document_type = value
+        //     .get_string(dpp::document::extended_document::property_names::DOCUMENT_TYPE_NAME)
+        //     .map_err(ProtocolError::ValueError)
+        //     .with_js_error()?;
+        //
+        // let (identifier_paths, _): (Vec<_>, Vec<_>) = data_contract
+        //     .get_identifiers_and_binary_paths_owned(document_type.as_str())
+        //     .with_js_error()?;
+        // value
+        //     .replace_at_paths(identifier_paths, ReplacementType::Identifier)
+        //     .map_err(ProtocolError::ValueError)
+        //     .with_js_error()?;
         let transition =
             DocumentCreateTransition::from_value_map(value, data_contract).with_js_error()?;
 
@@ -221,9 +222,9 @@ impl DocumentCreateTransitionWasm {
     pub fn to_object(&self, options: &JsValue) -> Result<JsValue, JsValue> {
         let (identifiers_paths, binary_paths) = self
             .inner
-            .base
+            .base()
             .data_contract
-            .get_identifiers_and_binary_paths(&self.inner.base.document_type_name)
+            .get_identifiers_and_binary_paths(&self.inner.base().document_type_name)
             .with_js_error()?;
 
         to_object(

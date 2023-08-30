@@ -147,6 +147,17 @@ impl DataContractWasm {
         self.inner.increment_version()
     }
 
+    #[wasm_bindgen(js_name=getBinaryProperties)]
+    pub fn get_binary_properties(&self, doc_type: &str) -> Result<JsValue, JsValue> {
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        with_js_error!(self
+            .inner
+            .document_type_for_name(doc_type)
+            .with_js_error()?
+            .binary_paths()
+            .serialize(&serializer))
+    }
+
     #[wasm_bindgen(js_name=setDocumentSchemas)]
     pub fn set_document_schemas(
         &mut self,

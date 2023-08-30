@@ -471,7 +471,7 @@ mod test {
         init();
         let init_doc = new_example_document();
         let buffer_document = init_doc
-            .serialize(LATEST_PLATFORM_VERSION)
+            .serialize_to_bytes(LATEST_PLATFORM_VERSION)
             .expect("no errors");
 
         let doc = ExtendedDocument::from_bytes(buffer_document.as_slice(), LATEST_PLATFORM_VERSION)
@@ -605,7 +605,7 @@ mod test {
 
     fn document_bytes() -> Vec<u8> {
         new_example_document()
-            .serialize(LATEST_PLATFORM_VERSION)
+            .serialize_to_bytes(LATEST_PLATFORM_VERSION)
             .unwrap()
     }
 

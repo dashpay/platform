@@ -7,7 +7,7 @@ const {
   IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyWithWitness,
   InvalidIdentityError, UnsupportedProtocolVersionError,
 } = require('../../..');
-const { IdentityPublicKey, SerializedObjectParsingError } = require('../../..');
+const { SerializedObjectParsingError } = require('../../..');
 
 describe('IdentityFactory', () => {
   let factory;
@@ -16,7 +16,7 @@ describe('IdentityFactory', () => {
   let chainAssetLockProof;
   let fakeTime;
 
-  beforeEach(async function () {
+  beforeEach(async function beforeEach() {
     instantAssetLockProof = await getInstantAssetLockProofFixture();
     chainAssetLockProof = new ChainAssetLockProof(getChainAssetLockProofFixture().toObject());
 
@@ -243,8 +243,8 @@ describe('IdentityFactory', () => {
       expect(stateTransition).to.be.instanceOf(IdentityUpdateTransition);
       expect(stateTransition.getIdentityId().toBuffer()).to.deep.equal(identity.getId().toBuffer());
       expect(stateTransition.getRevision()).to.deep.equal(revision);
-      expect(stateTransition.getPublicKeysToAdd().map((key) => key.toObject()))
-        .to.deep.equal(addPublicKeys.map((key) => key.toObject()));
+      expect(stateTransition.getPublicKeysToAdd().map((k) => k.toObject()))
+        .to.deep.equal(addPublicKeys.map((k) => k.toObject()));
       expect(stateTransition.getPublicKeyIdsToDisable()).to.deep.equal([0]);
       expect(stateTransition.getPublicKeysDisabledAt()).to.deep.equal(new Date());
     });

@@ -45,7 +45,7 @@ describe.skip('applyIdentityCreateTransitionFactory', () => {
     );
   });
 
-  it('should store identity created from state transition', async function () {
+  it('should store identity created from state transition', async function beforeEach() {
     await applyIdentityCreateTransition(stateTransition);
 
     const balance = convertSatoshiToCredits(

@@ -1,10 +1,10 @@
-mod document_create_transition;
-mod document_delete_transition;
-mod document_replace_transition;
+// mod document_create_transition;
+// mod document_delete_transition;
+// mod document_replace_transition;
 
-pub use document_create_transition::*;
-pub use document_delete_transition::*;
-pub use document_replace_transition::*;
+// pub use document_create_transition::*;
+// pub use document_delete_transition::*;
+// pub use document_replace_transition::*;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -54,10 +54,10 @@ impl DocumentTransitionWasm {
         self.0.action_type() as u8
     }
 
-    #[wasm_bindgen(js_name=getDataContract)]
-    pub fn get_data_contract(&self) -> DataContractWasm {
-        self.0.data_contract().to_owned().into()
-    }
+    // #[wasm_bindgen(js_name=getDataContract)]
+    // pub fn get_data_contract(&self) -> DataContractWasm {
+    //     self.0.data_contract().to_owned().into()
+    // }
 
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn get_data_contract_id(&self) -> IdentifierWrapper {
@@ -112,129 +112,129 @@ impl DocumentTransitionWasm {
             .set_created_at(created_at.map(|timestamp| timestamp.get_time() as TimestampMillis));
     }
 
-    #[wasm_bindgen(js_name=getData)]
-    pub fn get_data(&self) -> Result<JsValue, JsValue> {
-        if let Some(data) = self.0.data() {
-            let (identifier_paths, binary_paths) = self
-                .0
-                .data_contract()
-                .get_identifiers_and_binary_paths(self.0.document_type_name())
-                .with_js_error()?;
+    // #[wasm_bindgen(js_name=getData)]
+    // pub fn get_data(&self) -> Result<JsValue, JsValue> {
+    //     if let Some(data) = self.0.data() {
+    //         let (identifier_paths, binary_paths) = self
+    //             .0
+    //             .data_contract()
+    //             .get_identifiers_and_binary_paths(self.0.document_type_name())
+    //             .with_js_error()?;
+    //
+    //         let js_value = to_object(
+    //             data.clone().into(),
+    //             &JsValue::NULL,
+    //             identifier_paths,
+    //             binary_paths,
+    //         )?;
+    //         Ok(js_value)
+    //     } else {
+    //         Ok(JsValue::NULL)
+    //     }
+    // }
+    //
+    // #[wasm_bindgen(js_name=get)]
+    // pub fn get(&self, path: &str, data_contract: &DataContractWasm) -> JsValue {
+    //     let binary_type = self.get_binary_type_of_path(path, data_contract);
+    //
+    //     if let Some(value) = self.0.get_dynamic_property(path) {
+    //         match binary_type {
+    //             BinaryType::Identifier => {
+    //                 if let Ok(bytes) = value.to_identifier_bytes() {
+    //                     let id: IdentifierWrapper = Identifier::from_bytes(&bytes).unwrap().into();
+    //                     return id.into();
+    //                 }
+    //             }
+    //             BinaryType::Buffer => {
+    //                 if let Ok(bytes) = value.to_binary_bytes() {
+    //                     return Buffer::from_bytes(&bytes).into();
+    //                 }
+    //             }
+    //             BinaryType::None => {
+    //                 let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    //                 if let Ok(js_value) = value.serialize(&serializer) {
+    //                     return js_value;
+    //                 }
+    //             }
+    //         }
+    //     }
+    //
+    //     JsValue::undefined()
+    // }
 
-            let js_value = to_object(
-                data.clone().into(),
-                &JsValue::NULL,
-                identifier_paths,
-                binary_paths,
-            )?;
-            Ok(js_value)
-        } else {
-            Ok(JsValue::NULL)
-        }
-    }
+    // #[wasm_bindgen(js_name=toObject)]
+    // pub fn to_object(
+    //     &self,
+    //     options: &JsValue,
+    //     data_contract: &DataContractWasm,
+    // ) -> Result<JsValue, JsValue> {
+    //     match self.0 {
+    //         DocumentTransition::Create(ref t) => DocumentCreateTransitionWasm::from(t.to_owned())
+    //             .to_object(options, data_contract.inner()),
+    //         DocumentTransition::Replace(ref t) => DocumentReplaceTransitionWasm::from(t.to_owned())
+    //             .to_object(options, data_contract.inner()),
+    //         DocumentTransition::Delete(ref t) => DocumentDeleteTransitionWasm::from(t.to_owned())
+    //             .to_object(options, data_contract.inner()),
+    //     }
+    // }
 
-    #[wasm_bindgen(js_name=get)]
-    pub fn get(&self, path: &str, data_contract: &DataContractWasm) -> JsValue {
-        let binary_type = self.get_binary_type_of_path(path, data_contract);
-
-        if let Some(value) = self.0.get_dynamic_property(path) {
-            match binary_type {
-                BinaryType::Identifier => {
-                    if let Ok(bytes) = value.to_identifier_bytes() {
-                        let id: IdentifierWrapper = Identifier::from_bytes(&bytes).unwrap().into();
-                        return id.into();
-                    }
-                }
-                BinaryType::Buffer => {
-                    if let Ok(bytes) = value.to_binary_bytes() {
-                        return Buffer::from_bytes(&bytes).into();
-                    }
-                }
-                BinaryType::None => {
-                    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-                    if let Ok(js_value) = value.serialize(&serializer) {
-                        return js_value;
-                    }
-                }
-            }
-        }
-
-        JsValue::undefined()
-    }
-
-    #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(
-        &self,
-        options: &JsValue,
-        data_contract: &DataContractWasm,
-    ) -> Result<JsValue, JsValue> {
-        match self.0 {
-            DocumentTransition::Create(ref t) => DocumentCreateTransitionWasm::from(t.to_owned())
-                .to_object(options, data_contract.inner()),
-            DocumentTransition::Replace(ref t) => DocumentReplaceTransitionWasm::from(t.to_owned())
-                .to_object(options, data_contract.inner()),
-            DocumentTransition::Delete(ref t) => DocumentDeleteTransitionWasm::from(t.to_owned())
-                .to_object(options, data_contract.inner()),
-        }
-    }
-
-    #[wasm_bindgen(js_name=toJSON)]
-    pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let json_value = self.0.to_json().with_js_error()?;
-        with_js_error!(json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible()))
-    }
-
-    #[wasm_bindgen(js_name=fromTransitionCreate)]
-    pub fn from_transition_create(
-        js_create_transition: DocumentCreateTransitionWasm,
-    ) -> DocumentTransitionWasm {
-        let transition_create: DocumentCreateTransition = js_create_transition.into();
-        let document_transition = DocumentTransition::Create(transition_create);
-
-        document_transition.into()
-    }
-
-    #[wasm_bindgen(js_name=fromTransitionReplace)]
-    pub fn from_transition_replace(
-        js_replace_transition: DocumentReplaceTransitionWasm,
-    ) -> DocumentTransitionWasm {
-        let transition_replace: DocumentReplaceTransition = js_replace_transition.into();
-        let document_transition = DocumentTransition::Replace(transition_replace);
-
-        document_transition.into()
-    }
-
-    #[wasm_bindgen(js_name=fromTransitionDelete)]
-    pub fn from_transition_delete(
-        js_delete_transition: DocumentDeleteTransitionWasm,
-    ) -> DocumentTransitionWasm {
-        let transition_delete: DocumentDeleteTransition = js_delete_transition.into();
-        let document_transition = DocumentTransition::Delete(transition_delete);
-
-        document_transition.into()
-    }
+    // #[wasm_bindgen(js_name=toJSON)]
+    // pub fn to_json(&self) -> Result<JsValue, JsValue> {
+    //     let json_value = self.0.to_json().with_js_error()?;
+    //     with_js_error!(json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible()))
+    // }
+    //
+    // #[wasm_bindgen(js_name=fromTransitionCreate)]
+    // pub fn from_transition_create(
+    //     js_create_transition: DocumentCreateTransitionWasm,
+    // ) -> DocumentTransitionWasm {
+    //     let transition_create: DocumentCreateTransition = js_create_transition.into();
+    //     let document_transition = DocumentTransition::Create(transition_create);
+    //
+    //     document_transition.into()
+    // }
+    //
+    // #[wasm_bindgen(js_name=fromTransitionReplace)]
+    // pub fn from_transition_replace(
+    //     js_replace_transition: DocumentReplaceTransitionWasm,
+    // ) -> DocumentTransitionWasm {
+    //     let transition_replace: DocumentReplaceTransition = js_replace_transition.into();
+    //     let document_transition = DocumentTransition::Replace(transition_replace);
+    //
+    //     document_transition.into()
+    // }
+    //
+    // #[wasm_bindgen(js_name=fromTransitionDelete)]
+    // pub fn from_transition_delete(
+    //     js_delete_transition: DocumentDeleteTransitionWasm,
+    // ) -> DocumentTransitionWasm {
+    //     let transition_delete: DocumentDeleteTransition = js_delete_transition.into();
+    //     let document_transition = DocumentTransition::Delete(transition_delete);
+    //
+    //     document_transition.into()
+    // }
 }
-
-impl DocumentTransitionWasm {
-    fn get_binary_type_of_path(
-        &self,
-        path: impl AsRef<str>,
-        data_contract: DataContractWasm,
-    ) -> Result<BinaryType, JsValue> {
-        let document_type = data_contract
-            .inner()
-            .document_type_for_name(self.0.document_type_name().as_str())
-            .with_js_error()?;
-
-        if document_type.binary_paths().contains(&path) {
-            Ok(BinaryType::Buffer)
-        } else if document_type.identifier_paths().contains(&path) {
-            Ok(BinaryType::Identifier)
-        } else {
-            Ok(BinaryType::None)
-        }
-    }
-}
+//
+// impl DocumentTransitionWasm {
+//     fn get_binary_type_of_path(
+//         &self,
+//         path: impl AsRef<str>,
+//         data_contract: DataContractWasm,
+//     ) -> Result<BinaryType, JsValue> {
+//         let document_type = data_contract
+//             .inner()
+//             .document_type_for_name(self.0.document_type_name().as_str())
+//             .with_js_error()?;
+//
+//         if document_type.binary_paths().contains(&path) {
+//             Ok(BinaryType::Buffer)
+//         } else if document_type.identifier_paths().contains(&path) {
+//             Ok(BinaryType::Identifier)
+//         } else {
+//             Ok(BinaryType::None)
+//         }
+//     }
+// }
 
 impl From<DocumentTransition> for DocumentTransitionWasm {
     fn from(v: DocumentTransition) -> Self {
@@ -264,19 +264,19 @@ impl Inner for DocumentTransitionWasm {
     }
 }
 
-pub fn from_document_transition_to_js_value(document_transition: DocumentTransition) -> JsValue {
-    match document_transition {
-        DocumentTransition::Create(create_transition) => {
-            DocumentCreateTransitionWasm::from(create_transition).into()
-        }
-        DocumentTransition::Replace(replace_transition) => {
-            DocumentReplaceTransitionWasm::from(replace_transition).into()
-        }
-        DocumentTransition::Delete(delete_transition) => {
-            DocumentDeleteTransitionWasm::from(delete_transition).into()
-        }
-    }
-}
+// pub fn from_document_transition_to_js_value(document_transition: DocumentTransition) -> JsValue {
+//     match document_transition {
+//         DocumentTransition::Create(create_transition) => {
+//             DocumentCreateTransitionWasm::from(create_transition).into()
+//         }
+//         DocumentTransition::Replace(replace_transition) => {
+//             DocumentReplaceTransitionWasm::from(replace_transition).into()
+//         }
+//         DocumentTransition::Delete(delete_transition) => {
+//             DocumentDeleteTransitionWasm::from(delete_transition).into()
+//         }
+//     }
+// }
 
 pub(crate) fn to_object<'a>(
     value: Value,
@@ -299,7 +299,7 @@ pub(crate) fn to_object<'a>(
     let js_value = value.serialize(&serializer)?;
 
     for path in identifiers_paths.into_iter() {
-        if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
+        if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path.clone()) {
             let buffer = Buffer::from_bytes_owned(bytes);
             if !options.skip_identifiers_conversion {
                 lodash_set(&js_value, path, buffer.into());

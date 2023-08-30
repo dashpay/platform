@@ -1,5 +1,6 @@
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::document_factory::DocumentFactory;
+use platform_value::Bytes32;
 use platform_version::version::PlatformVersion;
 
 use crate::document::Document;
@@ -14,14 +15,13 @@ pub fn get_document_transitions_fixture<'a>(
     documents: impl IntoIterator<
         Item = (
             DocumentTransitionActionType,
-            Vec<(Document, DocumentTypeRef<'a>)>,
+            Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
         ),
     >,
 ) -> Vec<DocumentTransition> {
     let protocol_version = PlatformVersion::latest().protocol_version;
-    let data_contract = get_data_contract_fixture(None, protocol_version).data_contract_owned();
-    let document_factory = DocumentFactory::new(protocol_version, data_contract.clone())
-        .expect("expected to get document factory");
+    let document_factory =
+        DocumentFactory::new(protocol_version).expect("expected to get document factory");
 
     document_factory
         .create_state_transition(documents)

@@ -119,7 +119,7 @@ describe.skip('fetchAssetLockTransactionOutputFactory', () => {
       }
     });
 
-    it('should return mocked output on dry run', async function () {
+    it('should return mocked output on dry run', async function shouldReturn() {
       executionContext.enableDryRun();
 
       const result = await fetchAssetLockTransactionOutput(

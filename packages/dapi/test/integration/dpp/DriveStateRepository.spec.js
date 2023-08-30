@@ -36,7 +36,7 @@ describe('DriveStateRepository', () => {
   beforeEach(async function before() {
     dataContractFixture = await getDataContractFixture();
 
-    dpp = new DashPlatformProtocol({}, null, null);
+    dpp = new DashPlatformProtocol(null, 1);
 
     proto = new GetDataContractResponse();
     proto.setDataContract(dataContractFixture.toBuffer());

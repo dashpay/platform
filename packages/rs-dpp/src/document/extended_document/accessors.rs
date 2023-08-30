@@ -104,6 +104,13 @@ impl ExtendedDocument {
         }
     }
 
+    /// Returns a reference to the actual document object containing the data.
+    pub fn document_mut(&mut self) -> &mut Document {
+        match self {
+            ExtendedDocument::V0(v0) => &mut v0.document,
+        }
+    }
+
     /// Sets the document object.
     pub fn set_document(&mut self, document: Document) {
         match self {

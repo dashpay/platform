@@ -4,7 +4,9 @@ use crate::identity::signer::Signer;
 use crate::identity::{IdentityPublicKey, SecurityLevel};
 use crate::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use crate::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
+use crate::state_transition::documents_batch_transition::document_transition::{
+    DocumentTransition, DocumentTransitionV0Methods,
+};
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use platform_value::Identifier;
@@ -74,4 +76,6 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
                 .collect()
         })
     }
+
+    fn set_transitions(&mut self, transitions: Vec<DocumentTransition>);
 }
