@@ -3,6 +3,8 @@ use bincode::{config, Decode, Encode};
 use drive::error::drive::DriveError;
 use drive::error::Error::{Drive, GroveDB};
 use drive::grovedb::GroveDb;
+use prost::Message;
+use std::collections::HashMap;
 use std::mem::take;
 use std::path::{Path, PathBuf};
 use tenderdash_abci::proto::abci;
@@ -44,6 +46,33 @@ pub struct Manager {
     number_stored_snapshots: usize,
     checkpoints_path: String,
     offered_snapshot: Option<OfferedSnapshot>,
+    sender_metrics: Option<HashMap<String, Metrics>>,
+}
+
+struct Metrics {
+    success: usize,
+    error: usize,
+}
+
+enum MetricType {
+    Success,
+    Error,
+}
+
+impl Metrics {
+    fn new() -> Self {
+        Self {
+            success: 0,
+            error: 0,
+        }
+    }
+
+    fn incr(&mut self, metric: MetricType) {
+        match metric {
+            MetricType::Success => self.success += 1,
+            MetricType::Error => self.error += 1,
+        }
+    }
 }
 
 impl Manager {
@@ -58,6 +87,7 @@ impl Manager {
             number_stored_snapshots: DEFAULT_NUMBER_OF_SNAPSHOTS,
             checkpoints_path,
             offered_snapshot: None,
+            sender_metrics: None,
         };
         match freq {
             Some(freq) => manager.freq = freq,
@@ -80,6 +110,7 @@ impl Manager {
     ) -> Result<response_offer_snapshot::Result, Error> {
         match take(&mut self.offered_snapshot) {
             Some(mut offered_snapshot) => {
+                self.sender_metrics = None;
                 if offered_snapshot.snapshot.height == snapshot.height {
                     return Ok(response_offer_snapshot::Result::Reject);
                 }
@@ -91,6 +122,7 @@ impl Manager {
             _ => {}
         };
         self.offered_snapshot = Some(OfferedSnapshot { snapshot, app_hash });
+        self.sender_metrics = Some(HashMap::new());
         Ok(response_offer_snapshot::Result::Accept)
     }
 
@@ -146,6 +178,27 @@ impl Manager {
         self.save_snapshots(grove, snapshots)
     }
 
+    pub fn apply_snapshot_chunk(
+        &mut self,
+        grove: &GroveDb,
+        chunk_id: Vec<u8>,
+        chunk: Vec<u8>,
+        sender: String,
+    ) -> Result<Vec<Vec<u8>>, Error> {
+        let result: Result<Vec<Vec<u8>>, Error> = grove
+            .apply_chunk(chunk_id, chunk)
+            .map_err(|e| Error::Drive(GroveDB(e)));
+        match result {
+            Ok(next_chunk_ids) => {
+                self.update_sender_metric(sender, MetricType::Success);
+                next_chunk_ids
+            }
+            Err(e) => {
+                return Err(Error::Drive(GroveDB(e)));
+            }
+        }
+    }
+
     fn prune_excess_snapshots(&self, snapshots: Vec<Snapshot>) -> Result<Vec<Snapshot>, Error> {
         if snapshots.len() <= self.number_stored_snapshots {
             return Ok(snapshots);
@@ -169,6 +222,25 @@ impl Manager {
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?;
         Ok(())
+    }
+
+    fn update_sender_metric(&mut self, sender: String, metric_type: MetricType) {
+        let ref mut metrics = match self.sender_metrics {
+            Some(ref mut metrics) => metrics, //metrics.get_mut(&sender),
+            None => {
+                let mut metrics = HashMap::new();
+                self.sender_metrics = Some(metrics);
+                &metrics
+            }
+        };
+        let ref mut sender_metrics = match metrics.get_mut(&sender) {
+            Some(sender_metrics) => sender_metrics,
+            None => {
+                let mut sender_metrics = Metrics::new();
+                sender_metrics
+            }
+        };
+        sender_metrics.incr(metric_type);
     }
 }
 

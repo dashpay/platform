@@ -48,13 +48,12 @@ use serde_json::{json, Value};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{
-    self as proto, ExtendVoteExtension, RequestOfferSnapshot, ResponseException,
-    ResponseOfferSnapshot,
-};
-use tenderdash_abci::proto::abci::{
-    ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
-    RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
-    ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
+    self as proto, response_apply_snapshot_chunk, response_offer_snapshot, ExecTxResult,
+    ExtendVoteExtension, RequestApplySnapshotChunk, RequestCheckTx, RequestFinalizeBlock,
+    RequestInitChain, RequestOfferSnapshot, RequestPrepareProposal, RequestProcessProposal,
+    RequestQuery, ResponseApplySnapshotChunk, ResponseCheckTx, ResponseException,
+    ResponseFinalizeBlock, ResponseInitChain, ResponseOfferSnapshot, ResponsePrepareProposal,
+    ResponseProcessProposal, ResponseQuery, TxRecord,
 };
 use tenderdash_abci::proto::types::VoteExtensionType;
 
@@ -79,7 +78,7 @@ use dpp::fee::SignedCredits;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::drive::Drive;
-use drive::grovedb::GroveDb;
+use drive::grovedb::{self, GroveDb};
 use serde_json::Map;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
@@ -778,6 +777,53 @@ where
                 Ok(Default::default())
             }
         }
+    }
+
+    fn apply_snapshot_chunk(
+        &self,
+        request: RequestApplySnapshotChunk,
+    ) -> Result<ResponseApplySnapshotChunk, ResponseException> {
+        let mut manager = self.snapshot_manager.borrow_mut().as_mut();
+        if manager.is_none() {
+            tracing::warn!("Snapshot manager is not configured");
+            return Ok(Default::default());
+        }
+        tracing::debug!("Applying snapshot chunk");
+        let mut resp = ResponseApplySnapshotChunk {
+            result: response_apply_snapshot_chunk::Result::Unknown as i32,
+            refetch_chunks: vec![],
+            reject_senders: vec![],
+            next_chunks: vec![],
+        };
+        match manager.apply_snapshot_chunk(
+            &self.platform.drive.grove,
+            request.chunk_id,
+            request.chunk,
+            request.sender,
+        ) {
+            Ok(chunk_ids) => {
+                resp.result = response_apply_snapshot_chunk::Result::Accept as i32;
+                resp.next_chunks = chunk_ids;
+                if chunk_ids.is_empty() {
+                    let result = self.platform.drive.grove.verify_grovedb();
+                    if result.is_empty() {
+                        resp.result =
+                            response_apply_snapshot_chunk::Result::CompleteSnapshot as i32;
+                    }
+                }
+            }
+            Err(e) => match e {
+                Error::Drive(e) | Error::GroveDB(e) => {
+                    if let grovedb::Error::BadChunk(_) = e {
+                        resp.result = response_apply_snapshot_chunk::Result::Retry as i32;
+                    } else {
+                        return Err(ResponseException::from(e));
+                    }
+                }
+                _ => return Err(ResponseException::from(e)),
+            },
+        };
+        Ok(resp)
     }
 }
 //
