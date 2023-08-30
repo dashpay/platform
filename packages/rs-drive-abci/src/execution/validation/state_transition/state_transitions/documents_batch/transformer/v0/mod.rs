@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
-use dpp::consensus::basic::document::DataContractNotPresentError;
+use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
 use dpp::consensus::basic::BasicError;
 
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
@@ -231,7 +231,11 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
 
         let data_contract = &data_contract_fetch_info.contract;
 
-        let document_type = data_contract.document_type_for_name(document_type_name)?;
+        let Some(document_type) = data_contract.document_type_optional_for_name(document_type_name) else {
+            return Ok(ConsensusValidationResult::new_with_error(
+                InvalidDocumentTypeError::new(document_type_name.to_owned(), data_contract.id()).into(),
+            ));
+        };
 
         let replace_transitions = document_transitions
             .iter()
