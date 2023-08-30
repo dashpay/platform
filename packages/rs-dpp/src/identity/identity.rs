@@ -31,13 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
     platform_serialize(limit = 15000, unversioned)
 )]
 pub enum Identity {
-    #[cfg_attr(
-        all(
-            feature = "identity-serialization",
-            feature = "identity-serde-conversion"
-        ),
-        serde(rename = "0")
-    )]
+    #[cfg_attr(feature = "identity-serde-conversion", serde(rename = "0"))]
     V0(IdentityV0),
 }
 

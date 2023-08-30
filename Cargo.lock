@@ -1399,9 +1399,10 @@ dependencies = [
  "dpp",
  "drive",
  "drive-abci",
+ "hex",
  "lazy_static",
  "mockall",
- "rs-dapi-client",
+ "rs-dapi-client 0.1.0 (git+https://github.com/dashpay/platform?branch=rs-dapi-client)",
  "serde",
  "serde_json",
  "tenderdash-abci",
@@ -3485,6 +3486,21 @@ dependencies = [
 [[package]]
 name = "rs-dapi-client"
 version = "0.1.0"
+dependencies = [
+ "backon",
+ "dapi-grpc 0.25.0-dev.6",
+ "futures",
+ "http",
+ "rand",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
+name = "rs-dapi-client"
+version = "0.1.0"
 source = "git+https://github.com/dashpay/platform?branch=rs-dapi-client#0a8a89e1b1de493ccdcba16786fdd938fb92608a"
 dependencies = [
  "backon",
@@ -3495,6 +3511,13 @@ dependencies = [
  "thiserror",
  "tonic",
  "tracing",
+]
+
+[[package]]
+name = "rs-sdk"
+version = "0.1.0"
+dependencies = [
+ "dapi-grpc 0.25.0-dev.6",
 ]
 
 [[package]]

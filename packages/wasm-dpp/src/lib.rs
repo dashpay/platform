@@ -11,7 +11,7 @@ extern crate core;
 
 mod dash_platform_protocol;
 mod data_contract;
-// mod data_contract_factory;
+mod data_contract_factory;
 // mod data_trigger;
 // mod document;
 pub mod errors;

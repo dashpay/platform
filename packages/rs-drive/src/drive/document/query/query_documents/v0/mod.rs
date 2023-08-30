@@ -18,15 +18,20 @@ pub struct QueryDocumentsOutcomeV0 {
     cost: u64,
 }
 
-/// TODO
+/// Trait defining methods associated with `QueryDocumentsOutcomeV0`.
+///
+/// This trait provides a set of methods to interact with and retrieve 
+/// details from an instance of `QueryDocumentsOutcomeV0`. These methods 
+/// include retrieving the documents, skipped count, and the associated cost 
+/// of the query.
 pub trait QueryDocumentsOutcomeV0Methods {
-    /// returned items
+    /// Returns a reference to the documents found from the query.
     fn documents(&self) -> &Vec<Document>;
-    /// returned items
+    /// Consumes the instance to return the owned documents.
     fn documents_owned(self) -> Vec<Document>;
-    /// skipped item count
+    /// Returns the count of items that were skipped during the query.
     fn skipped(&self) -> u16;
-    /// the processing cost
+    /// Returns the processing cost associated with the query.
     fn cost(&self) -> u64;
 }
 
