@@ -30,7 +30,7 @@ export default async function publish(
 
   this.logger.silly(`[Contracts#publish] created data contract create transition ${dataContract.getId()}`);
 
-  await signStateTransition(this, dataContractCreateTransition, identity, 1);
+  await signStateTransition(this, dataContractCreateTransition, identity, 2);
   await broadcastStateTransition(this, dataContractCreateTransition);
 
   // Acknowledge identifier to handle retry attempts to mitigate

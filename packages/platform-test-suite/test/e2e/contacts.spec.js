@@ -207,8 +207,14 @@ describe('e2e', () => {
           { where: [['$id', '==', aliceProfile.getId()]] },
         );
 
-        expect(fetchedProfile.toObject()).to.be.deep.equal({
-          ...aliceProfile.toObject(),
+        const fetchedProfileObject = fetchedProfile.toObject();
+        delete fetchedProfileObject.$updatedAt;
+
+        const aliceObject = aliceProfile.toObject();
+        delete aliceObject.$updatedAt;
+
+        expect(fetchedProfileObject).to.be.deep.equal({
+          ...aliceObject,
           $revision: 2,
         });
       });

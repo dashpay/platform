@@ -1,3 +1,4 @@
+use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -29,7 +30,14 @@ impl DocumentReplaceTransitionActionStateValidationV0 for DocumentReplaceTransit
 
         let contract = &contract_fetch_info.contract;
 
-        let document_type = contract.document_type_for_name(self.base().document_type_name())?;
+        let document_type_name = self.base().document_type_name();
+
+        let Some(document_type) = contract
+            .document_type_optional_for_name(document_type_name) else {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidDocumentTypeError::new(document_type_name.clone(), contract.id()).into(),
+            ));
+        };
 
         // The rest of state validation is actually happening in documents batch transition transformer
         // TODO: Think more about this architecture

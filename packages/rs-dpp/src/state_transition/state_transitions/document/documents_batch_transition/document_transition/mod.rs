@@ -58,6 +58,9 @@ pub trait DocumentTransitionV0Methods {
     fn set_data_contract_id(&mut self, id: Identifier);
     fn base_mut(&mut self) -> &mut DocumentBaseTransition;
     fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>>;
+
+    // sets revision of the transition
+    fn set_revision(&mut self, revision: Revision);
 }
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
@@ -247,6 +250,14 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         match self {
             DocumentTransition::Create(ref mut t) => t.set_updated_at(timestamp_millis),
             DocumentTransition::Replace(ref mut t) => t.set_updated_at(timestamp_millis),
+            DocumentTransition::Delete(_) => {}
+        }
+    }
+
+    fn set_revision(&mut self, revision: Revision) {
+        match self {
+            DocumentTransition::Create(_) => {}
+            DocumentTransition::Replace(ref mut t) => t.set_revision(revision),
             DocumentTransition::Delete(_) => {}
         }
     }

@@ -58,8 +58,7 @@ describe('Platform', () => {
       }
     });
 
-    // TODO(versioning): restore - crashes drive with "check tx system error"
-    it.skip('should fail to create new document with an unknown type', async () => {
+    it('should fail to create new document with an unknown type', async () => {
       // Add undefined document type for
       client.getApps().get('customContracts').contract.setDocumentSchema('undefinedType', {
         type: 'object',
@@ -294,6 +293,7 @@ describe('Platform', () => {
       await waitForSTPropagated();
 
       const transitions = documentsBatchTransition.getTransitions();
+      transitions[0].setRevision(transitions[0].getRevision() + 1);
       transitions[0].setUpdatedAt(updatedAt);
 
       documentsBatchTransition.setTransitions(transitions);

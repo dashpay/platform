@@ -24,9 +24,14 @@ impl InvalidDocumentRevisionErrorWasm {
         Buffer::from_bytes(self.inner.document_id().as_bytes())
     }
 
-    #[wasm_bindgen(js_name=getCurrentRevision)]
-    pub fn current_revision(&self) -> Option<Revision> {
-        *self.inner.current_revision()
+    #[wasm_bindgen(js_name=getPreviousRevision)]
+    pub fn previous_revision(&self) -> Option<Revision> {
+        *self.inner.previous_revision()
+    }
+
+    #[wasm_bindgen(js_name=getDesiredRevision)]
+    pub fn desired_revision(&self) -> Revision {
+        *self.inner.desired_revision()
     }
 
     #[wasm_bindgen(js_name=getCode)]
