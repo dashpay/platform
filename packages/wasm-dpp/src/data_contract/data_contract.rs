@@ -8,7 +8,7 @@ use wasm_bindgen::prelude::*;
 
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::{DataContract, DocumentName, JsonValue};
-use dpp::platform_value::{Bytes32, Value};
+use dpp::platform_value::{platform_value, Bytes32, Value};
 
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::DataContractConfig;
@@ -150,12 +150,34 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name=getBinaryProperties)]
     pub fn get_binary_properties(&self, doc_type: &str) -> Result<JsValue, JsValue> {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        with_js_error!(self
+
+        let document_type = self
             .inner
             .document_type_for_name(doc_type)
-            .with_js_error()?
-            .binary_paths()
-            .serialize(&serializer))
+            .with_js_error()?;
+
+        let binary_paths_o = document_type.binary_paths();
+
+        let mut binary_paths = BTreeMap::new();
+
+        document_type.binary_paths().iter().for_each(
+            (|path| {
+                binary_paths.insert(path.to_owned(), platform_value!({}));
+            }),
+        );
+
+        document_type.identifier_paths().iter().for_each(
+            (|path| {
+                binary_paths.insert(
+                    path.to_owned(),
+                    platform_value!({
+                        "contentMediaType": "application/x.dash.dpp.identifier"
+                    }),
+                );
+            }),
+        );
+
+        with_js_error!(binary_paths.serialize(&serializer))
     }
 
     #[wasm_bindgen(js_name=setDocumentSchemas)]
