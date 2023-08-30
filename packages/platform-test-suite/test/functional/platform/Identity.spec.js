@@ -19,7 +19,6 @@ const {
     StateTransitionBroadcastError,
   },
   PlatformProtocol: {
-    Identity,
     Identifier,
     IdentityPublicKey,
     InvalidInstantAssetLockProofSignatureError,
