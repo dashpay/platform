@@ -5,7 +5,8 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
 use crate::document::errors::DocumentError;
-use crate::document::{Document, DocumentV0Getters, INITIAL_REVISION};
+use crate::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
+use chrono::Utc;
 
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::version::PlatformVersion;
@@ -19,6 +20,7 @@ use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
+use crate::prelude::TimestampMillis;
 use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 use crate::state_transition::documents_batch_transition::document_transition::{
     DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
@@ -365,7 +367,7 @@ impl DocumentFactoryV0 {
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
             .into_iter()
-            .map(|(document, document_type)| {
+            .map(|(mut document, document_type)| {
                 if !document_type.documents_mutable() {
                     return Err(DocumentError::TryingToReplaceImmutableDocument {
                         document: Box::new(document),
@@ -378,6 +380,10 @@ impl DocumentFactoryV0 {
                     }
                     .into());
                 };
+
+                document.set_revision(document.revision().map(|revision| revision + 1));
+                document.set_updated_at(Some(Utc::now().timestamp_millis() as TimestampMillis));
+
                 Ok(DocumentReplaceTransition::from_document(
                     document,
                     document_type,

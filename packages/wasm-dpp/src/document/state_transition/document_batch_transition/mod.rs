@@ -29,6 +29,7 @@ use crate::{
 };
 
 use document_transition::DocumentTransitionWasm;
+use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 
 use dpp::state_transition::StateTransitionIdentitySigned;
 
@@ -112,20 +113,21 @@ impl DocumentsBatchTransitionWasm {
         array
     }
 
-    // #[wasm_bindgen(js_name=setTransitions)]
-    // pub fn set_transitions(&mut self, js_transitions: Array) -> Result<(), JsValue> {
-    //     let mut transitions = vec![];
-    //     for js_transition in js_transitions.iter() {
-    //         let transition: DocumentTransition = js_transition
-    //             .to_wasm::<DocumentTransitionWasm>("DocumentTransition")?
-    //             .to_owned()
-    //             .into();
-    //         transitions.push(transition)
-    //     }
-    //
-    //     // self.0.set_transitions(transitions);
-    //     Ok(())
-    // }
+    #[wasm_bindgen(js_name=setTransitions)]
+    pub fn set_transitions(&mut self, js_transitions: Array) -> Result<(), JsValue> {
+        let mut transitions = vec![];
+        for js_transition in js_transitions.iter() {
+            let transition: DocumentTransition = js_transition
+                .to_wasm::<DocumentTransitionWasm>("DocumentTransition")?
+                .to_owned()
+                .into();
+            transitions.push(transition)
+        }
+
+        self.0.set_transitions(transitions);
+
+        Ok(())
+    }
 
     // #[wasm_bindgen(js_name=toJSON)]
     // pub fn to_json(&self) -> Result<JsValue, JsValue> {
