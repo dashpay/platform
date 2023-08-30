@@ -1,12 +1,13 @@
 use crate::data_contract::data_contract::DataContractV0;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
-use crate::data_contract::DataContract;
+use crate::data_contract::{DataContract, DefinitionName, DocumentName};
 use crate::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
-use platform_value::Identifier;
+use platform_value::{Identifier, Value};
 use platform_version::TryFromPlatformVersioned;
 use platform_versioning::PlatformVersioned;
 use serde::{Deserialize, Serialize};
@@ -38,6 +39,18 @@ impl DataContractInSerializationFormat {
     pub fn owner_id(&self) -> Identifier {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.owner_id,
+        }
+    }
+
+    pub fn document_schemas(&self) -> &BTreeMap<DocumentName, Value> {
+        match self {
+            DataContractInSerializationFormat::V0(v0) => &v0.document_schemas,
+        }
+    }
+
+    pub fn schema_defs(&self) -> Option<&BTreeMap<DefinitionName, Value>> {
+        match self {
+            DataContractInSerializationFormat::V0(v0) => v0.schema_defs.as_ref(),
         }
     }
 }

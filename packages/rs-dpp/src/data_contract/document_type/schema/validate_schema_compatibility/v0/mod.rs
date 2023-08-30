@@ -5,14 +5,18 @@ use std::collections::BTreeMap;
 /// The functionality has been ported 'as is' without any logic improvements and optimizations
 use std::convert::TryFrom;
 
-use crate::data_contract::state_transition::data_contract_update_transition::validation::basic::EMPTY_JSON;
 use crate::data_contract::DocumentName;
+use crate::ProtocolError;
 use anyhow::Context;
 use itertools::Itertools;
 use json_patch::PatchOperation;
 use jsonptr::{Pointer, Resolve};
-use serde_json::Value as JsonValue;
-use thiserror::Error;
+use lazy_static::lazy_static;
+use serde_json::{json, Value as JsonValue};
+
+lazy_static! {
+    pub static ref EMPTY_JSON: JsonValue = json!({});
+}
 
 mod property_names {
     pub const REQUIRED: &str = "required";
@@ -35,23 +39,14 @@ struct RemovedItem {
     operation: PatchOperation,
 }
 
-#[derive(Error, Debug)]
-pub enum DiffVAlidatorError {
-    /// The error that happens when there there is a problem with access to the fields
-    /// in dynamic data structure
-    #[error("Error while validation: {0}")]
-    DataStructureError(#[from] anyhow::Error),
-    /// The error is returned when validation proceeded but the schemas are not compatible
-    #[error("The schemas are not compatible: {diffs:#?}")]
-    SchemaCompatibilityError { diffs: Vec<PatchOperation> },
-}
+pub type IncompatibleOperations = Vec<PatchOperation>;
 
 pub fn any_schema_changes(
     old_schema: &BTreeMap<DocumentName, JsonValue>,
     new_schema: &JsonValue,
 ) -> bool {
     let changes = old_schema
-        .iter()
+        .into_iter()
         .filter(|(document_type, original_schema)| {
             let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
             let diff = json_patch::diff(original_schema, new_document_schema);
@@ -65,7 +60,7 @@ pub fn any_schema_changes(
 pub fn validate_schema_compatibility(
     original_schema: &JsonValue,
     new_schema: &JsonValue,
-) -> Result<(), DiffVAlidatorError> {
+) -> Result<IncompatibleOperations, ProtocolError> {
     validate_schema_compatibility_with_options(
         original_schema,
         new_schema,
@@ -77,7 +72,7 @@ pub fn validate_schema_compatibility_with_options(
     original_schema: &JsonValue,
     new_schema: &JsonValue,
     opts: ValidationOptions,
-) -> Result<(), DiffVAlidatorError> {
+) -> Result<IncompatibleOperations, ProtocolError> {
     let patch = json_patch::diff(original_schema, new_schema);
     let mut diffs: Vec<PatchOperation> = vec![];
     let mut removed: Vec<RemovedItem> = vec![];
@@ -185,11 +180,7 @@ pub fn validate_schema_compatibility_with_options(
         diffs.extend(filtered_removed);
     }
 
-    if !diffs.is_empty() {
-        return Err(DiffVAlidatorError::SchemaCompatibilityError { diffs });
-    }
-
-    Ok(())
+    Ok(diffs)
 }
 
 // checks if operation `move` or `remove` is backward compatible
@@ -337,7 +328,7 @@ mod test {
         );
         assert!(matches!(
             result,
-            Err(DiffVAlidatorError::SchemaCompatibilityError { .. })
+            Err(DiffValidatorError::SchemaCompatibilityError { .. })
         ));
     }
 
@@ -383,7 +374,7 @@ mod test {
 
         assert!(matches!(
             result,
-            Err(DiffVAlidatorError::SchemaCompatibilityError { .. })
+            Err(DiffValidatorError::SchemaCompatibilityError { .. })
         ));
     }
 
@@ -400,7 +391,7 @@ mod test {
 
         assert!(matches!(
             result,
-            Err(DiffVAlidatorError::SchemaCompatibilityError { .. })
+            Err(DiffValidatorError::SchemaCompatibilityError { .. })
         ));
     }
 }
