@@ -50,6 +50,7 @@
 * **sdk:** temporary disable data contracts and documents ([#1331](https://github.com/dashpay/platform/issues/1331))
 * update workflow_dispatch
 * upgrade to Node.JS v18 LTS ([#1280](https://github.com/dashpay/platform/issues/1280))
+* support Core v0.20.0-alpha.4 ([#1357](https://github.com/dashpay/platform/pull/1357))
 
 
 ### [0.24.23](https://github.com/dashpay/platform/compare/v0.24.22...v0.24.23) (2023-08-18)
