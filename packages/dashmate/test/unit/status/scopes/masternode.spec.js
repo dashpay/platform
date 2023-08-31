@@ -42,12 +42,6 @@ describe('getMasternodeScopeFactory', () => {
           AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
         },
       });
-      mockDockerCompose.execCommand
-        .withArgs(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py')
-        .returns({ out: '' });
-      mockDockerCompose.execCommand
-        .withArgs(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py -v')
-        .returns({ out: 'Dash Sentinel v1.7.3' });
 
       const mockProTxHash = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
       const mockDmnState = {
@@ -72,10 +66,6 @@ describe('getMasternodeScopeFactory', () => {
 
       const expectedScope = {
         syncAsset: MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
-        sentinel: {
-          state: 'ok',
-          version: '1.7.3',
-        },
         proTxHash: mockProTxHash,
         state: MasternodeStateEnum.READY,
         status: 'Ready',
@@ -97,39 +87,7 @@ describe('getMasternodeScopeFactory', () => {
       // simulate failed request to dashcore
       mockRpcClient.mnsync.throws(new Error());
 
-      // and lets say sentinel is working
-      mockDockerCompose.execCommand
-        .withArgs(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py')
-        .returns({ out: 'Waiting for dash core sync' });
-      mockDockerCompose.execCommand
-        .withArgs(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py -v')
-        .returns({ out: 'Dash Sentinel v1.7.3' });
-
-      const scope = await getMasternodeScope(config);
-
-      // should return scope with no info, but sentinel is in there
-      const expectedScope = {
-        syncAsset: null,
-        sentinel: {
-          state: 'Waiting for dash core sync',
-          version: '1.7.3',
-        },
-        proTxHash: null,
-        state: MasternodeStateEnum.UNKNOWN,
-        status: null,
-        nodeState: {
-          dmnState: null,
-          poSePenalty: null,
-          lastPaidHeight: null,
-          lastPaidTime: null,
-          paymentQueuePosition: null,
-          nextPaymentTime: null,
-        },
-      };
-
-      expect(scope).to.deep.equal(expectedScope);
-
-      // and also should not be trying to obtain masternode info
+      // it should not be trying to obtain masternode info
       expect(mockRpcClient.getBlockchainInfo.notCalled).to.be.true();
     });
 
@@ -139,37 +97,6 @@ describe('getMasternodeScopeFactory', () => {
           AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN,
         },
       });
-
-      mockDockerCompose.execCommand
-        .withArgs(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py')
-        .returns({ out: 'Waiting for dash core sync' });
-
-      mockDockerCompose.execCommand
-        .withArgs(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py -v')
-        .returns({ out: 'Dash Sentinel v1.7.3' });
-
-      const scope = await getMasternodeScope(config);
-
-      const expectedScope = {
-        syncAsset: MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN,
-        sentinel: {
-          state: 'Waiting for dash core sync',
-          version: '1.7.3',
-        },
-        proTxHash: null,
-        state: MasternodeStateEnum.UNKNOWN,
-        status: null,
-        nodeState: {
-          dmnState: null,
-          poSePenalty: null,
-          lastPaidHeight: null,
-          lastPaidTime: null,
-          paymentQueuePosition: null,
-          nextPaymentTime: null,
-        },
-      };
-
-      expect(scope).to.deep.equal(expectedScope);
 
       expect(mockRpcClient.getBlockchainInfo.notCalled).to.be.true();
       expect(mockRpcClient.masternode.notCalled).to.be.true();

@@ -28,8 +28,6 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
     getMasternodeScope,
   ) {
     const plain = {
-      'Sentinel Version': 'n/a',
-      'Sentinel Status': 'n/a',
       'Masternode State': 'n/a',
       'Masternode Sync Status': 'n/a',
       'ProTx Hash': 'n/a',
@@ -50,11 +48,6 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
     const scope = await getMasternodeScope(config);
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
-      if (scope.sentinel.version) {
-        plain['Sentinel Version'] = scope.sentinel.version || 'n/a';
-        plain['Sentinel Status'] = colors.sentinel(scope.sentinel.state)(scope.sentinel.state) || 'n/a';
-      }
-
       if (scope.syncAsset === MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED) {
         plain['Masternode State'] = (scope.state === MasternodeStateEnum.READY
           ? chalk.green : chalk.red)(scope.state) || 'n/a';

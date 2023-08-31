@@ -3,7 +3,6 @@ const services = {
   dapi_envoy: 'DAPI Envoy',
   dapi_api: 'DAPI API',
   drive_tenderdash: 'Drive Tenderdash',
-  sentinel: 'Sentinel',
   drive_abci: 'Drive ABCI',
   dapi_tx_filter_stream: 'DAPI Transactions Filter Stream',
   core: 'Core',

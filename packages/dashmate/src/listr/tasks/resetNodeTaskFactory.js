@@ -53,7 +53,7 @@ function resetNodeTaskFactory(
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async () => {
-          const nonPlatformServices = ['core', 'sentinel'];
+          const nonPlatformServices = ['core'];
           const envs = generateEnvs(configFile, config);
 
           // Remove containers

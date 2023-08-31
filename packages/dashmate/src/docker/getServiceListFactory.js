@@ -16,14 +16,6 @@ function getServiceListFactory() {
       },
     ];
 
-    if (config.get('core.masternode.enable')) {
-      services.push({
-        name: 'sentinel',
-        title: 'Sentinel',
-        image: config.get('core.sentinel.docker.image'),
-      });
-    }
-
     if (config.get('platform.enable')) {
       services.push({
         name: 'drive_abci',

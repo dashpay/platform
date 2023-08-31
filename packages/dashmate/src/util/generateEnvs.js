@@ -23,10 +23,6 @@ function generateEnvs(configFile, config, options = {}) {
   if (!options.platformOnly) {
     // TODO: it should contain only the dashmate helper that must be ran always
     dockerComposeFiles.push('docker-compose.yml');
-
-    if (config.get('core.masternode.enable') === true) {
-      dockerComposeFiles.push('docker-compose.sentinel.yml');
-    }
   }
 
   if (config.get('platform.enable')) {
