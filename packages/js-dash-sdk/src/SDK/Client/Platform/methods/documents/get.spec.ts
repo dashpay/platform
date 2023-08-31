@@ -174,8 +174,7 @@ describe('Client - Platform - Documents - .get()', () => {
     ]);
   });
 
-  // TODO(versioning): restore nested identifier properties conversion
-  it.skip('should convert nested identifier properties inside where condition if `elementMatch` is used', async () => {
+  it('should convert nested identifier properties inside where condition if `elementMatch` is used', async () => {
     const id = await generateRandomIdentifier();
 
     dataContract = await getDataContractFixture();
@@ -203,10 +202,13 @@ describe('Client - Platform - Documents - .get()', () => {
                   maxItems: 32,
                 },
               },
+              additionalProperties: false,
             },
           },
+          additionalProperties: false,
         },
       },
+      additionalProperties: false,
     });
 
     appDefinition = {
