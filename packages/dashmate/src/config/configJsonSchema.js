@@ -1,4 +1,4 @@
-const { NETWORKS } = require('../../src/constants');
+const { NETWORKS } = require('../constants');
 
 module.exports = {
   $schema: 'http://json-schema.org/draft-07/schema#',
@@ -18,20 +18,33 @@ module.exports = {
     dockerBuild: {
       type: 'object',
       properties: {
+        enabled: {
+          type: 'boolean',
+        },
+        context: {
+          type: 'string',
+          minLength: 1,
+        },
+        dockerFile: {
+          type: 'string',
+          minLength: 1,
+        },
+        target: {
+          type: 'string',
+        },
+      },
+      required: ['enabled', 'context', 'dockerFile', 'target'],
+      additionalProperties: false,
+    },
+    dockerWithBuild: {
+      type: 'object',
+      properties: {
         image: {
           type: 'string',
           minLength: 1,
         },
         build: {
-          type: 'object',
-          properties: {
-            path: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-          },
-          additionalProperties: false,
-          required: ['path'],
+          $ref: '#/definitions/dockerBuild',
         },
       },
       required: ['image', 'build'],
@@ -103,9 +116,19 @@ module.exports = {
           additionalProperties: false,
           required: ['subnet', 'bindIp'],
         },
+        baseImage: {
+          type: 'object',
+          properties: {
+            build: {
+              $ref: '#/definitions/dockerBuild',
+            },
+          },
+          additionalProperties: false,
+          required: ['build'],
+        },
       },
       additionalProperties: false,
-      required: ['network'],
+      required: ['network', 'baseImage'],
     },
     core: {
       type: 'object',
@@ -284,24 +307,9 @@ module.exports = {
         indexes: {
           type: 'boolean',
         },
-        reindex: {
-          type: 'object',
-          properties: {
-            enable: {
-              type: 'boolean',
-            },
-            containerId: {
-              type: ['string', 'null'],
-              minLength: 1,
-            },
-            additionalProperties: false,
-          },
-          required: ['enable', 'containerId'],
-          additionalProperties: false,
-        },
       },
       required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'sentinel', 'devnet',
-        'log', 'logIps', 'indexes', 'reindex'],
+        'log', 'logIps', 'indexes'],
       additionalProperties: false,
     },
     platform: {
@@ -390,7 +398,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/docker',
+                  $ref: '#/definitions/dockerWithBuild',
                 },
               },
               required: ['docker'],
@@ -407,7 +415,7 @@ module.exports = {
               type: 'object',
               properties: {
                 docker: {
-                  $ref: '#/definitions/docker',
+                  $ref: '#/definitions/dockerWithBuild',
                 },
                 log: {
                   type: 'object',
@@ -710,7 +718,14 @@ module.exports = {
           type: 'object',
           properties: {
             docker: {
-              $ref: '#/definitions/docker',
+              type: 'object',
+              properties: {
+                build: {
+                  $ref: '#/definitions/dockerBuild',
+                },
+              },
+              required: ['build'],
+              additionalProperties: false,
             },
             api: {
               type: 'object',
@@ -730,6 +745,8 @@ module.exports = {
           additionalProperties: false,
         },
       },
+      required: ['helper'],
+      additionalProperties: false,
     },
     externalIp: {
       type: ['string', 'null'],

@@ -66,8 +66,10 @@ class CoreStatusCommand extends ConfigBaseCommand {
         verificationProgress,
       } = scope;
 
+      const versionString = `${colors.status(version, latestVersion)(version) || 'n/a'} ${version && version !== latestVersion ? `(latest ${latestVersion})` : ''}`;
+
       plain.Network = network || 'n/a';
-      plain.Version = colors.status(version, latestVersion)(version) || 'n/a';
+      plain.Version = versionString;
       plain.Chain = chain || 'n/a';
       plain['Docker Status'] = dockerStatus || 'n/a';
       plain['Service Status'] = serviceStatus || 'n/a';

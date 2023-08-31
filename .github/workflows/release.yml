@@ -188,35 +188,6 @@ jobs:
             unplugged_amd64
             unplugged_arm64
 
-  release-envoy-docker-image:
-    name: Release Envoy to Docker Hub
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v3
-
-      - name: Get image tag
-        uses: actions/github-script@v6
-        id: tag
-        with:
-          result-encoding: string
-          script: |
-            return (
-              context.eventName === 'workflow_dispatch'
-                ? '${{ github.event.inputs.tag }}'
-                : context.payload.release.tag_name
-            );
-
-      - name: Build Docker image
-        uses: ./.github/actions/docker
-        with:
-          image: dashpay/envoy
-          dockerfile: ./packages/dashmate/docker/envoy/Dockerfile
-          dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
-          dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
-          push: true
-          image_tag: ${{steps.tag.outputs.result}}
-
   release-dashmate-helper-docker-image:
     name: Release Dashmate helper to Docker Hub
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]

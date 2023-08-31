@@ -6,6 +6,7 @@ const wait = require('../util/wait');
  */
 function waitForCoreDataFactory(rpcClient) {
   /**
+   * @typedef {function} waitForCoreData
    * @param {number} originalValue
    * @param {function(number, number)} predicateFn
    * @returns {Promise<number>}

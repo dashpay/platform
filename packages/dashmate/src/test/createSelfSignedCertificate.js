@@ -5,6 +5,7 @@ const generateKeyPair = require('../ssl/generateKeyPair');
 const generateCsr = require('../ssl/zerossl/generateCsr');
 const createCertificate = require('../ssl/selfSigned/createSelfSignedCertificate');
 
+// TODO: Refactor to reuse the logic together with obtainSelfSignedCertificateTask
 async function createSelfSignedCertificate(ip) {
   const keyPair = await generateKeyPair();
   const csr = await generateCsr(keyPair, ip);
