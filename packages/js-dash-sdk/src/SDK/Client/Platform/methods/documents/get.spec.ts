@@ -202,10 +202,13 @@ describe('Client - Platform - Documents - .get()', () => {
                   maxItems: 32,
                 },
               },
+              additionalProperties: false,
             },
           },
+          additionalProperties: false,
         },
       },
+      additionalProperties: false,
     });
 
     appDefinition = {

@@ -2,8 +2,9 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::{StateTransition, StateTransitionAction};
+use dpp::state_transition::StateTransition;
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::StateTransitionAction;
 
 /// A trait for validating state transitions within a blockchain.
 pub trait StateTransitionActionTransformerV0 {
@@ -26,6 +27,7 @@ pub trait StateTransitionActionTransformerV0 {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        validate: bool,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -34,17 +36,26 @@ impl StateTransitionActionTransformerV0 for StateTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        validate: bool,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
-            StateTransition::DataContractCreate(st) => st.transform_into_action(platform, tx),
-            StateTransition::DataContractUpdate(st) => st.transform_into_action(platform, tx),
-            StateTransition::IdentityCreate(st) => st.transform_into_action(platform, tx),
-            StateTransition::IdentityUpdate(st) => st.transform_into_action(platform, tx),
-            StateTransition::IdentityTopUp(st) => st.transform_into_action(platform, tx),
-            StateTransition::IdentityCreditWithdrawal(st) => st.transform_into_action(platform, tx),
-            StateTransition::DocumentsBatch(st) => st.transform_into_action(platform, tx),
-            StateTransition::IdentityCreditTransfer(st) => st.transform_into_action(platform, tx),
+            StateTransition::DataContractCreate(st) => {
+                st.transform_into_action(platform, validate, tx)
+            }
+            StateTransition::DataContractUpdate(st) => {
+                st.transform_into_action(platform, validate, tx)
+            }
+            StateTransition::IdentityCreate(st) => st.transform_into_action(platform, validate, tx),
+            StateTransition::IdentityUpdate(st) => st.transform_into_action(platform, validate, tx),
+            StateTransition::IdentityTopUp(st) => st.transform_into_action(platform, validate, tx),
+            StateTransition::IdentityCreditWithdrawal(st) => {
+                st.transform_into_action(platform, validate, tx)
+            }
+            StateTransition::DocumentsBatch(st) => st.transform_into_action(platform, validate, tx),
+            StateTransition::IdentityCreditTransfer(st) => {
+                st.transform_into_action(platform, validate, tx)
+            }
         }
     }
 }

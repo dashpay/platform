@@ -3,20 +3,22 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive::drive::Drive;
+use std::fmt::{Debug, Formatter};
 
+#[cfg(any(feature = "mocks", test))]
+use crate::rpc::core::MockCoreRPCLike;
+use dashcore_rpc::dashcore::hashes::hex::FromHex;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use std::path::Path;
 use std::sync::RwLock;
 
-use crate::rpc::core::MockCoreRPCLike;
-use dashcore_rpc::dashcore::hashes::hex::FromHex;
-
 use dashcore_rpc::dashcore::BlockHash;
 
-use dpp::serialization_traits::PlatformDeserializable;
-
-use crate::execution::types::block_execution_context;
-use crate::platform_types::platform_state::v0::PlatformState;
+use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformState;
+use dpp::serialization::PlatformDeserializable;
+use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::error::Error::GroveDB;
 use serde_json::json;
 
@@ -33,7 +35,7 @@ pub struct Platform<C> {
     /// Configuration
     pub config: PlatformConfig,
     /// Block execution context
-    pub block_execution_context: RwLock<Option<block_execution_context::v0::BlockExecutionContext>>,
+    pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
     /// Core RPC Client
     pub core_rpc: C,
 }
@@ -60,6 +62,15 @@ pub struct PlatformStateRef<'a> {
     pub state: &'a PlatformState,
     /// Configuration
     pub config: &'a PlatformConfig,
+}
+
+impl<'a> Debug for PlatformStateRef<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("platform_state_ref")
+            .field("state", self.state)
+            .field("config", self.config)
+            .finish()
+    }
 }
 
 impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
@@ -106,6 +117,7 @@ impl Platform<DefaultCoreRPC> {
     }
 }
 
+#[cfg(any(feature = "mocks", test))]
 impl Platform<MockCoreRPCLike> {
     /// Open Platform with Drive and block execution context and mock core rpc.
     pub fn open<P: AsRef<Path>>(
@@ -130,16 +142,23 @@ impl Platform<MockCoreRPCLike> {
     }
 
     /// Recreate the state from the backing store
-    pub fn recreate_state(&self) -> Result<bool, Error> {
-        let Some(serialized_platform_state) = self.drive
+    pub fn recreate_state(&self, _platform_version: &PlatformVersion) -> Result<bool, Error> {
+        let Some(serialized_platform_state) = self
+            .drive
             .grove
             .get_aux(b"saved_state", None)
             .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))? else {
+            .map_err(|e| Error::Drive(GroveDB(e)))?
+        else {
             return Ok(false);
         };
 
-        let recreated_state = PlatformState::deserialize(&serialized_platform_state)?;
+        let recreated_state =
+            PlatformState::deserialize_from_bytes_no_limit(&serialized_platform_state)?;
+
+        PlatformVersion::set_current(PlatformVersion::get(
+            recreated_state.current_protocol_version_in_consensus(),
+        )?);
 
         let mut state_cache = self.state.write().unwrap();
         *state_cache = recreated_state;
@@ -195,7 +214,12 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let platform_state = PlatformState::deserialize(&serialized_platform_state)?;
+        let platform_state =
+            PlatformState::deserialize_from_bytes_no_limit(&serialized_platform_state)?;
+
+        PlatformVersion::set_current(PlatformVersion::get(
+            platform_state.current_protocol_version_in_consensus(),
+        )?);
 
         let platform: Platform<C> = Platform {
             drive,
@@ -219,14 +243,16 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let state = PlatformState::default_with_protocol_versions(
+        let platform_state = PlatformState::default_with_protocol_versions(
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
         );
 
+        PlatformVersion::set_current(PlatformVersion::get(current_protocol_version_in_consensus)?);
+
         Ok(Platform {
             drive,
-            state: RwLock::new(state),
+            state: RwLock::new(platform_state),
             config,
             block_execution_context: RwLock::new(None),
             core_rpc,

@@ -9,8 +9,10 @@ const request = async (url) => {
     });
   } catch (e) {
     if (e.name === 'FetchError' || e.name === 'AbortError') {
-      // eslint-disable-next-line no-console
-      console.warn(`Could not fetch: ${e}`);
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.warn(`Could not fetch: ${e}`);
+      }
       return null;
     }
     throw e;
@@ -53,8 +55,10 @@ module.exports = {
       const json = await requestJSON(`https://api.github.com/repos/${repoSlug}/releases/latest`);
 
       if (json.message) {
-        // eslint-disable-next-line no-console
-        console.warn(`Github API: ${json.message}`);
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.warn(`Github API: ${json.message}`);
+        }
 
         return null;
       }
@@ -67,8 +71,10 @@ module.exports = {
       try {
         return requestText(`https://mnowatch.org/${port}/`);
       } catch (e) {
-        // eslint-disable-next-line no-console
-        console.log(e);
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.warn(e);
+        }
         return PortStateEnum.ERROR;
       }
     },

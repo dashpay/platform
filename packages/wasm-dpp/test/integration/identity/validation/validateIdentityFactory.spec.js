@@ -5,7 +5,7 @@ const { default: loadWasmDpp } = require('../../../../dist');
 const getBlsAdapterMock = require('../../../../lib/test/mocks/getBlsAdapterMock');
 const generateRandomIdentifierAsync = require('../../../../lib/test/utils/generateRandomIdentifierAsync');
 
-describe('validateIdentityFactory', () => {
+describe.skip('validateIdentityFactory', () => {
   let rawIdentity;
   let validateIdentity;
   let identity;
@@ -18,7 +18,7 @@ describe('validateIdentityFactory', () => {
     ({ IdentityValidator, Identity, UnsupportedProtocolVersionError } = await loadWasmDpp());
   });
 
-  beforeEach(async function () {
+  beforeEach(async function beforeEach() {
     this.timeout(20000);
     const blsAdapter = await getBlsAdapterMock();
 

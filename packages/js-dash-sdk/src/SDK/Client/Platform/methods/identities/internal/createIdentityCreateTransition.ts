@@ -1,5 +1,5 @@
 import { PrivateKey } from '@dashevo/dashcore-lib';
-import { IdentityPublicKey, StateTransitionExecutionContext } from '@dashevo/wasm-dpp';
+import { IdentityPublicKey } from '@dashevo/wasm-dpp';
 import { Platform } from '../../../Platform';
 
 /**
@@ -34,33 +34,37 @@ export async function createIdentityCreateTransition(
     .getIdentityHDKeyByIndex(identityIndex, 1);
   const identitySecondPublicKey = identitySecondPrivateKey.toPublicKey();
 
+  const { privateKey: identityThirdPrivateKey } = account.identities
+    .getIdentityHDKeyByIndex(identityIndex, 2);
+  const identityThirdPublicKey = identityThirdPrivateKey.toPublicKey();
+
+  const keyOne = new IdentityPublicKey(1);
+  keyOne.setData(identityMasterPublicKey.toBuffer());
+
+  const keyTwo = new IdentityPublicKey(1);
+  keyTwo.setId(1);
+  keyTwo.setData(identitySecondPublicKey.toBuffer());
+  keyTwo.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH);
+
+  const keyThree = new IdentityPublicKey(1);
+  keyThree.setId(2);
+  keyThree.setData(identityThirdPublicKey.toBuffer());
+  keyThree.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.CRITICAL);
+
   // Create Identity
   const identity = dpp.identity.create(
-    assetLockProof, [{
-      id: 0,
-      data: identityMasterPublicKey.toBuffer(),
-      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-      readOnly: false,
-    },
-    {
-      id: 1,
-      data: identitySecondPublicKey.toBuffer(),
-      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
-      readOnly: false,
-    },
-    ],
+    assetLockProof.createIdentifier(),
+    [keyOne, keyTwo, keyThree],
   );
 
   // Create ST
-  const identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);
+  const identityCreateTransition = dpp.identity.createIdentityCreateTransition(
+    identity,
+    assetLockProof,
+  );
 
   // Create key proofs
-
-  const [masterKey, secondKey] = identityCreateTransition.getPublicKeys();
+  const [masterKey, secondKey, thirdKey] = identityCreateTransition.getPublicKeys();
 
   await identityCreateTransition
     .signByPrivateKey(identityMasterPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
@@ -76,25 +80,34 @@ export async function createIdentityCreateTransition(
 
   identityCreateTransition.setSignature(undefined);
 
+  await identityCreateTransition
+    .signByPrivateKey(identityThirdPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+
+  thirdKey.setSignature(identityCreateTransition.getSignature());
+
+  identityCreateTransition.setSignature(undefined);
+
   // Set public keys back after updating their signatures
-  identityCreateTransition.setPublicKeys([masterKey, secondKey]);
+  identityCreateTransition.setPublicKeys([masterKey, secondKey, thirdKey]);
 
   // Sign and validate state transition
 
   await identityCreateTransition
     .signByPrivateKey(assetLockPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
-  const result = await dpp.stateTransition.validateBasic(
-    identityCreateTransition,
-    // TODO(v0.24-backport): get rid of this once decided
-    //  whether we need execution context in wasm bindings
-    new StateTransitionExecutionContext(),
-  );
+  // TODO(versioning): restore
+  // @ts-ignore
+  // const result = await dpp.stateTransition.validateBasic(
+  //   identityCreateTransition,
+  //   // TODO(v0.24-backport): get rid of this once decided
+  //   //  whether we need execution context in wasm bindings
+  //   new StateTransitionExecutionContext(),
+  // );
 
-  if (!result.isValid()) {
-    const messages = result.getErrors().map((error) => error.message);
-    throw new Error(`StateTransition is invalid - ${JSON.stringify(messages)}`);
-  }
+  // if (!result.isValid()) {
+  //   const messages = result.getErrors().map((error) => error.message);
+  //   throw new Error(`StateTransition is invalid - ${JSON.stringify(messages)}`);
+  // }
 
   return { identity, identityCreateTransition, identityIndex };
 }

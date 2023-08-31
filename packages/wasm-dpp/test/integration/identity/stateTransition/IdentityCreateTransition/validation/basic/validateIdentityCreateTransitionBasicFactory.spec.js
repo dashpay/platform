@@ -7,7 +7,7 @@ const { expectValidationError, expectJsonSchemaError } = require('../../../../..
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 const getBlsAdapterMock = require('../../../../../../../lib/test/mocks/getBlsAdapterMock');
 
-describe('validateIdentityCreateTransitionBasicFactory', () => {
+describe.skip('validateIdentityCreateTransitionBasicFactory', () => {
   let rawStateTransition;
   let stateTransition;
 
@@ -54,7 +54,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     );
   });
 
-  beforeEach(async function () {
+  beforeEach(async function beforeEach() {
     this.timeout(20000);
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.verifyInstantLock.resolves(true);

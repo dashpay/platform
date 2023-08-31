@@ -4,9 +4,9 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use dpp::consensus::ConsensusError;
 
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use dpp::version::PlatformVersion;
 use wasm_bindgen::prelude::*;
-
 #[wasm_bindgen(js_name=DataContractAlreadyPresentError)]
 pub struct DataContractAlreadyPresentErrorWasm {
     inner: DataContractAlreadyPresentError,
@@ -45,7 +45,7 @@ impl DataContractAlreadyPresentErrorWasm {
     #[wasm_bindgen(js_name=serialize)]
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
-            .serialize()
+            .serialize_to_bytes_with_platform_version(PlatformVersion::first())
             .map_err(JsError::from)?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))

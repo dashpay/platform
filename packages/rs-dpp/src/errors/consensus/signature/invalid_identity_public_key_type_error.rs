@@ -4,12 +4,16 @@ use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::ConsensusError;
 use crate::identity::KeyType;
 
-use serde::{Deserialize, Serialize};
+use crate::errors::ProtocolError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 use bincode::{Decode, Encode};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("Unsupported signature type {public_key_type}. Please use ECDSA (0), BLS (1) or ECDSA_HASH160 (2) keys to sign the state transition")]
+#[platform_serialize(unversioned)]
 pub struct InvalidIdentityPublicKeyTypeError {
     /*
 

@@ -1,5 +1,5 @@
 use crate::frequency::Frequency;
-use dpp::data_contract::document_type::random_document_type::RandomDocumentTypeParameters;
+use dpp::data_contract::document_type::v0::random_document_type::RandomDocumentTypeParameters;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract as Contract;
 use dpp::identifier::Identifier;

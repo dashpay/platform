@@ -333,7 +333,7 @@ pub fn generate_test_masternodes(
             .to_bytes()
             .to_vec();
         let masternode_list_item = MasternodeListItem {
-            node_type: MasternodeType::HighPerformance,
+            node_type: MasternodeType::Evo,
             pro_tx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
             collateral_hash: Txid::from_inner(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
@@ -531,7 +531,7 @@ where
             let quorum_hash: QuorumHash = QuorumHash::from_inner(rng.gen());
             let validator_pro_tx_hashes = proposers
                 .clone()
-                .filter(|m| m.node_type == MasternodeType::HighPerformance)
+                .filter(|m| m.node_type == MasternodeType::Evo)
                 .choose_multiple(rng, quorum_size)
                 .iter()
                 .map(|masternode| masternode.pro_tx_hash)
@@ -562,7 +562,7 @@ impl MasternodeListItemWithUpdates {
 
     pub(crate) fn get_state_at_height(&self, height: u32) -> &MasternodeListItem {
         // Find the closest height less than or equal to the given height
-        let closest_height = self.updates.range(..=height).rev().next().map(|(k, _)| *k);
+        let closest_height = self.updates.range(..=height).next_back().map(|(k, _)| *k);
 
         match closest_height {
             Some(h) => &self.updates[&h],

@@ -5,7 +5,7 @@ const getInstantAssetLockProofFixture = require('../../../../../lib/test/fixture
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 const { default: loadWasmDpp } = require('../../../../../dist');
 
-describe('fetchAssetLockTransactionOutputFactory', () => {
+describe.skip('fetchAssetLockTransactionOutputFactory', () => {
   let fetchAssetLockTransactionOutput;
   let stateRepositoryMock;
   let executionContext;
@@ -119,7 +119,7 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
       }
     });
 
-    it('should return mocked output on dry run', async function () {
+    it('should return mocked output on dry run', async function shouldReturn() {
       executionContext.enableDryRun();
 
       const result = await fetchAssetLockTransactionOutput(

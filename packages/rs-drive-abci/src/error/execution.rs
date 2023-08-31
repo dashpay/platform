@@ -1,5 +1,6 @@
 use dashcore_rpc::dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
 use dpp::bls_signatures::BlsError;
+use dpp::version::FeatureVersion;
 use drive::error::Error as DriveError;
 
 // @append_only
@@ -25,6 +26,30 @@ pub enum ExecutionError {
     /// The platform encountered a corrupted code execution error.
     #[error("platform corrupted code execution error: {0}")]
     CorruptedCodeExecution(&'static str),
+
+    /// Platform expected a specific version but got another.
+    #[error("platform corrupted code version mismatch: {0}")]
+    CorruptedCodeVersionMismatch(&'static str),
+
+    /// Platform expected some specific versions
+    #[error("platform unknown version on {method}, received: {received}")]
+    UnknownVersionMismatch {
+        /// method
+        method: String,
+        /// the allowed versions for this method
+        known_versions: Vec<FeatureVersion>,
+        /// requested core height
+        received: FeatureVersion,
+    },
+
+    /// Platform expected some specific versions
+    #[error("{method} not active for drive version")]
+    VersionNotActive {
+        /// method
+        method: String,
+        /// the allowed versions for this method
+        known_versions: Vec<FeatureVersion>,
+    },
 
     /// The platform encountered a corrupted cache state error.
     #[error("platform corrupted cached state error: {0}")]

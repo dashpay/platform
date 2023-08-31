@@ -1,24 +1,12 @@
 const getIdentityUpdateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 
-const { default: loadWasmDpp } = require('../../../../..');
-const { getLatestProtocolVersion, StateTransitionTypes } = require('../../../../..');
+const { IdentityPublicKey, Identifier, IdentityPublicKeyWithWitness } = require('../../../../..');
+const { StateTransitionTypes } = require('../../../../..');
 const generateRandomIdentifierAsync = require('../../../../../lib/test/utils/generateRandomIdentifierAsync');
 
 describe('IdentityUpdateTransition', () => {
   let rawStateTransition;
   let stateTransition;
-
-  let IdentityPublicKey;
-  let Identifier;
-  let IdentityPublicKeyWithWitness;
-
-  before(async () => {
-    ({
-      IdentityPublicKey,
-      Identifier,
-      IdentityPublicKeyWithWitness,
-    } = await loadWasmDpp());
-  });
 
   beforeEach(async () => {
     stateTransition = await getIdentityUpdateTransitionFixture();
@@ -75,28 +63,23 @@ describe('IdentityUpdateTransition', () => {
     it('should return public keys to add', () => {
       expect(stateTransition.getPublicKeysToAdd().map((key) => key.toObject()))
         .to.deep.equal(
-          rawStateTransition.addPublicKeys
-            .map((rawPublicKey) => new IdentityPublicKeyWithWitness(rawPublicKey).toObject()),
+          rawStateTransition.addPublicKeys,
         );
     });
   });
 
   describe('#setPublicKeysToAdd', () => {
     it('should set public keys to add', () => {
-      const publicKeys = [new IdentityPublicKeyWithWitness({
-        id: 0,
-        type: IdentityPublicKey.TYPES.BLS12_381,
-        purpose: 0,
-        securityLevel: 0,
-        readOnly: true,
-        signature: Buffer.alloc(0),
-        data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
-      })];
+      const key = new IdentityPublicKeyWithWitness(1);
+      key.setType(IdentityPublicKey.TYPES.BLS12_381);
+      key.setData(Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'));
+
+      const publicKeys = [key];
 
       stateTransition.setPublicKeysToAdd(publicKeys);
 
-      expect(stateTransition.addPublicKeys.map((key) => key.toObject()))
-        .to.have.deep.members(publicKeys.map((key) => key.toObject()));
+      expect(stateTransition.addPublicKeys.map((k) => k.toObject()))
+        .to.have.deep.members(publicKeys.map((k) => k.toObject()));
     });
   });
 
@@ -119,7 +102,7 @@ describe('IdentityUpdateTransition', () => {
   describe('#getPublicKeysDisabledAt', () => {
     it('should return time to disable public keys', () => {
       expect(stateTransition.getPublicKeysDisabledAt())
-        .to.deep.equal(new Date(rawStateTransition.publicKeysDisabledAt));
+        .to.deep.equal(rawStateTransition.publicKeysDisabledAt);
     });
   });
 
@@ -138,7 +121,7 @@ describe('IdentityUpdateTransition', () => {
       rawStateTransition = stateTransition.toObject();
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityUpdate,
         signature: undefined,
         identityId: rawStateTransition.identityId,
@@ -146,7 +129,7 @@ describe('IdentityUpdateTransition', () => {
         publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt,
         addPublicKeys: rawStateTransition.addPublicKeys,
         disablePublicKeys: rawStateTransition.disablePublicKeys,
-        signaturePublicKeyId: undefined,
+        signaturePublicKeyId: 0,
       });
     });
 
@@ -154,7 +137,7 @@ describe('IdentityUpdateTransition', () => {
       rawStateTransition = stateTransition.toObject({ skipSignature: true });
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityUpdate,
         identityId: rawStateTransition.identityId,
         revision: rawStateTransition.revision,
@@ -172,12 +155,12 @@ describe('IdentityUpdateTransition', () => {
       rawStateTransition = stateTransition.toObject();
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityUpdate,
         signature: undefined,
         identityId: rawStateTransition.identityId,
         revision: rawStateTransition.revision,
-        signaturePublicKeyId: undefined,
+        signaturePublicKeyId: 0,
       });
     });
   });
@@ -187,15 +170,15 @@ describe('IdentityUpdateTransition', () => {
       const jsonStateTransition = stateTransition.toJSON();
 
       expect(jsonStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityUpdate,
         signature: undefined,
         identityId: stateTransition.getIdentityId().toString(),
         revision: rawStateTransition.revision,
-        publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt,
+        publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt.getTime(),
         addPublicKeys: stateTransition.getPublicKeysToAdd().map((k) => k.toJSON()),
         disablePublicKeys: rawStateTransition.disablePublicKeys,
-        signaturePublicKeyId: undefined,
+        signaturePublicKeyId: 0,
       });
     });
   });

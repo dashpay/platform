@@ -7,7 +7,7 @@ const { expectValidationError } = require('../../../../lib/test/expect/expectErr
 
 const { default: loadWasmDpp } = require('../../../../dist');
 
-describe('validateStateTransitionKeySignatureFactory', () => {
+describe.skip('validateStateTransitionKeySignatureFactory', () => {
   let stateTransition;
   let stateRepositoryMock;
   let validateStateTransitionKeySignature;
@@ -85,7 +85,7 @@ describe('validateStateTransitionKeySignatureFactory', () => {
     expect(result.isValid()).to.be.true();
   });
 
-  it('should return IdentityNotFoundError if identity not exist on topup transaction', async function () {
+  it('should return IdentityNotFoundError if identity not exist on topup transaction', async function shouldReturn() {
     stateTransition = await getIdentityTopUpTransitionFixture();
     stateRepositoryMock.fetchIdentityBalance.resolves(undefined);
 

@@ -1,15 +1,17 @@
 use crate::consensus::basic::json_schema_error::json_schema_error_data::JsonSchemaErrorData;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use jsonschema::ValidationError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Value;
-use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
-#[derive(Error, Debug, Serialize, Deserialize, Clone, Encode, Decode)]
-#[error("JsonSchemaError: keyword: {keyword}, instance_path: {instance_path}, schema_path:{schema_path}")]
+#[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
+#[error("JsonSchemaError: {error_summary}, path: {instance_path}")]
+#[platform_serialize(unversioned)]
 pub struct JsonSchemaError {
     /*
 
@@ -30,11 +32,12 @@ impl<'a> From<ValidationError<'a>> for JsonSchemaError {
             keyword,
             params,
             property_name,
+            error_message,
         } = JsonSchemaErrorData::from(&validation_error);
 
         Self {
             keyword,
-            error_summary: "".to_string(),
+            error_summary: error_message,
             instance_path: validation_error.instance_path.to_string(),
             schema_path: validation_error.schema_path.to_string(),
             params: JsonValue::Object(params).into(),

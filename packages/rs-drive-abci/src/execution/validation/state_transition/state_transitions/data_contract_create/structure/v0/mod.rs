@@ -1,56 +1,57 @@
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::basic::data_contract::InvalidDataContractIdError;
-use dpp::data_contract::generate_data_contract_id;
-use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR;
-use dpp::validation::SimpleConsensusValidationResult;
 use crate::error::Error;
-use crate::execution::validation::state_transition::common::validate_schema::v0::validate_schema_v0;
+use dpp::consensus::basic::data_contract::InvalidDataContractIdError;
+use dpp::consensus::basic::BasicError;
+use dpp::prelude::DataContract;
+use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
+use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 
-pub(crate) trait StateTransitionStructureValidationV0 {
-    fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error>;
+pub(in crate::execution::validation::state_transition::state_transitions::data_contract_create) trait DataContractCreatedStateTransitionStructureValidationV0 {
+    fn validate_base_structure_v0(&self, platform_version: &PlatformVersion) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
-impl StateTransitionStructureValidationV0 for DataContractCreateTransition {
-    fn validate_structure_v0(&self) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema_v0(&DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR, self);
-        if !result.is_valid() {
-            return Ok(result);
+impl DataContractCreatedStateTransitionStructureValidationV0 for DataContractCreateTransition {
+    fn validate_base_structure_v0(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, Error> {
+        // Validate data contract
+        let result = DataContract::try_from_platform_versioned(
+            self.data_contract().clone(),
+            true,
+            platform_version,
+        );
+
+        // Return validation result if any consensus errors happened
+        // during data contract validation
+        match result {
+            Err(ProtocolError::ConsensusError(consensus_error)) => {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    *consensus_error,
+                ))
+            }
+            Err(protocol_error) => return Err(protocol_error.into()),
+            Ok(_) => {}
         }
 
-        //todo: re-enable version validation
-        // // Validate protocol version
-        // let protocol_version_validator = ProtocolVersionValidator::default();
-        // let result = protocol_version_validator
-        //     .validate(self.protocol_version)
-        //     .expect("TODO: again, how this will ever fail, why do we even need a validator trait");
-        // if !result.is_valid() {
-        //     return Ok(result);
-        // }
-        //
-        // // Validate data contract
-        // let data_contract_validator =
-        //     DataContractValidator::new(Arc::new(protocol_version_validator)); // ffs
-        // let result = data_contract_validator
-        //     .validate(&(self.data_contract.to_cleaned_object().expect("TODO")))?;
-        // if !result.is_valid() {
-        //     return Ok(result);
-        // }
-
         // Validate data contract id
-        let generated_id = generate_data_contract_id(self.data_contract.owner_id, self.entropy);
-        if generated_id.as_slice() != self.data_contract.id.as_ref() {
+        let generated_id = DataContract::generate_data_contract_id_v0(
+            self.data_contract().owner_id(),
+            self.entropy(),
+        );
+
+        if generated_id != self.data_contract().id() {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 BasicError::InvalidDataContractIdError(InvalidDataContractIdError::new(
                     generated_id.to_vec(),
-                    self.data_contract.id.as_ref().to_owned(),
+                    self.data_contract().id().to_vec(),
                 ))
                 .into(),
             ));
         }
 
-        self.data_contract
-            .validate_structure()
-            .map_err(Error::Protocol)
+        Ok(SimpleConsensusValidationResult::default())
     }
 }

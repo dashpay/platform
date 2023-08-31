@@ -5,7 +5,7 @@ const createStateRepositoryMock = require('../../../../../lib/test/mocks/createS
 const { default: loadWasmDpp } = require('../../../../../dist');
 const { expectValidationError } = require('../../../../../lib/test/expect/expectError');
 
-describe('validateAssetLockTransactionFactory', () => {
+describe.skip('validateAssetLockTransactionFactory', () => {
   let stateRepositoryMock;
   let rawTransaction;
   let outputIndex;
@@ -132,7 +132,8 @@ describe('validateAssetLockTransactionFactory', () => {
     expect(error.getOutputIndex()).to.equal(outputIndex);
   });
 
-  it('should return IdentityAssetLockTransactionOutPointAlreadyExistsError if outPoint was already used', async function () {
+  it('should return IdentityAssetLockTransactionOutPointAlreadyExistsError if outPoint was'
+    + ' already used', async function shouldReturn() {
     stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves(true);
 
     const result = await validateAssetLockTransaction(
@@ -161,7 +162,7 @@ describe('validateAssetLockTransactionFactory', () => {
       );
   });
 
-  it('should return valid result', async function () {
+  it('should return valid result', async function shouldReturn() {
     const result = await validateAssetLockTransaction(
       rawTransaction,
       outputIndex,

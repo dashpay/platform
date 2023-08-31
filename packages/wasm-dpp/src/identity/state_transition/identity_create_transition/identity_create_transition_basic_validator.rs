@@ -7,7 +7,6 @@ use dpp::identity::state_transition::validate_public_key_signatures::PublicKeysS
 use dpp::identity::validation::{
     PublicKeysValidator, RequiredPurposeAndSecurityLevelValidator, PUBLIC_KEY_SCHEMA_FOR_TRANSITION,
 };
-use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 
 use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use dpp::ProtocolError;

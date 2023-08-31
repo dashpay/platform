@@ -1,29 +1,15 @@
 const getIdentityTopUpTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
-const getChainAssetLockProofFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
 
-const { default: loadWasmDpp } = require('../../../../..');
-const { getLatestProtocolVersion, StateTransitionTypes } = require('../../../../..');
+const { InstantAssetLockProof, Identifier } = require('../../../../..');
+const { StateTransitionTypes } = require('../../../../..');
 
 describe('IdentityTopUpTransition', () => {
   let rawStateTransition;
   let stateTransition;
 
-  let IdentityTopUpTransition;
-  let InstantAssetLockProof;
-  let Identifier;
-
-  before(async () => {
-    ({
-      IdentityTopUpTransition, InstantAssetLockProof, Identifier,
-    } = await loadWasmDpp());
-  });
-
   beforeEach(async () => {
-    rawStateTransition = (await getIdentityTopUpTransitionFixture()).toObject();
-
-    stateTransition = new IdentityTopUpTransition(
-      rawStateTransition,
-    );
+    stateTransition = await getIdentityTopUpTransitionFixture();
+    rawStateTransition = stateTransition.toObject();
   });
 
   describe('#constructor', () => {
@@ -34,13 +20,6 @@ describe('IdentityTopUpTransition', () => {
       expect(stateTransition.getIdentityId().toBuffer()).to.be.deep.equal(
         rawStateTransition.identityId,
       );
-    });
-
-    it('should create instance with chain asset lock proof', () => {
-      rawStateTransition.assetLockProof = getChainAssetLockProofFixture().toObject();
-      stateTransition = new IdentityTopUpTransition(rawStateTransition);
-      expect(stateTransition.getAssetLockProof().toObject())
-        .to.deep.equal(rawStateTransition.assetLockProof);
     });
   });
 
@@ -90,7 +69,7 @@ describe('IdentityTopUpTransition', () => {
       rawStateTransition = stateTransition.toObject();
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityTopUp,
         assetLockProof: rawStateTransition.assetLockProof,
         identityId: rawStateTransition.identityId,
@@ -102,7 +81,7 @@ describe('IdentityTopUpTransition', () => {
       rawStateTransition = stateTransition.toObject({ skipSignature: true });
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityTopUp,
         assetLockProof: rawStateTransition.assetLockProof,
         identityId: rawStateTransition.identityId,
@@ -115,7 +94,7 @@ describe('IdentityTopUpTransition', () => {
       const jsonStateTransition = stateTransition.toJSON();
 
       expect(jsonStateTransition).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
+        $version: '0',
         type: StateTransitionTypes.IdentityTopUp,
         assetLockProof: stateTransition.getAssetLockProof().toJSON(),
         identityId: new Identifier(rawStateTransition.identityId).toString(),

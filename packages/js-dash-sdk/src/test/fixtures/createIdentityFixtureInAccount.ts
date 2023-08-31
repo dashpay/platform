@@ -11,26 +11,23 @@ export async function createIdentityFixtureInAccount(account) {
     .identities.getIdentityHDKeyByIndex(identityFixtureIndex, 0);
   const { privateKey: identitySecondPrivateKey } = account
     .identities.getIdentityHDKeyByIndex(identityFixtureIndex, 1);
+  const { privateKey: identityThirdPrivateKey } = account
+    .identities.getIdentityHDKeyByIndex(identityFixtureIndex, 2);
 
-  const publicKeyOne = new IdentityPublicKey({
-    id: 0,
-    type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-    data: identityMasterPrivateKey.toPublicKey().toBuffer(),
-    purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-    securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-    readOnly: false,
-  });
+  const publicKeyOne = new IdentityPublicKey(1);
+  publicKeyOne.setData(identityMasterPrivateKey.toPublicKey().toBuffer());
 
-  const publicKeyOneTwo = new IdentityPublicKey({
-    id: 1,
-    type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-    data: identitySecondPrivateKey.toPublicKey().toBuffer(),
-    purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-    securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
-    readOnly: false,
-  });
+  const publicKeyTwo = new IdentityPublicKey(1);
+  publicKeyTwo.setId(1);
+  publicKeyTwo.setData(identitySecondPrivateKey.toPublicKey().toBuffer());
+  publicKeyTwo.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH);
 
-  identityFixture.setPublicKeys([publicKeyOne, publicKeyOneTwo]);
+  const publicKeyThree = new IdentityPublicKey(1);
+  publicKeyThree.setId(2);
+  publicKeyThree.setData(identityThirdPrivateKey.toPublicKey().toBuffer());
+  publicKeyThree.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.CRITICAL);
+
+  identityFixture.setPublicKeys([publicKeyOne, publicKeyTwo, publicKeyThree]);
 
   account.storage
     .getWalletStore(account.walletId)

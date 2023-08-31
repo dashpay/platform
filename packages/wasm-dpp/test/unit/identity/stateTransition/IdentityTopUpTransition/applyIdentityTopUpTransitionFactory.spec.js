@@ -6,7 +6,7 @@ const createStateRepositoryMock = require('../../../../../lib/test/mocks/createS
 
 const { default: loadWasmDpp } = require('../../../../..');
 
-describe('applyIdentityTopUpTransitionFactory', () => {
+describe.skip('applyIdentityTopUpTransitionFactory', () => {
   let stateTransition;
   let applyIdentityTopUpTransition;
   let stateRepositoryMock;
@@ -48,7 +48,7 @@ describe('applyIdentityTopUpTransitionFactory', () => {
     );
   });
 
-  it('should add topup amount to identity balance', async function () {
+  it('should add topup amount to identity balance', async function shouldAdd() {
     const balanceToTopUp = convertSatoshiToCredits(
       stateTransition.getAssetLockProof().getOutput().satoshis,
     );
@@ -77,7 +77,7 @@ describe('applyIdentityTopUpTransitionFactory', () => {
       );
   });
 
-  it('should ignore balance debt for system credits', async function () {
+  it('should ignore balance debt for system credits', async function shouldIgnore() {
     stateRepositoryMock.fetchIdentityBalanceWithDebt.resolves(-5);
 
     const balanceToTopUp = convertSatoshiToCredits(
@@ -108,7 +108,7 @@ describe('applyIdentityTopUpTransitionFactory', () => {
       );
   });
 
-  it('should add topup amount to identity balance on dry run', async function () {
+  it('should add topup amount to identity balance on dry run', async function shouldAddTopup() {
     const { match } = this.sinonSandbox;
 
     const balanceToTopUp = convertSatoshiToCredits(

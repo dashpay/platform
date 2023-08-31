@@ -1,12 +1,7 @@
 use anyhow::anyhow;
 use dpp::platform_value::ReplacementType;
 use dpp::{
-    document::{
-        document_factory::{DocumentFactory, FactoryOptions},
-        document_transition::Action,
-        extended_document,
-        fetch_and_validate_data_contract::DataContractFetcherAndValidator,
-    },
+    document::{document_factory::DocumentFactory, extended_document},
     ProtocolError,
 };
 use std::collections::HashMap;
@@ -14,20 +9,25 @@ use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 use crate::document::errors::InvalidActionNameError;
+use crate::document::platform_value::Bytes32;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::prelude::ExtendedDocument;
+use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
+use dpp::version::PlatformVersion;
 use std::convert::TryFrom;
 use std::sync::Arc;
 
+use crate::document_batch_transition::DocumentsBatchTransitionWasm;
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::{
     identifier::identifier_from_js_value,
-    state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
     utils::{IntoWasm, ToSerdeJSONExt, WithJsError},
-    DataContractWasm, DocumentsBatchTransitionWasm, ExtendedDocumentWasm,
+    DataContractWasm, ExtendedDocumentWasm,
 };
-
-use super::validator::DocumentValidatorWasm;
 
 #[wasm_bindgen(js_name=DocumentTransitions)]
 #[derive(Debug, Default)]
@@ -61,55 +61,26 @@ impl DocumentTransitions {
 }
 
 #[wasm_bindgen(js_name = DocumentFactory)]
-pub struct DocumentFactoryWASM(DocumentFactory<ExternalStateRepositoryLikeWrapper>);
-
-impl DocumentFactoryWASM {
-    pub(crate) fn new_with_state_repository_wrapper(
-        protocol_version: u32,
-        document_validator: DocumentValidatorWasm,
-        entropy_generator: ExternalEntropyGenerator,
-        state_repository: ExternalStateRepositoryLikeWrapper,
-    ) -> Self {
-        let factory = DocumentFactory::new_with_entropy_generator(
-            protocol_version,
-            document_validator.into(),
-            DataContractFetcherAndValidator::new(Arc::new(state_repository)),
-            Box::new(entropy_generator),
-        );
-
-        DocumentFactoryWASM(factory)
-    }
-}
+pub struct DocumentFactoryWASM(DocumentFactory);
 
 #[wasm_bindgen(js_class=DocumentFactory)]
 impl DocumentFactoryWASM {
     #[wasm_bindgen(constructor)]
     pub fn new(
         protocol_version: u32,
-        document_validator: DocumentValidatorWasm,
-        state_repository: ExternalStateRepositoryLike,
         external_entropy_generator_arg: Option<ExternalEntropyGenerator>,
-    ) -> DocumentFactoryWASM {
+    ) -> Result<DocumentFactoryWASM, JsValue> {
         let factory = if let Some(external_entropy_generator) = external_entropy_generator_arg {
             DocumentFactory::new_with_entropy_generator(
                 protocol_version,
-                document_validator.into(),
-                DataContractFetcherAndValidator::new(Arc::new(
-                    ExternalStateRepositoryLikeWrapper::new(state_repository),
-                )),
                 Box::new(external_entropy_generator),
             )
+            .with_js_error()?
         } else {
-            DocumentFactory::new(
-                protocol_version,
-                document_validator.into(),
-                DataContractFetcherAndValidator::new(Arc::new(
-                    ExternalStateRepositoryLikeWrapper::new(state_repository),
-                )),
-            )
+            DocumentFactory::new(protocol_version).with_js_error()?
         };
 
-        DocumentFactoryWASM(factory)
+        Ok(DocumentFactoryWASM(factory))
     }
 
     #[wasm_bindgen]
@@ -122,17 +93,18 @@ impl DocumentFactoryWASM {
     ) -> Result<ExtendedDocumentWasm, JsValue> {
         let owner_id = identifier_from_js_value(js_owner_id)?;
         let dynamic_data = data.with_serde_to_platform_value()?;
-        let document = self
+
+        let extended_document = self
             .0
-            .create_extended_document_for_state_transition(
-                data_contract.to_owned().into(),
+            .create_extended_document(
+                data_contract.inner(),
                 owner_id,
                 document_type.to_string(),
                 dynamic_data,
             )
             .with_js_error()?;
 
-        Ok(document.into())
+        Ok(extended_document.into())
     }
 
     #[wasm_bindgen(js_name=createStateTransition)]
@@ -141,77 +113,99 @@ impl DocumentFactoryWASM {
         documents: &JsValue,
     ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
         let documents_by_action = extract_documents_by_action(documents)?;
-        let batch_transition = self
-            .0
-            .create_state_transition(documents_by_action)
-            .with_js_error()?;
+
+        let documents: Vec<(
+            DocumentTransitionActionType,
+            Vec<(Document, DocumentTypeRef, Bytes32)>,
+        )> = documents_by_action
+            .iter()
+            .map(|(action_type, documents)| {
+                let documents_with_refs: Vec<(Document, DocumentTypeRef, Bytes32)> = documents
+                    .iter()
+                    .map(|extended_document| {
+                        (
+                            extended_document.document().clone(),
+                            extended_document
+                                .data_contract()
+                                .document_type_for_name(extended_document.document_type_name())
+                                .expect("should be able to get document type"),
+                            extended_document.entropy().to_owned(),
+                        )
+                    })
+                    .collect();
+
+                (action_type.clone(), documents_with_refs)
+            })
+            .collect();
+
+        let batch_transition = self.0.create_state_transition(documents).with_js_error()?;
 
         Ok(batch_transition.into())
     }
-
-    #[wasm_bindgen(js_name=createFromObject)]
-    pub async fn create_from_object(
-        &self,
-        raw_document_js: JsValue,
-        options: JsValue,
-    ) -> Result<ExtendedDocumentWasm, JsValue> {
-        let mut raw_document = raw_document_js.with_serde_to_platform_value()?;
-        let options: FactoryOptions = if !options.is_undefined() && options.is_object() {
-            let raw_options = options.with_serde_to_json_value()?;
-            serde_json::from_value(raw_options).with_js_error()?
-        } else {
-            Default::default()
-        };
-        raw_document
-            .replace_at_paths(
-                extended_document::IDENTIFIER_FIELDS,
-                ReplacementType::Identifier,
-            )
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
-
-        let mut document = self
-            .0
-            .create_from_object(raw_document, options)
-            .await
-            .with_js_error()?;
-        let (identifier_paths, binary_paths): (Vec<_>, Vec<_>) = document
-            .get_identifiers_and_binary_paths_owned()
-            .with_js_error()?;
-        // When data contract is available, replace remaining dynamic paths
-        let document_data = document.properties_as_mut();
-        document_data
-            .replace_at_paths(identifier_paths, ReplacementType::Identifier)
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
-        document_data
-            .replace_at_paths(binary_paths, ReplacementType::BinaryBytes)
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
-        Ok(document.into())
-    }
-
-    #[wasm_bindgen(js_name=createFromBuffer)]
-    pub async fn create_from_buffer(
-        &self,
-        buffer: Vec<u8>,
-        options: &JsValue,
-    ) -> Result<ExtendedDocumentWasm, JsValue> {
-        let options: FactoryOptions = if !options.is_undefined() && options.is_object() {
-            let raw_options = options.with_serde_to_json_value()?;
-            serde_json::from_value(raw_options).with_js_error()?
-        } else {
-            Default::default()
-        };
-
-        let document = self
-            .0
-            .create_from_buffer(buffer, options)
-            .await
-            .with_js_error()?;
-
-        Ok(document.into())
-    }
+    //
+    // #[wasm_bindgen(js_name=createFromObject)]
+    // pub async fn create_from_object(
+    //     &self,
+    //     raw_document_js: JsValue,
+    //     options: JsValue,
+    // ) -> Result<ExtendedDocumentWasm, JsValue> {
+    //     let mut raw_document = raw_document_js.with_serde_to_platform_value()?;
+    //     let options: FactoryOptions = if !options.is_undefined() && options.is_object() {
+    //         let raw_options = options.with_serde_to_json_value()?;
+    //         serde_json::from_value(raw_options).with_js_error()?
+    //     } else {
+    //         Default::default()
+    //     };
+    //     raw_document
+    //         .replace_at_paths(
+    //             extended_document::IDENTIFIER_FIELDS,
+    //             ReplacementType::Identifier,
+    //         )
+    //         .map_err(ProtocolError::ValueError)
+    //         .with_js_error()?;
+    //
+    //     let mut document = self
+    //         .0
+    //         .create_from_object(raw_document, options)
+    //         .await
+    //         .with_js_error()?;
+    //     let (identifier_paths, binary_paths): (Vec<_>, Vec<_>) = document
+    //         .get_identifiers_and_binary_paths_owned()
+    //         .with_js_error()?;
+    //     // When data contract is available, replace remaining dynamic paths
+    //     let document_data = document.properties_as_mut();
+    //     document_data
+    //         .replace_at_paths(identifier_paths, ReplacementType::Identifier)
+    //         .map_err(ProtocolError::ValueError)
+    //         .with_js_error()?;
+    //     document_data
+    //         .replace_at_paths(binary_paths, ReplacementType::BinaryBytes)
+    //         .map_err(ProtocolError::ValueError)
+    //         .with_js_error()?;
+    //     Ok(document.into())
+    // }
+    //
+    // #[wasm_bindgen(js_name=createFromBuffer)]
+    // pub async fn create_from_buffer(
+    //     &self,
+    //     buffer: Vec<u8>,
+    //     options: &JsValue,
+    // ) -> Result<ExtendedDocumentWasm, JsValue> {
+    //     // let options: FactoryOptions = if !options.is_undefined() && options.is_object() {
+    //     //     let raw_options = options.with_serde_to_json_value()?;
+    //     //     serde_json::from_value(raw_options).with_js_error()?
+    //     // } else {
+    //     //     Default::default()
+    //     // };
+    //
+    //     let document = self
+    //         .0
+    //         .create_from_buffer(buffer, options)
+    //         .await
+    //         .with_js_error()?;
+    //
+    //     Ok(document.into())
+    // }
 
     #[wasm_bindgen(js_name=createExtendedDocumentFromDocumentBuffer)]
     pub fn create_extended_from_document_buffer(
@@ -220,30 +214,35 @@ impl DocumentFactoryWASM {
         document_type: &str,
         data_contract: &DataContractWasm,
     ) -> Result<ExtendedDocumentWasm, JsValue> {
+        let platform_version = PlatformVersion::first();
+
         self.0
             .create_extended_from_document_buffer(
                 buffer.as_slice(),
                 document_type,
                 &data_contract.to_owned().into(),
+                platform_version,
             )
             .map(|document| document.into())
             .with_js_error()
     }
 }
-
+//
 fn extract_documents_by_action(
     documents: &JsValue,
-) -> Result<HashMap<Action, Vec<ExtendedDocument>>, JsValue> {
+) -> Result<HashMap<DocumentTransitionActionType, Vec<ExtendedDocument>>, JsValue> {
     check_actions(documents)?;
-    let mut documents_by_action: HashMap<Action, Vec<ExtendedDocument>> = Default::default();
+
+    let mut documents_by_action: HashMap<DocumentTransitionActionType, Vec<ExtendedDocument>> =
+        Default::default();
 
     let documents_create = extract_documents_of_action(documents, "create").with_js_error()?;
     let documents_replace = extract_documents_of_action(documents, "replace").with_js_error()?;
     let documents_delete = extract_documents_of_action(documents, "delete").with_js_error()?;
 
-    documents_by_action.insert(Action::Create, documents_create);
-    documents_by_action.insert(Action::Replace, documents_replace);
-    documents_by_action.insert(Action::Delete, documents_delete);
+    documents_by_action.insert(DocumentTransitionActionType::Create, documents_create);
+    documents_by_action.insert(DocumentTransitionActionType::Replace, documents_replace);
+    documents_by_action.insert(DocumentTransitionActionType::Delete, documents_delete);
 
     Ok(documents_by_action)
 }
@@ -262,7 +261,8 @@ fn check_actions(documents: &JsValue) -> Result<(), JsValue> {
             .as_string()
             .ok_or_else(|| anyhow!("Expected all keys to be strings"))
             .with_js_error()?;
-        Action::try_from(action_string)
+
+        DocumentTransitionActionType::try_from(action_string.as_str())
             .map_err(|_| InvalidActionNameError::new(vec![action.clone()]))?;
     }
 
@@ -274,11 +274,14 @@ fn extract_documents_of_action(
     action: &str,
 ) -> Result<Vec<ExtendedDocument>, anyhow::Error> {
     let mut extracted_documents: Vec<ExtendedDocument> = vec![];
+
     let documents_with_action =
         js_sys::Reflect::get(documents, &action.to_string().into()).unwrap_or(JsValue::NULL);
+
     if documents_with_action.is_null() || documents_with_action.is_undefined() {
         return Ok(extracted_documents);
     }
+
     let documents_array = js_sys::Array::try_from(documents_with_action)
         .map_err(|e| anyhow!("property '{}' isn't an array: {}", action, e))?;
 
@@ -294,6 +297,7 @@ fn extract_documents_of_action(
             })?
             .clone()
             .into();
+
         extracted_documents.push(document)
     }
 

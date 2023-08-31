@@ -5,9 +5,13 @@ use dapi_grpc::platform::v0::{
     GetIdentitiesByPublicKeyHashesResponse, Proof,
 };
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::{Identity, PartialIdentity};
-use dpp::serialization_traits::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializable;
 use dpp::validation::SimpleValidationResult;
+use dpp::version::PlatformVersion;
 use drive::drive::verify::RootHash;
 use drive::drive::Drive;
 use drive_abci::abci::{AbciApplication, AbciError};
@@ -164,6 +168,7 @@ impl QueryStrategy {
         current_identities: &Vec<Identity>,
         abci_app: &AbciApplication<MockCoreRPCLike>,
         seed: StrategyRandomness,
+        platform_version: &PlatformVersion,
     ) {
         let mut rng = match seed {
             StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
@@ -179,6 +184,7 @@ impl QueryStrategy {
                 query_identities_by_public_key_hashes,
                 abci_app,
                 &mut rng,
+                platform_version,
             );
         }
     }
@@ -189,6 +195,7 @@ impl QueryStrategy {
         frequency: &Frequency,
         abci_app: &AbciApplication<MockCoreRPCLike>,
         rng: &mut StdRng,
+        platform_version: &PlatformVersion,
     ) {
         let events = frequency.events_if_hit(rng);
 
@@ -199,9 +206,9 @@ impl QueryStrategy {
                 .into_iter()
                 .filter_map(|identity| {
                     let unique_public_keys: Vec<_> = identity
-                        .public_keys
+                        .public_keys()
                         .iter()
-                        .filter(|(_, public_key)| public_key.key_type.is_unique_key_type())
+                        .filter(|(_, public_key)| public_key.key_type().is_unique_key_type())
                         .collect();
 
                     if unique_public_keys.is_empty() {
@@ -226,7 +233,11 @@ impl QueryStrategy {
             let encoded_request = request.encode_to_vec();
             let query_validation_result = abci_app
                 .platform
-                .query("/identities/by-public-key-hash", encoded_request.as_slice())
+                .query(
+                    "/identities/by-public-key-hash",
+                    encoded_request.as_slice(),
+                    platform_version,
+                )
                 .expect("expected to run query");
 
             assert!(
@@ -254,6 +265,7 @@ impl QueryStrategy {
                             .cloned()
                             .collect::<Vec<_>>()
                             .as_slice(),
+                        platform_version,
                     )
                     .expect("expected to verify proof");
                     let identities: HashMap<[u8; 20], PartialIdentity> = identities
@@ -277,9 +289,9 @@ impl QueryStrategy {
                         .identities
                         .into_iter()
                         .map(|serialized| {
-                            Identity::deserialize(&serialized)
+                            Identity::deserialize_from_bytes(&serialized)
                                 .expect("expected to deserialize identity")
-                                .id
+                                .id()
                         })
                         .collect::<HashSet<_>>();
                     assert_eq!(

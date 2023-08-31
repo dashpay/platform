@@ -1,14 +1,17 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Value;
-use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("Protocol version {parsed_protocol_version:?} is not supported. Latest supported version is {latest_version:?}")]
+#[platform_serialize(unversioned)]
 pub struct UnsupportedProtocolVersionError {
     /*
 
@@ -42,18 +45,11 @@ impl From<UnsupportedProtocolVersionError> for ConsensusError {
     }
 }
 
-impl TryFrom<Value> for UnsupportedProtocolVersionError {
-    type Error = ProtocolError;
-
-    fn try_from(args: Value) -> Result<Self, Self::Error> {
-        platform_value::from_value(args).map_err(ProtocolError::ValueError)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::serialization_traits::PlatformSerializable;
+    use crate::serialization::PlatformSerializableWithPlatformVersion;
+    use platform_version::version::LATEST_PLATFORM_VERSION;
 
     #[test]
     fn test_try_from() {
@@ -61,7 +57,9 @@ mod tests {
 
         let consensus_error: ConsensusError = error.clone().into();
 
-        let _cbor = PlatformSerializable::serialize(&consensus_error);
+        let _cbor = consensus_error
+            .serialize_to_bytes_with_platform_version(LATEST_PLATFORM_VERSION)
+            .expect("should serialize");
 
         // let value = Value::try_from(&consensus_error).expect("should convert to value");
 

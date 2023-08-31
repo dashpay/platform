@@ -1,11 +1,10 @@
-use super::purpose::Purpose;
 use anyhow::bail;
 use bincode::{Decode, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
-use lazy_static::lazy_static;
+
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::collections::HashMap;
+
 use std::convert::TryFrom;
 
 #[repr(u8)]
@@ -28,6 +27,12 @@ pub enum SecurityLevel {
     CRITICAL = 1,
     HIGH = 2,
     MEDIUM = 3,
+}
+
+impl Default for SecurityLevel {
+    fn default() -> Self {
+        SecurityLevel::MASTER
+    }
 }
 
 #[cfg(feature = "cbor")]
@@ -70,23 +75,4 @@ impl std::fmt::Display for SecurityLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
     }
-}
-
-lazy_static! {
-    pub static ref ALLOWED_SECURITY_LEVELS: HashMap<Purpose, Vec<SecurityLevel>> = {
-        let mut m = HashMap::new();
-        m.insert(
-            Purpose::AUTHENTICATION,
-            vec![
-                SecurityLevel::MASTER,
-                SecurityLevel::CRITICAL,
-                SecurityLevel::HIGH,
-                SecurityLevel::MEDIUM,
-            ],
-        );
-        m.insert(Purpose::ENCRYPTION, vec![SecurityLevel::MEDIUM]);
-        m.insert(Purpose::DECRYPTION, vec![SecurityLevel::MEDIUM]);
-        m.insert(Purpose::WITHDRAW, vec![SecurityLevel::CRITICAL]);
-        m
-    };
 }

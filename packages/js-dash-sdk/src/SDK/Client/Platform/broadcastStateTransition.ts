@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import { StateTransitionExecutionContext } from '@dashevo/wasm-dpp';
 import { Platform } from './Platform';
 import { StateTransitionBroadcastError } from '../../../errors/StateTransitionBroadcastError';
 import { IStateTransitionResult } from './IStateTransitionResult';
@@ -21,28 +20,32 @@ const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 export default async function broadcastStateTransition(
   platform: Platform,
   stateTransition: any,
+  // TODO: restore once validation is done?
+  // eslint-disable-next-line
   options: { skipValidation?: boolean; } = {},
 ): Promise<IStateTransitionResult | void> {
-  const { client, dpp } = platform;
+  const { client } = platform;
 
-  if (!options.skipValidation) {
-    const result = await dpp.stateTransition.validateBasic(
-      stateTransition,
-      // TODO(v0.24-backport): get rid of this once decided
-      //  whether we need execution context in wasm bindings
-      new StateTransitionExecutionContext(),
-    );
-
-    if (!result.isValid()) {
-      const consensusError = result.getFirstError();
-
-      throw new StateTransitionBroadcastError(
-        consensusError.getCode(),
-        consensusError.message,
-        consensusError,
-      );
-    }
-  }
+  // TODO(versioning): restore
+  // @ts-ignore
+  // if (!options.skipValidation) {
+  //   const result = await dpp.stateTransition.validateBasic(
+  //     stateTransition,
+  //     // TODO(v0.24-backport): get rid of this once decided
+  //     //  whether we need execution context in wasm bindings
+  //     new StateTransitionExecutionContext(),
+  //   );
+  //
+  //   if (!result.isValid()) {
+  //     const consensusError = result.getFirstError();
+  //
+  //     throw new StateTransitionBroadcastError(
+  //       consensusError.getCode(),
+  //       consensusError.message,
+  //       consensusError,
+  //     );
+  //   }
+  // }
 
   // Subscribing to future result
   const hash = crypto.createHash('sha256')

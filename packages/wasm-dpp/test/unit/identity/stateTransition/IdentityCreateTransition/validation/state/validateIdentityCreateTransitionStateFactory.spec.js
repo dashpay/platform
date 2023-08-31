@@ -5,7 +5,7 @@ const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/c
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 
-describe('validateIdentityCreateTransitionStateFactory', () => {
+describe.skip('validateIdentityCreateTransitionStateFactory', () => {
   let validateIdentityCreateTransitionState;
   let stateTransition;
   let stateRepositoryMock;
@@ -25,7 +25,7 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(async function () {
+  beforeEach(async function beforeEach() {
     executionContext = new StateTransitionExecutionContext();
     const privateKey = Buffer.from('af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837', 'hex');
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);

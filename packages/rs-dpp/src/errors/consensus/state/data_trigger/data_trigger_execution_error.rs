@@ -1,14 +1,16 @@
-use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
+use crate::errors::ProtocolError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::consensus::state::data_trigger::DataTriggerError;
 use bincode::{Decode, Encode};
 
-#[derive(Error, Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 #[error("{message}")]
+#[platform_serialize(unversioned)]
 pub struct DataTriggerExecutionError {
     /*
 

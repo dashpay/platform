@@ -1,12 +1,25 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use serde::{Deserialize, Serialize};
+use crate::errors::ProtocolError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use bincode::{Decode, Encode};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+)]
 #[error("Invalid instant lock proof signature")]
+#[platform_serialize(unversioned)]
 pub struct InvalidInstantAssetLockProofSignatureError;
 
 /*
@@ -17,7 +30,7 @@ DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
 impl InvalidInstantAssetLockProofSignatureError {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 impl From<InvalidInstantAssetLockProofSignatureError> for ConsensusError {

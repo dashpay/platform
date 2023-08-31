@@ -2,13 +2,17 @@ use thiserror::Error;
 
 use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use crate::identity::KeyID;
-use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 use bincode::{Decode, Encode};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("Identity key {public_key_id} is disabled")]
+#[platform_serialize(unversioned)]
 pub struct PublicKeyIsDisabledError {
     /*
 

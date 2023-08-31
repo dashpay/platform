@@ -3,25 +3,29 @@ use crate::error::Error;
 use crate::execution::types::unpaid_epoch;
 use crate::platform_types::platform::Platform;
 use dpp::block::epoch::Epoch;
-use drive::drive::fee_pools::epochs::start_block::StartBlockInfo;
-use drive::fee::epoch::GENESIS_EPOCH_INDEX;
+use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
+use dpp::version::PlatformVersion;
+use drive::drive::credit_pools::epochs::start_block::StartBlockInfo;
+
 use drive::grovedb::TransactionArg;
 
 impl<C> Platform<C> {
     /// Finds and returns the oldest epoch that hasn't been paid out yet.
-    pub(in crate::execution::platform_events::fee_pool_outwards_distribution) fn find_oldest_epoch_needing_payment_v0(
+    /// The unpaid epoch potentially returned is always version 0
+    pub(super) fn find_oldest_epoch_needing_payment_v0(
         &self,
         current_epoch_index: u16,
         cached_current_epoch_start_block_height: Option<u64>,
         cached_current_epoch_start_block_core_height: Option<u32>,
         transaction: TransactionArg,
-    ) -> Result<Option<unpaid_epoch::v0::UnpaidEpoch>, Error> {
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<unpaid_epoch::v0::UnpaidEpochV0>, Error> {
         // Since we are paying for passed epochs there is nothing to do on genesis epoch
         if current_epoch_index == GENESIS_EPOCH_INDEX {
             return Ok(None);
         }
 
-        let unpaid_epoch_index = self.drive.get_unpaid_epoch_index(transaction)?;
+        let unpaid_epoch_index = self.drive.get_unpaid_epoch_index_v0(transaction)?;
 
         // We pay for previous epochs only
         if unpaid_epoch_index == current_epoch_index {
@@ -30,13 +34,17 @@ impl<C> Platform<C> {
 
         let unpaid_epoch = Epoch::new(unpaid_epoch_index)?;
 
-        let start_block_height = self
-            .drive
-            .get_epoch_start_block_height(&unpaid_epoch, transaction)?;
+        let start_block_height = self.drive.get_epoch_start_block_height(
+            &unpaid_epoch,
+            transaction,
+            platform_version,
+        )?;
 
-        let start_block_core_height = self
-            .drive
-            .get_epoch_start_block_core_height(&unpaid_epoch, transaction)?;
+        let start_block_core_height = self.drive.get_epoch_start_block_core_height(
+            &unpaid_epoch,
+            transaction,
+            platform_version,
+        )?;
 
         let next_unpaid_epoch_info = if unpaid_epoch.index == current_epoch_index - 1 {
             // Use cached or committed block height for previous epoch
@@ -44,8 +52,11 @@ impl<C> Platform<C> {
                 Some(start_block_height) => start_block_height,
                 None => {
                     let current_epoch = Epoch::new(current_epoch_index)?;
-                    self.drive
-                        .get_epoch_start_block_height(&current_epoch, transaction)?
+                    self.drive.get_epoch_start_block_height(
+                        &current_epoch,
+                        transaction,
+                        platform_version,
+                    )?
                 }
             };
 
@@ -53,8 +64,11 @@ impl<C> Platform<C> {
                 Some(start_block_core_height) => start_block_core_height,
                 None => {
                     let current_epoch = Epoch::new(current_epoch_index)?;
-                    self.drive
-                        .get_epoch_start_block_core_height(&current_epoch, transaction)?
+                    self.drive.get_epoch_start_block_core_height(
+                        &current_epoch,
+                        transaction,
+                        platform_version,
+                    )?
                 }
             };
             StartBlockInfo {
@@ -68,15 +82,20 @@ impl<C> Platform<C> {
                 unpaid_epoch.index,
                 current_epoch_index,
                 transaction,
+                platform_version,
             )? {
                 // Only possible on epoch change of current epoch, when we have start_block_height batched but not committed yet
                 None => {
-                    let Some(cached_current_epoch_start_block_height) = cached_current_epoch_start_block_height else {
+                    let Some(cached_current_epoch_start_block_height) =
+                        cached_current_epoch_start_block_height
+                    else {
                         return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "start_block_height must be present in current epoch or cached_next_epoch_start_block_height must be passed",
                         )));
                     };
-                    let Some(cached_current_epoch_start_block_core_height) = cached_current_epoch_start_block_core_height else {
+                    let Some(cached_current_epoch_start_block_core_height) =
+                        cached_current_epoch_start_block_core_height
+                    else {
                         return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "start_block_core_height must be present in current epoch or cached_next_epoch_start_block_core_height must be passed",
                         )));
@@ -93,7 +112,7 @@ impl<C> Platform<C> {
 
         // Use cached current epoch start block height only if we pay for the previous epoch
 
-        Ok(Some(unpaid_epoch::v0::UnpaidEpoch {
+        Ok(Some(unpaid_epoch::v0::UnpaidEpochV0 {
             epoch_index: unpaid_epoch_index,
             next_unpaid_epoch_index: next_unpaid_epoch_info.epoch_index,
             start_block_height,
@@ -109,7 +128,9 @@ mod tests {
     use super::*;
 
     mod find_oldest_epoch_needing_payment {
+        use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0Methods;
         use crate::test::helpers::setup::TestPlatformBuilder;
+        use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use drive::drive::batch::GroveDbOpBatch;
         use drive::fee_pools::epochs::operations_factory::EpochOperations;
         use drive::fee_pools::update_unpaid_epoch_index_operation;
@@ -118,6 +139,7 @@ mod tests {
 
         #[test]
         fn test_no_epoch_to_pay_on_genesis_epoch() {
+            let platform_version = PlatformVersion::latest();
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -129,6 +151,7 @@ mod tests {
                     None,
                     None,
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("should find nothing");
 
@@ -137,6 +160,7 @@ mod tests {
 
         #[test]
         fn test_no_epoch_to_pay_if_oldest_unpaid_epoch_is_current_epoch() {
+            let platform_version = PlatformVersion::latest();
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -157,7 +181,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let unpaid_epoch = platform
@@ -166,6 +190,7 @@ mod tests {
                     None,
                     None,
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("should find nothing");
 
@@ -174,6 +199,7 @@ mod tests {
 
         #[test]
         fn test_use_cached_current_start_block_height_as_end_block_if_unpaid_epoch_is_previous() {
+            let platform_version = PlatformVersion::latest();
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -190,7 +216,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let cached_current_epoch_start_block_height = Some(2);
@@ -203,6 +229,7 @@ mod tests {
                     cached_current_epoch_start_block_height,
                     cached_current_epoch_start_block_core_height,
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("should find nothing");
 
@@ -226,6 +253,7 @@ mod tests {
         #[test]
         fn test_use_stored_start_block_height_from_current_epoch_as_end_block_if_unpaid_epoch_is_previous(
         ) {
+            let platform_version = PlatformVersion::latest();
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -246,7 +274,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let unpaid_epoch = platform
@@ -255,6 +283,7 @@ mod tests {
                     None,
                     None,
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("should find nothing");
 
@@ -277,6 +306,7 @@ mod tests {
 
         #[test]
         fn test_find_stored_next_start_block_as_end_block_if_unpaid_epoch_more_than_one_ago() {
+            let platform_version = PlatformVersion::latest();
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -300,7 +330,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let unpaid_epoch = platform
@@ -309,6 +339,7 @@ mod tests {
                     None,
                     None,
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("should find nothing");
 
@@ -331,6 +362,7 @@ mod tests {
 
         #[test]
         fn test_use_cached_start_block_height_if_not_found_in_case_of_epoch_change() {
+            let platform_version = PlatformVersion::latest();
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -347,7 +379,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let cached_current_epoch_start_block_height = Some(2);
@@ -359,6 +391,7 @@ mod tests {
                     cached_current_epoch_start_block_height,
                     cached_current_epoch_start_block_core_height,
                     Some(&transaction),
+                    platform_version,
                 )
                 .expect("should find nothing");
 
@@ -382,6 +415,7 @@ mod tests {
         #[test]
         fn test_error_if_cached_start_block_height_is_not_present_and_not_found_in_case_of_epoch_change(
         ) {
+            let platform_version = PlatformVersion::latest();
             let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
@@ -398,7 +432,7 @@ mod tests {
 
             platform
                 .drive
-                .grove_apply_batch(batch, false, Some(&transaction))
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
                 .expect("should apply batch");
 
             let unpaid_epoch = platform.find_oldest_epoch_needing_payment_v0(
@@ -406,6 +440,7 @@ mod tests {
                 None,
                 None,
                 Some(&transaction),
+                platform_version,
             );
 
             assert!(matches!(

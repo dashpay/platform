@@ -1,11 +1,14 @@
 use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
 
-use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
 use dpp::block::epoch::Epoch;
 
 use dpp::validation::SimpleValidationResult;
 
 use drive::grovedb::Transaction;
+
+use dpp::block::block_info::BlockInfo;
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+use dpp::version::PlatformVersion;
 
 use tenderdash_abci::{
     proto::{serializers::timestamp::ToMilis, types::BlockId as ProtoBlockId},
@@ -16,14 +19,20 @@ use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
-use crate::execution::types::block_execution_context;
+use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_state_info::v0::{
+    BlockStateInfoV0Getters, BlockStateInfoV0Methods,
+};
 
 use crate::platform_types::block_execution_outcome;
 use crate::platform_types::cleaned_abci_messages::cleaned_block::v0::CleanedBlock;
 use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
 
-use crate::platform_types::commit;
+use crate::platform_types::commit::Commit;
+use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
 use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
@@ -51,6 +60,7 @@ where
         &self,
         request_finalize_block: FinalizeBlockCleanedRequest,
         transaction: &Transaction,
+        _platform_version: &PlatformVersion,
     ) -> Result<block_execution_outcome::v0::BlockFinalizationOutcome, Error> {
         let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
 
@@ -63,12 +73,13 @@ where
                     "block execution context must be set in block begin handler for finalize block proposal",
                 )))?;
 
-        let block_execution_context::v0::BlockExecutionContext {
-            block_state_info,
-            epoch_info,
-            block_platform_state,
-            ..
-        } = &block_execution_context;
+        let block_state_info = block_execution_context.block_state_info();
+        let epoch_info = block_execution_context.epoch_info();
+        let block_platform_state = block_execution_context.block_platform_state();
+
+        let current_protocol_version = block_platform_state.current_protocol_version_in_consensus();
+
+        let platform_version = PlatformVersion::get(current_protocol_version)?;
 
         // Let's decompose the request
         let FinalizeBlockCleanedRequest {
@@ -113,25 +124,25 @@ where
                 round,
                 hash.to_hex(),
                 block_header.core_chain_locked_height,
-                block_state_info.height,
-                block_state_info.round,
-                block_state_info.block_hash.map(|a| a.to_hex()).unwrap_or("None".to_string()),
-                block_state_info.core_chain_locked_height
+                block_state_info.height(),
+                block_state_info.round(),
+                block_state_info.block_hash().map(|a| a.to_hex()).unwrap_or("None".to_string()),
+                block_state_info.core_chain_locked_height()
             )));
             return Ok(validation_result.into());
         }
 
         let state_cache = self.state.read().unwrap();
-        let current_quorum_hash = state_cache.current_validator_set_quorum_hash.into_inner();
+        let current_quorum_hash = state_cache.current_validator_set_quorum_hash().into_inner();
         if current_quorum_hash != commit_info.quorum_hash {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",
-                height, round, hex::encode(commit_info.quorum_hash), hex::encode(block_platform_state.current_validator_set_quorum_hash)
+                height, round, hex::encode(commit_info.quorum_hash), hex::encode(block_platform_state.current_validator_set_quorum_hash())
             )));
             return Ok(validation_result.into());
         }
 
-        let quorum_public_key = &state_cache.current_validator_set()?.threshold_public_key;
+        let quorum_public_key = &state_cache.current_validator_set()?.threshold_public_key();
 
         // In production this will always be true
         if self
@@ -142,13 +153,14 @@ where
             // Verify commit
 
             let quorum_type = self.config.quorum_type();
-            let commit = commit::v0::Commit::new_from_cleaned(
+            let commit = Commit::new_from_cleaned(
                 commit_info.clone(),
                 block_id,
                 height,
                 quorum_type,
                 &block_header.chain_id,
-            );
+                platform_version,
+            )?;
             let validation_result =
                 commit.verify_signature(&commit_info.block_signature, quorum_public_key);
 
@@ -176,11 +188,12 @@ where
         // Next let's check that the hash received is the same as the hash we expect
 
         if height == self.config.abci.genesis_height {
-            self.drive.set_genesis_time(block_state_info.block_time_ms);
+            self.drive
+                .set_genesis_time(block_state_info.block_time_ms());
         }
 
         let mut to_commit_block_info: BlockInfo = block_state_info.to_block_info(
-            Epoch::new(epoch_info.current_epoch_index)
+            Epoch::new(epoch_info.current_epoch_index())
                 .expect("current epoch info should be in range"),
         );
 
@@ -196,16 +209,17 @@ where
 
         drop(guarded_block_execution_context);
 
-        let extended_block_info = ExtendedBlockInfo {
+        let extended_block_info = ExtendedBlockInfoV0 {
             basic_info: to_commit_block_info,
             app_hash: block_header.app_hash,
             quorum_hash: current_quorum_hash,
             block_id_hash,
             signature: commit_info.block_signature,
             round,
-        };
+        }
+        .into();
 
-        self.update_state_cache_v0(extended_block_info, transaction)?;
+        self.update_state_cache(extended_block_info, transaction, platform_version)?;
 
         let mut drive_cache = self.drive.cache.write().unwrap();
 

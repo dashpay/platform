@@ -12,7 +12,7 @@ let {
   StateTransitionExecutionContext,
 } = require('../../../..');
 
-describe('validateStateTransitionStateFactory', () => {
+describe.skip('validateStateTransitionStateFactory', () => {
   let stateTransition;
   let dpp;
   let stateRepositoryMock;

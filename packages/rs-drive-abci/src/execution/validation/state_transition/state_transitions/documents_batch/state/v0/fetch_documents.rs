@@ -5,14 +5,21 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
 use dpp::consensus::basic::BasicError;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
+use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::DataContract;
+
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::document::Document;
-use dpp::get_from_transition;
 use dpp::platform_value::{Identifier, Value};
-use dpp::prelude::DocumentTransition;
+use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_transition::{
+    DocumentTransition, DocumentTransitionV0Methods,
+};
 use dpp::validation::ConsensusValidationResult;
-use drive::contract::Contract;
+use dpp::version::PlatformVersion;
+use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
@@ -22,6 +29,7 @@ pub(crate) fn fetch_documents_for_transitions(
     platform: &PlatformStateRef,
     document_transitions: &[&DocumentTransition],
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
     let mut transitions_by_contracts_and_types: BTreeMap<
         (&Identifier, &String),
@@ -29,8 +37,8 @@ pub(crate) fn fetch_documents_for_transitions(
     > = BTreeMap::new();
 
     for document_transition in document_transitions {
-        let document_type = &document_transition.base().document_type_name;
-        let data_contract_id = &document_transition.base().data_contract_id;
+        let document_type = document_transition.base().document_type_name();
+        let data_contract_id = document_transition.base().data_contract_id_ref();
 
         match transitions_by_contracts_and_types.entry((data_contract_id, document_type)) {
             Entry::Vacant(v) => {
@@ -49,6 +57,7 @@ pub(crate) fn fetch_documents_for_transitions(
                 document_type_name,
                 transitions.as_slice(),
                 transaction,
+                platform_version,
             )
         })
         .collect::<Result<Vec<ConsensusValidationResult<Vec<Document>>>, Error>>()?;
@@ -65,6 +74,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
     document_type_name: &str,
     transitions: &[&DocumentTransition],
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
     let drive = platform.drive;
     //todo: deal with fee result
@@ -75,16 +85,29 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
         Some(&platform.state.epoch()),
         add_to_cache_if_pulled,
         transaction,
+        platform_version,
     )?;
 
     let Some(contract_fetch_info) = contract_fetch_info else {
-        return Ok(ConsensusValidationResult::new_with_error(BasicError::DataContractNotPresentError(DataContractNotPresentError::new(*contract_id)).into()));
+        return Ok(ConsensusValidationResult::new_with_error(
+            BasicError::DataContractNotPresentError(DataContractNotPresentError::new(*contract_id))
+                .into(),
+        ));
     };
 
     let contract_fetch_info = contract_fetch_info;
 
-    let Some(document_type) = contract_fetch_info.contract.optional_document_type_for_name(document_type_name) else {
-        return Ok(ConsensusValidationResult::new_with_error(BasicError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(document_type_name.to_string(), *contract_id)).into()));
+    let Some(document_type) = contract_fetch_info
+        .contract
+        .document_type_optional_for_name(document_type_name)
+    else {
+        return Ok(ConsensusValidationResult::new_with_error(
+            BasicError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
+                document_type_name.to_string(),
+                *contract_id,
+            ))
+            .into(),
+        ));
     };
     fetch_documents_for_transitions_knowing_contract_and_document_type(
         drive,
@@ -92,19 +115,25 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
         document_type,
         transitions,
         transaction,
+        platform_version,
     )
 }
 
 pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type(
     drive: &Drive,
-    contract: &Contract,
-    document_type: &DocumentType,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
     transitions: &[&DocumentTransition],
     transaction: TransactionArg,
+    platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
+    if transitions.is_empty() {
+        return Ok(ConsensusValidationResult::new_with_data(vec![]));
+    }
+
     let ids: Vec<Value> = transitions
         .iter()
-        .map(|dt| Value::Identifier(get_from_transition!(dt, id).to_buffer()))
+        .map(|dt| Value::Identifier(dt.get_id().to_buffer()))
         .collect();
 
     let drive_query = DriveQuery {
@@ -130,9 +159,63 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
     };
 
     //todo: deal with cost of this operation
-    let documents = drive
-        .query_documents(drive_query, None, false, transaction)?
-        .documents;
+    let documents_outcome = drive.query_documents(
+        drive_query,
+        None,
+        false,
+        transaction,
+        Some(platform_version.protocol_version),
+    )?;
 
-    Ok(ConsensusValidationResult::new_with_data(documents))
+    Ok(ConsensusValidationResult::new_with_data(
+        documents_outcome.documents_owned(),
+    ))
+}
+
+pub(crate) fn fetch_document_with_id(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    id: Identifier,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Option<Document>, Error> {
+    let drive_query = DriveQuery {
+        contract,
+        document_type,
+        internal_clauses: InternalClauses {
+            primary_key_in_clause: None,
+            primary_key_equal_clause: Some(WhereClause {
+                field: "$id".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(id.to_buffer()),
+            }),
+            in_clause: None,
+            range_clause: None,
+            equal_clauses: Default::default(),
+        },
+        offset: None,
+        limit: Some(1),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+    };
+
+    //todo: deal with cost of this operation
+    let documents_outcome = drive.query_documents(
+        drive_query,
+        None,
+        false,
+        transaction,
+        Some(platform_version.protocol_version),
+    )?;
+
+    let mut documents = documents_outcome.documents_owned();
+
+    if documents.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(documents.remove(0)))
+    }
 }

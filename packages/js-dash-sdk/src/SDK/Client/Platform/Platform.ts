@@ -3,7 +3,6 @@ import type { DPPModule } from '@dashevo/wasm-dpp';
 import crypto from 'crypto';
 
 import { latestVersion as latestProtocolVersion } from '@dashevo/dpp/lib/version/protocolVersion';
-import getBlsAdapter from '../../../bls/getBlsAdapter';
 
 import Client from '../Client';
 import { IStateTransitionResult } from './IStateTransitionResult';
@@ -35,7 +34,6 @@ import resolveName from './methods/names/resolve';
 import resolveNameByRecord from './methods/names/resolveByRecord';
 import searchName from './methods/names/search';
 import broadcastStateTransition from './broadcastStateTransition';
-import StateRepository from './StateRepository';
 
 import logger, { ConfigurableLogger } from '../../../logger';
 import Fetcher from './Fetcher';
@@ -217,12 +215,7 @@ export class Platform {
     if (!this.dpp) {
       await Platform.initializeDppModule();
 
-      const bls = await getBlsAdapter();
-      const stateRepository = new StateRepository(this.client);
-
       this.dpp = new DashPlatformProtocol(
-        bls,
-        stateRepository,
         {
           generate: () => crypto.randomBytes(32),
         },

@@ -1,47 +1,26 @@
-const varint = require('varint');
-
 const { hash: hashFunction } = require('@dashevo/dpp/lib/util/hash');
 const { expect } = require('chai');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
-const { default: loadWasmDpp } = require('../../..');
-const { getLatestProtocolVersion } = require('../../..');
+const {
+  Identity, Metadata, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
+  Identifier,
+} = require('../../..');
 
 describe('Identity', () => {
   let rawIdentity;
   let identity;
   let metadataFixture;
-  let Identity;
-  let Metadata;
-  let IdentityPublicKey;
-  let KeyPurpose;
-  let KeyType;
-  let KeySecurityLevel;
-
-  before(async () => {
-    ({
-      Identity, Metadata, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
-    } = await loadWasmDpp());
-  });
 
   beforeEach(async () => {
-    rawIdentity = {
-      protocolVersion: getLatestProtocolVersion(),
-      id: await generateRandomIdentifierAsync(),
-      publicKeys: [
-        {
-          id: 0,
-          type: KeyType.ECDSA_SECP256K1,
-          data: Buffer.alloc(36).fill('a'),
-          purpose: KeyPurpose.AUTHENTICATION,
-          securityLevel: KeySecurityLevel.MASTER,
-          readOnly: false,
-        },
-      ],
-      balance: 0,
-      revision: 0,
-    };
+    identity = new Identity(1);
+    identity.setId(await generateRandomIdentifierAsync());
 
-    identity = new Identity(rawIdentity);
+    const publicKey = new IdentityPublicKey(1);
+    publicKey.setData(Buffer.alloc(36).fill('a'));
+
+    identity.setPublicKeys([publicKey]);
+
+    rawIdentity = identity.toObject();
 
     metadataFixture = new Metadata({
       blockHeight: 42,
@@ -60,14 +39,11 @@ describe('Identity', () => {
     });
   });
 
-  afterEach(() => {
-  });
-
   describe('#constructor', () => {
     it('should set variables from raw model', () => {
       const instance = identity;
 
-      expect(instance.getId().toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
+      expect(instance.getId()).to.deep.equal(rawIdentity.id);
       expect(
         instance.getPublicKeys().map((pk) => pk.toObject()),
       ).to.deep.equal(
@@ -78,7 +54,7 @@ describe('Identity', () => {
 
   describe('#getId', () => {
     it('should return set id', () => {
-      expect(identity.getId().toBuffer()).to.deep.equal(rawIdentity.id.toBuffer());
+      expect(identity.getId()).to.deep.equal(rawIdentity.id);
     });
   });
 
@@ -99,15 +75,19 @@ describe('Identity', () => {
 
     it('should set public keys', () => {
       const rawKey = {
+        $version: '0',
         id: 2,
         type: KeyType.ECDSA_SECP256K1,
         data: Buffer.alloc(36).fill('a'),
         purpose: KeyPurpose.AUTHENTICATION,
         securityLevel: KeySecurityLevel.MASTER,
         readOnly: false,
+        disabledAt: null,
       };
 
-      const ipk = new IdentityPublicKey(rawKey);
+      const ipk = new IdentityPublicKey(1);
+      ipk.setData(Buffer.alloc(36).fill('a'));
+      ipk.setId(2);
 
       identity.setPublicKeys([ipk]);
       expect(identity.getPublicKeys()).length(1);
@@ -136,7 +116,7 @@ describe('Identity', () => {
     it('should return buffer', () => {
       const result = identity.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.length(87);
+      expect(result).to.have.length(81);
     });
   });
 
@@ -153,12 +133,6 @@ describe('Identity', () => {
     it('should return the same has as JS Identity', () => {
       const expectedHash = hashFunction(identity.toBuffer());
       const result = identity.hash();
-
-      const identityDataToEncode = identity.toObject();
-      delete identityDataToEncode.protocolVersion;
-
-      varint.encode(identity.getProtocolVersion());
-
       expect(result).to.deep.equal(expectedHash);
     });
   });
@@ -166,10 +140,6 @@ describe('Identity', () => {
   describe('#toObject', () => {
     it('should return plain object representation', () => {
       const identityObject = identity.toObject();
-
-      // We can't compare Identifier directly - it needs to be converted into a Buffer
-      rawIdentity.id = rawIdentity.id.toBuffer();
-
       expect(identityObject).to.deep.equal(rawIdentity);
     });
   });
@@ -179,16 +149,18 @@ describe('Identity', () => {
       const jsonIdentity = identity.toJSON();
 
       expect(jsonIdentity).to.deep.equal({
-        protocolVersion: getLatestProtocolVersion(),
-        id: rawIdentity.id.toString(),
+        $version: '0',
+        id: Identifier.from(rawIdentity.id).toString(),
         publicKeys: [
           {
+            $version: '0',
             id: 0,
             type: KeyType.ECDSA_SECP256K1,
             data: rawIdentity.publicKeys[0].data.toString('base64'),
             purpose: KeyPurpose.AUTHENTICATION,
             securityLevel: KeySecurityLevel.MASTER,
             readOnly: false,
+            disabledAt: null,
           },
         ],
         balance: 0,
@@ -260,27 +232,15 @@ describe('Identity', () => {
 
   describe('#getPublicKeyMaxId', () => {
     it('should get the biggest public key ID', () => {
-      const key = new IdentityPublicKey({
-        id: 99,
-        type: KeyType.ECDSA_SECP256K1,
-        data: Buffer.alloc(36).fill('a'),
-        purpose: KeyPurpose.AUTHENTICATION,
-        securityLevel: KeySecurityLevel.MASTER,
-        signature: Buffer.alloc(36).fill('a'),
-        readOnly: false,
-      });
-      identity.addPublicKeys(
-        key,
-        new IdentityPublicKey({
-          id: 50,
-          type: KeyType.ECDSA_SECP256K1,
-          data: Buffer.alloc(36).fill('a'),
-          purpose: KeyPurpose.AUTHENTICATION,
-          securityLevel: KeySecurityLevel.MASTER,
-          signature: Buffer.alloc(36).fill('a'),
-          readOnly: false,
-        }),
-      );
+      const key1 = new IdentityPublicKey(1);
+      key1.setId(99);
+      key1.setData(Buffer.alloc(36).fill('a'));
+
+      const key2 = new IdentityPublicKey(1);
+      key2.setId(50);
+      key2.setData(Buffer.alloc(36).fill('a'));
+
+      identity.addPublicKeys([key1, key2]);
 
       const maxId = identity.getPublicKeyMaxId();
 

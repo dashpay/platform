@@ -1,3 +1,5 @@
+const { UInt32Value } = require('google-protobuf/google/protobuf/wrappers_pb');
+
 const {
   v0: {
     PlatformPromiseClient,
@@ -94,8 +96,8 @@ describe('getDataContractHistoryFactory', () => {
 
     const request = new GetDataContractHistoryRequest();
     request.setId(contractId);
-    request.setLimit(10);
-    request.setOffset(0);
+    request.setLimit(new UInt32Value([10]));
+    request.setOffset(new UInt32Value([0]));
     request.setStartAtMs(0);
     request.setProve(false);
 
@@ -124,8 +126,8 @@ describe('getDataContractHistoryFactory', () => {
 
     const request = new GetDataContractHistoryRequest();
     request.setId(contractId);
-    request.setLimit(10);
-    request.setOffset(0);
+    request.setLimit(new UInt32Value([10]));
+    request.setOffset(new UInt32Value([0]));
     request.setStartAtMs(0);
     request.setProve(true);
 
@@ -157,8 +159,8 @@ describe('getDataContractHistoryFactory', () => {
 
     const request = new GetDataContractHistoryRequest();
     request.setId(contractId.toBuffer());
-    request.setLimit(10);
-    request.setOffset(0);
+    request.setLimit(new UInt32Value([10]));
+    request.setOffset(new UInt32Value([0]));
     request.setStartAtMs(0);
     request.setProve(false);
 

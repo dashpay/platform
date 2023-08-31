@@ -19,13 +19,12 @@ const {
     StateTransitionBroadcastError,
   },
   PlatformProtocol: {
-    Identity,
     Identifier,
     IdentityPublicKey,
     InvalidInstantAssetLockProofSignatureError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     BalanceIsNotEnoughError,
-    InvalidIdentityKeySignatureError,
+    BasicECDSAError,
     IdentityPublicKeyWithWitness,
   },
 } = Dash;
@@ -196,9 +195,9 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause().getCode()).to.equal(1056);
+      expect(broadcastError.getCause().getCode()).to.equal(2009);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
-        InvalidIdentityKeySignatureError,
+        BasicECDSAError,
       );
     });
 
@@ -492,6 +491,7 @@ describe('Platform', () => {
         let recipient;
         before(async () => {
           recipient = await client.platform.identities.register(400000);
+          await waitForSTPropagated();
         });
 
         it('should be able to transfer credits from one identity to another', async () => {
@@ -555,11 +555,11 @@ describe('Platform', () => {
       });
     });
 
-    describe.skip('Update', () => {
+    describe('Update', () => {
       it('should be able to add public key to the identity', async () => {
-        const identityBeforeUpdate = new Identity(identity.toObject());
+        const identityBeforeUpdate = identity.toObject();
 
-        expect(identityBeforeUpdate.getPublicKeyById(2)).to.not.exist();
+        expect(identityBeforeUpdate.publicKeys[3]).to.not.exist();
 
         const account = await client.platform.client.getWalletAccount();
         const identityIndex = await account.getUnusedIdentityIndex();
@@ -570,17 +570,10 @@ describe('Platform', () => {
 
         const identityPublicKey = identityPrivateKey.toPublicKey().toBuffer();
 
-        const newPublicKey = new IdentityPublicKeyWithWitness(
-          {
-            id: 2,
-            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
-            data: identityPublicKey,
-            readOnly: false,
-            signature: Buffer.alloc(0),
-          },
-        );
+        const newPublicKey = new IdentityPublicKeyWithWitness(1);
+        newPublicKey.setId(3);
+        newPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
+        newPublicKey.setData(identityPublicKey);
 
         const update = {
           add: [newPublicKey],
@@ -600,12 +593,13 @@ describe('Platform', () => {
           identity.getId(),
         );
 
-        expect(identity.getRevision()).to.equal(identityBeforeUpdate.getRevision() + 1);
+        expect(identity.getRevision()).to.equal(identityBeforeUpdate.revision + 1);
         expect(identity.getPublicKeyById(2)).to.exist();
 
-        const newPublicKeyObject = newPublicKey.toObject();
-        delete newPublicKeyObject.signature;
-        expect(identity.getPublicKeyById(2).toObject()).to.deep.equal(
+        const newPublicKeyObject = newPublicKey.toObject(true);
+        const expectedPublicKey = identity.getPublicKeyById(3).toObject(true);
+        delete expectedPublicKey.disabledAt;
+        expect(expectedPublicKey).to.deep.equal(
           newPublicKeyObject,
         );
       });
@@ -613,9 +607,9 @@ describe('Platform', () => {
       it('should be able to disable public key of the identity', async () => {
         const now = new Date();
 
-        const identityBeforeUpdate = new Identity(identity.toObject());
+        const identityBeforeUpdate = identity.toObject();
 
-        const publicKeyToDisable = identityBeforeUpdate.getPublicKeyById(2);
+        const publicKeyToDisable = identity.getPublicKeyById(2);
         const update = {
           disable: [publicKeyToDisable],
         };
@@ -631,7 +625,7 @@ describe('Platform', () => {
           identity.getId(),
         );
 
-        expect(identity.getRevision()).to.equal(identityBeforeUpdate.getRevision() + 1);
+        expect(identity.getRevision()).to.equal(identityBeforeUpdate.revision + 1);
         expect(identity.getPublicKeyById(2)).to.exist();
         expect(identity.getPublicKeyById(2).getDisabledAt()).to.be.at.least(now);
 

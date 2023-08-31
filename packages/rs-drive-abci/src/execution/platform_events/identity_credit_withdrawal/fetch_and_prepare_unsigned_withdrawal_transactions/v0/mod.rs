@@ -1,21 +1,26 @@
-use std::ops::Deref;
-
 use dashcore_rpc::dashcore::{
     blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo,
     hashes::Hash, QuorumHash,
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::document::Document;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::{Document, DocumentV0Setters};
+use dpp::version::PlatformVersion;
 
-use drive::dpp::contracts::withdrawals_contract;
+use drive::dpp::system_data_contracts::withdrawals_contract;
+use drive::dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 
 use drive::dpp::util::hash;
 
 use drive::drive::batch::DriveOperation;
 use drive::grovedb::Transaction;
 
-use crate::execution::types::block_execution_context;
+use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
+use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
+use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::{
     error::{execution::ExecutionError, Error},
     platform_types::platform::Platform,
@@ -29,32 +34,35 @@ where
     C: CoreRPCLike,
 {
     /// Prepares a list of an unsigned withdrawal transaction bytes
-    pub fn fetch_and_prepare_unsigned_withdrawal_transactions_v0(
+    pub(super) fn fetch_and_prepare_unsigned_withdrawal_transactions_v0(
         &self,
         validator_set_quorum_hash: [u8; 32],
-        block_execution_context: &block_execution_context::v0::BlockExecutionContext,
+        block_execution_context: &BlockExecutionContext,
         transaction: &Transaction,
+        platform_version: &PlatformVersion,
     ) -> Result<Vec<Vec<u8>>, Error> {
         let block_info = BlockInfo {
-            time_ms: block_execution_context.block_state_info.block_time_ms,
-            height: block_execution_context.block_state_info.height,
+            time_ms: block_execution_context.block_state_info().block_time_ms(),
+            height: block_execution_context.block_state_info().height(),
             core_height: block_execution_context
-                .block_state_info
-                .core_chain_locked_height,
-            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index)?,
+                .block_state_info()
+                .core_chain_locked_height(),
+            epoch: Epoch::new(block_execution_context.epoch_info().current_epoch_index())?,
         };
 
-        let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
+        let data_contract_id = withdrawals_contract::ID;
 
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info_and_fee(
             data_contract_id.to_buffer(),
             None,
             true,
             Some(transaction),
-        )? else {
-            return Err(Error::Execution(
-                ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
-            ));
+            platform_version,
+        )?
+        else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "can't fetch withdrawal data contract",
+            )));
         };
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -78,8 +86,8 @@ where
                 .map(|(_, untied_transaction_bytes)| {
                     let request_info = AssetUnlockRequestInfo {
                         request_height: block_execution_context
-                            .block_state_info
-                            .core_chain_locked_height,
+                            .block_state_info()
+                            .core_chain_locked_height(),
                         quorum_hash: QuorumHash::hash(&validator_set_quorum_hash),
                     };
 
@@ -103,15 +111,16 @@ where
                     let mut document = self.drive.find_withdrawal_document_by_transaction_id(
                         &original_transaction_id,
                         Some(transaction),
+                        platform_version,
                     )?;
 
                     document.set_bytes(
-                        withdrawals_contract::property_names::TRANSACTION_ID,
+                        withdrawal::properties::TRANSACTION_ID,
                         update_transaction_id,
                     );
 
                     document.set_i64(
-                        withdrawals_contract::property_names::UPDATED_AT,
+                        withdrawal::properties::UPDATED_AT,
                         block_info.time_ms.try_into().map_err(|_| {
                             Error::Execution(ExecutionError::CorruptedCodeExecution(
                                 "Can't convert u64 block time to i64 updated_at",
@@ -136,20 +145,22 @@ where
             &contract_fetch_info.contract,
             contract_fetch_info
                 .contract
-                .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+                .document_type_for_name(withdrawal::NAME)
                 .map_err(|_| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "could not get document type",
                     ))
                 })?,
             &mut drive_operations,
-        );
+            &platform_version.drive,
+        )?;
 
         self.drive.apply_drive_operations(
             drive_operations,
             true,
             &block_info,
             Some(transaction),
+            platform_version,
         )?;
 
         Ok(unsigned_withdrawal_transactions)

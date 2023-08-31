@@ -1,5 +1,5 @@
-use crate::document::state_transition::document_batch_transition::document_transition::from_document_transition_to_js_value;
-use dpp::prelude::DocumentTransition;
+// use crate::document::state_transition::document_batch_transition::document_transition::from_document_transition_to_js_value;
+use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use thiserror::Error;
 
 use super::*;
@@ -13,10 +13,10 @@ pub struct DocumentNotProvidedError {
 
 #[wasm_bindgen]
 impl DocumentNotProvidedError {
-    #[wasm_bindgen(js_name=getDocumentTransition)]
-    pub fn get_document_transition(&self) -> JsValue {
-        from_document_transition_to_js_value(self.document_transition.clone())
-    }
+    // #[wasm_bindgen(js_name=getDocumentTransition)]
+    // pub fn get_document_transition(&self) -> JsValue {
+    //     from_document_transition_to_js_value(self.document_transition.clone())
+    // }
 }
 
 impl DocumentNotProvidedError {

@@ -14,9 +14,9 @@ pub enum QuerySyntaxError {
     /// We asked for nothing
     #[error("no query items error: {0}")]
     NoQueryItems(&'static str),
-    /// Contract not found error
+    ///DataContract not found error
     #[error("contract not found error: {0}")]
-    ContractNotFound(&'static str),
+    DataContractNotFound(&'static str),
     /// Document type not found error
     #[error("document type not found error: {0}")]
     DocumentTypeNotFound(&'static str),

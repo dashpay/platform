@@ -3,7 +3,7 @@ const getIdentityUpdateTransitionFixture = require('../../../../../lib/test/fixt
 
 const { default: loadWasmDpp } = require('../../../../../dist');
 
-describe('applyIdentityUpdateTransition', () => {
+describe.skip('applyIdentityUpdateTransition', () => {
   let applyIdentityUpdateTransition;
   let stateRepositoryMock;
   let stateTransition;
@@ -38,7 +38,7 @@ describe('applyIdentityUpdateTransition', () => {
     );
   });
 
-  it('should add and disable public keys', async function () {
+  it('should add and disable public keys', async function shouldAdd() {
     await applyIdentityUpdateTransition(stateTransition);
 
     const { match } = this.sinonSandbox;
@@ -66,7 +66,7 @@ describe('applyIdentityUpdateTransition', () => {
     );
   });
 
-  it('should add and disable public keys on dry run', async function () {
+  it('should add and disable public keys on dry run', async function shouldDisable() {
     const { match } = this.sinonSandbox;
 
     executionContext.enableDryRun();

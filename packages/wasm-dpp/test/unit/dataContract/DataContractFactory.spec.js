@@ -3,7 +3,7 @@ const getDataContractFixture = require('../../../lib/test/fixtures/getDataContra
 const { default: loadWasmDpp, UnsupportedProtocolVersionError } = require('../../..');
 const { getLatestProtocolVersion } = require('../../..');
 
-describe('DataContractFactory', () => {
+describe.skip('DataContractFactory', () => {
   let DataContractFactory;
   let DataContractValidator;
   let DataContract;

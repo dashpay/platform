@@ -1,63 +1,33 @@
-// MIT LICENSE
-//
-// Copyright (c) 2021 Dash Core Group
-//
-// Permission is hereby granted, free of charge, to any
-// person obtaining a copy of this software and associated
-// documentation files (the "Software"), to deal in the
-// Software without restriction, including without
-// limitation the rights to use, copy, modify, merge,
-// publish, distribute, sublicense, and/or sell copies of
-// the Software, and to permit persons to whom the Software
-// is furnished to do so, subject to the following
-// conditions:
-//
-// The above copyright notice and this permission notice
-// shall be included in all copies or substantial portions
-// of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-// ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-// TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-// PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-// SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-// CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-// OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-// IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-//
-
-//! Fee ops
-//!
-
 use crate::drive::batch::GroveDbOpBatch;
-use costs::storage_cost::removal::Identifier;
-use costs::storage_cost::removal::StorageRemovedBytes::{
+use grovedb_costs::storage_cost::removal::Identifier;
+use grovedb_costs::storage_cost::removal::StorageRemovedBytes::{
     BasicStorageRemoval, NoStorageRemoval, SectionedStorageRemoval,
 };
 
-use costs::OperationCost;
 use enum_map::Enum;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::element::MaxReferenceHop;
 use grovedb::reference_path::ReferencePathType;
 use grovedb::{batch::GroveDbOp, Element, ElementFlags};
+use grovedb_costs::OperationCost;
 
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+use crate::drive::fee::get_overflow_error;
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::default_costs::EpochCosts;
-use crate::fee::default_costs::KnownCostItem::{
-    StorageDiskUsageCreditPerByte, StorageLoadCreditPerByte, StorageProcessingCreditPerByte,
-    StorageSeekCost,
-};
 use crate::fee::op::LowLevelDriveOperation::{
     CalculatedCostOperation, FunctionOperation, GroveOperation, PreCalculatedFeeResult,
 };
-use crate::fee::result::refunds::FeeRefunds;
-use crate::fee::{get_overflow_error, FeeResult};
 use dpp::block::epoch::Epoch;
+use dpp::fee::default_costs::EpochCosts;
+use dpp::fee::default_costs::KnownCostItem::{
+    StorageDiskUsageCreditPerByte, StorageLoadCreditPerByte, StorageProcessingCreditPerByte,
+    StorageSeekCost,
+};
+use dpp::fee::fee_result::refunds::FeeRefunds;
+use dpp::fee::fee_result::FeeResult;
 
 /// Base ops
 #[derive(Debug, Enum)]
@@ -184,7 +154,9 @@ impl HashFunction {
 /// A Hash Function Operation
 #[derive(Debug, PartialEq, Eq)]
 pub struct FunctionOp {
+    /// hash
     pub(crate) hash: HashFunction,
+    /// rounds
     pub(crate) rounds: u32,
 }
 

@@ -4,7 +4,7 @@ use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::consensus::ConsensusError;
 use dpp::identifier::Identifier;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataTriggerConditionError)]
@@ -48,7 +48,7 @@ impl DataTriggerConditionErrorWasm {
     #[wasm_bindgen(js_name=serialize)]
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
-            .serialize()
+            .serialize_to_bytes()
             .map_err(JsError::from)?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))

@@ -1,0 +1,15 @@
+[package]
+name = "platform-version"
+authors = ["Samuel Westrich <sam@dash.org>"]
+description = "Bincode based serialization and deserialization"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+private = true
+
+[dependencies]
+bincode = { version = "2.0.0-rc.3", features = ["serde"] }
+thiserror = { version = "1.0" }
+
+[features]
+mock-versions = []

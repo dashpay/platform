@@ -2,16 +2,16 @@ const { Listr } = require('listr2');
 const fs = require('node:fs');
 const path = require('node:path');
 const wait = require('../../util/wait');
-const generateEnvs = require('../../util/generateEnvs');
-const { HOME_DIR_PATH } = require('../../constants');
 
 /**
  * @param {DockerCompose} dockerCompose
  * @param {Docker} docker
  * @param {startNodeTask} startNodeTask
  * @param {generateToAddressTask} generateToAddressTask
- * @param {systemConfigs} systemConfigs
+ * @param {DefaultConfigs} defaultConfigs
  * @param {ConfigFile} configFile
+ * @param {HomeDir} homeDir
+ * @param {generateEnvs} generateEnvs
  * @return {resetNodeTask}
  */
 function resetNodeTaskFactory(
@@ -19,8 +19,10 @@ function resetNodeTaskFactory(
   docker,
   startNodeTask,
   generateToAddressTask,
-  systemConfigs,
+  defaultConfigs,
   configFile,
+  homeDir,
+  generateEnvs,
 ) {
   /**
    * @typedef {resetNodeTask}
@@ -39,7 +41,7 @@ function resetNodeTaskFactory(
         title: 'Check services are not running',
         skip: (ctx) => ctx.isForce,
         task: async () => {
-          if (await dockerCompose.isNodeRunning(generateEnvs(configFile, config))) {
+          if (await dockerCompose.isNodeRunning(config)) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
         },
@@ -47,30 +49,20 @@ function resetNodeTaskFactory(
       {
         title: 'Remove all services and associated data',
         enabled: (ctx) => !ctx.isPlatformOnlyReset,
-        task: async () => dockerCompose.down(generateEnvs(configFile, config)),
+        task: async () => dockerCompose.down(config),
       },
       {
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async () => {
-          const nonPlatformServices = ['core'];
-          const envs = generateEnvs(configFile, config);
-
-          // Remove containers
-          const serviceNames = (await dockerCompose
-            .getContainersList(
-              envs,
-              { returnServiceNames: true },
-            ))
-            .filter((serviceName) => !nonPlatformServices.includes(serviceName));
-
-          await dockerCompose.rm(generateEnvs(configFile, config), serviceNames);
+          await dockerCompose.rm(config, { profiles: ['platform'] });
 
           // Remove volumes
-          const { COMPOSE_PROJECT_NAME: composeProjectName } = envs;
+          const { COMPOSE_PROJECT_NAME: composeProjectName } = generateEnvs(config);
 
           const projectVolumeNames = await dockerCompose.getVolumeNames(
-            generateEnvs(configFile, config, { platformOnly: true }),
+            config,
+            { profiles: ['platform'] },
           );
 
           await Promise.all(
@@ -91,7 +83,7 @@ function resetNodeTaskFactory(
                       await wait(1000);
 
                       // Remove containers
-                      await dockerCompose.rm(generateEnvs(configFile, config), serviceNames);
+                      await dockerCompose.rm(config, { profiles: ['platform'] });
 
                       isRetry = true;
 
@@ -114,6 +106,7 @@ function resetNodeTaskFactory(
         title: 'Reset dashmate\'s ephemeral data',
         task: (ctx) => {
           if (!ctx.isPlatformOnlyReset) {
+            // TODO: We should remove it from config
             config.set('core.miner.mediantime', null);
           }
         },
@@ -124,13 +117,13 @@ function resetNodeTaskFactory(
         task: (ctx) => {
           const baseConfigName = config.get('group') || config.getName();
 
-          if (systemConfigs[baseConfigName]) {
+          if (defaultConfigs.has(baseConfigName)) {
             // Reset config if the corresponding base config exists
             if (ctx.isPlatformOnlyReset) {
-              const { platform: systemPlatformConfig } = systemConfigs[baseConfigName];
-              config.set('platform', systemPlatformConfig);
+              const defaultPlatformConfig = defaultConfigs.get(baseConfigName).get('platform');
+              config.set('platform', defaultPlatformConfig);
             } else {
-              config.setOptions(systemConfigs[baseConfigName]);
+              config.setOptions(defaultConfigs.get(baseConfigName).getOptions());
             }
           } else {
             // Delete config if no base config
@@ -138,7 +131,7 @@ function resetNodeTaskFactory(
           }
 
           // Remove service configs
-          let serviceConfigsPath = path.join(HOME_DIR_PATH, baseConfigName);
+          let serviceConfigsPath = homeDir.joinPath(baseConfigName);
 
           if (ctx.isPlatformOnlyReset) {
             serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
@@ -150,7 +143,7 @@ function resetNodeTaskFactory(
           });
 
           // Remove SSL files
-          fs.rmSync(path.join(HOME_DIR_PATH, 'ssl', baseConfigName), {
+          fs.rmSync(homeDir.joinPath('ssl', baseConfigName), {
             recursive: true,
             force: true,
           });

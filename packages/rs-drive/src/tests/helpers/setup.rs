@@ -38,9 +38,11 @@ use dpp::block::block_info::BlockInfo;
 
 use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
+
+use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use tempfile::TempDir;
 
@@ -73,8 +75,10 @@ pub fn setup_drive_with_initial_state_structure() -> Drive {
         batching_consistency_verification: true,
         ..Default::default()
     }));
+
+    let platform_version = PlatformVersion::latest();
     drive
-        .create_initial_state_structure(None)
+        .create_initial_state_structure(None, platform_version)
         .expect("should create root tree successfully");
 
     drive
@@ -86,8 +90,16 @@ pub fn setup_system_data_contract(
     data_contract: &DataContract,
     transaction: TransactionArg,
 ) {
+    let platform_version = PlatformVersion::latest();
     drive
-        .apply_contract(data_contract, BlockInfo::default(), true, None, transaction)
+        .apply_contract(
+            data_contract,
+            BlockInfo::default(),
+            true,
+            None,
+            transaction,
+            platform_version,
+        )
         .unwrap();
 }
 
@@ -96,9 +108,10 @@ pub fn setup_document(
     drive: &Drive,
     document: &Document,
     data_contract: &DataContract,
-    document_type: &DocumentType,
+    document_type: DocumentTypeRef,
     transaction: TransactionArg,
 ) {
+    let platform_version = PlatformVersion::latest();
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
@@ -113,6 +126,7 @@ pub fn setup_document(
             BlockInfo::default(),
             true,
             transaction,
+            platform_version,
         )
         .unwrap();
 }

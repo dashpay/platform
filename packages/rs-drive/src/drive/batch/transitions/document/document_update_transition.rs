@@ -7,43 +7,24 @@ use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 
-use dpp::document::document_transition::{
-    DocumentBaseTransitionAction, DocumentReplaceTransitionAction,
-};
 use dpp::document::Document;
 use dpp::prelude::Identifier;
 use std::borrow::Cow;
+use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use crate::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::{DocumentFromReplaceTransition, DocumentReplaceTransitionAction, DocumentReplaceTransitionActionAccessorsV0};
+use dpp::version::PlatformVersion;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentReplaceTransitionAction {
-    fn into_high_level_document_drive_operations<'a>(
+    fn into_high_level_document_drive_operations<'b>(
         self,
         epoch: &Epoch,
         owner_id: Identifier,
-    ) -> Result<Vec<DriveOperation<'a>>, Error> {
-        let DocumentReplaceTransitionAction {
-            base,
-            revision,
-            created_at,
-            updated_at,
-            data,
-        } = self;
-
-        let DocumentBaseTransitionAction {
-            id,
-            document_type_name,
-            data_contract_id,
-            //todo: should we use the contract?
-            ..
-        } = base;
-
-        let document = Document {
-            id,
-            owner_id,
-            properties: data,
-            revision: Some(revision),
-            created_at,
-            updated_at,
-        };
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<DriveOperation<'b>>, Error> {
+        let data_contract_id = self.base().data_contract_id();
+        let document_type_name = self.base().document_type_name().clone();
+        let document =
+            Document::try_from_owned_replace_transition(self, owner_id, platform_version)?;
 
         let storage_flags = StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
 

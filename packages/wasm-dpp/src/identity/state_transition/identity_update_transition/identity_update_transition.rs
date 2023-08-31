@@ -1,36 +1,40 @@
 use std::convert::TryInto;
 use std::default::Default;
 
-use dpp::consensus::signature::SignatureError;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
 
 use crate::{
-    buffer::Buffer, errors::RustConversionError,
+    buffer::Buffer,
     identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm,
-    identity::IdentityPublicKeyWasm, with_js_error,
+    identity::IdentityPublicKeyWasm, utils, with_js_error,
 };
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
 use crate::utils::{generic_of_js_val, WithJsError};
 
-use dpp::consensus::ConsensusError;
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+use crate::errors::from_dpp_err;
+use dpp::errors::consensus::signature::SignatureError;
+use dpp::errors::consensus::ConsensusError;
+use dpp::errors::ProtocolError;
 use dpp::identity::{KeyID, KeyType, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::{string_encoding, BinaryData, Value};
+use dpp::platform_value::{string_encoding, BinaryData, ReplacementType, Value};
 use dpp::prelude::Revision;
-use dpp::serialization_traits::PlatformSerializable;
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
-use dpp::{
-    identifier::Identifier,
-    identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
-    platform_value, state_transition::StateTransitionLike, ProtocolError,
-};
+use dpp::serialization::PlatformSerializable;
+use dpp::serialization::ValueConvertible;
+use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::StateTransition;
+use dpp::state_transition::StateTransitionIdentitySigned;
+use dpp::version::PlatformVersion;
+use dpp::{identifier::Identifier, state_transition::StateTransitionLike};
 
 #[wasm_bindgen(js_name=IdentityUpdateTransition)]
 #[derive(Clone)]
@@ -61,29 +65,23 @@ impl From<IdentityUpdateTransitionWasm> for IdentityUpdateTransition {
     }
 }
 
-pub fn js_value_to_identity_update_transition_object(object: JsValue) -> Result<Value, JsValue> {
-    let parameters: IdentityUpdateTransitionParams =
-        with_js_error!(serde_wasm_bindgen::from_value(object))?;
-
-    platform_value::to_value(parameters).map_err(|e| e.to_string().into())
-}
+// pub fn js_value_to_identity_update_transition_object(object: JsValue) -> Result<Value, JsValue> {
+//     let parameters: IdentityUpdateTransitionParams =
+//         with_js_error!(serde_wasm_bindgen::from_value(object))?;
+//
+//     platform_value::to_value(parameters).map_err(|e| e.to_string().into())
+// }
 
 #[wasm_bindgen(js_class = IdentityUpdateTransition)]
 impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_parameters: JsValue) -> Result<IdentityUpdateTransitionWasm, JsValue> {
-        let mut identity_update_transition_object =
-            js_value_to_identity_update_transition_object(raw_parameters)?;
+    pub fn new(platform_version: u32) -> Result<IdentityUpdateTransitionWasm, JsValue> {
+        let platform_version =
+            &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        IdentityUpdateTransition::clean_value(&mut identity_update_transition_object)
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
-
-        let identity_update_transition =
-            IdentityUpdateTransition::new(identity_update_transition_object)
-                .map_err(|e| RustConversionError::Error(e.to_string()).to_js_value())?;
-
-        Ok(identity_update_transition.into())
+        IdentityUpdateTransition::default_versioned(&platform_version)
+            .map(Into::into)
+            .map_err(from_dpp_err)
     }
 
     #[wasm_bindgen(js_name=setPublicKeysToAdd)]
@@ -114,7 +112,7 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(js_name=getPublicKeysToAdd)]
     pub fn get_public_keys_add(&self) -> Vec<JsValue> {
         self.0
-            .get_public_keys_to_add()
+            .public_keys_to_add()
             .iter()
             .map(|key| IdentityPublicKeyWithWitnessWasm::from(key.to_owned()).into())
             .collect()
@@ -128,7 +126,7 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(js_name=getPublicKeyIdsToDisable)]
     pub fn get_public_key_ids_to_disable(&self) -> Vec<JsValue> {
         self.0
-            .get_public_key_ids_to_disable()
+            .public_key_ids_to_disable()
             .iter()
             .map(|key| JsValue::from_f64(key.to_owned() as f64))
             .collect()
@@ -150,7 +148,7 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(js_name=getPublicKeysDisabledAt)]
     pub fn get_public_keys_disabled_at(&self) -> Option<js_sys::Date> {
         self.0
-            .get_public_keys_disabled_at()
+            .public_keys_disabled_at()
             .map(|timestamp| js_sys::Date::new(&JsValue::from_f64(timestamp as f64)))
     }
 
@@ -166,7 +164,7 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> u8 {
-        self.0.get_type() as u8
+        self.0.state_transition_type() as u8
     }
 
     #[wasm_bindgen(getter, js_name=identityId)]
@@ -176,7 +174,7 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getIdentityId)]
     pub fn get_identity_id(&self) -> IdentifierWrapper {
-        (*self.0.get_identity_id()).into()
+        self.0.identity_id().to_owned().into()
     }
 
     #[wasm_bindgen(js_name=setIdentityId)]
@@ -186,7 +184,7 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        (*self.0.get_owner_id()).into()
+        StateTransitionLike::owner_id(&self.0).to_owned().into()
     }
 
     #[wasm_bindgen(js_name=toObject)]
@@ -197,7 +195,7 @@ impl IdentityUpdateTransitionWasm {
             Default::default()
         };
 
-        let object = super::to_object::to_object_struct(&self.0, opts);
+        let object = super::to_object::to_object_struct(&self.0, &opts);
         let js_object = js_sys::Object::new();
 
         js_sys::Reflect::set(
@@ -206,11 +204,11 @@ impl IdentityUpdateTransitionWasm {
             &object.transition_type.into(),
         )?;
 
-        js_sys::Reflect::set(
-            &js_object,
-            &"protocolVersion".to_owned().into(),
-            &object.protocol_version.into(),
-        )?;
+        let version = match self.0 {
+            IdentityUpdateTransition::V0(_) => "0",
+        };
+
+        js_sys::Reflect::set(&js_object, &"$version".to_owned().into(), &version.into())?;
 
         js_sys::Reflect::set(
             &js_object,
@@ -227,33 +225,28 @@ impl IdentityUpdateTransitionWasm {
 
             js_sys::Reflect::set(&js_object, &"signature".to_owned().into(), &signature_value)?;
 
-            if let Some(signature_public_key_id) = object.signature_public_key_id {
-                js_sys::Reflect::set(
-                    &js_object,
-                    &"signaturePublicKeyId".to_owned().into(),
-                    &JsValue::from(signature_public_key_id),
-                )?;
-            } else {
-                js_sys::Reflect::set(
-                    &js_object,
-                    &"signaturePublicKeyId".to_owned().into(),
-                    &JsValue::undefined(),
-                )?;
-            }
+            js_sys::Reflect::set(
+                &js_object,
+                &"signaturePublicKeyId".to_owned().into(),
+                &JsValue::from(object.signature_public_key_id),
+            )?;
         }
 
         if let Some(timestamp) = object.public_keys_disabled_at {
             js_sys::Reflect::set(
                 &js_object,
                 &"publicKeysDisabledAt".to_owned().into(),
-                &(timestamp as u32).into(),
+                &js_sys::Date::new(&JsValue::from_f64(timestamp as f64)).into(),
             )?;
         }
 
         if let Some(public_keys_to_add) = object.public_keys_to_add {
             let keys_objects = public_keys_to_add
                 .into_iter()
-                .map(|key| IdentityPublicKeyWithWitnessWasm::from(key).to_object(options.clone()))
+                .map(|key| {
+                    IdentityPublicKeyWithWitnessWasm::from(key)
+                        .to_object(opts.skip_signature.unwrap_or(false))
+                })
                 .collect::<Result<js_sys::Array, _>>()?;
 
             js_sys::Reflect::set(
@@ -287,15 +280,16 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes =
-            PlatformSerializable::serialize(&StateTransition::IdentityUpdate(self.0.clone()))
-                .with_js_error()?;
+        let bytes = PlatformSerializable::serialize_to_bytes(&StateTransition::IdentityUpdate(
+            self.0.clone(),
+        ))
+        .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let object = super::to_object::to_object_struct(&self.0, Default::default());
+        let object = super::to_object::to_object_struct(&self.0, &Default::default());
         let js_object = js_sys::Object::new();
 
         js_sys::Reflect::set(
@@ -304,11 +298,11 @@ impl IdentityUpdateTransitionWasm {
             &object.transition_type.into(),
         )?;
 
-        js_sys::Reflect::set(
-            &js_object,
-            &"protocolVersion".to_owned().into(),
-            &object.protocol_version.into(),
-        )?;
+        let version = match self.0 {
+            IdentityUpdateTransition::V0(_) => "0",
+        };
+
+        js_sys::Reflect::set(&js_object, &"$version".to_owned().into(), &version.into())?;
 
         js_sys::Reflect::set(
             &js_object,
@@ -325,26 +319,18 @@ impl IdentityUpdateTransitionWasm {
 
             js_sys::Reflect::set(&js_object, &"signature".to_owned().into(), &signature_value)?;
 
-            if let Some(signature_public_key_id) = object.signature_public_key_id {
-                js_sys::Reflect::set(
-                    &js_object,
-                    &"signaturePublicKeyId".to_owned().into(),
-                    &signature_public_key_id.into(),
-                )?;
-            } else {
-                js_sys::Reflect::set(
-                    &js_object,
-                    &"signaturePublicKeyId".to_owned().into(),
-                    &JsValue::undefined(),
-                )?;
-            }
+            js_sys::Reflect::set(
+                &js_object,
+                &"signaturePublicKeyId".to_owned().into(),
+                &object.signature_public_key_id.into(),
+            )?;
         }
 
         if let Some(timestamp) = object.public_keys_disabled_at {
             js_sys::Reflect::set(
                 &js_object,
                 &"publicKeysDisabledAt".to_owned().into(),
-                &(timestamp as u32).into(),
+                &JsValue::from_f64(timestamp as f64),
             )?;
         }
 
@@ -386,8 +372,8 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getModifiedDataIds)]
-    pub fn get_modified_data_ids(&self) -> Vec<JsValue> {
-        let ids = self.0.get_modified_data_ids();
+    pub fn modified_data_ids(&self) -> Vec<JsValue> {
+        let ids = self.0.modified_data_ids();
 
         ids.into_iter()
             .map(|id| <IdentifierWrapper as std::convert::From<Identifier>>::from(id).into())
@@ -433,9 +419,16 @@ impl IdentityUpdateTransitionWasm {
             BlsAdapter(JsValue::undefined().into())
         };
 
-        self.0
+        // TODO: not the best approach because it involves cloning the transition
+        // Probably it worth to return `sign_by_private_key` per state transition
+        let mut wrapper = StateTransition::IdentityUpdate(self.0.clone());
+        wrapper
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)
-            .with_js_error()
+            .with_js_error()?;
+
+        self.0.set_signature(wrapper.signature().to_owned());
+
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=setSignaturePublicKeyId)]
@@ -445,17 +438,18 @@ impl IdentityUpdateTransitionWasm {
 
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Buffer {
-        Buffer::from_bytes_owned(self.0.get_signature().to_vec())
+        Buffer::from_bytes_owned(self.0.signature().to_vec())
     }
 
     #[wasm_bindgen(js_name=setSignature)]
     pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
-        self.0.signature = BinaryData::new(signature.unwrap_or(vec![]))
+        self.0
+            .set_signature(BinaryData::new(signature.unwrap_or(vec![])))
     }
 
     #[wasm_bindgen(js_name=getRevision)]
     pub fn get_revision(&self) -> u32 {
-        self.0.get_revision() as u32
+        self.0.revision() as u32
     }
 
     #[wasm_bindgen(js_name=setRevision)]
@@ -471,13 +465,23 @@ impl IdentityUpdateTransitionWasm {
         bls: JsBlsAdapter,
     ) -> Result<(), JsValue> {
         let bls_adapter = BlsAdapter(bls);
-        self.0
+        // TODO: come up with a better way to set signature to the binding.
+        let mut state_transition = StateTransition::IdentityUpdate(self.0.clone());
+        state_transition
             .sign(
                 &identity_public_key.to_owned().into(),
                 &private_key,
                 &bls_adapter,
             )
-            .with_js_error()
+            .with_js_error()?;
+
+        let signature = state_transition.signature().to_owned();
+        let signature_public_key_id = state_transition.signature_public_key_id().unwrap_or(0);
+
+        self.0.set_signature(signature);
+        self.0.set_signature_public_key_id(signature_public_key_id);
+
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=verifySignature)]
@@ -488,8 +492,7 @@ impl IdentityUpdateTransitionWasm {
     ) -> Result<bool, JsValue> {
         let bls_adapter = BlsAdapter(bls);
 
-        let verification_result = self
-            .0
+        let verification_result = StateTransition::IdentityUpdate(self.0.clone())
             .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
 
         match verification_result {

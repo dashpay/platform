@@ -9,7 +9,7 @@ use dpp::{
 };
 
 use dpp::platform_value::Value;
-use dpp::serialization_traits::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializable;
 use js_sys::{Function, Uint8Array};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
@@ -297,6 +297,8 @@ pub(crate) fn consensus_errors_from_buffers(
             )
             .to_vec()
         })
-        .map(|error_bytes| ConsensusError::deserialize(&error_bytes.to_vec()).with_js_error())
+        .map(|error_bytes| {
+            ConsensusError::deserialize_from_bytes(&error_bytes.to_vec()).with_js_error()
+        })
         .collect::<Result<Vec<ConsensusError>, JsValue>>()
 }

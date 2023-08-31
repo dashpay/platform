@@ -1,3 +1,113 @@
+## [0.25.0-dev.17](https://github.com/dashpay/platform/compare/v0.25.0-dev.16...v0.25.0-dev.17) (2023-08-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* Some of the WASM DPP methods are disabled
+* DataContract methods are renamed
+* Raw data contract structure is changed
+
+
+### Features
+
+* add better JsonSchemaError messages ([#1341](https://github.com/dashpay/platform/issues/1341))
+* validate with document type ([#1334](https://github.com/dashpay/platform/issues/1334))
+* code versioning ([#1327](https://github.com/dashpay/platform/issues/1327))
+
+
+### Bug Fixes
+
+* dpp and drive-abci fail to build without default-features ([#1345](https://github.com/dashpay/platform/issues/1345))
+* **dpp:** data contract facade and state transition bindings ([#1342](https://github.com/dashpay/platform/issues/1342))
+* **dpp:** fixing identity transition bindings ([#1315](https://github.com/dashpay/platform/issues/1315))
+* **dpp:** identity constructor ([#1336](https://github.com/dashpay/platform/issues/1336))
+* **dpp:** identity facade ([#1329](https://github.com/dashpay/platform/issues/1329))
+* **dpp:** wasm binding for DataContract ([#1333](https://github.com/dashpay/platform/issues/1333))
+* network start for querying ([#1335](https://github.com/dashpay/platform/issues/1335))
+* various fixes and todos for [#1334](https://github.com/dashpay/platform/issues/1334) ([#1337](https://github.com/dashpay/platform/issues/1337))
+* wasm DPP binding and other ([#1352](https://github.com/dashpay/platform/issues/1352))
+
+
+### Continuous Integration
+
+* fix credentials could not be loaded error ([#1320](https://github.com/dashpay/platform/issues/1320))
+
+
+### Code Refactoring
+
+* rename serialize ([#1338](https://github.com/dashpay/platform/issues/1338))
+
+
+### Tests
+
+* **dpp:** temporary skip wasm-dpp tests ([#1328](https://github.com/dashpay/platform/issues/1328))
+* enable data contract tests ([#1346](https://github.com/dashpay/platform/issues/1346))
+* restore identity create ([#1339](https://github.com/dashpay/platform/issues/1339))
+
+
+### Miscellaneous Chores
+
+* npm audit fix ([#1321](https://github.com/dashpay/platform/issues/1321))
+* **sdk:** temporary disable data contracts and documents ([#1331](https://github.com/dashpay/platform/issues/1331))
+* update workflow_dispatch
+* upgrade to Node.JS v18 LTS ([#1280](https://github.com/dashpay/platform/issues/1280))
+* support Core v0.20.0-alpha.4 ([#1357](https://github.com/dashpay/platform/pull/1357))
+
+
+### [0.24.23](https://github.com/dashpay/platform/compare/v0.24.22...v0.24.23) (2023-08-18)
+
+
+### Miscellaneous Chores
+
+* npm audit fix ([#1321](https://github.com/dashpay/platform/issues/1321))
+
+### Continuous Integration
+
+* ci: fix credentials could not be loaded error ([#1321](https://github.com/dashpay/platform/issues/1320))
+
+### [0.24.22](https://github.com/dashevo/platform/compare/v0.24.21...v0.24.22) (2023-08-15)
+
+
+### Features
+
+* **dashmate:** render tenderdash node mode in the service config ([#1311](https://github.com/dashevo/platform/issues/1311))
+
+### [0.24.21](https://github.com/dashpay/platform/compare/v0.24.20...v0.24.21) (2023-08-09)
+
+
+### Bug Fixes
+
+* **js-drive** tests after upgrade of wasm-bindgen to version 0.2.86 ([#1306](https://github.com/dashpay/platform/issues/1306))
+* **release:** upgrade buildbase with wasm-bindgen 0.2.86 ([#1304](https://github.com/dashpay/platform/issues/1304))
+
+### [0.24.20](https://github.com/dashpay/platform/compare/v0.24.19...v0.24.20) (2023-08-07)
+
+
+### Bug Fixes
+
+* **dashmate:** `--platform` flag is ignored ([#1287](https://github.com/dashpay/platform/issues/1287))
+* **dashmate:** load external ip for evo fullnodes ([#1288](https://github.com/dashpay/platform/issues/1288))
+* **dashmate:** missing default values in IP and ports form ([#1276](https://github.com/dashpay/platform/issues/1276))
+* **dashmate:** some status errors is visible without DEBUG env ([#1299](https://github.com/dashpay/platform/issues/1299))
+* **dashmate:** various status output issues ([#1274](https://github.com/dashpay/platform/issues/1274), [#1293](https://github.com/dashpay/platform/issues/1293))
+* **dashmate:** invalid migration version ([#1285](https://github.com/dashpay/platform/issues/1285))
+
+
+### Continuous Integration
+
+* update self-hosted runner tags ([#1271](https://github.com/dashpay/platform/issues/1271))
+
+
+### Build System
+
+* update `wasm-bindgen-cli` to 0.2.86 ([#1289](https://github.com/dashpay/platform/issues/1289))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update Core to v19.3.0 ([#1284](https://github.com/dashpay/platform/issues/1284))
+
+
 ## [0.25.0-dev.16](https://github.com/dashpay/platform/compare/v0.25.0-dev.15...v0.25.0-dev.16) (2023-08-02)
 
 
@@ -73,6 +183,92 @@
 * select workflow_id to cancel based on head_ref ([#1247](https://github.com/dashpay/platform/issues/1247))
 * specify docker mount cache bucket name as variable ([#1252](https://github.com/dashpay/platform/issues/1252))
 * switch to multi-runner stack ([#1268](https://github.com/dashpay/platform/issues/1268))
+
+### [0.24.19](https://github.com/dashpay/platform/compare/v0.24.18...v0.24.19) (2023-07-28)
+
+
+### Bug Fixes
+
+* **dashmate:** `baseImage/build/context` invalid json schema ([#1269](https://github.com/dashpay/platform/issues/1269))
+
+### [0.24.18](https://github.com/dashpay/platform/compare/v0.24.17...v0.24.18) (2023-07-26)
+
+
+### Bug Fixes
+
+* **dashmate:** the update command expects helper image option ([#1264](https://github.com/dashpay/platform/issues/1264))
+
+### [0.24.17](https://github.com/dashpay/platform/compare/v0.24.16...v0.24.17) (2023-07-26)
+
+
+### Features
+
+* **dashmate:** pre-build image ([#1259](https://github.com/dashpay/platform/issues/1259))
+
+
+### Bug Fixes
+
+* **dashmate:** undefined createIpAndPortsForm factory ([#1258](https://github.com/dashpay/platform/issues/1258))
+* **dashmate:** version color is red ([#1255](https://github.com/dashpay/platform/issues/1255))
+
+
+### Code Refactoring
+
+* **dashmate:** default configuration ([#1257](https://github.com/dashpay/platform/issues/1257))
+
+### [0.24.16](https://github.com/dashpay/platform/compare/v0.24.15...v0.24.16) (2023-07-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** Removed `dashmate.helper.docker.image` configuration option (#1231)
+
+### Features
+
+* **dashmate:** allow separation of a service build ([#1206](https://github.com/dashpay/platform/issues/1206))
+* **dashmate:** reindex reworked ([#1212](https://github.com/dashpay/platform/issues/1212))
+
+
+### Bug Fixes
+
+* **dashmate:** invalid testnet chain id ([#1233](https://github.com/dashpay/platform/issues/1233))
+* **dashmate:** runs invalid helper version ([#1231](https://github.com/dashpay/platform/issues/1231))
+* word wrap audit fail ([#1235](https://github.com/dashpay/platform/issues/1235))
+
+
+### Miscellaneous Chores
+
+* remove envoy build from dashmate and release ([#1232](https://github.com/dashpay/platform/issues/1232))
+
+
+### Code Refactoring
+
+* **dashmate:** dynamic home dir path ([#1237](https://github.com/dashpay/platform/issues/1237))
+* **dashmate:** move all envs definition to `generateEnvs` ([#1246](https://github.com/dashpay/platform/issues/1246))
+
+
+### Tests
+
+* **dashmate:** increase the reliability of e2e tests ([#1204](https://github.com/dashpay/platform/issues/1204))
+
+### [0.24.15](https://github.com/dashpay/platform/compare/v0.24.14...v0.24.15) (2023-07-10)
+
+
+### Features
+
+* **dashmate:** interface binding configuration ([#1220](https://github.com/dashpay/platform/issues/1220))
+
+### Bug Fixes
+
+* **dashmate:** service name variable name ([#1225](https://github.com/dashpay/platform/issues/1225))
+
+### Miscellaneous Chores
+
+* **dashmate:** update tenderdash genesis for testnet ([#1223](https://github.com/dashpay/platform/issues/1223))
+
+### Continuous Integration
+
+* temporary ignore gRPC JS vulnerability ([#1221](https://github.com/dashpay/platform/issues/1221))
 
 
 ### [0.24.14](https://github.com/dashpay/platform/compare/v0.24.13...v0.24.14) (2023-07-05)
@@ -432,7 +628,7 @@ The masternode identities logic is partially disabled due to incomplete Identity
 * fees distribution (dashpay/rs-platform[#105](https://github.com/dashpay/platform/issues/105))
 * identity create state transition (dashpay/rs-platform[#9](https://github.com/dashpay/platform/issues/9))
 * identity credit withdrawal transition (dashpay/rs-platform[#25](https://github.com/dashpay/platform/issues/25))
-* identity from_buffer and from_raw_object
+* identity from_buffer and from_object
 * immutibility and contracts that allow document history (dashpay/rs-platform[#79](https://github.com/dashpay/platform/issues/79))
 * implement `deleteDocument`
 * implement `updateDocument`
