@@ -350,7 +350,8 @@ impl SpecializedDocumentFactoryV0 {
                     let Some(revision) = document.revision() else {
                         return Err(DocumentError::RevisionAbsentError {
                             document: Box::new(document),
-                        }.into());
+                        }
+                        .into());
                     };
                     if revision != INITIAL_REVISION {
                         return Err(DocumentError::InvalidInitialRevisionError {
@@ -462,7 +463,8 @@ impl SpecializedDocumentFactoryV0 {
                 let Some(_document_revision) = document.revision() else {
                     return Err(DocumentError::RevisionAbsentError {
                         document: Box::new(document),
-                    }.into());
+                    }
+                    .into());
                 };
                 Ok(DocumentDeleteTransition::from_document(
                     document,

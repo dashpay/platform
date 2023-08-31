@@ -338,10 +338,11 @@ impl DocumentFactoryV0 {
                 if document_type.documents_mutable() {
                     //we need to have revisions
                     let Some(revision) = document.revision() else {
-                    return Err(DocumentError::RevisionAbsentError {
-                        document: Box::new(document),
-                    }.into());
-                };
+                        return Err(DocumentError::RevisionAbsentError {
+                            document: Box::new(document),
+                        }
+                        .into());
+                    };
                     if revision != INITIAL_REVISION {
                         return Err(DocumentError::InvalidInitialRevisionError {
                             document: Box::new(document),
@@ -450,10 +451,11 @@ impl DocumentFactoryV0 {
                     .into());
                 }
                 let Some(_document_revision) = document.revision() else {
-                return Err(DocumentError::RevisionAbsentError {
-                    document: Box::new(document),
-                }.into());
-            };
+                    return Err(DocumentError::RevisionAbsentError {
+                        document: Box::new(document),
+                    }
+                    .into());
+                };
                 Ok(DocumentDeleteTransition::from_document(
                     document,
                     document_type,

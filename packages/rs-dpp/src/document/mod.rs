@@ -163,9 +163,11 @@ impl DocumentMethodsV0 for Document {
 
     fn increment_revision(&mut self) -> Result<(), ProtocolError> {
         let Some(revision) = self.revision() else {
-            return Err(ProtocolError::Document(Box::new(DocumentError::DocumentNoRevisionError {
-                document: Box::new(self.clone()),
-            })))
+            return Err(ProtocolError::Document(Box::new(
+                DocumentError::DocumentNoRevisionError {
+                    document: Box::new(self.clone()),
+                },
+            )));
         };
 
         let new_revision = revision

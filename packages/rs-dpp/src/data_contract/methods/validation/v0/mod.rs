@@ -36,8 +36,7 @@ impl DataContract {
         value: Value,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        let Some(document_type) = self
-            .document_type_optional_for_name(name) else {
+        let Some(document_type) = self.document_type_optional_for_name(name) else {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTypeError::new(name.to_owned(), self.id()).into(),
             ));
@@ -79,8 +78,7 @@ impl DataContract {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // Make sure that the document type is defined in the contract
-        let Some(document_type) = self
-            .document_type_optional_for_name(name) else {
+        let Some(document_type) = self.document_type_optional_for_name(name) else {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTypeError::new(name.to_string(), self.id()).into(),
             ));
