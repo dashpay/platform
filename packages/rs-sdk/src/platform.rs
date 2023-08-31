@@ -19,5 +19,8 @@ pub use platform_proto::WaitForStateTransitionResultRequest;
 pub use rs_dapi_client::DapiClient as PlatformClient;
 
 pub mod data_contract;
-pub mod get_documents;
+pub mod document;
 pub mod identity;
+
+// Some internal logic for documents
+mod document_query;

@@ -1,5 +1,5 @@
-use dpp::{data_contract::accessors::v0::DataContractV0Getters, prelude::Identifier};
-use rs_sdk::crud::ReadOnly;
+use dpp::prelude::Identifier;
+use rs_sdk::crud::Readable;
 
 include!("credentials.rs");
 

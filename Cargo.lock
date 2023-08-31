@@ -3487,6 +3487,7 @@ name = "rs-sdk"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "ciborium",
  "dapi-grpc",
  "dashcore-rpc",
  "dpp",
@@ -3495,6 +3496,7 @@ dependencies = [
  "drive-proof-verifier",
  "http",
  "rs-dapi-client",
+ "serde",
  "thiserror",
  "tokio",
 ]

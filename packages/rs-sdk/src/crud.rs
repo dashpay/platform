@@ -3,28 +3,37 @@
 use crate::{dapi::DAPI, error::Error};
 
 #[async_trait::async_trait]
-pub trait ReadOnly<A: DAPI, I, Q: ObjectQuery<I>>
+pub trait Readable<A: DAPI, I, Q: ObjectQuery<I>>
 where
     Self: Sized,
 {
     async fn read(api: &A, query: &Q) -> Result<Self, Error>;
 }
 
-pub trait ReadWrite<I>
+// TODO this will change, not tested at all
+pub trait Writable<A: DAPI, W>
 where
     Self: Sized,
 {
-    fn create() -> Result<Self, Error>;
-    fn update() -> Result<Self, Error>;
-    fn delete() -> Result<Self, Error>;
+    fn create(self, api: &A, wallet: &W) -> Result<Self, Error>;
+    fn update(self, api: &A, wallet: &W) -> Result<Self, Error>;
+    fn delete(self, api: &A, wallet: &W) -> Result<(), Error>;
 }
 
-pub trait ObjectQuery<T>: Sized + Send + Sync
+// TODO this will change, not tested at all
+pub trait Listable<A: DAPI, I, Q: ObjectQuery<I>>
 where
-    T: Sized,
     Self: Sized,
 {
-    fn query(&self) -> Result<T, Error>;
+    fn list(api: &A, query: &Q) -> Result<Vec<Self>, Error>;
+}
+
+pub trait ObjectQuery<O>: Sized + Send + Sync
+where
+    O: Sized,
+    Self: Sized,
+{
+    fn query(&self) -> Result<O, Error>;
 }
 
 impl ObjectQuery<[u8; 32]> for dpp::prelude::Identifier {

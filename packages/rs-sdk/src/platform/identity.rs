@@ -5,7 +5,7 @@ use dpp::prelude::Identifier;
 use drive_proof_verifier::proof::from_proof::FromProof;
 use rs_dapi_client::{DapiRequest, RequestSettings};
 
-use crate::{crud::ReadOnly, dapi::DAPI, error::Error};
+use crate::{crud::Readable, dapi::DAPI, error::Error};
 
 /// Dash Platform Identity object wrapper
 pub struct Identity {
@@ -13,8 +13,20 @@ pub struct Identity {
     pub inner: dpp::prelude::Identity,
 }
 
+impl From<Identity> for dpp::prelude::Identity {
+    fn from(id: Identity) -> Self {
+        id.inner
+    }
+}
+
+impl From<dpp::prelude::Identity> for Identity {
+    fn from(id: dpp::prelude::Identity) -> Self {
+        Self { inner: id }
+    }
+}
+
 #[async_trait::async_trait]
-impl<A: DAPI> ReadOnly<A, [u8; 32], Identifier> for Identity {
+impl<A: DAPI> Readable<A, [u8; 32], Identifier> for Identity {
     async fn read(api: &A, id: &Identifier) -> Result<Self, Error> {
         let request = platform_proto::GetIdentityRequest {
             id: id.to_vec(),

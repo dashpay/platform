@@ -1,5 +1,5 @@
 use dpp::{identity::accessors::IdentityGettersV0, prelude::Identifier};
-use rs_sdk::crud::ReadOnly;
+use rs_sdk::crud::Readable;
 
 include!("credentials.rs");
 

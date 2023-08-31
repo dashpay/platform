@@ -16,6 +16,8 @@ thiserror = "1.0.47"
 tokio = { version = "1.32.0", features = ["macros"] }
 async-trait = { version = "0.1.73" }
 http = { version = "0.2.9" }
+ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
+serde = { version = "1.0.152", default-features = false }
 
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev = "408bef25fd229dbb6b9f1b3d380e2afbc77d812c" }

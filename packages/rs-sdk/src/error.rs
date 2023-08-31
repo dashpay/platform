@@ -17,6 +17,10 @@ pub enum Error {
     CoreClientError(#[from] dashcore_rpc::Error),
     #[error("Invalid url: {0}")]
     InvalidUrl(#[from] http::uri::InvalidUri),
+    #[error("Object not found")]
+    NotFound,
+    #[error("Too many elements received, expected: {expected}, got: {got}")]
+    TooManyElementsReceived { expected: usize, got: usize },
 }
 
 impl<T: Debug> From<DapiClientError<T>> for Error {

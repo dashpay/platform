@@ -1,6 +1,6 @@
 //! Data contract features
 
-use crate::{crud::ReadOnly, dapi::DAPI, error::Error};
+use crate::{crud::Readable, dapi::DAPI, error::Error};
 use dapi_grpc::platform::v0::{self as platform_proto};
 use dpp::prelude::Identifier;
 use drive_proof_verifier::proof::from_proof::FromProof;
@@ -25,7 +25,7 @@ impl From<dpp::prelude::DataContract> for DataContract {
 }
 
 #[async_trait::async_trait]
-impl<A: DAPI> ReadOnly<A, [u8; 32], Identifier> for DataContract {
+impl<A: DAPI> Readable<A, [u8; 32], Identifier> for DataContract {
     async fn read(api: &A, id: &Identifier) -> Result<Self, Error> {
         let request = platform_proto::GetDataContractRequest {
             id: id.to_vec(),
