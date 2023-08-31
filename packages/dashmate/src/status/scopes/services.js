@@ -19,19 +19,15 @@ function getServicesScopeFactory(dockerCompose, getServiceList) {
 
     const scope = {};
 
-    for (const { name, title } of services) {
+    for (const { name, title, image } of services) {
       let containerId;
       let status;
-      let image;
 
       try {
         ({
           Id: containerId,
           State: {
             Status: status,
-          },
-          Config: {
-            Image: image,
           },
         } = await dockerCompose.inspectService(config, name));
 
@@ -54,7 +50,7 @@ function getServicesScopeFactory(dockerCompose, getServiceList) {
         scope[name] = {
           title,
           containerId: null,
-          image: null,
+          image,
           status,
         };
       }

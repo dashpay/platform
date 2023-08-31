@@ -1,3 +1,57 @@
+### [0.24.23](https://github.com/dashpay/platform/compare/v0.24.22...v0.24.23) (2023-08-18)
+
+
+### Miscellaneous Chores
+
+* npm audit fix ([#1321](https://github.com/dashpay/platform/issues/1321))
+
+### Continuous Integration
+
+* ci: fix credentials could not be loaded error ([#1321](https://github.com/dashpay/platform/issues/1320))
+
+### [0.24.22](https://github.com/dashevo/platform/compare/v0.24.21...v0.24.22) (2023-08-15)
+
+
+### Features
+
+* **dashmate:** render tenderdash node mode in the service config ([#1311](https://github.com/dashevo/platform/issues/1311))
+
+### [0.24.21](https://github.com/dashpay/platform/compare/v0.24.20...v0.24.21) (2023-08-09)
+
+
+### Bug Fixes
+
+* **js-drive** tests after upgrade of wasm-bindgen to version 0.2.86 ([#1306](https://github.com/dashpay/platform/issues/1306))
+* **release:** upgrade buildbase with wasm-bindgen 0.2.86 ([#1304](https://github.com/dashpay/platform/issues/1304))
+
+### [0.24.20](https://github.com/dashpay/platform/compare/v0.24.19...v0.24.20) (2023-08-07)
+
+
+### Bug Fixes
+
+* **dashmate:** `--platform` flag is ignored ([#1287](https://github.com/dashpay/platform/issues/1287))
+* **dashmate:** load external ip for evo fullnodes ([#1288](https://github.com/dashpay/platform/issues/1288))
+* **dashmate:** missing default values in IP and ports form ([#1276](https://github.com/dashpay/platform/issues/1276))
+* **dashmate:** some status errors is visible without DEBUG env ([#1299](https://github.com/dashpay/platform/issues/1299))
+* **dashmate:** various status output issues ([#1274](https://github.com/dashpay/platform/issues/1274), [#1293](https://github.com/dashpay/platform/issues/1293))
+* **dashmate:** invalid migration version ([#1285](https://github.com/dashpay/platform/issues/1285))
+
+
+### Continuous Integration
+
+* update self-hosted runner tags ([#1271](https://github.com/dashpay/platform/issues/1271))
+
+
+### Build System
+
+* update `wasm-bindgen-cli` to 0.2.86 ([#1289](https://github.com/dashpay/platform/issues/1289))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update Core to v19.3.0 ([#1284](https://github.com/dashpay/platform/issues/1284))
+
+
 ## [0.25.0-dev.16](https://github.com/dashpay/platform/compare/v0.25.0-dev.15...v0.25.0-dev.16) (2023-08-02)
 
 
@@ -74,6 +128,12 @@
 * specify docker mount cache bucket name as variable ([#1252](https://github.com/dashpay/platform/issues/1252))
 * switch to multi-runner stack ([#1268](https://github.com/dashpay/platform/issues/1268))
 
+### [0.24.19](https://github.com/dashpay/platform/compare/v0.24.18...v0.24.19) (2023-07-28)
+
+
+### Bug Fixes
+
+* **dashmate:** `baseImage/build/context` invalid json schema ([#1269](https://github.com/dashpay/platform/issues/1269))
 
 ### [0.24.18](https://github.com/dashpay/platform/compare/v0.24.17...v0.24.18) (2023-07-26)
 

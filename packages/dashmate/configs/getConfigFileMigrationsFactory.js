@@ -106,6 +106,24 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
+      '0.24.20': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.docker.image = base.get('core.docker.image');
+          });
+        return configFile;
+      },
+      '0.24.22': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if (options.core.masternode.enable) {
+              options.platform.drive.tenderdash.mode = 'validator';
+            } else {
+              options.platform.drive.tenderdash.mode = 'full';
+            }
+          });
+        return configFile;
+      },
     };
   }
 

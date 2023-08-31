@@ -6,9 +6,10 @@ const { DASHMATE_HELPER_DOCKER_IMAGE } = require('../constants');
 /**
  * @param {ConfigFile} configFile
  * @param {HomeDir} homeDir
+ * @param {getConfigProfiles} getConfigProfiles
  * @return {generateEnvs}
  */
-function generateEnvsFactory(configFile, homeDir) {
+function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
   /**
    * @typedef {function} generateEnvs
    * @param {Config} config
@@ -24,21 +25,14 @@ function generateEnvsFactory(configFile, homeDir) {
    */
   function generateEnvs(config) {
     const dockerComposeFiles = ['docker-compose.yml'];
-    const profiles = [];
 
-    profiles.push('core');
-
-    if (config.get('core.masternode.enable')) {
-      profiles.push('masternode');
-    }
+    const profiles = getConfigProfiles(config);
 
     if (config.get('dashmate.helper.docker.build.enabled')) {
       dockerComposeFiles.push('docker-compose.build.dashmate_helper.yml');
     }
 
     if (config.get('platform.enable')) {
-      profiles.push('platform');
-
       if (config.get('platform.drive.abci.docker.build.enabled')) {
         dockerComposeFiles.push('docker-compose.build.drive_abci.yml');
       }

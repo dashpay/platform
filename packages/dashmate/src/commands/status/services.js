@@ -27,10 +27,10 @@ class ServicesStatusCommand extends ConfigBaseCommand {
 
     const outputRows = [];
 
-    for (const [serviceName, serviceDescription] of Object.entries(scope)) {
+    for (const [serviceName, service] of Object.entries(scope)) {
       const {
         title, containerId, image, status,
-      } = serviceDescription;
+      } = service;
       if (flags.format === OUTPUT_FORMATS.PLAIN) {
         let statusText;
         if (status) {
