@@ -9,7 +9,7 @@ services:
       - drive_abci_logs:/var/log/dash
     environment:
       - BLOCK_SPACING_MS=3000 # TODO: sync with tenderdash
-      - CHAIN_ID=devnet # TODO: sync with tenderdash chain id
+      - CHAIN_ID=${PLATFORM_DRIVE_TENDERDASH_GENESIS_CHAIN_ID:?err} # TODO: sync with tenderdash chain id
       - CORE_JSON_RPC_USERNAME=${CORE_RPC_USER:?err}
       - CORE_JSON_RPC_PASSWORD=${CORE_RPC_PASSWORD:?err}
       - CORE_JSON_RPC_HOST=core
