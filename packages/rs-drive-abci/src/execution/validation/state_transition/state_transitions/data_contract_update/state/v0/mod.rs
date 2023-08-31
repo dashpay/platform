@@ -211,17 +211,27 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             .to_json_value()
             .map_err(ProtocolError::ValueError)?;
 
-        for (document_type, document_schema) in self.data_contract().document_schemas() {
-            let old_document_schema = document_schema
+        for (document_type_name, old_document_schema) in old_data_contract.document_schemas() {
+            let old_document_schema_json: JsonValue = old_document_schema
                 .clone()
                 .try_into()
                 .map_err(ProtocolError::ValueError)?;
 
-            let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
+            let new_document_schema_json: JsonValue = new_data_contract
+                .document_type_optional_for_name(&document_type_name)
+                .map(|document_type| {
+                    document_type
+                        .schema()
+                        .clone()
+                        .try_into()
+                        .map_err(ProtocolError::ValueError)
+                })
+                .transpose()?
+                .unwrap_or_else(|| EMPTY_JSON.clone());
 
             let diffs = validate_schema_compatibility(
-                &old_document_schema,
-                new_document_schema,
+                &old_document_schema_json,
+                &new_document_schema_json,
                 platform_version,
             )?;
 
@@ -234,8 +244,8 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                         self.data_contract().id(),
                         operation_name.to_owned(),
                         property_name.to_owned(),
-                        old_document_schema,
-                        new_document_schema.clone(),
+                        old_document_schema_json,
+                        new_document_schema_json,
                     ),
                 ));
 
