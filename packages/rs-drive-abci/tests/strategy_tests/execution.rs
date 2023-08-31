@@ -12,7 +12,7 @@ use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, Bip9SoftforkStatus, DMNStateDiff, ExtendedQuorumDetails, MasternodeListDiff,
-    MasternodeListItem, QuorumInfoResult, QuorumType,
+    MasternodeListItem, QuorumInfoResult, QuorumType, SoftforkType,
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
@@ -20,6 +20,7 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
+use dashcore_rpc::json::SoftforkInfo;
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
@@ -235,13 +236,26 @@ pub(crate) fn run_chain_for_strategy(
         .core_rpc
         .expect_get_fork_info()
         .returning(move |_| {
-            Ok(Some(Bip9SoftforkInfo {
-                status: Bip9SoftforkStatus::Active,
-                bit: None,
-                start_time: 0,
-                timeout: 0,
-                since: start_core_height, // block height 1
-                statistics: None,
+            // Ok(Some(Bip9SoftforkInfo {
+            //     status: Bip9SoftforkStatus::Active,
+            //     bit: None,
+            //     start_time: 0,
+            //     timeout: 0,
+            //     since: start_core_height, // block height 1
+            //     statistics: None,
+            // }))
+            Ok(Some(SoftforkInfo {
+                softfork_type: SoftforkType::Bip9,
+                active: true,
+                height: Some(start_core_height), // block height 1
+                bip9: Some(Bip9SoftforkInfo {
+                    status: Bip9SoftforkStatus::Active,
+                    bit: None,
+                    start_time: 0,
+                    timeout: 0,
+                    since: start_core_height, // block height 1
+                    statistics: None,
+                }),
             }))
         });
 

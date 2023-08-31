@@ -223,7 +223,7 @@ function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
 
       let command;
       if (ctx.isHP) {
-        command = `dash-cli protx register_hpmn \\
+        command = `dash-cli protx register_evo \\
   ${state.collateral.txId} \\
   ${state.collateral.outputIndex} \\
   ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort} \\

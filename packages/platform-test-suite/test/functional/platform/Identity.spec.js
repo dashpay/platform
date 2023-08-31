@@ -491,6 +491,7 @@ describe('Platform', () => {
         let recipient;
         before(async () => {
           recipient = await client.platform.identities.register(400000);
+          await waitForSTPropagated();
         });
 
         it('should be able to transfer credits from one identity to another', async () => {

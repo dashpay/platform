@@ -31,17 +31,18 @@ where
         let fork_info = self.core_rpc.get_fork_info("v20")?.ok_or(
             ExecutionError::InitializationForkNotActive("fork is not yet known".to_string()),
         )?;
-        if fork_info.status != Bip9SoftforkStatus::Active {
+        if !fork_info.active || fork_info.height.is_none() {
             // fork is not good yet
             return Err(ExecutionError::InitializationForkNotActive(format!(
                 "fork is not yet known (currently {:?})",
-                fork_info.status
+                fork_info.bip9.unwrap()
             ))
             .into());
         } else {
             tracing::debug!(?fork_info, "core fork v20 is active");
         };
-        let v20_fork = fork_info.since;
+        // We expect height to present if the fork is active
+        let v20_fork = fork_info.height.unwrap();
 
         if let Some(requested) = requested {
             let best = self.core_rpc.get_best_chain_lock()?.core_block_height;
