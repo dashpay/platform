@@ -201,6 +201,32 @@ impl WhereOperator {
     }
 }
 
+impl ToString for WhereOperator {
+    fn to_string(&self) -> String {
+        let s = match self {
+            Self::Equal => "=",
+            Self::GreaterThan => ">",
+            Self::GreaterThanOrEquals => ">=",
+            Self::LessThan => "<",
+            Self::LessThanOrEquals => "<=",
+            Self::Between => "Between",
+            Self::BetweenExcludeBounds => "BetweenExcludeBounds",
+            Self::BetweenExcludeLeft => "BetweenExcludeLeft",
+            Self::BetweenExcludeRight => "BetweenExcludeRight",
+            Self::In => "In",
+            Self::StartsWith => "StartsWith",
+        };
+
+        s.to_string()
+    }
+}
+
+impl From<WhereOperator> for Value {
+    fn from(value: WhereOperator) -> Self {
+        Self::Text(value.to_string())
+    }
+}
+
 /// Where clause struct
 #[derive(Clone, Debug, PartialEq)]
 pub struct WhereClause {
@@ -1177,6 +1203,12 @@ impl<'a> WhereClause {
                 "Issue parsing sql: invalid selection format",
             ))),
         }
+    }
+}
+
+impl<'a> From<WhereClause> for Value {
+    fn from(value: WhereClause) -> Self {
+        Value::Array(vec![value.field.into(), value.operator.into(), value.value])
     }
 }
 

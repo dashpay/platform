@@ -80,3 +80,14 @@ impl<'a> OrderClause {
         Ok(OrderClause { field, ascending })
     }
 }
+
+impl From<OrderClause> for Value {
+    fn from(order: OrderClause) -> Self {
+        let direction = match order.ascending {
+            true => "asc",
+            false => "desc",
+        };
+
+        Self::Array(vec![order.field.into(), direction.into()])
+    }
+}

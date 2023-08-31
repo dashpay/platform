@@ -257,6 +257,27 @@ impl InternalClauses {
     }
 }
 
+impl From<InternalClauses> for Vec<WhereClause> {
+    fn from(clauses: InternalClauses) -> Self {
+        let mut result: Self = clauses.equal_clauses.into_values().collect();
+
+        if let Some(clause) = clauses.in_clause {
+            result.push(clause);
+        };
+        if let Some(clause) = clauses.primary_key_equal_clause {
+            result.push(clause);
+        };
+        if let Some(clause) = clauses.primary_key_in_clause {
+            result.push(clause);
+        };
+        if let Some(clause) = clauses.range_clause {
+            result.push(clause);
+        };
+
+        result
+    }
+}
+
 #[cfg(any(feature = "full", feature = "verify"))]
 /// The encoding returned by queries
 #[derive(Debug, PartialEq)]
@@ -379,6 +400,32 @@ impl<'a> DriveQuery<'a> {
         document_type: DocumentTypeRef<'a>,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
+        if let Some(contract_id) = query_document
+            .remove_optional_identifier("contract_id")
+            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?
+        {
+            if contract.id != contract_id {
+                return Err(ProtocolError::IdentifierError(format!(
+                    "data contract id mismatch, expected: {}, got: {}",
+                    contract.id, contract_id
+                ))
+                .into());
+            };
+        }
+
+        if let Some(document_type_name) = query_document
+            .remove_optional_string("document_type_name")
+            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?
+        {
+            if document_type.name != document_type_name {
+                return Err(ProtocolError::IdentifierError(format!(
+                    "document type name mismatch, expected: {}, got: {}",
+                    document_type.name, document_type_name
+                ))
+                .into());
+            }
+        }
+
         let maybe_limit: Option<u16> = query_document
             .remove_optional_integer("limit")
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
@@ -395,6 +442,10 @@ impl<'a> DriveQuery<'a> {
                 "limit greater than max limit {}",
                 config.max_query_limit
             ))))?;
+
+        let offset: Option<u16> = query_document
+            .remove_optional_integer("offset")
+            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
         let block_time_ms: Option<u64> = query_document
             .remove_optional_integer("blockTime")
@@ -485,17 +536,18 @@ impl<'a> DriveQuery<'a> {
                 })?;
 
         if !query_document.is_empty() {
-            return Err(Error::Query(QuerySyntaxError::Unsupported(
-                "unsupported syntax in where clause".to_string(),
-            )));
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "unsupported syntax in where clause: {:?}",
+                query_document
+            ))));
         }
 
         Ok(DriveQuery {
             contract,
             document_type,
             internal_clauses,
-            offset: None,
             limit: Some(limit),
+            offset,
             order_by,
             start_at,
             start_at_included,
@@ -729,6 +781,21 @@ impl<'a> DriveQuery<'a> {
             start_at_included,
             block_time_ms: None,
         })
+    }
+
+    /// Serialize drive query to CBOR format.
+    ///
+    /// FIXME: The data contract is only refered as ID, and document type as its name.
+    /// This can change in the future to include full data contract and document type.
+    #[cfg(any(feature = "full", feature = "verify"))]
+    pub fn to_cbor(&self) -> Result<Vec<u8>, Error> {
+        let data: BTreeMap<String, Value> = self.into();
+        let cbor: BTreeMap<String, ciborium::Value> = Value::convert_to_cbor_map(data)?;
+        let mut output = Vec::new();
+
+        ciborium::ser::into_writer(&cbor, &mut output)
+            .map_err(|e| ProtocolError::PlatformSerializationError(e.to_string()))?;
+        Ok(output)
     }
 
     #[cfg(any(feature = "full", feature = "verify"))]
@@ -1809,9 +1876,71 @@ impl<'a> DriveQuery<'a> {
     }
 }
 
+/// Convert DriveQuery to a BTreeMap of values
+impl<'a> From<&DriveQuery<'a>> for BTreeMap<String, Value> {
+    fn from(query: &DriveQuery<'a>) -> Self {
+        let mut response = BTreeMap::<String, Value>::new();
+
+        //  contract
+        // TODO: once contract can be serialized, maybe put full contract here instead of id
+        response.insert(
+            "contract_id".to_string(),
+            Value::Identifier(query.contract.id.to_buffer()),
+        );
+
+        // document_type
+        // TODO: once DocumentType can be serialized, maybe put full DocumentType instead of name
+        response.insert(
+            "document_type_name".to_string(),
+            Value::Text(query.document_type.name.to_string()),
+        );
+
+        // Internal clauses
+        let all_where_clauses: Vec<WhereClause> = query.internal_clauses.clone().into();
+        response.insert(
+            "where".to_string(),
+            Value::Array(all_where_clauses.into_iter().map(|v| v.into()).collect()),
+        );
+
+        // Offset
+        if let Some(offset) = query.offset {
+            response.insert("offset".to_string(), Value::U16(offset));
+        };
+        // Limit
+        if let Some(limit) = query.limit {
+            response.insert("limit".to_string(), Value::U16(limit));
+        };
+        // Order by
+        let order_by = &query.order_by;
+        let value: Vec<Value> = order_by
+            .into_iter()
+            .map(|(_k, v)| v.clone().into())
+            .collect();
+        response.insert("orderBy".to_string(), Value::Array(value));
+
+        // start_at, start_at_included
+        if let Some(start_at) = query.start_at {
+            let v = Value::Identifier(start_at);
+            if query.start_at_included {
+                response.insert("startAt".to_string(), v);
+            } else {
+                response.insert("startAfter".to_string(), v);
+            }
+        };
+
+        // block_time_ms
+        if let Some(block_time_ms) = query.block_time_ms {
+            response.insert("blockTime".to_string(), Value::U64(block_time_ms));
+        };
+
+        response
+    }
+}
+
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
+    use dpp::prelude::Identifier;
     use serde_json::json;
     use std::borrow::Cow;
     use std::option::Option::None;
@@ -1892,6 +2021,48 @@ mod tests {
             .expect("expected to apply contract successfully");
 
         (drive, contract)
+    }
+
+    #[test]
+    fn test_drive_query_from_to_cbor() {
+        let config = DriveConfig::default();
+        let contract = Contract::default();
+        let document_type = DocumentType::default();
+        let start_after = Identifier::random();
+
+        let query_value = json!({
+            "contract_id": contract.id,
+            "document_type_name": document_type.name,
+            "where": [
+                ["firstName", "<", "Gilligan"],
+                ["lastName", "=", "Doe"]
+            ],
+            "limit": 100u16,
+            "offset": 10u16,
+            "orderBy": [
+                ["firstName", "asc"],
+                ["lastName", "desc"],
+            ],
+            "startAfter": start_after,
+            "blockTime": 13453432u64,
+        });
+
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+        let query =
+            DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type, &config)
+                .expect("deserialize cbor shouldn't fail");
+
+        let cbor = query.to_cbor().expect("should serialize cbor");
+
+        let deserialized = DriveQuery::from_cbor(&cbor, &contract, &document_type, &config)
+            .expect("should deserialize cbor");
+
+        assert_eq!(query, deserialized);
+
+        assert_eq!(deserialized.start_at, Some(start_after.to_buffer()));
+        assert_eq!(deserialized.start_at_included, false);
+        assert_eq!(deserialized.block_time_ms, Some(13453432u64));
     }
 
     #[test]
