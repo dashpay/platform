@@ -79,7 +79,7 @@ impl Manager {
         app_hash: Vec<u8>,
     ) -> Result<response_offer_snapshot::Result, Error> {
         match take(&mut self.offered_snapshot) {
-            Some(mut offered_snapshot) => {
+            Some(offered_snapshot) => {
                 if offered_snapshot.snapshot.height == snapshot.height {
                     return Ok(response_offer_snapshot::Result::Reject);
                 }
@@ -120,7 +120,7 @@ impl Manager {
         if height == 0 || height % self.freq != 0 {
             return Ok(());
         }
-        let mut checkpoint_path: PathBuf = [self.checkpoints_path.clone(), height.to_string()]
+        let checkpoint_path: PathBuf = [self.checkpoints_path.clone(), height.to_string()]
             .iter()
             .collect();
         grove

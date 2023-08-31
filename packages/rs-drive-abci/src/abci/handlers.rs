@@ -74,12 +74,9 @@ use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
-use dpp::dashcore::blockdata::opcodes::Class::NoOp;
 use dpp::fee::SignedCredits;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
-use drive::drive::Drive;
-use drive::grovedb::GroveDb;
 use serde_json::Map;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
@@ -587,7 +584,7 @@ where
 
         self.commit_transaction()?;
 
-        /// Create a snapshot of the current state for the height
+        // Create a snapshot of the current state for the height
         match self.snapshot_manager.borrow().deref() {
             Some(snapshot_manager) => {
                 match snapshot_manager.create_snapshot(&self.platform.drive.grove, height) {
