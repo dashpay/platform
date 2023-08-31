@@ -279,11 +279,11 @@ mod test {
 
     lazy_static! {
         static ref DATA_SCHEMA: JsonValue = serde_json::from_str(include_str!(
-            "./../../../../../../tests/payloads/schema/data.json"
+            "./../../../../../tests/payloads/schema/data.json"
         ))
         .unwrap();
         static ref DATA_SCHEMA_V2: JsonValue = serde_json::from_str(include_str!(
-            "./../../../../../../tests/payloads/schema/data_v2.json"
+            "./../../../../../tests/payloads/schema/data_v2.json"
         ))
         .unwrap();
     }
@@ -316,7 +316,7 @@ mod test {
             &DATA_SCHEMA.clone(),
             ValidationOptions::default(),
         );
-        assert!(matches!(result, Ok(())));
+        assert!(matches!(result, Ok(operations) if operations.len() == 0));
     }
 
     #[test]
@@ -328,7 +328,7 @@ mod test {
         );
         assert!(matches!(
             result,
-            Err(DiffValidatorError::SchemaCompatibilityError { .. })
+            Ok(operations) if operations.len() == 1
         ));
     }
 
@@ -344,7 +344,7 @@ mod test {
             ValidationOptions::default(),
         );
 
-        assert!(matches!(result, Ok(())));
+        assert!(matches!(result, Ok(operations) if operations.len() == 0));
     }
 
     #[test]
@@ -358,7 +358,7 @@ mod test {
             ValidationOptions::default(),
         );
 
-        assert!(matches!(result, Ok(())));
+        assert!(matches!(result, Ok(operations) if operations.len() == 0));
     }
 
     #[test]
@@ -374,7 +374,7 @@ mod test {
 
         assert!(matches!(
             result,
-            Err(DiffValidatorError::SchemaCompatibilityError { .. })
+            Ok(operations) if operations.len() == 1
         ));
     }
 
@@ -391,7 +391,7 @@ mod test {
 
         assert!(matches!(
             result,
-            Err(DiffValidatorError::SchemaCompatibilityError { .. })
+            Ok(operations) if operations.len() > 0
         ));
     }
 }
