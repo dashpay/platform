@@ -4,3 +4,10 @@
 pub mod platform;
 
 pub mod error;
+
+pub mod core;
+
+pub mod crud;
+
+#[macro_use]
+pub mod dapi;

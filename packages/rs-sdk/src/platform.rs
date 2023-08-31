@@ -16,4 +16,8 @@ pub use platform_proto::GetIdentitiesByPublicKeyHashesRequest;
 pub use platform_proto::GetIdentityRequest;
 pub use platform_proto::WaitForStateTransitionResultRequest;
 
+pub use rs_dapi_client::DapiClient as PlatformClient;
+
+pub mod data_contract;
 pub mod get_documents;
+pub mod identity;

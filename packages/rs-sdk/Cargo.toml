@@ -5,9 +5,19 @@ edition = "2021"
 
 [dependencies]
 dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
-
+rs-dapi-client = { path = "../rs-dapi-client" }
 drive = { path = "../rs-drive", default-features = false, features = [
     "verify",
 ] }
 dpp = { path = "../rs-dpp" }
+drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
+
 thiserror = "1.0.47"
+tokio = { version = "1.32.0", features = ["macros"] }
+async-trait = { version = "0.1.73" }
+http = { version = "0.2.9" }
+
+# dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev = "408bef25fd229dbb6b9f1b3d380e2afbc77d812c" }
+# drive-abci is only needed for core rpc; TODO remove once we have correct core rpc impl
+drive-abci = { path = "../rs-drive-abci", default-features = false }

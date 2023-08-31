@@ -1,5 +1,7 @@
+use std::fmt::Debug;
+
 use dpp::ProtocolError;
-use drive::error::drive::DriveError;
+use rs_dapi_client::DapiClientError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -7,4 +9,18 @@ pub enum Error {
     Drive(#[from] drive::error::Error),
     #[error("Protocol error: {0}")]
     Protocol(#[from] ProtocolError),
+    #[error("Proof verification error: {0}")]
+    Proof(#[from] drive_proof_verifier::Error),
+    #[error("Dapi client error: {0}")]
+    DapiClientError(String),
+    #[error("Core client error: {0}")]
+    CoreClientError(#[from] dashcore_rpc::Error),
+    #[error("Invalid url: {0}")]
+    InvalidUrl(#[from] http::uri::InvalidUri),
+}
+
+impl<T: Debug> From<DapiClientError<T>> for Error {
+    fn from(value: DapiClientError<T>) -> Self {
+        Self::DapiClientError(format!("{:?}", value))
+    }
 }

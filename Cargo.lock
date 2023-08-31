@@ -1387,7 +1387,6 @@ dependencies = [
  "lazy_static",
  "mockall",
  "rs-dapi-client",
- "rs-sdk",
  "serde",
  "serde_json",
  "tenderdash-abci",
@@ -3487,10 +3486,17 @@ dependencies = [
 name = "rs-sdk"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "dapi-grpc",
+ "dashcore-rpc",
  "dpp",
  "drive",
+ "drive-abci",
+ "drive-proof-verifier",
+ "http",
+ "rs-dapi-client",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
