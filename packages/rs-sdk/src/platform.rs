@@ -15,3 +15,5 @@ pub use platform_proto::GetDocumentsRequest;
 pub use platform_proto::GetIdentitiesByPublicKeyHashesRequest;
 pub use platform_proto::GetIdentityRequest;
 pub use platform_proto::WaitForStateTransitionResultRequest;
+
+pub mod get_documents;

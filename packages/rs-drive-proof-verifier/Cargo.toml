@@ -8,9 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 uniffi = { git = "https://github.com/mozilla/uniffi-rs", optional = true }
-# TODO uncomment once we solve the client
-# dapi-grpc = { path = "../dapi-grpc" }
-dapi-grpc = { git = "https://github.com/dashpay/platform", branch = "rs-dapi-client" }
+dapi-grpc = { path = "../dapi-grpc" }
 
 thiserror = { version = "1.0.39" }
 bytes = { version = "1.4.0" }
@@ -21,6 +19,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
     "verify",
 ] }
 dpp = { path = "../rs-dpp" }
+rs-sdk = { path = "../rs-sdk" }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci" }
 # tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }
 tracing = { version = "0.1.37" }
@@ -35,12 +34,12 @@ tracing-subscriber = { version = "0.3.16" }
 serde_json = { version = "1.0.103" }
 derive_more = { version = "0.99.16" }
 base64 = { version = "0.21.0" }
+hex = { version = "0.4.3" }
 
 drive-abci = { path = "../rs-drive-abci", default-features = false }
 # Dependencies for examples
-rs-dapi-client = { git = "https://github.com/dashpay/platform", branch = "rs-dapi-client" }
+rs-dapi-client = { path = "../rs-dapi-client" }
 tokio = { version = "1.32.0", features = ["macros"] }
-dapi-grpc = { git = "https://github.com/dashpay/platform", branch = "rs-dapi-client" }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev = "408bef25fd229dbb6b9f1b3d380e2afbc77d812c" }
 async-trait = { version = "0.1.73" }
 

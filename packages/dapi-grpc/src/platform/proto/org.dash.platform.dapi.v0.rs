@@ -741,12 +741,15 @@ pub mod get_data_contract_history_response {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDocumentsRequest {
     #[prost(bytes = "vec", tag = "1")]
+    #[serde(with = "crate::deserialization::base64string")]
     pub data_contract_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(string, tag = "2")]
     pub document_type: ::prost::alloc::string::String,
     #[prost(bytes = "vec", tag = "3")]
+    #[serde(with = "crate::deserialization::base64string")]
     pub r#where: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "4")]
+    #[serde(with = "crate::deserialization::base64string")]
     pub order_by: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint32, tag = "5")]
     pub limit: u32,

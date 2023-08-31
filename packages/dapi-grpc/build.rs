@@ -70,6 +70,19 @@ pub fn generate() -> Result<(), std::io::Error> {
             "public_key_hashes",
             r#"#[serde(with = "crate::deserialization::vec_base64string")]"#,
         )
+        // Get documents fields
+        .field_attribute(
+            "data_contract_id",
+            r#"#[serde(with = "crate::deserialization::base64string")]"#,
+        )
+        .field_attribute(
+            "where",
+            r#"#[serde(with = "crate::deserialization::base64string")]"#,
+        )
+        .field_attribute(
+            "order_by",
+            r#"#[serde(with = "crate::deserialization::base64string")]"#,
+        )
         // Proof fields
         .field_attribute(
             "Proof.grovedb_proof",

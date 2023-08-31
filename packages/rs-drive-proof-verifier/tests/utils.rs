@@ -13,6 +13,7 @@ pub fn load<Req, Resp>(
 ) -> (
     Req,
     Resp,
+    TestMetadata,
     drive_proof_verifier::proof::from_proof::MockQuorumInfoProvider,
 )
 where
@@ -24,16 +25,17 @@ where
         .join(file);
 
     let f = File::open(path).unwrap();
-    let (req, resp, quorum): (Req, Resp, TestMetadata) = serde_json::from_reader(f).unwrap();
+    let (req, resp, metadata): (Req, Resp, TestMetadata) = serde_json::from_reader(f).unwrap();
 
     // println!("req: {:?}\nresp: {:?}\nquorum: {:?}\n", req, resp, quorum);
 
-    let pubkey = quorum.quorum_public_key;
+    let pubkey = metadata.quorum_public_key.clone();
     let mut provider = drive_proof_verifier::proof::from_proof::MockQuorumInfoProvider::new();
     provider
         .expect_get_quorum_public_key()
         .return_once(|_, _, _| Ok(pubkey));
-    (req, resp, provider)
+
+    (req, resp, metadata, provider)
 }
 
 #[allow(unused)]

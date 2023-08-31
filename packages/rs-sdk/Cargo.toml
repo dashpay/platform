@@ -5,3 +5,9 @@ edition = "2021"
 
 [dependencies]
 dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
+
+drive = { path = "../rs-drive", default-features = false, features = [
+    "verify",
+] }
+dpp = { path = "../rs-dpp" }
+thiserror = "1.0.47"

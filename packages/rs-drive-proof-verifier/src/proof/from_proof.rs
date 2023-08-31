@@ -604,17 +604,29 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
 }
 
 // #[cfg_attr(feature = "mock", mockall::automock)]
-impl<'dq> FromProof<DriveQuery<'dq>> for Documents {
+impl<'dq, Q> FromProof<Q> for Documents
+where
+    Q: TryInto<DriveQuery<'dq>> + Clone + 'dq,
+    Q::Error: std::fmt::Display,
+{
     type Response = platform::GetDocumentsResponse;
 
     fn maybe_from_proof<'a>(
-        request: &DriveQuery<'dq>,
+        request: &Q,
         response: &Self::Response,
         provider: Box<dyn QuorumInfoProvider + 'a>,
     ) -> Result<Option<Self>, Error>
     where
         Self: 'a,
     {
+        let request: DriveQuery<'dq> =
+            request
+                .clone()
+                .try_into()
+                .map_err(|e: Q::Error| Error::RequestDecodeError {
+                    error: e.to_string(),
+                })?;
+
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_documents_response::Result::Proof(p) => p,

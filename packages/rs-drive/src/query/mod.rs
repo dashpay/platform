@@ -184,7 +184,7 @@ impl InternalClauses {
 
     #[cfg(any(feature = "full", feature = "verify"))]
     /// Extracts the `WhereClause`s and returns them as type `InternalClauses`.
-    fn extract_from_clauses(all_where_clauses: Vec<WhereClause>) -> Result<Self, Error> {
+    pub fn extract_from_clauses(all_where_clauses: Vec<WhereClause>) -> Result<Self, Error> {
         let primary_key_equal_clauses_array = all_where_clauses
             .iter()
             .filter_map(|where_clause| match where_clause.operator {
