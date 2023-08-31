@@ -148,7 +148,6 @@ impl Drive {
     ///
     /// This function returns an error if the contract fetching fails or if the
     /// drive version does not match any of the implemented method versions.
-
     pub(crate) fn get_contract_with_fetch_info_and_add_to_operations(
         &self,
         contract_id: [u8; 32],

@@ -25,6 +25,33 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 impl Drive {
+    /// Adds estimated storage costs for adding a document to primary storage.
+    ///
+    /// This function computes and updates the expected costs associated with storing
+    /// a document in primary storage. Depending on the type and history preservation
+    /// properties of the document, the costs are determined differently.
+    ///
+    /// - If the document type retains history, the function will account for costs
+    ///   associated with trees and potential flags for deletion.
+    /// - Otherwise, the function will only account for the cost of storing the elements.
+    ///
+    /// # Arguments
+    /// * `document_and_contract_info`: Information about the document and its associated contract.
+    /// * `primary_key_path`: Key path where the document should be stored in primary storage.
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a hashmap where the estimated layer
+    ///    information will be stored for the given key path.
+    /// * `platform_version`: Version of the platform being used, potentially affecting some estimates.
+    ///
+    /// # Returns
+    /// * `Result<(), Error>`: Returns `Ok(())` if the operation succeeds, otherwise it returns an `Error`.
+    ///
+    /// # Errors
+    /// This function might return an `Error` if there's a problem estimating the document's size for the
+    /// given platform version.
+    ///
+    /// # Panics
+    /// This function will not panic under normal circumstances. However, unexpected behavior may result
+    /// from incorrect arguments or unforeseen edge cases.
     pub(super) fn add_estimation_costs_for_add_document_to_primary_storage_v0(
         document_and_contract_info: &DocumentAndContractInfo,
         primary_key_path: [&[u8]; 5],

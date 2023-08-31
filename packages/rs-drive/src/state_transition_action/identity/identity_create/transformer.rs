@@ -4,6 +4,7 @@ use dpp::consensus::ConsensusError;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 
 impl IdentityCreateTransitionAction {
+    /// try from
     pub fn try_from(
         value: IdentityCreateTransition,
         initial_balance_amount: u64,
@@ -15,6 +16,7 @@ impl IdentityCreateTransitionAction {
         }
     }
 
+    /// try from borrowed
     pub fn try_from_borrowed(
         value: &IdentityCreateTransition,
         initial_balance_amount: u64,

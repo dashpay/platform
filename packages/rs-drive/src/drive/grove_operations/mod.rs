@@ -198,6 +198,7 @@ pub enum BatchDeleteUpTreeApplyType {
     },
 }
 
+/// batch insert tree apply type
 #[derive(Clone, Copy)]
 /// Batch insert tree apply type
 pub enum BatchInsertTreeApplyType {
@@ -294,10 +295,13 @@ impl BatchInsertApplyType {
 /// Flags length
 pub type FlagsLen = u32;
 
+/// query target
 #[derive(Clone, Copy)]
 /// Query target
 pub enum QueryTarget {
+    /// tree
     QueryTargetTree(FlagsLen, IsSumTree),
+    /// value
     QueryTargetValue(u32),
 }
 
@@ -314,6 +318,7 @@ impl QueryTarget {
     }
 }
 
+/// direct query type
 #[derive(Clone, Copy)]
 /// Direct query type
 pub enum DirectQueryType {

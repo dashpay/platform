@@ -26,6 +26,7 @@ pub fn add_initial_fork_update_structure_operations(batch: &mut GroveDbOpBatch) 
     );
 }
 
+/// versions counter path
 pub(crate) fn versions_counter_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::Versions),
@@ -37,6 +38,7 @@ fn versions_counter_path_vec() -> Vec<Vec<u8>> {
     vec![vec![RootTree::Versions as u8], VERSIONS_COUNTER.to_vec()]
 }
 
+/// desired version for validators path
 pub(crate) fn desired_version_for_validators_path() -> [&'static [u8]; 2] {
     [
         Into::<&[u8; 1]>::into(RootTree::Versions),

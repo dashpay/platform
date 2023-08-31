@@ -7,6 +7,7 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionV0};
 
 impl DocumentBaseTransitionAction {
+    /// from base transition with contract lookup
     pub fn from_base_transition_with_contract_lookup(
         value: DocumentBaseTransition,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
@@ -22,6 +23,7 @@ impl DocumentBaseTransitionAction {
         }
     }
 
+    /// from borrowed base transition with contract lookup
     pub fn from_borrowed_base_transition_with_contract_lookup(
         value: &DocumentBaseTransition,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,

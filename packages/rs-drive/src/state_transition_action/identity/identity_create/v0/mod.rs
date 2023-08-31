@@ -1,3 +1,4 @@
+/// transformer
 pub mod transformer;
 
 use dpp::identifier::Identifier;
@@ -10,12 +11,17 @@ use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 
+/// action v0
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityCreateTransitionActionV0 {
+    /// public keys
     pub public_keys: Vec<IdentityPublicKey>,
+    /// initial balance amount
     pub initial_balance_amount: u64,
+    /// identity id
     pub identity_id: Identifier,
+    /// asset lock outpoint
     pub asset_lock_outpoint: Bytes36,
 }
 
@@ -53,13 +59,16 @@ impl From<&IdentityCreateTransitionActionV0> for PartialIdentity {
     }
 }
 
+/// action v0
 pub trait IdentityFromIdentityCreateTransitionActionV0 {
+    /// try from
     fn try_from_identity_create_transition_action_v0(
         value: IdentityCreateTransitionActionV0,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
+    /// try from borrowed
     fn try_from_borrowed_identity_create_transition_action_v0(
         value: &IdentityCreateTransitionActionV0,
         platform_version: &PlatformVersion,
