@@ -98,11 +98,12 @@ impl<'de> BorrowDecode<'de> for CoreScript {
         let mut bytes = Vec::new();
         loop {
             let buf_len = 1024; // Adjust the buffer size as needed
-            let mut temp = Vec::with_capacity(buf_len);
-            match decoder.reader().read(&mut temp) {
+            let mut buf = vec![0; buf_len];
+
+            match decoder.reader().read(&mut buf) {
                 Ok(()) => {
-                    let read_bytes = temp.iter().position(|&x| x == 0).unwrap_or(temp.len());
-                    bytes.extend_from_slice(&temp[..read_bytes]);
+                    let read_bytes = buf.iter().position(|&x| x == 0).unwrap_or(buf.len());
+                    bytes.extend_from_slice(&buf[..read_bytes]);
                     if read_bytes < buf_len {
                         break;
                     }

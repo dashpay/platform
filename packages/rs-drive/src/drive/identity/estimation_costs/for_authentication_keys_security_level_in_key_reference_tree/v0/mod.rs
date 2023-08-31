@@ -31,20 +31,6 @@ impl Drive {
     /// The function has a hardcoded estimation of `ApproximateElements(4)`, which implies
     /// an estimation that each security level will have approximately four keys.
     /// This is a preliminary estimate and might be revisited in future versions or updates.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let drive = Drive::new(...); // Initialize Drive
-    /// let identity_id = [0u8; 32]; // Replace with actual identity ID
-    /// let mut estimated_info = HashMap::new(); // Estimated layer information map
-    /// let security_level = SecurityLevel::...; // Define the security level
-    ///
-    /// drive.add_estimation_costs_for_authentication_keys_security_level_in_key_reference_tree_v0(
-    ///     identity_id,
-    ///     &mut estimated_info,
-    ///     security_level,
-    /// );
     /// ```
     pub(super) fn add_estimation_costs_for_authentication_keys_security_level_in_key_reference_tree_v0(
         identity_id: [u8; 32],

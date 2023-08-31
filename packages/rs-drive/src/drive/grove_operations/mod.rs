@@ -219,17 +219,6 @@ impl BatchInsertTreeApplyType {
     ///
     /// - A variant of `DirectQueryType::StatelessDirectQuery` if the current type is `BatchInsertTreeApplyType::StatelessBatchInsertTree`.
     /// - `DirectQueryType::StatefulDirectQuery` if the current type is `BatchInsertTreeApplyType::StatefulBatchInsertTree`.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let batch_type = BatchInsertTreeApplyType::StatelessBatchInsertTree {
-    ///     in_tree_using_sums: true,
-    ///     is_sum_tree: false,
-    ///     flags_len: 5,
-    /// };
-    ///
-    /// let query_type = batch_type.to_direct_query_type();
     /// ```
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {
@@ -266,16 +255,6 @@ impl BatchInsertApplyType {
     ///
     /// - A variant of `DirectQueryType::StatelessDirectQuery` if the current type is `BatchInsertApplyType::StatelessBatchInsert`.
     /// - `DirectQueryType::StatefulDirectQuery` if the current type is `BatchInsertApplyType::StatefulBatchInsert`.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let batch_type = BatchInsertApplyType::StatelessBatchInsert {
-    ///     in_tree_using_sums: true,
-    ///     target: SomeQueryTarget, // Replace with an actual target instance.
-    /// };
-    ///
-    /// let query_type = batch_type.to_direct_query_type();
     /// ```
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {

@@ -46,14 +46,6 @@ impl Drive {
     /// 1. A top layer with balance information, assumed to be on layer 2. Updates to
     ///    this layer are estimated to involve updating one sum tree and one normal tree.
     /// 2. A contract layer for the balance. This layer is considered as a sum tree.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let drive = Drive::new(...); // Initialize the drive
-    /// let mut estimated_info = HashMap::new(); // Estimated layer information map
-    ///
-    /// drive.add_estimation_costs_for_balances_v0(&mut estimated_info);
     /// ```
     pub(super) fn add_estimation_costs_for_balances_v0(
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,

@@ -38,24 +38,6 @@ impl Drive {
     /// - This function divides the provided keys into unique and non-unique types, and processes
     ///   them accordingly.
     /// - Updates to the estimated costs (if provided) are made based on the version of the drive.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let drive = Drive::new(...); // Initialize the drive
-    /// let identity_id = [0u8; 32]; // Replace with actual identity ID
-    /// let keys = vec![...]; // Vector of IdentityPublicKey
-    /// let mut estimated_info = Some(HashMap::new()); // Optional Estimated layer information map
-    /// let transaction = TransactionArg::new(...); // Create a transaction
-    /// let platform_version = PlatformVersion::new(...); // Define the platform version
-    ///
-    /// let result = drive.create_key_tree_with_keys_operations_v0(
-    ///     identity_id,
-    ///     keys,
-    ///     &mut estimated_info,
-    ///     transaction,
-    ///     &platform_version,
-    /// );
     /// ```
     pub(super) fn create_key_tree_with_keys_operations_v0(
         &self,
