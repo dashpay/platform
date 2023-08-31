@@ -2,7 +2,6 @@ const MasternodeSyncAssetEnum = require('../../../../src/status/enums/masternode
 const getMasternodeScopeFactory = require('../../../../src/status/scopes/masternode');
 const MasternodeStateEnum = require('../../../../src/status/enums/masternodeState');
 const getConfigMock = require('../../../../src/test/mock/getConfigMock');
-const generateEnvs = require('../../../../src/util/generateEnvs');
 
 describe('getMasternodeScopeFactory', () => {
   describe('#getMasternodeScope', () => {
@@ -32,7 +31,6 @@ describe('getMasternodeScopeFactory', () => {
         mockDockerCompose,
         mockCreateRpcClient,
         mockGetConnectionHost,
-        configFile,
       );
     });
 
