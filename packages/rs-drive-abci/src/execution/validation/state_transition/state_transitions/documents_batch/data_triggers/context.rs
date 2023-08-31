@@ -19,6 +19,13 @@ pub struct DataTriggerExecutionContext<'a> {
     pub state_transition_execution_context: &'a StateTransitionExecutionContext,
 }
 
+impl DataTriggerExecutionContext<'_> {
+    /// Returns the current epoch
+    pub fn current_epoch(&self) -> Epoch {
+        self.platform.epoch()
+    }
+}
+
 impl<'a> Debug for DataTriggerExecutionContext<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("data_trigger_execution_context")
@@ -29,10 +36,5 @@ impl<'a> Debug for DataTriggerExecutionContext<'a> {
                 self.state_transition_execution_context,
             )
             .finish()
-    }
-
-    /// Returns the current epoch
-    pub fn current_epoch(&self) -> Epoch {
-        self.platform.epoch()
     }
 }
