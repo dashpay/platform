@@ -15,6 +15,7 @@ mod validate_max_depth;
 
 #[cfg(feature = "validation")]
 mod validate_schema_compatibility;
+#[cfg(feature = "validation")]
 pub use validate_schema_compatibility::*;
 
 #[cfg(feature = "validation")]

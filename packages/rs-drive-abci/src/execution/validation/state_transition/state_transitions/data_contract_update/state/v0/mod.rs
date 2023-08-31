@@ -23,6 +23,7 @@ use dpp::data_contract::JsonValue;
 use dpp::platform_value::converter::serde_json::{
     BTreeValueJsonConverter, BTreeValueRefJsonConverter,
 };
+use dpp::platform_value::{Value, ValueMap};
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
@@ -166,10 +167,8 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                         self.data_contract().id(),
                         "remove".to_string(),
                         "$defs".to_string(),
-                        old_defs
-                            .to_json_value()
-                            .map_err(ProtocolError::ValueError)?,
-                        JsonValue::Null,
+                        old_defs.into(),
+                        Value::Null,
                     ),
                 ));
 
@@ -196,8 +195,8 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                         self.data_contract().id(),
                         operation_name.to_owned(),
                         property_name.to_owned(),
-                        old_defs_json,
-                        new_defs_json,
+                        old_defs_json.into(),
+                        new_defs_json.into(),
                     ),
                 ));
 
@@ -217,17 +216,15 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 .try_into()
                 .map_err(ProtocolError::ValueError)?;
 
-            let new_document_schema_json: JsonValue = new_data_contract
+            let new_document_schema = new_data_contract
                 .document_type_optional_for_name(&document_type_name)
-                .map(|document_type| {
-                    document_type
-                        .schema()
-                        .clone()
-                        .try_into()
-                        .map_err(ProtocolError::ValueError)
-                })
-                .transpose()?
-                .unwrap_or_else(|| EMPTY_JSON.clone());
+                .map(|document_type| document_type.schema().clone())
+                .unwrap_or(ValueMap::new().into());
+
+            let new_document_schema_json: JsonValue = new_document_schema
+                .clone()
+                .try_into()
+                .map_err(ProtocolError::ValueError)?;
 
             let diffs = validate_schema_compatibility(
                 &old_document_schema_json,
@@ -244,8 +241,8 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                         self.data_contract().id(),
                         operation_name.to_owned(),
                         property_name.to_owned(),
-                        old_document_schema_json,
-                        new_document_schema_json,
+                        old_document_schema.clone(),
+                        new_document_schema,
                     ),
                 ));
 
