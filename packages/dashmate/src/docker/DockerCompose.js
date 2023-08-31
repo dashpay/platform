@@ -53,16 +53,23 @@ class DockerCompose {
   #generateEnvs;
 
   /**
+   * @type {function}
+   */
+  #getServiceList;
+
+  /**
    * @param {Docker} docker
    * @param {StartedContainers} startedContainers
    * @param {HomeDir} homeDir
    * @param {generateEnvs} generateEnvs
+   * @param {getServiceList} getServiceList
    */
-  constructor(docker, startedContainers, homeDir, generateEnvs) {
+  constructor(docker, startedContainers, homeDir, generateEnvs, getServiceList) {
     this.#docker = docker;
     this.#startedContainers = startedContainers;
     this.#homeDir = homeDir;
     this.#generateEnvs = generateEnvs;
+    this.#getServiceList = getServiceList;
   }
 
   /**
@@ -112,11 +119,22 @@ class DockerCompose {
    * @param {string[]} [options.profiles] - Filter by profiles
    * @return {Promise<boolean>}
    */
-  async isNodeRunning(config, options) {
+  async isNodeRunning(config, options = { profiles: [] }) {
     await this.throwErrorIfNotInstalled();
+
+    let serviceList = this.#getServiceList(config, options);
+
+    if (options.profiles?.length > 0) {
+      serviceList = serviceList.filter((service) => (
+        service.profiles.some((profile) => options.profiles.includes(profile))
+      ));
+    }
+
+    const filterServiceNames = serviceList.map((service) => service.name);
 
     const serviceContainers = await this.getContainersList(config, {
       formatJson: true,
+      filterServiceNames,
       ...options,
     });
 
@@ -249,8 +267,7 @@ class DockerCompose {
     await this.throwErrorIfNotInstalled();
 
     const containerIds = await this.getContainersList(config, {
-      filterServiceNames:
-        serviceName,
+      filterServiceNames: serviceName,
       quiet: true,
     });
 
