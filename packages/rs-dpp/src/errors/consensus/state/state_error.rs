@@ -1,5 +1,6 @@
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
@@ -30,7 +31,7 @@ use crate::consensus::ConsensusError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
-#[derive(Error, Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 pub enum StateError {
     /*
 

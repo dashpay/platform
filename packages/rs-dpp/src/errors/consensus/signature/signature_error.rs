@@ -8,9 +8,10 @@ use crate::consensus::ConsensusError;
 use bincode::{Decode, Encode};
 use thiserror::Error;
 
-use serde::{Deserialize, Serialize};
+use crate::errors::ProtocolError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
-#[derive(Error, Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 pub enum SignatureError {
     /*
 

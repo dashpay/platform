@@ -5,9 +5,10 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
+const { UInt32Value } = require('google-protobuf/google/protobuf/wrappers_pb');
+
 const GetDataContractHistoryResponse = require('./GetDataContractHistoryResponse');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
-
 /**
  * @param {GrpcTransport} grpcTransport
  * @returns {getDataContractHistory}
@@ -43,8 +44,8 @@ function getDataContractHistoryFactory(grpcTransport) {
 
     getDataContractHistoryRequest.setId(contractId);
     getDataContractHistoryRequest.setStartAtMs(startAtMs);
-    getDataContractHistoryRequest.setLimit(limit);
-    getDataContractHistoryRequest.setOffset(offset);
+    getDataContractHistoryRequest.setLimit(new UInt32Value([limit]));
+    getDataContractHistoryRequest.setOffset(new UInt32Value([offset]));
     getDataContractHistoryRequest.setProve(!!options.prove);
 
     let lastError;

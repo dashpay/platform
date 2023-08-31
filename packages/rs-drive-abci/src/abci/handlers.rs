@@ -677,7 +677,7 @@ where
             };
             tracing::trace!(method = "query", ?request, ?response);
 
-            return Ok(response)
+            return Ok(response);
         };
 
         let result = self

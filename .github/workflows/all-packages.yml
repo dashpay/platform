@@ -5,11 +5,13 @@ on:
   pull_request:
     branches:
       - master
-      - 'v[0-9]+\.[0-9]+-dev(-nightly)?'
+      - 'v[0-9]+\.[0-9]+-dev'
+      - 'v[0-9]+\.[0-9]+-dev-nightly'
   push:
     branches:
       - master
-      - 'v[0-9]+\.[0-9]+-dev(-nightly)?'
+      - 'v[0-9]+\.[0-9]+-dev'
+      - 'v[0-9]+\.[0-9]+-dev-nightly'
   schedule:
     - cron: "30 4 * * *"
 

@@ -20,9 +20,11 @@ const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 export default async function broadcastStateTransition(
   platform: Platform,
   stateTransition: any,
+  // TODO: restore once validation is done?
+  // eslint-disable-next-line
   options: { skipValidation?: boolean; } = {},
 ): Promise<IStateTransitionResult | void> {
-  const { client, dpp } = platform;
+  const { client } = platform;
 
   // TODO(versioning): restore
   // @ts-ignore

@@ -44,7 +44,7 @@ pub trait DocumentTransitionV0Methods {
     ///  get the id
     fn get_id(&self) -> Identifier;
     /// get the document type
-    fn get_document_type(&self) -> &String;
+    fn document_type_name(&self) -> &String;
     /// get the data contract id
     fn data_contract_id(&self) -> Identifier;
     /// get the data of the transition if exits
@@ -58,6 +58,9 @@ pub trait DocumentTransitionV0Methods {
     fn set_data_contract_id(&mut self, id: Identifier);
     fn base_mut(&mut self) -> &mut DocumentBaseTransition;
     fn data_mut(&mut self) -> Option<&mut BTreeMap<String, Value>>;
+
+    // sets revision of the transition
+    fn set_revision(&mut self, revision: Revision);
 }
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
@@ -251,6 +254,14 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         }
     }
 
+    fn set_revision(&mut self, revision: Revision) {
+        match self {
+            DocumentTransition::Create(_) => {}
+            DocumentTransition::Replace(ref mut t) => t.set_revision(revision),
+            DocumentTransition::Delete(_) => {}
+        }
+    }
+
     fn get_dynamic_property(&self, path: &str) -> Option<&Value> {
         match self {
             DocumentTransition::Create(t) => t.data().get(path),
@@ -263,7 +274,7 @@ impl DocumentTransitionV0Methods for DocumentTransition {
         self.base().id()
     }
 
-    fn get_document_type(&self) -> &String {
+    fn document_type_name(&self) -> &String {
         self.base().document_type_name()
     }
 

@@ -102,7 +102,7 @@ describe('Platform', () => {
     });
 
     // TODO(versioning): this test is not passing
-    it.skip('should not be able to update an existing data contract if schema is not backward compatible', async () => {
+    it('should not be able to update an existing data contract if schema is not backward compatible', async () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
@@ -127,8 +127,7 @@ describe('Platform', () => {
       expect(broadcastError.getCause()).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
     });
 
-    // TODO(versioning): restore once document facade is done
-    it.skip('should be able to update an existing data contract', async () => {
+    it('should be able to update an existing data contract', async () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 

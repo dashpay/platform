@@ -1,14 +1,17 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::ProtocolError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Value;
-use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("version {received_version:?} is not supported. Supported versions are {min_version:?} to {max_version:?}")]
+#[platform_serialize(unversioned)]
 pub struct UnsupportedVersionError {
     /*
 
@@ -45,14 +48,6 @@ impl UnsupportedVersionError {
 impl From<UnsupportedVersionError> for ConsensusError {
     fn from(err: UnsupportedVersionError) -> Self {
         Self::BasicError(BasicError::UnsupportedVersionError(err))
-    }
-}
-
-impl TryFrom<Value> for UnsupportedVersionError {
-    type Error = ProtocolError;
-
-    fn try_from(args: Value) -> Result<Self, Self::Error> {
-        platform_value::from_value(args).map_err(ProtocolError::ValueError)
     }
 }
 

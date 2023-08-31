@@ -19,7 +19,7 @@ describe.skip('validateIdentityTopUpTransitionStateFactory', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(async function () {
+  beforeEach(async function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
     stateTransition = await getIdentityTopUpTransitionFixture();

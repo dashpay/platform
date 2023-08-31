@@ -2,6 +2,8 @@ use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
 use crate::data_contract::DataContractFacadeWasm;
+use crate::document::factory::DocumentFactoryWASM;
+use crate::document_facade::DocumentFacadeWasm;
 use dpp::dash_platform_protocol::DashPlatformProtocol;
 use dpp::data_contract::DataContractFacade;
 use dpp::identity::IdentityFacade;
@@ -18,6 +20,7 @@ use crate::utils::WithJsError;
 pub struct DashPlatformProtocolWasm {
     protocol: DashPlatformProtocol,
     data_contracts: Arc<DataContractFacade>,
+    documents: DocumentFacadeWasm,
 }
 
 static mut LOGGER_INITIALIZED: bool = false;
@@ -39,18 +42,20 @@ impl DashPlatformProtocolWasm {
             }
         }
 
-        // let bls = BlsAdapter(bls_adapter);
         let protocol_version = maybe_protocol_version.unwrap_or(LATEST_VERSION);
         let protocol = DashPlatformProtocol::new(protocol_version);
 
         let data_contracts = Arc::new(
-            DataContractFacade::new(protocol_version, Some(Box::new(entropy_generator)))
+            DataContractFacade::new(protocol_version, Some(Box::new(entropy_generator.clone())))
                 .with_js_error()?,
         );
+
+        let document_factory = DocumentFactoryWASM::new(protocol_version, Some(entropy_generator))?;
 
         Ok(DashPlatformProtocolWasm {
             protocol,
             data_contracts,
+            documents: DocumentFacadeWasm::new(document_factory),
         })
     }
 
@@ -59,11 +64,11 @@ impl DashPlatformProtocolWasm {
         DataContractFacadeWasm(Arc::clone(&self.data_contracts))
     }
 
-    // #[wasm_bindgen(getter=document)]
-    // pub fn document(&self) -> DocumentFacadeWasm {
-    //     self.document.clone()
-    // }
-    //
+    #[wasm_bindgen(getter=document)]
+    pub fn document(&self) -> DocumentFacadeWasm {
+        self.documents.clone()
+    }
+
     #[wasm_bindgen(getter = identity)]
     pub fn identity(&self) -> IdentityFacadeWasm {
         // TODO: think if it's possible to avoid cloning

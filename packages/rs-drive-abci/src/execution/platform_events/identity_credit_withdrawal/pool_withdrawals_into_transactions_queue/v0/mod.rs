@@ -50,10 +50,11 @@ where
             true,
             Some(transaction),
             platform_version,
-        )? else {
-            return Err(Error::Execution(
-                ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
-            ));
+        )?
+        else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "can't fetch withdrawal data contract",
+            )));
         };
 
         let mut documents = self.drive.fetch_withdrawal_documents_by_status(
@@ -77,7 +78,9 @@ where
 
         for document in documents.iter_mut() {
             let Some((_, transaction_bytes)) = withdrawal_transactions.get(&document.id()) else {
-                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution("transactions must contain a transaction")))
+                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "transactions must contain a transaction",
+                )));
             };
 
             let transaction_id = hash::hash_to_vec(transaction_bytes);

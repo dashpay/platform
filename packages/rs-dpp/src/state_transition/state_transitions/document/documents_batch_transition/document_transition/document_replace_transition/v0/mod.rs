@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::BTreeMap;
 
+pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 use crate::state_transition::documents_batch_transition::document_base_transition::DocumentBaseTransition;
 
 pub(self) mod property_names {
