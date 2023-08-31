@@ -41,6 +41,9 @@ module.exports = {
     }
   },
   version: (version, latestVersion) => {
+    if (!version) {
+      return () => null;
+    }
     if (version === latestVersion) {
       return chalk.green;
     }

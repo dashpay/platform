@@ -9,15 +9,14 @@ const {
 const Docker = require('dockerode');
 
 const getServiceListFactory = require('./docker/getServiceListFactory');
-const ensureHomeDirFactory = require('./config/ensureHomeDirFactory');
 const ensureFileMountExistsFactory = require('./docker/ensureFileMountExistsFactory');
 const getConnectionHostFactory = require('./docker/getConnectionHostFactory');
 const ConfigFileJsonRepository = require('./config/configFile/ConfigFileJsonRepository');
-const createSystemConfigsFactory = require('./config/systemConfigs/createSystemConfigsFactory');
-const isSystemConfigFactory = require('./config/systemConfigs/isSystemConfigFactory');
-const migrateConfigFile = require('./config/configFile/migrateConfigFile');
-const systemConfigs = require('../configs/system');
+const createConfigFileFactory = require('./config/configFile/createConfigFileFactory');
+const migrateConfigFileFactory = require('./config/configFile/migrateConfigFileFactory');
+const DefaultConfigs = require('./config/DefaultConfigs');
 
+const renderTemplateFactory = require('./templates/renderTemplateFactory');
 const renderServiceTemplatesFactory = require('./templates/renderServiceTemplatesFactory');
 const writeServiceConfigsFactory = require('./templates/writeServiceConfigsFactory');
 
@@ -80,7 +79,7 @@ const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
 
 const obtainZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory');
 const VerificationServer = require('./listr/tasks/ssl/VerificationServer');
-const saveCertificateTask = require('./listr/tasks/ssl/saveCertificateTask');
+const saveCertificateTaskFactory = require('./listr/tasks/ssl/saveCertificateTask');
 
 const createZeroSSLCertificate = require('./ssl/zerossl/createZeroSSLCertificate');
 const verifyDomain = require('./ssl/zerossl/verifyDomain');
@@ -97,8 +96,23 @@ const configureNodeTaskFactory = require('./listr/tasks/setup/regular/configureN
 const configureSSLCertificateTaskFactory = require('./listr/tasks/setup/regular/configureSSLCertificateTaskFactory');
 const createHttpApiServerFactory = require('./helper/api/createHttpApiServerFactory');
 const resolveDockerSocketPath = require('./docker/resolveDockerSocketPath');
+const HomeDir = require('./config/HomeDir');
+const getBaseConfigFactory = require('../configs/defaults/getBaseConfigFactory');
+const getLocalConfigFactory = require('../configs/defaults/getLocalConfigFactory');
+const getTestnetConfigFactory = require('../configs/defaults/getTestnetConfigFactory');
+const getMainnetConfigFactory = require('../configs/defaults/getMainnetConfigFactory');
+const getConfigFileMigrationsFactory = require('../configs/getConfigFileMigrationsFactory');
+const assertLocalServicesRunningFactory = require('./test/asserts/assertLocalServicesRunningFactory');
+const assertServiceRunningFactory = require('./test/asserts/assertServiceRunningFactory');
+const generateEnvsFactory = require('./config/generateEnvsFactory');
+const createIpAndPortsFormFactory = require('./listr/prompts/createIpAndPortsForm');
+const registerMasternodeWithCoreWalletFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet');
 
-async function createDIContainer() {
+/**
+ * @param {Object} [options]
+ * @returns {Promise<AwilixContainer<any>>}
+ */
+async function createDIContainer(options = {}) {
   const container = createAwilixContainer({
     injectionMode: InjectionMode.CLASSIC,
   });
@@ -107,15 +121,33 @@ async function createDIContainer() {
    * Config
    */
   container.register({
+    // TODO: It creates a directory on the disk when we create DI container. Doesn't smell good
+    homeDir: asFunction(() => (
+      HomeDir.createWithPathOrDefault(options.DASHMATE_HOME_DIR)
+    )).singleton(),
     getServiceList: asFunction(getServiceListFactory).singleton(),
-    ensureHomeDir: asFunction(ensureHomeDirFactory).singleton(),
     configFileRepository: asClass(ConfigFileJsonRepository).singleton(),
-    systemConfigs: asValue(systemConfigs),
-    createSystemConfigs: asFunction(createSystemConfigsFactory).singleton(),
-    isSystemConfig: asFunction(isSystemConfigFactory).singleton(),
-    migrateConfigFile: asValue(migrateConfigFile),
+    getBaseConfig: asFunction(getBaseConfigFactory).singleton(),
+    getLocalConfig: asFunction(getLocalConfigFactory).singleton(),
+    getTestnetConfig: asFunction(getTestnetConfigFactory).singleton(),
+    getMainnetConfig: asFunction(getMainnetConfigFactory).singleton(),
+    defaultConfigs: asFunction((
+      getBaseConfig,
+      getLocalConfig,
+      getTestnetConfig,
+      getMainnetConfig,
+    ) => new DefaultConfigs([
+      getBaseConfig,
+      getLocalConfig,
+      getTestnetConfig,
+      getMainnetConfig,
+    ])).singleton(),
+    createConfigFile: asFunction(createConfigFileFactory).singleton(),
+    getConfigFileMigrations: asFunction(getConfigFileMigrationsFactory).singleton(),
+    migrateConfigFile: asFunction(migrateConfigFileFactory).singleton(),
     isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
-    getConnectionHost: asClass(getConnectionHostFactory).singleton(),
+    getConnectionHost: asFunction(getConnectionHostFactory).singleton(),
+    generateEnvs: asFunction(generateEnvsFactory).singleton(),
     ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
     // `configFile` and `config` are registering on command init
   });
@@ -138,6 +170,7 @@ async function createDIContainer() {
    * Templates
    */
   container.register({
+    renderTemplate: asFunction(renderTemplateFactory).singleton(),
     renderServiceTemplates: asFunction(renderServiceTemplatesFactory).singleton(),
     writeServiceConfigs: asFunction(writeServiceConfigsFactory).singleton(),
   });
@@ -220,6 +253,13 @@ async function createDIContainer() {
   });
 
   /**
+   * Prompts
+   */
+  container.register({
+    createIpAndPortsForm: asFunction(createIpAndPortsFormFactory).singleton(),
+  });
+
+  /**
    * Tasks
    */
   container.register({
@@ -241,7 +281,7 @@ async function createDIContainer() {
     registerMasternodeGuideTask: asFunction(registerMasternodeGuideTaskFactory).singleton(),
     obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
     obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
-    saveCertificateTask: asValue(saveCertificateTask),
+    saveCertificateTask: asFunction(saveCertificateTaskFactory),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
     getCoreScope: asFunction(getCoreScopeFactory).singleton(),
     getMasternodeScope: asFunction(getMasternodeScopeFactory).singleton(),
@@ -251,6 +291,8 @@ async function createDIContainer() {
     getHostScope: asFunction(getHostScopeFactory).singleton(),
     configureNodeTask: asFunction(configureNodeTaskFactory).singleton(),
     configureSSLCertificateTask: asFunction(configureSSLCertificateTaskFactory).singleton(),
+    registerMasternodeWithCoreWallet: asFunction(registerMasternodeWithCoreWalletFactory)
+      .singleton(),
   });
 
   /**
@@ -259,6 +301,14 @@ async function createDIContainer() {
   container.register({
     scheduleRenewZeroSslCertificate: asFunction(scheduleRenewZeroSslCertificateFactory).singleton(),
     createHttpApiServer: asFunction(createHttpApiServerFactory).singleton(),
+  });
+
+  /**
+   * Tests
+   */
+  container.register({
+    assertLocalServicesRunning: asFunction(assertLocalServicesRunningFactory).singleton(),
+    assertServiceRunning: asFunction(assertServiceRunningFactory).singleton(),
   });
 
   return container;

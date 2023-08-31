@@ -9,8 +9,6 @@ const {
   PRESET_MAINNET,
 } = require('../../../constants');
 
-const systemConfigs = require('../../../../configs/system');
-
 const {
   NODE_TYPE_NAMES,
   getNodeTypeByName,
@@ -18,7 +16,6 @@ const {
   isNodeTypeNameHighPerformance,
 } = require('./nodeTypes');
 
-const Config = require('../../../config/Config');
 const generateRandomString = require('../../../util/generateRandomString');
 
 /**
@@ -31,6 +28,7 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {registerMasternodeGuideTask} registerMasternodeGuideTask
  * @param {configureNodeTask} configureNodeTask
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
+ * @param {DefaultConfigs} defaultConfigs
  */
 function setupRegularPresetTaskFactory(
   configFile,
@@ -42,6 +40,7 @@ function setupRegularPresetTaskFactory(
   registerMasternodeGuideTask,
   configureNodeTask,
   configureSSLCertificateTask,
+  defaultConfigs,
 ) {
   /**
    * @typedef {setupRegularPresetTask}
@@ -84,7 +83,7 @@ function setupRegularPresetTaskFactory(
             nodeTypeName = getNodeTypeNameByType(ctx.nodeType);
           }
 
-          ctx.config = new Config(ctx.preset, systemConfigs[ctx.preset]);
+          ctx.config = defaultConfigs.get(ctx.preset);
 
           ctx.config.set('platform.enable', ctx.isHP && ctx.config.get('network') !== PRESET_MAINNET);
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);

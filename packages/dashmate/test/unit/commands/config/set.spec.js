@@ -1,13 +1,15 @@
 const ConfigSetCommand = require('../../../../src/commands/config/set');
-const Config = require('../../../../src/config/Config');
-const baseConfig = require('../../../../configs/system/base');
+const getBaseConfigFactory = require('../../../../configs/defaults/getBaseConfigFactory');
+const HomeDir = require('../../../../src/config/HomeDir');
 
 describe('Config set command', () => {
   const flags = {};
   let config;
 
   beforeEach(async () => {
-    config = new Config('config', baseConfig);
+    const getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
+
+    config = getBaseConfig();
   });
 
   describe('#platform', () => {
@@ -83,8 +85,8 @@ describe('Config set command', () => {
       const command = new ConfigSetCommand();
 
       await command.runWithDependencies({
-        option: 'docker',
-        value: '{"network":{"subnet":"127.0.0.1/24", "bindIp": "0.0.0.0"}}',
+        option: 'docker.network',
+        value: '{"subnet":"127.0.0.1/24", "bindIp": "0.0.0.0"}',
       }, flags, config);
     });
 
