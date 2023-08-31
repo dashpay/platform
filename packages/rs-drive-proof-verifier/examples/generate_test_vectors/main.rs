@@ -28,8 +28,8 @@ use tokio::sync::RwLock;
 
 pub const PLATFORM_IP: &str = "10.56.229.104";
 pub const CORE_PORT: u16 = 30002;
-pub const CORE_USER: &str = "2adagxdp";
-pub const CORE_PASSWORD: &str = "brlcSY7dWAk2";
+pub const CORE_USER: &str = "iHAedM4G";
+pub const CORE_PASSWORD: &str = "Cigmoac4RGIm";
 pub const PLATFORM_PORT: u16 = 2443;
 
 pub const IDENTITY_ID_BYTES: [u8; 32] = [
@@ -51,10 +51,10 @@ async fn main() {
 }
 
 async fn run_tests(api: Api) {
-    // println!(
-    //     "\"get_identity\": {{\n{}\n}}\n",
-    //     api.get_identity(&IDENTITY_ID_BYTES).await
-    // );
+    println!(
+        "\"get_identity\": {{\n{}\n}}\n",
+        api.get_identity(&IDENTITY_ID_BYTES).await
+    );
 
     let b64 = base64::engine::general_purpose::STANDARD;
     let contract_id: [u8; 32] = b64

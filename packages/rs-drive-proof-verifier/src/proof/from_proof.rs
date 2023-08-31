@@ -77,7 +77,7 @@ pub trait FromProof<Req> {
     where
         Self: Sized + 'a,
     {
-        Self::maybe_from_proof(request, response, provider)?.ok_or(Error::DocumentMissingInProof)
+        Self::maybe_from_proof(request, response, provider)?.ok_or(Error::NotFound)
     }
 }
 
@@ -703,5 +703,44 @@ impl<K, T> Length for Vec<(K, Option<T>)> {
 impl<K, T> Length for BTreeMap<K, Option<T>> {
     fn count_some(&self) -> usize {
         self.into_iter().filter(|(_, v)| v.is_some()).count()
+    }
+}
+
+#[macro_export]
+macro_rules! get_proof {
+    ($response:expr, $result_type:ty) => {{
+        use $result_type as Result;
+        let proof = if let Some(Result::Proof(proof)) = &($response.result) {
+            Some(proof)
+        } else {
+            None
+        };
+
+        proof
+    }};
+}
+#[cfg(test)]
+pub mod test {
+    use dapi_grpc::platform::v0::{self as platform_proto};
+
+    #[test]
+    fn get_proof() {
+        let resp = platform_proto::GetDataContractResponse {
+            ..Default::default()
+        };
+        let proof = get_proof!(resp, platform_proto::get_data_contract_response::Result);
+        assert_eq!(proof, None);
+
+        let resp = platform_proto::GetDataContractResponse {
+            result: Some(platform_proto::get_data_contract_response::Result::Proof(
+                platform_proto::Proof {
+                    round: 12,
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        };
+        let proof = get_proof!(resp, platform_proto::get_data_contract_response::Result);
+        assert_eq!(proof.unwrap().round, 12);
     }
 }

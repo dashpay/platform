@@ -29,9 +29,9 @@ pub enum Error {
     #[error("no proof in result")]
     NoProofInResult,
 
-    /// Document not in proof
-    #[error("requested document missing in proof")]
-    DocumentMissingInProof,
+    /// Requested object not found
+    #[error("requested object not found")]
+    NotFound,
 
     /// Decode protobuf error
     #[error("decode request: {error}")]
