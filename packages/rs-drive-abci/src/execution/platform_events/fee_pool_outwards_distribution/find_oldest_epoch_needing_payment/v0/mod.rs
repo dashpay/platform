@@ -86,12 +86,16 @@ impl<C> Platform<C> {
             )? {
                 // Only possible on epoch change of current epoch, when we have start_block_height batched but not committed yet
                 None => {
-                    let Some(cached_current_epoch_start_block_height) = cached_current_epoch_start_block_height else {
+                    let Some(cached_current_epoch_start_block_height) =
+                        cached_current_epoch_start_block_height
+                    else {
                         return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "start_block_height must be present in current epoch or cached_next_epoch_start_block_height must be passed",
                         )));
                     };
-                    let Some(cached_current_epoch_start_block_core_height) = cached_current_epoch_start_block_core_height else {
+                    let Some(cached_current_epoch_start_block_core_height) =
+                        cached_current_epoch_start_block_core_height
+                    else {
                         return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "start_block_core_height must be present in current epoch or cached_next_epoch_start_block_core_height must be passed",
                         )));

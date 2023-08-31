@@ -33,20 +33,14 @@ impl TryFrom<Block> for CleanedBlock {
             core_chain_lock,
         } = value;
         let Some(header) = header else {
-            return Err(AbciError::BadRequest(
-                "block is missing header".to_string(),
-            ).into());
+            return Err(AbciError::BadRequest("block is missing header".to_string()).into());
         };
         let Some(data) = data else {
-            return Err(AbciError::BadRequest(
-                "block is missing data".to_string(),
-            ).into());
+            return Err(AbciError::BadRequest("block is missing data".to_string()).into());
         };
 
         let Some(evidence) = evidence else {
-            return Err(AbciError::BadRequest(
-                "block is missing evidence".to_string(),
-            ).into());
+            return Err(AbciError::BadRequest("block is missing evidence".to_string()).into());
         };
 
         Ok(CleanedBlock {

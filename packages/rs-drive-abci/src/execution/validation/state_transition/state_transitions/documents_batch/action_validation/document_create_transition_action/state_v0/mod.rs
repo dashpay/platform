@@ -37,8 +37,8 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
 
         let document_type_name = self.base().document_type_name();
 
-        let Some(document_type) = contract
-            .document_type_optional_for_name(document_type_name) else {
+        let Some(document_type) = contract.document_type_optional_for_name(document_type_name)
+        else {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTypeError::new(document_type_name.clone(), contract.id()).into(),
             ));

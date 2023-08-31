@@ -37,10 +37,11 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
         let document_type_name = self.base().document_type_name();
 
         // Make sure that the document type is defined in the contract
-        let Some(document_type) = data_contract
-            .document_type_optional_for_name(document_type_name) else {
+        let Some(document_type) = data_contract.document_type_optional_for_name(document_type_name)
+        else {
             return Ok(SimpleConsensusValidationResult::new_with_error(
-                InvalidDocumentTypeError::new(document_type_name.clone(), data_contract.id()).into(),
+                InvalidDocumentTypeError::new(document_type_name.clone(), data_contract.id())
+                    .into(),
             ));
         };
 

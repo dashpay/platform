@@ -40,8 +40,8 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
 
         let document_type_name = self.base().document_type_name();
 
-        let Some(document_type) = contract
-            .document_type_optional_for_name(document_type_name) else {
+        let Some(document_type) = contract.document_type_optional_for_name(document_type_name)
+        else {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTypeError::new(document_type_name.clone(), contract.id()).into(),
             ));
@@ -58,11 +58,11 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
         )?;
 
         let Some(document) = original_document else {
-            return Ok(ConsensusValidationResult::new_with_error(ConsensusError::StateError(
-                StateError::DocumentNotFoundError(DocumentNotFoundError::new(
-                    self.base().id(),
-                ))
-            )));
+            return Ok(ConsensusValidationResult::new_with_error(
+                ConsensusError::StateError(StateError::DocumentNotFoundError(
+                    DocumentNotFoundError::new(self.base().id()),
+                )),
+            ));
         };
 
         Ok(check_ownership(self, &document, &owner_id))

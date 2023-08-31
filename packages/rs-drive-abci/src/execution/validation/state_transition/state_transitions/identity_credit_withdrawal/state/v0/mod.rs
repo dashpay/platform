@@ -45,7 +45,9 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
         )?;
 
         let Some(existing_identity_balance) = maybe_existing_identity_balance else {
-            return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.identity_id()).into()));
+            return Ok(ConsensusValidationResult::new_with_error(
+                IdentityNotFoundError::new(self.identity_id()).into(),
+            ));
         };
 
         if existing_identity_balance < self.amount() {
@@ -59,8 +61,16 @@ impl IdentityCreditWithdrawalStateTransitionStateValidationV0
             ));
         }
 
-        let Some(revision) = platform.drive.fetch_identity_revision(self.identity_id().to_buffer(), true, tx, platform_version)? else {
-            return Ok(ConsensusValidationResult::new_with_error(IdentityNotFoundError::new(self.identity_id()).into()));
+        let Some(revision) = platform.drive.fetch_identity_revision(
+            self.identity_id().to_buffer(),
+            true,
+            tx,
+            platform_version,
+        )?
+        else {
+            return Ok(ConsensusValidationResult::new_with_error(
+                IdentityNotFoundError::new(self.identity_id()).into(),
+            ));
         };
 
         // Check revision
