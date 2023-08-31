@@ -2,8 +2,8 @@ use dashcore_rpc::dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
-    Bip9SoftforkInfo, ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult,
-    GetChainTipsResult, MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType,
+    ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult, GetChainTipsResult,
+    MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
 };
 use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
@@ -34,7 +34,7 @@ pub trait CoreRPCLike {
     fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error>;
 
     /// Get block by hash
-    fn get_fork_info(&self, name: &str) -> Result<Option<Bip9SoftforkInfo>, Error>;
+    fn get_fork_info(&self, name: &str) -> Result<Option<SoftforkInfo>, Error>;
 
     /// Get block by hash
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error>;
@@ -192,11 +192,11 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self.inner.get_transaction(tx_id, None))
     }
 
-    fn get_fork_info(&self, name: &str) -> Result<Option<Bip9SoftforkInfo>, Error> {
+    fn get_fork_info(&self, name: &str) -> Result<Option<SoftforkInfo>, Error> {
         retry!(self
             .inner
             .get_blockchain_info()
-            .map(|blockchain_info| blockchain_info.bip9_softforks.get(name).cloned()))
+            .map(|blockchain_info| blockchain_info.softforks.get(name).cloned()))
     }
 
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error> {
