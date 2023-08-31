@@ -17,6 +17,7 @@ server=1
 rpcuser={{=it.core.rpc.user}}
 rpcpassword={{=it.core.rpc.password}}
 rpcwallet=main
+deprecatedrpc=hpmn
 
 {{~it.core.rpc.allowIps :host}}
 rpcallowip={{=host}}{{~}}
