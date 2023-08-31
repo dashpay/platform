@@ -47,7 +47,10 @@ use dpp::platform_value::platform_value;
 use serde_json::{json, Value};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
-use tenderdash_abci::proto::abci::{self as proto, ExtendVoteExtension, ResponseException};
+use tenderdash_abci::proto::abci::{
+    self as proto, ExtendVoteExtension, RequestOfferSnapshot, ResponseException,
+    ResponseOfferSnapshot,
+};
 use tenderdash_abci::proto::abci::{
     ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
@@ -581,7 +584,7 @@ where
 
         self.commit_transaction()?;
 
-        /// Create a snapshot of the current state for the height
+        // Create a snapshot of the current state for the height
         match self.snapshot_manager.borrow().deref() {
             Some(snapshot_manager) => {
                 match snapshot_manager.create_snapshot(&self.platform.drive.grove, height) {
@@ -745,6 +748,33 @@ where
         tracing::trace!(method = "query", ?request, ?response);
 
         Ok(response)
+    }
+
+    /// Called when bootstrapping the node using state sync.
+    fn offer_snapshot(
+        &self,
+        request: RequestOfferSnapshot,
+    ) -> Result<ResponseOfferSnapshot, ResponseException> {
+        let mut manager = self.snapshot_manager.borrow_mut();
+        match manager.as_mut() {
+            Some(manager) => {
+                tracing::debug!("Offering snapshot");
+                match manager.offer_snapshot(
+                    &self.platform.drive.grove,
+                    request.snapshot.expect("snapshot is required"),
+                    request.app_hash,
+                ) {
+                    Ok(result) => Ok(ResponseOfferSnapshot {
+                        result: result.into(),
+                    }),
+                    Err(e) => Err(ResponseException::from(e)),
+                }
+            }
+            None => {
+                tracing::warn!("Snapshot manager is not configured");
+                Ok(Default::default())
+            }
+        }
     }
 }
 //
