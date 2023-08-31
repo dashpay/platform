@@ -218,16 +218,6 @@ module.exports = {
           required: ['enable', 'interval', 'mediantime', 'address'],
           additionalProperties: false,
         },
-        sentinel: {
-          type: 'object',
-          properties: {
-            docker: {
-              $ref: '#/definitions/docker',
-            },
-          },
-          required: ['docker'],
-          additionalProperties: false,
-        },
         devnet: {
           type: 'object',
           properties: {
@@ -300,8 +290,8 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'sentinel', 'devnet',
-        'log', 'logIps', 'indexes', 'reindex'],
+      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet', 'log',
+        'logIps', 'indexes', 'reindex'],
       additionalProperties: false,
     },
     platform: {

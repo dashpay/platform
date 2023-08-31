@@ -613,4 +613,11 @@ module.exports = {
       });
     return configFile;
   },
+  '0.25.0': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        delete config.core.sentinel;
+      });
+    return configFile;
+  },
 };
