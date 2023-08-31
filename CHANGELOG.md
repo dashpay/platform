@@ -3,9 +3,10 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **dpp:** data contract facade and state transition bindings (#1342)
-* **dpp:** wasm binding for DataContract (#1333)
-* **dashmate:** runs invalid helper version (#1231)
+* Some of the WASM DPP methods are disabled
+* DataContract methods are renamed
+* Raw data contract structure is changed
+
 
 ### Features
 
