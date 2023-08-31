@@ -1,3 +1,58 @@
+## [0.25.0-dev.17](https://github.com/dashpay/platform/compare/v0.25.0-dev.16...v0.25.0-dev.17) (2023-08-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** data contract facade and state transition bindings (#1342)
+* **dpp:** wasm binding for DataContract (#1333)
+* **dashmate:** runs invalid helper version (#1231)
+
+### Features
+
+* add better JsonSchemaError messages ([#1341](https://github.com/dashpay/platform/issues/1341))
+* validate with document type ([#1334](https://github.com/dashpay/platform/issues/1334))
+* code versioning ([#1327](https://github.com/dashpay/platform/issues/1327))
+
+
+### Bug Fixes
+
+* dpp and drive-abci fail to build without default-features ([#1345](https://github.com/dashpay/platform/issues/1345))
+* **dpp:** data contract facade and state transition bindings ([#1342](https://github.com/dashpay/platform/issues/1342))
+* **dpp:** fixing identity transition bindings ([#1315](https://github.com/dashpay/platform/issues/1315))
+* **dpp:** identity constructor ([#1336](https://github.com/dashpay/platform/issues/1336))
+* **dpp:** identity facade ([#1329](https://github.com/dashpay/platform/issues/1329))
+* **dpp:** wasm binding for DataContract ([#1333](https://github.com/dashpay/platform/issues/1333))
+* network start for querying ([#1335](https://github.com/dashpay/platform/issues/1335))
+* various fixes and todos for [#1334](https://github.com/dashpay/platform/issues/1334) ([#1337](https://github.com/dashpay/platform/issues/1337))
+* wasm DPP binding and other ([#1352](https://github.com/dashpay/platform/issues/1352))
+
+
+### Continuous Integration
+
+* fix credentials could not be loaded error ([#1320](https://github.com/dashpay/platform/issues/1320))
+
+
+### Code Refactoring
+
+* rename serialize ([#1338](https://github.com/dashpay/platform/issues/1338))
+
+
+### Tests
+
+* **dpp:** temporary skip wasm-dpp tests ([#1328](https://github.com/dashpay/platform/issues/1328))
+* enable data contract tests ([#1346](https://github.com/dashpay/platform/issues/1346))
+* restore identity create ([#1339](https://github.com/dashpay/platform/issues/1339))
+
+
+### Miscellaneous Chores
+
+* npm audit fix ([#1321](https://github.com/dashpay/platform/issues/1321))
+* **sdk:** temporary disable data contracts and documents ([#1331](https://github.com/dashpay/platform/issues/1331))
+* update workflow_dispatch
+* upgrade to Node.JS v18 LTS ([#1280](https://github.com/dashpay/platform/issues/1280))
+* support Core v0.20.0-alpha.4 ([#1357](https://github.com/dashpay/platform/pull/1357))
+
+
 ### [0.24.23](https://github.com/dashpay/platform/compare/v0.24.22...v0.24.23) (2023-08-18)
 
 
