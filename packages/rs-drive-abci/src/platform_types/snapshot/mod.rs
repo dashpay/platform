@@ -83,7 +83,7 @@ impl Manager {
                 if offered_snapshot.snapshot.height == snapshot.height {
                     return Ok(response_offer_snapshot::Result::Reject);
                 }
-                if offered_snapshot.snapshot.version != snapshot.version {
+                if snapshot.version != SNAPSHOT_VERSION {
                     return Ok(response_offer_snapshot::Result::Reject);
                 }
                 grove.wipe().map_err(|e| GroveDB(e))?;
