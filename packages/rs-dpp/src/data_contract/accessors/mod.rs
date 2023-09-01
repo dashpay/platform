@@ -84,18 +84,6 @@ impl DataContractV0Getters for DataContract {
             DataContract::V0(v0) => v0.config_mut(),
         }
     }
-
-    fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
-        match self {
-            DataContract::V0(v0) => v0.encryption_key_storage_requirements(),
-        }
-    }
-
-    fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
-        match self {
-            DataContract::V0(v0) => v0.decryption_key_storage_requirements(),
-        }
-    }
 }
 
 impl DataContractV0Setters for DataContract {

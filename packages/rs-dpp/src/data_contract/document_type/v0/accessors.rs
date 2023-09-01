@@ -63,12 +63,12 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
         self.data_contract_id
     }
 
-    fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
-        self.encryption_key_storage_requirements
+    fn requires_identity_encryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
+        self.requires_identity_encryption_bounded_key
     }
 
-    fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
-        self.decryption_key_storage_requirements
+    fn requires_identity_decryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
+        self.requires_identity_decryption_bounded_key
     }
 
     fn security_level_requirement(&self) -> SecurityLevel {

@@ -392,6 +392,8 @@ pub struct DriveIdentityCostEstimationMethodVersions {
     pub for_authentication_keys_security_level_in_key_reference_tree: FeatureVersion,
     pub for_balances: FeatureVersion,
     pub for_contract_info: FeatureVersion,
+    pub for_contract_info_group: FeatureVersion,
+    pub for_contract_info_group_key_purpose: FeatureVersion,
     pub for_keys_for_identity_id: FeatureVersion,
     pub for_negative_credit: FeatureVersion,
     pub for_purpose_in_key_reference_tree: FeatureVersion,

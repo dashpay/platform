@@ -91,15 +91,15 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 
-    fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
+    fn requires_identity_encryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
         match self {
-            DocumentType::V0(v0) => v0.encryption_key_storage_requirements(),
+            DocumentType::V0(v0) => v0.requires_identity_encryption_bounded_key(),
         }
     }
 
-    fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
+    fn requires_identity_decryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
         match self {
-            DocumentType::V0(v0) => v0.decryption_key_storage_requirements(),
+            DocumentType::V0(v0) => v0.requires_identity_decryption_bounded_key(),
         }
     }
 
@@ -189,15 +189,15 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
-    fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
+    fn requires_identity_encryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
         match self {
-            DocumentTypeRef::V0(v0) => v0.encryption_key_storage_requirements(),
+            DocumentTypeRef::V0(v0) => v0.requires_identity_encryption_bounded_key(),
         }
     }
 
-    fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
+    fn requires_identity_decryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
         match self {
-            DocumentTypeRef::V0(v0) => v0.decryption_key_storage_requirements(),
+            DocumentTypeRef::V0(v0) => v0.requires_identity_decryption_bounded_key(),
         }
     }
 
@@ -287,15 +287,15 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
         }
     }
 
-    fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
+    fn requires_identity_encryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
         match self {
-            DocumentTypeMutRef::V0(v0) => v0.encryption_key_storage_requirements(),
+            DocumentTypeMutRef::V0(v0) => v0.requires_identity_encryption_bounded_key(),
         }
     }
 
-    fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
+    fn requires_identity_decryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
         match self {
-            DocumentTypeMutRef::V0(v0) => v0.decryption_key_storage_requirements(),
+            DocumentTypeMutRef::V0(v0) => v0.requires_identity_decryption_bounded_key(),
         }
     }
 

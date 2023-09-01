@@ -42,12 +42,6 @@ pub struct DataContractV0 {
 
     /// Shared subschemas to reuse across documents (see $defs)
     pub(crate) schema_defs: Option<BTreeMap<DefinitionName, Value>>,
-
-    /// Encryption key storage requirements
-    pub(crate) encryption_key_storage_requirements: Option<StorageKeyRequirements>,
-
-    /// Decryption key storage requirements
-    pub(crate) decryption_key_storage_requirements: Option<StorageKeyRequirements>,
 }
 
 //

@@ -24,9 +24,10 @@ impl Drive {
         if ops.is_empty() {
             return Err(Error::Drive(DriveError::BatchIsEmpty()));
         }
-        // if ops.operations.len() < 500 { //no initialization
-        //     dbg!("batch {:#?}", &ops);
-        // }
+        if ops.operations.len() < 500 {
+            //no initialization
+            dbg!("batch {:#?}", &ops);
+        }
 
         if self.config.batching_consistency_verification {
             let consistency_results = GroveDbOp::verify_consistency_of_operations(&ops.operations);

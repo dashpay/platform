@@ -65,14 +65,6 @@ impl DataContractV0Getters for DataContractV0 {
     fn config_mut(&mut self) -> &mut DataContractConfig {
         &mut self.config
     }
-
-    fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
-        self.encryption_key_storage_requirements
-    }
-
-    fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements> {
-        self.decryption_key_storage_requirements
-    }
 }
 
 impl DataContractV0Setters for DataContractV0 {

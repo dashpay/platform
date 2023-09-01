@@ -7,6 +7,7 @@ use dpp::consensus::basic::identity::DataContractBoundsNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use dpp::identity::contract_bounds::ContractBounds;
@@ -62,17 +63,15 @@ fn validate_identity_public_key_contract_bounds_v0(
                     platform_version,
                 )?;
                 match contract {
-                    None => {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            ConsensusError::BasicError(BasicError::DataContractNotPresentError(
-                                DataContractNotPresentError::new(*contract_id),
-                            )),
-                        ));
-                    }
+                    None => Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::BasicError(BasicError::DataContractNotPresentError(
+                            DataContractNotPresentError::new(*contract_id),
+                        )),
+                    )),
                     Some(contract) => {
                         match purpose {
                             ENCRYPTION => {
-                                let Some(requirements) = contract.contract.encryption_key_storage_requirements() else {
+                                let Some(requirements) = contract.contract.config().requires_identity_encryption_bounded_key() else {
                                         return Ok(SimpleConsensusValidationResult::new_with_error(
                                             ConsensusError::BasicError(
                                                 BasicError::DataContractBoundsNotPresentError(
@@ -93,7 +92,7 @@ fn validate_identity_public_key_contract_bounds_v0(
                                 }
                             }
                             DECRYPTION => {
-                                let Some(requirements) = contract.contract.decryption_key_storage_requirements() else {
+                                let Some(requirements) = contract.contract.config().requires_identity_decryption_bounded_key() else {
                                         return Ok(SimpleConsensusValidationResult::new_with_error(
                                             ConsensusError::BasicError(
                                                 BasicError::DataContractBoundsNotPresentError(
@@ -162,7 +161,7 @@ fn validate_identity_public_key_contract_bounds_v0(
                             Some(document_type) => {
                                 match purpose {
                                     ENCRYPTION => {
-                                        let Some(requirements) = document_type.encryption_key_storage_requirements() else {
+                                        let Some(requirements) = document_type.requires_identity_encryption_bounded_key() else {
                                                 return Ok(SimpleConsensusValidationResult::new_with_error(
                                                     ConsensusError::BasicError(
                                                         BasicError::DataContractBoundsNotPresentError(
@@ -183,7 +182,7 @@ fn validate_identity_public_key_contract_bounds_v0(
                                         }
                                     }
                                     DECRYPTION => {
-                                        let Some(requirements) = document_type.encryption_key_storage_requirements() else {
+                                        let Some(requirements) = document_type.requires_identity_encryption_bounded_key() else {
                                                 return Ok(SimpleConsensusValidationResult::new_with_error(
                                                     ConsensusError::BasicError(
                                                         BasicError::DataContractBoundsNotPresentError(

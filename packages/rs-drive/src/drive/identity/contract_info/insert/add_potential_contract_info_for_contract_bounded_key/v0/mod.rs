@@ -3,21 +3,28 @@ use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyT
 use crate::drive::identity::contract_info::insert::DataContractApplyInfo;
 use crate::drive::identity::IdentityRootStructure::IdentityContractInfo;
 use crate::drive::identity::{
-    identity_contract_info_group_path_vec, identity_contract_info_root_path_vec,
-    identity_key_location_within_identity_vec, identity_path_vec,
+    identity_contract_info_group_path_key_purpose_vec, identity_contract_info_group_path_vec,
+    identity_contract_info_root_path_vec, identity_key_location_within_identity_vec,
+    identity_path_vec,
 };
 use crate::drive::object_size_info::{PathKeyElementInfo, PathKeyInfo};
 use crate::drive::Drive;
+use crate::error::contract::DataContractError;
+use crate::error::identity::IdentityError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::IdentityPublicKey;
+use dpp::identity::{IdentityPublicKey, Purpose};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
+use grovedb::reference_path::ReferencePathType::{SiblingReference, UpstreamRootHeightReference};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb_costs::OperationCost;
 use integer_encoding::VarInt;
 use std::collections::HashMap;
 
@@ -38,6 +45,7 @@ impl Drive {
             // We need to get the contract
             let contract_apply_info = DataContractApplyInfo::new_from_single_key(
                 identity_key.id(),
+                identity_key.purpose(),
                 contract_bounds,
                 self,
                 epoch,
@@ -47,6 +55,7 @@ impl Drive {
             )?;
             self.add_contract_info_operations_v0(
                 identity_id,
+                epoch,
                 vec![contract_apply_info],
                 estimated_costs_only_with_layer_info,
                 transaction,
@@ -61,6 +70,7 @@ impl Drive {
     fn add_contract_info_operations_v0(
         &self,
         identity_id: [u8; 32],
+        epoch: &Epoch,
         contract_infos: Vec<DataContractApplyInfo>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -102,6 +112,36 @@ impl Drive {
         for contract_info in contract_infos.into_iter() {
             let root_id = contract_info.root_id();
 
+            let contract = if estimated_costs_only_with_layer_info.is_none() {
+                // we should start by fetching the contract
+                let (fee, contract) = self.get_contract_with_fetch_info_and_fee(
+                    root_id,
+                    Some(epoch),
+                    true,
+                    transaction,
+                    platform_version,
+                )?;
+
+                let fee = fee.ok_or(Error::Identity(
+                    IdentityError::IdentityKeyDataContractNotFound,
+                ))?;
+                let contract = contract.ok_or(Error::Identity(
+                    IdentityError::IdentityKeyDataContractNotFound,
+                ))?;
+                drive_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(fee));
+                Some(contract)
+            } else {
+                drive_operations.push(LowLevelDriveOperation::CalculatedCostOperation(
+                    OperationCost {
+                        seek_count: 1,
+                        storage_cost: Default::default(),
+                        storage_loaded_bytes: 100,
+                        hash_node_calls: 0,
+                    },
+                ));
+                None
+            };
+
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
                 Self::add_estimation_costs_for_contract_info_group(
@@ -125,13 +165,38 @@ impl Drive {
             )?;
             let (document_keys, contract_or_family_keys) = contract_info.keys();
 
-            for key_id in contract_or_family_keys {
+            for (key_id, purpose) in contract_or_family_keys {
+                if let Some(estimated_costs_only_with_layer_info) =
+                    estimated_costs_only_with_layer_info
+                {
+                    Self::add_estimation_costs_for_contract_info_group_key_purpose(
+                        &identity_id,
+                        &root_id,
+                        purpose,
+                        estimated_costs_only_with_layer_info,
+                        &platform_version.drive,
+                    )?;
+                }
+
+                // We need to insert the key type
+                self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
+                    PathKeyInfo::<0>::PathKey((
+                        identity_contract_info_group_path_vec(&identity_id, &root_id),
+                        vec![purpose as u8],
+                    )),
+                    None,
+                    apply_type,
+                    transaction,
+                    drive_operations,
+                    &platform_version.drive,
+                )?;
+
                 // we need to add a reference to the key
                 let key_id_bytes = key_id.encode_var_vec();
                 let key_reference =
                     identity_key_location_within_identity_vec(key_id_bytes.as_slice());
 
-                let reference_type_path = UpstreamRootHeightReference(1, key_reference);
+                let reference_type_path = UpstreamRootHeightReference(2, key_reference);
 
                 let ref_apply_type = if estimated_costs_only_with_layer_info.is_none() {
                     BatchInsertApplyType::StatefulBatchInsert
@@ -142,17 +207,92 @@ impl Drive {
                     }
                 };
 
-                self.batch_insert_if_not_exists(
-                    PathKeyElementInfo::<0>::PathKeyRefElement((
-                        identity_contract_info_group_path_vec(&identity_id, &root_id),
-                        key_id_bytes.as_slice(),
-                        Element::Reference(reference_type_path, Some(1), None),
-                    )),
-                    ref_apply_type,
-                    transaction,
-                    drive_operations,
-                    &platform_version.drive,
-                )?;
+                // at this point we want to know if the contract is single key or multiple key
+                let storage_key_requirements = contract
+                    .as_ref()
+                    .map(|contract| match purpose {
+                        Purpose::ENCRYPTION => {
+                            let encryption_storage_key_requirements = contract
+                                .contract
+                                .config()
+                                .requires_identity_encryption_bounded_key()
+                                .ok_or(Error::DataContract(
+                                    DataContractError::KeyBoundsExpectedButNotPresent(
+                                        "expected encryption key bounds",
+                                    ),
+                                ))?;
+                            Ok(encryption_storage_key_requirements)
+                        }
+                        Purpose::DECRYPTION => {
+                            let decryption_storage_key_requirements = contract
+                                .contract
+                                .config()
+                                .requires_identity_decryption_bounded_key()
+                                .ok_or(Error::DataContract(
+                                    DataContractError::KeyBoundsExpectedButNotPresent(
+                                        "expected encryption key bounds",
+                                    ),
+                                ))?;
+                            Ok(decryption_storage_key_requirements)
+                        }
+                        _ => Err(Error::Identity(IdentityError::IdentityKeyBoundsError(
+                            "purpose not available for key bounds",
+                        ))),
+                    })
+                    .transpose()?
+                    .unwrap_or(StorageKeyRequirements::MultipleReferenceToLatest);
+
+                // if we are multiple we insert the key under the key bytes, otherwise it is under 0
+
+                if storage_key_requirements == StorageKeyRequirements::Unique {
+                    self.batch_insert_if_not_exists(
+                        PathKeyElementInfo::<0>::PathKeyElement((
+                            identity_contract_info_group_path_key_purpose_vec(
+                                &identity_id,
+                                &root_id,
+                                purpose,
+                            ),
+                            vec![],
+                            Element::Reference(reference_type_path, Some(1), None),
+                        )),
+                        ref_apply_type,
+                        transaction,
+                        drive_operations,
+                        &platform_version.drive,
+                    )?;
+                } else {
+                    self.batch_insert_if_not_exists(
+                        PathKeyElementInfo::<0>::PathKeyRefElement((
+                            identity_contract_info_group_path_key_purpose_vec(
+                                &identity_id,
+                                &root_id,
+                                purpose,
+                            ),
+                            key_id_bytes.as_slice(),
+                            Element::Reference(reference_type_path, Some(1), None),
+                        )),
+                        ref_apply_type,
+                        transaction,
+                        drive_operations,
+                        &platform_version.drive,
+                    )?;
+                };
+
+                if storage_key_requirements == StorageKeyRequirements::MultipleReferenceToLatest {
+                    // we also insert a sibling reference so we can query the current key
+
+                    let sibling_ref_type_path = SiblingReference(key_id_bytes);
+
+                    self.batch_insert(
+                        PathKeyElementInfo::<0>::PathKeyElement((
+                            identity_contract_info_group_path_vec(&identity_id, &root_id),
+                            vec![],
+                            Element::Reference(sibling_ref_type_path, Some(2), None),
+                        )),
+                        drive_operations,
+                        &platform_version.drive,
+                    )?;
+                }
             }
 
             for (document_type_name, document_key_ids) in document_keys {
@@ -182,13 +322,41 @@ impl Drive {
                     drive_operations,
                     &platform_version.drive,
                 )?;
-                for key_id in document_key_ids {
+                for (key_id, purpose) in document_key_ids {
+                    if let Some(estimated_costs_only_with_layer_info) =
+                        estimated_costs_only_with_layer_info
+                    {
+                        Self::add_estimation_costs_for_contract_info_group_key_purpose(
+                            &identity_id,
+                            &contract_id_bytes_with_document_type_name,
+                            purpose,
+                            estimated_costs_only_with_layer_info,
+                            &platform_version.drive,
+                        )?;
+                    }
+
+                    // We need to insert the key type
+                    self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
+                        PathKeyInfo::<0>::PathKey((
+                            identity_contract_info_group_path_vec(
+                                &identity_id,
+                                &contract_id_bytes_with_document_type_name,
+                            ),
+                            vec![purpose as u8],
+                        )),
+                        None,
+                        apply_type,
+                        transaction,
+                        drive_operations,
+                        &platform_version.drive,
+                    )?;
+
                     // we need to add a reference to the key
                     let key_id_bytes = key_id.encode_var_vec();
                     let key_reference =
                         identity_key_location_within_identity_vec(key_id_bytes.as_slice());
 
-                    let reference = UpstreamRootHeightReference(1, key_reference);
+                    let reference = UpstreamRootHeightReference(2, key_reference);
 
                     let ref_apply_type = if estimated_costs_only_with_layer_info.is_none() {
                         BatchInsertApplyType::StatefulBatchInsert
@@ -199,20 +367,92 @@ impl Drive {
                         }
                     };
 
-                    self.batch_insert_if_not_exists(
-                        PathKeyElementInfo::<0>::PathKeyRefElement((
-                            identity_contract_info_group_path_vec(
-                                &identity_id,
-                                &contract_id_bytes_with_document_type_name,
-                            ),
-                            key_id_bytes.as_slice(),
-                            Element::Reference(reference, Some(1), None),
-                        )),
-                        ref_apply_type,
-                        transaction,
-                        drive_operations,
-                        &platform_version.drive,
-                    )?;
+                    // at this point we want to know if the contract is single key or multiple key
+                    let storage_key_requirements = contract
+                        .as_ref()
+                        .map(|contract| match purpose {
+                            Purpose::ENCRYPTION => {
+                                let document_type = contract
+                                    .contract
+                                    .document_type_for_name(document_type_name.as_str())?;
+                                let encryption_storage_key_requirements = document_type
+                                    .requires_identity_encryption_bounded_key()
+                                    .ok_or(Error::DataContract(
+                                        DataContractError::KeyBoundsExpectedButNotPresent(
+                                            "expected encryption key bounds in document type",
+                                        ),
+                                    ))?;
+                                Ok(encryption_storage_key_requirements)
+                            }
+                            Purpose::DECRYPTION => {
+                                let document_type = contract
+                                    .contract
+                                    .document_type_for_name(document_type_name.as_str())?;
+                                let decryption_storage_key_requirements = document_type
+                                    .requires_identity_decryption_bounded_key()
+                                    .ok_or(Error::DataContract(
+                                        DataContractError::KeyBoundsExpectedButNotPresent(
+                                            "expected encryption key bounds in document type",
+                                        ),
+                                    ))?;
+                                Ok(decryption_storage_key_requirements)
+                            }
+                            _ => Err(Error::Identity(IdentityError::IdentityKeyBoundsError(
+                                "purpose not available for key bounds",
+                            ))),
+                        })
+                        .transpose()?
+                        .unwrap_or(StorageKeyRequirements::MultipleReferenceToLatest);
+
+                    if storage_key_requirements == StorageKeyRequirements::Unique {
+                        self.batch_insert(
+                            PathKeyElementInfo::<0>::PathKeyElement((
+                                identity_contract_info_group_path_vec(
+                                    &identity_id,
+                                    &contract_id_bytes_with_document_type_name,
+                                ),
+                                vec![],
+                                Element::Reference(reference, Some(1), None),
+                            )),
+                            drive_operations,
+                            &platform_version.drive,
+                        )?;
+                    } else {
+                        self.batch_insert_if_not_exists(
+                            PathKeyElementInfo::<0>::PathKeyElement((
+                                identity_contract_info_group_path_vec(
+                                    &identity_id,
+                                    &contract_id_bytes_with_document_type_name,
+                                ),
+                                key_id_bytes.clone(),
+                                Element::Reference(reference, Some(1), None),
+                            )),
+                            ref_apply_type,
+                            transaction,
+                            drive_operations,
+                            &platform_version.drive,
+                        )?;
+                    };
+
+                    if storage_key_requirements == StorageKeyRequirements::MultipleReferenceToLatest
+                    {
+                        // we also insert a sibling reference so we can query the current key
+
+                        let sibling_ref_type_path = SiblingReference(key_id_bytes);
+
+                        self.batch_insert(
+                            PathKeyElementInfo::<0>::PathKeyElement((
+                                identity_contract_info_group_path_vec(
+                                    &identity_id,
+                                    &contract_id_bytes_with_document_type_name,
+                                ),
+                                vec![],
+                                Element::Reference(sibling_ref_type_path, Some(2), None),
+                            )),
+                            drive_operations,
+                            &platform_version.drive,
+                        )?;
+                    }
                 }
             }
         }

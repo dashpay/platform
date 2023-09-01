@@ -54,10 +54,10 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) documents_mutable: bool,
     pub(in crate::data_contract) data_contract_id: Identifier,
     /// Encryption key storage requirements
-    pub(in crate::data_contract) encryption_key_storage_requirements:
+    pub(in crate::data_contract) requires_identity_encryption_bounded_key:
         Option<StorageKeyRequirements>,
     /// Decryption key storage requirements
-    pub(in crate::data_contract) decryption_key_storage_requirements:
+    pub(in crate::data_contract) requires_identity_decryption_bounded_key:
         Option<StorageKeyRequirements>,
     pub(in crate::data_contract) security_level_requirement: SecurityLevel,
     #[cfg(feature = "validation")]

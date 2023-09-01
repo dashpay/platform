@@ -71,7 +71,7 @@ impl DataContractFactoryWasm {
             .with_js_error()?;
         //todo: contract config
         self.0
-            .create(identifier, documents_object, contract_config, None)
+            .create_with_value_config(identifier, documents_object, contract_config, None)
             .map(Into::into)
             .with_js_error()
     }

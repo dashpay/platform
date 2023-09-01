@@ -44,6 +44,7 @@ use dpp::identity::{KeyID, Purpose, SecurityLevel};
 /// Everything related to withdrawals
 pub mod withdrawals;
 
+use dpp::identity::KeyType;
 #[cfg(feature = "full")]
 use dpp::identity::Purpose::AUTHENTICATION;
 #[cfg(feature = "full")]
@@ -117,6 +118,21 @@ pub fn identity_contract_info_group_path_vec(
         identity_id.to_vec(),
         vec![IdentityRootStructure::IdentityContractInfo as u8],
         group_id.to_vec(),
+    ]
+}
+
+/// The group is either a contract id or on a family of contracts owned by the same identity
+pub fn identity_contract_info_group_path_key_purpose_vec(
+    identity_id: &[u8; 32],
+    group_id: &[u8],
+    key_purpose: Purpose,
+) -> Vec<Vec<u8>> {
+    vec![
+        vec![RootTree::Identities as u8],
+        identity_id.to_vec(),
+        vec![IdentityRootStructure::IdentityContractInfo as u8],
+        group_id.to_vec(),
+        vec![key_purpose as u8],
     ]
 }
 

@@ -52,4 +52,7 @@ pub enum IdentityError {
     /// Identity key bounds error
     #[error("identity key bounds error: {0}")]
     IdentityKeyBoundsError(&'static str),
+
+    #[error("contact with specified identifier is not found for identity key data contract")]
+    IdentityKeyDataContractNotFound,
 }

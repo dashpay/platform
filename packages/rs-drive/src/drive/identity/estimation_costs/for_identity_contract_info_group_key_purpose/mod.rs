@@ -3,6 +3,7 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::identity::Purpose;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerInformation;
@@ -24,9 +25,10 @@ impl Drive {
     ///
     /// # Errors
     /// This function will return an error if the method version doesn't match any known versions.
-    pub(crate) fn add_estimation_costs_for_contract_info_group(
+    pub(crate) fn add_estimation_costs_for_contract_info_group_key_purpose(
         identity_id: &[u8; 32],
         group_id: &[u8],
+        key_purpose: Purpose,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
@@ -34,12 +36,13 @@ impl Drive {
             .methods
             .identity
             .cost_estimation
-            .for_contract_info_group
+            .for_contract_info_group_key_purpose
         {
             0 => {
-                Self::add_estimation_costs_for_contract_info_group_v0(
+                Self::add_estimation_costs_for_contract_info_group_key_purpose_v0(
                     identity_id,
                     group_id,
+                    key_purpose,
                     estimated_costs_only_with_layer_info,
                 );
                 Ok(())

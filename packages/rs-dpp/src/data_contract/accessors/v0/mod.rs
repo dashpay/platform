@@ -40,12 +40,6 @@ pub trait DataContractV0Getters {
 
     /// Returns the internal configuration for the contract as mutable.
     fn config_mut(&mut self) -> &mut DataContractConfig;
-
-    /// Returns the encryption key storage requirements
-    fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements>;
-
-    /// Returns the decryption key storage requirements
-    fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements>;
 }
 
 pub trait DataContractV0Setters {

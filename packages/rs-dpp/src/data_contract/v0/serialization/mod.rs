@@ -80,8 +80,6 @@ impl DataContractV0 {
             owner_id,
             document_schemas,
             schema_defs,
-            encryption_key_storage_requirements,
-            decryption_key_storage_requirements,
         } = data_contract_data;
 
         let document_types = DocumentType::create_document_types_from_document_schemas(
@@ -102,8 +100,6 @@ impl DataContractV0 {
             metadata: None,
             config,
             schema_defs,
-            encryption_key_storage_requirements,
-            decryption_key_storage_requirements,
         };
 
         Ok(data_contract)

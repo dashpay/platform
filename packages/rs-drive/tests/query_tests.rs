@@ -4867,7 +4867,7 @@ fn test_query_a_b_c_d_e_contract() {
         .expect("should create factory");
 
     let contract = factory
-        .create(owner_id, documents, None, None)
+        .create_with_value_config(owner_id, documents, None, None)
         .expect("data in fixture should be correct")
         .data_contract_owned();
 

@@ -37,12 +37,6 @@ pub struct DataContractInSerializationFormatV0 {
 
     /// Document JSON Schemas per type
     pub document_schemas: BTreeMap<DocumentName, Value>,
-
-    /// Encryption key storage requirements
-    pub encryption_key_storage_requirements: Option<StorageKeyRequirements>,
-
-    /// Decryption key storage requirements
-    pub decryption_key_storage_requirements: Option<StorageKeyRequirements>,
 }
 
 impl From<DataContract> for DataContractInSerializationFormatV0 {
@@ -56,8 +50,6 @@ impl From<DataContract> for DataContractInSerializationFormatV0 {
                     owner_id,
                     schema_defs,
                     document_types,
-                    encryption_key_storage_requirements,
-                    decryption_key_storage_requirements,
                     ..
                 } = v0;
 
@@ -70,9 +62,7 @@ impl From<DataContract> for DataContractInSerializationFormatV0 {
                         .into_iter()
                         .map(|(key, document_type)| (key, document_type.schema_owned()))
                         .collect(),
-                    encryption_key_storage_requirements,
                     schema_defs,
-                    decryption_key_storage_requirements,
                 }
             }
         }

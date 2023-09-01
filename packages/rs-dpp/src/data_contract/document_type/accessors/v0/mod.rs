@@ -47,10 +47,10 @@ pub trait DocumentTypeV0Getters {
     fn data_contract_id(&self) -> Identifier;
 
     /// Returns the encryption key storage requirements
-    fn encryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements>;
+    fn requires_identity_encryption_bounded_key(&self) -> Option<StorageKeyRequirements>;
 
     /// Returns the decryption key storage requirements
-    fn decryption_key_storage_requirements(&self) -> Option<StorageKeyRequirements>;
+    fn requires_identity_decryption_bounded_key(&self) -> Option<StorageKeyRequirements>;
 
     /// The security level requirements
     fn security_level_requirement(&self) -> SecurityLevel;

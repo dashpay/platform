@@ -346,8 +346,8 @@ impl DocumentTypeV0 {
             documents_keep_history,
             documents_mutable,
             data_contract_id,
-            encryption_key_storage_requirements: None, //todo
-            decryption_key_storage_requirements: None,
+            requires_identity_encryption_bounded_key: None, //todo
+            requires_identity_decryption_bounded_key: None,
             security_level_requirement,
             #[cfg(feature = "validation")]
             json_schema_validator,

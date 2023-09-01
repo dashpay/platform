@@ -47,9 +47,11 @@ use dpp::prelude::IdentityPublicKey;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
 
-use crate::drive::identity::identity_contract_info_group_path_vec;
 use crate::drive::identity::key::fetch::KeyRequestType::{
     ContractBoundKey, ContractDocumentTypeBoundKey,
+};
+use crate::drive::identity::{
+    identity_contract_info_group_path_key_purpose_vec, identity_contract_info_group_path_vec,
 };
 #[cfg(feature = "full")]
 use grovedb::query_result_type::{
@@ -92,9 +94,9 @@ pub enum KeyRequestType {
     /// Search for keys on an identity
     SearchKey(BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>),
     /// Search for contract bound keys
-    ContractBoundKey([u8; 32], KeyKindRequestType),
+    ContractBoundKey([u8; 32], Purpose, KeyKindRequestType),
     /// Search for contract bound keys
-    ContractDocumentTypeBoundKey([u8; 32], String, KeyKindRequestType),
+    ContractDocumentTypeBoundKey([u8; 32], String, Purpose, KeyKindRequestType),
 }
 
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -667,7 +669,7 @@ impl IdentityKeysRequest {
             SpecificKeys(keys) => Ok(keys.len() as u64
                 * epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost)),
             SearchKey(_search) => todo!(),
-            ContractBoundKey(_, key_kind) | ContractDocumentTypeBoundKey(_, _, key_kind) => {
+            ContractBoundKey(_, _, key_kind) | ContractDocumentTypeBoundKey(_, _, _, key_kind) => {
                 match key_kind {
                     CurrentKeyOfKindRequest => {
                         Ok(epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost))
@@ -694,6 +696,24 @@ impl IdentityKeysRequest {
         IdentityKeysRequest {
             identity_id,
             request_type: SearchKey(purpose_btree_map),
+            limit: None,
+            offset: None,
+        }
+    }
+
+    #[cfg(feature = "full")]
+    /// Make a request for all current keys for the identity
+    pub fn new_contract_encryption_keys_query(
+        identity_id: [u8; 32],
+        contract_id: [u8; 32],
+    ) -> Self {
+        IdentityKeysRequest {
+            identity_id,
+            request_type: ContractBoundKey(
+                contract_id,
+                Purpose::ENCRYPTION,
+                CurrentKeyOfKindRequest,
+            ),
             limit: None,
             offset: None,
         }
@@ -765,7 +785,7 @@ impl IdentityKeysRequest {
         let IdentityKeysRequest {
             identity_id,
             request_type: key_request,
-            limit,
+            mut limit,
             offset,
         } = self;
 
@@ -803,11 +823,17 @@ impl IdentityKeysRequest {
                     },
                 }
             }
-            ContractBoundKey(contract_id, key_request_type) => {
-                let query_keys_path =
-                    identity_contract_info_group_path_vec(&identity_id, &contract_id);
+            ContractBoundKey(contract_id, purpose, key_request_type) => {
+                let query_keys_path = identity_contract_info_group_path_key_purpose_vec(
+                    &identity_id,
+                    &contract_id,
+                    purpose,
+                );
                 let query = match key_request_type {
-                    CurrentKeyOfKindRequest => Query::new_single_key(vec![0]),
+                    CurrentKeyOfKindRequest => {
+                        limit = Some(1);
+                        Query::new_single_key(vec![])
+                    }
                     AllKeysOfKindRequest => {
                         Query::new_single_query_item(QueryItem::RangeFull(RangeFull))
                     }
@@ -821,11 +847,24 @@ impl IdentityKeysRequest {
                     },
                 }
             }
-            ContractDocumentTypeBoundKey(contract_id, document_type, key_request_type) => {
-                let query_keys_path =
-                    identity_contract_info_group_path_vec(&identity_id, &contract_id);
+            ContractDocumentTypeBoundKey(
+                contract_id,
+                document_type_name,
+                purpose,
+                key_request_type,
+            ) => {
+                let mut group_id = contract_id.to_vec();
+                group_id.extend(document_type_name.as_bytes());
+                let query_keys_path = identity_contract_info_group_path_key_purpose_vec(
+                    &identity_id,
+                    &group_id,
+                    purpose,
+                );
                 let query = match key_request_type {
-                    CurrentKeyOfKindRequest => Query::new_single_key(vec![0]),
+                    CurrentKeyOfKindRequest => {
+                        limit = Some(1);
+                        Query::new_single_key(vec![])
+                    }
                     AllKeysOfKindRequest => {
                         Query::new_single_query_item(QueryItem::RangeFull(RangeFull))
                     }
