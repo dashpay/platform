@@ -1,43 +1,61 @@
 //! Dash Platform create, read, update, delete (CRUD) operations.
 
-use crate::{dapi::DAPI, error::Error};
+use drive::query::DriveQuery;
+
+use crate::{dapi::DashAPI, error::Error, platform::document_query::DocumentQuery};
 
 #[async_trait::async_trait]
-pub trait Readable<A: DAPI, I, Q: ObjectQuery<I>>
+pub trait Readable<API: DashAPI>
 where
     Self: Sized,
 {
-    async fn read(api: &A, query: &Q) -> Result<Self, Error>;
+    type Identifier;
+
+    async fn read<Q: ObjectQuery<Self::Identifier>>(api: &API, query: &Q) -> Result<Self, Error>;
 }
 
 // TODO this will change, not tested at all
-pub trait Writable<A: DAPI, W>
+#[async_trait::async_trait]
+pub trait Writable<A: DashAPI, W>
 where
     Self: Sized,
 {
-    fn create(self, api: &A, wallet: &W) -> Result<Self, Error>;
-    fn update(self, api: &A, wallet: &W) -> Result<Self, Error>;
-    fn delete(self, api: &A, wallet: &W) -> Result<(), Error>;
+    async fn create(self, api: &A, wallet: &W) -> Result<Self, Error>;
+    async fn update(self, api: &A, wallet: &W) -> Result<Self, Error>;
+    async fn delete(self, api: &A, wallet: &W) -> Result<(), Error>;
 }
 
 // TODO this will change, not tested at all
-pub trait Listable<A: DAPI, I, Q: ObjectQuery<I>>
+#[async_trait::async_trait]
+pub trait Listable<API: DashAPI>
 where
     Self: Sized,
 {
-    fn list(api: &A, query: &Q) -> Result<Vec<Self>, Error>;
+    type Request;
+
+    async fn list<Q: ObjectQuery<Self::Request>>(api: &API, query: &Q) -> Result<Vec<Self>, Error>;
 }
 
-pub trait ObjectQuery<O>: Sized + Send + Sync
-where
-    O: Sized,
-    Self: Sized,
-{
-    fn query(&self) -> Result<O, Error>;
+// pub trait ObjectQuery<O>: Sized + Send + Sync
+// where
+//     O: Sized,
+//     Self: Sized,
+// {
+// }
+
+pub trait ObjectQuery<I>: Sized + Send + Sync + Clone {
+    fn query(&self) -> Result<I, Error>;
 }
 
 impl ObjectQuery<[u8; 32]> for dpp::prelude::Identifier {
     fn query(&self) -> Result<[u8; 32], Error> {
         Ok(self.as_bytes().clone())
+    }
+}
+
+impl<'a> ObjectQuery<DocumentQuery> for DriveQuery<'a> {
+    fn query(&self) -> Result<DocumentQuery, Error> {
+        let q: DocumentQuery = self.into();
+        Ok(q)
     }
 }

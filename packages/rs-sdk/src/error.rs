@@ -21,6 +21,8 @@ pub enum Error {
     NotFound,
     #[error("Too many elements received, expected: {expected}, got: {got}")]
     TooManyElementsReceived { expected: usize, got: usize },
+    #[error("Invalid query: {0}")]
+    InvalidQuery(String),
 }
 
 impl<T: Debug> From<DapiClientError<T>> for Error {

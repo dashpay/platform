@@ -1,16 +1,15 @@
 //! Dash API implementation
 
 use crate::error::Error;
-use dapi_grpc::platform::v0::{self as platform_proto};
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::dashcore::{hashes::Hash, QuorumHash};
 use drive_abci::rpc::core::DefaultCoreRPC;
-use drive_proof_verifier::proof::from_proof::{self, QuorumInfoProvider};
+use drive_proof_verifier::QuorumInfoProvider;
 use rs_dapi_client::{AddressList, DapiClient, RequestSettings};
 use tokio::sync::{RwLock, RwLockWriteGuard};
 
 #[async_trait::async_trait]
-pub trait DAPI: Send + Sync {
+pub trait DashAPI: Send + Sync {
     async fn core_client(&self) -> RwLockWriteGuard<crate::core::CoreClient>;
     async fn platform_client(&self) -> RwLockWriteGuard<crate::platform::PlatformClient>;
     fn quorum_info_provider<'a>(&'a self) -> Result<Box<dyn QuorumInfoProvider + 'a>, Error>;
@@ -47,42 +46,7 @@ impl Api {
             core: RwLock::new(Box::new(core)),
         })
     }
-    /*
-        async fn get_documents(&self, data_contract: DataContract, doc_type_name: &str) -> String {
-            let data_contract_id = data_contract.id();
-            // let dc: DataContractV0 = data_contract.into_v0().expect("data contract v0");
-            // dc.id();
-            //get_documents::GetDocumentsRequest
-            let empty: Vec<u8> = Vec::new();
-            let empty =
-                cbor_serializer::serializable_value_to_cbor(&empty, None).expect("serialize empty vec");
 
-            let request: platform_proto::GetDocumentsRequest = platform_proto::GetDocumentsRequest {
-                data_contract_id: data_contract_id.to_vec(),
-                document_type: doc_type_name.to_string(),
-                limit: 10,
-                start: None,
-                order_by: empty.clone(),
-                r#where: empty,
-                prove: true,
-            }
-            .into();
-
-            // return serde_json::to_string_pretty(&request).expect("request json serialization");
-
-            let mut client = self.dapi.write().await;
-            let response: platform_proto::GetDocumentsResponse = request
-                .clone()
-                .execute(&mut client, RequestSettings::default())
-                .await
-                .expect("unable to perform dapi request");
-
-            let proof = get_proof!(response, platform_proto::get_documents_response::Result);
-
-            self.test_vector(&request, &response, proof, Some(data_contract))
-                .await
-        }
-    */
     async fn get_quorum_key(&self, quorum_hash: &[u8], quorum_type: u32) -> Result<Vec<u8>, Error> {
         let quorum_hash = QuorumHash::from_slice(quorum_hash).map_err(|e| {
             Error::Proof(drive_proof_verifier::Error::InvalidQuorum {
@@ -99,7 +63,7 @@ impl Api {
 }
 
 #[async_trait::async_trait]
-impl DAPI for Api {
+impl DashAPI for Api {
     async fn core_client(&self) -> RwLockWriteGuard<crate::core::CoreClient> {
         self.core.write().await
     }

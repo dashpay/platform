@@ -21,7 +21,7 @@ use dpp::{
 };
 
 use drive_abci::rpc::core::{CoreRPCLike, DefaultCoreRPC};
-use drive_proof_verifier::proof::from_proof::{FromProof, QuorumInfoProvider};
+use drive_proof_verifier::{FromProof, QuorumInfoProvider};
 use rs_dapi_client::{AddressList, DapiClient, DapiRequest, RequestSettings};
 use test_vector::TestVector;
 use tokio::sync::RwLock;

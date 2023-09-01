@@ -20,7 +20,5 @@ pub use rs_dapi_client::DapiClient as PlatformClient;
 
 pub mod data_contract;
 pub mod document;
+pub mod document_query;
 pub mod identity;
-
-// Some internal logic for documents
-mod document_query;

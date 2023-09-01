@@ -8,7 +8,7 @@ mod error;
 pub mod proof;
 
 pub use error::Error;
-pub use proof::from_proof::FromProof;
+pub use proof::from_proof::{FromProof, QuorumInfoProvider};
 
 #[cfg(feature = "uniffi")]
 uniffi::include_scaffolding!("dash_drive_v0");

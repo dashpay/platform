@@ -6,7 +6,10 @@ use crate::error::Error;
 use ciborium::Value as CborValue;
 use dapi_grpc::platform::v0::{self as platform_proto, get_documents_request::Start};
 use dpp::{
-    data_contract::accessors::v0::DataContractV0Getters, platform_value::Value,
+    data_contract::{
+        accessors::v0::DataContractV0Getters, document_type::accessors::DocumentTypeV0Getters,
+    },
+    platform_value::Value,
     prelude::DataContract,
 };
 use drive::query::{DriveQuery, InternalClauses, OrderClause, WhereClause};
@@ -25,7 +28,7 @@ pub struct DocumentQuery {
     pub order_by_clauses: Vec<OrderClause>,
     /// queryset limit
     pub limit: u32,
-
+    /// first object to start with
     pub start: Option<Start>,
 }
 
@@ -47,9 +50,9 @@ fn serialize_vec_to_cbor<T: Into<Value>>(input: Vec<T>) -> Result<Vec<u8>, Error
     Ok(serialized)
 }
 
-impl TryFrom<&DocumentQuery> for platform_proto::GetDocumentsRequest {
+impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
     type Error = Error;
-    fn try_from(dapi_request: &DocumentQuery) -> Result<Self, Self::Error> {
+    fn try_from(dapi_request: DocumentQuery) -> Result<Self, Self::Error> {
         // TODO implement where and order_by clause
 
         let where_clauses = serialize_vec_to_cbor(dapi_request.where_clauses.clone())
@@ -66,6 +69,34 @@ impl TryFrom<&DocumentQuery> for platform_proto::GetDocumentsRequest {
             prove: true,
             start: dapi_request.start.clone(),
         })
+    }
+}
+
+impl<'a> From<&'a DriveQuery<'a>> for DocumentQuery {
+    fn from(value: &'a DriveQuery<'a>) -> Self {
+        let data_contract = value.contract.clone();
+        let document_type_name = value.document_type.name();
+        let where_clauses = value.internal_clauses.clone().into();
+        let order_by_clauses = value.order_by.iter().map(|(_, v)| v.clone()).collect();
+        let limit = value.limit.unwrap_or(0) as u32;
+
+        let start = if let Some(start_at) = value.start_at {
+            match value.start_at_included {
+                true => Some(Start::StartAt(start_at.to_vec())),
+                false => Some(Start::StartAfter(start_at.to_vec())),
+            }
+        } else {
+            None
+        };
+
+        Self {
+            data_contract,
+            document_type_name: document_type_name.to_string(),
+            where_clauses,
+            order_by_clauses,
+            limit,
+            start,
+        }
     }
 }
 
