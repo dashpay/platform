@@ -17,8 +17,8 @@ pub enum Error {
     CoreClientError(#[from] dashcore_rpc::Error),
     #[error("Invalid url: {0}")]
     InvalidUrl(#[from] http::uri::InvalidUri),
-    #[error("Object not found")]
-    NotFound,
+    #[error("Object not found: {0}")]
+    NotFound(String),
     #[error("Too many elements received, expected: {expected}, got: {got}")]
     TooManyElementsReceived { expected: usize, got: usize },
     #[error("Invalid query: {0}")]

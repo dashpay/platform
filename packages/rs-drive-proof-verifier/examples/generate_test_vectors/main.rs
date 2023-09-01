@@ -168,7 +168,7 @@ impl Api {
 
         let proof = get_proof!(response, platform_proto::get_data_contract_response::Result);
 
-        let contract = DataContract::from_proof(&request, &response, Box::new(self))
+        let contract = DataContract::from_proof(&request, &response, &self)
             .expect("get data contract from proof");
 
         (
@@ -228,13 +228,14 @@ impl QuorumInfoProvider for &Api {
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
-        quorum_hash: Vec<u8>,
+        quorum_hash: [u8; 32],
         _core_chain_locked_height: u32,
-    ) -> Result<Vec<u8>, drive_proof_verifier::Error> {
+    ) -> Result<[u8; 48], drive_proof_verifier::Error> {
         let key_fut = self.get_quorum_key(&quorum_hash, quorum_type);
         let key =
             tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(key_fut));
 
+        let key = key.try_into().expect("quorum key size");
         Ok(key)
     }
 }

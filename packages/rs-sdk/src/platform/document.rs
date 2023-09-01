@@ -53,7 +53,7 @@ impl<API: DashAPI> Readable<API> for Document {
 
         let docs =
             Documents::maybe_from_proof(&drive_query, &response, api.quorum_info_provider()?)?
-                .ok_or(Error::NotFound)?;
+                .ok_or(Error::NotFound("document not found".to_string()))?;
 
         if docs.len() == 1 {
             Ok(docs
@@ -85,7 +85,7 @@ impl<API: DashAPI> Listable<API> for Document {
 
         let docs =
             Documents::maybe_from_proof(&drive_query, &response, api.quorum_info_provider()?)?
-                .ok_or(Error::NotFound)?
+                .ok_or(Error::NotFound("no document found".to_string()))?
                 .into_iter()
                 .map(|doc| doc.into())
                 .collect();

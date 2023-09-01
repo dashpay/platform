@@ -29,11 +29,15 @@ where
 
     // println!("req: {:?}\nresp: {:?}\nquorum: {:?}\n", req, resp, quorum);
 
-    let pubkey = metadata.quorum_public_key.clone();
+    let pubkey = metadata
+        .quorum_public_key
+        .clone()
+        .try_into()
+        .expect("pubkey size");
     let mut provider = drive_proof_verifier::proof::from_proof::MockQuorumInfoProvider::new();
     provider
         .expect_get_quorum_public_key()
-        .return_once(|_, _, _| Ok(pubkey));
+        .return_once(move |_, _, _| Ok(pubkey));
 
     (req, resp, metadata, provider)
 }

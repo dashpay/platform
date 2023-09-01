@@ -11,3 +11,6 @@ pub mod crud;
 
 #[macro_use]
 pub mod dapi;
+
+pub use crud::*;
+pub use dapi::{Api, DashAPI};

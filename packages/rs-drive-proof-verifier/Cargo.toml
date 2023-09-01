@@ -40,7 +40,7 @@ drive-abci = { path = "../rs-drive-abci", default-features = false }
 # Dependencies for examples
 rs-dapi-client = { path = "../rs-dapi-client" }
 tokio = { version = "1.32.0", features = ["macros"] }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev="7840fe65fbdf4f083ff8632f6e7afac11a31ca63" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev = "7840fe65fbdf4f083ff8632f6e7afac11a31ca63" }
 async-trait = { version = "0.1.73" }
 
 [build-dependencies]

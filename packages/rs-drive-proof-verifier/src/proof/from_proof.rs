@@ -47,7 +47,7 @@ pub trait FromProof<Req> {
     fn maybe_from_proof<'a>(
         request: &Req,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider + 'a>,
+        provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: Sized + 'a;
@@ -72,7 +72,7 @@ pub trait FromProof<Req> {
     fn from_proof<'a>(
         request: &Req,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider + 'a>,
+        provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Self, Error>
     where
         Self: Sized + 'a,
@@ -104,9 +104,9 @@ pub trait QuorumInfoProvider: Send + Sync {
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
-        quorum_hash: Vec<u8>, // TODO: once we get rid of uniffi, we should take [u8;32] here
+        quorum_hash: [u8; 32], // quorum hash is 32 bytes
         core_chain_locked_height: u32,
-    ) -> Result<Vec<u8>, Error>; // TODO: When we get rid of uniffi, we should return 48 bytes instead of Vec
+    ) -> Result<[u8; 48], Error>; // public key is 48 bytes
 }
 
 #[cfg_attr(feature = "mock", mockall::automock)]
@@ -116,7 +116,7 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
     fn maybe_from_proof<'a>(
         request: &platform::GetIdentityRequest,
         response: &platform::GetIdentityResponse,
-        provider: Box<dyn QuorumInfoProvider + 'a>,
+        provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         Identity: Sized + 'a,
@@ -150,7 +150,7 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_identity)
     }
@@ -163,7 +163,7 @@ impl FromProof<platform::GetIdentityByPublicKeyHashesRequest> for Identity {
     fn maybe_from_proof<'a>(
         request: &platform::GetIdentityByPublicKeyHashesRequest,
         response: &platform::GetIdentityByPublicKeyHashesResponse,
-        provider: Box<dyn QuorumInfoProvider + 'a>,
+        provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         Identity: 'a,
@@ -201,7 +201,7 @@ impl FromProof<platform::GetIdentityByPublicKeyHashesRequest> for Identity {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_identity)
     }
@@ -214,7 +214,7 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
     fn maybe_from_proof<'a>(
         request: &platform::GetIdentityKeysRequest,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider + 'a>,
+        provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         IdentityPublicKeys: 'a,
@@ -289,7 +289,7 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
             None
         };
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_keys)
     }
@@ -356,7 +356,7 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalance {
     fn maybe_from_proof<'a>(
         request: &platform::GetIdentityRequest,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider + 'a>,
+        provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         IdentityBalance: 'a,
@@ -390,7 +390,7 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalance {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_identity)
     }
@@ -403,7 +403,7 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalanceAndRevision {
     fn maybe_from_proof<'a>(
         request: &platform::GetIdentityRequest,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider + 'a>,
+        provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         IdentityBalanceAndRevision: 'a,
@@ -437,7 +437,7 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalanceAndRevision {
                 error: e.to_string(),
             })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_identity)
     }
@@ -450,7 +450,7 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
     fn maybe_from_proof<'a>(
         request: &platform::GetDataContractRequest,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider + 'a>,
+        provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         DataContract: 'a,
@@ -485,7 +485,7 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_contract)
     }
@@ -498,7 +498,7 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
     fn maybe_from_proof<'a>(
         request: &platform::GetDataContractsRequest,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider + 'a>,
+        provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         DataContracts: 'a,
@@ -540,7 +540,7 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let maybe_contracts = if contracts.count_some() > 0 {
             Some(contracts)
@@ -558,7 +558,7 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
     fn maybe_from_proof<'a>(
         request: &platform::GetDataContractHistoryRequest,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider + 'a>,
+        provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: Sized + 'a,
@@ -597,7 +597,7 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_history)
     }
@@ -614,7 +614,7 @@ where
     fn maybe_from_proof<'a>(
         request: &Q,
         response: &Self::Response,
-        provider: Box<dyn QuorumInfoProvider + 'a>,
+        provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: 'a,
@@ -646,7 +646,7 @@ where
                 error: e.to_string(),
             })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, &provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         if documents.is_empty() {
             Ok(None)

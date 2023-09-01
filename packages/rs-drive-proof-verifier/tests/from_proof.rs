@@ -108,8 +108,7 @@ macro_rules! test_maybe_from_proof {
             let expected: Result<usize, drive_proof_verifier::Error> = $expected;
             let (request, response, _metadata, quorum_info_callback) = load::<$req, $resp>($vector);
 
-            let ret =
-                <$object>::maybe_from_proof(&request, &response, Box::new(quorum_info_callback));
+            let ret = <$object>::maybe_from_proof(&request, &response, &quorum_info_callback);
 
             tracing::info!(?ret, "object retrieved from proof");
 
