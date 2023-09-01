@@ -11,14 +11,7 @@ async fn test_identity_read() {
     ];
     let id = Identifier::from_bytes(&IDENTITY_ID_BYTES).expect("parse identity id");
 
-    let api = rs_sdk::dapi::Api::new(
-        PLATFORM_IP,
-        CORE_PORT,
-        CORE_USER,
-        CORE_PASSWORD,
-        PLATFORM_PORT,
-    )
-    .expect("initialize api");
+    let api = setup_api();
 
     let identity = rs_sdk::platform::identity::Identity::read(&api, &id)
         .await

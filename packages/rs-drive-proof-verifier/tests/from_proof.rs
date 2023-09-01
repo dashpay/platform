@@ -1,11 +1,8 @@
 use dapi_grpc::platform::v0::{self as grpc};
 use dpp::{
-    data_contract::accessors::v0::DataContractV0Getters,
     document::Document,
     prelude::{DataContract, Identity},
-    version::{PlatformVersion, PlatformVersionCurrentVersion},
 };
-use drive::query::DriveQuery;
 use drive_proof_verifier::proof::from_proof::{
     DataContractHistory, DataContracts, Documents, FromProof, IdentityBalance,
     IdentityBalanceAndRevision, IdentityPublicKeys, Length,
@@ -364,58 +361,6 @@ test_maybe_from_proof! {
     "vectors/data_contracts_1_not_found.json",
     Ok(0)
 }
-
-// === DOCUMENTS === //
-fn test_documents(vector: &str, expected: Result<usize, drive_proof_verifier::Error>) {
-    enable_logs();
-    PlatformVersion::set_current(PlatformVersion::latest());
-
-    let (request, response, metadata, quorum_info_callback) =
-        load::<grpc::GetDocumentsRequest, grpc::GetDocumentsResponse>(vector);
-
-    let req = rs_sdk::platform::get_documents::GetDocumentsRequest {
-        data_contract: metadata.data_contract.unwrap(),
-        document_type_name: request.document_type,
-        where_clauses: vec![],
-        order_by_clauses: vec![],
-        limit: request.limit,
-    };
-
-    let dq: DriveQuery = (&req).try_into().expect("convert to drive query");
-
-    let ret = Documents::maybe_from_proof(&dq, &response, Box::new(quorum_info_callback));
-
-    tracing::info!(?ret, "object retrieved from proof");
-
-    match ret {
-        Err(e) => assert_eq!(
-            expected.expect_err("Expected Ok, got error").to_string(),
-            e.to_string()
-        ), // Note: not tested
-        Ok(None) => assert!(expected.expect("Expected error, got None") == 0),
-        Ok(Some(o)) => {
-            let object: TestedObject = o.into();
-            assert_eq!(
-                expected.expect("Expected error, got Some"),
-                object.count_some()
-            );
-        }
-    }
-}
-
-#[test]
-fn test_documents_ok() {
-    test_documents("vectors/documents_1_ok.json", Ok(1))
-}
-// }
-// test_maybe_from_proof! {
-//     get_documents_not_found,
-//     grpc::GetDocumentsRequest,
-//     grpc::GetDocumentsResponse,
-//     Documents,
-//     "vectors/documents_1_ok.json",
-//     Ok(1)
-// }
 
 // ==== UTILS ==== //
 

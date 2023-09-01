@@ -23,3 +23,7 @@ serde = { version = "1.0.152", default-features = false }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev = "408bef25fd229dbb6b9f1b3d380e2afbc77d812c" }
 # drive-abci is only needed for core rpc; TODO remove once we have correct core rpc impl
 drive-abci = { path = "../rs-drive-abci", default-features = false }
+
+
+[dev-dependencies]
+base64 = { version = "0.21.0" }

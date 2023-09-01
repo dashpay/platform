@@ -2,24 +2,26 @@
 
 // TODO: Move to rs-sdk
 
-use crate::error::Error;
+use crate::{crud::Readable, dapi::DashAPI, error::Error};
 use ciborium::Value as CborValue;
 use dapi_grpc::platform::v0::{self as platform_proto, get_documents_request::Start};
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters, document_type::accessors::DocumentTypeV0Getters,
     },
-    platform_value::Value,
-    prelude::DataContract,
+    platform_value::{platform_value, Value},
+    prelude::{DataContract as DppDataContract, Identifier},
 };
-use drive::query::{DriveQuery, InternalClauses, OrderClause, WhereClause};
+use drive::query::{DriveQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
+
+use super::data_contract::DataContract;
 
 /// Request documents.
 // TODO: is it needed or we use drivequery?
 #[derive(Debug, Clone)]
 pub struct DocumentQuery {
     /// Data contract ID
-    pub data_contract: DataContract,
+    pub data_contract: DppDataContract,
     /// Document type for the data contract
     pub document_type_name: String,
     /// `where` clauses for the query
@@ -32,22 +34,41 @@ pub struct DocumentQuery {
     pub start: Option<Start>,
 }
 
-fn serialize_vec_to_cbor<T: Into<Value>>(input: Vec<T>) -> Result<Vec<u8>, Error> {
-    let values = Value::Array(
-        input
-            .into_iter()
-            .map(|v| v.into() as Value)
-            .collect::<Vec<Value>>(),
-    );
+impl DocumentQuery {
+    /// Fetch one document with provided document ID
+    pub async fn new_with_document_id<API: DashAPI>(
+        api: &API,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        document_id: Identifier,
+    ) -> Result<Self, Error> {
+        let data_contract = DataContract::read(api, &data_contract_id).await?;
 
-    let cbor_values: CborValue = TryInto::<CborValue>::try_into(values)
-        .map_err(|e| Error::Protocol(dpp::ProtocolError::EncodingError(e.to_string())))?;
+        data_contract
+            .inner
+            .document_type_for_name(&document_type_name)?;
 
-    let mut serialized = Vec::new();
-    ciborium::ser::into_writer(&cbor_values, &mut serialized)
-        .map_err(|e| Error::Protocol(dpp::ProtocolError::EncodingError(e.to_string())))?;
+        let where_clauses = vec![WhereClause {
+            field: "id".to_string(),
+            operator: WhereOperator::Equal,
+            value: platform_value!(document_id),
+        }];
 
-    Ok(serialized)
+        // Order clause
+        let order_by_clauses = vec![OrderClause {
+            ascending: true,
+            field: "id".to_string(),
+        }];
+
+        Ok(DocumentQuery {
+            data_contract: data_contract.into(),
+            document_type_name: document_type_name.to_string(),
+            where_clauses,
+            order_by_clauses,
+            start: Some(Start::StartAt(document_id.to_vec())),
+            limit: 1,
+        })
+    }
 }
 
 impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
@@ -137,4 +158,22 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveQuery<'a> {
 
         Ok(query)
     }
+}
+
+fn serialize_vec_to_cbor<T: Into<Value>>(input: Vec<T>) -> Result<Vec<u8>, Error> {
+    let values = Value::Array(
+        input
+            .into_iter()
+            .map(|v| v.into() as Value)
+            .collect::<Vec<Value>>(),
+    );
+
+    let cbor_values: CborValue = TryInto::<CborValue>::try_into(values)
+        .map_err(|e| Error::Protocol(dpp::ProtocolError::EncodingError(e.to_string())))?;
+
+    let mut serialized = Vec::new();
+    ciborium::ser::into_writer(&cbor_values, &mut serialized)
+        .map_err(|e| Error::Protocol(dpp::ProtocolError::EncodingError(e.to_string())))?;
+
+    Ok(serialized)
 }

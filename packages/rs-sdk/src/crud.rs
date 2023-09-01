@@ -47,6 +47,15 @@ pub trait ObjectQuery<I>: Sized + Send + Sync + Clone {
     fn query(&self) -> Result<I, Error>;
 }
 
+impl<T> ObjectQuery<T> for T
+where
+    T: Sized + Send + Sync + Clone,
+{
+    fn query(&self) -> Result<T, Error> {
+        Ok(self.clone()) // or whatever logic you want here
+    }
+}
+
 impl ObjectQuery<[u8; 32]> for dpp::prelude::Identifier {
     fn query(&self) -> Result<[u8; 32], Error> {
         Ok(self.as_bytes().clone())

@@ -1,13 +1,7 @@
 //! Document manipulation
 
-use dapi_grpc::platform::v0::{
-    get_documents_request::Start, GetDocumentsRequest, GetDocumentsResponse,
-};
-use dpp::{
-    platform_value::platform_value,
-    prelude::{DataContract, Identifier},
-};
-use drive::query::{DriveQuery, OrderClause, WhereClause, WhereOperator};
+use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse};
+use drive::query::DriveQuery;
 use rs_dapi_client::{DapiRequest, RequestSettings};
 
 use crate::{
@@ -15,11 +9,12 @@ use crate::{
     dapi::DashAPI,
     error::Error,
 };
-use drive_proof_verifier::proof::from_proof::{Documents, FromProof};
+use drive_proof_verifier::proof::from_proof::{Documents, FromProof, Length};
 
 use super::document_query::DocumentQuery;
 
 /// A document
+#[derive(Debug, Clone)]
 pub struct Document {
     inner: dpp::document::Document,
 }
@@ -33,6 +28,12 @@ impl From<Document> for dpp::document::Document {
 impl From<dpp::document::Document> for Document {
     fn from(doc: dpp::document::Document) -> Self {
         Self { inner: doc }
+    }
+}
+
+impl Length for Document {
+    fn count_some(&self) -> usize {
+        1
     }
 }
 
@@ -90,50 +91,6 @@ impl<API: DashAPI> Listable<API> for Document {
                 .collect();
 
         Ok(docs)
-    }
-}
-
-/// `DocumentIdentifier` represents a unique identifier for a Document.
-#[derive(Clone, Debug)]
-pub struct DocumentIdentifier {
-    /// `data_contract` is the DataContract associated with the Document.
-    pub data_contract: DataContract,
-
-    /// `document_type_name` is the name of the document type.
-    pub document_type_name: String,
-
-    /// `id` is the unique Identifier for the Document.
-    pub id: Identifier,
-}
-impl TryFrom<DocumentIdentifier> for DocumentQuery {
-    type Error = Error;
-    fn try_from(value: DocumentIdentifier) -> Result<Self, Self::Error> {
-        let where_clauses = vec![WhereClause {
-            field: "id".to_string(),
-            operator: WhereOperator::Equal,
-            value: platform_value!(value.id),
-        }];
-
-        // Order clause
-        let order_by_clauses = vec![OrderClause {
-            ascending: true,
-            field: "id".to_string(),
-        }];
-
-        Ok(DocumentQuery {
-            data_contract: value.data_contract.clone(),
-            document_type_name: value.document_type_name.clone(),
-            where_clauses,
-            order_by_clauses,
-            start: Some(Start::StartAt(value.id.to_vec())),
-            limit: 1,
-        })
-    }
-}
-
-impl ObjectQuery<DocumentQuery> for DocumentIdentifier {
-    fn query(&self) -> Result<DocumentQuery, Error> {
-        self.clone().try_into()
     }
 }
 
