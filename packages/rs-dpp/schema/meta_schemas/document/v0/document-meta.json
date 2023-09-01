@@ -436,7 +436,7 @@
         1,
         2
       ],
-      "description": "Key requirements. 0 - Unique Non Replaceable, 1 - Unique Replaceable, 2 - Multiple."
+      "description": "Key requirements. 0 - Unique Non Replaceable, 1 - Multiple, 2 - Multiple with reference to latest key."
     },
     "requiresIdentityDecryptionBoundedKey": {
       "type": "integer",
@@ -445,7 +445,7 @@
         1,
         2
       ],
-      "description": "Key requirements. 0 - Unique Non Replaceable, 1 - Unique Replaceable, 2 - Multiple."
+      "description": "Key requirements. 0 - Unique Non Replaceable, 1 - Multiple, 2 - Multiple with reference to latest key."
     },
     "properties": {
       "type": "object",
