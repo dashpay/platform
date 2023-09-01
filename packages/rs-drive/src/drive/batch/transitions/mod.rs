@@ -1,5 +1,3 @@
-
-
 //! Translation of State Transitions to Drive Operations
 //!
 //! This module defines general, commonly used functions in Drive.

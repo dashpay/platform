@@ -667,17 +667,14 @@ impl IdentityKeysRequest {
             SpecificKeys(keys) => Ok(keys.len() as u64
                 * epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost)),
             SearchKey(_search) => todo!(),
-            ContractBoundKey(_, key_kind)
-            | ContractDocumentTypeBoundKey(_, _, key_kind) => {
+            ContractBoundKey(_, key_kind) | ContractDocumentTypeBoundKey(_, _, key_kind) => {
                 match key_kind {
                     CurrentKeyOfKindRequest => {
                         Ok(epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost))
                     }
-                    AllKeysOfKindRequest => {
-                        Err(Error::Fee(FeeError::OperationNotAllowed(
-                            "You can not get costs for an all keys of kind request",
-                        )))
-                    }
+                    AllKeysOfKindRequest => Err(Error::Fee(FeeError::OperationNotAllowed(
+                        "You can not get costs for an all keys of kind request",
+                    ))),
                 }
             }
         }

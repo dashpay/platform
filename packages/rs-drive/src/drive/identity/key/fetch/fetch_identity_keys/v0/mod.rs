@@ -1,5 +1,9 @@
-use crate::drive::identity::key::fetch::KeyRequestType::{AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, SearchKey, SpecificKeys};
-use crate::drive::identity::key::fetch::{IdentityKeysRequest, IdentityPublicKeyResult, KeyRequestType};
+use crate::drive::identity::key::fetch::KeyRequestType::{
+    AllKeys, ContractBoundKey, ContractDocumentTypeBoundKey, SearchKey, SpecificKeys,
+};
+use crate::drive::identity::key::fetch::{
+    IdentityKeysRequest, IdentityPublicKeyResult, KeyRequestType,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
@@ -59,9 +63,7 @@ impl Drive {
 
                 T::try_from_path_key_optional(result, platform_version)
             }
-            SearchKey(_)
-            | ContractBoundKey(_, _)
-            | ContractDocumentTypeBoundKey(_, _, _) => {
+            SearchKey(_) | ContractBoundKey(_, _) | ContractDocumentTypeBoundKey(_, _, _) => {
                 let path_query = key_request.into_path_query();
 
                 let result = self.grove_get_path_query_with_optional(

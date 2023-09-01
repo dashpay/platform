@@ -1,5 +1,3 @@
-
-
 //! Implements in Drive a function which adds estimated costs to a hashmap for adding an asset lock (version 0).
 
 use crate::drive::Drive;

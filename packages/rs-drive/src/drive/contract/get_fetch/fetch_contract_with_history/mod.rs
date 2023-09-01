@@ -452,7 +452,7 @@ mod tests {
         run_single_test_case(test_case);
     }
 
-    /// Test that when the number of available updates is fewer than the combined sum of the limit and offset, 
+    /// Test that when the number of available updates is fewer than the combined sum of the limit and offset,
     /// the function should only return the oldest available updates, including the original contract.
     #[test]
     pub fn should_fetch_only_oldest_updates_with_offset_regardless_of_limit_when_not_enough_updates(
