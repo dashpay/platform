@@ -23,6 +23,7 @@ use crate::data_contract::document_type::schema::{
 use crate::data_contract::document_type::schema::enrich_with_base_schema;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::SecurityLevel;
 use crate::util::json_schema::resolve_uri;
 #[cfg(feature = "validation")]
@@ -333,6 +334,16 @@ impl DocumentTypeV0 {
             .transpose()?
             .unwrap_or(SecurityLevel::HIGH);
 
+        let requires_identity_encryption_bounded_key = schema
+            .get_optional_integer::<u8>(property_names::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY)?
+            .map(StorageKeyRequirements::try_from)
+            .transpose()?;
+
+        let requires_identity_decryption_bounded_key = schema
+            .get_optional_integer::<u8>(property_names::REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY)?
+            .map(StorageKeyRequirements::try_from)
+            .transpose()?;
+
         Ok(DocumentTypeV0 {
             name: String::from(name),
             schema,
@@ -346,8 +357,8 @@ impl DocumentTypeV0 {
             documents_keep_history,
             documents_mutable,
             data_contract_id,
-            requires_identity_encryption_bounded_key: None, //todo
-            requires_identity_decryption_bounded_key: None,
+            requires_identity_encryption_bounded_key,
+            requires_identity_decryption_bounded_key,
             security_level_requirement,
             #[cfg(feature = "validation")]
             json_schema_validator,

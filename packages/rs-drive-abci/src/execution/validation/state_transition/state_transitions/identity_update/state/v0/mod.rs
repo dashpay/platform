@@ -88,6 +88,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
         // bounds they refer to
         validation_result.add_errors(
             validate_identity_public_keys_contract_bounds(
+                self.identity_id(),
                 self.public_keys_to_add(),
                 drive,
                 tx,

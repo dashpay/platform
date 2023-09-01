@@ -6,20 +6,26 @@ use dpp::consensus::basic::document::{
 use dpp::consensus::basic::identity::DataContractBoundsNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
+use dpp::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
+use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+use dpp::identifier::Identifier;
 use dpp::identity::contract_bounds::ContractBounds;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Purpose::{DECRYPTION, ENCRYPTION};
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
+use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyKindRequestType, KeyRequestType, OptionalSingleIdentityPublicKeyOutcome};
 use drive::grovedb::{Transaction, TransactionArg};
 
 pub(super) fn validate_identity_public_keys_contract_bounds_v0(
+    identity_id: Identifier,
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
     drive: &Drive,
     transaction: TransactionArg,
@@ -30,6 +36,7 @@ pub(super) fn validate_identity_public_keys_contract_bounds_v0(
         .iter()
         .map(|identity_public_key| {
             validate_identity_public_key_contract_bounds_v0(
+                identity_id,
                 identity_public_key,
                 drive,
                 transaction,
@@ -44,6 +51,7 @@ pub(super) fn validate_identity_public_keys_contract_bounds_v0(
 }
 
 fn validate_identity_public_key_contract_bounds_v0(
+    identity_id: Identifier,
     identity_public_key_in_creation: &IdentityPublicKeyInCreation,
     drive: &Drive,
     transaction: TransactionArg,
@@ -82,11 +90,27 @@ fn validate_identity_public_key_contract_bounds_v0(
                                     };
 
                                 match requirements {
+                                    // We should make sure no other key exists for these bounds
                                     StorageKeyRequirements::Unique => {
-                                        // We should make sure no other key exists for these bounds
-                                        Ok(SimpleConsensusValidationResult::new())
+                                        let key_request = IdentityKeysRequest {
+                                            identity_id: identity_id.to_buffer(),
+                                            request_type: KeyRequestType::ContractBoundKey(
+                                                contract_id.to_buffer(),
+                                                purpose,
+                                                KeyKindRequestType::CurrentKeyOfKindRequest,
+                                            ),
+                                            limit: None,
+                                            offset: None,
+                                        };
+                                        let maybe_conflicting_key = drive.fetch_identity_keys::<OptionalSingleIdentityPublicKeyOutcome>(key_request, transaction, platform_version)?;
+                                        if let Some(conflicting_key) = maybe_conflicting_key {
+                                            Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(StateError::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError::new(identity_id, *contract_id, purpose, identity_public_key_in_creation.id(), conflicting_key.id())))))
+                                        } else {
+                                            Ok(SimpleConsensusValidationResult::new())
+                                        }
                                     }
-                                    StorageKeyRequirements::Multiple => {
+                                    StorageKeyRequirements::Multiple
+                                    | StorageKeyRequirements::MultipleReferenceToLatest => {
                                         Ok(SimpleConsensusValidationResult::new())
                                     }
                                 }
@@ -105,9 +129,25 @@ fn validate_identity_public_key_contract_bounds_v0(
                                 match requirements {
                                     StorageKeyRequirements::Unique => {
                                         // We should make sure no other key exists for these bounds
-                                        Ok(SimpleConsensusValidationResult::new())
+                                        let key_request = IdentityKeysRequest {
+                                            identity_id: identity_id.to_buffer(),
+                                            request_type: KeyRequestType::ContractBoundKey(
+                                                contract_id.to_buffer(),
+                                                purpose,
+                                                KeyKindRequestType::CurrentKeyOfKindRequest,
+                                            ),
+                                            limit: None,
+                                            offset: None,
+                                        };
+                                        let maybe_conflicting_key = drive.fetch_identity_keys::<OptionalSingleIdentityPublicKeyOutcome>(key_request, transaction, platform_version)?;
+                                        if let Some(conflicting_key) = maybe_conflicting_key {
+                                            Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(StateError::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError::new(identity_id, *contract_id, purpose, identity_public_key_in_creation.id(), conflicting_key.id())))))
+                                        } else {
+                                            Ok(SimpleConsensusValidationResult::new())
+                                        }
                                     }
-                                    StorageKeyRequirements::Multiple => {
+                                    StorageKeyRequirements::Multiple
+                                    | StorageKeyRequirements::MultipleReferenceToLatest => {
                                         Ok(SimpleConsensusValidationResult::new())
                                     }
                                 }
@@ -134,30 +174,24 @@ fn validate_identity_public_key_contract_bounds_v0(
                     platform_version,
                 )?;
                 match contract {
-                    None => {
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            ConsensusError::BasicError(BasicError::DataContractNotPresentError(
-                                DataContractNotPresentError::new(*contract_id),
-                            )),
-                        ));
-                    }
+                    None => Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::BasicError(BasicError::DataContractNotPresentError(
+                            DataContractNotPresentError::new(*contract_id),
+                        )),
+                    )),
                     Some(contract) => {
                         let document_type = contract
                             .contract
                             .document_type_optional_for_name(document_type_name.as_str());
                         match document_type {
-                            None => {
-                                return Ok(SimpleConsensusValidationResult::new_with_error(
-                                    ConsensusError::BasicError(
-                                        BasicError::InvalidDocumentTypeError(
-                                            InvalidDocumentTypeError::new(
-                                                document_type_name.clone(),
-                                                *contract_id,
-                                            ),
-                                        ),
+                            None => Ok(SimpleConsensusValidationResult::new_with_error(
+                                ConsensusError::BasicError(BasicError::InvalidDocumentTypeError(
+                                    InvalidDocumentTypeError::new(
+                                        document_type_name.clone(),
+                                        *contract_id,
                                     ),
-                                ));
-                            }
+                                )),
+                            )),
                             Some(document_type) => {
                                 match purpose {
                                     ENCRYPTION => {
@@ -174,9 +208,22 @@ fn validate_identity_public_key_contract_bounds_v0(
                                         match requirements {
                                             StorageKeyRequirements::Unique => {
                                                 // We should make sure no other key exists for these bounds
-                                                Ok(SimpleConsensusValidationResult::new())
+                                                let key_request = IdentityKeysRequest {
+                                                    identity_id: identity_id.to_buffer(),
+                                                    request_type: KeyRequestType::ContractDocumentTypeBoundKey(contract_id.to_buffer(), document_type_name.clone(), purpose, KeyKindRequestType::CurrentKeyOfKindRequest),
+                                                    limit: None,
+                                                    offset: None,
+                                                };
+                                                let maybe_conflicting_key = drive.fetch_identity_keys::<OptionalSingleIdentityPublicKeyOutcome>(key_request, transaction, platform_version)?;
+                                                if let Some(conflicting_key) = maybe_conflicting_key
+                                                {
+                                                    Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(StateError::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError::new(identity_id, *contract_id, purpose, identity_public_key_in_creation.id(), conflicting_key.id())))))
+                                                } else {
+                                                    Ok(SimpleConsensusValidationResult::new())
+                                                }
                                             }
-                                            StorageKeyRequirements::Multiple => {
+                                            StorageKeyRequirements::Multiple
+                                            | StorageKeyRequirements::MultipleReferenceToLatest => {
                                                 Ok(SimpleConsensusValidationResult::new())
                                             }
                                         }
@@ -194,10 +241,22 @@ fn validate_identity_public_key_contract_bounds_v0(
 
                                         match requirements {
                                             StorageKeyRequirements::Unique => {
-                                                // We should make sure no other key exists for these bounds
-                                                Ok(SimpleConsensusValidationResult::new())
+                                                let key_request = IdentityKeysRequest {
+                                                    identity_id: identity_id.to_buffer(),
+                                                    request_type: KeyRequestType::ContractDocumentTypeBoundKey(contract_id.to_buffer(), document_type_name.clone(), purpose, KeyKindRequestType::CurrentKeyOfKindRequest),
+                                                    limit: None,
+                                                    offset: None,
+                                                };
+                                                let maybe_conflicting_key = drive.fetch_identity_keys::<OptionalSingleIdentityPublicKeyOutcome>(key_request, transaction, platform_version)?;
+                                                if let Some(conflicting_key) = maybe_conflicting_key
+                                                {
+                                                    Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(StateError::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError::new(identity_id, *contract_id, purpose, identity_public_key_in_creation.id(), conflicting_key.id())))))
+                                                } else {
+                                                    Ok(SimpleConsensusValidationResult::new())
+                                                }
                                             }
-                                            StorageKeyRequirements::Multiple => {
+                                            StorageKeyRequirements::Multiple
+                                            | StorageKeyRequirements::MultipleReferenceToLatest => {
                                                 Ok(SimpleConsensusValidationResult::new())
                                             }
                                         }

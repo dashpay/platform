@@ -87,7 +87,9 @@ mod tests {
     use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::{platform_value, BinaryData};
     use dpp::prelude::IdentityPublicKey;
-    use dpp::tests::fixtures::get_dashpay_contract_with_generalized_encryption_key_fixture;
+    use dpp::tests::fixtures::{
+        get_dashpay_contract_fixture, get_dashpay_contract_with_generalized_encryption_key_fixture,
+    };
     use dpp::tests::json_document::json_document_to_contract;
 
     use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairVec};
@@ -164,6 +166,31 @@ mod tests {
         // let's construct the grovedb structure for the dashpay data contract
         let contract = json_document_to_contract(contract_path, false, platform_version)
             .expect("expected to get a contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract successfully");
+
+        (drive, contract)
+    }
+
+    pub(in crate::drive::contract) fn setup_dashpay() -> (Drive, DataContract) {
+        let tmp_dir = TempDir::new().unwrap();
+        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let platform_version = PlatformVersion::latest();
+
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create root tree successfully");
+
+        // let's construct the grovedb structure for the dashpay data contract
+        let contract = get_dashpay_contract_fixture(None, 1).data_contract_owned();
         drive
             .apply_contract(
                 &contract,
@@ -325,7 +352,7 @@ mod tests {
 
         // Let's insert an identity with an encryption key for this contract
 
-        let mut identity = Identity::random_identity(0, Some(12345), platform_version)
+        let mut identity = Identity::random_identity(5, Some(12345), platform_version)
             .expect("expected a random identity");
 
         let mut rng = StdRng::from_entropy();
@@ -368,6 +395,68 @@ mod tests {
         let request = IdentityKeysRequest::new_contract_encryption_keys_query(
             identity.id().to_buffer(),
             contract.id().to_buffer(),
+        );
+        let identity_keys = drive
+            .fetch_identity_keys::<KeyIDIdentityPublicKeyPairVec>(request, None, platform_version)
+            .expect("expected keys");
+        assert_eq!(identity_keys.len(), 1);
+        assert_eq!(&identity_keys.first().unwrap().1, &encryption_key);
+    }
+
+    #[test]
+    fn test_create_contract_with_encryption_keys_on_document_type() {
+        let (drive, contract) = setup_dashpay();
+        let platform_version = PlatformVersion::latest();
+
+        // Let's insert an identity with an encryption key for this contract
+
+        let mut identity = Identity::random_identity(0, Some(12345), platform_version)
+            .expect("expected a random identity");
+
+        let mut rng = StdRng::from_entropy();
+
+        let encryption_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 5,
+            purpose: Purpose::ENCRYPTION,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: Some(ContractBounds::SingleContractDocumentType {
+                id: contract.id(),
+                document_type_name: "contactRequest".to_string(),
+            }),
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(
+                KeyType::ECDSA_SECP256K1
+                    .random_public_key_data(&mut rng, platform_version)
+                    .expect("expected a random key"),
+            ),
+            disabled_at: None,
+        }
+        .into();
+        identity.add_public_key(encryption_key.clone());
+
+        let db_transaction = drive.grove.start_transaction();
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                &BlockInfo::default(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("expected to be able to commit a transaction");
+
+        let request = IdentityKeysRequest::new_document_type_encryption_keys_query(
+            identity.id().to_buffer(),
+            contract.id().to_buffer(),
+            "contactRequest".to_string(),
         );
         let identity_keys = drive
             .fetch_identity_keys::<KeyIDIdentityPublicKeyPairVec>(request, None, platform_version)

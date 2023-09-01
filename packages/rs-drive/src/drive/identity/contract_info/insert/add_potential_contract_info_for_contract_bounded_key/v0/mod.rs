@@ -142,28 +142,33 @@ impl Drive {
                 None
             };
 
-            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
-            {
-                Self::add_estimation_costs_for_contract_info_group(
-                    &identity_id,
-                    &root_id,
-                    estimated_costs_only_with_layer_info,
+            let (document_keys, contract_or_family_keys) = contract_info.keys();
+
+            if !contract_or_family_keys.is_empty() {
+                // we only need to do this once
+                if let Some(estimated_costs_only_with_layer_info) =
+                    estimated_costs_only_with_layer_info
+                {
+                    Self::add_estimation_costs_for_contract_info_group(
+                        &identity_id,
+                        &root_id,
+                        estimated_costs_only_with_layer_info,
+                        &platform_version.drive,
+                    )?;
+                }
+
+                self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
+                    PathKeyInfo::<0>::PathKey((
+                        identity_contract_info_root_path_vec(&identity_id),
+                        root_id.to_vec(),
+                    )),
+                    None,
+                    apply_type,
+                    transaction,
+                    drive_operations,
                     &platform_version.drive,
                 )?;
             }
-
-            self.batch_insert_empty_tree_if_not_exists_check_existing_operations(
-                PathKeyInfo::<0>::PathKey((
-                    identity_contract_info_root_path_vec(&identity_id),
-                    root_id.to_vec(),
-                )),
-                None,
-                apply_type,
-                transaction,
-                drive_operations,
-                &platform_version.drive,
-            )?;
-            let (document_keys, contract_or_family_keys) = contract_info.keys();
 
             for (key_id, purpose) in contract_or_family_keys {
                 if let Some(estimated_costs_only_with_layer_info) =
@@ -407,9 +412,10 @@ impl Drive {
                     if storage_key_requirements == StorageKeyRequirements::Unique {
                         self.batch_insert(
                             PathKeyElementInfo::<0>::PathKeyElement((
-                                identity_contract_info_group_path_vec(
+                                identity_contract_info_group_path_key_purpose_vec(
                                     &identity_id,
                                     &contract_id_bytes_with_document_type_name,
+                                    purpose,
                                 ),
                                 vec![],
                                 Element::Reference(reference, Some(1), None),
@@ -420,9 +426,10 @@ impl Drive {
                     } else {
                         self.batch_insert_if_not_exists(
                             PathKeyElementInfo::<0>::PathKeyElement((
-                                identity_contract_info_group_path_vec(
+                                identity_contract_info_group_path_key_purpose_vec(
                                     &identity_id,
                                     &contract_id_bytes_with_document_type_name,
+                                    purpose,
                                 ),
                                 key_id_bytes.clone(),
                                 Element::Reference(reference, Some(1), None),
@@ -442,9 +449,10 @@ impl Drive {
 
                         self.batch_insert(
                             PathKeyElementInfo::<0>::PathKeyElement((
-                                identity_contract_info_group_path_vec(
+                                identity_contract_info_group_path_key_purpose_vec(
                                     &identity_id,
                                     &contract_id_bytes_with_document_type_name,
+                                    purpose,
                                 ),
                                 vec![],
                                 Element::Reference(sibling_ref_type_path, Some(2), None),

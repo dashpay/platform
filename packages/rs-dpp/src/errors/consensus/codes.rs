@@ -172,7 +172,8 @@ impl ErrorWithCode for StateError {
             Self::DuplicatedIdentityPublicKeyIdStateError { .. } => 4022,
             Self::IdentityPublicKeyIsDisabledError { .. } => 4023,
             Self::MissingIdentityPublicKeyIdsError { .. } => 4024,
-            Self::IdentityInsufficientBalanceError(_) => 4024,
+            Self::IdentityInsufficientBalanceError(_) => 4026,
+            Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 4027,
         }
     }
 }

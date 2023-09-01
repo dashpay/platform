@@ -1,3 +1,4 @@
+use dpp::identifier::Identifier;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::drive::Drive;
@@ -11,6 +12,7 @@ use crate::execution::validation::state_transition::common::validate_identity_pu
 pub mod v0;
 
 pub(crate) fn validate_identity_public_keys_contract_bounds(
+    identity_id: Identifier,
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
     drive: &Drive,
     transaction: TransactionArg,
@@ -25,6 +27,7 @@ pub(crate) fn validate_identity_public_keys_contract_bounds(
         .validate_identity_public_key_contract_bounds
     {
         0 => validate_identity_public_keys_contract_bounds_v0(
+            identity_id,
             identity_public_keys_with_witness,
             drive,
             transaction,

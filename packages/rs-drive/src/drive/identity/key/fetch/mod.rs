@@ -702,7 +702,7 @@ impl IdentityKeysRequest {
     }
 
     #[cfg(feature = "full")]
-    /// Make a request for all current keys for the identity
+    /// Make a request for an encryption key for a specific contract
     pub fn new_contract_encryption_keys_query(
         identity_id: [u8; 32],
         contract_id: [u8; 32],
@@ -712,6 +712,64 @@ impl IdentityKeysRequest {
             request_type: ContractBoundKey(
                 contract_id,
                 Purpose::ENCRYPTION,
+                CurrentKeyOfKindRequest,
+            ),
+            limit: None,
+            offset: None,
+        }
+    }
+
+    #[cfg(feature = "full")]
+    /// Make a request for an decryption key for a specific contract
+    pub fn new_contract_decryption_keys_query(
+        identity_id: [u8; 32],
+        contract_id: [u8; 32],
+    ) -> Self {
+        IdentityKeysRequest {
+            identity_id,
+            request_type: ContractBoundKey(
+                contract_id,
+                Purpose::DECRYPTION,
+                CurrentKeyOfKindRequest,
+            ),
+            limit: None,
+            offset: None,
+        }
+    }
+
+    #[cfg(feature = "full")]
+    /// Make a request for an encryption key for a specific contract document type
+    pub fn new_document_type_encryption_keys_query(
+        identity_id: [u8; 32],
+        contract_id: [u8; 32],
+        document_type_name: String,
+    ) -> Self {
+        IdentityKeysRequest {
+            identity_id,
+            request_type: ContractDocumentTypeBoundKey(
+                contract_id,
+                document_type_name,
+                Purpose::ENCRYPTION,
+                CurrentKeyOfKindRequest,
+            ),
+            limit: None,
+            offset: None,
+        }
+    }
+
+    #[cfg(feature = "full")]
+    /// Make a request for an decryption key for a specific contract document type
+    pub fn new_document_type_decryption_keys_query(
+        identity_id: [u8; 32],
+        contract_id: [u8; 32],
+        document_type_name: String,
+    ) -> Self {
+        IdentityKeysRequest {
+            identity_id,
+            request_type: ContractDocumentTypeBoundKey(
+                contract_id,
+                document_type_name,
+                Purpose::DECRYPTION,
                 CurrentKeyOfKindRequest,
             ),
             limit: None,

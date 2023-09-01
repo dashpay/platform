@@ -68,8 +68,6 @@ impl Drive {
             | ContractDocumentTypeBoundKey(_, _, _, KeyKindRequestType::CurrentKeyOfKindRequest) => {
                 let path_query = key_request.into_path_query();
 
-                dbg!(&path_query);
-
                 let result = self.grove_get_path_query_with_optional(
                     &path_query,
                     transaction,

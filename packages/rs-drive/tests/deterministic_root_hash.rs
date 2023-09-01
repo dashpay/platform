@@ -450,7 +450,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
         .unwrap()
         .expect("should return app hash");
 
-    let expected_app_hash = "2d0b5162671e4cf1f1956c546709d760b578b42eee1e6d85e794f418f4e75d03";
+    let expected_app_hash = "e2337ce8f1edc0d0c27c7efb8050ce2ca92c7431e5b43686f84e9f8e96a28fd9";
 
     assert_eq!(hex::encode(app_hash), expected_app_hash);
 }
