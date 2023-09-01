@@ -404,10 +404,11 @@ impl<'a> DriveQuery<'a> {
             .remove_optional_identifier("contract_id")
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?
         {
-            if contract.id != contract_id {
+            if contract.id() != contract_id {
                 return Err(ProtocolError::IdentifierError(format!(
                     "data contract id mismatch, expected: {}, got: {}",
-                    contract.id, contract_id
+                    contract.id(),
+                    contract_id
                 ))
                 .into());
             };
@@ -417,10 +418,11 @@ impl<'a> DriveQuery<'a> {
             .remove_optional_string("document_type_name")
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?
         {
-            if document_type.name != document_type_name {
+            if document_type.name() != &document_type_name {
                 return Err(ProtocolError::IdentifierError(format!(
                     "document type name mismatch, expected: {}, got: {}",
-                    document_type.name, document_type_name
+                    document_type.name(),
+                    document_type_name
                 ))
                 .into());
             }
@@ -1885,14 +1887,14 @@ impl<'a> From<&DriveQuery<'a>> for BTreeMap<String, Value> {
         // TODO: once contract can be serialized, maybe put full contract here instead of id
         response.insert(
             "contract_id".to_string(),
-            Value::Identifier(query.contract.id.to_buffer()),
+            Value::Identifier(query.contract.id().to_buffer()),
         );
 
         // document_type
         // TODO: once DocumentType can be serialized, maybe put full DocumentType instead of name
         response.insert(
             "document_type_name".to_string(),
-            Value::Text(query.document_type.name.to_string()),
+            Value::Text(query.document_type.name().to_string()),
         );
 
         // Internal clauses
@@ -1940,6 +1942,7 @@ impl<'a> From<&DriveQuery<'a>> for BTreeMap<String, Value> {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::prelude::Identifier;
     use serde_json::json;
     use std::borrow::Cow;
@@ -2026,13 +2029,15 @@ mod tests {
     #[test]
     fn test_drive_query_from_to_cbor() {
         let config = DriveConfig::default();
-        let contract = Contract::default();
-        let document_type = DocumentType::default();
+        let contract = get_data_contract_fixture(None, 1).data_contract_owned();
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("expected to get nice document");
         let start_after = Identifier::random();
 
         let query_value = json!({
-            "contract_id": contract.id,
-            "document_type_name": document_type.name,
+            "contract_id": contract.id(),
+            "document_type_name": document_type.name(),
             "where": [
                 ["firstName", "<", "Gilligan"],
                 ["lastName", "=", "Doe"]
@@ -2049,13 +2054,12 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query =
-            DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type, &config)
-                .expect("deserialize cbor shouldn't fail");
+        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type, &config)
+            .expect("deserialize cbor shouldn't fail");
 
         let cbor = query.to_cbor().expect("should serialize cbor");
 
-        let deserialized = DriveQuery::from_cbor(&cbor, &contract, &document_type, &config)
+        let deserialized = DriveQuery::from_cbor(&cbor, &contract, document_type, &config)
             .expect("should deserialize cbor");
 
         assert_eq!(query, deserialized);
