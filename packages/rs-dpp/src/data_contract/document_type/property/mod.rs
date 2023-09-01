@@ -648,7 +648,7 @@ impl DocumentPropertyType {
             }
             DocumentPropertyType::Object(inner_fields) => {
                 let Some(value_map) = value.as_map() else {
-                    return Err(get_field_type_matching_error())
+                    return Err(get_field_type_matching_error());
                 };
                 let value_map = Value::map_ref_into_btree_string_map(value_map)?;
                 let mut r_vec = vec![];

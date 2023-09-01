@@ -1137,7 +1137,7 @@ mod tests {
         update_transition.set_signature(signature.to_vec().into());
 
         let update_transition_bytes = update_transition
-            .serialize()
+            .serialize_to_bytes()
             .expect("expected to serialize");
 
         let validation_result = platform

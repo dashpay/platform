@@ -1,8 +1,12 @@
+use crate::data_contract::{DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm};
+use crate::document_batch_transition::DocumentsBatchTransitionWasm;
 use crate::errors::from_dpp_err;
 use crate::identity::state_transition::{
     IdentityCreateTransitionWasm, IdentityCreditTransferTransitionWasm,
     IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm,
 };
+use crate::state_transition::errors::invalid_state_transition_error::InvalidStateTransitionErrorWasm;
+use dpp::state_transition::errors::StateTransitionError;
 use dpp::state_transition::state_transition_factory::StateTransitionFactory;
 use dpp::state_transition::StateTransition;
 use dpp::ProtocolError;
@@ -29,12 +33,12 @@ impl StateTransitionFactoryWasm {
     ) -> Result<JsValue, JsValue> {
         match result {
             Ok(state_transition) => match state_transition {
-                // StateTransition::DataContractCreate(st) => {
-                //     Ok(DataContractCreateTransitionWasm::from(st).into())
-                // }
-                // StateTransition::DataContractUpdate(st) => {
-                //     Ok(DataContractUpdateTransitionWasm::from(st).into())
-                // }
+                StateTransition::DataContractCreate(st) => {
+                    Ok(DataContractCreateTransitionWasm::from(st).into())
+                }
+                StateTransition::DataContractUpdate(st) => {
+                    Ok(DataContractUpdateTransitionWasm::from(st).into())
+                }
                 StateTransition::IdentityCreate(st) => {
                     Ok(IdentityCreateTransitionWasm::from(st).into())
                 }
@@ -47,21 +51,21 @@ impl StateTransitionFactoryWasm {
                 StateTransition::IdentityCreditTransfer(st) => {
                     Ok(IdentityCreditTransferTransitionWasm::from(st).into())
                 }
-                // StateTransition::DocumentsBatch(st) => {
-                //     Ok(DocumentsBatchTransitionWasm::from(st).into())
-                // }
+                StateTransition::DocumentsBatch(st) => {
+                    Ok(DocumentsBatchTransitionWasm::from(st).into())
+                }
                 _ => Err("Unsupported state transition type".into()),
             },
-            // Err(dpp::ProtocolError::StateTransitionError(e)) => match e {
-            //     StateTransitionError::InvalidStateTransitionError {
-            //         errors,
-            //         raw_state_transition,
-            //     } => Err(InvalidStateTransitionErrorWasm::new(
-            //         errors,
-            //         serde_wasm_bindgen::to_value(&raw_state_transition)?,
-            //     )
-            //     .into()),
-            // },
+            Err(dpp::ProtocolError::StateTransitionError(e)) => match e {
+                StateTransitionError::InvalidStateTransitionError {
+                    errors,
+                    raw_state_transition,
+                } => Err(InvalidStateTransitionErrorWasm::new(
+                    errors,
+                    serde_wasm_bindgen::to_value(&raw_state_transition)?,
+                )
+                .into()),
+            },
             Err(other) => Err(from_dpp_err(other)),
         }
     }

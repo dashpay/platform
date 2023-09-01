@@ -5,6 +5,7 @@ use dpp::consensus::ConsensusError;
 use dpp::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 
 impl IdentityTopUpTransitionActionV0 {
+    /// try from
     pub fn try_from(
         value: IdentityTopUpTransitionV0,
         top_up_balance_amount: u64,
@@ -31,6 +32,7 @@ impl IdentityTopUpTransitionActionV0 {
         })
     }
 
+    /// try from borrowed
     pub fn try_from_borrowed(
         value: &IdentityTopUpTransitionV0,
         top_up_balance_amount: u64,

@@ -1,21 +1,35 @@
+use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
+use crate::data_contract::DataContractFacadeWasm;
+use crate::document::factory::DocumentFactoryWASM;
+use crate::document_facade::DocumentFacadeWasm;
 use dpp::dash_platform_protocol::DashPlatformProtocol;
+use dpp::data_contract::DataContractFacade;
+use dpp::identity::IdentityFacade;
+use dpp::prelude::DataContract;
+use dpp::state_transition::state_transition_factory::StateTransitionFactory;
 use dpp::version::LATEST_VERSION;
 
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::identity::identity_facade::IdentityFacadeWasm;
 use crate::state_transition::state_transition_factory::StateTransitionFactoryWasm;
+use crate::utils::WithJsError;
 
 #[wasm_bindgen(js_name=DashPlatformProtocol)]
-pub struct DashPlatformProtocolWasm(DashPlatformProtocol);
+pub struct DashPlatformProtocolWasm {
+    protocol: DashPlatformProtocol,
+    data_contracts: Arc<DataContractFacade>,
+    documents: DocumentFacadeWasm,
+}
+
 static mut LOGGER_INITIALIZED: bool = false;
 
 #[wasm_bindgen(js_class=DashPlatformProtocol)]
 impl DashPlatformProtocolWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        _entropy_generator: ExternalEntropyGenerator,
+        entropy_generator: ExternalEntropyGenerator,
         maybe_protocol_version: Option<u32>,
     ) -> Result<DashPlatformProtocolWasm, JsValue> {
         // Initialize logger only once to avoid repeating warnings
@@ -28,31 +42,42 @@ impl DashPlatformProtocolWasm {
             }
         }
 
-        // let bls = BlsAdapter(bls_adapter);
         let protocol_version = maybe_protocol_version.unwrap_or(LATEST_VERSION);
-        let dpp = DashPlatformProtocol::new(protocol_version);
-        Ok(DashPlatformProtocolWasm(dpp))
+        let protocol = DashPlatformProtocol::new(protocol_version);
+
+        let data_contracts = Arc::new(
+            DataContractFacade::new(protocol_version, Some(Box::new(entropy_generator.clone())))
+                .with_js_error()?,
+        );
+
+        let document_factory = DocumentFactoryWASM::new(protocol_version, Some(entropy_generator))?;
+
+        Ok(DashPlatformProtocolWasm {
+            protocol,
+            data_contracts,
+            documents: DocumentFacadeWasm::new(document_factory),
+        })
     }
 
-    // #[wasm_bindgen(getter = dataContract)]
-    // pub fn data_contract(&self) -> DataContractFacadeWasm {
-    //     self.data_contract.clone()
-    // }
-    //
-    // #[wasm_bindgen(getter=document)]
-    // pub fn document(&self) -> DocumentFacadeWasm {
-    //     self.document.clone()
-    // }
-    //
+    #[wasm_bindgen(getter = dataContract)]
+    pub fn data_contract(&self) -> DataContractFacadeWasm {
+        DataContractFacadeWasm(Arc::clone(&self.data_contracts))
+    }
+
+    #[wasm_bindgen(getter=document)]
+    pub fn document(&self) -> DocumentFacadeWasm {
+        self.documents.clone()
+    }
+
     #[wasm_bindgen(getter = identity)]
     pub fn identity(&self) -> IdentityFacadeWasm {
         // TODO: think if it's possible to avoid cloning
-        self.0.identities().into()
+        self.protocol.identities().into()
     }
 
     #[wasm_bindgen(getter = stateTransition)]
     pub fn state_transition(&self) -> StateTransitionFactoryWasm {
-        self.0.state_transition().into()
+        self.protocol.state_transition().into()
     }
     //
     // #[wasm_bindgen(getter = protocolVersion)]

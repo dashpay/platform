@@ -1,85 +1,74 @@
-const path = require('path');
-const os = require('os');
-const fs = require('fs');
-
-process.env.DASHMATE_HOME_DIR = path.resolve(os.tmpdir(), '.dashmate');
-
 const { asValue } = require('awilix');
 
 const createDIContainer = require('../../src/createDIContainer');
-const areServicesRunningFactory = require('../../src/test/areServicesRunningFactory');
-const { SERVICES } = require('../../src/test/constants/services');
+const HomeDir = require('../../src/config/HomeDir');
 
-describe.skip('Local Network', function main() {
+describe('Local Network', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
   this.bail(true); // bail on first failure
 
+  let homeDir;
   let container;
-  let setupLocalPresetTask;
-  let resetNodeTask;
-  let group;
+  let configGroup;
   let configFile;
-  let startGroupNodesTask;
-  let dockerCompose;
-  let areServicesRunning;
-  let stopNodeTask;
-  let restartNodeTask;
+  let configFileRepository;
+  let assertLocalServicesRunning;
 
   const groupName = 'local';
 
   before(async () => {
     container = await createDIContainer();
 
-    const createSystemConfigs = container.resolve('createSystemConfigs');
+    homeDir = container.resolve('homeDir');
+    homeDir.change(HomeDir.createTemp());
 
-    configFile = createSystemConfigs();
+    // Create config file
+    configFileRepository = container.resolve('configFileRepository');
+
+    const createConfigFile = container.resolve('createConfigFile');
+
+    configFile = createConfigFile();
+
+    // Update local config template that will be used to setup nodes
+    const localConfig = configFile.getConfig(groupName);
+    localConfig.set('dashmate.helper.docker.build.enabled', true);
+    localConfig.set('docker.network.subnet', '172.30.0.0/24');
+    localConfig.set('dashmate.helper.api.port', 40000);
+    localConfig.set('core.p2p.port', 40001);
+    localConfig.set('core.rpc.port', 40002);
+    localConfig.set('platform.dapi.envoy.http.port', 40003);
+    localConfig.set('platform.drive.tenderdash.p2p.port', 40004);
+    localConfig.set('platform.drive.tenderdash.rpc.port', 40005);
+    localConfig.set('platform.drive.tenderdash.pprof.port', 40006);
 
     container.register({
       configFile: asValue(configFile),
     });
 
-    const defaultGroupName = configFile.getDefaultGroupName();
-
-    group = configFile.getGroupConfigs(defaultGroupName);
-
-    container.register({
-      configGroup: asValue(group),
-    });
-
-    const renderServiceTemplates = container.resolve('renderServiceTemplates');
-    const writeServiceConfigs = container.resolve('writeServiceConfigs');
-
-    for (const config of group) {
-      const serviceConfigFiles = renderServiceTemplates(config);
-      writeServiceConfigs(config.getName(), serviceConfigFiles);
-    }
-
-    setupLocalPresetTask = await container.resolve('setupLocalPresetTask');
-    resetNodeTask = await container.resolve('resetNodeTask');
-    startGroupNodesTask = await container.resolve('startGroupNodesTask');
-    restartNodeTask = await container.resolve('restartNodeTask');
-    stopNodeTask = await container.resolve('stopNodeTask');
-
-    dockerCompose = await container.resolve('dockerCompose');
+    assertLocalServicesRunning = container.resolve('assertLocalServicesRunning');
   });
 
   after(async () => {
-    if (fs.existsSync(process.env.DASHMATE_HOME_DIR)) {
-      for (const config of group) {
-        const resetTask = resetNodeTask(config);
+    const resetNodeTask = await container.resolve('resetNodeTask');
 
-        await resetTask.run({
-          isHardReset: false,
-          isForce: false,
-        });
+    for (const config of configFile.getGroupConfigs(groupName)) {
+      const resetTask = resetNodeTask(config);
 
-        await configFile.removeConfig(config.getName());
-      }
+      await resetTask.run({
+        isVerbose: true,
+        isHardReset: false,
+        isForce: true,
+      });
     }
+
+    homeDir.remove();
   });
 
   describe('setup', () => {
     it('should setup local network', async () => {
+      // TODO: Refactor setup command to extract setup logic to
+      //  setupTask function and use it here
+      const setupLocalPresetTask = await container.resolve('setupLocalPresetTask');
       const setupTask = setupLocalPresetTask();
 
       await setupTask.run({
@@ -89,53 +78,75 @@ describe.skip('Local Network', function main() {
         isVerbose: true,
       });
 
-      configFile = container.resolve('configFile');
-
       const configExists = configFile.isGroupExists(groupName);
 
-      group = configFile.getGroupConfigs(groupName);
-
-      areServicesRunning = areServicesRunningFactory(configFile, group, dockerCompose, SERVICES);
-
       expect(configExists).to.be.true();
+
+      // Store config group for further usage
+      configGroup = configFile.getGroupConfigs(groupName);
+
+      container.register({
+        configGroup: asValue(configGroup),
+      });
+
+      // Write configs
+      await configFileRepository.write(configFile);
+
+      const renderServiceTemplates = container.resolve('renderServiceTemplates');
+
+      const writeServiceConfigs = container.resolve('writeServiceConfigs');
+      for (const config of configGroup) {
+        const serviceConfigFiles = renderServiceTemplates(config);
+        writeServiceConfigs(config.getName(), serviceConfigFiles);
+      }
     });
   });
 
   describe('start', () => {
     it('should start local network', async () => {
-      const task = startGroupNodesTask(group);
+      const startGroupNodesTask = await container.resolve('startGroupNodesTask');
+      const task = startGroupNodesTask(configGroup);
 
-      await task.run();
+      await task.run({
+        isVerbose: true,
+        waitForReadiness: true,
+      });
 
-      const result = await areServicesRunning();
-
-      expect(result).to.be.true();
+      await assertLocalServicesRunning(configGroup);
     });
   });
 
   describe('restart', () => {
     it('should restart local network', async () => {
-      for (const config of group) {
+      // TODO: Refactor group restart command to extract group restart logic
+      //  to restartGroupNodesTask function and use it here
+      const restartNodeTask = await container.resolve('restartNodeTask');
+
+      for (const config of configGroup) {
         const task = restartNodeTask(config);
-        await task.run();
+        await task.run({
+          isVerbose: true,
+        });
       }
 
-      const result = await areServicesRunning();
-
-      expect(result).to.be.true();
+      await assertLocalServicesRunning(configGroup);
     });
   });
 
   describe('stop', () => {
     it('should stop local network', async () => {
-      for (const config of group.reverse()) {
+      // TODO: Refactor group stop command to extract group stop logic
+      //  to restartGroupNodesTask function and use it here
+      const stopNodeTask = await container.resolve('stopNodeTask');
+
+      for (const config of configGroup.reverse()) {
         const task = stopNodeTask(config);
-        await task.run();
+        await task.run({
+          isVerbose: true,
+        });
       }
 
-      const result = await areServicesRunning();
-
-      expect(result).to.be.false();
+      await assertLocalServicesRunning(configGroup, false);
     });
   });
 });

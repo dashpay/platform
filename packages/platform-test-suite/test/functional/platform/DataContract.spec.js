@@ -101,6 +101,7 @@ describe('Platform', () => {
       expect(broadcastError.getCause()).to.be.an.instanceOf(InvalidDataContractVersionError);
     });
 
+    // TODO(versioning): this test is not passing
     it('should not be able to update an existing data contract if schema is not backward compatible', async () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();

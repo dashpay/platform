@@ -1,6 +1,4 @@
-// TODO(versioning): restore
-// @ts-ignore
-import { Identity, IdentityPublicKey, StateTransitionExecutionContext } from '@dashevo/wasm-dpp';
+import { Identity, IdentityPublicKey } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 import { signStateTransition } from '../../signStateTransition';
 
@@ -59,8 +57,6 @@ export async function update(
 
         identityUpdateTransition.setSignaturePublicKeyId(signerKey.getId());
 
-        // TODO(versioning): restore
-        // @ts-ignore
         await identityUpdateTransition.signByPrivateKey(privateKey.toBuffer(), publicKey.getType());
 
         publicKey.setSignature(identityUpdateTransition.getSignature());

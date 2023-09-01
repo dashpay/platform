@@ -1,11 +1,15 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("Identity public keys disabled time ({disabled_at}) is out of block time window from {time_window_start} and {time_window_end}")]
+#[platform_serialize(unversioned)]
 pub struct IdentityPublicKeyDisabledAtWindowViolationError {
     /*
 

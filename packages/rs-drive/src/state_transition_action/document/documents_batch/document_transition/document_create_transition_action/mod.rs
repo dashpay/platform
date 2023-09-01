@@ -1,3 +1,5 @@
+
+/// transformer
 pub mod transformer;
 mod v0;
 
@@ -13,8 +15,10 @@ pub use v0::*;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction};
 use dpp::version::{PlatformVersion};
 
+/// document create transition action
 #[derive(Debug, Clone, From)]
 pub enum DocumentCreateTransitionAction {
+    /// v0
     V0(DocumentCreateTransitionActionV0),
 }
 
@@ -62,6 +66,7 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
     }
 }
 
+/// document from create transition
 pub trait DocumentFromCreateTransition {
     /// Attempts to create a new `Document` from the given `DocumentCreateTransition` reference and `owner_id`.
     ///

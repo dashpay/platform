@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
-use dpp::consensus::basic::document::DataContractNotPresentError;
+use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
 use dpp::consensus::basic::BasicError;
 
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
@@ -183,10 +183,21 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
         let drive = platform.drive;
         // Data Contract must exist
         let Some(data_contract_fetch_info) = drive
-        .get_contract_with_fetch_info_and_fee(data_contract_id.0 .0, None, false, transaction, platform_version)?
-        .1
+            .get_contract_with_fetch_info_and_fee(
+                data_contract_id.0 .0,
+                None,
+                false,
+                transaction,
+                platform_version,
+            )?
+            .1
         else {
-            return Ok(ConsensusValidationResult::new_with_error(BasicError::DataContractNotPresentError(DataContractNotPresentError::new(*data_contract_id)).into()));
+            return Ok(ConsensusValidationResult::new_with_error(
+                BasicError::DataContractNotPresentError(DataContractNotPresentError::new(
+                    *data_contract_id,
+                ))
+                .into(),
+            ));
         };
 
         let validation_result = document_transitions
@@ -231,7 +242,13 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
 
         let data_contract = &data_contract_fetch_info.contract;
 
-        let document_type = data_contract.document_type_for_name(document_type_name)?;
+        let Some(document_type) = data_contract.document_type_optional_for_name(document_type_name)
+        else {
+            return Ok(ConsensusValidationResult::new_with_error(
+                InvalidDocumentTypeError::new(document_type_name.to_owned(), data_contract.id())
+                    .into(),
+            ));
+        };
 
         let replace_transitions = document_transitions
             .iter()
@@ -434,14 +451,13 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
 
         // If there was no previous revision this means that the document_type is not update-able
         // However this should have been caught earlier
-        let Some(previous_revision) =  original_document.revision() else {
+        let Some(previous_revision) = original_document.revision() else {
             result.add_error(ConsensusError::StateError(
-                StateError::InvalidDocumentRevisionError(
-                    InvalidDocumentRevisionError::new(
-                        document_transition.base().id(),
-                        None,
-                    )
-                )
+                StateError::InvalidDocumentRevisionError(InvalidDocumentRevisionError::new(
+                    document_transition.base().id(),
+                    None,
+                    revision,
+                )),
             ));
             return result;
         };
@@ -452,6 +468,7 @@ impl DocumentsBatchTransitionInternalTransformerV0 for DocumentsBatchTransition 
                 StateError::InvalidDocumentRevisionError(InvalidDocumentRevisionError::new(
                     document_transition.base().id(),
                     Some(previous_revision),
+                    revision,
                 )),
             ))
         }

@@ -30,8 +30,6 @@ export async function createIdentityTopUpTransition(
   );
 
   await identityTopUpTransition
-  // TODO(versioning): restore
-  // @ts-ignore
     .signByPrivateKey(assetLockPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
   // TODO(versioning): restore

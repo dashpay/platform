@@ -1021,7 +1021,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=408bef25fd229dbb6b9f1b3d380e2afbc77d812c#408bef25fd229dbb6b9f1b3d380e2afbc77d812c"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=7840fe65fbdf4f083ff8632f6e7afac11a31ca63#7840fe65fbdf4f083ff8632f6e7afac11a31ca63"
 dependencies = [
  "dashcore-rpc-json",
  "env_logger 0.10.0",
@@ -1034,7 +1034,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=408bef25fd229dbb6b9f1b3d380e2afbc77d812c#408bef25fd229dbb6b9f1b3d380e2afbc77d812c"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=7840fe65fbdf4f083ff8632f6e7afac11a31ca63#7840fe65fbdf4f083ff8632f6e7afac11a31ca63"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dashcore",
@@ -3925,7 +3925,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-abci"
 version = "0.13.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#00454dbc5d1e452e62ea0c4af7192404467a7655"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#00454dbc5d1e452e62ea0c4af7192404467a7655"
 dependencies = [
  "bytes",
  "futures",
@@ -3945,7 +3945,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto"
 version = "0.13.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#00454dbc5d1e452e62ea0c4af7192404467a7655"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#00454dbc5d1e452e62ea0c4af7192404467a7655"
 dependencies = [
  "bytes",
  "chrono",
@@ -3963,7 +3963,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto-compiler"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#00454dbc5d1e452e62ea0c4af7192404467a7655"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#00454dbc5d1e452e62ea0c4af7192404467a7655"
 dependencies = [
  "fs_extra",
  "prost-build",

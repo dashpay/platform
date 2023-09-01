@@ -348,7 +348,7 @@ impl Strategy {
                     return None;
                 };
                 let Some(contract_update) = contract_updates.get(&block_height) else {
-                    return None
+                    return None;
                 };
                 let identity = current_identities
                     .iter()

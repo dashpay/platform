@@ -3,9 +3,12 @@ const AbstractError = require('../../errors/AbstractError');
 class CouldNotCreateHomeDirError extends AbstractError {
   /**
    * @param {string} homeDirPath
+   * @param {Error} cause
    */
-  constructor(homeDirPath) {
-    super(`Could not create home dir at '${homeDirPath}'`);
+  constructor(homeDirPath, cause) {
+    super(`Could not create home dir at '${homeDirPath}': ${cause}`);
+
+    this.cause = cause;
 
     this.homeDirPath = homeDirPath;
   }

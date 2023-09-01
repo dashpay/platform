@@ -3,15 +3,16 @@ use crate::consensus::state::data_trigger::data_trigger_execution_error::DataTri
 use crate::consensus::state::data_trigger::data_trigger_invalid_result_error::DataTriggerInvalidResultError;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use crate::identity::state_transition::asset_lock_proof::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 pub mod data_trigger_condition_error;
 pub mod data_trigger_execution_error;
 pub mod data_trigger_invalid_result_error;
 
-#[derive(Error, Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 pub enum DataTriggerError {
     /*
 

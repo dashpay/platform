@@ -19,6 +19,9 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::utils::{generic_of_js_val, WithJsError};
 
 use crate::errors::from_dpp_err;
+use dpp::errors::consensus::signature::SignatureError;
+use dpp::errors::consensus::ConsensusError;
+use dpp::errors::ProtocolError;
 use dpp::identity::{KeyID, KeyType, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData, ReplacementType, Value};
@@ -462,39 +465,48 @@ impl IdentityUpdateTransitionWasm {
         bls: JsBlsAdapter,
     ) -> Result<(), JsValue> {
         let bls_adapter = BlsAdapter(bls);
-        StateTransition::IdentityUpdate(self.0.clone())
+        // TODO: come up with a better way to set signature to the binding.
+        let mut state_transition = StateTransition::IdentityUpdate(self.0.clone());
+        state_transition
             .sign(
                 &identity_public_key.to_owned().into(),
                 &private_key,
                 &bls_adapter,
             )
-            .with_js_error()
+            .with_js_error()?;
+
+        let signature = state_transition.signature().to_owned();
+        let signature_public_key_id = state_transition.signature_public_key_id().unwrap_or(0);
+
+        self.0.set_signature(signature);
+        self.0.set_signature_public_key_id(signature_public_key_id);
+
+        Ok(())
     }
 
-    // #[wasm_bindgen(js_name=verifySignature)]
-    // pub fn verify_signature(
-    //     &self,
-    //     identity_public_key: &IdentityPublicKeyWasm,
-    //     bls: JsBlsAdapter,
-    // ) -> Result<bool, JsValue> {
-    //     let bls_adapter = BlsAdapter(bls);
-    //
-    //     let verification_result = self
-    //         .0
-    //         .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
-    //
-    //     match verification_result {
-    //         Ok(()) => Ok(true),
-    //         Err(protocol_error) => match &protocol_error {
-    //             ProtocolError::ConsensusError(err) => match err.as_ref() {
-    //                 ConsensusError::SignatureError(
-    //                     SignatureError::InvalidStateTransitionSignatureError { .. },
-    //                 ) => Ok(false),
-    //                 _ => Err(protocol_error),
-    //             },
-    //             _ => Err(protocol_error),
-    //         },
-    //     }
-    //     .with_js_error()
-    // }
+    #[wasm_bindgen(js_name=verifySignature)]
+    pub fn verify_signature(
+        &self,
+        identity_public_key: &IdentityPublicKeyWasm,
+        bls: JsBlsAdapter,
+    ) -> Result<bool, JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+
+        let verification_result = StateTransition::IdentityUpdate(self.0.clone())
+            .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+
+        match verification_result {
+            Ok(()) => Ok(true),
+            Err(protocol_error) => match &protocol_error {
+                ProtocolError::ConsensusError(err) => match err.as_ref() {
+                    ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError { .. },
+                    ) => Ok(false),
+                    _ => Err(protocol_error),
+                },
+                _ => Err(protocol_error),
+            },
+        }
+        .with_js_error()
+    }
 }

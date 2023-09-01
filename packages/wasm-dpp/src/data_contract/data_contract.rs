@@ -8,7 +8,7 @@ use wasm_bindgen::prelude::*;
 
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::{DataContract, DocumentName, JsonValue};
-use dpp::platform_value::{Bytes32, Value};
+use dpp::platform_value::{platform_value, Bytes32, Value};
 
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::DataContractConfig;
@@ -16,6 +16,7 @@ use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use dpp::version::PlatformVersion;
 use dpp::{platform_value, ProtocolError};
@@ -144,6 +145,39 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name=incrementVersion)]
     pub fn increment_version(&mut self) {
         self.inner.increment_version()
+    }
+
+    #[wasm_bindgen(js_name=getBinaryProperties)]
+    pub fn get_binary_properties(&self, doc_type: &str) -> Result<JsValue, JsValue> {
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+
+        let document_type = self
+            .inner
+            .document_type_for_name(doc_type)
+            .with_js_error()?;
+
+        let binary_paths_o = document_type.binary_paths();
+
+        let mut binary_paths = BTreeMap::new();
+
+        document_type.binary_paths().iter().for_each(
+            (|path| {
+                binary_paths.insert(path.to_owned(), platform_value!({}));
+            }),
+        );
+
+        document_type.identifier_paths().iter().for_each(
+            (|path| {
+                binary_paths.insert(
+                    path.to_owned(),
+                    platform_value!({
+                        "contentMediaType": "application/x.dash.dpp.identifier"
+                    }),
+                );
+            }),
+        );
+
+        with_js_error!(binary_paths.serialize(&serializer))
     }
 
     #[wasm_bindgen(js_name=setDocumentSchemas)]
@@ -392,6 +426,17 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name=clone)]
     pub fn deep_clone(&self) -> Self {
         self.clone()
+    }
+
+    pub(crate) fn try_from_serialization_format(
+        value: DataContractInSerializationFormat,
+        validate: bool,
+    ) -> Result<Self, JsValue> {
+        let platform_version = PlatformVersion::first();
+
+        DataContract::try_from_platform_versioned(value, validate, platform_version)
+            .with_js_error()
+            .map(Into::into)
     }
 }
 

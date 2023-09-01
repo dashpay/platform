@@ -732,6 +732,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                         byte_array_has_no_items_as_parent_validator: 0,
                         pattern_is_valid_regex_validator: 0,
                     },
+                    validate_schema_compatibility: 0,
                 },
                 methods: DocumentTypeMethodVersions {
                     create_document_from_data: 0,

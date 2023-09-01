@@ -9,6 +9,7 @@ use grovedb::Element;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
+    /// Generates a vector of operations for inserting key to storage.
     pub(super) fn insert_key_to_storage_operations_v0(
         &self,
         identity_id: [u8; 32],

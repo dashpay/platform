@@ -107,6 +107,8 @@ mod test {
             owner_id: Default::default(),
             schema_defs: None,
             document_schemas: Default::default(),
+            encryption_key_storage_requirements: None,
+            decryption_key_storage_requirements: None,
         };
 
         let mut data_contract = DataContractV0::try_from_platform_versioned(
@@ -152,6 +154,8 @@ mod test {
             owner_id: Default::default(),
             schema_defs: defs_map,
             document_schemas: Default::default(),
+            encryption_key_storage_requirements: None,
+            decryption_key_storage_requirements: None,
         };
 
         let mut data_contract = DataContractV0::try_from_platform_versioned(

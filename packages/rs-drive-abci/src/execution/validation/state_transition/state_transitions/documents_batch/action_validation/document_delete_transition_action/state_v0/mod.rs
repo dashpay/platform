@@ -1,3 +1,4 @@
+use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
@@ -37,7 +38,14 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
 
         let contract = &contract_fetch_info.contract;
 
-        let document_type = contract.document_type_for_name(self.base().document_type_name())?;
+        let document_type_name = self.base().document_type_name();
+
+        let Some(document_type) = contract.document_type_optional_for_name(document_type_name)
+        else {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidDocumentTypeError::new(document_type_name.clone(), contract.id()).into(),
+            ));
+        };
 
         // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
         let original_document = fetch_document_with_id(
@@ -50,11 +58,11 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
         )?;
 
         let Some(document) = original_document else {
-            return Ok(ConsensusValidationResult::new_with_error(ConsensusError::StateError(
-                StateError::DocumentNotFoundError(DocumentNotFoundError::new(
-                    self.base().id(),
-                ))
-            )));
+            return Ok(ConsensusValidationResult::new_with_error(
+                ConsensusError::StateError(StateError::DocumentNotFoundError(
+                    DocumentNotFoundError::new(self.base().id()),
+                )),
+            ));
         };
 
         Ok(check_ownership(self, &document, &owner_id))

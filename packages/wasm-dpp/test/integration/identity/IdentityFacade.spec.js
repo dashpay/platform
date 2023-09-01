@@ -1,17 +1,14 @@
 const crypto = require('crypto');
 const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 
-const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 const getInstantAssetLockProofFixture = require('../../../lib/test/fixtures/getInstantAssetLockProofFixture');
 const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
-const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 const {
   Identity, InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
   IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyWithWitness,
   DashPlatformProtocol, ValidationResult,
 } = require('../../..');
-const { IdentityPublicKey } = require('../../..');
 
 describe('IdentityFacade', () => {
   let dpp;
@@ -188,7 +185,7 @@ describe('IdentityFacade', () => {
       );
       expect(
         stateTransition.getPublicKeysToAdd().map((pk) => pk.toObject()),
-      ).to.deep.equal(publicKeys.add.map((key) => key.toObject()));
+      ).to.deep.equal(publicKeys.add.map((k) => k.toObject()));
       expect(stateTransition.getPublicKeyIdsToDisable()).to.deep.equal([]);
       expect(stateTransition.getPublicKeysDisabledAt()).to.equal(undefined);
     });

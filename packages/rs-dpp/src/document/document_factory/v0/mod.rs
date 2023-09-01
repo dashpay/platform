@@ -5,7 +5,8 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::DataContract;
 use crate::document::errors::DocumentError;
-use crate::document::{Document, DocumentV0Getters, INITIAL_REVISION};
+use crate::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
+use chrono::Utc;
 
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::version::PlatformVersion;
@@ -14,10 +15,13 @@ use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier, Value};
 
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+use crate::document::document_methods::DocumentMethodsV0;
 #[cfg(feature = "extended-document")]
 use crate::document::extended_document::v0::ExtendedDocumentV0;
+use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
+use crate::prelude::TimestampMillis;
 use crate::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
 use crate::state_transition::documents_batch_transition::document_transition::{
     DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
@@ -61,53 +65,45 @@ const DOCUMENT_REPLACE_KEYS_TO_STAY: [&str; 5] = [
 /// Factory for creating documents
 pub struct DocumentFactoryV0 {
     protocol_version: u32,
-    pub(super) data_contract: DataContract,
     entropy_generator: Box<dyn EntropyGenerator>,
 }
 
 impl DocumentFactoryV0 {
-    pub fn new(protocol_version: u32, data_contract: DataContract) -> Self {
+    pub fn new(protocol_version: u32) -> Self {
         DocumentFactoryV0 {
             protocol_version,
-            data_contract,
             entropy_generator: Box::new(DefaultEntropyGenerator),
         }
     }
 
     pub fn new_with_entropy_generator(
         protocol_version: u32,
-        data_contract: DataContract,
         entropy_generator: Box<dyn EntropyGenerator>,
     ) -> Self {
         DocumentFactoryV0 {
             protocol_version,
-            data_contract,
             entropy_generator,
         }
     }
 
     pub fn create_document(
         &self,
+        data_contract: &DataContract,
         owner_id: Identifier,
         document_type_name: String,
         data: Value,
     ) -> Result<Document, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
-        if !self
-            .data_contract
-            .has_document_type_for_name(&document_type_name)
-        {
+        if !data_contract.has_document_type_for_name(&document_type_name) {
             return Err(DataContractError::InvalidDocumentTypeError(
-                InvalidDocumentTypeError::new(document_type_name, self.data_contract.id()),
+                InvalidDocumentTypeError::new(document_type_name, data_contract.id()),
             )
             .into());
         }
 
         let document_entropy = self.entropy_generator.generate()?;
 
-        let document_type = self
-            .data_contract
-            .document_type_for_name(document_type_name.as_str())?;
+        let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;
 
         document_type.create_document_from_data(data, owner_id, document_entropy, platform_version)
     }
@@ -115,26 +111,22 @@ impl DocumentFactoryV0 {
     #[cfg(feature = "extended-document")]
     pub fn create_extended_document(
         &self,
+        data_contract: &DataContract,
         owner_id: Identifier,
         document_type_name: String,
         data: Value,
     ) -> Result<ExtendedDocument, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
-        if !self
-            .data_contract
-            .has_document_type_for_name(&document_type_name)
-        {
+        if !data_contract.has_document_type_for_name(&document_type_name) {
             return Err(DataContractError::InvalidDocumentTypeError(
-                InvalidDocumentTypeError::new(document_type_name, self.data_contract.id()),
+                InvalidDocumentTypeError::new(document_type_name, data_contract.id()),
             )
             .into());
         }
 
         let document_entropy = self.entropy_generator.generate()?;
 
-        let document_type = self
-            .data_contract
-            .document_type_for_name(document_type_name.as_str())?;
+        let document_type = data_contract.document_type_for_name(document_type_name.as_str())?;
 
         let document = document_type.create_document_from_data(
             data,
@@ -150,9 +142,9 @@ impl DocumentFactoryV0 {
         {
             0 => Ok(ExtendedDocumentV0 {
                 document_type_name,
-                data_contract_id: self.data_contract.id(),
+                data_contract_id: data_contract.id(),
                 document,
-                data_contract: self.data_contract.clone(),
+                data_contract: data_contract.clone(),
                 metadata: None,
                 entropy: Bytes32::new(document_entropy),
             }
@@ -172,32 +164,32 @@ impl DocumentFactoryV0 {
         documents_iter: impl IntoIterator<
             Item = (
                 DocumentTransitionActionType,
-                Vec<(Document, DocumentTypeRef<'a>)>,
+                Vec<(Document, DocumentTypeRef<'a>, Bytes32)>,
             ),
         >,
     ) -> Result<DocumentsBatchTransition, ProtocolError> {
         let platform_version = PlatformVersion::get(self.protocol_version)?;
         let documents: Vec<(
             DocumentTransitionActionType,
-            Vec<(Document, DocumentTypeRef)>,
+            Vec<(Document, DocumentTypeRef, Bytes32)>,
         )> = documents_iter.into_iter().collect();
         let mut flattened_documents_iter = documents.iter().flat_map(|(_, v)| v).peekable();
 
-        let Some((first_document, _)) = flattened_documents_iter.peek() else {
+        let Some((first_document, _, _)) = flattened_documents_iter.peek() else {
             return Err(DocumentError::NoDocumentsSuppliedError.into());
         };
 
         let owner_id = first_document.owner_id();
 
         let is_the_same_owner =
-            flattened_documents_iter.all(|(document, _)| document.owner_id() == owner_id);
+            flattened_documents_iter.all(|(document, _, _)| document.owner_id() == owner_id);
         if !is_the_same_owner {
             return Err(DocumentError::MismatchOwnerIdsError {
                 documents: documents
                     .into_iter()
                     .flat_map(|(_, v)| {
                         v.into_iter()
-                            .map(|(document, _)| document)
+                            .map(|(document, _, _)| document)
                             .collect::<Vec<_>>()
                     })
                     .collect(),
@@ -209,15 +201,22 @@ impl DocumentFactoryV0 {
             .into_iter()
             .map(|(action, documents)| match action {
                 DocumentTransitionActionType::Create => {
-                    let entropy = self.entropy_generator.generate()?;
-                    Self::document_create_transitions(documents, entropy, platform_version)
+                    Self::document_create_transitions(documents, platform_version)
                 }
-                DocumentTransitionActionType::Delete => {
-                    Self::document_delete_transitions(documents, platform_version)
-                }
-                DocumentTransitionActionType::Replace => {
-                    Self::document_replace_transitions(documents, platform_version)
-                }
+                DocumentTransitionActionType::Delete => Self::document_delete_transitions(
+                    documents
+                        .into_iter()
+                        .map(|(document, document_type, _)| (document, document_type))
+                        .collect(),
+                    platform_version,
+                ),
+                DocumentTransitionActionType::Replace => Self::document_replace_transitions(
+                    documents
+                        .into_iter()
+                        .map(|(document, document_type, _)| (document, document_type))
+                        .collect(),
+                    platform_version,
+                ),
             })
             .collect::<Result<Vec<_>, ProtocolError>>()?
             .into_iter()
@@ -236,32 +235,39 @@ impl DocumentFactoryV0 {
         }
         .into())
     }
-    //
-    // pub fn create_extended_from_document_buffer(
-    //     &self,
-    //     buffer: &[u8],
-    //     document_type: &str,
-    //     data_contract: &DataContract,
-    //     platform_version: &PlatformVersion,
-    // ) -> Result<ExtendedDocument, ProtocolError> {
-    //     let document_type = data_contract.document_types.get(document_type).ok_or(
-    //         ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
-    //             "document type was not found in the data contract",
-    //         )),
-    //     )?;
-    //
-    //     let document = Document::from_bytes(buffer, document_type, platform_version)?;
-    //
-    //     Ok(ExtendedDocument {
-    //         protocol_version: data_contract.protocol_version,
-    //         document_type_name: document_type.name.clone(),
-    //         data_contract_id: data_contract.id(),
-    //         document,
-    //         data_contract: data_contract.clone(),
-    //         metadata: None,
-    //         entropy: Bytes32::default(),
-    //     })
-    // }
+
+    pub fn create_extended_from_document_buffer(
+        &self,
+        buffer: &[u8],
+        document_type_name: &str,
+        data_contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<ExtendedDocument, ProtocolError> {
+        let document_type = data_contract.document_type_for_name(document_type_name)?;
+
+        let document = Document::from_bytes(buffer, document_type, platform_version)?;
+
+        match platform_version
+            .dpp
+            .document_versions
+            .extended_document_structure_version
+        {
+            0 => Ok(ExtendedDocumentV0 {
+                document_type_name: document_type_name.to_string(),
+                data_contract_id: data_contract.id(),
+                document,
+                data_contract: data_contract.clone(),
+                metadata: None,
+                entropy: Bytes32::default(),
+            }
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "DocumentFactory::create_extended_from_document_buffer".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
     //
     // pub fn create_from_buffer(
     //     &self,
@@ -323,20 +329,20 @@ impl DocumentFactoryV0 {
     // // }
     //
     fn document_create_transitions(
-        documents: Vec<(Document, DocumentTypeRef)>,
-        entropy: [u8; 32],
+        documents: Vec<(Document, DocumentTypeRef, Bytes32)>,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
             .into_iter()
-            .map(|(document, document_type)| {
+            .map(|(document, document_type, entropy)| {
                 if document_type.documents_mutable() {
                     //we need to have revisions
                     let Some(revision) = document.revision() else {
-                    return Err(DocumentError::RevisionAbsentError {
-                        document: Box::new(document),
-                    }.into());
-                };
+                        return Err(DocumentError::RevisionAbsentError {
+                            document: Box::new(document),
+                        }
+                        .into());
+                    };
                     if revision != INITIAL_REVISION {
                         return Err(DocumentError::InvalidInitialRevisionError {
                             document: Box::new(document),
@@ -347,7 +353,7 @@ impl DocumentFactoryV0 {
                 Ok(DocumentCreateTransition::from_document(
                     document,
                     document_type,
-                    entropy,
+                    entropy.to_buffer(),
                     platform_version,
                     None,
                     None,
@@ -363,7 +369,7 @@ impl DocumentFactoryV0 {
     ) -> Result<Vec<DocumentTransition>, ProtocolError> {
         documents
             .into_iter()
-            .map(|(document, document_type)| {
+            .map(|(mut document, document_type)| {
                 if !document_type.documents_mutable() {
                     return Err(DocumentError::TryingToReplaceImmutableDocument {
                         document: Box::new(document),
@@ -376,6 +382,10 @@ impl DocumentFactoryV0 {
                     }
                     .into());
                 };
+
+                document.increment_revision()?;
+                document.set_updated_at(Some(Utc::now().timestamp_millis() as TimestampMillis));
+
                 Ok(DocumentReplaceTransition::from_document(
                     document,
                     document_type,
@@ -441,10 +451,11 @@ impl DocumentFactoryV0 {
                     .into());
                 }
                 let Some(_document_revision) = document.revision() else {
-                return Err(DocumentError::RevisionAbsentError {
-                    document: Box::new(document),
-                }.into());
-            };
+                    return Err(DocumentError::RevisionAbsentError {
+                        document: Box::new(document),
+                    }
+                    .into());
+                };
                 Ok(DocumentDeleteTransition::from_document(
                     document,
                     document_type,

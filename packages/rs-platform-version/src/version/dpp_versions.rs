@@ -162,6 +162,7 @@ pub struct DocumentTypeSchemaVersions {
     pub find_identifier_and_binary_paths: FeatureVersion,
     pub validate_max_depth: FeatureVersion,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,
+    pub validate_schema_compatibility: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

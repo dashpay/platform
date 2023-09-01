@@ -17,7 +17,7 @@ const createDIContainer = require('../src/createDIContainer');
   // eslint-disable-next-line no-console
   console.info('Starting dashmate helper');
 
-  const container = await createDIContainer();
+  const container = await createDIContainer(process.env);
 
   // Load configs
   /**

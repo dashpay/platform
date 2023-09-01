@@ -73,8 +73,12 @@ impl StateTransitionStructureValidationV0 for DocumentsBatchTransition {
                     action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "documents batch structure validation should have an action",
                     )))?;
-                let StateTransitionAction::DocumentsBatchAction(documents_batch_transition_action) = action else  {
-                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution("action must be a documents batch transition action")));
+                let StateTransitionAction::DocumentsBatchAction(documents_batch_transition_action) =
+                    action
+                else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "action must be a documents batch transition action",
+                    )));
                 };
                 self.validate_structure_v0(
                     platform,
@@ -113,8 +117,12 @@ impl StateTransitionStateValidationV0 for DocumentsBatchTransition {
                     action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "documents batch structure validation should have an action",
                     )))?;
-                let StateTransitionAction::DocumentsBatchAction(documents_batch_transition_action) = action else  {
-                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution("action must be a documents batch transition action")));
+                let StateTransitionAction::DocumentsBatchAction(documents_batch_transition_action) =
+                    action
+                else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "action must be a documents batch transition action",
+                    )));
                 };
                 self.validate_state_v0(
                     documents_batch_transition_action,

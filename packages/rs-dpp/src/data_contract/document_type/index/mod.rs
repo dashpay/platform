@@ -35,10 +35,10 @@ impl Index {
         }
         self.properties.iter().all(|property| {
             //if either or both are null then there can not be an overlap
-            let Some(value1) = Value::get_optional_from_map(object1,property.name.as_str()) else {
+            let Some(value1) = Value::get_optional_from_map(object1, property.name.as_str()) else {
                 return false;
             };
-            let Some(value2) = Value::get_optional_from_map(object2,property.name.as_str()) else {
+            let Some(value2) = Value::get_optional_from_map(object2, property.name.as_str()) else {
                 return false;
             };
             value1 == value2

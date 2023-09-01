@@ -1,12 +1,11 @@
 const BaseCommand = require('../../oclif/command/BaseCommand');
 
-const systemConfigs = require('../../../configs/system');
-
 class ConfigRemoveCommand extends BaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
    * @param {ConfigFile} configFile
+   * @param {DefaultConfigs} defaultConfigs
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -15,9 +14,10 @@ class ConfigRemoveCommand extends BaseCommand {
     },
     flags,
     configFile,
+    defaultConfigs,
   ) {
-    if (Object.keys(systemConfigs).includes(configName)) {
-      throw new Error(`system config ${configName} can't be removed`);
+    if (defaultConfigs.has(configName)) {
+      throw new Error(`system config ${configName} can't be removed.\nPlease use 'dashmate reset --hard --config=${configName}' command to reset the configuration`);
     }
 
     configFile.removeConfig(configName);

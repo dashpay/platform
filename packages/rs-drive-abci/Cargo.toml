@@ -29,8 +29,8 @@ bs58 = "0.4.0"
 hex = "0.4.3"
 indexmap = { version = "1.9.3", features = ["serde"] }
 sha2 = "0.10.6"
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev="408bef25fd229dbb6b9f1b3d380e2afbc77d812c" }
-dpp = { path = "../rs-dpp" , features = ["abci"] }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev="7840fe65fbdf4f083ff8632f6e7afac11a31ca63" }
+dpp = { path = "../rs-dpp", features = ["abci"] }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
 mockall = { version = "0.11", optional = true }
@@ -51,9 +51,9 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
     "std",
     "registry",
     "tracing-log",
-], optional = true }
-atty = { version = "0.2.14", optional = true }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", branch = "master" }
+], optional = false }
+atty = { version = "0.2.14", optional = false }
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci" }
 # tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }
 anyhow = { version = "1.0.70" }
 lazy_static = "1.4.0"
@@ -76,15 +76,28 @@ derive_more = "0.99.17"
 
 [dev-dependencies]
 base64 = "0.20.0"
-platform-version = { path = "../rs-platform-version", features = ["mock-versions"]}
-dpp = { path = "../rs-dpp" , features = ["abci", "random-documents", "state-transition-signing", "random-identities",
-  "random-public-keys", "random-document-types", "fixtures-and-mocks", "identity-value-conversion",
-  "data-contract-json-conversion", "data-contract-cbor-conversion"] }
-drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
+platform-version = { path = "../rs-platform-version", features = [
+    "mock-versions",
+] }
+dpp = { path = "../rs-dpp", features = [
+    "abci",
+    "random-documents",
+    "state-transition-signing",
+    "random-identities",
+    "random-public-keys",
+    "random-document-types",
+    "fixtures-and-mocks",
+    "identity-value-conversion",
+    "data-contract-json-conversion",
+    "data-contract-cbor-conversion",
+] }
+drive = { path = "../rs-drive" }
 
 [features]
-default = ["server"]
-server = ["clap", "dotenvy", "tracing-subscriber", "atty", "mockall"]
+default = ["server", "mocks"]
+server = ["clap", "dotenvy"]
+mocks = ["mockall", "drive/fixtures-and-mocks"]
+
 
 [[bin]]
 name = "drive-abci"

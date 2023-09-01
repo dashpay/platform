@@ -1,4 +1,5 @@
 const { Listr } = require('listr2');
+const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
 
 /**
  * @param {startNodeTask} startNodeTask
@@ -18,7 +19,7 @@ function restartNodeTaskFactory(startNodeTask, stopNodeTask, buildServicesTask) 
   function restartNodeTask(config) {
     return new Listr([
       {
-        enabled: () => config.get('platform.enable') && config.get('platform.sourcePath') !== null,
+        enabled: () => isServiceBuildRequired(config),
         task: (ctx) => {
           ctx.skipBuildServices = true;
 

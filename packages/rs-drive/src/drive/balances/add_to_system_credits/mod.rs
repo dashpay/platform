@@ -1,3 +1,5 @@
+
+
 mod v0;
 
 use crate::drive::Drive;
@@ -17,7 +19,7 @@ impl Drive {
     ///
     /// * `amount` - The amount of system credits to be added.
     /// * `transaction` - A `TransactionArg` object representing the transaction to be used for adding to the system credits.
-    /// * `drive_version` - A `DriveVersion` object specifying the version of the Drive.
+    /// * `platform_version` - A `PlatformVersion` object specifying the version of Platform.
     ///
     /// # Returns
     ///
@@ -25,7 +27,7 @@ impl Drive {
     ///
     /// # Errors
     ///
-    /// This function will return an error if the version of the Drive is unknown.
+    /// This function will return an error if the version of Platform is unknown.
     pub fn add_to_system_credits(
         &self,
         amount: u64,

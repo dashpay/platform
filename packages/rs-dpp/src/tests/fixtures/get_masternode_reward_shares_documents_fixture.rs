@@ -18,12 +18,12 @@ pub fn get_masternode_reward_shares_documents_fixture(
         load_system_data_contract(SystemDataContract::MasternodeRewards, protocol_version)
             .expect("should load masternode rewards contract");
 
-    let factory = DocumentFactory::new(protocol_version, data_contract.clone())
-        .expect("expected to make factory");
+    let factory = DocumentFactory::new(protocol_version).expect("expected to make factory");
 
     (
         vec![factory
             .create_document(
+                &data_contract,
                 owner_id,
                 String::from("rewardShare"),
                 platform_value!({
@@ -51,12 +51,12 @@ pub fn get_masternode_reward_shares_extended_documents_fixture(
         load_system_data_contract(SystemDataContract::MasternodeRewards, protocol_version)
             .expect("should load masternode rewards contract");
 
-    let factory = DocumentFactory::new(protocol_version, data_contract.clone())
-        .expect("expected to make factory");
+    let factory = DocumentFactory::new(protocol_version).expect("expected to make factory");
 
     (
         vec![factory
             .create_extended_document(
+                &data_contract,
                 owner_id,
                 String::from("rewardShare"),
                 platform_value!({

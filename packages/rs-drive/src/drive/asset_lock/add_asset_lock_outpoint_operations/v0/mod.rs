@@ -1,3 +1,6 @@
+
+//! Implements in Drive a function which adds operations to a given `outpoint` if it is present in the estimated costs.
+
 use crate::drive::asset_lock::asset_lock_storage_path;
 
 use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefElement;

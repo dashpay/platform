@@ -1,5 +1,3 @@
-// TODO(versioning): restore
-// @ts-ignore
 import { Identity, DataContract, DataContractCreateTransition } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 import broadcastStateTransition from '../../broadcastStateTransition';
@@ -23,14 +21,12 @@ export default async function publish(
 
   const { dpp } = this;
 
-  // TODO(versioning): restore
-  // @ts-ignore
   const dataContractCreateTransition = dpp.dataContract
     .createDataContractCreateTransition(dataContract);
 
   this.logger.silly(`[Contracts#publish] created data contract create transition ${dataContract.getId()}`);
 
-  await signStateTransition(this, dataContractCreateTransition, identity, 1);
+  await signStateTransition(this, dataContractCreateTransition, identity, 2);
   await broadcastStateTransition(this, dataContractCreateTransition);
 
   // Acknowledge identifier to handle retry attempts to mitigate

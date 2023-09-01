@@ -33,10 +33,11 @@ pub mod core;
 /// Metrics subsystem
 pub mod metrics;
 /// Test helpers and fixtures
-// #[cfg(test)]
+#[cfg(any(feature = "mocks", test))]
 pub mod test;
 
 /// Mimic of block execution for tests
+#[cfg(any(feature = "mocks", test))]
 pub mod mimic;
 /// Platform module
 pub mod platform_types;

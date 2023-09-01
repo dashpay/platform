@@ -232,7 +232,7 @@ impl ExtendedDocumentV0 {
         Self::from_untrusted_platform_value(raw_document.into(), data_contract, platform_version)
     }
 
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "document-value-conversion")]
     /// Create an extended document from a trusted platform value object where fields are already in
     /// the proper format for the contract.
     ///
@@ -277,7 +277,7 @@ impl ExtendedDocumentV0 {
         Ok(extended_document)
     }
 
-    #[cfg(feature = "document-json-conversion")]
+    #[cfg(feature = "document-value-conversion")]
     /// Create an extended document from an untrusted platform value object where fields might not
     /// be in the proper format for the contract.
     ///
@@ -416,7 +416,10 @@ impl ExtendedDocumentV0 {
 
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash_to_vec(
-            ExtendedDocumentPlatformConversionMethodsV0::serialize(self, platform_version)?,
+            ExtendedDocumentPlatformConversionMethodsV0::serialize_to_bytes(
+                self,
+                platform_version,
+            )?,
         ))
     }
 
@@ -425,6 +428,28 @@ impl ExtendedDocumentV0 {
     /// If parents are not present they will be automatically created
     pub fn set(&mut self, path: &str, value: Value) -> Result<(), ProtocolError> {
         Ok(self.document.properties_mut().insert_at_path(path, value)?)
+    }
+
+    /// Set the value under given path.
+    /// The path supports syntax from `lodash` JS lib. Example: "root.people[0].name".
+    /// If parents are not present they will be automatically created
+    pub fn set_untrusted(&mut self, path: &str, value: Value) -> Result<(), ProtocolError> {
+        let document_type = self.document_type()?;
+
+        let identifiers = document_type.identifier_paths();
+        let binary_paths = document_type.binary_paths();
+
+        if identifiers.contains(path) {
+            let value =
+                ReplacementType::Identifier.replace_for_bytes(value.to_identifier_bytes()?)?;
+            self.set(path, value)
+        } else if binary_paths.contains(path) {
+            let value =
+                ReplacementType::BinaryBytes.replace_for_bytes(value.to_identifier_bytes()?)?;
+            self.set(path, value)
+        } else {
+            self.set(path, value)
+        }
     }
 
     /// Retrieves field specified by path
