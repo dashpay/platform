@@ -108,7 +108,7 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
     };
 
     try {
-      scope.syncAsset = await getSyncAsset(config)
+      scope.syncAsset = await getSyncAsset(config);
     } catch (error) {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
