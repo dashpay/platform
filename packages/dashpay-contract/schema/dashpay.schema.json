@@ -122,6 +122,8 @@
     "additionalProperties": false
   },
   "contactRequest": {
+    "requiresIdentityEncryptionBoundedKey": 2,
+    "requiresIdentityDecryptionBoundedKey": 2,
     "type": "object",
     "indices": [
       {
@@ -174,22 +176,6 @@
       }
     ],
     "properties": {
-      "requiresIdentityEncryptionBoundedKey": {
-        "type": "integer",
-        "enum": [
-          0,
-          1,
-          2
-        ]
-      },
-      "requiresIdentityDecryptionBoundedKey": {
-        "type": "integer",
-        "enum": [
-          0,
-          1,
-          2
-        ]
-      },
       "toUserId": {
         "type": "array",
         "byteArray": true,
