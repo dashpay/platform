@@ -2036,7 +2036,6 @@ mod tests {
         let document_type = contract
             .document_type_for_name("niceDocument")
             .expect("expected to get nice document");
-
         let start_after = Identifier::random();
 
         let query_value = json!({
