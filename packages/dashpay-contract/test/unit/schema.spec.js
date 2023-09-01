@@ -7,7 +7,8 @@ const whitepaperMasternodeText = 'Full nodes are servers running on a P2P networ
 const encoded32Chars = '4fafc98bbfe597f7ba2c9f767d52036d';
 const encoded64Chars = '4fafc98bbfe597f7ba2c9f767d52036d2226175960a908e355e5c575711eb166';
 
-describe('Dashpay Contract', () => {
+// TODO: consider restoring with wasm-dpp
+describe.skip('Dashpay Contract', () => {
   let dpp;
   let contract;
   let identityId;
