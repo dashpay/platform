@@ -130,7 +130,10 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocumentV0 {
     ///
     /// The serialization of a document follows the pattern:
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
+    fn serialize_to_bytes(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
         match platform_version
             .dpp
             .document_versions
@@ -146,7 +149,7 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocumentV0 {
         }
     }
 
-    fn serialize_specific_version(
+    fn serialize_specific_version_to_bytes(
         &self,
         feature_version: FeatureVersion,
         platform_version: &PlatformVersion,
@@ -165,7 +168,7 @@ impl ExtendedDocumentPlatformConversionMethodsV0 for ExtendedDocumentV0 {
     ///
     /// The serialization of a document follows the pattern:
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
-    fn serialize_consume(
+    fn serialize_consume_to_bytes(
         self,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {

@@ -19,7 +19,6 @@ const {
     StateTransitionBroadcastError,
   },
   PlatformProtocol: {
-    Identity,
     Identifier,
     IdentityPublicKey,
     InvalidInstantAssetLockProofSignatureError,
@@ -492,6 +491,7 @@ describe('Platform', () => {
         let recipient;
         before(async () => {
           recipient = await client.platform.identities.register(400000);
+          await waitForSTPropagated();
         });
 
         it('should be able to transfer credits from one identity to another', async () => {
@@ -559,7 +559,7 @@ describe('Platform', () => {
       it('should be able to add public key to the identity', async () => {
         const identityBeforeUpdate = identity.toObject();
 
-        expect(identityBeforeUpdate.publicKeys[2]).to.not.exist();
+        expect(identityBeforeUpdate.publicKeys[3]).to.not.exist();
 
         const account = await client.platform.client.getWalletAccount();
         const identityIndex = await account.getUnusedIdentityIndex();
@@ -571,8 +571,8 @@ describe('Platform', () => {
         const identityPublicKey = identityPrivateKey.toPublicKey().toBuffer();
 
         const newPublicKey = new IdentityPublicKeyWithWitness(1);
-        newPublicKey.setId(2);
-        newPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH);
+        newPublicKey.setId(3);
+        newPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
         newPublicKey.setData(identityPublicKey);
 
         const update = {
@@ -597,7 +597,7 @@ describe('Platform', () => {
         expect(identity.getPublicKeyById(2)).to.exist();
 
         const newPublicKeyObject = newPublicKey.toObject(true);
-        const expectedPublicKey = identity.getPublicKeyById(2).toObject(true);
+        const expectedPublicKey = identity.getPublicKeyById(3).toObject(true);
         delete expectedPublicKey.disabledAt;
         expect(expectedPublicKey).to.deep.equal(
           newPublicKeyObject,

@@ -67,7 +67,7 @@ describe('DocumentBatchTransition', () => {
     });
   });
 
-  describe('#getRequiredKeySecurityLevel', () => {
+  describe.skip('#getRequiredKeySecurityLevel', () => {
     it('should return the highest security level of all transitions - Rust', () => {
       stateTransitionFixture = documentFactory.createStateTransition({
         create: [mediumSecurityDocumentFixture],

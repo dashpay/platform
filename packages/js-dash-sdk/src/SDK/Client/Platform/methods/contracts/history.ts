@@ -49,8 +49,6 @@ export async function history(
 
   // eslint-disable-next-line no-restricted-syntax
   for (const [date, contractBytes] of Object.entries(rawContractHistory)) {
-    // TODO(versioning): restore
-    // @ts-ignore
     contractHistory[date] = await this.dpp.dataContract
       .createFromBuffer(contractBytes as Uint8Array);
   }

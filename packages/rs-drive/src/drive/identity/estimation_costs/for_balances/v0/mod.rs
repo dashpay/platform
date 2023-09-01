@@ -30,13 +30,13 @@ use std::collections::HashMap;
 impl Drive {
     /// Adds estimation costs for balances in Drive for version 0.
     ///
-    /// This function provides a mechanism to estimate the costs of balances 
+    /// This function provides a mechanism to estimate the costs of balances
     /// in the drive by updating the provided `HashMap` with layer information
     /// relevant to balances.
     ///
     /// # Parameters
     ///
-    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap` 
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap`
     ///   that stores estimated layer information based on the key information path.
     ///
     /// # Notes
@@ -46,14 +46,6 @@ impl Drive {
     /// 1. A top layer with balance information, assumed to be on layer 2. Updates to
     ///    this layer are estimated to involve updating one sum tree and one normal tree.
     /// 2. A contract layer for the balance. This layer is considered as a sum tree.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let drive = Drive::new(...); // Initialize the drive
-    /// let mut estimated_info = HashMap::new(); // Estimated layer information map
-    ///
-    /// drive.add_estimation_costs_for_balances_v0(&mut estimated_info);
     /// ```
     pub(super) fn add_estimation_costs_for_balances_v0(
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,

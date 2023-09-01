@@ -91,9 +91,7 @@ impl TryFrom<Header> for CleanedHeader {
         } = value;
 
         let Some(version) = version else {
-            return Err(AbciError::BadRequest(
-                "header is missing version".to_string(),
-            ).into());
+            return Err(AbciError::BadRequest("header is missing version".to_string()).into());
         };
 
         if height < 0 {
@@ -103,9 +101,7 @@ impl TryFrom<Header> for CleanedHeader {
         }
 
         let Some(time) = time else {
-            return Err(AbciError::BadRequest(
-                "header is missing time".to_string(),
-            ).into());
+            return Err(AbciError::BadRequest("header is missing time".to_string()).into());
         };
 
         let last_commit_hash = if last_commit_hash.is_empty() {

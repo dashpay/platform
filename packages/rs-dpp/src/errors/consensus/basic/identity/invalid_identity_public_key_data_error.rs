@@ -1,13 +1,17 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use crate::identity::KeyID;
 use crate::PublicKeyValidationError;
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("Invalid identity public key {public_key_id:?} data: {validation_error:?}")]
+#[platform_serialize(unversioned)]
 pub struct InvalidIdentityPublicKeyDataError {
     /*
 

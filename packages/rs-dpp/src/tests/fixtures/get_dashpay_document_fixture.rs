@@ -18,7 +18,7 @@ pub fn get_contact_request_document_fixture(
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
     let data_contract = get_dashpay_contract_fixture(None, protocol_version).data_contract_owned();
 
-    let factory = DocumentFactory::new(protocol_version, data_contract)
+    let factory = DocumentFactory::new(protocol_version)
         .expect("expected to create factory for get_contact_request_document_fixture");
 
     let mut data = platform_value! ({
@@ -34,7 +34,7 @@ pub fn get_contact_request_document_fixture(
     }
 
     factory
-        .create_document(owner_id, "contactRequest".to_string(), data)
+        .create_document(&data_contract, owner_id, "contactRequest".to_string(), data)
         .expect("the document dashpay contact request should be created")
 }
 
@@ -47,8 +47,7 @@ pub fn get_contact_request_extended_document_fixture(
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
     let data_contract = get_dashpay_contract_fixture(None, protocol_version).data_contract_owned();
 
-    let factory =
-        DocumentFactory::new(protocol_version, data_contract).expect("expected document factory");
+    let factory = DocumentFactory::new(protocol_version).expect("expected document factory");
 
     let mut data = platform_value! ({
             "toUserId": Identifier::new([0_u8;32]),
@@ -63,6 +62,6 @@ pub fn get_contact_request_extended_document_fixture(
     }
 
     factory
-        .create_extended_document(owner_id, "contactRequest".to_string(), data)
+        .create_extended_document(&data_contract, owner_id, "contactRequest".to_string(), data)
         .expect("the document dashpay contact request should be created")
 }

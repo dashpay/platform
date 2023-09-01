@@ -85,7 +85,8 @@ impl<'a> ValidateStateTransitionIdentitySignatureV0<'a> for StateTransition {
                 let action = action.ok_or(ProtocolError::CorruptedCodeExecution(
                     "we expect a state transition action when validating the signature of the documents batch transition".to_string(),
                 ))?;
-                let StateTransitionAction::DocumentsBatchAction(documents_batch_action) = action else {
+                let StateTransitionAction::DocumentsBatchAction(documents_batch_action) = action
+                else {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                         "we expect a documents batch state transition action when validating the signature of the documents batch transition",
                     )));

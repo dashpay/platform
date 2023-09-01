@@ -1,9 +1,11 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use serde::Serialize;
 
 use dpp::consensus::basic::data_contract::{
-    DataContractInvalidIndexDefinitionUpdateError, InvalidDataContractVersionError,
+    DataContractInvalidIndexDefinitionUpdateError, IncompatibleDataContractSchemaError,
+    InvalidDataContractVersionError,
 };
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
@@ -13,9 +15,19 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::schema::{
+    get_operation_and_property_name_json, validate_schema_compatibility, EMPTY_JSON,
+};
+use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+use dpp::data_contract::JsonValue;
+use dpp::platform_value::converter::serde_json::{
+    BTreeValueJsonConverter, BTreeValueRefJsonConverter,
+};
+use dpp::platform_value::{Value, ValueMap};
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
+use dpp::ProtocolError;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
@@ -66,23 +78,21 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         // Data contract should exist
         let add_to_cache_if_pulled = tx.is_some();
         // Data contract should exist
-        let Some(contract_fetch_info) =
-            drive
-                .get_contract_with_fetch_info_and_fee(
-                    new_data_contract.id().to_buffer(),
-                    None,
-                    add_to_cache_if_pulled,
-                    tx,
-                    platform_version,
-                )?
-                .1
-            else {
-                validation_result
-                    .add_error(BasicError::DataContractNotPresentError(
-                        DataContractNotPresentError::new(new_data_contract.id())
-                    ));
-                return Ok(validation_result);
-            };
+        let Some(contract_fetch_info) = drive
+            .get_contract_with_fetch_info_and_fee(
+                new_data_contract.id().to_buffer(),
+                None,
+                add_to_cache_if_pulled,
+                tx,
+                platform_version,
+            )?
+            .1
+        else {
+            validation_result.add_error(BasicError::DataContractNotPresentError(
+                DataContractNotPresentError::new(new_data_contract.id()),
+            ));
+            return Ok(validation_result);
+        };
 
         let old_data_contract = &contract_fetch_info.contract;
 
@@ -105,7 +115,9 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         for (new_contract_document_type_name, new_contract_document_type) in
             new_data_contract.document_types()
         {
-            let Some(old_contract_document_type) = old_data_contract.document_type_optional_for_name(new_contract_document_type_name) else {
+            let Some(old_contract_document_type) =
+                old_data_contract.document_type_optional_for_name(new_contract_document_type_name)
+            else {
                 // if it's a new document type (ie the old data contract didn't have it)
                 // then new indices on it are fine
                 continue;
@@ -142,94 +154,101 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             return Ok(validation_result);
         }
 
-        //todo: reenable checks
+        // Schema defs should be compatible
 
-        //
-        //
-        // let mut existing_data_contract_object = existing_data_contract.to_object()?;
-        // let new_data_contract_object = new_data_contract.to_object()?;
-        //
-        // existing_data_contract_object
-        //     .remove_many(&vec![
-        //         property_names::DEFINITIONS,
-        //         property_names::DOCUMENTS,
-        //         property_names::VERSION,
-        //     ])
-        //     .map_err(ProtocolError::ValueError)?;
-        //
-        // let mut new_base_data_contract = new_data_contract_object.clone();
-        // new_base_data_contract
-        //     .remove_many(&vec![
-        //         property_names::DEFINITIONS,
-        //         property_names::DOCUMENTS,
-        //         property_names::VERSION,
-        //     ])
-        //     .map_err(ProtocolError::ValueError)?;
-        //
-        // let base_data_contract_diff =
-        //     platform_value::patch::diff(&existing_data_contract_object, &new_base_data_contract);
-        //
-        // for diff in base_data_contract_diff.0.iter() {
-        //     let (operation, property_name) = get_operation_and_property_name(diff);
-        //     validation_result.add_error(BasicError::DataContractImmutablePropertiesUpdateError(
-        //         DataContractImmutablePropertiesUpdateError::new(
-        //             operation.to_owned(),
-        //             property_name.to_owned(),
-        //             existing_data_contract_object
-        //                 .get(property_name.split_at(1).1)
-        //                 .ok()
-        //                 .flatten()
-        //                 .cloned()
-        //                 .unwrap_or(Value::Null),
-        //             new_base_data_contract
-        //                 .get(property_name.split_at(1).1)
-        //                 .ok()
-        //                 .flatten()
-        //                 .cloned()
-        //                 .unwrap_or(Value::Null),
-        //         ),
-        //     ))
-        // }
-        // if !validation_result.is_valid() {
-        //     return Ok(validation_result);
-        // }
-        //
-        // // Schema should be backward compatible
-        // let old_schema = &existing_data_contract.documents()?;
-        // let new_schema: JsonValue = new_data_contract_object
-        //     .get_value("documents")
-        //     .map_err(ProtocolError::ValueError)?
-        //     .clone()
-        //     .try_into_validating_json() //maybe (not sure) / could be just try_into
-        //     .map_err(ProtocolError::ValueError)?;
-        //
-        // for (document_type, document_schema) in old_schema.iter() {
-        //     let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
-        //     let result = validate_schema_compatibility(document_schema, new_document_schema);
-        //     match result {
-        //         Ok(_) => {}
-        //         Err(DiffValidatorError::SchemaCompatibilityError { diffs }) => {
-        //             let (operation_name, property_name) =
-        //                 get_operation_and_property_name_json(&diffs[0]);
-        //             validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
-        //                 IncompatibleDataContractSchemaError::new(
-        //                     existing_data_contract.id(),
-        //                     operation_name.to_owned(),
-        //                     property_name.to_owned(),
-        //                     document_schema.clone(),
-        //                     new_document_schema.clone(),
-        //                 ),
-        //             ));
-        //         }
-        //         Err(DiffValidatorError::DataStructureError(e)) => {
-        //             return Err(ProtocolError::ParsingError(e.to_string()).into())
-        //         }
-        //     }
-        // }
-        //
-        // if !validation_result.is_valid() {
-        //     return Ok(validation_result);
-        // }
+        // TODO: WE need to combine defs with documents schema and and resolve all refs
+        //  Having such full schema we can make sure that changes in defs are actually
+        //  affect document schema. Current simplified solution just apply the same logic
+        //  as for document schema
+        if let Some(old_defs) = old_data_contract.schema_defs() {
+            let Some(new_defs) = self.data_contract().schema_defs() else {
+                validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
+                    IncompatibleDataContractSchemaError::new(
+                        self.data_contract().id(),
+                        "remove".to_string(),
+                        "$defs".to_string(),
+                        old_defs.into(),
+                        Value::Null,
+                    ),
+                ));
+
+                return Ok(validation_result);
+            };
+
+            let old_defs_json: JsonValue = old_defs
+                .to_json_value()
+                .map_err(ProtocolError::ValueError)?;
+
+            let new_defs_json: JsonValue = new_defs
+                .to_json_value()
+                .map_err(ProtocolError::ValueError)?;
+
+            let diffs =
+                validate_schema_compatibility(&old_defs_json, &new_defs_json, platform_version)?;
+
+            if diffs.len() > 0 {
+                let (operation_name, property_name) =
+                    get_operation_and_property_name_json(&diffs[0]);
+
+                validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
+                    IncompatibleDataContractSchemaError::new(
+                        self.data_contract().id(),
+                        operation_name.to_owned(),
+                        property_name.to_owned(),
+                        old_defs_json.into(),
+                        new_defs_json.into(),
+                    ),
+                ));
+
+                return Ok(validation_result);
+            }
+        }
+
+        // Document schemas should be backward compatible
+        let new_schema = new_data_contract
+            .document_schemas()
+            .to_json_value()
+            .map_err(ProtocolError::ValueError)?;
+
+        for (document_type_name, old_document_schema) in old_data_contract.document_schemas() {
+            let old_document_schema_json: JsonValue = old_document_schema
+                .clone()
+                .try_into()
+                .map_err(ProtocolError::ValueError)?;
+
+            let new_document_schema = new_data_contract
+                .document_type_optional_for_name(&document_type_name)
+                .map(|document_type| document_type.schema().clone())
+                .unwrap_or(ValueMap::new().into());
+
+            let new_document_schema_json: JsonValue = new_document_schema
+                .clone()
+                .try_into()
+                .map_err(ProtocolError::ValueError)?;
+
+            let diffs = validate_schema_compatibility(
+                &old_document_schema_json,
+                &new_document_schema_json,
+                platform_version,
+            )?;
+
+            if diffs.len() > 0 {
+                let (operation_name, property_name) =
+                    get_operation_and_property_name_json(&diffs[0]);
+
+                validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
+                    IncompatibleDataContractSchemaError::new(
+                        self.data_contract().id(),
+                        operation_name.to_owned(),
+                        property_name.to_owned(),
+                        old_document_schema.clone(),
+                        new_document_schema,
+                    ),
+                ));
+
+                return Ok(validation_result);
+            }
+        }
 
         Ok(action)
     }

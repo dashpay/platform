@@ -1,24 +1,26 @@
 use crate::consensus::basic::BasicError;
-use serde::{Deserialize, Serialize};
+use crate::errors::ProtocolError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 use crate::prelude::Identifier;
-use serde_json::Value as JsonValue;
 
 use bincode::{Decode, Encode};
+use platform_value::Value;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("Data Contract updated schema is not backward compatible with one defined in Data Contract wid id {data_contract_id}. Field: '{field_path}', Operation: '{operation}'"
 )]
+#[platform_serialize(unversioned)]
 pub struct IncompatibleDataContractSchemaError {
     data_contract_id: Identifier,
     operation: String,
     field_path: String,
-    #[bincode(with_serde)]
-    old_schema: JsonValue,
-    #[bincode(with_serde)]
-    new_schema: JsonValue,
+    old_schema: Value,
+    new_schema: Value,
 }
 
 impl IncompatibleDataContractSchemaError {
@@ -26,8 +28,8 @@ impl IncompatibleDataContractSchemaError {
         data_contract_id: Identifier,
         operation: String,
         field_path: String,
-        old_schema: JsonValue,
-        new_schema: JsonValue,
+        old_schema: Value,
+        new_schema: Value,
     ) -> Self {
         Self {
             data_contract_id,
@@ -47,10 +49,10 @@ impl IncompatibleDataContractSchemaError {
     pub fn field_path(&self) -> String {
         self.field_path.clone()
     }
-    pub fn old_schema(&self) -> JsonValue {
+    pub fn old_schema(&self) -> Value {
         self.old_schema.clone()
     }
-    pub fn new_schema(&self) -> JsonValue {
+    pub fn new_schema(&self) -> Value {
         self.new_schema.clone()
     }
 }

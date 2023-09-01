@@ -20,9 +20,9 @@ pub struct QueryDocumentsOutcomeV0 {
 
 /// Trait defining methods associated with `QueryDocumentsOutcomeV0`.
 ///
-/// This trait provides a set of methods to interact with and retrieve 
-/// details from an instance of `QueryDocumentsOutcomeV0`. These methods 
-/// include retrieving the documents, skipped count, and the associated cost 
+/// This trait provides a set of methods to interact with and retrieve
+/// details from an instance of `QueryDocumentsOutcomeV0`. These methods
+/// include retrieving the documents, skipped count, and the associated cost
 /// of the query.
 pub trait QueryDocumentsOutcomeV0Methods {
     /// Returns a reference to the documents found from the query.

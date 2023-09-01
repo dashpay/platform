@@ -8,6 +8,7 @@ use crate::drive::contract::DataContractFetchInfo;
 use crate::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionV0};
 
 impl DocumentReplaceTransitionAction {
+    /// try from borrowed
     pub fn try_from_borrowed_document_replace_transition(
         document_replace_transition: &DocumentReplaceTransition,
         originally_created_at: Option<TimestampMillis>,

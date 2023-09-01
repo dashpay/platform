@@ -1,14 +1,18 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use serde::{Deserialize, Serialize};
+use crate::errors::ProtocolError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::prelude::Identifier;
 
 use bincode::{Decode, Encode};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("Data Contract {data_contract_id} doesn't define document with the type {document_type}")]
+#[platform_serialize(unversioned)]
 pub struct InvalidDocumentTypeError {
     /*
 

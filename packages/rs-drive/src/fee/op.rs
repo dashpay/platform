@@ -154,7 +154,9 @@ impl HashFunction {
 /// A Hash Function Operation
 #[derive(Debug, PartialEq, Eq)]
 pub struct FunctionOp {
+    /// hash
     pub(crate) hash: HashFunction,
+    /// rounds
     pub(crate) rounds: u32,
 }
 

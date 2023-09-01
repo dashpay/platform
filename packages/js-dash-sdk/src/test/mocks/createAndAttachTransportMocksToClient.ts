@@ -1,7 +1,6 @@
 import { Transaction } from '@dashevo/dashcore-lib';
 import DAPIClient from '@dashevo/dapi-client';
 import stateTransitionTypes from '@dashevo/dpp/lib/stateTransition/stateTransitionTypes';
-import { Identity } from '@dashevo/wasm-dpp';
 
 import { createFakeInstantLock } from '../../utils/createFakeIntantLock';
 import getResponseMetadataFixture from '../fixtures/getResponseMetadataFixture';
@@ -60,7 +59,9 @@ async function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
             .getPublicKeys(),
         );
 
-      identityToResolve.setBalance(interceptedIdentityStateTransition.getAssetLockProof().getOutput().satoshis);
+      identityToResolve.setBalance(
+        interceptedIdentityStateTransition.getAssetLockProof().getOutput().satoshis,
+      );
 
       dapiClientMock.platform.getIdentity.withArgs(identityToResolve.getId())
         .resolves(new GetIdentityResponse(

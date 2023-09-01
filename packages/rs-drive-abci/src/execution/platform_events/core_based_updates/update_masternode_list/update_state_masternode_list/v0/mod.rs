@@ -111,7 +111,7 @@ where
 
         //todo: clean up
         let added_hpmns = added_mns.iter().filter_map(|masternode| {
-            if masternode.node_type == MasternodeType::HighPerformance {
+            if masternode.node_type == MasternodeType::Evo {
                 Some((masternode.pro_tx_hash, masternode.clone()))
             } else {
                 None

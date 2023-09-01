@@ -58,10 +58,11 @@ where
             true,
             Some(transaction),
             platform_version,
-        )? else {
-            return Err(Error::Execution(
-                ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
-            ));
+        )?
+        else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "can't fetch withdrawal data contract",
+            )));
         };
 
         let mut drive_operations: Vec<DriveOperation> = vec![];

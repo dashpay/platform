@@ -36,6 +36,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
       'PoSe Penalty': 'n/a',
       'Last paid block': 'n/a',
       'Last paid time': 'n/a',
+      'Enabled count': 'n/a',
       'Payment queue position': 'n/a',
       'Next payment time': 'n/a',
     };
@@ -75,6 +76,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
         plain['Last paid time'] = lastPaidHeight === 0 ? 'Never' : (lastPaidTime || 'n/a');
         plain['Payment queue position'] = paymentQueuePosition || 'n/a';
         plain['Next payment time'] = `in ${nextPaymentTime}` || 'n/a';
+        plain['Enabled count'] = enabledCount || 'n/a';
       }
 
       return printObject(plain, flags.format);

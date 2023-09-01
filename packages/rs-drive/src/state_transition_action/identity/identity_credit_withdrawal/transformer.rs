@@ -3,6 +3,7 @@ use crate::state_transition_action::identity::identity_credit_withdrawal::Identi
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 
 impl IdentityCreditWithdrawalTransitionAction {
+    /// from
     pub fn from_identity_credit_withdrawal(
         identity_credit_withdrawal: &IdentityCreditWithdrawalTransition,
         creation_time_ms: u64,

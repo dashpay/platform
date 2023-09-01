@@ -43,10 +43,12 @@ pub fn delete_withdrawal_data_trigger_v0(
     let mut result = DataTriggerExecutionResult::default();
 
     let DocumentTransitionAction::DeleteAction(dt_delete) = document_transition else {
-        return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(format!(
-            "the Document Transition {} isn't 'DELETE",
-            document_transition.base().id()
-        ))));
+        return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
+            format!(
+                "the Document Transition {} isn't 'DELETE",
+                document_transition.base().id()
+            ),
+        )));
     };
 
     let document_type = data_contract.document_type_for_name(withdrawal::NAME)?;

@@ -25,14 +25,12 @@ export default async function update(
 
   updatedDataContract.incrementVersion();
 
-  // TODO(versioning): restore
-  // @ts-ignore
   const dataContractUpdateTransition = dpp.dataContract
     .createDataContractUpdateTransition(updatedDataContract);
 
   this.logger.silly(`[DataContract#update] Created data contract update transition ${dataContract.getId()}`);
 
-  await signStateTransition(this, dataContractUpdateTransition, identity, 1);
+  await signStateTransition(this, dataContractUpdateTransition, identity, 2);
   await broadcastStateTransition(this, dataContractUpdateTransition);
 
   this.logger.silly(`[DataContract#update] Broadcasted data contract update transition ${dataContract.getId()}`);

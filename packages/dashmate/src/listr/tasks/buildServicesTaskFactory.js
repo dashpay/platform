@@ -1,15 +1,14 @@
 const { Listr } = require('listr2');
-const generateEnvs = require('../../util/generateEnvs');
 
 /**
  *
  * @param {DockerCompose} dockerCompose
- * @param {ConfigFile} configFile
+ * @param {generateEnvs} generateEnvs
  * @return {buildServicesTask}
  */
 function buildServicesTaskFactory(
   dockerCompose,
-  configFile,
+  generateEnvs,
 ) {
   /**
    * @typedef {buildServicesTask}
@@ -17,31 +16,37 @@ function buildServicesTaskFactory(
    * @return {Listr}
    */
   function buildServicesTask(config) {
-    return new Listr({
-      title: 'Build services',
+    return new Listr([{
+      title: 'Build base image',
+      enabled: () => config.get('docker.baseImage.build.enabled'),
       task: async (ctx, task) => {
-        // prebuild dependencies
-
         const envs = {
-          ...generateEnvs(configFile, config),
-          COMPOSE_FILE: 'docker-compose.platform.deps.yml',
+          ...generateEnvs(config),
+          COMPOSE_FILE: 'docker-compose.build.base.yml',
+          COMPOSE_PROFILES: '',
         };
 
-        let obs = await dockerCompose.build(envs, 'deps');
-
-        await new Promise((res, rej) => {
-          obs
-            .subscribe((msg) => ctx.isVerbose && task.stdout().write(msg), rej, res);
-        });
-
-        obs = await dockerCompose.build(generateEnvs(configFile, config));
+        const obs = await dockerCompose.buildWithEnvs(
+          envs,
+          { serviceName: '_base' },
+        );
 
         await new Promise((res, rej) => {
           obs
             .subscribe((msg) => ctx.isVerbose && task.stdout().write(msg), rej, res);
         });
       },
-    });
+    }, {
+      title: 'Build services',
+      task: async (ctx, task) => {
+        const obs = await dockerCompose.build(config);
+
+        await new Promise((res, rej) => {
+          obs
+            .subscribe((msg) => ctx.isVerbose && task.stdout().write(msg), rej, res);
+        });
+      },
+    }]);
   }
 
   return buildServicesTask;

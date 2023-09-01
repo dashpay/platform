@@ -1,11 +1,24 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Default, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Default,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+)]
 #[error("$dataContractId is not present")]
+#[platform_serialize(unversioned)]
 pub struct MissingDataContractIdBasicError;
 
 /*

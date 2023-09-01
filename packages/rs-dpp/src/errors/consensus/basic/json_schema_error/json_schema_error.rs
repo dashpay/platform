@@ -1,15 +1,17 @@
 use crate::consensus::basic::json_schema_error::json_schema_error_data::JsonSchemaErrorData;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
 use jsonschema::ValidationError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Value;
-use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
-#[derive(Error, Debug, Serialize, Deserialize, Clone, Encode, Decode)]
+#[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 #[error("JsonSchemaError: {error_summary}, path: {instance_path}")]
+#[platform_serialize(unversioned)]
 pub struct JsonSchemaError {
     /*
 

@@ -2,16 +2,14 @@ const calculatePaymentQueuePosition = require('../../core/calculatePaymentQueueP
 const blocksToTime = require('../../util/blocksToTime');
 const MasternodeStateEnum = require('../enums/masternodeState');
 const MasternodeSyncAssetEnum = require('../enums/masternodeSyncAsset');
-const generateEnvs = require('../../util/generateEnvs');
 
 /**
  * @param {DockerCompose}dockerCompose
  * @param {createRpcClient} createRpcClient
  * @param {getConnectionHost} getConnectionHost
- * @param {ConfigFile} configFile
  * @returns {getMasternodeScopeFactory}
  */
-function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnectionHost, configFile) {
+function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnectionHost) {
   async function getSyncAsset(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),
@@ -45,6 +43,7 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
         lastPaidTime: null,
         paymentQueuePosition: null,
         nextPaymentTime: null,
+        enabledCount: null,
       },
     };
 
@@ -69,15 +68,15 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
 
       const { PoSePenalty: poSePenalty, lastPaidHeight } = dmnState;
 
-      const position = calculatePaymentQueuePosition(dmnState, enabled, coreBlocks);
-      const lastPaidTime = blocksToTime(coreBlocks - lastPaidHeight);
-      const paymentQueuePosition = position / enabled;
+      const paymentQueuePosition = calculatePaymentQueuePosition(dmnState, enabled, coreBlocks);
+      const lastPaidTime = lastPaidHeight ? blocksToTime(coreBlocks - lastPaidHeight) : null;
       const nextPaymentTime = `${blocksToTime(paymentQueuePosition)}`;
 
       info.nodeState.dmnState = dmnState;
       info.nodeState.poSePenalty = poSePenalty;
       info.nodeState.lastPaidHeight = lastPaidHeight;
       info.nodeState.lastPaidTime = lastPaidTime;
+      info.nodeState.enabledCount = enabled;
       info.nodeState.paymentQueuePosition = paymentQueuePosition;
       info.nodeState.nextPaymentTime = nextPaymentTime;
     }
@@ -88,9 +87,9 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
   async function getSentinelInfo(config) {
     // cannot be put in Promise.all, because sentinel will cause exit 1 with simultaneous requests
     const sentinelStateResponse = await dockerCompose
-      .execCommand(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py');
+      .execCommand(config, 'sentinel', 'python bin/sentinel.py');
     const sentinelVersionResponse = await dockerCompose
-      .execCommand(generateEnvs(configFile, config), 'sentinel', 'python bin/sentinel.py -v');
+      .execCommand(config, 'sentinel', 'python bin/sentinel.py -v');
 
     const [state] = sentinelStateResponse.out.split(/\r?\n/);
 

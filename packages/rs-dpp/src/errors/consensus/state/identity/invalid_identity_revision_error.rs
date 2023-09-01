@@ -1,14 +1,18 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
-use serde::{Deserialize, Serialize};
+use crate::errors::ProtocolError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::prelude::{Identifier, Revision};
 
 use bincode::{Decode, Encode};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("Identity {identity_id} has invalid revision. The current revision is {current_revision}")]
+#[platform_serialize(unversioned)]
 pub struct InvalidIdentityRevisionError {
     /*
 

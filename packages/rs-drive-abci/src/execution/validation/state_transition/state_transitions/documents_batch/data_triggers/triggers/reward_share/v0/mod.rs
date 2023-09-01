@@ -205,7 +205,7 @@ mod test {
     use dpp::document::{Document, DocumentV0Setters};
     use dpp::identity::Identity;
 
-    use dpp::platform_value::{Identifier, Value};
+    use dpp::platform_value::{Bytes32, Identifier, Value};
     use dpp::tests::fixtures::{
         get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
     };
@@ -241,7 +241,7 @@ mod test {
             Identifier::from_bytes(&hex::decode(top_level_identifier_hex).unwrap()).unwrap();
 
         platform_state.hpmn_masternode_list.insert(ProTxHash::from_inner(top_level_identifier.to_buffer()), MasternodeListItem {
-            node_type: MasternodeType::HighPerformance,
+            node_type: MasternodeType::Evo,
             pro_tx_hash: ProTxHash::from_inner(top_level_identifier.to_buffer()),
             collateral_hash: Txid::from_str("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash"),
             collateral_index: 0,
@@ -272,7 +272,7 @@ mod test {
         );
 
         platform_state.hpmn_masternode_list.insert(pro_tx_hash, MasternodeListItem {
-            node_type: MasternodeType::HighPerformance,
+            node_type: MasternodeType::Evo,
             pro_tx_hash,
             collateral_hash: Txid::from_str("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash"),
             collateral_index: 0,
@@ -301,7 +301,7 @@ mod test {
             .expect("expected the rewards document type");
         let document_transitions = get_document_transitions_fixture([(
             DocumentTransitionActionType::Create,
-            vec![(documents[0].clone(), document_type)],
+            vec![(documents[0].clone(), document_type, Bytes32::default())],
         )]);
 
         let document_create_transition = document_transitions[0]

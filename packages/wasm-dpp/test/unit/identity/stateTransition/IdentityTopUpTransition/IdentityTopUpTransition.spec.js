@@ -1,7 +1,6 @@
 const getIdentityTopUpTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
-const getChainAssetLockProofFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
 
-const { IdentityTopUpTransition, InstantAssetLockProof, Identifier } = require('../../../../..');
+const { InstantAssetLockProof, Identifier } = require('../../../../..');
 const { StateTransitionTypes } = require('../../../../..');
 
 describe('IdentityTopUpTransition', () => {

@@ -14,48 +14,30 @@ use std::collections::HashMap;
 impl Drive {
     /// Creates a key tree and associates the provided keys with it (version 0).
     ///
-    /// This function constructs a key tree for a specific identity ID and associates the 
-    /// provided public keys with it. The tree creation and association are performed as 
+    /// This function constructs a key tree for a specific identity ID and associates the
+    /// provided public keys with it. The tree creation and association are performed as
     /// low-level drive operations.
     ///
     /// # Parameters
     ///
     /// * `identity_id`: A 32-byte array representing the identity ID.
     /// * `keys`: A vector of `IdentityPublicKey` to be associated with the identity.
-    /// * `estimated_costs_only_with_layer_info`: An optional mutable reference to a `HashMap` 
+    /// * `estimated_costs_only_with_layer_info`: An optional mutable reference to a `HashMap`
     ///   that stores estimated layer information based on the key information path.
     /// * `transaction`: A `TransactionArg` object representing the context of the current transaction.
     /// * `platform_version`: A reference to the `PlatformVersion` struct, providing versioning details.
     ///
     /// # Returns
     ///
-    /// Returns a `Result` containing a vector of `LowLevelDriveOperation`, which represents the 
-    /// operations needed to perform the tree creation and key association, or an `Error` if 
+    /// Returns a `Result` containing a vector of `LowLevelDriveOperation`, which represents the
+    /// operations needed to perform the tree creation and key association, or an `Error` if
     /// any step fails.
     ///
     /// # Notes
     ///
-    /// - This function divides the provided keys into unique and non-unique types, and processes 
+    /// - This function divides the provided keys into unique and non-unique types, and processes
     ///   them accordingly.
     /// - Updates to the estimated costs (if provided) are made based on the version of the drive.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let drive = Drive::new(...); // Initialize the drive
-    /// let identity_id = [0u8; 32]; // Replace with actual identity ID
-    /// let keys = vec![...]; // Vector of IdentityPublicKey
-    /// let mut estimated_info = Some(HashMap::new()); // Optional Estimated layer information map
-    /// let transaction = TransactionArg::new(...); // Create a transaction
-    /// let platform_version = PlatformVersion::new(...); // Define the platform version
-    ///
-    /// let result = drive.create_key_tree_with_keys_operations_v0(
-    ///     identity_id,
-    ///     keys,
-    ///     &mut estimated_info,
-    ///     transaction,
-    ///     &platform_version,
-    /// );
     /// ```
     pub(super) fn create_key_tree_with_keys_operations_v0(
         &self,

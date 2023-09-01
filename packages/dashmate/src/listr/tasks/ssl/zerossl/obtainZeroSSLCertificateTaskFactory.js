@@ -3,7 +3,6 @@ const { Listr } = require('listr2');
 const chalk = require('chalk');
 const path = require('path');
 const fs = require('fs');
-const { HOME_DIR_PATH } = require('../../../../constants');
 const wait = require('../../../../util/wait');
 
 /**
@@ -16,6 +15,7 @@ const wait = require('../../../../util/wait');
  * @param {listCertificates} listCertificates
  * @param {saveCertificateTask} saveCertificateTask
  * @param {VerificationServer} verificationServer
+ * @param {HomeDir} homeDir
  * @return {obtainZeroSSLCertificateTask}
  */
 function obtainZeroSSLCertificateTaskFactory(
@@ -28,6 +28,7 @@ function obtainZeroSSLCertificateTaskFactory(
   listCertificates,
   saveCertificateTask,
   verificationServer,
+  homeDir,
 ) {
   /**
    * @typedef {obtainZeroSSLCertificateTask}
@@ -39,7 +40,7 @@ function obtainZeroSSLCertificateTaskFactory(
     const apiKey = config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', true);
     const externalIp = config.get('externalIp', true);
 
-    const sslConfigDir = path.join(HOME_DIR_PATH, 'ssl', config.getName());
+    const sslConfigDir = homeDir.joinPath('ssl', config.getName());
     const csrFilePath = path.join(sslConfigDir, 'csr.pem');
     const privateKeyFilePath = path.join(sslConfigDir, 'private.key');
     const bundleFilePath = path.join(sslConfigDir, 'bundle.crt');

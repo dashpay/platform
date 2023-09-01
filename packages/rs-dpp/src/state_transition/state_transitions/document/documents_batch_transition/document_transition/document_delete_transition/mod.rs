@@ -1,5 +1,5 @@
 mod from_document;
-pub(crate) mod v0;
+pub mod v0;
 mod v0_methods;
 
 use bincode::{Decode, Encode};

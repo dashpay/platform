@@ -1,5 +1,3 @@
-// TODO(versioning): restore
-// @ts-ignore
 import { ExtendedDocument } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 import broadcastStateTransition from '../../broadcastStateTransition';
@@ -33,8 +31,6 @@ export default async function broadcast(
 
   const { dpp } = this;
 
-  // TODO(versioning): restore
-  // @ts-ignore
   const documentsBatchTransition = dpp.document.createStateTransition(documents);
 
   this.logger.silly('[Document#broadcast] Created documents batch transition');

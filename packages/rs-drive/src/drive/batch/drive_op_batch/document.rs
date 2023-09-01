@@ -137,7 +137,7 @@ pub enum DocumentOperationType<'a> {
     UpdateDocument {
         /// The document and contract info, also may contain the owner_id
         owned_document_info: OwnedDocumentInfo<'a>,
-        ///DataContract
+        /// DataContract
         contract_id: Identifier,
         /// Document type
         document_type_name: Cow<'a, String>,

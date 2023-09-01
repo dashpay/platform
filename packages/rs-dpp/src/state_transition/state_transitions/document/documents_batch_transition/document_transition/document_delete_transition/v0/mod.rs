@@ -8,6 +8,8 @@ use derive_more::Display;
 
 use serde::{Deserialize, Serialize};
 
+pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
+
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
