@@ -43,6 +43,7 @@ impl Drive {
             contract_proof.as_slice(),
             Some(false),
             false,
+            false,
             contract_id,
             platform_version,
         );
@@ -61,6 +62,7 @@ impl Drive {
                 let (_, proof_returned_historical_contract) = Drive::verify_contract(
                     historical_contract_proof.as_slice(),
                     Some(true),
+                    false,
                     false,
                     contract_id,
                     platform_version,

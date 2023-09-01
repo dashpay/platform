@@ -9,7 +9,9 @@ use drive_abci::abci::AbciApplication;
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 
+use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
@@ -86,6 +88,10 @@ pub(crate) fn verify_state_transitions_were_executed(
                     .contracts
                     .push(get_proofs_request::ContractRequest {
                         contract_id: data_contract_create.data_contract_ref().id().to_vec(),
+                        is_historical: data_contract_create
+                            .data_contract_ref()
+                            .config()
+                            .keeps_history(),
                     });
                 let result = abci_app
                     .platform
@@ -100,15 +106,18 @@ pub(crate) fn verify_state_transitions_were_executed(
 
                 let response_proof = proof.expect("proof should be present");
 
+                // let fetched_contract = abci_app
+                //     .platform.drive.fetch_contract(data_contract_create.data_contract_ref().id().into_buffer(), None, None, None, platform_version).unwrap().unwrap();
                 // we expect to get an identity that matches the state transition
                 let (root_hash, contract) = Drive::verify_contract(
                     &response_proof.grovedb_proof,
                     None,
                     false,
+                    true,
                     data_contract_create.data_contract_ref().id().into_buffer(),
                     platform_version,
                 )
-                .expect("expected to verify full identity");
+                .expect("expected to verify a contract");
                 assert_eq!(
                     &root_hash,
                     expected_root_hash,
@@ -125,6 +134,10 @@ pub(crate) fn verify_state_transitions_were_executed(
                     .contracts
                     .push(get_proofs_request::ContractRequest {
                         contract_id: data_contract_update.data_contract_ref().id().to_vec(),
+                        is_historical: data_contract_update
+                            .data_contract_ref()
+                            .config()
+                            .keeps_history(),
                     });
                 let result = abci_app
                     .platform
@@ -144,6 +157,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     &response_proof.grovedb_proof,
                     None,
                     false,
+                    true,
                     data_contract_update.data_contract_ref().id().into_buffer(),
                     platform_version,
                 )

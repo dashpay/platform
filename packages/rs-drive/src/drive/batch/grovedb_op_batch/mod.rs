@@ -1,5 +1,3 @@
-
-
 //! GroveDB Operations Batch.
 //!
 //! This module defines the GroveDbOpBatch struct and implements its functions.

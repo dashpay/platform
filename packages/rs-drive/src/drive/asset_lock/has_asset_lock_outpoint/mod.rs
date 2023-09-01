@@ -1,4 +1,3 @@
-
 //! Implements in Drive functions which check if a given `outpoint` is present as an asset lock in the transaction and potentially applies operations to it.
 
 mod v0;

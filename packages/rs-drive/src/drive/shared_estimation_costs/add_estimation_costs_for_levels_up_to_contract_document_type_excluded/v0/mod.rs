@@ -49,8 +49,8 @@ impl Drive {
     /// let drive_version = DriveVersion::new(/* parameters */);
     ///
     /// Drive::add_estimation_costs_for_levels_up_to_contract_document_type_excluded_v0(
-    ///     &contract, 
-    ///     &mut estimated_costs_only_with_layer_info, 
+    ///     &contract,
+    ///     &mut estimated_costs_only_with_layer_info,
     ///     &drive_version
     /// )?;
     /// ```

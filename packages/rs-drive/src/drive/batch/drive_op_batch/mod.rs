@@ -1,5 +1,3 @@
-
-
 mod contract;
 mod document;
 mod drive_methods;

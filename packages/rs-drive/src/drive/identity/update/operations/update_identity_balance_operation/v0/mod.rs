@@ -20,7 +20,7 @@ impl Drive {
     ///
     /// # Returns
     ///
-    /// - `Result<LowLevelDriveOperation, Error>`: Returns a low-level drive operation that, when applied, will update the identity's balance in GroveDB. 
+    /// - `Result<LowLevelDriveOperation, Error>`: Returns a low-level drive operation that, when applied, will update the identity's balance in GroveDB.
     ///   Returns an error if the balance exceeds the maximum allowable value (`MAX_CREDITS`).
     ///
     /// # Errors

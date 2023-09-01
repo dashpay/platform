@@ -100,7 +100,9 @@ impl Drive {
         historical_contract_ids: &[[u8; 32]],
     ) -> Result<PathQuery, Error> {
         if non_historical_contract_ids.is_empty() {
-            return Self::fetch_historical_contracts_query(historical_contract_ids);
+            return Ok(Self::fetch_historical_contracts_query(
+                historical_contract_ids,
+            ));
         }
         if historical_contract_ids.is_empty() {
             return Ok(Self::fetch_non_historical_contracts_query(
@@ -111,7 +113,7 @@ impl Drive {
             Self::fetch_non_historical_contracts_query(non_historical_contract_ids);
         contracts_query.query.limit = None;
         let mut historical_contracts_query =
-            Self::fetch_historical_contracts_query(historical_contract_ids)?;
+            Self::fetch_historical_contracts_query(historical_contract_ids);
         historical_contracts_query.query.limit = None;
         PathQuery::merge(vec![&contracts_query, &historical_contracts_query]).map_err(GroveDB)
     }
@@ -135,14 +137,19 @@ impl Drive {
     /// # Errors
     ///
     /// This function returns an error if the merging of path queries fails.
-    pub fn fetch_historical_contracts_query(
-        historical_contract_ids: &[[u8; 32]],
-    ) -> Result<PathQuery, Error> {
-        let mut queries = Vec::new();
-        for contract_id in historical_contract_ids {
-            queries.push(Self::fetch_contract_with_history_latest_query(*contract_id));
-        }
-        PathQuery::merge(queries.iter().collect()).map_err(GroveDB)
+    pub fn fetch_historical_contracts_query(historical_contract_ids: &[[u8; 32]]) -> PathQuery {
+        let mut query = Query::new();
+        query.insert_keys(
+            historical_contract_ids
+                .iter()
+                .map(|key| key.to_vec())
+                .collect(),
+        );
+        query.set_subquery_path(vec![vec![0], vec![0]]);
+        PathQuery::new(
+            vec![Into::<&[u8; 1]>::into(RootTree::DataContractDocuments).to_vec()],
+            SizedQuery::new(query, Some(historical_contract_ids.len() as u16), None),
+        )
     }
 
     /// Creates a path query for historical entries of a specified contract.
