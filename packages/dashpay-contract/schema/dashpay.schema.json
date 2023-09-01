@@ -175,10 +175,20 @@
     ],
     "properties": {
       "requiresIdentityEncryptionBoundedKey": {
-        "type": "integer"
+        "type": "integer",
+        "enum": [
+          0,
+          1,
+          2
+        ]
       },
       "requiresIdentityDecryptionBoundedKey": {
-        "type": "integer"
+        "type": "integer",
+        "enum": [
+          0,
+          1,
+          2
+        ]
       },
       "toUserId": {
         "type": "array",

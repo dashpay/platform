@@ -441,8 +441,6 @@ describe('Dashpay Contract', () => {
 
       beforeEach(() => {
         contactRequestData = {
-          requiresIdentityEncryptionBoundedKey: 2,
-          requiresIdentityDecryptionBoundedKey: 2,
           toUserId: Buffer.alloc(32),
           encryptedPublicKey: Buffer.alloc(96),
           senderKeyIndex: 0,
