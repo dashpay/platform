@@ -122,8 +122,6 @@
     "additionalProperties": false
   },
   "contactRequest": {
-    "requiresIdentityEncryptionBoundedKey": 2,
-    "requiresIdentityDecryptionBoundedKey": 2,
     "type": "object",
     "indices": [
       {
@@ -176,6 +174,12 @@
       }
     ],
     "properties": {
+      "requiresIdentityEncryptionBoundedKey": {
+        "type": "integer"
+      },
+      "requiresIdentityDecryptionBoundedKey": {
+        "type": "integer"
+      },
       "toUserId": {
         "type": "array",
         "byteArray": true,
