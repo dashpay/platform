@@ -107,22 +107,13 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       },
     };
 
-    const basicResult = await Promise.allSettled([
-      getSyncAsset(config),
-    ]);
-
-    if (process.env.DEBUG) {
-      for (const error of basicResult.filter((e) => e.status === 'rejected')) {
+    try {
+      scope.syncAsset = await getSyncAsset(config)
+    } catch (error) {
+      if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
-        console.error(error.reason);
+        console.error(error);
       }
-    }
-
-    const [syncAsset] = basicResult
-      .map((result) => (result.status === 'fulfilled' ? result.value : null));
-
-    if (syncAsset) {
-      scope.syncAsset = syncAsset;
     }
 
     if (scope.syncAsset === MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED) {
