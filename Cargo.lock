@@ -1090,41 +1090,14 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=408bef25fd229dbb6b9f1b3d380e2afbc77d812c#408bef25fd229dbb6b9f1b3d380e2afbc77d812c"
-dependencies = [
- "dashcore-rpc-json 0.15.0 (git+https://github.com/dashpay/rust-dashcore-rpc?rev=408bef25fd229dbb6b9f1b3d380e2afbc77d812c)",
- "env_logger 0.10.0",
- "jsonrpc",
- "log",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dashcore-rpc"
-version = "0.15.0"
 source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=7840fe65fbdf4f083ff8632f6e7afac11a31ca63#7840fe65fbdf4f083ff8632f6e7afac11a31ca63"
 dependencies = [
- "dashcore-rpc-json 0.15.0 (git+https://github.com/dashpay/rust-dashcore-rpc?rev=7840fe65fbdf4f083ff8632f6e7afac11a31ca63)",
+ "dashcore-rpc-json",
  "env_logger 0.10.0",
  "jsonrpc",
  "log",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "dashcore-rpc-json"
-version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=408bef25fd229dbb6b9f1b3d380e2afbc77d812c#408bef25fd229dbb6b9f1b3d380e2afbc77d812c"
-dependencies = [
- "bincode 2.0.0-rc.3",
- "dashcore",
- "hex",
- "serde",
- "serde_json",
- "serde_repr",
- "serde_with 2.3.3",
 ]
 
 [[package]]
@@ -1356,7 +1329,7 @@ dependencies = [
  "ciborium",
  "clap 4.4.2",
  "dapi-grpc",
- "dashcore-rpc 0.15.0 (git+https://github.com/dashpay/rust-dashcore-rpc?rev=7840fe65fbdf4f083ff8632f6e7afac11a31ca63)",
+ "dashcore-rpc",
  "delegate",
  "derive_more",
  "dotenvy",
@@ -1403,7 +1376,7 @@ dependencies = [
  "bytes",
  "camino",
  "dapi-grpc",
- "dashcore-rpc 0.15.0 (git+https://github.com/dashpay/rust-dashcore-rpc?rev=408bef25fd229dbb6b9f1b3d380e2afbc77d812c)",
+ "dashcore-rpc",
  "derive_more",
  "dpp",
  "drive",
@@ -3551,7 +3524,7 @@ dependencies = [
  "base64 0.21.3",
  "ciborium",
  "dapi-grpc",
- "dashcore-rpc 0.15.0 (git+https://github.com/dashpay/rust-dashcore-rpc?rev=408bef25fd229dbb6b9f1b3d380e2afbc77d812c)",
+ "dashcore-rpc",
  "dpp",
  "drive",
  "drive-abci",
