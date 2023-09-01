@@ -1,7 +1,7 @@
 use dpp::prelude::Identifier;
 use rs_sdk::crud::Readable;
 
-include!("credentials.rs");
+include!("common.rs");
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_data_contract_read_not_found() {

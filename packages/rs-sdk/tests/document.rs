@@ -7,7 +7,7 @@ use rs_sdk::crud::{ObjectQuery, Readable};
 use rs_sdk::platform::document::Document;
 use rs_sdk::platform::document_query::DocumentQuery;
 
-include!("credentials.rs");
+include!("common.rs");
 
 async fn test_read<API: DashAPI, O: Readable<API>, Q: ObjectQuery<O::Identifier>>(
     api: &API,
