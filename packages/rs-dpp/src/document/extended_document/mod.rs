@@ -106,6 +106,80 @@ impl ExtendedDocument {
         ))
     }
 
+    #[cfg(feature = "document-value-conversion")]
+    /// Create an extended document from a trusted platform value object where fields are already in
+    /// the proper format for the contract.
+    ///
+    /// # Arguments
+    ///
+    /// * `document_value` - A `Value` representing the document value.
+    /// * `data_contract` - A `DataContract` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ProtocolError` if there is an error processing the trusted platform value.
+    pub fn from_trusted_platform_value(
+        document_value: Value,
+        data_contract: DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .document_versions
+            .extended_document_structure_version
+        {
+            0 => Ok(ExtendedDocument::V0(
+                ExtendedDocumentV0::from_trusted_platform_value(
+                    document_value,
+                    data_contract,
+                    platform_version,
+                )?,
+            )),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "ExtendedDocument::from_trusted_platform_value".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    #[cfg(feature = "document-value-conversion")]
+    /// Create an extended document from an untrusted platform value object where fields might not
+    /// be in the proper format for the contract.
+    ///
+    /// # Arguments
+    ///
+    /// * `document_value` - A `Value` representing the document value.
+    /// * `data_contract` - A `DataContract` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ProtocolError` if there is an error processing the untrusted platform value.
+    pub fn from_untrusted_platform_value(
+        document_value: Value,
+        data_contract: DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .document_versions
+            .extended_document_structure_version
+        {
+            0 => Ok(ExtendedDocument::V0(
+                ExtendedDocumentV0::from_untrusted_platform_value(
+                    document_value,
+                    data_contract,
+                    platform_version,
+                )?,
+            )),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "ExtendedDocument::from_untrusted_platform_value".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
     /// Convert the extended document to a JSON object.
     ///
     /// This function is a passthrough to the `to_json` method.
@@ -194,6 +268,18 @@ impl ExtendedDocument {
     pub fn set(&mut self, path: &str, value: Value) -> Result<(), ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.set(path, value),
+        }
+    }
+
+    /// Set the value under the given path.
+    /// The path should be checked against the contract's document type and the value's type
+    /// should be modified accordingly.
+    /// For example we could go from a base 64 string to bytes.
+    ///
+    /// This function is a passthrough to the `set_untrusted` method.
+    pub fn set_untrusted(&mut self, path: &str, value: Value) -> Result<(), ProtocolError> {
+        match self {
+            ExtendedDocument::V0(v0) => v0.set_untrusted(path, value),
         }
     }
 
@@ -385,7 +471,7 @@ mod test {
         init();
         let init_doc = new_example_document();
         let buffer_document = init_doc
-            .serialize(LATEST_PLATFORM_VERSION)
+            .serialize_to_bytes(LATEST_PLATFORM_VERSION)
             .expect("no errors");
 
         let doc = ExtendedDocument::from_bytes(buffer_document.as_slice(), LATEST_PLATFORM_VERSION)
@@ -519,7 +605,7 @@ mod test {
 
     fn document_bytes() -> Vec<u8> {
         new_example_document()
-            .serialize(LATEST_PLATFORM_VERSION)
+            .serialize_to_bytes(LATEST_PLATFORM_VERSION)
             .unwrap()
     }
 

@@ -15,12 +15,12 @@ pub use v0::*;
 /// Represents the outcome of a query to retrieve documents.
 ///
 /// This enum provides versioning for the outcomes of querying documents.
-/// As the system evolves, new versions of the outcome structure can be 
+/// As the system evolves, new versions of the outcome structure can be
 /// added to this enum without breaking existing implementations.
 pub enum QueryDocumentsOutcome {
     /// Version 0 of the `QueryDocumentsOutcome`.
     ///
-    /// This version contains a list of documents retrieved, the number of 
+    /// This version contains a list of documents retrieved, the number of
     /// skipped documents, and the cost associated with the query.
     V0(QueryDocumentsOutcomeV0),
 }

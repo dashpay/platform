@@ -313,7 +313,7 @@ mod tests {
         let data_contract = get_data_contract_fixture(None, platform_version.protocol_version)
             .data_contract_owned();
         let documents = get_extended_documents_fixture_with_owner_id_from_contract(
-            data_contract.clone(),
+            &data_contract,
             platform_version.protocol_version,
         )
         .unwrap();
@@ -327,6 +327,7 @@ mod tests {
                     data_contract
                         .document_type_for_name(extended_document.document_type_name())
                         .unwrap(),
+                    extended_document.entropy().clone(),
                 )
             })
             .collect::<Vec<_>>();

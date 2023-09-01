@@ -13,6 +13,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 
 use dpp::version::PlatformVersion;
 
+/// document create transition action v0
 #[derive(Debug, Clone)]
 pub struct DocumentCreateTransitionActionV0 {
     /// Document Base Transition
@@ -26,16 +27,25 @@ pub struct DocumentCreateTransitionActionV0 {
     pub data: BTreeMap<String, Value>,
 }
 
+/// document create transition action accessors v0
 pub trait DocumentCreateTransitionActionAccessorsV0 {
+    /// base
     fn base(&self) -> &DocumentBaseTransitionAction;
+    /// base owned
     fn base_owned(self) -> DocumentBaseTransitionAction;
+    /// created at
     fn created_at(&self) -> Option<TimestampMillis>;
+    /// updated at
     fn updated_at(&self) -> Option<TimestampMillis>;
+    /// data
     fn data(&self) -> &BTreeMap<String, Value>;
+    /// data mut
     fn data_mut(&mut self) -> &mut BTreeMap<String, Value>;
+    /// data owned
     fn data_owned(self) -> BTreeMap<String, Value>;
 }
 
+/// documents from create transition v0
 pub trait DocumentFromCreateTransitionV0 {
     /// Attempts to create a new `Document` from the given `DocumentCreateTransition` instance and `owner_id`.
     ///

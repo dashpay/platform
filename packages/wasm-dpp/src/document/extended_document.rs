@@ -1,26 +1,33 @@
-use dpp::document::document_transition::document_base_transition::JsonValue;
-use dpp::document::{ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS};
+use dpp::document::{
+    DocumentV0Getters, DocumentV0Setters, ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
+};
+use serde_json::Value as JsonValue;
 
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::{Identifier, Revision, TimestampMillis};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::JsonValueExt;
 
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::serialization::PlatformSerializable;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
+use crate::data_contract::DataContractWasm;
 use crate::document::BinaryType;
+use crate::document::{ConversionOptions, DocumentWasm};
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
+use crate::metadata::MetadataWasm;
 use crate::utils::{with_serde_to_platform_value, IntoWasm, ToSerdeJSONExt, WithJsError};
-use crate::{with_js_error, ConversionOptions, DocumentWasm};
-use crate::{DataContractWasm, MetadataWasm};
+use crate::with_js_error;
 
 #[wasm_bindgen(js_name=ExtendedDocument)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,79 +67,82 @@ impl ExtendedDocumentWasm {
         let document = ExtendedDocument::from_untrusted_platform_value(
             raw_document,
             js_data_contract.to_owned().into(),
+            PlatformVersion::first(),
         )
         .with_js_error()?;
 
         Ok(document.into())
     }
 
-    #[wasm_bindgen(js_name=getProtocolVersion)]
-    pub fn get_protocol_version(&self) -> u32 {
-        self.0.feature_version
+    #[wasm_bindgen(js_name=getFeatureVersion)]
+    pub fn get_feature_version(&self) -> u16 {
+        self.0.feature_version()
     }
 
     #[wasm_bindgen(js_name=getId)]
     pub fn get_id(&self) -> IdentifierWrapper {
-        self.0.document.id.into()
+        self.0.document().id().into()
     }
 
     #[wasm_bindgen(js_name=setId)]
     pub fn set_id(&mut self, js_id: IdentifierWrapper) {
-        self.0.document.id = js_id.into();
+        self.0.document_mut().set_id(js_id.into());
     }
 
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> String {
-        self.0.document_type_name.clone()
+        self.0.document_type_name().clone()
     }
 
     #[wasm_bindgen(js_name=setType)]
     pub fn set_type(&mut self, document_type_name: String) {
-        self.0.document_type_name = document_type_name;
+        self.0.set_document_type_name(document_type_name);
     }
 
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn get_data_contract_id(&self) -> IdentifierWrapper {
-        self.0.data_contract_id.into()
+        self.0.data_contract_id().into()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
     pub fn get_data_contract(&self) -> DataContractWasm {
-        self.0.data_contract.clone().into()
+        self.0.data_contract().clone().into()
     }
 
     #[wasm_bindgen(js_name=setDataContractId)]
     pub fn set_data_contract_id(&mut self, js_data_contract_id: &JsValue) -> Result<(), JsValue> {
         let identifier = identifier_from_js_value(js_data_contract_id)?;
-        self.0.data_contract_id = identifier;
+        self.0.set_data_contract_id(identifier);
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getDocument)]
     pub fn get_document(&self) -> DocumentWasm {
-        self.0.document.clone().into()
+        self.0.document().clone().into()
     }
 
     #[wasm_bindgen(js_name=setOwnerId)]
     pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
-        self.0.document.owner_id = owner_id.into();
+        self.0.document_mut().set_owner_id(owner_id.into());
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        self.0.document.owner_id.into()
+        self.0.document().owner_id().into()
     }
 
     #[wasm_bindgen(js_name=setRevision)]
     pub fn set_revision(&mut self, rev: Option<u32>) {
         // TODO: js feeds Number (u32). Is casting revision to u64 safe?
-        self.0.document.revision = rev.map(|r| r as Revision);
+        self.0
+            .document_mut()
+            .set_revision(rev.map(|r| r as Revision));
     }
 
     #[wasm_bindgen(js_name=getRevision)]
     pub fn get_revision(&self) -> Option<u32> {
         // TODO: js expects Number (u32). Is casting revision to u32 safe?
-        self.0.document.revision.map(|r| r as u32)
+        self.0.document().revision().map(|r| r as u32)
     }
 
     #[wasm_bindgen(js_name=setEntropy)]
@@ -143,22 +153,24 @@ impl ExtendedDocumentWasm {
             ))
             .to_js_value()
         })?;
-        self.0.entropy = Bytes32::new(entropy);
+        self.0.set_entropy(Bytes32::new(entropy));
         Ok(())
     }
 
     #[wasm_bindgen(js_name=getEntropy)]
     pub fn get_entropy(&mut self) -> Buffer {
-        Buffer::from_bytes_owned(self.0.entropy.to_vec())
+        Buffer::from_bytes_owned(self.0.entropy().to_vec())
     }
 
     #[wasm_bindgen(js_name=setData)]
     pub fn set_data(&mut self, d: JsValue) -> Result<(), JsValue> {
         let properties_as_value = d.with_serde_to_platform_value()?;
-        self.0.document.properties = properties_as_value
-            .into_btree_string_map()
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
+        self.0.document_mut().set_properties(
+            properties_as_value
+                .into_btree_string_map()
+                .map_err(ProtocolError::ValueError)
+                .with_js_error()?,
+        );
         Ok(())
     }
 
@@ -166,8 +178,8 @@ impl ExtendedDocumentWasm {
     pub fn get_data(&mut self) -> Result<JsValue, JsValue> {
         let json_value: JsonValue = self
             .0
-            .document
-            .properties
+            .document()
+            .properties()
             .to_json_value()
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
@@ -178,18 +190,8 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=set)]
     pub fn set(&mut self, path: String, js_value_to_set: JsValue) -> Result<(), JsValue> {
-        let (identifier_paths, binary_paths) =
-            self.0.get_identifiers_and_binary_paths().with_js_error()?;
         let mut value: Value = js_value_to_set.with_serde_to_platform_value()?;
-        value
-            .replace_to_binary_types_when_setting_with_path(
-                path.as_str(),
-                identifier_paths,
-                binary_paths,
-            )
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
-        self.0.set(&path, value).with_js_error()
+        self.0.set_untrusted(&path, value).with_js_error()
     }
 
     #[wasm_bindgen(js_name=get)]
@@ -227,51 +229,47 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=setCreatedAt)]
     pub fn set_created_at(&mut self, ts: Option<js_sys::Date>) {
-        if let Some(ts) = ts {
-            self.0.document.created_at = Some(ts.get_time() as TimestampMillis);
-        } else {
-            self.0.document.created_at = None;
-        }
+        self.0
+            .document_mut()
+            .set_created_at(ts.map(|t| t.get_time() as TimestampMillis));
     }
 
     #[wasm_bindgen(js_name=setUpdatedAt)]
     pub fn set_updated_at(&mut self, ts: Option<js_sys::Date>) {
-        if let Some(ts) = ts {
-            self.0.document.updated_at = Some(ts.get_time() as TimestampMillis);
-        } else {
-            self.0.document.updated_at = None;
-        }
+        self.0
+            .document_mut()
+            .set_updated_at(ts.map(|t| t.get_time() as TimestampMillis));
     }
 
     #[wasm_bindgen(js_name=getCreatedAt)]
     pub fn get_created_at(&self) -> Option<js_sys::Date> {
         self.0
-            .document
-            .created_at
+            .document()
+            .created_at()
             .map(|v| js_sys::Date::new(&JsValue::from_f64(v as f64)))
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn get_updated_at(&self) -> Option<js_sys::Date> {
         self.0
-            .document
-            .updated_at
+            .document()
+            .updated_at()
             .map(|v| js_sys::Date::new(&JsValue::from_f64(v as f64)))
     }
 
     #[wasm_bindgen(js_name=getMetadata)]
     pub fn get_metadata(&self) -> Option<MetadataWasm> {
-        self.0.metadata.clone().map(Into::into)
+        self.0.metadata().clone().map(Into::into)
     }
 
     #[wasm_bindgen(js_name=setMetadata)]
     pub fn set_metadata(&mut self, metadata: JsValue) -> Result<(), JsValue> {
-        self.0.metadata = if !metadata.is_falsy() {
+        self.0.set_metadata(if !metadata.is_falsy() {
             let metadata = metadata.to_wasm::<MetadataWasm>("Metadata")?;
             Some(metadata.to_owned().into())
         } else {
             None
-        };
+        });
 
         Ok(())
     }
@@ -286,13 +284,17 @@ impl ExtendedDocumentWasm {
         };
         let mut value = self.0.to_json_object_for_validation().with_js_error()?;
 
-        let (identifiers_paths, binary_paths) =
-            self.0.get_identifiers_and_binary_paths().with_js_error()?;
+        let document_type = self.0.document_type().with_js_error()?;
+
+        let identifier_paths = document_type.identifier_paths();
+        let binary_paths = document_type.binary_paths();
+
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_value = value.serialize(&serializer)?;
 
-        for path in identifiers_paths
-            .into_iter()
+        for path in identifier_paths
+            .iter()
+            .map(|s| s.as_str())
             .chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS)
         {
             if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
@@ -318,7 +320,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let value = self.0.to_json().with_js_error()?;
+        let value = self.0.to_json(PlatformVersion::first()).with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
         with_js_error!(value.serialize(&serializer))
@@ -326,13 +328,16 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes = PlatformSerializable::serialize_to_bytes(&self.0.clone()).with_js_error()?;
+        let bytes: Vec<u8> = self
+            .0
+            .serialize_to_bytes(PlatformVersion::first())
+            .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
     #[wasm_bindgen(js_name=hash)]
     pub fn hash(&self) -> Result<Buffer, JsValue> {
-        let bytes = self.0.hash().with_js_error()?;
+        let bytes = self.0.hash(PlatformVersion::first()).with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
@@ -343,21 +348,16 @@ impl ExtendedDocumentWasm {
 }
 
 impl ExtendedDocumentWasm {
-    fn get_binary_type_of_path(&self, path: &String) -> BinaryType {
-        let maybe_binary_properties = self
-            .0
-            .data_contract
-            .get_binary_properties(&self.0.document_type_name);
+    fn get_binary_type_of_path(&self, path: &String) -> Result<BinaryType, JsValue> {
+        let document_type = self.0.document_type().with_js_error()?;
 
-        if let Ok(binary_properties) = maybe_binary_properties {
-            if let Some(data) = binary_properties.get(path) {
-                if data.is_type_of_identifier() {
-                    return BinaryType::Identifier;
-                }
-                return BinaryType::Buffer;
-            }
+        if document_type.binary_paths().contains(path) {
+            Ok(BinaryType::Buffer)
+        } else if document_type.identifier_paths().contains(path) {
+            Ok(BinaryType::Identifier)
+        } else {
+            Ok(BinaryType::None)
         }
-        BinaryType::None
     }
 }
 

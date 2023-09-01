@@ -198,6 +198,7 @@ pub enum BatchDeleteUpTreeApplyType {
     },
 }
 
+/// batch insert tree apply type
 #[derive(Clone, Copy)]
 /// Batch insert tree apply type
 pub enum BatchInsertTreeApplyType {
@@ -216,20 +217,9 @@ impl BatchInsertTreeApplyType {
     /// Converts the current `BatchInsertTreeApplyType` into a corresponding `DirectQueryType`.
     ///
     /// # Returns
-    /// 
+    ///
     /// - A variant of `DirectQueryType::StatelessDirectQuery` if the current type is `BatchInsertTreeApplyType::StatelessBatchInsertTree`.
     /// - `DirectQueryType::StatefulDirectQuery` if the current type is `BatchInsertTreeApplyType::StatefulBatchInsertTree`.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let batch_type = BatchInsertTreeApplyType::StatelessBatchInsertTree {
-    ///     in_tree_using_sums: true,
-    ///     is_sum_tree: false,
-    ///     flags_len: 5,
-    /// };
-    ///
-    /// let query_type = batch_type.to_direct_query_type();
     /// ```
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {
@@ -263,19 +253,9 @@ impl BatchInsertApplyType {
     /// Converts the current `BatchInsertApplyType` into a corresponding `DirectQueryType`.
     ///
     /// # Returns
-    /// 
+    ///
     /// - A variant of `DirectQueryType::StatelessDirectQuery` if the current type is `BatchInsertApplyType::StatelessBatchInsert`.
     /// - `DirectQueryType::StatefulDirectQuery` if the current type is `BatchInsertApplyType::StatefulBatchInsert`.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let batch_type = BatchInsertApplyType::StatelessBatchInsert {
-    ///     in_tree_using_sums: true,
-    ///     target: SomeQueryTarget, // Replace with an actual target instance.
-    /// };
-    ///
-    /// let query_type = batch_type.to_direct_query_type();
     /// ```
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {
@@ -294,10 +274,13 @@ impl BatchInsertApplyType {
 /// Flags length
 pub type FlagsLen = u32;
 
+/// query target
 #[derive(Clone, Copy)]
 /// Query target
 pub enum QueryTarget {
+    /// tree
     QueryTargetTree(FlagsLen, IsSumTree),
+    /// value
     QueryTargetValue(u32),
 }
 
@@ -314,6 +297,7 @@ impl QueryTarget {
     }
 }
 
+/// direct query type
 #[derive(Clone, Copy)]
 /// Direct query type
 pub enum DirectQueryType {
@@ -343,17 +327,17 @@ impl From<DirectQueryType> for QueryType {
 }
 
 impl DirectQueryType {
-    /// Converts the current `DirectQueryType` into a corresponding `QueryType` 
+    /// Converts the current `DirectQueryType` into a corresponding `QueryType`
     /// while associating it with the given reference sizes.
     ///
     /// # Parameters
     ///
-    /// * `reference_sizes`: A vector of `u32` values representing the reference sizes 
+    /// * `reference_sizes`: A vector of `u32` values representing the reference sizes
     ///   associated with the query.
     ///
     /// # Returns
-    /// 
-    /// - A variant of `QueryType::StatelessQuery` with the provided reference sizes if 
+    ///
+    /// - A variant of `QueryType::StatelessQuery` with the provided reference sizes if
     ///   the current type is `DirectQueryType::StatelessDirectQuery`.
     /// - `QueryType::StatefulQuery` if the current type is `DirectQueryType::StatefulDirectQuery`.
     ///

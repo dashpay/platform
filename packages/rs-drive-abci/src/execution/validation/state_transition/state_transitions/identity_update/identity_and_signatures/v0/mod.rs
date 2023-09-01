@@ -41,7 +41,9 @@ impl IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0 for Identity
         }
 
         let Some(revision) = partial_identity.revision else {
-            return Err(Error::Execution(CorruptedCodeExecution("revision should exist")));
+            return Err(Error::Execution(CorruptedCodeExecution(
+                "revision should exist",
+            )));
         };
 
         // Check revision

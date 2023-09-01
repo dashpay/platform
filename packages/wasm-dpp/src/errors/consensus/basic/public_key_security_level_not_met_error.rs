@@ -7,7 +7,6 @@ use serde::Serialize;
 use dpp::serialization::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
-#[derive(Serialize)]
 #[wasm_bindgen(js_name=PublicKeySecurityLevelNotMetError)]
 pub struct PublicKeySecurityLevelNotMetErrorWasm {
     inner: PublicKeySecurityLevelNotMetError,

@@ -33,9 +33,9 @@ impl TryFrom<BlockId> for CleanedBlockId {
         })?;
 
         let Some(part_set_header) = part_set_header else {
-            return Err(AbciError::BadRequest(
-                "block id is missing part set header".to_string(),
-            ).into());
+            return Err(
+                AbciError::BadRequest("block id is missing part set header".to_string()).into(),
+            );
         };
 
         let state_id = hash_or_default(state_id).map_err(|_| {

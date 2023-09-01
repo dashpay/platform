@@ -13,6 +13,8 @@ pub mod extended_document;
 mod fields;
 pub mod generate_document_id;
 pub mod serialization_traits;
+#[cfg(feature = "factories")]
+pub mod specialized_document_factory;
 mod v0;
 
 pub use accessors::*;
@@ -161,9 +163,11 @@ impl DocumentMethodsV0 for Document {
 
     fn increment_revision(&mut self) -> Result<(), ProtocolError> {
         let Some(revision) = self.revision() else {
-            return Err(ProtocolError::Document(Box::new(DocumentError::DocumentNoRevisionError {
-                document: Box::new(self.clone()),
-            })))
+            return Err(ProtocolError::Document(Box::new(
+                DocumentError::DocumentNoRevisionError {
+                    document: Box::new(self.clone()),
+                },
+            )));
         };
 
         let new_revision = revision

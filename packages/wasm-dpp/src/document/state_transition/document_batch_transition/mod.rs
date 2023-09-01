@@ -1,15 +1,8 @@
 use dpp::identity::KeyID;
 
 use dpp::{
-    document::{
-        document_transition::document_base_transition,
-        state_transition::documents_batch_transition::property_names, DocumentsBatchTransition,
-    },
-    prelude::{DataContract, DocumentTransition, Identifier},
-    state_transition::{
-        StateTransitionFieldTypes, StateTransitionIdentitySignedV0, StateTransitionLike,
-        StateTransitionType,
-    },
+    prelude::{DataContract, Identifier},
+    state_transition::{StateTransitionFieldTypes, StateTransitionLike, StateTransitionType},
     util::json_value::JsonValueExt,
     ProtocolError,
 };
@@ -20,21 +13,28 @@ use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::{BinaryData, ReplacementType};
 use dpp::serialization::PlatformSerializable;
+use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
+use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransition;
+use dpp::state_transition::documents_batch_transition::DocumentsBatchTransition;
 use dpp::state_transition::StateTransition;
 use wasm_bindgen::prelude::*;
 
 use crate::{
     bls_adapter::{BlsAdapter, JsBlsAdapter},
     buffer::Buffer,
-    document_batch_transition::document_transition::DocumentTransitionWasm,
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{Inner, IntoWasm, ToSerdeJSONExt, WithJsError},
     IdentityPublicKeyWasm,
 };
-pub mod apply_document_batch_transition;
+
+use document_transition::DocumentTransitionWasm;
+use dpp::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+
+use dpp::state_transition::StateTransitionIdentitySigned;
+
 pub mod document_transition;
-pub mod validation;
+// pub mod validation;
 
 #[derive(Clone, Debug)]
 #[wasm_bindgen(js_name = DocumentsBatchTransition)]
@@ -51,44 +51,44 @@ pub struct ToObjectOptions {
 
 #[wasm_bindgen(js_class=DocumentsBatchTransition)]
 impl DocumentsBatchTransitionWasm {
-    #[wasm_bindgen(constructor)]
-    pub fn from_object(
-        js_raw_transition: JsValue,
-        data_contracts: Array,
-    ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
-        let data_contracts_array_js = Array::from(&data_contracts);
-
-        let mut data_contracts: Vec<DataContract> = vec![];
-
-        for contract in data_contracts_array_js.iter() {
-            let value = contract.with_serde_to_platform_value()?;
-            let data_contract = DataContract::from_value(value).with_js_error()?;
-            data_contracts.push(data_contract);
-        }
-
-        let mut batch_transition_value = js_raw_transition.with_serde_to_platform_value()?;
-        let base_identifier_fields = document_base_transition::IDENTIFIER_FIELDS
-            .iter()
-            .map(|field| format!("{}[].{}", property_names::TRANSITIONS, field))
-            .collect::<Vec<_>>();
-        batch_transition_value
-            .replace_at_paths(
-                DocumentsBatchTransition::identifiers_property_paths()
-                    .into_iter()
-                    .chain(base_identifier_fields.iter().map(|s| s.as_str())),
-                ReplacementType::Identifier,
-            )
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
-
-        let documents_batch_transition = DocumentsBatchTransition::from_object_with_contracts(
-            batch_transition_value,
-            data_contracts,
-        )
-        .with_js_error()?;
-
-        Ok(documents_batch_transition.into())
-    }
+    // #[wasm_bindgen(constructor)]
+    // pub fn from_object(
+    //     js_raw_transition: JsValue,
+    //     data_contracts: Array,
+    // ) -> Result<DocumentsBatchTransitionWasm, JsValue> {
+    //     let data_contracts_array_js = Array::from(&data_contracts);
+    //
+    //     let mut data_contracts: Vec<DataContract> = vec![];
+    //
+    //     for contract in data_contracts_array_js.iter() {
+    //         let value = contract.with_serde_to_platform_value()?;
+    //         let data_contract = DataContract::from_value(value).with_js_error()?;
+    //         data_contracts.push(data_contract);
+    //     }
+    //
+    //     let mut batch_transition_value = js_raw_transition.with_serde_to_platform_value()?;
+    //     let base_identifier_fields = document_base_transition::IDENTIFIER_FIELDS
+    //         .iter()
+    //         .map(|field| format!("{}[].{}", property_names::TRANSITIONS, field))
+    //         .collect::<Vec<_>>();
+    //     batch_transition_value
+    //         .replace_at_paths(
+    //             DocumentsBatchTransition::identifiers_property_paths()
+    //                 .into_iter()
+    //                 .chain(base_identifier_fields.iter().map(|s| s.as_str())),
+    //             ReplacementType::Identifier,
+    //         )
+    //         .map_err(ProtocolError::ValueError)
+    //         .with_js_error()?;
+    //
+    //     let documents_batch_transition = DocumentsBatchTransition::from_object_with_contracts(
+    //         batch_transition_value,
+    //         data_contracts,
+    //     )
+    //     .with_js_error()?;
+    //
+    //     Ok(documents_batch_transition.into())
+    // }
 
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> u8 {
@@ -97,13 +97,13 @@ impl DocumentsBatchTransitionWasm {
 
     #[wasm_bindgen(js_name=getOwnerId)]
     pub fn get_owner_id(&self) -> IdentifierWrapper {
-        self.0.get_owner_id().to_owned().into()
+        self.0.owner_id().to_owned().into()
     }
 
     #[wasm_bindgen(js_name=getTransitions)]
     pub fn get_transitions(&self) -> js_sys::Array {
         let array = js_sys::Array::new();
-        let transitions = self.0.get_transitions();
+        let transitions = self.0.transitions();
 
         for tr in transitions.iter().cloned() {
             let transition: DocumentTransitionWasm = tr.into();
@@ -124,125 +124,126 @@ impl DocumentsBatchTransitionWasm {
             transitions.push(transition)
         }
 
-        self.0.transitions = transitions;
+        self.0.set_transitions(transitions);
+
         Ok(())
     }
 
-    #[wasm_bindgen(js_name=toJSON)]
-    pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let value = self.0.to_json(false).with_js_error()?;
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    // #[wasm_bindgen(js_name=toJSON)]
+    // pub fn to_json(&self) -> Result<JsValue, JsValue> {
+    //     let value = self.0.to_json(false).with_js_error()?;
+    //     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    //
+    //     let is_null_signature = value.get(property_names::SIGNATURE).is_none();
+    //     let is_null_signature_public_key_id =
+    //         value.get(property_names::SIGNATURE_PUBLIC_KEY_ID).is_none();
+    //
+    //     let js_value = value.serialize(&serializer)?;
+    //
+    //     if is_null_signature {
+    //         js_sys::Reflect::set(
+    //             &js_value,
+    //             &property_names::SIGNATURE.into(),
+    //             &JsValue::undefined(),
+    //         )?;
+    //     }
+    //     if is_null_signature_public_key_id {
+    //         js_sys::Reflect::set(
+    //             &js_value,
+    //             &property_names::SIGNATURE_PUBLIC_KEY_ID.into(),
+    //             &JsValue::undefined(),
+    //         )?;
+    //     }
+    //
+    //     Ok(js_value)
+    // }
 
-        let is_null_signature = value.get(property_names::SIGNATURE).is_none();
-        let is_null_signature_public_key_id =
-            value.get(property_names::SIGNATURE_PUBLIC_KEY_ID).is_none();
-
-        let js_value = value.serialize(&serializer)?;
-
-        if is_null_signature {
-            js_sys::Reflect::set(
-                &js_value,
-                &property_names::SIGNATURE.into(),
-                &JsValue::undefined(),
-            )?;
-        }
-        if is_null_signature_public_key_id {
-            js_sys::Reflect::set(
-                &js_value,
-                &property_names::SIGNATURE_PUBLIC_KEY_ID.into(),
-                &JsValue::undefined(),
-            )?;
-        }
-
-        Ok(js_value)
-    }
-
-    #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self, js_options: &JsValue) -> Result<JsValue, JsValue> {
-        let options: ToObjectOptions = if js_options.is_object() {
-            let raw_options = js_options.with_serde_to_json_value()?;
-            serde_json::from_value(raw_options).with_js_error()?
-        } else {
-            Default::default()
-        };
-
-        let mut value = self
-            .0
-            .to_cleaned_object(options.skip_signature)
-            .with_js_error()?;
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        let js_value = value.serialize(&serializer)?;
-        let is_signature_present = value
-            .get(property_names::SIGNATURE)
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?
-            .is_some();
-
-        // Transform every transition individually
-        let transitions = Array::new();
-        for transition in self.0.transitions.iter() {
-            let js_value =
-                DocumentTransitionWasm::from(transition.to_owned()).to_object(js_options)?;
-            transitions.push(&js_value);
-        }
-        // Replace the whole collection of transitions
-        Reflect::set(
-            &js_value,
-            &property_names::TRANSITIONS.into(),
-            &transitions.into(),
-        )?;
-
-        // Transform paths that are specific to the DocumentsBatchTransition
-        for path in DocumentsBatchTransition::binary_property_paths() {
-            if let Some(bytes) = value
-                .remove_optional_value_at_path(path)
-                .and_then(|value| value.map(|value| value.to_binary_bytes()).transpose())
-                .map_err(ProtocolError::ValueError)
-                .with_js_error()?
-            {
-                let buffer = Buffer::from_bytes_owned(bytes);
-                lodash_set(&js_value, path, buffer.into());
-            }
-        }
-        for path in DocumentsBatchTransition::identifiers_property_paths() {
-            if let Some(bytes) = value
-                .remove_optional_value_at_path(path)
-                .and_then(|value| value.map(|value| value.to_identifier_bytes()).transpose())
-                .map_err(ProtocolError::ValueError)
-                .with_js_error()?
-            {
-                let buffer = Buffer::from_bytes_owned(bytes);
-                if !options.skip_identifiers_conversion {
-                    lodash_set(&js_value, path, buffer.into());
-                } else {
-                    let id = IdentifierWrapper::new(buffer.into());
-                    lodash_set(&js_value, path, id.into());
-                }
-            }
-        }
-
-        if !is_signature_present && !options.skip_signature {
-            js_sys::Reflect::set(
-                &js_value,
-                &property_names::SIGNATURE.into(),
-                &JsValue::undefined(),
-            )?;
-        }
-        if value
-            .get(property_names::SIGNATURE_PUBLIC_KEY_ID)
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?
-            .is_none()
-        {
-            js_sys::Reflect::set(
-                &js_value,
-                &property_names::SIGNATURE_PUBLIC_KEY_ID.into(),
-                &JsValue::undefined(),
-            )?;
-        }
-
-        Ok(js_value)
-    }
+    // #[wasm_bindgen(js_name=toObject)]
+    // pub fn to_object(&self, js_options: &JsValue) -> Result<JsValue, JsValue> {
+    //     let options: ToObjectOptions = if js_options.is_object() {
+    //         let raw_options = js_options.with_serde_to_json_value()?;
+    //         serde_json::from_value(raw_options).with_js_error()?
+    //     } else {
+    //         Default::default()
+    //     };
+    //
+    //     let mut value = self
+    //         .0
+    //         .to_cleaned_object(options.skip_signature)
+    //         .with_js_error()?;
+    //     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    //     let js_value = value.serialize(&serializer)?;
+    //     let is_signature_present = value
+    //         .get(property_names::SIGNATURE)
+    //         .map_err(ProtocolError::ValueError)
+    //         .with_js_error()?
+    //         .is_some();
+    //
+    //     // Transform every transition individually
+    //     let transitions = Array::new();
+    //     for transition in self.0.transitions.iter() {
+    //         let js_value =
+    //             DocumentTransitionWasm::from(transition.to_owned()).to_object(js_options)?;
+    //         transitions.push(&js_value);
+    //     }
+    //     // Replace the whole collection of transitions
+    //     Reflect::set(
+    //         &js_value,
+    //         &property_names::TRANSITIONS.into(),
+    //         &transitions.into(),
+    //     )?;
+    //
+    //     // Transform paths that are specific to the DocumentsBatchTransition
+    //     for path in DocumentsBatchTransition::binary_property_paths() {
+    //         if let Some(bytes) = value
+    //             .remove_optional_value_at_path(path)
+    //             .and_then(|value| value.map(|value| value.to_binary_bytes()).transpose())
+    //             .map_err(ProtocolError::ValueError)
+    //             .with_js_error()?
+    //         {
+    //             let buffer = Buffer::from_bytes_owned(bytes);
+    //             lodash_set(&js_value, path, buffer.into());
+    //         }
+    //     }
+    //     for path in DocumentsBatchTransition::identifiers_property_paths() {
+    //         if let Some(bytes) = value
+    //             .remove_optional_value_at_path(path)
+    //             .and_then(|value| value.map(|value| value.to_identifier_bytes()).transpose())
+    //             .map_err(ProtocolError::ValueError)
+    //             .with_js_error()?
+    //         {
+    //             let buffer = Buffer::from_bytes_owned(bytes);
+    //             if !options.skip_identifiers_conversion {
+    //                 lodash_set(&js_value, path, buffer.into());
+    //             } else {
+    //                 let id = IdentifierWrapper::new(buffer.into());
+    //                 lodash_set(&js_value, path, id.into());
+    //             }
+    //         }
+    //     }
+    //
+    //     if !is_signature_present && !options.skip_signature {
+    //         js_sys::Reflect::set(
+    //             &js_value,
+    //             &property_names::SIGNATURE.into(),
+    //             &JsValue::undefined(),
+    //         )?;
+    //     }
+    //     if value
+    //         .get(property_names::SIGNATURE_PUBLIC_KEY_ID)
+    //         .map_err(ProtocolError::ValueError)
+    //         .with_js_error()?
+    //         .is_none()
+    //     {
+    //         js_sys::Reflect::set(
+    //             &js_value,
+    //             &property_names::SIGNATURE_PUBLIC_KEY_ID.into(),
+    //             &JsValue::undefined(),
+    //         )?;
+    //     }
+    //
+    //     Ok(js_value)
+    // }
 
     #[wasm_bindgen(js_name=getModifiedDataIds)]
     pub fn get_modified_ids(&self) -> Array {
@@ -258,8 +259,8 @@ impl DocumentsBatchTransitionWasm {
 
     // AbstractSTateTransitionIdentitySigned methods
     #[wasm_bindgen(js_name=getSignaturePublicKeyId)]
-    pub fn get_signature_public_key_id(&self) -> Option<f64> {
-        self.0.get_signature_public_key_id().map(|v| v as f64)
+    pub fn get_signature_public_key_id(&self) -> u32 {
+        self.0.signature_public_key_id()
     }
 
     #[wasm_bindgen(js_name=sign)]
@@ -289,26 +290,26 @@ impl DocumentsBatchTransitionWasm {
 
         Ok(())
     }
-
-    #[wasm_bindgen(js_name=verifyPublicKeyLevelAndPurpose)]
-    pub fn verify_public_key_level_and_purpose(
-        &self,
-        public_key: &IdentityPublicKeyWasm,
-    ) -> Result<(), JsValue> {
-        self.0
-            .verify_public_key_level_and_purpose(public_key.inner())
-            .with_js_error()
-    }
-
-    #[wasm_bindgen(js_name=verifyPublicKeyIsEnabled)]
-    pub fn verify_public_key_is_enabled(
-        &self,
-        public_key: &IdentityPublicKeyWasm,
-    ) -> Result<(), JsValue> {
-        self.0
-            .verify_public_key_is_enabled(public_key.inner())
-            .with_js_error()
-    }
+    //
+    // #[wasm_bindgen(js_name=verifyPublicKeyLevelAndPurpose)]
+    // pub fn verify_public_key_level_and_purpose(
+    //     &self,
+    //     public_key: &IdentityPublicKeyWasm,
+    // ) -> Result<(), JsValue> {
+    //     self.0
+    //         .verify_public_key_level_and_purpose(public_key.inner())
+    //         .with_js_error()
+    // }
+    //
+    // #[wasm_bindgen(js_name=verifyPublicKeyIsEnabled)]
+    // pub fn verify_public_key_is_enabled(
+    //     &self,
+    //     public_key: &IdentityPublicKeyWasm,
+    // ) -> Result<(), JsValue> {
+    //     self.0
+    //         .verify_public_key_is_enabled(public_key.inner())
+    //         .with_js_error()
+    // }
 
     #[wasm_bindgen(js_name=verifySignature)]
     pub fn verify_signature(
@@ -318,8 +319,7 @@ impl DocumentsBatchTransitionWasm {
     ) -> Result<bool, JsValue> {
         let bls_adapter = BlsAdapter(bls);
 
-        let verification_result = self
-            .0
+        let verification_result = StateTransition::DocumentsBatch(self.0.clone())
             .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
 
         match verification_result {
@@ -345,17 +345,17 @@ impl DocumentsBatchTransitionWasm {
     #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
     pub fn get_security_level_requirement(&self) -> js_sys::Array {
         let array = js_sys::Array::new();
-        for security_level in self.0.get_security_level_requirement() {
+        for security_level in self.0.security_level_requirement() {
             array.push(&JsValue::from(security_level as u32));
         }
         array
     }
 
     // AbstractStateTransition methods
-    #[wasm_bindgen(js_name=getProtocolVersion)]
-    pub fn get_protocol_version(&self) -> u32 {
-        self.0.state_transition_protocol_version()
-    }
+    // #[wasm_bindgen(js_name=getProtocolVersion)]
+    // pub fn get_protocol_version(&self) -> u32 {
+    //     self.0.state_transition_protocol_version()
+    // }
 
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Vec<u8> {
@@ -391,18 +391,18 @@ impl DocumentsBatchTransitionWasm {
         Ok(Buffer::from_bytes(&bytes))
     }
 
-    #[wasm_bindgen(js_name=hash)]
-    pub fn hash(&self, options: JsValue) -> Result<Buffer, JsValue> {
-        let skip_signature = if options.is_object() {
-            let options = options.with_serde_to_json_value()?;
-            options.get_bool("skipSignature").unwrap_or_default()
-        } else {
-            false
-        };
-        let bytes = self.0.hash(skip_signature).with_js_error()?;
-
-        Ok(Buffer::from_bytes(&bytes))
-    }
+    // #[wasm_bindgen(js_name=hash)]
+    // pub fn hash(&self, options: JsValue) -> Result<Buffer, JsValue> {
+    //     let skip_signature = if options.is_object() {
+    //         let options = options.with_serde_to_json_value()?;
+    //         options.get_bool("skipSignature").unwrap_or_default()
+    //     } else {
+    //         false
+    //     };
+    //     let bytes = self.0.hash(skip_signature).with_js_error()?;
+    //
+    //     Ok(Buffer::from_bytes(&bytes))
+    // }
 }
 
 impl From<DocumentsBatchTransition> for DocumentsBatchTransitionWasm {

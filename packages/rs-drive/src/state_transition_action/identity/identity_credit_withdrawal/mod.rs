@@ -1,4 +1,6 @@
+/// transformer
 pub mod transformer;
+/// v0
 pub mod v0;
 
 use crate::state_transition_action::identity::identity_credit_withdrawal::v0::IdentityCreditWithdrawalTransitionActionV0;
@@ -8,27 +10,29 @@ use dpp::document::Document;
 use dpp::platform_value::Identifier;
 use dpp::prelude::Revision;
 
+/// action
 #[derive(Debug, Clone, From)]
 pub enum IdentityCreditWithdrawalTransitionAction {
+    /// v0
     V0(IdentityCreditWithdrawalTransitionActionV0),
 }
 
 impl IdentityCreditWithdrawalTransitionAction {
-    // Withdrawal amount
+    /// Withdrawal amount
     pub fn revision(&self) -> Revision {
         match self {
             IdentityCreditWithdrawalTransitionAction::V0(transition) => transition.revision,
         }
     }
 
-    // Identity Id
+    /// Identity Id
     pub fn identity_id(&self) -> Identifier {
         match self {
             IdentityCreditWithdrawalTransitionAction::V0(transition) => transition.identity_id,
         }
     }
 
-    // Recipient Id
+    /// Recipient Id
     pub fn prepared_withdrawal_document(&self) -> &Document {
         match self {
             IdentityCreditWithdrawalTransitionAction::V0(transition) => {
@@ -37,7 +41,7 @@ impl IdentityCreditWithdrawalTransitionAction {
         }
     }
 
-    // Recipient Id
+    /// Recipient Id
     pub fn prepared_withdrawal_document_owned(self) -> Document {
         match self {
             IdentityCreditWithdrawalTransitionAction::V0(transition) => {

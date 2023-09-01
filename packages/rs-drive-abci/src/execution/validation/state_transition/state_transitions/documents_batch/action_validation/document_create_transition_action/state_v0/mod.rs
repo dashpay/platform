@@ -1,3 +1,4 @@
+use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::consensus::ConsensusError;
 use dpp::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
 use dpp::consensus::state::state_error::StateError;
@@ -34,7 +35,14 @@ impl DocumentCreateTransitionActionStateValidationV0 for DocumentCreateTransitio
 
         let contract = &contract_fetch_info.contract;
 
-        let document_type = contract.document_type_for_name(self.base().document_type_name())?;
+        let document_type_name = self.base().document_type_name();
+
+        let Some(document_type) = contract.document_type_optional_for_name(document_type_name)
+        else {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidDocumentTypeError::new(document_type_name.clone(), contract.id()).into(),
+            ));
+        };
 
         // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
         // We should check to see if a document already exists in the state

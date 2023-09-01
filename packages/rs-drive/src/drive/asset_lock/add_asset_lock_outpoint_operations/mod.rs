@@ -1,3 +1,7 @@
+
+
+//! Implements in Drive a function which adds operations to a given `outpoint` if it is present in the estimated costs.
+
 mod v0;
 
 use crate::drive::Drive;

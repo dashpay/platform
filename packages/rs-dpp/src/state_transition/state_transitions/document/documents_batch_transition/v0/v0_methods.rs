@@ -98,4 +98,8 @@ impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransitionV0 {
         )?;
         Ok(state_transition)
     }
+
+    fn set_transitions(&mut self, transitions: Vec<DocumentTransition>) {
+        self.transitions = transitions;
+    }
 }

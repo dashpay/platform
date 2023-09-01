@@ -2,6 +2,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::identity::signer::Signer;
 use crate::identity::IdentityPublicKey;
+use crate::state_transition::documents_batch_transition::document_transition::DocumentTransition;
 use crate::state_transition::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use crate::state_transition::documents_batch_transition::{
     DocumentsBatchTransition, DocumentsBatchTransitionV0,
@@ -13,6 +14,12 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 pub mod v0;
 
 impl DocumentsBatchTransitionMethodsV0 for DocumentsBatchTransition {
+    fn set_transitions(&mut self, transitions: Vec<DocumentTransition>) {
+        match self {
+            DocumentsBatchTransition::V0(v0) => v0.set_transitions(transitions),
+        }
+    }
+
     #[cfg(feature = "state-transition-signing")]
     fn new_document_creation_transition_from_document<S: Signer>(
         document: Document,

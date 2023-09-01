@@ -68,7 +68,6 @@ mod tests {
     use std::option::Option::None;
 
     use dpp::data_contract::{DataContract, DataContractFactory};
-    use dpp::document::document_factory::DocumentFactory;
 
     use dpp::platform_value::{platform_value, Identifier, Value};
 
@@ -96,6 +95,7 @@ mod tests {
     use dpp::document::serialization_traits::{
         DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
     };
+    use dpp::document::specialized_document_factory::SpecializedDocumentFactory;
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::default_costs::EpochCosts;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
@@ -1875,8 +1875,8 @@ mod tests {
 
         // Create a document factory
 
-        let document_factory =
-            DocumentFactory::new(1, contract).expect("expected to create document factory");
+        let document_factory = SpecializedDocumentFactory::new(1, contract)
+            .expect("expected to create document factory");
 
         // Create a document
 

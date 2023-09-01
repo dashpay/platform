@@ -52,10 +52,11 @@ where
             true,
             Some(transaction),
             platform_version,
-        )? else {
-            return Err(Error::Execution(
-                ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
-            ));
+        )?
+        else {
+            return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "can't fetch withdrawal data contract",
+            )));
         };
 
         let core_transactions = self.fetch_core_block_transactions(
