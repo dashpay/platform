@@ -88,8 +88,10 @@ impl DataContractApplyInfo {
             platform_version,
         )?;
         let Some(contract_fetch_info) = maybe_contract_fetch_info else {
-                    return Err(Error::Identity(IdentityError::IdentityKeyBoundsError("Contract for key bounds not found")));
-                };
+            return Err(Error::Identity(IdentityError::IdentityKeyBoundsError(
+                "Contract for key bounds not found",
+            )));
+        };
         let contract = &contract_fetch_info.contract;
         match contract_bounds {
             ContractBounds::SingleContract { .. } => Ok(ContractBased {

@@ -79,15 +79,21 @@ fn validate_identity_public_key_contract_bounds_v0(
                     Some(contract) => {
                         match purpose {
                             ENCRYPTION => {
-                                let Some(requirements) = contract.contract.config().requires_identity_encryption_bounded_key() else {
-                                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                                            ConsensusError::BasicError(
-                                                BasicError::DataContractBoundsNotPresentError(
-                                                    DataContractBoundsNotPresentError::new(*contract_id),
+                                let Some(requirements) = contract
+                                    .contract
+                                    .config()
+                                    .requires_identity_encryption_bounded_key()
+                                else {
+                                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                                        ConsensusError::BasicError(
+                                            BasicError::DataContractBoundsNotPresentError(
+                                                DataContractBoundsNotPresentError::new(
+                                                    *contract_id,
                                                 ),
                                             ),
-                                        ))
-                                    };
+                                        ),
+                                    ));
+                                };
 
                                 match requirements {
                                     // We should make sure no other key exists for these bounds
@@ -116,15 +122,21 @@ fn validate_identity_public_key_contract_bounds_v0(
                                 }
                             }
                             DECRYPTION => {
-                                let Some(requirements) = contract.contract.config().requires_identity_decryption_bounded_key() else {
-                                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                                            ConsensusError::BasicError(
-                                                BasicError::DataContractBoundsNotPresentError(
-                                                    DataContractBoundsNotPresentError::new(*contract_id),
+                                let Some(requirements) = contract
+                                    .contract
+                                    .config()
+                                    .requires_identity_decryption_bounded_key()
+                                else {
+                                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                                        ConsensusError::BasicError(
+                                            BasicError::DataContractBoundsNotPresentError(
+                                                DataContractBoundsNotPresentError::new(
+                                                    *contract_id,
                                                 ),
                                             ),
-                                        ))
-                                    };
+                                        ),
+                                    ));
+                                };
 
                                 match requirements {
                                     StorageKeyRequirements::Unique => {
@@ -195,15 +207,17 @@ fn validate_identity_public_key_contract_bounds_v0(
                             Some(document_type) => {
                                 match purpose {
                                     ENCRYPTION => {
-                                        let Some(requirements) = document_type.requires_identity_encryption_bounded_key() else {
-                                                return Ok(SimpleConsensusValidationResult::new_with_error(
+                                        let Some(requirements) = document_type
+                                            .requires_identity_encryption_bounded_key()
+                                        else {
+                                            return Ok(SimpleConsensusValidationResult::new_with_error(
                                                     ConsensusError::BasicError(
                                                         BasicError::DataContractBoundsNotPresentError(
                                                             DataContractBoundsNotPresentError::new(*contract_id),
                                                         ),
                                                     ),
-                                                ))
-                                            };
+                                                ));
+                                        };
 
                                         match requirements {
                                             StorageKeyRequirements::Unique => {
@@ -229,15 +243,17 @@ fn validate_identity_public_key_contract_bounds_v0(
                                         }
                                     }
                                     DECRYPTION => {
-                                        let Some(requirements) = document_type.requires_identity_encryption_bounded_key() else {
-                                                return Ok(SimpleConsensusValidationResult::new_with_error(
+                                        let Some(requirements) = document_type
+                                            .requires_identity_encryption_bounded_key()
+                                        else {
+                                            return Ok(SimpleConsensusValidationResult::new_with_error(
                                                     ConsensusError::BasicError(
                                                         BasicError::DataContractBoundsNotPresentError(
                                                             DataContractBoundsNotPresentError::new(*contract_id),
                                                         ),
                                                     ),
-                                                ))
-                                            };
+                                                ));
+                                        };
 
                                         match requirements {
                                             StorageKeyRequirements::Unique => {

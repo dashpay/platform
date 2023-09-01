@@ -29,7 +29,7 @@ impl Drive {
         let Element::Item(encoded_multiplier, _) = element else {
             return Err(Error::Drive(DriveError::UnexpectedElementType(
                 "epochs multiplier must be an item",
-            )))
+            )));
         };
 
         Ok(f64::from_be_bytes(

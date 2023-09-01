@@ -179,7 +179,7 @@ fn element_to_serialized_identity_public_key(element: Element) -> Result<Vec<u8>
     let Item(value, _) = element else {
         return Err(Error::Drive(DriveError::CorruptedElementType(
             "expected item for identity public key",
-        )))
+        )));
     };
 
     Ok(value)
@@ -190,7 +190,7 @@ fn element_to_identity_public_key(element: Element) -> Result<IdentityPublicKey,
     let Item(value, _) = element else {
         return Err(Error::Drive(DriveError::CorruptedElementType(
             "expected item for identity public key",
-        )))
+        )));
     };
 
     IdentityPublicKey::deserialize_from_bytes(value.as_slice()).map_err(Error::Protocol)
