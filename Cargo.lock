@@ -698,9 +698,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chrono"
-version = "0.4.27"
+version = "0.4.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f56b4c72906975ca04becb8a30e102dfecddd0c06181e3e95ddc444be28881f8"
+checksum = "95ed24df0632f708f5f6d8082675bef2596f7084dee3dd55f632290bf35bfe0f"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
@@ -760,33 +760,31 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.4.1"
+version = "4.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c8d502cbaec4595d2e7d5f61e318f05417bd2b66fdc3809498f0d3fdf0bea27"
+checksum = "6a13b88d2c62ff462f88e4a121f17a82c1af05693a2f192b5c38d14de73c19f6"
 dependencies = [
  "clap_builder",
  "clap_derive",
- "once_cell",
 ]
 
 [[package]]
 name = "clap_builder"
-version = "4.4.1"
+version = "4.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5891c7bc0edb3e1c2204fc5e94009affabeb1821c9e5fdc3959536c5c0bb984d"
+checksum = "2bb9faaa7c2ef94b2743a21f5a29e6f0010dff4caa69ac8e9d6cf8b6fa74da08"
 dependencies = [
  "anstream",
  "anstyle",
  "clap_lex",
- "once_cell",
  "strsim",
 ]
 
 [[package]]
 name = "clap_derive"
-version = "4.4.0"
+version = "4.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9fd1a5729c4548118d7d70ff234a44868d00489a4b6597b0b020918a0e91a1a"
+checksum = "0862016ff20d69b84ef8247369fabf5c008a7417002411897d40ee1f4532b873"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -1092,14 +1090,41 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=7840fe65fbdf4f083ff8632f6e7afac11a31ca63#7840fe65fbdf4f083ff8632f6e7afac11a31ca63"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=408bef25fd229dbb6b9f1b3d380e2afbc77d812c#408bef25fd229dbb6b9f1b3d380e2afbc77d812c"
 dependencies = [
- "dashcore-rpc-json",
+ "dashcore-rpc-json 0.15.0 (git+https://github.com/dashpay/rust-dashcore-rpc?rev=408bef25fd229dbb6b9f1b3d380e2afbc77d812c)",
  "env_logger 0.10.0",
  "jsonrpc",
  "log",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "dashcore-rpc"
+version = "0.15.0"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=7840fe65fbdf4f083ff8632f6e7afac11a31ca63#7840fe65fbdf4f083ff8632f6e7afac11a31ca63"
+dependencies = [
+ "dashcore-rpc-json 0.15.0 (git+https://github.com/dashpay/rust-dashcore-rpc?rev=7840fe65fbdf4f083ff8632f6e7afac11a31ca63)",
+ "env_logger 0.10.0",
+ "jsonrpc",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "dashcore-rpc-json"
+version = "0.15.0"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?rev=408bef25fd229dbb6b9f1b3d380e2afbc77d812c#408bef25fd229dbb6b9f1b3d380e2afbc77d812c"
+dependencies = [
+ "bincode 2.0.0-rc.3",
+ "dashcore",
+ "hex",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "serde_with 2.3.3",
 ]
 
 [[package]]
@@ -1329,9 +1354,9 @@ dependencies = [
  "bytes",
  "chrono",
  "ciborium",
- "clap 4.4.1",
+ "clap 4.4.2",
  "dapi-grpc",
- "dashcore-rpc",
+ "dashcore-rpc 0.15.0 (git+https://github.com/dashpay/rust-dashcore-rpc?rev=7840fe65fbdf4f083ff8632f6e7afac11a31ca63)",
  "delegate",
  "derive_more",
  "dotenvy",
@@ -1378,7 +1403,7 @@ dependencies = [
  "bytes",
  "camino",
  "dapi-grpc",
- "dashcore-rpc",
+ "dashcore-rpc 0.15.0 (git+https://github.com/dashpay/rust-dashcore-rpc?rev=408bef25fd229dbb6b9f1b3d380e2afbc77d812c)",
  "derive_more",
  "dpp",
  "drive",
@@ -1804,6 +1829,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "generator"
+version = "0.7.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5cc16584ff22b460a382b7feec54b23d2908d858152e5739a120b949293bd74e"
+dependencies = [
+ "cc",
+ "libc",
+ "log",
+ "rustversion",
+ "windows",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2207,7 +2245,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb0889898416213fab133e1d33a0e5858a48177452750691bde3666d0fdbaf8b"
 dependencies = [
  "hermit-abi 0.3.2",
- "rustix 0.38.10",
+ "rustix 0.38.11",
  "windows-sys",
 ]
 
@@ -2423,6 +2461,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
 
 [[package]]
+name = "loom"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff50ecb28bb86013e935fb6683ab1f6d3a20016f123c76fd4c27470076ac30f5"
+dependencies = [
+ "cfg-if",
+ "generator",
+ "pin-utils",
+ "scoped-tls",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "lz4-sys"
 version = "1.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2466,9 +2518,9 @@ checksum = "ed1202b2a6f884ae56f04cff409ab315c5ce26b5e58d7412e484f01fd52f52ef"
 
 [[package]]
 name = "memchr"
-version = "2.6.1"
+version = "2.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f478948fd84d9f8e86967bf432640e46adfb5a4bd4f14ef7e864ab38220534ae"
+checksum = "5486aed0026218e61b8a01d5fbd5a0a134649abb71a0e53b7bc088529dced86e"
 
 [[package]]
 name = "memoffset"
@@ -2805,6 +2857,15 @@ name = "once_cell"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
+
+[[package]]
+name = "oneshot"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc22d22931513428ea6cc089e942d38600e3d00976eef8c86de6b8a3aadec6eb"
+dependencies = [
+ "loom",
+]
 
 [[package]]
 name = "oorandom"
@@ -3490,7 +3551,7 @@ dependencies = [
  "base64 0.21.3",
  "ciborium",
  "dapi-grpc",
- "dashcore-rpc",
+ "dashcore-rpc 0.15.0 (git+https://github.com/dashpay/rust-dashcore-rpc?rev=408bef25fd229dbb6b9f1b3d380e2afbc77d812c)",
  "dpp",
  "drive",
  "drive-abci",
@@ -3565,9 +3626,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.10"
+version = "0.38.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed6248e1caa625eb708e266e06159f135e8c26f2bb7ceb72dc4b2766d0340964"
+checksum = "c0c3dde1fc030af041adc40e79c0e7fbcf431dd24870053d187d7c66e4b87453"
 dependencies = [
  "bitflags 2.4.0",
  "errno",
@@ -3667,6 +3728,12 @@ checksum = "3cbc66816425a074528352f5789333ecff06ca41b36b0b0efdfbb29edc391a19"
 dependencies = [
  "parking_lot",
 ]
+
+[[package]]
+name = "scoped-tls"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
 
 [[package]]
 name = "scopeguard"
@@ -4143,7 +4210,7 @@ dependencies = [
  "cfg-if",
  "fastrand 2.0.0",
  "redox_syscall",
- "rustix 0.38.10",
+ "rustix 0.38.11",
  "windows-sys",
 ]
 
@@ -4670,11 +4737,11 @@ checksum = "f962df74c8c05a667b5ee8bcf162993134c104e96440b663c8daa176dc772d8c"
 [[package]]
 name = "uniffi"
 version = "0.24.1"
-source = "git+https://github.com/mozilla/uniffi-rs#95c1be6778c95c95a156c916df812225c992fb4a"
+source = "git+https://github.com/mozilla/uniffi-rs#cd0b5055551b20d886e7789fa0d0332e113ba046"
 dependencies = [
  "anyhow",
  "camino",
- "clap 4.4.1",
+ "clap 4.4.2",
  "uniffi_bindgen",
  "uniffi_build",
  "uniffi_core",
@@ -4684,13 +4751,13 @@ dependencies = [
 [[package]]
 name = "uniffi_bindgen"
 version = "0.24.1"
-source = "git+https://github.com/mozilla/uniffi-rs#95c1be6778c95c95a156c916df812225c992fb4a"
+source = "git+https://github.com/mozilla/uniffi-rs#cd0b5055551b20d886e7789fa0d0332e113ba046"
 dependencies = [
  "anyhow",
  "askama",
  "camino",
  "cargo_metadata 0.15.4",
- "clap 4.4.1",
+ "clap 4.4.2",
  "fs-err",
  "glob",
  "goblin",
@@ -4707,7 +4774,7 @@ dependencies = [
 [[package]]
 name = "uniffi_build"
 version = "0.24.1"
-source = "git+https://github.com/mozilla/uniffi-rs#95c1be6778c95c95a156c916df812225c992fb4a"
+source = "git+https://github.com/mozilla/uniffi-rs#cd0b5055551b20d886e7789fa0d0332e113ba046"
 dependencies = [
  "anyhow",
  "camino",
@@ -4717,7 +4784,7 @@ dependencies = [
 [[package]]
 name = "uniffi_checksum_derive"
 version = "0.24.1"
-source = "git+https://github.com/mozilla/uniffi-rs#95c1be6778c95c95a156c916df812225c992fb4a"
+source = "git+https://github.com/mozilla/uniffi-rs#cd0b5055551b20d886e7789fa0d0332e113ba046"
 dependencies = [
  "quote",
  "syn 2.0.29",
@@ -4726,14 +4793,13 @@ dependencies = [
 [[package]]
 name = "uniffi_core"
 version = "0.24.1"
-source = "git+https://github.com/mozilla/uniffi-rs#95c1be6778c95c95a156c916df812225c992fb4a"
+source = "git+https://github.com/mozilla/uniffi-rs#cd0b5055551b20d886e7789fa0d0332e113ba046"
 dependencies = [
  "anyhow",
  "bytes",
  "camino",
- "cargo_metadata 0.15.4",
  "log",
- "once_cell",
+ "oneshot",
  "paste",
  "static_assertions",
 ]
@@ -4741,7 +4807,7 @@ dependencies = [
 [[package]]
 name = "uniffi_macros"
 version = "0.24.1"
-source = "git+https://github.com/mozilla/uniffi-rs#95c1be6778c95c95a156c916df812225c992fb4a"
+source = "git+https://github.com/mozilla/uniffi-rs#cd0b5055551b20d886e7789fa0d0332e113ba046"
 dependencies = [
  "bincode 1.3.3",
  "camino",
@@ -4759,7 +4825,7 @@ dependencies = [
 [[package]]
 name = "uniffi_meta"
 version = "0.24.1"
-source = "git+https://github.com/mozilla/uniffi-rs#95c1be6778c95c95a156c916df812225c992fb4a"
+source = "git+https://github.com/mozilla/uniffi-rs#cd0b5055551b20d886e7789fa0d0332e113ba046"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4770,7 +4836,7 @@ dependencies = [
 [[package]]
 name = "uniffi_testing"
 version = "0.24.1"
-source = "git+https://github.com/mozilla/uniffi-rs#95c1be6778c95c95a156c916df812225c992fb4a"
+source = "git+https://github.com/mozilla/uniffi-rs#cd0b5055551b20d886e7789fa0d0332e113ba046"
 dependencies = [
  "anyhow",
  "camino",
@@ -4782,7 +4848,7 @@ dependencies = [
 [[package]]
 name = "uniffi_udl"
 version = "0.24.1"
-source = "git+https://github.com/mozilla/uniffi-rs#95c1be6778c95c95a156c916df812225c992fb4a"
+source = "git+https://github.com/mozilla/uniffi-rs#cd0b5055551b20d886e7789fa0d0332e113ba046"
 dependencies = [
  "anyhow",
  "uniffi_meta",
@@ -5044,7 +5110,7 @@ dependencies = [
 [[package]]
 name = "weedle2"
 version = "4.0.0"
-source = "git+https://github.com/mozilla/uniffi-rs#95c1be6778c95c95a156c916df812225c992fb4a"
+source = "git+https://github.com/mozilla/uniffi-rs#cd0b5055551b20d886e7789fa0d0332e113ba046"
 dependencies = [
  "nom",
 ]
