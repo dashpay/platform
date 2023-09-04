@@ -25,7 +25,9 @@ impl Drive {
             .map_err(Error::GroveDB)?;
 
         let Element::Item(encoded_start_time, _) = element else {
-            return Err(Error::Drive(DriveError::UnexpectedElementType("start time must be an item")))
+            return Err(Error::Drive(DriveError::UnexpectedElementType(
+                "start time must be an item",
+            )));
         };
 
         let start_time =

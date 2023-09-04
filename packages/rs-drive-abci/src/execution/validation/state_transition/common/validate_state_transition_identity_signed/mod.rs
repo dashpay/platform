@@ -45,6 +45,7 @@ impl ValidateStateTransitionIdentitySignature for StateTransition {
             .drive_abci
             .validation_and_processing
             .state_transitions
+            .common_validation_methods
             .validate_state_transition_identity_signed
         {
             0 => self.validate_state_transition_identity_signed_v0(

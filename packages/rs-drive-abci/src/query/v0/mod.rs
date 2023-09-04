@@ -1255,6 +1255,7 @@ mod test {
                                 "can't fit u16 limit from the supplied value"
                             );
                         }
+                        _ => panic!("expect contract overflow error"),
                     },
                     _ => panic!("expect contract error"),
                 },
@@ -1291,6 +1292,7 @@ mod test {
                                 "can't fit u16 offset from the supplied value"
                             );
                         }
+                        _ => panic!("expect contract overflow error"),
                     },
                     _ => panic!("expect contract error"),
                 },

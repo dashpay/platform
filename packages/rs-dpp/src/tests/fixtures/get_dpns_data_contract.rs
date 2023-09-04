@@ -32,6 +32,6 @@ pub fn get_dpns_data_contract_fixture(
 
     //Todo create config
     factory
-        .create(owner_id, document_schemas.into(), None, Some(defs))
+        .create_with_value_config(owner_id, document_schemas.into(), None, Some(defs))
         .expect("data in fixture should be correct")
 }

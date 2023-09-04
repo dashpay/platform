@@ -85,7 +85,9 @@ impl Value {
                             return None;
                         }
                         let Some(map) = current_value.as_map_mut() else {
-                            return Some(Err(Error::StructureError("value is not a map during removal".to_string())));
+                            return Some(Err(Error::StructureError(
+                                "value is not a map during removal".to_string(),
+                            )));
                         };
 
                         let Some(array_value) = map.get_optional_key_mut(string_part) else {
@@ -96,7 +98,9 @@ impl Value {
                             return None;
                         }
                         let Some(array) = array_value.as_array_mut() else {
-                            return Some(Err(Error::StructureError("value is not an array during removal".to_string())));
+                            return Some(Err(Error::StructureError(
+                                "value is not an array during removal".to_string(),
+                            )));
                         };
                         if let Some(number_part) = number_part {
                             if array.len() < number_part {
@@ -187,7 +191,7 @@ impl Value {
                 let array_value = map.get_key(string_part)?;
                 let array = array_value.to_array_ref()?;
                 let Some(number_part) = number_part else {
-                    return Err(Error::Unsupported("getting values of more than 1 member of an array is currently not supported".to_string()))
+                    return Err(Error::Unsupported("getting values of more than 1 member of an array is currently not supported".to_string()));
                 };
                 // We are setting the value of just member of the array
                 if number_part < array.len() {
@@ -224,7 +228,10 @@ impl Value {
                 };
                 let array = array_value.to_array_ref()?;
                 let Some(number_part) = number_part else {
-                    return Err(Error::Unsupported("setting values of all members in an array is currently not supported".to_string()))
+                    return Err(Error::Unsupported(
+                        "setting values of all members in an array is currently not supported"
+                            .to_string(),
+                    ));
                 };
                 // We are setting the value of just member of the array
                 if number_part < array.len() {
@@ -320,7 +327,10 @@ impl Value {
                 let array_value = map.get_key_mut_or_insert(string_part, Value::Array(vec![]));
                 let array = array_value.to_array_mut()?;
                 let Some(number_part) = number_part else {
-                    return Err(Error::Unsupported("setting values of all members in an array is currently not supported".to_string()))
+                    return Err(Error::Unsupported(
+                        "setting values of all members in an array is currently not supported"
+                            .to_string(),
+                    ));
                 };
                 // We are setting the value of just member of the array
                 if number_part < array.len() {

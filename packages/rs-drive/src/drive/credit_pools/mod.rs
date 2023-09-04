@@ -251,7 +251,10 @@ mod tests {
                     Epoch::new(i as EpochIndex).unwrap().get_path_vec()
                 );
 
-                let Op::Insert{ element: Element::SumItem (credits, _)} = operation.op else {
+                let Op::Insert {
+                    element: Element::SumItem(credits, _),
+                } = operation.op
+                else {
                     panic!("invalid operation");
                 };
 
@@ -311,9 +314,12 @@ mod tests {
             let updated_credits: Vec<_> = batch
                 .into_iter()
                 .map(|operation| {
-                    let Op::Insert{ element: Element::SumItem (credits, _)} = operation.op else {
-                    panic!("invalid operation");
-                };
+                    let Op::Insert {
+                        element: Element::SumItem(credits, _),
+                    } = operation.op
+                    else {
+                        panic!("invalid operation");
+                    };
 
                     credits
                 })

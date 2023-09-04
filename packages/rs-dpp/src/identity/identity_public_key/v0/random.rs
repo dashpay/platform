@@ -58,6 +58,7 @@ impl IdentityPublicKeyV0 {
             read_only,
             disabled_at: None,
             data,
+            contract_bounds: None,
         })
     }
 
@@ -108,6 +109,7 @@ impl IdentityPublicKeyV0 {
                 read_only,
                 disabled_at: None,
                 data,
+                contract_bounds: None,
             },
             private_data,
         ))
@@ -160,6 +162,7 @@ impl IdentityPublicKeyV0 {
             read_only,
             disabled_at: None,
             data,
+            contract_bounds: None,
         })
     }
 
@@ -183,6 +186,7 @@ impl IdentityPublicKeyV0 {
                 read_only,
                 disabled_at: None,
                 data: data.into(),
+                contract_bounds: None,
             },
             private_data,
         ))
@@ -208,6 +212,7 @@ impl IdentityPublicKeyV0 {
                 read_only,
                 disabled_at: None,
                 data: data.into(),
+                contract_bounds: None,
             },
             private_data,
         ))
@@ -233,6 +238,7 @@ impl IdentityPublicKeyV0 {
                 read_only,
                 disabled_at: None,
                 data: data.into(),
+                contract_bounds: None,
             },
             private_data,
         ))

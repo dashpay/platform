@@ -31,15 +31,6 @@ impl Drive {
     ///
     /// This function is intended to be used internally within the crate's `drive::identity::update` module.
     ///
-    /// # Example
-    ///
-    /// ```rust
-    /// // Assuming all types and constants are defined
-    /// let identity_id: [u8; 32] = /* ... */;
-    /// let new_balance: Credits = /* ... */;
-    ///
-    /// let operation = drive_instance.update_identity_balance_operation_v0(identity_id, new_balance)?;
-    /// ```
     pub(in crate::drive::identity::update) fn update_identity_balance_operation_v0(
         &self,
         identity_id: [u8; 32],
