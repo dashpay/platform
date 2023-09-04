@@ -128,8 +128,8 @@ fn replace_down(
                 if current_value.is_map() {
                     let map = current_value.as_map_mut_ref()?;
                     let Some(new_value) = map.get_optional_key_mut(path_component) else {
-                    return Ok(None);
-                };
+                        return Ok(None);
+                    };
                     if split.peek().is_none() {
                         match new_value {
                             Value::Bytes20(bytes) => {

@@ -94,6 +94,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidInstantAssetLockProofError(_) => 1041,
             Self::InvalidInstantAssetLockProofSignatureError(_) => 1042,
             Self::InvalidIdentityAssetLockProofChainLockValidationError(_) => 1043,
+            Self::DataContractBoundsNotPresentError(_) => 1066,
 
             Self::MissingMasterPublicKeyError(_) => 1046,
             Self::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
@@ -171,7 +172,8 @@ impl ErrorWithCode for StateError {
             Self::DuplicatedIdentityPublicKeyIdStateError { .. } => 4022,
             Self::IdentityPublicKeyIsDisabledError { .. } => 4023,
             Self::MissingIdentityPublicKeyIdsError { .. } => 4024,
-            Self::IdentityInsufficientBalanceError(_) => 4024,
+            Self::IdentityInsufficientBalanceError(_) => 4026,
+            Self::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(_) => 4027,
         }
     }
 }

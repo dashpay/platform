@@ -220,6 +220,7 @@ message GetProofsRequest {
 
   message ContractRequest {
     bytes contract_id = 1;
+    bool is_historical = 2;
   }
 
   repeated IdentityRequest identities = 1;

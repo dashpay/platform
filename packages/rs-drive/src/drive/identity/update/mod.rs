@@ -53,8 +53,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 14175000,
-                    processing_fee: 2411690,
+                    storage_fee: 14202000,
+                    processing_fee: 2413690,
                     ..Default::default()
                 }
             );
@@ -106,8 +106,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 346734000,
-                    processing_fee: 9300050,
+                    storage_fee: 347382000,
+                    processing_fee: 9312050,
                     ..Default::default()
                 }
             );
@@ -167,8 +167,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 17118000,
-                    processing_fee: 12544960,
+                    storage_fee: 17145000,
+                    processing_fee: 12545360,
                     ..Default::default()
                 }
             );
@@ -234,7 +234,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 513000,
-                    processing_fee: 1602860,
+                    processing_fee: 1607660,
                     ..Default::default()
                 }
             );
@@ -299,7 +299,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 486000,
-                    processing_fee: 5865330,
+                    processing_fee: 5866130,
                     ..Default::default()
                 }
             );

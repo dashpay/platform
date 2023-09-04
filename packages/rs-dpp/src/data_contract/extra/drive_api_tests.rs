@@ -221,6 +221,8 @@ mod test {
                 keeps_history: true,
                 documents_mutable_contract_default: false,
                 documents_keep_history_contract_default: true,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
             })
         ));
     }
@@ -267,6 +269,8 @@ mod test {
                 keeps_history: true,
                 documents_mutable_contract_default: false,
                 documents_keep_history_contract_default: true,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
             })
         );
     }

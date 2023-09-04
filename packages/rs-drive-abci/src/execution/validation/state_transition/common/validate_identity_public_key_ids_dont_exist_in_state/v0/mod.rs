@@ -10,16 +10,18 @@ use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDVec, KeyRequestType};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 /// This will validate that all keys are valid against the state
-pub(crate) fn validate_identity_public_key_ids_dont_exist_in_state_v0(
+pub(super) fn validate_identity_public_key_ids_dont_exist_in_state_v0(
     identity_id: Identifier,
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
     drive: &Drive,
     transaction: TransactionArg,
+    execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     // first let's check that the identity has no keys with the same id

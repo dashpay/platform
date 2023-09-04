@@ -3,7 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 
 use dpp::version::PlatformVersion;
-use grovedb::{TransactionArg, Element};
+use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Proves the existence of the specified contracts.

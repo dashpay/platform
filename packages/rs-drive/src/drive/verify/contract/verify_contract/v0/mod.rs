@@ -44,16 +44,23 @@ impl Drive {
         proof: &[u8],
         contract_known_keeps_history: Option<bool>,
         is_proof_subset: bool,
+        in_multiple_contract_proof_form: bool,
         contract_id: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<DataContract>), Error> {
-        let mut path_query = if contract_known_keeps_history.unwrap_or_default() {
-            Self::fetch_contract_with_history_latest_query(contract_id)
-        } else {
-            Self::fetch_contract_query(contract_id)
+        let mut path_query = match (
+            in_multiple_contract_proof_form,
+            contract_known_keeps_history.unwrap_or_default(),
+        ) {
+            (true, true) => Self::fetch_historical_contracts_query(&[contract_id]),
+            (true, false) => Self::fetch_non_historical_contracts_query(&[contract_id]),
+            (false, true) => Self::fetch_contract_with_history_latest_query(contract_id),
+            (false, false) => Self::fetch_contract_query(contract_id),
         };
 
         path_query.query.limit = Some(1);
+
+        dbg!(&path_query);
 
         let result = if is_proof_subset {
             GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)
@@ -69,6 +76,7 @@ impl Drive {
                         proof,
                         Some(true),
                         is_proof_subset,
+                        in_multiple_contract_proof_form,
                         contract_id,
                         platform_version,
                     )
@@ -127,6 +135,7 @@ impl Drive {
                             proof,
                             Some(true),
                             is_proof_subset,
+                            in_multiple_contract_proof_form,
                             contract_id,
                             platform_version,
                         )
@@ -181,7 +190,7 @@ impl Drive {
 
         for contract_id in contract_ids {
             let (root_hash, contract) =
-                Self::verify_contract(proof, None, true, *contract_id, platform_version)?;
+                Self::verify_contract(proof, None, true, true, *contract_id, platform_version)?;
             returned_root_hash = Some(root_hash);
             contracts.insert(*contract_id, contract);
         }

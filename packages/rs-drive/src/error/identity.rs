@@ -48,4 +48,12 @@ pub enum IdentityError {
     /// Identity key incorrect query missing information error
     #[error("identity key incorrect query missing information error: {0}")]
     IdentityKeyIncorrectQueryMissingInformation(&'static str),
+
+    /// Identity key bounds error
+    #[error("identity key bounds error: {0}")]
+    IdentityKeyBoundsError(&'static str),
+
+    /// Identity Key Data Contract Not Found
+    #[error("contact with specified identifier is not found for identity key data contract")]
+    IdentityKeyDataContractNotFound,
 }

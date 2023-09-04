@@ -53,13 +53,13 @@ impl DocumentsBatchTransitionAction {
     ///    - If the schema specifies a security level, that is used.
     ///    - Otherwise, a default security level is used.
     ///
-    /// The method then determines the highest security level (which corresponds to the lowest 
+    /// The method then determines the highest security level (which corresponds to the lowest
     /// integer value of the `SecurityLevel` enum) across all documents affected by the state transitions.
     /// This highest level becomes the signature requirement for the entire batch transition action.
     ///
     /// # Returns
     ///
-    /// - Returns a `Result` containing a `Vec<SecurityLevel>` which is the list of security 
+    /// - Returns a `Result` containing a `Vec<SecurityLevel>` which is the list of security
     ///   levels required for the batch transition action.
     /// - Returns an `Err` of type `ProtocolError` if any error occurs during the process.
     ///

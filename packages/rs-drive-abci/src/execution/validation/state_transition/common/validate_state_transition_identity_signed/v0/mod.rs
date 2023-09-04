@@ -48,7 +48,7 @@ lazy_static! {
     };
 }
 
-pub trait ValidateStateTransitionIdentitySignatureV0<'a> {
+pub(super) trait ValidateStateTransitionIdentitySignatureV0<'a> {
     fn validate_state_transition_identity_signed_v0(
         &self,
         drive: &Drive,

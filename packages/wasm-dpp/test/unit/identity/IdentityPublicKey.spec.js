@@ -14,6 +14,7 @@ describe('IdentityPublicKey', () => {
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
       readOnly: false,
+      contractBounds: null,
     };
 
     publicKey = new IdentityPublicKey(1);
@@ -196,6 +197,7 @@ describe('IdentityPublicKey', () => {
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
         disabledAt: now.getTime(),
+        contractBounds: null,
       });
     });
   });
@@ -216,6 +218,7 @@ describe('IdentityPublicKey', () => {
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
         disabledAt: now.getTime(),
+        contractBounds: null,
       });
     });
   });

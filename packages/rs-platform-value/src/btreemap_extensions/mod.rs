@@ -283,20 +283,20 @@ where
                 if value.is_null() {
                     None
                 } else {
-                    Some(value.to_array_ref()
-                        .and_then(|inner| {
-                            inner
-                                .iter()
-                                .map(|v| {
-                                    let Some(str) = v.as_text() else {
-                                        return Err(Error::StructureError(format!("{key} must be an string")))
-                                    };
-                                    Ok(str.to_string())
-                                })
-                                .collect::<Result<I, Error>>()
-                        }))
+                    Some(value.to_array_ref().and_then(|inner| {
+                        inner
+                            .iter()
+                            .map(|v| {
+                                let Some(str) = v.as_text() else {
+                                    return Err(Error::StructureError(format!(
+                                        "{key} must be an string"
+                                    )));
+                                };
+                                Ok(str.to_string())
+                            })
+                            .collect::<Result<I, Error>>()
+                    }))
                 }
-
             })
             .transpose()
     }

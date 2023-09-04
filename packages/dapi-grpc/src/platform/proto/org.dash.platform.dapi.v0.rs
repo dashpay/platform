@@ -570,6 +570,8 @@ pub mod get_proofs_request {
     pub struct ContractRequest {
         #[prost(bytes = "vec", tag = "1")]
         pub contract_id: ::prost::alloc::vec::Vec<u8>,
+        #[prost(bool, tag = "2")]
+        pub is_historical: bool,
     }
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]

@@ -4,6 +4,7 @@ use crate::data_contract::config::{
     DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
     DEFAULT_CONTRACT_MUTABILITY,
 };
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -30,6 +31,10 @@ pub struct DataContractConfigV0 {
     /// changed or deleted. This is a default for all documents in the contract, but can be
     /// overridden by the document itself
     pub documents_mutable_contract_default: bool,
+    /// Encryption key storage requirements
+    pub requires_identity_encryption_bounded_key: Option<StorageKeyRequirements>,
+    /// Decryption key storage requirements
+    pub requires_identity_decryption_bounded_key: Option<StorageKeyRequirements>,
 }
 
 /// Trait representing getters for `DataContractConfigV0`
@@ -48,6 +53,12 @@ pub trait DataContractConfigGettersV0 {
 
     /// Returns whether documents in the contract are mutable by default.
     fn documents_mutable_contract_default(&self) -> bool;
+
+    /// Encryption key storage requirements
+    fn requires_identity_encryption_bounded_key(&self) -> Option<StorageKeyRequirements>;
+
+    /// Decryption key storage requirements
+    fn requires_identity_decryption_bounded_key(&self) -> Option<StorageKeyRequirements>;
 }
 
 /// Trait representing setters for `DataContractConfigV0`
@@ -66,6 +77,18 @@ pub trait DataContractConfigSettersV0 {
 
     /// Sets whether documents in the contract are mutable by default.
     fn set_documents_mutable_contract_default(&mut self, value: bool);
+
+    /// Sets Encryption key storage requirements.
+    fn set_requires_identity_encryption_bounded_key(
+        &mut self,
+        value: Option<StorageKeyRequirements>,
+    );
+
+    /// Sets Decryption key storage requirements.
+    fn set_requires_identity_decryption_bounded_key(
+        &mut self,
+        value: Option<StorageKeyRequirements>,
+    );
 }
 
 impl std::default::Default for DataContractConfigV0 {
@@ -76,6 +99,8 @@ impl std::default::Default for DataContractConfigV0 {
             keeps_history: DEFAULT_CONTRACT_KEEPS_HISTORY,
             documents_keep_history_contract_default: DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
             documents_mutable_contract_default: DEFAULT_CONTRACT_DOCUMENT_MUTABILITY,
+            requires_identity_encryption_bounded_key: None,
+            requires_identity_decryption_bounded_key: None,
         }
     }
 }
@@ -131,12 +156,24 @@ impl DataContractConfigV0 {
             .get_optional_bool(config::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT)?
             .unwrap_or(DEFAULT_CONTRACT_DOCUMENT_MUTABILITY);
 
+        let requires_identity_encryption_bounded_key = contract
+            .get_optional_integer::<u8>(config::property::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY)?
+            .map(|int| int.try_into())
+            .transpose()?;
+
+        let requires_identity_decryption_bounded_key = contract
+            .get_optional_integer::<u8>(config::property::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY)?
+            .map(|int| int.try_into())
+            .transpose()?;
+
         Ok(DataContractConfigV0 {
             can_be_deleted,
             readonly,
             keeps_history,
             documents_keep_history_contract_default,
             documents_mutable_contract_default,
+            requires_identity_encryption_bounded_key,
+            requires_identity_decryption_bounded_key,
         })
     }
 }

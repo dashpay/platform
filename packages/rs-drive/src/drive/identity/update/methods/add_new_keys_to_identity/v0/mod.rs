@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::IdentityPublicKey;
 
+use dpp::block::epoch::Epoch;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -16,6 +17,7 @@ impl Drive {
         unique_keys_to_add: Vec<IdentityPublicKey>,
         non_unique_keys_to_add: Vec<IdentityPublicKey>,
         with_references: bool,
+        epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -36,10 +38,11 @@ impl Drive {
                 identity_id,
                 key,
                 with_references,
+                epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 &mut drive_operations,
-                &platform_version.drive,
+                platform_version,
             )?;
         }
 
@@ -48,10 +51,11 @@ impl Drive {
                 identity_id,
                 key,
                 with_references,
+                epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 &mut drive_operations,
-                &platform_version.drive,
+                platform_version,
             )?;
         }
         Ok(drive_operations)

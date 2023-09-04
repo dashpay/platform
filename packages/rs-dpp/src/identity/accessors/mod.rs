@@ -102,6 +102,13 @@ impl IdentityGettersV0 for Identity {
         }
     }
 
+    /// Add an identity public key
+    fn add_public_key(&mut self, key: IdentityPublicKey) {
+        match self {
+            Identity::V0(identity) => identity.public_keys.insert(key.id(), key),
+        };
+    }
+
     /// Add identity public keys
     fn add_public_keys(&mut self, keys: impl IntoIterator<Item = IdentityPublicKey>) {
         match self {

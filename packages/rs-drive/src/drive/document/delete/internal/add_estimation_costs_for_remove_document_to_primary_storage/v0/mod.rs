@@ -26,16 +26,16 @@ use dpp::version::PlatformVersion;
 impl Drive {
     /// Adds estimation costs for removing a document to the primary storage with version v0.
     ///
-    /// This function estimates the costs associated with removing a document from the primary storage. 
+    /// This function estimates the costs associated with removing a document from the primary storage.
     /// The estimation considers whether the document type is mutable and adjusts the cost estimation
-    /// accordingly. The results of the estimation are stored in the `estimated_costs_only_with_layer_info` 
-    /// hashmap, where the key is derived from the `primary_key_path` and the value contains information 
+    /// accordingly. The results of the estimation are stored in the `estimated_costs_only_with_layer_info`
+    /// hashmap, where the key is derived from the `primary_key_path` and the value contains information
     /// about the estimated layer sizes and counts.
     ///
     /// # Parameters
     /// - `primary_key_path`: The primary key path for the document in the storage.
     /// - `document_type`: A reference to the type of document being processed.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a hashmap where the function stores 
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a hashmap where the function stores
     ///   its cost estimation results.
     /// - `platform_version`: The current version of the platform.
     ///
@@ -44,7 +44,7 @@ impl Drive {
     ///
     /// # Notes
     /// - The function uses constants like `AVERAGE_NUMBER_OF_UPDATES` and `AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE`
-    ///   to derive estimations for mutable documents. In the future, the contract might dictate how often 
+    ///   to derive estimations for mutable documents. In the future, the contract might dictate how often
     ///   documents are expected to mutate.
     /// - The function assumes a default hash size (`DEFAULT_HASH_SIZE_U8`) and other default values for its estimations.
     pub(super) fn add_estimation_costs_for_remove_document_to_primary_storage_v0(

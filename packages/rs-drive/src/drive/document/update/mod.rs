@@ -1858,7 +1858,7 @@ mod tests {
             .expect("expected to create factory");
 
         let contract = factory
-            .create(owner_id, documents, None, None)
+            .create_with_value_config(owner_id, documents, None, None)
             .expect("data in fixture should be correct")
             .data_contract_owned();
 

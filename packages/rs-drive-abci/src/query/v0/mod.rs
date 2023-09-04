@@ -866,9 +866,12 @@ impl<C> Platform<C> {
                 let contract_ids = check_validation_result_with_data!(contracts
                     .into_iter()
                     .map(|contract_request| {
-                        Bytes32::from_vec(contract_request.contract_id).map(|bytes| bytes.0)
+                        Ok((
+                            Bytes32::from_vec(contract_request.contract_id).map(|bytes| bytes.0)?,
+                            contract_request.is_historical,
+                        ))
                     })
-                    .collect::<Result<Vec<[u8; 32]>, dpp::platform_value::Error>>());
+                    .collect::<Result<Vec<([u8; 32], bool)>, dpp::platform_value::Error>>());
                 let identity_requests = check_validation_result_with_data!(identities
                     .into_iter()
                     .map(|identity_request| {
@@ -1252,6 +1255,7 @@ mod test {
                                 "can't fit u16 limit from the supplied value"
                             );
                         }
+                        _ => panic!("expect contract overflow error"),
                     },
                     _ => panic!("expect contract error"),
                 },
@@ -1288,6 +1292,7 @@ mod test {
                                 "can't fit u16 offset from the supplied value"
                             );
                         }
+                        _ => panic!("expect contract overflow error"),
                     },
                     _ => panic!("expect contract error"),
                 },

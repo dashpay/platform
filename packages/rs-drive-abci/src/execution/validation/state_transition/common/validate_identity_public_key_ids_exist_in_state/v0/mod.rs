@@ -11,14 +11,16 @@ use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDVec, KeyReque
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::version::PlatformVersion;
 use std::collections::BTreeSet;
 
 /// This will validate that all keys are valid against the state
-pub(crate) fn validate_identity_public_key_ids_exist_in_state_v0(
+pub(super) fn validate_identity_public_key_ids_exist_in_state_v0(
     identity_id: Identifier,
     key_ids: &[KeyID],
     drive: &Drive,
+    execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {

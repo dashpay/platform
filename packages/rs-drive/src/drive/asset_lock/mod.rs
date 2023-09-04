@@ -1,4 +1,3 @@
-
 //! Implements in Drive functions relating to asset locks.
 
 use crate::drive::RootTree;
