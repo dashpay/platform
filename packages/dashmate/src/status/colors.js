@@ -75,10 +75,4 @@ module.exports = {
     }
     return chalk.red;
   },
-  sentinel: (state) => {
-    if (state === 'ok') {
-      return chalk.green;
-    }
-    return chalk.red;
-  },
 };

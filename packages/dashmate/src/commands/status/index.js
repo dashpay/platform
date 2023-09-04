@@ -39,8 +39,6 @@ class StatusCommand extends ConfigBaseCommand {
       'Last paid time': 'n/a',
       'Payment queue position': 'n/a',
       'Next payment time': 'n/a',
-      'Sentinel Version': 'n/a',
-      'Sentinel Status': 'n/a',
       'Platform Enabled': 'n/a',
       'Platform Status': 'n/a',
       'Platform Version': 'n/a',
@@ -91,11 +89,6 @@ class StatusCommand extends ConfigBaseCommand {
           plain['Last paid time'] = lastPaidHeight === 0 ? 'Never' : (lastPaidTime || 'n/a');
           plain['Payment queue position'] = paymentQueuePosition || 'n/a';
           plain['Next payment time'] = nextPaymentTime || 'n/a';
-        }
-
-        if (masternode.sentinel.version) {
-          plain['Sentinel Version'] = masternode.sentinel.version || 'n/a';
-          plain['Sentinel Status'] = colors.sentinel(masternode.sentinel.state)(masternode.sentinel.state) || 'n/a';
         }
       }
 
