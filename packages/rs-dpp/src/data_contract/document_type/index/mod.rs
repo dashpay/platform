@@ -13,11 +13,56 @@ use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::ProtocolError;
 use anyhow::anyhow;
 
+use crate::data_contract::document_type::ContestedIndexFieldMatch::Regex;
+use crate::data_contract::document_type::ContestedIndexResolution::MasternodeVote;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
 use std::{collections::BTreeMap, convert::TryFrom};
 
 pub mod random_index;
+
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContestedIndexResolution {
+    MasternodeVote = 0,
+}
+
+impl TryFrom<u8> for ContestedIndexResolution {
+    type Error = ProtocolError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(MasternodeVote),
+            value => Err(ProtocolError::UnknownStorageKeyRequirements(format!(
+                "contested index resolution unknown: {}",
+                value
+            ))),
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ContestedIndexFieldMatch {
+    Regex(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContestedIndexInformation {
+    pub contested_field_name: String,
+    pub field_match: ContestedIndexFieldMatch,
+    pub resolution: ContestedIndexResolution,
+}
+
+impl Default for ContestedIndexInformation {
+    fn default() -> Self {
+        ContestedIndexInformation {
+            contested_field_name: "".to_string(),
+            field_match: Regex(String::new()),
+            resolution: ContestedIndexResolution::MasternodeVote,
+        }
+    }
+}
 
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,6 +70,8 @@ pub struct Index {
     pub name: String,
     pub properties: Vec<IndexProperty>,
     pub unique: bool,
+    /// Contested indexes are useful when a resource is considered valuable
+    pub contested_index: Option<ContestedIndexInformation>,
 }
 
 impl Index {
@@ -185,6 +232,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
 
         let mut unique = false;
         let mut name = None;
+        let mut contested_index = None;
         let mut index_properties: Vec<IndexProperty> = Vec::new();
 
         for (key_value, value_value) in index_type_value_map {
@@ -209,6 +257,39 @@ impl TryFrom<&[(Value, Value)]> for Index {
                     if value_value.is_bool() {
                         unique = value_value.as_bool().expect("confirmed as bool");
                     }
+                }
+                "contested" => {
+                    let contested_properties_value_map = value_value.to_map()?;
+
+                    let mut contested_index_information = ContestedIndexInformation::default();
+
+                    for (contested_key_value, contested_value) in contested_properties_value_map {
+                        let contested_key = contested_key_value
+                            .to_str()
+                            .map_err(ProtocolError::ValueError)?;
+                        match contested_key {
+                            "regexPattern" => {
+                                let regex = contested_value.to_str()?.to_owned();
+                                contested_index_information.field_match = Regex(regex);
+                            }
+                            "fieldMatch" => {
+                                let field = contested_value.to_str()?.to_owned();
+                                contested_index_information.contested_field_name = field;
+                            }
+                            "resolution" => {
+                                let resolution_int = contested_value.to_integer::<u8>()?;
+                                contested_index_information.resolution =
+                                    resolution_int.try_into()?;
+                            }
+                            "description" => {}
+                            _ => {
+                                return Err(ProtocolError::StructureError(
+                                    StructureError::ValueWrongType("unexpected contested key"),
+                                ))
+                            }
+                        }
+                    }
+                    contested_index = Some(contested_index_information);
                 }
                 "properties" => {
                     let properties =
@@ -244,6 +325,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
             name,
             properties: index_properties,
             unique,
+            contested_index,
         })
     }
 }

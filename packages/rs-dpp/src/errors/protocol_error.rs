@@ -93,6 +93,9 @@ pub enum ProtocolError {
     #[error("unknown storage key requirements {0}")]
     UnknownStorageKeyRequirements(String),
 
+    #[error("unknown contested index resolution {0}")]
+    UnknownContestedIndexResolution(String),
+
     #[error(transparent)]
     DataContractError(#[from] DataContractError),
 

@@ -12,7 +12,14 @@
             "normalizedLabel": "asc"
           }
         ],
-        "unique": true
+        "unique": true,
+        "contested": {
+          "name": "normalizedLabelContested",
+          "fieldMatch": "normalizedLabel",
+          "regexPattern": "^[a-zA-Z]{3,19}$",
+          "resolution": 0,
+          "description": "If the normalized label part of this index is less than 20 characters (all non numeric) then this index is non unique while contest resolution takes place."
+        }
       },
       {
         "name": "dashIdentityId",
