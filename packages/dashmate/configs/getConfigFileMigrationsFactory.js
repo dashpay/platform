@@ -128,6 +128,10 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             delete options.core.sentinel;
+
+            if (options.network === 'testnet') {
+              options.core.docker.image = base.get('core.docker.image');
+            }
           });
         return configFile;
       },
