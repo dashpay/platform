@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 
 #[cfg(feature = "validation")]
 pub(in crate::data_contract) use validator::StatelessJsonSchemaLazyValidator;
@@ -45,10 +46,19 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) properties: BTreeMap<String, DocumentProperty>,
     pub(in crate::data_contract) identifier_paths: BTreeSet<String>,
     pub(in crate::data_contract) binary_paths: BTreeSet<String>,
+    /// The required fields on the document type
     pub(in crate::data_contract) required_fields: BTreeSet<String>,
+    /// Should documents keep history?
     pub(in crate::data_contract) documents_keep_history: bool,
+    /// Are documents mutable?
     pub(in crate::data_contract) documents_mutable: bool,
     pub(in crate::data_contract) data_contract_id: Identifier,
+    /// Encryption key storage requirements
+    pub(in crate::data_contract) requires_identity_encryption_bounded_key:
+        Option<StorageKeyRequirements>,
+    /// Decryption key storage requirements
+    pub(in crate::data_contract) requires_identity_decryption_bounded_key:
+        Option<StorageKeyRequirements>,
     pub(in crate::data_contract) security_level_requirement: SecurityLevel,
     #[cfg(feature = "validation")]
     pub(in crate::data_contract) json_schema_validator: StatelessJsonSchemaLazyValidator,

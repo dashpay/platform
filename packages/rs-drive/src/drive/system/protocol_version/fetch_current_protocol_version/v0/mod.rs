@@ -15,15 +15,26 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Option<ProtocolVersion>, Error> {
         let misc_path = misc_path();
-        self.grove.get_raw_optional((&misc_path).into(), PROTOCOL_VERSION_STORAGE_KEY, transaction).unwrap().map_err(Error::GroveDB)
+        self.grove
+            .get_raw_optional(
+                (&misc_path).into(),
+                PROTOCOL_VERSION_STORAGE_KEY,
+                transaction,
+            )
+            .unwrap()
+            .map_err(Error::GroveDB)
             .map(|maybe_element| {
-                maybe_element.map(|e| {
-                    let bytes = e.as_item_bytes()?;
-                    let Some((protocol_version, _)) = ProtocolVersion::decode_var(bytes) else {
-                        return Err(Error::Drive(DriveError::CorruptedSerialization("protocol version incorrectly serialized")))
-                    };
-                    Ok(protocol_version)
-                }).transpose()
+                maybe_element
+                    .map(|e| {
+                        let bytes = e.as_item_bytes()?;
+                        let Some((protocol_version, _)) = ProtocolVersion::decode_var(bytes) else {
+                            return Err(Error::Drive(DriveError::CorruptedSerialization(
+                                "protocol version incorrectly serialized",
+                            )));
+                        };
+                        Ok(protocol_version)
+                    })
+                    .transpose()
             })?
     }
 }

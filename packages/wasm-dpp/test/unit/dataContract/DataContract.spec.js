@@ -216,6 +216,8 @@ describe('DataContract', () => {
           documentsMutableContractDefault: true,
           keepsHistory: false,
           readonly: false,
+          requiresIdentityDecryptionBoundedKey: null,
+          requiresIdentityEncryptionBoundedKey: null,
         },
         id: bs58.encode(contractId),
         version: 1,
@@ -243,6 +245,8 @@ describe('DataContract', () => {
           documentsMutableContractDefault: true,
           keepsHistory: false,
           readonly: false,
+          requiresIdentityDecryptionBoundedKey: null,
+          requiresIdentityEncryptionBoundedKey: null,
         },
         id: bs58.encode(contractId),
         version: 1,
@@ -257,7 +261,7 @@ describe('DataContract', () => {
     it('should return DataContract as a Buffer', () => {
       const result = dataContract.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.lengthOf(209);
+      expect(result).to.have.lengthOf(211);
     });
   });
 

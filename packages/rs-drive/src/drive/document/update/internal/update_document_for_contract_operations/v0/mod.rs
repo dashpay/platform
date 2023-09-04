@@ -78,8 +78,14 @@ impl Drive {
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         let owner_id = document_and_contract_info.owned_document_info.owner_id;
-        let Some((document, storage_flags)) = document_and_contract_info.owned_document_info.document_info.get_borrowed_document_and_storage_flags() else {
-            return Err(Error::Drive(DriveError::CorruptedCodeExecution("must have document and storage flags")));
+        let Some((document, storage_flags)) = document_and_contract_info
+            .owned_document_info
+            .document_info
+            .get_borrowed_document_and_storage_flags()
+        else {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "must have document and storage flags",
+            )));
         };
         // we need to construct the path for documents on the contract
         // the path is

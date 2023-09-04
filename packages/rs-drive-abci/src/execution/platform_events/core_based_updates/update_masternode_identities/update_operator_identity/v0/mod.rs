@@ -171,6 +171,7 @@ where
                             .to_vec(),
                     ),
                     disabled_at: None,
+                    contract_bounds: None,
                 }
                 .into();
                 non_unique_keys_to_add.push(key);
@@ -195,6 +196,7 @@ where
                         read_only: true,
                         data: BinaryData::new(new_operator_payout_address.to_vec()),
                         disabled_at: None,
+                        contract_bounds: None,
                     };
                     non_unique_keys_to_add.push(key.into());
                     // new_key_id += 1;

@@ -1,3 +1,4 @@
+use crate::identity::contract_bounds::ContractBounds;
 use crate::identity::{KeyID, KeyType, Purpose, SecurityLevel};
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_value::BinaryData;
@@ -24,6 +25,9 @@ pub trait IdentityPublicKeyInCreationV0Getters {
 
     /// Returns the key's `signature`.
     fn signature(&self) -> &BinaryData;
+
+    /// Contract bounds
+    fn contract_bounds(&self) -> Option<&ContractBounds>;
 }
 
 /// Trait providing getters for `IdentityPublicKeyInCreationV0`.
@@ -124,6 +128,12 @@ impl IdentityPublicKeyInCreationV0Getters for IdentityPublicKeyInCreation {
     fn signature(&self) -> &BinaryData {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => &v0.signature,
+        }
+    }
+
+    fn contract_bounds(&self) -> Option<&ContractBounds> {
+        match self {
+            IdentityPublicKeyInCreation::V0(v0) => v0.contract_bounds.as_ref(),
         }
     }
 }

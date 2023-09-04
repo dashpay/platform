@@ -80,7 +80,6 @@ impl DataContractV0 {
             owner_id,
             document_schemas,
             schema_defs,
-            ..
         } = data_contract_data;
 
         let document_types = DocumentType::create_document_types_from_document_schemas(

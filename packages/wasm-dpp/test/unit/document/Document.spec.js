@@ -423,7 +423,7 @@ describe('Document', () => {
     it('should return serialized Document', () => {
       const buffer = document.toBuffer();
       expect(buffer).to.be.instanceOf(Buffer);
-      expect(buffer.length).to.equal(562);
+      expect(buffer.length).to.equal(564);
     });
 
     // TODO: remove or replace?

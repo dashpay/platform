@@ -40,20 +40,6 @@ impl Drive {
     ///
     /// This function is intended to be used internally within the Drive implementation.
     ///
-    /// # Example
-    ///
-    /// ```rust
-    /// // Assuming all types and constants are defined
-    /// let contract = DataContract::new(/* parameters */);
-    /// let mut estimated_costs_only_with_layer_info: HashMap<KeyInfoPath, EstimatedLayerInformation> = HashMap::new();
-    /// let drive_version = DriveVersion::new(/* parameters */);
-    ///
-    /// Drive::add_estimation_costs_for_levels_up_to_contract_document_type_excluded_v0(
-    ///     &contract, 
-    ///     &mut estimated_costs_only_with_layer_info, 
-    ///     &drive_version
-    /// )?;
-    /// ```
     pub(super) fn add_estimation_costs_for_levels_up_to_contract_document_type_excluded_v0(
         contract: &DataContract,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,

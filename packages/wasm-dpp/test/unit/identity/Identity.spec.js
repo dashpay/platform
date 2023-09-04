@@ -83,6 +83,7 @@ describe('Identity', () => {
         securityLevel: KeySecurityLevel.MASTER,
         readOnly: false,
         disabledAt: null,
+        contractBounds: null,
       };
 
       const ipk = new IdentityPublicKey(1);
@@ -116,7 +117,7 @@ describe('Identity', () => {
     it('should return buffer', () => {
       const result = identity.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
-      expect(result).to.have.length(81);
+      expect(result).to.have.length(82);
     });
   });
 
@@ -161,6 +162,7 @@ describe('Identity', () => {
             securityLevel: KeySecurityLevel.MASTER,
             readOnly: false,
             disabledAt: null,
+            contractBounds: null,
           },
         ],
         balance: 0,

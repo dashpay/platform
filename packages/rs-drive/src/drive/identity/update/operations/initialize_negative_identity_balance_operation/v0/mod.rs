@@ -22,14 +22,6 @@ impl Drive {
     ///
     /// This function is intended to be used internally and should not be exposed to external clients.
     ///
-    /// # Example
-    ///
-    /// ```rust
-    /// // Assuming all types and constants are defined
-    /// let identity_id: [u8; 32] = /* ... */;
-    ///
-    /// let operation = drive_instance.initialize_negative_identity_balance_operation_v0(identity_id);
-    /// ```
     pub(crate) fn initialize_negative_identity_balance_operation_v0(
         &self,
         identity_id: [u8; 32],

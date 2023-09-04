@@ -22,7 +22,7 @@ fn create_data_contract(
     let id = Identifier::from(id_bytes);
     let owner_id = Identifier::from(owner_id_bytes);
 
-    let mut data_contract = factory.create(
+    let mut data_contract = factory.create_with_value_config(
         owner_id,
         document_schemas.into(),
         None,

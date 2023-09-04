@@ -283,6 +283,6 @@ pub fn get_data_contract_fixture(
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
 
     factory
-        .create(owner_id, documents, None, Some(defs))
+        .create_with_value_config(owner_id, documents, None, Some(defs))
         .expect("data in fixture should be correct")
 }

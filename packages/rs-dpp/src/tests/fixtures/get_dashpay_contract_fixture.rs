@@ -19,6 +19,6 @@ pub fn get_dashpay_contract_fixture(
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
 
     factory
-        .create(owner_id, dpns_schema.into(), None, None)
+        .create_with_value_config(owner_id, dpns_schema.into(), None, None)
         .expect("data in fixture should be correct")
 }

@@ -27,6 +27,10 @@ pub(self) mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
+    pub const REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY: &str =
+        "requiresIdentityEncryptionBoundedKey";
+    pub const REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY: &str =
+        "requiresIdentityDecryptionBoundedKey";
     pub const INDICES: &str = "indices";
     pub const PROPERTIES: &str = "properties";
     pub const REQUIRED: &str = "required";
@@ -40,6 +44,8 @@ pub(self) mod property_names {
     pub const MAX_LENGTH: &str = "maxLength";
     pub const BYTE_ARRAY: &str = "byteArray";
     pub const CONTENT_MEDIA_TYPE: &str = "contentMediaType";
+    pub const ENCRYPTION_KEY_REQUIREMENTS: &str = "encryptionKeyReqs";
+    pub const DECRYPTION_KEY_REQUIREMENTS: &str = "decryptionKeyReqs";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

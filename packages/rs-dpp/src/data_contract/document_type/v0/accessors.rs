@@ -6,6 +6,7 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 
 use platform_value::{Identifier, Value};
 
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::SecurityLevel;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -60,6 +61,14 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
 
     fn data_contract_id(&self) -> Identifier {
         self.data_contract_id
+    }
+
+    fn requires_identity_encryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
+        self.requires_identity_encryption_bounded_key
+    }
+
+    fn requires_identity_decryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
+        self.requires_identity_decryption_bounded_key
     }
 
     fn security_level_requirement(&self) -> SecurityLevel {

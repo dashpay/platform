@@ -47,7 +47,7 @@ impl DataContractFacade {
         definitions: Option<Value>,
     ) -> Result<CreatedDataContract, ProtocolError> {
         self.factory
-            .create(owner_id, documents, config, definitions)
+            .create_with_value_config(owner_id, documents, config, definitions)
     }
 
     /// Create Data Contract from plain object
