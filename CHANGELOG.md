@@ -4,7 +4,6 @@
 ### Features
 
 * contract specified encryption/decryption keys (stage 1 contract bounds) ([#1358](https://github.com/dashpay/platform/issues/1358))
-* **dashmate:** remove sentinel service ([#1354](https://github.com/dashpay/platform/issues/1354))
 
 
 ### Bug Fixes
@@ -15,6 +14,7 @@
 ### Miscellaneous Chores
 
 * **dashmate:** bump core to 20.0.0-alpha.6 ([#1361](https://github.com/dashpay/platform/issues/1361))
+* **dashmate:** remove sentinel service ([#1354](https://github.com/dashpay/platform/issues/1354))
 
 ## [0.25.0-dev.17](https://github.com/dashpay/platform/compare/v0.25.0-dev.16...v0.25.0-dev.17) (2023-08-31)
 
