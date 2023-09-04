@@ -33,15 +33,11 @@ where
 {
     type Request;
 
-    async fn list<Q: SdkQuery<Self::Request>>(api: &API, query: &Q) -> Result<Vec<Self>, Error>;
+    async fn list<Q: SdkQuery<Self::Request>>(
+        api: &API,
+        query: &Q,
+    ) -> Result<Option<Vec<Self>>, Error>;
 }
-
-// pub trait ObjectQuery<O>: Sized + Send + Sync
-// where
-//     O: Sized,
-//     Self: Sized,
-// {
-// }
 
 pub trait SdkQuery<I>: Sized + Send + Sync + Clone {
     fn query(&self) -> Result<I, Error>;

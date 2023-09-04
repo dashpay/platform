@@ -41,9 +41,11 @@ where
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn document_read() {
-    const DATA_CONTRACT_ID: &str = "vodmkW20CxRTcGXjr9mM4ExaABN69A81CJv6K9F6gsY=";
+    setup_logs();
+
+    const DATA_CONTRACT_ID: &str = "U+2i5Ec8omVduoMbFf+e8sPx3QaW0B5pwQolLU+N3dw=";
     const DOCUMENT_TYPE_NAME: &str = "indexedDocument";
-    const DOCUMENT_ID: &str = "vodmkW20CxRTcGXjr9mM4ExaABN69A81CJv6K9F6gsY=";
+    const DOCUMENT_ID: &str = "0DDWWXXPtcooBgJJJTCBDZ4xxinWg5yMPbIf/iv98d4=";
 
     let api = setup_api();
 
@@ -57,7 +59,18 @@ async fn document_read() {
         document_id,
     )
     .await
-    .expect("create document query");
+    .expect("create SdkDocumentQuery");
 
     let _res: Result<SdkDocument, rs_sdk::error::Error> = test_read(&api, &query, Ok(1)).await;
+}
+
+pub fn setup_logs() {
+    tracing_subscriber::fmt::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::new(
+            "info,rs_sdk=trace,h2=info",
+        ))
+        .pretty()
+        .with_ansi(true)
+        .try_init()
+        .ok();
 }

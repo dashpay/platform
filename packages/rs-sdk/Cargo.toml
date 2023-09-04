@@ -28,3 +28,4 @@ drive-abci = { path = "../rs-drive-abci", default-features = false }
 
 [dev-dependencies]
 base64 = { version = "0.21.0" }
+tracing-subscriber = { version = "0.3.16" }

@@ -44,9 +44,20 @@ impl<API: DashAPI> Readable<API> for SdkIdentity {
             .execute(&mut client, RequestSettings::default())
             .await?;
 
-        let inner =
-            dpp::prelude::Identity::from_proof(&request, &response, api.quorum_info_provider()?)?;
+        tracing::trace!(request = ?request, response = ?response, "read identity");
 
-        Ok(SdkIdentity { inner })
+        let identity = dpp::prelude::Identity::maybe_from_proof(
+            &request,
+            &response,
+            api.quorum_info_provider()?,
+        )?;
+
+        match identity {
+            Some(identity) => Ok(identity.into()),
+            None => Err(Error::NotFound(format!(
+                "identity not found: {:?}",
+                id.query()?
+            ))),
+        }
     }
 }

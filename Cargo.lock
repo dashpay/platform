@@ -1313,6 +1313,7 @@ dependencies = [
  "sqlparser",
  "tempfile",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -3535,6 +3536,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

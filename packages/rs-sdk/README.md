@@ -22,3 +22,34 @@ The crud module provides a comprehensive interface for Create, Read, Update, and
 - Readable: This trait is designed for reading data from the Dash Platform. It requires an object's identifier as an SdkQuery parameter that will return exactly one item.
 - Listable: This trait allows listing of data from the Dash Platform. It uses the SdkQuery to define the search criteria for the data to be listed.
 - Writable: This trait is currently under development. Once completed, it will enable modification of data on the Dash Platform.
+
+## Logging
+
+This project uses the `tracing` crate for instrumentation and logging. The `tracing` ecosystem provides a powerful, flexible framework for adding structured, context-aware logs to your program.
+
+To enable logging, you can use the `tracing_subscriber` crate which allows applications to customize how events are processed and recorded.
+
+### Setup
+
+You can setup the logging system as follows:
+
+```rust
+pub fn setup_logs() {
+    tracing_subscriber::fmt::fmt()
+    .with_env_filter(tracing_subscriber::EnvFilter::new(
+        "info,rs_sdk=trace,h2=info",
+    ))
+    .pretty()
+    .with_ansi(true)
+    .try_init()
+    .ok();
+}
+```
+
+In this example, an environment filter is used to control the verbosity of the logs. The filter string "info,rs_sdk=trace,h2=info" indicates that by default, all tracing events at or below the info level will be logged, but for the `rs_sdk` module, trace level events will also be logged. The `h2` module will only log info level events.
+
+The `.pretty()` method configures the subscriber to print events in a human-readable format, and `.with_ansi(true)` enables ANSI color coding. The `try_init()` method initializes the global logger with the constructed subscriber.
+
+Please note that the `setup_logs()` function should be called before any spans or events are created.
+
+For more information on how to use `tracing` and `tracing_subscriber`, please refer to their respective documentation pages.

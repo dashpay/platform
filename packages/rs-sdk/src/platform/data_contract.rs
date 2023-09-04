@@ -39,20 +39,25 @@ impl<API: DashAPI> Readable<API> for SdkDataContract {
         };
 
         let mut client = api.platform_client().await;
-        let mut response: platform_proto::GetDataContractResponse = request
+        let response: platform_proto::GetDataContractResponse = request
             .clone()
             .execute(&mut client, RequestSettings::default())
             .await?;
 
-        if let Some(mtd) = &mut response.metadata {
-            mtd.chain_id = "dashmate_local_32".to_string();
-        }
+        tracing::trace!(request = ?request, response = ?response, "read data contract");
 
-        let inner = dpp::prelude::DataContract::from_proof(
+        let contract = dpp::prelude::DataContract::maybe_from_proof(
             &request,
             &response,
             api.quorum_info_provider()?,
         )?;
-        Ok(SdkDataContract { inner })
+
+        match contract {
+            Some(contract) => Ok(contract.into()),
+            None => Err(Error::NotFound(format!(
+                "data contract not found: {:?}",
+                query
+            ))),
+        }
     }
 }

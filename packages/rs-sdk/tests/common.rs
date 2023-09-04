@@ -3,8 +3,8 @@ use rs_sdk::{core::CoreClient, dapi::DashAPI};
 
 pub const PLATFORM_IP: &str = "10.56.229.104";
 pub const CORE_PORT: u16 = 30002;
-pub const CORE_USER: &str = "iHAedM4G";
-pub const CORE_PASSWORD: &str = "Cigmoac4RGIm";
+pub const CORE_USER: &str = "PdXjj4HC";
+pub const CORE_PASSWORD: &str = "POv4lqSbzO7m";
 pub const PLATFORM_PORT: u16 = 2443;
 
 #[allow(unused)]
