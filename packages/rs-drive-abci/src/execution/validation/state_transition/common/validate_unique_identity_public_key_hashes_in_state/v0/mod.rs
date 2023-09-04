@@ -11,15 +11,17 @@ use dpp::ProtocolError;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::version::PlatformVersion;
 use std::collections::HashMap;
 
 /// This will validate that all keys are valid against the state
-pub(crate) fn validate_unique_identity_public_key_hashes_in_state_v0(
+pub(super) fn validate_unique_identity_public_key_hashes_in_state_v0(
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
     drive: &Drive,
+    execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {

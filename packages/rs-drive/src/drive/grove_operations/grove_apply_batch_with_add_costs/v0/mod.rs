@@ -24,7 +24,8 @@ impl Drive {
         if ops.is_empty() {
             return Err(Error::Drive(DriveError::BatchIsEmpty()));
         }
-        // if ops.operations.len() < 500 { //no initialization
+        // if ops.operations.len() < 500 {
+        //     //no initialization
         //     dbg!("batch {:#?}", &ops);
         // }
 

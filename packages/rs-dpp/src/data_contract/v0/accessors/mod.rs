@@ -3,6 +3,7 @@ use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;

@@ -1,4 +1,3 @@
-
 //! This module defines functions within the Drive struct related to balances.
 //! Functions include inserting verifying balances between various trees.
 //!

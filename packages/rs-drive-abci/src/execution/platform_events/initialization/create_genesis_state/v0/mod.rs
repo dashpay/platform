@@ -142,6 +142,7 @@ impl<C> Platform<C> {
                         id: 0,
                         purpose: Purpose::AUTHENTICATION,
                         security_level: SecurityLevel::MASTER,
+                        contract_bounds: None,
                         key_type: KeyType::ECDSA_SECP256K1,
                         read_only: false,
                         data: identity_public_keys_set.master.clone().into(),
@@ -155,6 +156,7 @@ impl<C> Platform<C> {
                         id: 1,
                         purpose: Purpose::AUTHENTICATION,
                         security_level: SecurityLevel::HIGH,
+                        contract_bounds: None,
                         key_type: KeyType::ECDSA_SECP256K1,
                         read_only: false,
                         data: identity_public_keys_set.high.clone().into(),
@@ -301,8 +303,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    44, 248, 65, 88, 33, 68, 26, 12, 33, 190, 23, 22, 203, 42, 28, 213, 25, 197,
-                    240, 163, 65, 101, 101, 190, 226, 164, 97, 107, 89, 11, 15, 234
+                    139, 38, 114, 176, 67, 184, 113, 97, 33, 58, 51, 77, 92, 18, 20, 59, 134, 39,
+                    104, 71, 1, 22, 62, 201, 111, 142, 102, 58, 75, 81, 230, 222
                 ]
             )
         }

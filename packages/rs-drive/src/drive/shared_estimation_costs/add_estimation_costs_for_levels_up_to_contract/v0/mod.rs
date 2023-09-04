@@ -16,7 +16,7 @@ use std::collections::HashMap;
 impl Drive {
     /// Adds estimated costs for layers up to the contract level.
     ///
-    /// This function populates the `estimated_costs_only_with_layer_info` hashmap with estimated layer information for the top level and the contract layer. 
+    /// This function populates the `estimated_costs_only_with_layer_info` hashmap with estimated layer information for the top level and the contract layer.
     /// These estimates are useful for optimizing GroveDB operations.
     ///
     /// # Parameters
@@ -36,14 +36,6 @@ impl Drive {
     ///
     /// This function is intended to be used internally within the Drive implementation.
     ///
-    /// # Example
-    ///
-    /// ```rust
-    /// // Assuming all types and constants are defined
-    /// let mut estimated_costs_only_with_layer_info: HashMap<KeyInfoPath, EstimatedLayerInformation> = HashMap::new();
-    ///
-    /// Drive::add_estimation_costs_for_levels_up_to_contract_v0(&mut estimated_costs_only_with_layer_info);
-    /// ```
     pub(super) fn add_estimation_costs_for_levels_up_to_contract_v0(
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {

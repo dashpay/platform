@@ -2,6 +2,7 @@ mod fields;
 mod methods;
 pub mod v0;
 
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -115,42 +116,68 @@ impl DataContractConfigGettersV0 for DataContractConfig {
             DataContractConfig::V0(v0) => v0.documents_mutable_contract_default,
         }
     }
+
+    /// Encryption key storage requirements
+    fn requires_identity_encryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
+        match self {
+            DataContractConfig::V0(v0) => v0.requires_identity_encryption_bounded_key,
+        }
+    }
+
+    /// Decryption key storage requirements
+    fn requires_identity_decryption_bounded_key(&self) -> Option<StorageKeyRequirements> {
+        match self {
+            DataContractConfig::V0(v0) => v0.requires_identity_encryption_bounded_key,
+        }
+    }
 }
 
 impl DataContractConfigSettersV0 for DataContractConfig {
     fn set_can_be_deleted(&mut self, value: bool) {
         match self {
             DataContractConfig::V0(v0) => v0.can_be_deleted = value,
-            // If there are other enum variants, you might want to handle them here
-            // _ => {} // For example, do nothing or panic
         }
     }
 
     fn set_readonly(&mut self, value: bool) {
         match self {
             DataContractConfig::V0(v0) => v0.readonly = value,
-            // _ => {}
         }
     }
 
     fn set_keeps_history(&mut self, value: bool) {
         match self {
             DataContractConfig::V0(v0) => v0.keeps_history = value,
-            // _ => {}
         }
     }
 
     fn set_documents_keep_history_contract_default(&mut self, value: bool) {
         match self {
             DataContractConfig::V0(v0) => v0.documents_keep_history_contract_default = value,
-            // _ => {}
         }
     }
 
     fn set_documents_mutable_contract_default(&mut self, value: bool) {
         match self {
             DataContractConfig::V0(v0) => v0.documents_mutable_contract_default = value,
-            // _ => {}
+        }
+    }
+
+    fn set_requires_identity_encryption_bounded_key(
+        &mut self,
+        value: Option<StorageKeyRequirements>,
+    ) {
+        match self {
+            DataContractConfig::V0(v0) => v0.requires_identity_encryption_bounded_key = value,
+        }
+    }
+
+    fn set_requires_identity_decryption_bounded_key(
+        &mut self,
+        value: Option<StorageKeyRequirements>,
+    ) {
+        match self {
+            DataContractConfig::V0(v0) => v0.requires_identity_decryption_bounded_key = value,
         }
     }
 }

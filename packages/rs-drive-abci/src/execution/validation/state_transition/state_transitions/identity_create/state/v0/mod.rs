@@ -23,8 +23,10 @@ use drive::state_transition_action::identity::identity_create::IdentityCreateTra
 use drive::state_transition_action::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
+use dpp::version::DefaultForPlatformVersion;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::asset_lock::fetch_tx_out::v0::FetchAssetLockProofTxOutV0;
-use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::v0::validate_unique_identity_public_key_hashes_in_state_v0;
+use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_in_state;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create) trait IdentityCreateStateTransitionStateValidationV0
 {
@@ -50,6 +52,8 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let drive = platform.drive;
+        let mut state_transition_execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
         let identity_id = self.identity_id();
@@ -97,9 +101,10 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
 
         // Now we should check the state of added keys to make sure there aren't any that already exist
         validation_result.add_errors(
-            validate_unique_identity_public_key_hashes_in_state_v0(
+            validate_unique_identity_public_key_hashes_in_state(
                 self.public_keys(),
                 drive,
+                &mut state_transition_execution_context,
                 tx,
                 platform_version,
             )?

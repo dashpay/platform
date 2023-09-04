@@ -207,8 +207,8 @@ impl From<JsonValue> for Value {
                 if len >= 10
                     && array.iter().all(|v| {
                         let Some(int) = v.as_u64() else {
-                        return false;
-                    };
+                            return false;
+                        };
                         int.le(&u8_max)
                     })
                 {
@@ -253,8 +253,8 @@ impl From<&JsonValue> for Value {
                 if len >= 10
                     && array.iter().all(|v| {
                         let Some(int) = v.as_u64() else {
-                        return false;
-                    };
+                            return false;
+                        };
                         int.le(&u8_max)
                     })
                 {

@@ -1,12 +1,14 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::epoch::Epoch;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, Purpose};
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
+use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
 impl Drive {
@@ -16,19 +18,20 @@ impl Drive {
         identity_id: [u8; 32],
         identity_key: IdentityPublicKey,
         with_references: bool,
+        epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         drive_operations.append(&mut self.insert_reference_to_unique_key_operations(
             identity_id,
             &identity_key,
             estimated_costs_only_with_layer_info,
             transaction,
-            drive_version,
+            &platform_version.drive,
         )?);
 
         let key_id_bytes = identity_key.id().encode_var_vec();
@@ -38,7 +41,18 @@ impl Drive {
             &identity_key,
             key_id_bytes.as_slice(),
             drive_operations,
-            drive_version,
+            platform_version,
+        )?;
+
+        // if there are contract bounds we need to insert them
+        self.add_potential_contract_info_for_contract_bounded_key(
+            identity_id,
+            &identity_key,
+            epoch,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            drive_operations,
+            platform_version,
         )?;
 
         if with_references
@@ -54,7 +68,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 transaction,
                 drive_operations,
-                drive_version,
+                &platform_version.drive,
             )?;
         }
         Ok(())

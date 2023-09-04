@@ -47,6 +47,12 @@ use dpp::prelude::IdentityPublicKey;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
 
+use crate::drive::identity::key::fetch::KeyRequestType::{
+    ContractBoundKey, ContractDocumentTypeBoundKey,
+};
+use crate::drive::identity::{
+    identity_contract_info_group_path_key_purpose_vec, identity_contract_info_group_path_vec,
+};
 #[cfg(feature = "full")]
 use grovedb::query_result_type::{
     Key, Path, PathKeyOptionalElementTrio, QueryResultElement, QueryResultElements,
@@ -62,6 +68,7 @@ use integer_encoding::VarInt;
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::collections::BTreeMap;
 use std::collections::HashSet;
+use std::ops::RangeFull;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// The kind of keys you are requesting
@@ -86,6 +93,10 @@ pub enum KeyRequestType {
     SpecificKeys(Vec<KeyID>),
     /// Search for keys on an identity
     SearchKey(BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>),
+    /// Search for contract bound keys
+    ContractBoundKey([u8; 32], Purpose, KeyKindRequestType),
+    /// Search for contract bound keys
+    ContractDocumentTypeBoundKey([u8; 32], String, Purpose, KeyKindRequestType),
 }
 
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -168,7 +179,7 @@ fn element_to_serialized_identity_public_key(element: Element) -> Result<Vec<u8>
     let Item(value, _) = element else {
         return Err(Error::Drive(DriveError::CorruptedElementType(
             "expected item for identity public key",
-        )))
+        )));
     };
 
     Ok(value)
@@ -179,7 +190,7 @@ fn element_to_identity_public_key(element: Element) -> Result<IdentityPublicKey,
     let Item(value, _) = element else {
         return Err(Error::Drive(DriveError::CorruptedElementType(
             "expected item for identity public key",
-        )))
+        )));
     };
 
     IdentityPublicKey::deserialize_from_bytes(value.as_slice()).map_err(Error::Protocol)
@@ -658,6 +669,16 @@ impl IdentityKeysRequest {
             SpecificKeys(keys) => Ok(keys.len() as u64
                 * epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost)),
             SearchKey(_search) => todo!(),
+            ContractBoundKey(_, _, key_kind) | ContractDocumentTypeBoundKey(_, _, _, key_kind) => {
+                match key_kind {
+                    CurrentKeyOfKindRequest => {
+                        Ok(epoch.cost_for_known_cost_item(FetchSingleIdentityKeyProcessingCost))
+                    }
+                    AllKeysOfKindRequest => Err(Error::Fee(FeeError::OperationNotAllowed(
+                        "You can not get costs for an all keys of kind request",
+                    ))),
+                }
+            }
         }
     }
 
@@ -675,6 +696,82 @@ impl IdentityKeysRequest {
         IdentityKeysRequest {
             identity_id,
             request_type: SearchKey(purpose_btree_map),
+            limit: None,
+            offset: None,
+        }
+    }
+
+    #[cfg(feature = "full")]
+    /// Make a request for an encryption key for a specific contract
+    pub fn new_contract_encryption_keys_query(
+        identity_id: [u8; 32],
+        contract_id: [u8; 32],
+    ) -> Self {
+        IdentityKeysRequest {
+            identity_id,
+            request_type: ContractBoundKey(
+                contract_id,
+                Purpose::ENCRYPTION,
+                CurrentKeyOfKindRequest,
+            ),
+            limit: None,
+            offset: None,
+        }
+    }
+
+    #[cfg(feature = "full")]
+    /// Make a request for an decryption key for a specific contract
+    pub fn new_contract_decryption_keys_query(
+        identity_id: [u8; 32],
+        contract_id: [u8; 32],
+    ) -> Self {
+        IdentityKeysRequest {
+            identity_id,
+            request_type: ContractBoundKey(
+                contract_id,
+                Purpose::DECRYPTION,
+                CurrentKeyOfKindRequest,
+            ),
+            limit: None,
+            offset: None,
+        }
+    }
+
+    #[cfg(feature = "full")]
+    /// Make a request for an encryption key for a specific contract document type
+    pub fn new_document_type_encryption_keys_query(
+        identity_id: [u8; 32],
+        contract_id: [u8; 32],
+        document_type_name: String,
+    ) -> Self {
+        IdentityKeysRequest {
+            identity_id,
+            request_type: ContractDocumentTypeBoundKey(
+                contract_id,
+                document_type_name,
+                Purpose::ENCRYPTION,
+                CurrentKeyOfKindRequest,
+            ),
+            limit: None,
+            offset: None,
+        }
+    }
+
+    #[cfg(feature = "full")]
+    /// Make a request for an decryption key for a specific contract document type
+    pub fn new_document_type_decryption_keys_query(
+        identity_id: [u8; 32],
+        contract_id: [u8; 32],
+        document_type_name: String,
+    ) -> Self {
+        IdentityKeysRequest {
+            identity_id,
+            request_type: ContractDocumentTypeBoundKey(
+                contract_id,
+                document_type_name,
+                Purpose::DECRYPTION,
+                CurrentKeyOfKindRequest,
+            ),
             limit: None,
             offset: None,
         }
@@ -746,7 +843,7 @@ impl IdentityKeysRequest {
         let IdentityKeysRequest {
             identity_id,
             request_type: key_request,
-            limit,
+            mut limit,
             offset,
         } = self;
 
@@ -779,6 +876,61 @@ impl IdentityKeysRequest {
                     path: query_keys_path,
                     query: SizedQuery {
                         query: Self::construct_search_query(map),
+                        limit,
+                        offset,
+                    },
+                }
+            }
+            ContractBoundKey(contract_id, purpose, key_request_type) => {
+                let query_keys_path = identity_contract_info_group_path_key_purpose_vec(
+                    &identity_id,
+                    &contract_id,
+                    purpose,
+                );
+                let query = match key_request_type {
+                    CurrentKeyOfKindRequest => {
+                        limit = Some(1);
+                        Query::new_single_key(vec![])
+                    }
+                    AllKeysOfKindRequest => {
+                        Query::new_single_query_item(QueryItem::RangeFull(RangeFull))
+                    }
+                };
+                PathQuery {
+                    path: query_keys_path,
+                    query: SizedQuery {
+                        query,
+                        limit,
+                        offset,
+                    },
+                }
+            }
+            ContractDocumentTypeBoundKey(
+                contract_id,
+                document_type_name,
+                purpose,
+                key_request_type,
+            ) => {
+                let mut group_id = contract_id.to_vec();
+                group_id.extend(document_type_name.as_bytes());
+                let query_keys_path = identity_contract_info_group_path_key_purpose_vec(
+                    &identity_id,
+                    &group_id,
+                    purpose,
+                );
+                let query = match key_request_type {
+                    CurrentKeyOfKindRequest => {
+                        limit = Some(1);
+                        Query::new_single_key(vec![])
+                    }
+                    AllKeysOfKindRequest => {
+                        Query::new_single_query_item(QueryItem::RangeFull(RangeFull))
+                    }
+                };
+                PathQuery {
+                    path: query_keys_path,
+                    query: SizedQuery {
+                        query,
                         limit,
                         offset,
                     },

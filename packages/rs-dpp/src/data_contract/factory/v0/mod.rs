@@ -47,11 +47,28 @@ impl DataContractFactoryV0 {
     }
 
     /// Create Data Contract
-    pub fn create(
+    pub fn create_with_value_config(
         &self,
         owner_id: Identifier,
         documents: Value,
         config: Option<Value>,
+        definitions: Option<Value>,
+    ) -> Result<CreatedDataContract, ProtocolError> {
+        let platform_version = PlatformVersion::get(self.protocol_version)?;
+
+        // We need to transform the value into a data contract config
+        let config = config
+            .map(|config_value| DataContractConfig::from_value(config_value, platform_version))
+            .transpose()?;
+        self.create(owner_id, documents, config, definitions)
+    }
+
+    /// Create Data Contract
+    pub fn create(
+        &self,
+        owner_id: Identifier,
+        documents: Value,
+        config: Option<DataContractConfig>,
         definitions: Option<Value>,
     ) -> Result<CreatedDataContract, ProtocolError> {
         let entropy = Bytes32::new(self.entropy_generator.generate()?);
@@ -66,20 +83,13 @@ impl DataContractFactoryV0 {
             .transpose()
             .map_err(ProtocolError::ValueError)?;
 
-        // We need to transform the value into a data contract config
-        let config = if let Some(config_value) = config {
-            DataContractConfig::from_value(config_value, platform_version)?
-        } else {
-            DataContractConfig::default_for_version(platform_version)?
-        };
-
         let documents_map = documents
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
 
         let format = DataContractInSerializationFormat::V0(DataContractInSerializationFormatV0 {
             id: data_contract_id,
-            config,
+            config: config.unwrap_or(DataContractConfig::default_for_version(platform_version)?),
             version: 1,
             owner_id,
             document_schemas: documents_map,
@@ -246,7 +256,7 @@ mod tests {
             .clone();
 
         let result = factory
-            .create(
+            .create_with_value_config(
                 data_contract.owner_id(),
                 raw_documents,
                 None,
