@@ -2,7 +2,7 @@
 
 use drive::query::DriveQuery;
 
-use crate::{dapi::DashAPI, error::Error, platform::document_query::DocumentQuery};
+use crate::{dapi::DashAPI, error::Error, platform::document_query::SdkDocumentQuery};
 
 #[async_trait::async_trait]
 pub trait Readable<API: DashAPI>
@@ -11,7 +11,7 @@ where
 {
     type Identifier;
 
-    async fn read<Q: ObjectQuery<Self::Identifier>>(api: &API, query: &Q) -> Result<Self, Error>;
+    async fn read<Q: SdkQuery<Self::Identifier>>(api: &API, query: &Q) -> Result<Self, Error>;
 }
 
 // TODO this will change, not tested at all
@@ -33,7 +33,7 @@ where
 {
     type Request;
 
-    async fn list<Q: ObjectQuery<Self::Request>>(api: &API, query: &Q) -> Result<Vec<Self>, Error>;
+    async fn list<Q: SdkQuery<Self::Request>>(api: &API, query: &Q) -> Result<Vec<Self>, Error>;
 }
 
 // pub trait ObjectQuery<O>: Sized + Send + Sync
@@ -43,11 +43,11 @@ where
 // {
 // }
 
-pub trait ObjectQuery<I>: Sized + Send + Sync + Clone {
+pub trait SdkQuery<I>: Sized + Send + Sync + Clone {
     fn query(&self) -> Result<I, Error>;
 }
 
-impl<T> ObjectQuery<T> for T
+impl<T> SdkQuery<T> for T
 where
     T: Sized + Send + Sync + Clone,
 {
@@ -56,15 +56,15 @@ where
     }
 }
 
-impl ObjectQuery<[u8; 32]> for dpp::prelude::Identifier {
+impl SdkQuery<[u8; 32]> for dpp::prelude::Identifier {
     fn query(&self) -> Result<[u8; 32], Error> {
         Ok(self.as_bytes().clone())
     }
 }
 
-impl<'a> ObjectQuery<DocumentQuery> for DriveQuery<'a> {
-    fn query(&self) -> Result<DocumentQuery, Error> {
-        let q: DocumentQuery = self.into();
+impl<'a> SdkQuery<SdkDocumentQuery> for DriveQuery<'a> {
+    fn query(&self) -> Result<SdkDocumentQuery, Error> {
+        let q: SdkDocumentQuery = self.into();
         Ok(q)
     }
 }

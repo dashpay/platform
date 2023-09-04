@@ -10,7 +10,7 @@ async fn test_data_contract_read_not_found() {
 
     let api = setup_api();
 
-    let result = rs_sdk::platform::data_contract::DataContract::read(&api, &id).await;
+    let result = rs_sdk::platform::data_contract::SdkDataContract::read(&api, &id).await;
 
     assert!(matches!(
         result,

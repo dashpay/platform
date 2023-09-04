@@ -14,12 +14,12 @@ use dpp::{
 };
 use drive::query::{DriveQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 
-use super::data_contract::DataContract;
+use super::data_contract::SdkDataContract;
 
 /// Request documents.
 // TODO: is it needed or we use drivequery?
 #[derive(Debug, Clone)]
-pub struct DocumentQuery {
+pub struct SdkDocumentQuery {
     /// Data contract ID
     pub data_contract: DppDataContract,
     /// Document type for the data contract
@@ -34,7 +34,7 @@ pub struct DocumentQuery {
     pub start: Option<Start>,
 }
 
-impl DocumentQuery {
+impl SdkDocumentQuery {
     /// Fetch one document with provided document ID
     pub async fn new_with_document_id<API: DashAPI>(
         api: &API,
@@ -42,7 +42,7 @@ impl DocumentQuery {
         document_type_name: &str,
         document_id: Identifier,
     ) -> Result<Self, Error> {
-        let data_contract = DataContract::read(api, &data_contract_id).await?;
+        let data_contract = SdkDataContract::read(api, &data_contract_id).await?;
 
         data_contract
             .inner
@@ -60,7 +60,7 @@ impl DocumentQuery {
             field: "id".to_string(),
         }];
 
-        Ok(DocumentQuery {
+        Ok(SdkDocumentQuery {
             data_contract: data_contract.into(),
             document_type_name: document_type_name.to_string(),
             where_clauses,
@@ -71,9 +71,9 @@ impl DocumentQuery {
     }
 }
 
-impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
+impl TryFrom<SdkDocumentQuery> for platform_proto::GetDocumentsRequest {
     type Error = Error;
-    fn try_from(dapi_request: DocumentQuery) -> Result<Self, Self::Error> {
+    fn try_from(dapi_request: SdkDocumentQuery) -> Result<Self, Self::Error> {
         // TODO implement where and order_by clause
 
         let where_clauses = serialize_vec_to_cbor(dapi_request.where_clauses.clone())
@@ -93,7 +93,7 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
     }
 }
 
-impl<'a> From<&'a DriveQuery<'a>> for DocumentQuery {
+impl<'a> From<&'a DriveQuery<'a>> for SdkDocumentQuery {
     fn from(value: &'a DriveQuery<'a>) -> Self {
         let data_contract = value.contract.clone();
         let document_type_name = value.document_type.name();
@@ -121,10 +121,10 @@ impl<'a> From<&'a DriveQuery<'a>> for DocumentQuery {
     }
 }
 
-impl<'a> TryFrom<&'a DocumentQuery> for DriveQuery<'a> {
+impl<'a> TryFrom<&'a SdkDocumentQuery> for DriveQuery<'a> {
     type Error = crate::error::Error;
 
-    fn try_from(request: &'a DocumentQuery) -> Result<Self, Self::Error> {
+    fn try_from(request: &'a SdkDocumentQuery) -> Result<Self, Self::Error> {
         // let data_contract = request.data_contract.clone();
         let document_type = request
             .data_contract

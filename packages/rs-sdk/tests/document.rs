@@ -3,13 +3,13 @@
 use std::fmt::Debug;
 
 use drive_proof_verifier::proof::from_proof::Length;
-use rs_sdk::crud::{ObjectQuery, Readable};
-use rs_sdk::platform::document::Document;
-use rs_sdk::platform::document_query::DocumentQuery;
+use rs_sdk::crud::{Readable, SdkQuery};
+use rs_sdk::platform::document::SdkDocument;
+use rs_sdk::platform::document_query::SdkDocumentQuery;
 
 include!("common.rs");
 
-async fn test_read<API: DashAPI, O: Readable<API>, Q: ObjectQuery<O::Identifier>>(
+async fn test_read<API: DashAPI, O: Readable<API>, Q: SdkQuery<O::Identifier>>(
     api: &API,
     id: &Q,
     expected: Result<usize, rs_sdk::error::Error>,
@@ -50,7 +50,7 @@ async fn document_read() {
     let data_contract_id = base64_identifier(DATA_CONTRACT_ID);
     let document_id = base64_identifier(DOCUMENT_ID);
 
-    let query = DocumentQuery::new_with_document_id(
+    let query = SdkDocumentQuery::new_with_document_id(
         &api,
         data_contract_id,
         DOCUMENT_TYPE_NAME,
@@ -59,5 +59,5 @@ async fn document_read() {
     .await
     .expect("create document query");
 
-    let _res: Result<Document, rs_sdk::error::Error> = test_read(&api, &query, Ok(1)).await;
+    let _res: Result<SdkDocument, rs_sdk::error::Error> = test_read(&api, &query, Ok(1)).await;
 }

@@ -13,7 +13,7 @@ async fn test_identity_read() {
 
     let api = setup_api();
 
-    let identity = rs_sdk::platform::identity::Identity::read(&api, &id)
+    let identity = rs_sdk::platform::identity::SdkIdentity::read(&api, &id)
         .await
         .unwrap();
 

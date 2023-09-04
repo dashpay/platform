@@ -5,34 +5,34 @@ use drive_proof_verifier::proof::from_proof::FromProof;
 use rs_dapi_client::{DapiRequest, RequestSettings};
 
 use crate::{
-    crud::{ObjectQuery, Readable},
+    crud::{Readable, SdkQuery},
     dapi::DashAPI,
     error::Error,
 };
 
 /// Dash Platform Identity object wrapper
-pub struct Identity {
+pub struct SdkIdentity {
     /// Identity object
     pub inner: dpp::prelude::Identity,
 }
 
-impl From<Identity> for dpp::prelude::Identity {
-    fn from(id: Identity) -> Self {
+impl From<SdkIdentity> for dpp::prelude::Identity {
+    fn from(id: SdkIdentity) -> Self {
         id.inner
     }
 }
 
-impl From<dpp::prelude::Identity> for Identity {
+impl From<dpp::prelude::Identity> for SdkIdentity {
     fn from(id: dpp::prelude::Identity) -> Self {
         Self { inner: id }
     }
 }
 
 #[async_trait::async_trait]
-impl<API: DashAPI> Readable<API> for Identity {
+impl<API: DashAPI> Readable<API> for SdkIdentity {
     type Identifier = [u8; 32];
 
-    async fn read<Q: ObjectQuery<Self::Identifier>>(api: &API, id: &Q) -> Result<Self, Error> {
+    async fn read<Q: SdkQuery<Self::Identifier>>(api: &API, id: &Q) -> Result<Self, Error> {
         let request = platform_proto::GetIdentityRequest {
             id: id.query()?.to_vec(),
             prove: true,
@@ -47,6 +47,6 @@ impl<API: DashAPI> Readable<API> for Identity {
         let inner =
             dpp::prelude::Identity::from_proof(&request, &response, api.quorum_info_provider()?)?;
 
-        Ok(Identity { inner })
+        Ok(SdkIdentity { inner })
     }
 }

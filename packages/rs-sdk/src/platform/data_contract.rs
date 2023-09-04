@@ -1,7 +1,7 @@
 //! Data contract features
 
 use crate::{
-    crud::{ObjectQuery, Readable},
+    crud::{Readable, SdkQuery},
     dapi::DashAPI,
     error::Error,
 };
@@ -10,28 +10,28 @@ use drive_proof_verifier::proof::from_proof::FromProof;
 use rs_dapi_client::{DapiRequest, RequestSettings};
 
 /// Data contract object wrapper
-pub struct DataContract {
+pub struct SdkDataContract {
     /// Data contract object
     pub inner: dpp::prelude::DataContract,
 }
 
-impl From<DataContract> for dpp::prelude::DataContract {
-    fn from(dc: DataContract) -> Self {
+impl From<SdkDataContract> for dpp::prelude::DataContract {
+    fn from(dc: SdkDataContract) -> Self {
         dc.inner
     }
 }
 
-impl From<dpp::prelude::DataContract> for DataContract {
+impl From<dpp::prelude::DataContract> for SdkDataContract {
     fn from(dc: dpp::prelude::DataContract) -> Self {
         Self { inner: dc }
     }
 }
 
 #[async_trait::async_trait]
-impl<API: DashAPI> Readable<API> for DataContract {
+impl<API: DashAPI> Readable<API> for SdkDataContract {
     type Identifier = [u8; 32];
 
-    async fn read<Q: ObjectQuery<Self::Identifier>>(api: &API, id: &Q) -> Result<Self, Error> {
+    async fn read<Q: SdkQuery<Self::Identifier>>(api: &API, id: &Q) -> Result<Self, Error> {
         let query = id.query()?;
         let request = platform_proto::GetDataContractRequest {
             id: query.to_vec(),
@@ -53,6 +53,6 @@ impl<API: DashAPI> Readable<API> for DataContract {
             &response,
             api.quorum_info_provider()?,
         )?;
-        Ok(DataContract { inner })
+        Ok(SdkDataContract { inner })
     }
 }

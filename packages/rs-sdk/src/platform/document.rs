@@ -5,43 +5,43 @@ use drive::query::DriveQuery;
 use rs_dapi_client::{DapiRequest, RequestSettings};
 
 use crate::{
-    crud::{Listable, ObjectQuery, Readable},
+    crud::{Listable, Readable, SdkQuery},
     dapi::DashAPI,
     error::Error,
 };
 use drive_proof_verifier::proof::from_proof::{Documents, FromProof, Length};
 
-use super::document_query::DocumentQuery;
+use super::document_query::SdkDocumentQuery;
 
 /// A document
 #[derive(Debug, Clone)]
-pub struct Document {
+pub struct SdkDocument {
     inner: dpp::document::Document,
 }
 
-impl From<Document> for dpp::document::Document {
-    fn from(doc: Document) -> Self {
+impl From<SdkDocument> for dpp::document::Document {
+    fn from(doc: SdkDocument) -> Self {
         doc.inner
     }
 }
 
-impl From<dpp::document::Document> for Document {
+impl From<dpp::document::Document> for SdkDocument {
     fn from(doc: dpp::document::Document) -> Self {
         Self { inner: doc }
     }
 }
 
-impl Length for Document {
+impl Length for SdkDocument {
     fn count_some(&self) -> usize {
         1
     }
 }
 
 #[async_trait::async_trait]
-impl<API: DashAPI> Readable<API> for Document {
-    type Identifier = DocumentQuery;
+impl<API: DashAPI> Readable<API> for SdkDocument {
+    type Identifier = SdkDocumentQuery;
 
-    async fn read<Q: ObjectQuery<Self::Identifier>>(api: &API, query: &Q) -> Result<Self, Error> {
+    async fn read<Q: SdkQuery<Self::Identifier>>(api: &API, query: &Q) -> Result<Self, Error> {
         let document_query = query.query()?;
         let request: GetDocumentsRequest = document_query.clone().try_into()?;
         let drive_query: DriveQuery = (&document_query).try_into()?;
@@ -71,10 +71,10 @@ impl<API: DashAPI> Readable<API> for Document {
 }
 
 #[async_trait::async_trait]
-impl<API: DashAPI> Listable<API> for Document {
-    type Request = DocumentQuery;
-    async fn list<Q: ObjectQuery<Self::Request>>(api: &API, query: &Q) -> Result<Vec<Self>, Error> {
-        let document_query: DocumentQuery = query.query()?;
+impl<API: DashAPI> Listable<API> for SdkDocument {
+    type Request = SdkDocumentQuery;
+    async fn list<Q: SdkQuery<Self::Request>>(api: &API, query: &Q) -> Result<Vec<Self>, Error> {
+        let document_query: SdkDocumentQuery = query.query()?;
         let drive_query: DriveQuery = (&document_query).try_into()?;
         let request: GetDocumentsRequest = document_query.clone().try_into()?;
 
@@ -94,7 +94,7 @@ impl<API: DashAPI> Listable<API> for Document {
     }
 }
 
-impl ObjectQuery<GetDocumentsRequest> for DocumentQuery {
+impl SdkQuery<GetDocumentsRequest> for SdkDocumentQuery {
     fn query(&self) -> Result<GetDocumentsRequest, Error> {
         <Self as TryInto<GetDocumentsRequest>>::try_into(self.clone()).map_err(|e| e.into())
     }
