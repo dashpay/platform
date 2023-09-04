@@ -1,5 +1,7 @@
 /* eslint-disable no-param-reassign */
 
+const { NETWORK_LOCAL, NETWORK_TESTNET } = require('../src/constants');
+
 /**
  * @param {HomeDir} homeDir
  * @param {DefaultConfigs} defaultConfigs
@@ -129,7 +131,7 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
           .forEach(([, options]) => {
             delete options.core.sentinel;
 
-            if (options.network === 'testnet') {
+            if ([NETWORK_LOCAL, NETWORK_TESTNET].includes(options.network)) {
               options.core.docker.image = base.get('core.docker.image');
             }
           });
