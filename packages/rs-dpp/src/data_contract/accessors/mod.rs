@@ -7,6 +7,7 @@ use crate::prelude::DataContract;
 use crate::ProtocolError;
 use platform_value::Identifier;
 
+use crate::identity::SecurityLevel;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod v0;
@@ -83,6 +84,33 @@ impl DataContractV0Getters for DataContract {
             DataContract::V0(v0) => v0.config_mut(),
         }
     }
+
+    fn are_documents_keep_history_for_type(
+        &self,
+        document_type_name: &str,
+    ) -> Result<bool, ProtocolError> {
+        match self {
+            DataContract::V0(v0) => v0.are_documents_keep_history_for_type(document_type_name),
+        }
+    }
+
+    fn are_documents_mutable_for_type(
+        &self,
+        document_type_name: &str,
+    ) -> Result<bool, ProtocolError> {
+        match self {
+            DataContract::V0(v0) => v0.are_documents_mutable_for_type(document_type_name),
+        }
+    }
+
+    fn security_level_requirement_for_type(
+        &self,
+        document_type_name: &str,
+    ) -> Result<SecurityLevel, ProtocolError> {
+        match self {
+            DataContract::V0(v0) => v0.security_level_requirement_for_type(document_type_name),
+        }
+    }
 }
 
 impl DataContractV0Setters for DataContract {
@@ -119,6 +147,40 @@ impl DataContractV0Setters for DataContract {
     fn set_config(&mut self, config: DataContractConfig) {
         match self {
             DataContract::V0(v0) => v0.set_config(config),
+        }
+    }
+
+    fn set_documents_keep_history_for_type(
+        &mut self,
+        document_type_name: &str,
+        keep_history: bool,
+    ) -> Result<(), ProtocolError> {
+        match self {
+            DataContract::V0(v0) => {
+                v0.set_documents_keep_history_for_type(document_type_name, keep_history)
+            }
+        }
+    }
+
+    fn set_documents_mutable_for_type(
+        &mut self,
+        document_type_name: &str,
+        mutable: bool,
+    ) -> Result<(), ProtocolError> {
+        match self {
+            DataContract::V0(v0) => v0.set_documents_mutable_for_type(document_type_name, mutable),
+        }
+    }
+
+    fn set_security_level_requirement_for_type(
+        &mut self,
+        document_type_name: &str,
+        requirement: SecurityLevel,
+    ) -> Result<(), ProtocolError> {
+        match self {
+            DataContract::V0(v0) => {
+                v0.set_security_level_requirement_for_type(document_type_name, requirement)
+            }
         }
     }
 }

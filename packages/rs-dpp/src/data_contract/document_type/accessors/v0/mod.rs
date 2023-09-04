@@ -4,7 +4,8 @@ use crate::data_contract::document_type::property::DocumentProperty;
 
 use platform_value::{Identifier, Value};
 
-use crate::identity::SecurityLevel;
+use crate::data_contract::document_type::config::DocumentTypeConfig;
+use crate::data_contract::document_type::DocumentType;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub trait DocumentTypeV0Getters {
@@ -36,13 +37,8 @@ pub trait DocumentTypeV0Getters {
     /// Returns the required fields of the document type.
     fn required_fields(&self) -> &BTreeSet<String>;
 
-    /// Returns the documents keep history flag of the document type.
-    fn documents_keep_history(&self) -> bool;
-
-    /// Returns the documents mutable flag of the document type.
-    fn documents_mutable(&self) -> bool;
-
     /// Returns the data contract id of the document type.
     fn data_contract_id(&self) -> Identifier;
-    fn security_level_requirement(&self) -> SecurityLevel;
+
+    fn config(&self) -> &DocumentTypeConfig;
 }

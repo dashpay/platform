@@ -1,10 +1,11 @@
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::DocumentName;
+use crate::identity::SecurityLevel;
 use crate::metadata::Metadata;
 use crate::ProtocolError;
 use platform_value::Identifier;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 pub trait DataContractV0Getters {
     /// Returns the unique identifier for the data contract.
@@ -39,6 +40,21 @@ pub trait DataContractV0Getters {
 
     /// Returns the internal configuration for the contract as mutable.
     fn config_mut(&mut self) -> &mut DataContractConfig;
+
+    fn are_documents_keep_history_for_type(
+        &self,
+        document_type_name: &str,
+    ) -> Result<bool, ProtocolError>;
+
+    fn are_documents_mutable_for_type(
+        &self,
+        document_type_name: &str,
+    ) -> Result<bool, ProtocolError>;
+
+    fn security_level_requirement_for_type(
+        &self,
+        document_type_name: &str,
+    ) -> Result<SecurityLevel, ProtocolError>;
 }
 
 pub trait DataContractV0Setters {
@@ -58,4 +74,22 @@ pub trait DataContractV0Setters {
 
     /// Sets the internal configuration for the contract.
     fn set_config(&mut self, config: DataContractConfig);
+
+    fn set_documents_keep_history_for_type(
+        &mut self,
+        document_type_name: &str,
+        keep_history: bool,
+    ) -> Result<(), ProtocolError>;
+
+    fn set_documents_mutable_for_type(
+        &mut self,
+        document_type_name: &str,
+        mutable: bool,
+    ) -> Result<(), ProtocolError>;
+
+    fn set_security_level_requirement_for_type(
+        &mut self,
+        document_type_name: &str,
+        requirement: SecurityLevel,
+    ) -> Result<(), ProtocolError>;
 }

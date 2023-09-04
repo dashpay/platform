@@ -8,11 +8,13 @@ pub use index::*;
 mod index_level;
 pub use index_level::IndexLevel;
 
+pub mod config;
 #[cfg(feature = "random-documents")]
 pub mod random_document;
 pub mod schema;
 pub mod v0;
 
+use crate::data_contract::document_type::config::DocumentTypeConfig;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::document::Document;
@@ -67,6 +69,12 @@ impl DocumentType {
     pub fn as_mut_ref(&mut self) -> DocumentTypeMutRef {
         match self {
             DocumentType::V0(v0) => DocumentTypeMutRef::V0(v0),
+        }
+    }
+
+    pub fn config_mut(&mut self) -> &mut DocumentTypeConfig {
+        match self {
+            DocumentType::V0(v0) => &mut v0.config,
         }
     }
 }
