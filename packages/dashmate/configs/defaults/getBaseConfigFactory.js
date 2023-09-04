@@ -97,11 +97,6 @@ function getBaseConfigFactory(homeDir) {
           mediantime: null,
           address: null,
         },
-        sentinel: {
-          docker: {
-            image: 'dashpay/sentinel:1.7.3',
-          },
-        },
         devnet: {
           name: null,
           minimumDifficultyBlocks: 0,

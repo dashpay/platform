@@ -7,10 +7,6 @@ function getConfigProfilesFactory() {
 
     profiles.push('core');
 
-    if (config.get('core.masternode.enable')) {
-      profiles.push('masternode');
-    }
-
     if (config.get('platform.enable')) {
       profiles.push('platform');
     }
