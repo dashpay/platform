@@ -43,8 +43,6 @@ describe('getOverviewScopeFactory', () => {
         lastPaidTime: '23 days ago',
         paymentQueuePosition: null,
         nextPaymentTime: 'in 1 day',
-        sentinelState: '',
-        sentinelVersion: 'v1.2',
       };
 
       const mockPlatformScope = {
@@ -94,8 +92,6 @@ describe('getOverviewScopeFactory', () => {
       expect(mockGetMasternodeScope.notCalled).to.be.true();
       expect(scope.masternode.state).to.be.equal(null);
       expect(scope.masternode.proTxHash).to.be.equal(null);
-      expect(scope.masternode.sentinel.version).to.be.equal(null);
-      expect(scope.masternode.sentinel.state).to.be.equal(null);
       expect(scope.masternode.nodeState).to.be.equal(null);
 
       expect(mockGetPlatformScope.notCalled).to.be.true();
