@@ -78,20 +78,18 @@ mod test {
     use dpp::consensus::state::data_trigger::DataTriggerError;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::document::{DocumentV0Getters, DocumentV0Setters};
-    use dpp::platform_value;
     use dpp::platform_value::platform_value;
     use dpp::state_transition::documents_batch_transition::document_transition::action_type::DocumentTransitionActionType;
-    use dpp::tests::fixtures::{get_contact_request_document_fixture, get_dashpay_contract_fixture, get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, get_dpns_preorder_document_fixture, identity_v0_fixture, ParentDocumentOptions};
+    use dpp::tests::fixtures::{get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, get_dpns_preorder_document_fixture, identity_v0_fixture, ParentDocumentOptions};
     use drive::drive::contract::DataContractFetchInfo;
     use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionV0};
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
-    use platform_version::version::LATEST_PLATFORM_VERSION;
     use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
     use crate::execution::types::state_transition_execution_context::v0::StateTransitionExecutionContextV0;
-    use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
-    use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::dashpay::create_contact_request_data_trigger;
+    use crate::execution::validation::state_transition::documents_batch::data_triggers::{DataTriggerExecutionContext};
     use crate::execution::validation::state_transition::documents_batch::data_triggers::triggers::dpns::v0::run_name_register_trigger;
     use crate::platform_types::platform::PlatformStateRef;
+    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::test::helpers::setup::TestPlatformBuilder;
 
     #[test]
@@ -143,95 +141,8 @@ mod test {
 
         let document_create_transition = document_transition
             .as_transition_create()
-            .expect("expected a document create transition").to_owned();
-
-        let data_contract = get_dpns_data_contract_fixture(None, 0);
-
-        let mut transition_execution_context =
-            StateTransitionExecutionContext::V0(StateTransitionExecutionContextV0::default());
-        transition_execution_context.enable_dry_run();
-
-        let data_trigger_context = DataTriggerExecutionContext {
-            platform: &platform_ref,
-            owner_id,
-            state_transition_execution_context: &transition_execution_context,
-            transaction: None,
-        };
-
-        let document_create_transition_action = DocumentTransitionAction::CreateAction(
-            DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(
-                &document_create_transition,
-                |id| Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(0)))
-            ).unwrap()
-        );
-
-        let result = run_name_register_trigger(&document_create_transition_action, &data_trigger_context, None)
-            .expect("the execution result should be returned");
-
-        assert!(!result.is_valid());
-
-        let data_trigger_error = &result.errors[0];
-        match data_trigger_error {
-            DataTriggerError::DataTriggerExecutionError(e) => {
-                assert_eq!(e.message(), "Vote didn't happen");
-            }
-            _ => {
-                panic!("Expected DataTriggerExecutionError");
-            }
-        }
-    }
-
-    #[test]
-    fn should_allow_registering_names_after_epoch_0() {
-        let dpns = get_dpns_data_contract_fixture(None, 0).data_contract_owned();
-
-        let platform = TestPlatformBuilder::new()
-            .build_with_mock_rpc()
-            .set_initial_state_structure();
-        let mut state_guard = platform.state.write().unwrap();
-
-        state_guard
-            .v0_mut()
-            .expect("Expected state to be v0")
-            .last_committed_block_info = Some(ExtendedBlockInfo::from(ExtendedBlockInfoV0 {
-            basic_info: BlockInfo {
-                time_ms: 500000,
-                height: 100,
-                core_height: 42,
-                epoch: Epoch::new(1).expect("expected to create epoch"),
-            },
-            app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
-            quorum_hash: [0u8; 32],
-            block_id_hash: [0u8; 32],
-            signature: [0u8; 96],
-            round: 0,
-        }));
-
-        let platform_ref = PlatformStateRef {
-            drive: &platform.drive,
-            state: &state_guard,
-            config: &platform.config,
-        };
-
-        let mut domain_document =
-            get_dpns_parent_document_fixture(ParentDocumentOptions::default(), 0);
-        domain_document.set(
-            super::property_names::CORE_HEIGHT_CREATED_AT,
-            platform_value!(10u32),
-        );
-        let owner_id = &domain_document.owner_id();
-
-        let document_transitions = get_document_transitions_fixture([(
-            DocumentTransitionActionType::Create,
-            vec![(domain_document, dpns.document_type_for_name("domain").unwrap())],
-        )]);
-        let document_transition = document_transitions
-            .get(0)
-            .expect("document transition should be present");
-
-        let document_create_transition = document_transition
-            .as_transition_create()
-            .expect("expected a document create transition");
+            .expect("expected a document create transition")
+            .to_owned();
 
         let data_contract = get_dpns_data_contract_fixture(None, 0);
 
@@ -260,17 +171,114 @@ mod test {
         )
         .expect("the execution result should be returned");
 
+        assert!(!result.is_valid());
+
+        let data_trigger_error = &result.errors[0];
+        match data_trigger_error {
+            DataTriggerError::DataTriggerExecutionError(e) => {
+                assert_eq!(e.message(), "Vote didn't happen");
+            }
+            _ => {
+                panic!("Expected DataTriggerExecutionError");
+            }
+        }
+    }
+
+    #[test]
+    fn should_allow_registering_names_after_epoch_0() {
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let mut state_guard = platform.state.write().unwrap();
+        let protocol_version = state_guard.current_protocol_version_in_consensus();
+
+        let dpns = get_dpns_data_contract_fixture(None, protocol_version).data_contract_owned();
+
+        state_guard
+            .v0_mut()
+            .expect("Expected state to be v0")
+            .last_committed_block_info = Some(ExtendedBlockInfo::from(ExtendedBlockInfoV0 {
+            basic_info: BlockInfo {
+                time_ms: 500000,
+                height: 100,
+                core_height: 42,
+                epoch: Epoch::new(1).expect("expected to create epoch"),
+            },
+            app_hash: platform.drive.grove.root_hash(None).unwrap().unwrap(),
+            quorum_hash: [0u8; 32],
+            block_id_hash: [0u8; 32],
+            signature: [0u8; 96],
+            round: 0,
+        }));
+
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state_guard,
+            config: &platform.config,
+        };
+
+        let mut domain_document =
+            get_dpns_parent_document_fixture(ParentDocumentOptions::default(), protocol_version);
+        domain_document.set(
+            super::property_names::CORE_HEIGHT_CREATED_AT,
+            platform_value!(10u32),
+        );
+        let owner_id = &domain_document.owner_id();
+
+        let document_transitions = get_document_transitions_fixture([(
+            DocumentTransitionActionType::Create,
+            vec![(
+                domain_document,
+                dpns.document_type_for_name("domain").unwrap(),
+            )],
+        )]);
+        let document_transition = document_transitions
+            .get(0)
+            .expect("document transition should be present");
+
+        let document_create_transition = document_transition
+            .as_transition_create()
+            .expect("expected a document create transition");
+
+        let data_contract = get_dpns_data_contract_fixture(None, protocol_version);
+
+        let mut transition_execution_context =
+            StateTransitionExecutionContext::V0(StateTransitionExecutionContextV0::default());
+        transition_execution_context.enable_dry_run();
+
+        let data_trigger_context = DataTriggerExecutionContext {
+            platform: &platform_ref,
+            owner_id,
+            state_transition_execution_context: &transition_execution_context,
+            transaction: None,
+        };
+
+        let document_create_transition_action = DocumentTransitionAction::CreateAction(
+            DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(
+                &document_create_transition,
+                |id| Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version)))
+            ).unwrap()
+        );
+
+        let result = run_name_register_trigger(
+            &document_create_transition_action,
+            &data_trigger_context,
+            None,
+        )
+        .expect("the execution result should be returned");
+
         assert!(result.is_valid());
     }
 
     #[test]
     fn should_always_return_valid_results_for_preorder_at_epoch_0() {
-        let dpns = get_dpns_data_contract_fixture(None, 0).data_contract_owned();
-
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let state_read_guard = platform.state.read().unwrap();
+        let protocol_version = state_read_guard.current_protocol_version_in_consensus();
+
+        let dpns = get_dpns_data_contract_fixture(None, protocol_version).data_contract_owned();
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
@@ -278,7 +286,7 @@ mod test {
         };
 
         let (mut preorder_document, preorder_salt) =
-            get_dpns_preorder_document_fixture(ParentDocumentOptions::default(), 0);
+            get_dpns_preorder_document_fixture(ParentDocumentOptions::default(), protocol_version);
         preorder_document
             .set(
                 super::property_names::CORE_HEIGHT_CREATED_AT,
@@ -302,7 +310,7 @@ mod test {
             .as_transition_create()
             .expect("expected a document create transition");
 
-        let data_contract = get_dpns_data_contract_fixture(None, 0);
+        let data_contract = get_dpns_data_contract_fixture(None, protocol_version);
 
         let mut transition_execution_context =
             StateTransitionExecutionContext::V0(StateTransitionExecutionContextV0::default());
@@ -318,7 +326,7 @@ mod test {
         let document_create_transition_action = DocumentTransitionAction::CreateAction(
             DocumentCreateTransitionAction::from_document_borrowed_create_transition_with_contract_lookup(
                 &document_create_transition,
-                |id| Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(0)))
+                |id| Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(protocol_version)))
             ).unwrap()
         );
 
