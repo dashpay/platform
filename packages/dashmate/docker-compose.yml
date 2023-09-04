@@ -38,7 +38,6 @@ services:
       - WSL2_FIX=${WSL2_FIX:-0}
     profiles:
       - core
-      - masternode
 
   drive_abci:
     image: ${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE:?err}
