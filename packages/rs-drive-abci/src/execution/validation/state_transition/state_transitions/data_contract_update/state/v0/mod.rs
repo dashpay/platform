@@ -104,7 +104,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             ))
         }
 
-        if old_data_contract.config().readonly() {
+        if old_data_contract.config().is_contract_update_allowed() {
             validation_result.add_error(DataContractIsReadonlyError::new(new_data_contract.id()));
             return Ok(validation_result);
         }
@@ -167,7 +167,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                         self.data_contract().id(),
                         "remove".to_string(),
                         "$defs".to_string(),
-                        old_defs.into(),
+                        old_defs.clone(),
                         Value::Null,
                     ),
                 ));
@@ -176,11 +176,13 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             };
 
             let old_defs_json: JsonValue = old_defs
-                .to_json_value()
+                .clone()
+                .try_into_validating_json()
                 .map_err(ProtocolError::ValueError)?;
 
             let new_defs_json: JsonValue = new_defs
-                .to_json_value()
+                .clone()
+                .try_into_validating_json()
                 .map_err(ProtocolError::ValueError)?;
 
             let diffs =

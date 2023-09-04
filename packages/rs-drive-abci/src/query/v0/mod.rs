@@ -974,8 +974,10 @@ mod test {
             drop(state);
             let mut data_contract =
                 get_data_contract_fixture(None, current_protocol_version).data_contract_owned();
-            data_contract.config_mut().set_keeps_history(true);
-            data_contract.config_mut().set_readonly(false);
+            data_contract
+                .config_mut()
+                .set_keeps_previous_contract_versions(true);
+            data_contract.config_mut().set_allow_contract_update(false);
 
             platform
                 .drive

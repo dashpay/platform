@@ -11,13 +11,13 @@ impl DataContractConfig {
         new_config: &DataContractConfig,
         contract_id: Identifier,
     ) -> SimpleConsensusValidationResult {
-        if self.readonly() {
+        if self.is_contract_update_allowed() {
             return SimpleConsensusValidationResult::new_with_error(
                 DataContractIsReadonlyError::new(contract_id).into(),
             );
         }
 
-        if new_config.readonly() {
+        if new_config.is_contract_update_allowed() {
             return SimpleConsensusValidationResult::new_with_error(
                 DataContractConfigUpdateError::new(
                     contract_id,
@@ -27,14 +27,15 @@ impl DataContractConfig {
             );
         }
 
-        if new_config.keeps_history() != self.keeps_history() {
+        if new_config.keeps_previous_contract_versions() != self.keeps_previous_contract_versions()
+        {
             return SimpleConsensusValidationResult::new_with_error(
                 DataContractConfigUpdateError::new(
                     contract_id,
                     format!(
                         "contract can not change whether it keeps history: changing from {} to {}",
-                        self.keeps_history(),
-                        new_config.keeps_history()
+                        self.keeps_previous_contract_versions(),
+                        new_config.keeps_previous_contract_versions()
                     ),
                 )
                 .into(),
@@ -53,8 +54,8 @@ impl DataContractConfig {
             );
         }
 
-        if new_config.documents_mutable_contract_default()
-            != self.documents_mutable_contract_default()
+        if new_config.documents_mutability_contract_default()
+            != self.documents_mutability_contract_default()
         {
             return SimpleConsensusValidationResult::new_with_error(
                 DataContractConfigUpdateError::new(

@@ -36,7 +36,9 @@ impl Drive {
         )?;
 
         // we only store the owner_id storage
-        let storage_flags = if contract.config().can_be_deleted() || !contract.config().readonly() {
+        let storage_flags = if contract.config().is_contract_deletion_allowed()
+            || !contract.config().is_contract_update_allowed()
+        {
             Some(StorageFlags::approximate_size(true, None))
         } else {
             None
@@ -60,7 +62,7 @@ impl Drive {
             );
         }
 
-        if contract.config().keeps_history() {
+        if contract.config().keeps_previous_contract_versions() {
             // we are dealing with a sibling reference
             // sibling reference serialized size is going to be the encoded time size
             // (DEFAULT_FLOAT_SIZE) plus 1 byte for reference type and 1 byte for the space of

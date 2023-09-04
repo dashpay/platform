@@ -8,6 +8,7 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::util::entropy_generator::EntropyGenerator;
 
+use crate::data_contract::config::DataContractConfig;
 use crate::ProtocolError;
 use platform_value::Value;
 
@@ -43,7 +44,7 @@ impl DataContractFacade {
         &self,
         owner_id: Identifier,
         documents: Value,
-        config: Option<Value>,
+        config: Option<DataContractConfig>,
         definitions: Option<Value>,
     ) -> Result<CreatedDataContract, ProtocolError> {
         self.factory

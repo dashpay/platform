@@ -73,7 +73,7 @@ impl Drive {
         if document_type.documents_keep_history() {
             // if we keep history this level has trees
             // we only keep flags if the contract can be deleted
-            let average_flags_size = if contract.config().can_be_deleted() {
+            let average_flags_size = if contract.config().is_contract_deletion_allowed() {
                 // the trees flags will never change
                 let flags_size = StorageFlags::approximate_size(true, None);
                 Some(flags_size)

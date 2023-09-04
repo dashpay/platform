@@ -47,18 +47,15 @@ impl DocumentTypeV0 {
         data_contract_id: Identifier,
         name: &str,
         schema: Value,
-        schema_defs: Option<&BTreeMap<String, Value>>,
+        schema_defs: Option<&Value>,
         default_keeps_history: bool,
         default_mutability: bool,
         validate: bool, // we don't need to validate if loaded from state
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // Create a full root JSON Schema from shorten contract document type schema
-        let root_schema = enrich_with_base_schema(
-            schema.clone(),
-            schema_defs.map(|defs| Value::from(defs.clone())),
-            platform_version,
-        )?;
+        let root_schema =
+            enrich_with_base_schema(schema.clone(), schema_defs.cloned(), platform_version)?;
 
         #[cfg(feature = "validation")]
         let json_schema_validator = StatelessJsonSchemaLazyValidator::new();
@@ -118,15 +115,16 @@ impl DocumentTypeV0 {
         // TODO: These properties aren't defined in JSON meta schema
         // Do documents of this type keep history? (Overrides contract value)
         let documents_keep_history: bool =
-            Value::inner_optional_bool_value(schema_map, "documentsKeepHistory")
+            Value::inner_optional_bool_value(schema_map, property_names::KEEP_HISTORY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or(default_keeps_history);
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
-            Value::inner_optional_bool_value(schema_map, "documentsMutable")
+            Value::inner_optional_bool_value(schema_map, property_names::DOCUMENTS_READ_ONLY)
                 .map_err(ProtocolError::ValueError)?
-                .unwrap_or(default_mutability);
+                // mutable true == readOnly false
+                .map_or(default_mutability, |v| !v);
 
         // Extract the properties
         let property_values =

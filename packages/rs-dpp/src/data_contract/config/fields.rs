@@ -1,8 +1,8 @@
 pub const DEFAULT_CONTRACT_KEEPS_HISTORY: bool = false;
-pub const DEFAULT_CONTRACT_CAN_BE_DELETED: bool = false;
-pub const DEFAULT_CONTRACT_MUTABILITY: bool = true;
-pub const DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY: bool = false;
-pub const DEFAULT_CONTRACT_DOCUMENT_MUTABILITY: bool = true;
+pub const DEFAULT_ALLOW_CONTRACT_DELETION: bool = false;
+pub const DEFAULT_ALLOW_CONTRACT_UPDATE: bool = true;
+pub const DEFAULT_DOCUMENTS_KEEP_HISTORY: bool = false;
+pub const DEFAULT_DOCUMENTS_MUTABILITY: bool = true;
 
 pub mod property {
     pub const CAN_BE_DELETED: &str = "canBeDeleted";

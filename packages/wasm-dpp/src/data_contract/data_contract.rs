@@ -194,9 +194,7 @@ impl DataContractWasm {
                 opts_value
                     .get_optional_value("defs")
                     .map_err(JsError::from)?
-                    .map(|defs| defs.clone().into_btree_string_map())
-                    .transpose()
-                    .map_err(JsError::from)?,
+                    .cloned(),
             )
         } else {
             (false, None)
@@ -214,7 +212,7 @@ impl DataContractWasm {
                 document_schemas_map,
                 defs,
                 !skip_validation,
-                &platform_version,
+                platform_version,
             )
             .with_js_error()
     }

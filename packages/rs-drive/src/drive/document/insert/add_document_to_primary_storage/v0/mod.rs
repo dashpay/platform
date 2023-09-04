@@ -97,7 +97,7 @@ impl Drive {
                     StorageFlags::optional_default_as_ref(),
                 )
             } else {
-                let inserted_storage_flags = if contract.config().can_be_deleted() {
+                let inserted_storage_flags = if contract.config().is_contract_deletion_allowed() {
                     document_and_contract_info
                         .owned_document_info
                         .document_info

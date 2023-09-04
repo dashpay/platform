@@ -8,7 +8,7 @@ pub trait DataContractSchemaMethodsV0 {
     fn set_document_schemas(
         &mut self,
         schemas: BTreeMap<DocumentName, Value>,
-        defs: Option<BTreeMap<DefinitionName, Value>>,
+        defs: Option<Value>,
         validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError>;
@@ -22,10 +22,10 @@ pub trait DataContractSchemaMethodsV0 {
     ) -> Result<(), ProtocolError>;
 
     fn document_schemas(&self) -> BTreeMap<DocumentName, &Value>;
-    fn schema_defs(&self) -> Option<&BTreeMap<DefinitionName, Value>>;
+    fn schema_defs(&self) -> Option<&Value>;
     fn set_schema_defs(
         &mut self,
-        defs: Option<BTreeMap<DefinitionName, Value>>,
+        defs: Option<Value>,
         validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError>;

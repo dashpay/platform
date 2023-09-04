@@ -40,15 +40,16 @@ impl Drive {
         let index_level = document_type.index_structure();
         let contract = document_and_contract_info.contract;
         let event_id = unique_event_id();
-        let storage_flags =
-            if document_type.documents_mutable() || contract.config().can_be_deleted() {
-                document_and_contract_info
-                    .owned_document_info
-                    .document_info
-                    .get_storage_flags_ref()
-            } else {
-                None //there are no need for storage flags if documents are not mutable and contract can not be deleted
-            };
+        let storage_flags = if document_type.documents_mutable()
+            || contract.config().is_contract_deletion_allowed()
+        {
+            document_and_contract_info
+                .owned_document_info
+                .document_info
+                .get_storage_flags_ref()
+        } else {
+            None //there are no need for storage flags if documents are not mutable and contract can not be deleted
+        };
 
         // we need to construct the path for documents on the contract
         // the path is

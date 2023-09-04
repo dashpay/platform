@@ -30,7 +30,7 @@ mod test {
         vec![
             ExpectedDocumentsData {
                 document_name: "profile",
-                required_properties: &["$cratedAt"],
+                required_properties: &["$createdAt"],
                 indexes: &[
                     ("index1", true, &[("$ownerId", "asc")]),
                     (
@@ -43,7 +43,7 @@ mod test {
             },
             ExpectedDocumentsData {
                 document_name: "contactInfo",
-                required_properties: &["lastName", "$cratedAt"],
+                required_properties: &["lastName", "$createdAt"],
                 indexes: &[
                     ("index1", true, &[("$ownerId", "asc")]),
                     ("index2", false, &[("$ownerId", "asc"), ("lastName", "asc")]),
@@ -131,9 +131,9 @@ mod test {
         .into_v0()
         .unwrap();
 
-        assert!(contract.config.documents_mutable_contract_default());
-        assert!(!contract.config.keeps_history());
-        assert!(!contract.config().readonly()); // the contract shouldn't be readonly
+        assert!(contract.config.documents_mutability_contract_default());
+        assert!(!contract.config.keeps_previous_contract_versions());
+        assert!(!contract.config().is_contract_update_allowed()); // the contract shouldn't be readonly
         assert!(!contract.config.documents_keep_history_contract_default());
         assert_eq!(contract.document_types.len(), 3);
         assert!(contract.document_types.get("profile").is_some());
@@ -193,16 +193,16 @@ mod test {
         .into_v0()
         .unwrap();
 
-        assert!(!contract.config().readonly());
-        assert!(!contract.config.keeps_history());
-        assert!(contract.config.documents_mutable_contract_default());
+        assert!(!contract.config().is_contract_update_allowed());
+        assert!(!contract.config.keeps_previous_contract_versions());
+        assert!(contract.config.documents_mutability_contract_default());
         assert!(!contract.config.documents_keep_history_contract_default());
 
-        contract.config.set_readonly(true);
-        contract.config.set_keeps_history(true);
+        contract.config.set_allow_contract_update(true);
+        contract.config.set_keeps_previous_contract_versions(true);
         contract
             .config
-            .set_documents_mutable_contract_default(false);
+            .set_documents_mutability_contract_default(false);
         contract
             .config
             .set_documents_keep_history_contract_default(true);
@@ -216,10 +216,10 @@ mod test {
         assert!(matches!(
             deserialized_contract.config(),
             DataContractConfig::V0(DataContractConfigV0 {
-                can_be_deleted: false,
-                readonly: true,
-                keeps_history: true,
-                documents_mutable_contract_default: false,
+                allow_contract_deletion: false,
+                allow_contract_update: true,
+                keeps_previous_contract_versions: true,
+                documents_mutability_contract_default: false,
                 documents_keep_history_contract_default: true,
             })
         ));
@@ -238,16 +238,18 @@ mod test {
 
         let contract_v0 = contract.as_v0_mut().unwrap();
 
-        assert!(!contract_v0.config().readonly());
-        assert!(!contract_v0.config.keeps_history());
-        assert!(contract_v0.config.documents_mutable_contract_default());
+        assert!(!contract_v0.config().is_contract_update_allowed());
+        assert!(!contract_v0.config.keeps_previous_contract_versions());
+        assert!(contract_v0.config.documents_mutability_contract_default());
         assert!(!contract_v0.config.documents_keep_history_contract_default());
 
-        contract_v0.config.set_readonly(true);
-        contract_v0.config.set_keeps_history(true);
+        contract_v0.config.set_allow_contract_update(true);
         contract_v0
             .config
-            .set_documents_mutable_contract_default(false);
+            .set_keeps_previous_contract_versions(true);
+        contract_v0
+            .config
+            .set_documents_mutability_contract_default(false);
         contract_v0
             .config
             .set_documents_keep_history_contract_default(true);
@@ -262,10 +264,10 @@ mod test {
         assert_eq!(
             deserialized_contract.as_v0().unwrap().config,
             DataContractConfig::V0(DataContractConfigV0 {
-                can_be_deleted: false,
-                readonly: true,
-                keeps_history: true,
-                documents_mutable_contract_default: false,
+                allow_contract_deletion: false,
+                allow_contract_update: true,
+                keeps_previous_contract_versions: true,
+                documents_mutability_contract_default: false,
                 documents_keep_history_contract_default: true,
             })
         );

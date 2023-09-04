@@ -48,7 +48,7 @@ impl DataContractInSerializationFormat {
         }
     }
 
-    pub fn schema_defs(&self) -> Option<&BTreeMap<DefinitionName, Value>> {
+    pub fn schema_defs(&self) -> Option<&Value> {
         match self {
             DataContractInSerializationFormat::V0(v0) => v0.schema_defs.as_ref(),
         }

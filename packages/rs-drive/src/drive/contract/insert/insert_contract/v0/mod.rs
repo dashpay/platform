@@ -32,7 +32,9 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let storage_flags = if contract.config().can_be_deleted() || !contract.config().readonly() {
+        let storage_flags = if contract.config().is_contract_deletion_allowed()
+            || !contract.config().is_contract_update_allowed()
+        {
             Some(StorageFlags::new_single_epoch(
                 block_info.epoch.index,
                 Some(contract.owner_id().to_buffer()),

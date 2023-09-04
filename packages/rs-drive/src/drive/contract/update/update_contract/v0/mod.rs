@@ -92,7 +92,11 @@ impl Drive {
                 "contract should exist",
             )))?;
 
-        if original_contract_fetch_info.contract.config().readonly() {
+        if original_contract_fetch_info
+            .contract
+            .config()
+            .is_contract_update_allowed()
+        {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "original contract is readonly",
             )));
@@ -210,19 +214,23 @@ impl Drive {
 
         let drive_version = &platform_version.drive;
 
-        if original_contract.config().readonly() {
+        if original_contract.config().is_contract_update_allowed() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "contract is readonly",
             )));
         }
 
-        if contract.config().readonly() {
+        if contract.config().is_contract_update_allowed() {
             return Err(Error::Drive(DriveError::ChangingContractToReadOnly(
                 "contract can not be changed to readonly",
             )));
         }
 
-        if contract.config().keeps_history() ^ original_contract.config().keeps_history() {
+        if contract.config().keeps_previous_contract_versions()
+            ^ original_contract
+                .config()
+                .keeps_previous_contract_versions()
+        {
             return Err(Error::Drive(DriveError::ChangingContractKeepsHistory(
                 "contract can not change whether it keeps history",
             )));
@@ -240,10 +248,10 @@ impl Drive {
             ));
         }
 
-        if contract.config().documents_mutable_contract_default()
+        if contract.config().documents_mutability_contract_default()
             ^ original_contract
                 .config()
-                .documents_mutable_contract_default()
+                .documents_mutability_contract_default()
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsMutabilityDefault(

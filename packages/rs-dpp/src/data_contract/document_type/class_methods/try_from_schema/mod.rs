@@ -12,7 +12,7 @@ impl DocumentType {
         data_contract_id: Identifier,
         name: &str,
         schema: Value,
-        schema_defs: Option<&BTreeMap<String, Value>>,
+        schema_defs: Option<&Value>,
         default_keeps_history: bool,
         default_mutability: bool,
         validate: bool,
