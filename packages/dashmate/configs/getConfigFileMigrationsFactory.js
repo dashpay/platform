@@ -124,7 +124,7 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
           });
         return configFile;
       },
-      '0.25.0': (configFile) => {
+      '0.25.0-dev.18': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             delete options.core.sentinel;
