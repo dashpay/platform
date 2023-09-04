@@ -46,8 +46,8 @@ impl TryFrom<CborValue> for Value {
                 if len > 10
                     && array.iter().all(|v| {
                         let Some(int) = v.as_integer() else {
-                        return false;
-                    };
+                            return false;
+                        };
                         int.le(&Integer::from(u8::MAX)) && int.ge(&Integer::from(0))
                     })
                 {

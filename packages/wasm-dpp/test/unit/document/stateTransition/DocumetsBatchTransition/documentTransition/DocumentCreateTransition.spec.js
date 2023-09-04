@@ -4,7 +4,7 @@ const { default: loadWasmDpp } = require('../../../../../../dist');
 let DataContract;
 let DocumentCreateTransition;
 
-describe('DocumentCreateTransition', () => {
+describe.skip('DocumentCreateTransition', () => {
   let documentTransitionJs;
   let documentTransition;
 

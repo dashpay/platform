@@ -34,8 +34,7 @@ pub fn get_dpns_parent_document_fixture(
 ) -> Document {
     let data_contract = get_dpns_data_contract_fixture(Some(options.owner_id), protocol_version);
     let document_factory =
-        DocumentFactory::new(protocol_version, data_contract.data_contract_owned())
-            .expect("expected to get document factory");
+        DocumentFactory::new(protocol_version).expect("expected to get document factory");
     let mut pre_order_salt = [0u8; 32];
     let _ = getrandom(&mut pre_order_salt);
 
@@ -66,7 +65,12 @@ pub fn get_dpns_parent_document_fixture(
     );
 
     document_factory
-        .create_document(options.owner_id, String::from("domain"), map.into())
+        .create_document(
+            data_contract.data_contract(),
+            options.owner_id,
+            String::from("domain"),
+            map.into(),
+        )
         .expect("DPNS document should be created")
 }
 
@@ -77,8 +81,7 @@ pub fn get_dpns_parent_extended_document_fixture(
 ) -> ExtendedDocument {
     let data_contract = get_dpns_data_contract_fixture(Some(options.owner_id), protocol_version);
     let document_factory =
-        DocumentFactory::new(protocol_version, data_contract.data_contract_owned())
-            .expect("expected to get document factory");
+        DocumentFactory::new(protocol_version).expect("expected to get document factory");
     let mut pre_order_salt = [0u8; 32];
     let _ = getrandom(&mut pre_order_salt);
 
@@ -109,6 +112,11 @@ pub fn get_dpns_parent_extended_document_fixture(
     );
 
     document_factory
-        .create_extended_document(options.owner_id, String::from("domain"), map.into())
+        .create_extended_document(
+            data_contract.data_contract(),
+            options.owner_id,
+            String::from("domain"),
+            map.into(),
+        )
         .expect("DPNS document should be created")
 }

@@ -995,8 +995,8 @@ fn test_family_basic_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        67, 94, 64, 189, 203, 253, 162, 192, 210, 252, 11, 126, 194, 22, 120, 66, 57, 88, 66, 42,
-        85, 168, 217, 167, 183, 106, 73, 231, 21, 208, 27, 143,
+        244, 216, 38, 16, 128, 35, 223, 59, 132, 193, 66, 241, 215, 119, 158, 246, 123, 98, 219,
+        31, 214, 181, 122, 100, 118, 162, 141, 147, 140, 251, 210, 250,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2307,8 +2307,8 @@ fn test_family_basic_queries() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            86, 130, 130, 251, 123, 90, 47, 36, 70, 105, 104, 74, 161, 62, 42, 154, 57, 106, 39, 2,
-            65, 111, 215, 164, 243, 224, 132, 63, 164, 124, 251, 39
+            151, 210, 23, 182, 64, 67, 229, 210, 70, 215, 41, 21, 66, 93, 61, 178, 45, 235, 176,
+            135, 117, 51, 16, 116, 92, 181, 252, 48, 123, 253, 157, 160,
         ],
     );
 }
@@ -2454,8 +2454,8 @@ fn test_family_starts_at_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        67, 94, 64, 189, 203, 253, 162, 192, 210, 252, 11, 126, 194, 22, 120, 66, 57, 88, 66, 42,
-        85, 168, 217, 167, 183, 106, 73, 231, 21, 208, 27, 143,
+        244, 216, 38, 16, 128, 35, 223, 59, 132, 193, 66, 241, 215, 119, 158, 246, 123, 98, 219,
+        31, 214, 181, 122, 100, 118, 162, 141, 147, 140, 251, 210, 250,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2896,8 +2896,8 @@ fn test_family_with_nulls_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        219, 116, 111, 145, 18, 129, 110, 72, 107, 162, 143, 84, 75, 73, 222, 200, 6, 207, 196, 15,
-        30, 65, 188, 201, 111, 92, 216, 211, 65, 126, 103, 164,
+        240, 85, 110, 53, 4, 214, 117, 109, 156, 125, 101, 5, 32, 210, 104, 179, 114, 186, 116,
+        133, 140, 167, 4, 114, 173, 230, 209, 172, 146, 141, 129, 36,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3020,8 +3020,8 @@ fn test_query_with_cached_contract() {
 
     // Make sure the state is deterministic
     let expected_app_hash = vec![
-        67, 94, 64, 189, 203, 253, 162, 192, 210, 252, 11, 126, 194, 22, 120, 66, 57, 88, 66, 42,
-        85, 168, 217, 167, 183, 106, 73, 231, 21, 208, 27, 143,
+        244, 216, 38, 16, 128, 35, 223, 59, 132, 193, 66, 241, 215, 119, 158, 246, 123, 98, 219,
+        31, 214, 181, 122, 100, 118, 162, 141, 147, 140, 251, 210, 250,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3167,8 +3167,8 @@ fn test_dpns_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
-        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
+        175, 16, 44, 105, 4, 45, 179, 128, 145, 189, 165, 121, 188, 122, 142, 185, 121, 41, 55,
+        197, 78, 237, 254, 126, 5, 75, 30, 254, 79, 85, 208, 136,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3719,8 +3719,8 @@ fn test_dpns_query_start_at() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
-        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
+        175, 16, 44, 105, 4, 45, 179, 128, 145, 189, 165, 121, 188, 122, 142, 185, 121, 41, 55,
+        197, 78, 237, 254, 126, 5, 75, 30, 254, 79, 85, 208, 136,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -3813,8 +3813,8 @@ fn test_dpns_query_start_after() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
-        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
+        175, 16, 44, 105, 4, 45, 179, 128, 145, 189, 165, 121, 188, 122, 142, 185, 121, 41, 55,
+        197, 78, 237, 254, 126, 5, 75, 30, 254, 79, 85, 208, 136,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3907,8 +3907,8 @@ fn test_dpns_query_start_at_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
-        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
+        175, 16, 44, 105, 4, 45, 179, 128, 145, 189, 165, 121, 188, 122, 142, 185, 121, 41, 55,
+        197, 78, 237, 254, 126, 5, 75, 30, 254, 79, 85, 208, 136,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4001,8 +4001,8 @@ fn test_dpns_query_start_after_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        138, 248, 141, 103, 211, 70, 148, 102, 98, 172, 1, 70, 152, 39, 208, 66, 173, 160, 11, 67,
-        211, 202, 84, 113, 61, 20, 241, 111, 221, 7, 225, 17,
+        175, 16, 44, 105, 4, 45, 179, 128, 145, 189, 165, 121, 188, 122, 142, 185, 121, 41, 55,
+        197, 78, 237, 254, 126, 5, 75, 30, 254, 79, 85, 208, 136,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4193,8 +4193,8 @@ fn test_dpns_query_start_at_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        67, 43, 169, 92, 91, 128, 61, 11, 212, 215, 190, 41, 112, 8, 167, 5, 116, 57, 254, 140,
-        167, 216, 164, 29, 46, 190, 133, 2, 73, 119, 253, 248,
+        157, 24, 78, 255, 158, 14, 134, 31, 227, 53, 109, 156, 177, 115, 129, 16, 243, 248, 0, 243,
+        152, 151, 97, 130, 198, 243, 52, 158, 115, 66, 144, 223,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4396,8 +4396,8 @@ fn test_dpns_query_start_after_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        67, 43, 169, 92, 91, 128, 61, 11, 212, 215, 190, 41, 112, 8, 167, 5, 116, 57, 254, 140,
-        167, 216, 164, 29, 46, 190, 133, 2, 73, 119, 253, 248,
+        157, 24, 78, 255, 158, 14, 134, 31, 227, 53, 109, 156, 177, 115, 129, 16, 243, 248, 0, 243,
+        152, 151, 97, 130, 198, 243, 52, 158, 115, 66, 144, 223,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4601,8 +4601,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        67, 43, 169, 92, 91, 128, 61, 11, 212, 215, 190, 41, 112, 8, 167, 5, 116, 57, 254, 140,
-        167, 216, 164, 29, 46, 190, 133, 2, 73, 119, 253, 248,
+        157, 24, 78, 255, 158, 14, 134, 31, 227, 53, 109, 156, 177, 115, 129, 16, 243, 248, 0, 243,
+        152, 151, 97, 130, 198, 243, 52, 158, 115, 66, 144, 223,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -4867,7 +4867,7 @@ fn test_query_a_b_c_d_e_contract() {
         .expect("should create factory");
 
     let contract = factory
-        .create(owner_id, documents, None, None)
+        .create_with_value_config(owner_id, documents, None, None)
         .expect("data in fixture should be correct")
         .data_contract_owned();
 

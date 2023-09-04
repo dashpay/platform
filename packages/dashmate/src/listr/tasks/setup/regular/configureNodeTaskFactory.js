@@ -10,13 +10,17 @@ const {
 
 const validateBLSPrivateKeyFactory = require('../../../prompts/validators/validateBLSPrivateKeyFactory');
 const createPlatformNodeKeyInput = require('../../../prompts/createPlatformNodeKeyInput');
-const createIpAndPortsForm = require('../../../prompts/createIpAndPortsForm');
 const deriveTenderdashNodeId = require('../../../../tenderdash/deriveTenderdashNodeId');
 const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
 
-function configureNodeTaskFactory() {
+/**
+ *
+ * @param {createIpAndPortsForm} createIpAndPortsForm
+ * @return {configureNodeTask}
+ */
+function configureNodeTaskFactory(createIpAndPortsForm) {
   /**
-   * @typedef configureNodeTask
+   * @typedef {function} configureNodeTask
    * @returns {Listr}
    */
   async function configureNodeTask() {
@@ -74,7 +78,7 @@ function configureNodeTaskFactory() {
             } else {
               form = await task.prompt(await createIpAndPortsForm(ctx.preset, {
                 isHPMN: ctx.isHP,
-                initialIp: '',
+                initialIp: ctx.nodeType === NODE_TYPE_MASTERNODE ? '' : undefined,
                 initialCoreP2PPort: showEmptyPort ? '' : undefined,
                 initialPlatformHTTPPort: showEmptyPort ? '' : undefined,
                 initialPlatformP2PPort: showEmptyPort ? '' : undefined,

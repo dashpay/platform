@@ -9,6 +9,7 @@ use crate::state_transition_action::document::documents_batch::document_transiti
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 
 impl DocumentReplaceTransitionActionV0 {
+    /// try from borrowed
     pub fn try_from_borrowed_document_replace_transition(
         document_replace_transition: &DocumentReplaceTransitionV0,
         originally_created_at: Option<TimestampMillis>,

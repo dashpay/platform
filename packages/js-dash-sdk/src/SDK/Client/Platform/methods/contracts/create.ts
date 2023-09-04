@@ -17,8 +17,6 @@ export async function create(
 
   await this.initialize();
 
-  // TODO(versioning): restore
-  // @ts-ignore
   const dataContract = this.dpp.dataContract.create(identity.getId(), contractDefinitions);
 
   this.logger.debug(`[Contracts#create] created data contract "${dataContract.getId()}"`);

@@ -151,6 +151,7 @@ impl Drive {
         let mut create_tree_keys_operations = self.create_key_tree_with_keys_operations(
             id.to_buffer(),
             public_keys.into_values().collect(),
+            &block_info.epoch,
             estimated_costs_only_with_layer_info,
             transaction,
             platform_version,

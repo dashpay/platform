@@ -1,12 +1,16 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use crate::identity::KeyID;
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error("Identity Public Key with Id {id} does not exist")]
+#[platform_serialize(unversioned)]
 pub struct InvalidIdentityPublicKeyIdError {
     /*
 

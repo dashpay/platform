@@ -13,10 +13,13 @@ use dpp::ProtocolError;
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use dpp::version::PlatformVersion;
 
+/// tranformer
 pub mod transformer;
 
+/// action
 #[derive(Debug, Clone, From)]
 pub enum DocumentReplaceTransitionAction {
+    /// v0
     V0(DocumentReplaceTransitionActionV0),
 }
 
@@ -64,6 +67,7 @@ impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAct
     }
 }
 
+/// document from replace transition
 pub trait DocumentFromReplaceTransition {
     /// Attempts to create a new `Document` from the given `DocumentReplaceTransition` reference and `owner_id`.
     ///

@@ -47,13 +47,13 @@ impl InvalidStateTransitionErrorWasm {
         self.raw_state_transition.clone()
     }
 
-    #[wasm_bindgen(js_name = valueOf)]
-    pub fn value_of(&self) -> Result<JsValue, JsError> {
-        let errors = serde_json::to_value(&self.errors)
-            .map_err(|_| JsError::new("Can't serialize consensus errors to json"))?;
-        let ser = serde_wasm_bindgen::Serializer::json_compatible();
-        errors
-            .serialize(&ser)
-            .map_err(|_| JsError::new("Can't serialize consensus errors to json"))
-    }
+    // #[wasm_bindgen(js_name = valueOf)]
+    // pub fn value_of(&self) -> Result<JsValue, JsError> {
+    //     let errors = serde_json::to_value(&self.errors)
+    //         .map_err(|_| JsError::new("Can't serialize consensus errors to json"))?;
+    //     let ser = serde_wasm_bindgen::Serializer::json_compatible();
+    //     errors
+    //         .serialize(&ser)
+    //         .map_err(|_| JsError::new("Can't serialize consensus errors to json"))
+    // }
 }

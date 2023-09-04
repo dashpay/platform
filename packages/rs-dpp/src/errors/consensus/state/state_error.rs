@@ -1,5 +1,6 @@
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
@@ -27,10 +28,11 @@ use crate::consensus::state::identity::{
     IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
 };
 use crate::consensus::ConsensusError;
+use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
-#[derive(Error, Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 pub enum StateError {
     /*
 
@@ -69,6 +71,11 @@ pub enum StateError {
 
     #[error(transparent)]
     IdentityAlreadyExistsError(IdentityAlreadyExistsError),
+
+    #[error(transparent)]
+    IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(
+        IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError,
+    ),
 
     #[error(transparent)]
     IdentityPublicKeyDisabledAtWindowViolationError(

@@ -1,70 +1,21 @@
 use std::convert::TryFrom;
 use std::sync::Arc;
 
-use dpp::data_contract::CreatedDataContract;
-use dpp::{
-    data_contract::{
-        validation::data_contract_validation::DataContractValidator, DataContractFactory,
-    },
-    platform_value,
-    prelude::Identifier,
-    version::ProtocolVersionValidator,
-    ProtocolError,
-};
+use dpp::data_contract::created_data_contract::CreatedDataContract;
+use dpp::{data_contract::DataContractFactory, platform_value, prelude::Identifier, ProtocolError};
 use wasm_bindgen::prelude::*;
 
 use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::utils::{ToSerdeJSONExt, WithJsError};
 
+use crate::data_contract::{DataContractCreateTransitionWasm, DataContractWasm};
 use crate::{
     data_contract::errors::InvalidDataContractError,
     errors::{from_dpp_err, protocol_error::from_protocol_error},
-    js_value_to_data_contract_value,
-    validation::ValidationResultWasm,
-    with_js_error, DataContractCreateTransitionWasm, DataContractParameters, DataContractWasm,
+    with_js_error,
 };
 
-#[wasm_bindgen(js_name=DataContractValidator)]
-pub struct DataContractValidatorWasm(DataContractValidator);
-
-impl From<DataContractValidator> for DataContractValidatorWasm {
-    fn from(v: DataContractValidator) -> Self {
-        DataContractValidatorWasm(v)
-    }
-}
-
-impl From<DataContractValidatorWasm> for DataContractValidator {
-    fn from(val: DataContractValidatorWasm) -> Self {
-        val.0
-    }
-}
-
-impl Default for DataContractValidatorWasm {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[wasm_bindgen(js_class=DataContractValidator)]
-impl DataContractValidatorWasm {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        DataContractValidator::new(std::sync::Arc::new(ProtocolVersionValidator::default())).into()
-    }
-
-    #[wasm_bindgen]
-    pub fn validate(&self, raw_data_contract: JsValue) -> Result<ValidationResultWasm, JsValue> {
-        let parameters: DataContractParameters =
-            with_js_error!(serde_wasm_bindgen::from_value(raw_data_contract))?;
-        let platform_object = platform_value::to_value(parameters).expect("Implements Serialize");
-
-        let validation_result = self
-            .0
-            .validate(&platform_object)
-            .map_err(from_protocol_error)?;
-        Ok(validation_result.map(|_| JsValue::undefined()).into())
-    }
-}
+use dpp::util::entropy_generator::EntropyGenerator;
 
 #[wasm_bindgen(js_name=DataContractFactory)]
 pub struct DataContractFactoryWasm(DataContractFactory);
@@ -86,18 +37,15 @@ impl DataContractFactoryWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
         protocol_version: u32,
-        validate_data_contract: DataContractValidatorWasm,
         external_entropy_generator_arg: Option<ExternalEntropyGenerator>,
     ) -> DataContractFactoryWasm {
         if let Some(external_entropy_generator) = external_entropy_generator_arg {
-            DataContractFactory::new_with_entropy_generator(
-                protocol_version,
-                Arc::new(validate_data_contract.into()),
-                Box::new(external_entropy_generator),
-            )
+            DataContractFactory::new(protocol_version, Some(Box::new(external_entropy_generator)))
         } else {
-            DataContractFactory::new(protocol_version, Arc::new(validate_data_contract.into()))
+            DataContractFactory::new(protocol_version, None)
         }
+        .with_js_error()
+        .expect("should create a factory")
         .into()
     }
 
@@ -123,30 +71,30 @@ impl DataContractFactoryWasm {
             .with_js_error()?;
         //todo: contract config
         self.0
-            .create(identifier, documents_object, contract_config, None)
+            .create_with_value_config(identifier, documents_object, contract_config, None)
             .map(Into::into)
             .with_js_error()
     }
 
-    #[wasm_bindgen(js_name=createFromObject)]
-    pub async fn create_from_object(
-        &self,
-        object: JsValue,
-        skip_validation: Option<bool>,
-    ) -> Result<DataContractWasm, JsValue> {
-        let parameters_value = js_value_to_data_contract_value(object.clone())?;
-        let result = self
-            .0
-            .create_from_object(parameters_value, skip_validation.unwrap_or(false))
-            .await;
-        match result {
-            Ok(data_contract) => Ok(data_contract.into()),
-            Err(dpp::ProtocolError::InvalidDataContractError(err)) => {
-                Err(InvalidDataContractError::new(err.errors, object).into())
-            }
-            Err(other) => Err(from_dpp_err(other)),
-        }
-    }
+    // #[wasm_bindgen(js_name=createFromObject)]
+    // pub async fn create_from_object(
+    //     &self,
+    //     object: JsValue,
+    //     skip_validation: Option<bool>,
+    // ) -> Result<DataContractWasm, JsValue> {
+    //     let parameters_value = js_value_to_data_contract_value(object.clone())?;
+    //     let result = self
+    //         .0
+    //         .create_from_object(parameters_value, skip_validation.unwrap_or(false))
+    //         .await;
+    //     match result {
+    //         Ok(data_contract) => Ok(data_contract.into()),
+    //         Err(dpp::ProtocolError::InvalidDataContractError(err)) => {
+    //             Err(InvalidDataContractError::new(err.errors, object).into())
+    //         }
+    //         Err(other) => Err(from_dpp_err(other)),
+    //     }
+    // }
 
     #[wasm_bindgen(js_name=createFromBuffer)]
     pub async fn create_from_buffer(
@@ -156,7 +104,6 @@ impl DataContractFactoryWasm {
     ) -> Result<DataContractWasm, JsValue> {
         self.0
             .create_from_buffer(buffer, skip_validation.unwrap_or(false))
-            .await
             .map(Into::into)
             .map_err(from_protocol_error)
     }

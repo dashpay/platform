@@ -31,8 +31,16 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut operations = vec![];
-        let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(contract_id, Some(epoch), true, transaction, &mut operations, platform_version)? else {
-            return Err(Error::Document(DocumentError::DataContractNotFound))
+        let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(
+            contract_id,
+            Some(epoch),
+            true,
+            transaction,
+            &mut operations,
+            platform_version,
+        )?
+        else {
+            return Err(Error::Document(DocumentError::DataContractNotFound));
         };
 
         let contract = &contract_fetch_info.contract;

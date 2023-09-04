@@ -293,6 +293,7 @@ describe('Platform', () => {
       await waitForSTPropagated();
 
       const transitions = documentsBatchTransition.getTransitions();
+      transitions[0].setRevision(transitions[0].getRevision() + 1);
       transitions[0].setUpdatedAt(updatedAt);
 
       documentsBatchTransition.setTransitions(transitions);

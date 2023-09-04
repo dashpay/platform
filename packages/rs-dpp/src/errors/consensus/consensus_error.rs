@@ -1,7 +1,7 @@
+use crate::errors::ProtocolError;
 use bincode;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::state::state_error::StateError;
@@ -13,7 +13,6 @@ use crate::consensus::signature::SignatureError;
 use crate::consensus::test_consensus_error::TestConsensusError;
 
 use crate::errors::consensus::basic::BasicError;
-use crate::ProtocolError;
 
 // TODO It must be versioned as all other serializable types
 

@@ -9,8 +9,6 @@ const {
   PRESET_MAINNET,
 } = require('../../../constants');
 
-const systemConfigs = require('../../../../configs/system');
-
 const {
   NODE_TYPE_NAMES,
   getNodeTypeByName,
@@ -18,7 +16,6 @@ const {
   isNodeTypeNameHighPerformance,
 } = require('./nodeTypes');
 
-const Config = require('../../../config/Config');
 const generateRandomString = require('../../../util/generateRandomString');
 
 /**
@@ -31,6 +28,7 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {registerMasternodeGuideTask} registerMasternodeGuideTask
  * @param {configureNodeTask} configureNodeTask
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
+ * @param {DefaultConfigs} defaultConfigs
  */
 function setupRegularPresetTaskFactory(
   configFile,
@@ -42,6 +40,7 @@ function setupRegularPresetTaskFactory(
   registerMasternodeGuideTask,
   configureNodeTask,
   configureSSLCertificateTask,
+  defaultConfigs,
 ) {
   /**
    * @typedef {setupRegularPresetTask}
@@ -61,9 +60,9 @@ function setupRegularPresetTaskFactory(
                 // Keep this order, because each item references the text in the previous item
                 header: `  The Dash network consists of several different node types:
       Fullnode             - Host the full Dash blockchain (no collateral)
-      Masternode           - Fullnode features, plus Core services such as ChainLocks 
+      Masternode           - Fullnode features, plus Core services such as ChainLocks
                             and InstantSend (1000 DASH collateral)
-      Evolution fullnode   - Fullnode features, plus host a full copy of the Platform 
+      Evolution fullnode   - Fullnode features, plus host a full copy of the Platform
                             blockchain (no collateral)
       Evolution masternode - Masternode features, plus Platform services such as DAPI
                             and Drive (4000 DASH collateral)\n`,
@@ -84,10 +83,16 @@ function setupRegularPresetTaskFactory(
             nodeTypeName = getNodeTypeNameByType(ctx.nodeType);
           }
 
-          ctx.config = new Config(ctx.preset, systemConfigs[ctx.preset]);
+          ctx.config = defaultConfigs.get(ctx.preset);
 
           ctx.config.set('platform.enable', ctx.isHP && ctx.config.get('network') !== PRESET_MAINNET);
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);
+
+          if (ctx.config.get('core.masternode.enable')) {
+            ctx.config.set('platform.drive.tenderdash.mode', 'validator');
+          } else {
+            ctx.config.set('platform.drive.tenderdash.mode', 'full');
+          }
 
           ctx.config.set('core.rpc.user', generateRandomString(8));
           ctx.config.set('core.rpc.password', generateRandomString(12));

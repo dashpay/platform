@@ -1,3 +1,5 @@
+//! Implements in Drive functions relating to asset locks.
+
 use crate::drive::RootTree;
 
 mod add_asset_lock_outpoint_operations;

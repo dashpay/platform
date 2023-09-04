@@ -41,8 +41,6 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
     throw e;
   }
 
-  // TODO(versioning): restore
-  // @ts-ignore
   const contract = await this.dpp.dataContract
     .createFromBuffer(dataContractResponse.getDataContract() as Uint8Array);
 

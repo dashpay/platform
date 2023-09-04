@@ -156,7 +156,10 @@ mod tests {
     use dpp::version::PlatformVersion;
     use dpp::NativeBlsModule;
 
+    use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
     use dpp::platform_value::Bytes32;
+    use dpp::system_data_contracts::dashpay_contract;
+    use dpp::system_data_contracts::SystemDataContract::Dashpay;
     use platform_version::TryIntoPlatformVersioned;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -979,6 +982,7 @@ mod tests {
             read_only: false,
             data: new_key_pair.public_key().serialize().to_vec().into(),
             signature: Default::default(),
+            contract_bounds: None,
         };
 
         let signable_bytes = new_key
@@ -1022,6 +1026,125 @@ mod tests {
             .expect("expected to execute identity top up tx");
 
         // Only master keys can sign an update
+
+        validation_result.errors.first().expect("expected an error");
+    }
+
+    #[test]
+    fn identity_update_with_encryption_key_check_tx() {
+        let mut config = PlatformConfig::default();
+
+        let mut rng = StdRng::seed_from_u64(1);
+
+        let secp = Secp256k1::new();
+
+        let master_key_pair = KeyPair::new(&secp, &mut rng);
+
+        let master_secret_key = master_key_pair.secret_key();
+
+        let master_public_key = master_key_pair.public_key();
+
+        config.abci.keys.dashpay_master_public_key = master_public_key.serialize().to_vec();
+
+        let high_key_pair = KeyPair::new(&secp, &mut rng);
+
+        let high_secret_key = high_key_pair.secret_key();
+
+        let high_public_key = high_key_pair.public_key();
+
+        config.abci.keys.dashpay_second_public_key = high_public_key.serialize().to_vec();
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(config)
+            .build_with_mock_rpc();
+
+        let platform_state = platform.state.read().unwrap();
+        let platform_version = platform_state.current_platform_version().unwrap();
+
+        let genesis_time = 0;
+
+        let system_identity_public_keys_v0: SystemIdentityPublicKeysV0 =
+            platform.config.abci.keys.clone().into();
+
+        platform
+            .create_genesis_state(
+                genesis_time,
+                system_identity_public_keys_v0.into(),
+                None,
+                platform_version,
+            )
+            .expect("expected to create genesis state");
+
+        let new_key_pair = KeyPair::new(&secp, &mut rng);
+
+        let mut new_key = IdentityPublicKeyInCreationV0 {
+            id: 2,
+            purpose: Purpose::ENCRYPTION,
+            security_level: SecurityLevel::MEDIUM,
+            key_type: ECDSA_SECP256K1,
+            read_only: true,
+            data: new_key_pair.public_key().serialize().to_vec().into(),
+            signature: Default::default(),
+            contract_bounds: Some(SingleContractDocumentType {
+                id: Dashpay.id(),
+                document_type_name: "contactRequest".to_string(),
+            }),
+        };
+
+        let signable_bytes = new_key
+            .signable_bytes()
+            .expect("expected to get signable bytes");
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: dashpay_contract::OWNER_ID_BYTES.into(),
+            revision: 1,
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key.clone())],
+            disable_public_keys: vec![],
+            public_keys_disabled_at: None,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+
+        let signable_bytes = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+
+        let secret = new_key_pair.secret_key();
+        let signature =
+            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+
+        new_key.signature = signature.to_vec().into();
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: dashpay_contract::OWNER_ID_BYTES.into(),
+            revision: 1,
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
+            disable_public_keys: vec![],
+            public_keys_disabled_at: None,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+
+        let signature = signer::sign(&signable_bytes, &master_secret_key.secret_bytes())
+            .expect("expected to sign");
+
+        update_transition.set_signature(signature.to_vec().into());
+
+        let update_transition_bytes = update_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        let validation_result = platform
+            .check_tx(update_transition_bytes.as_slice())
+            .expect("expected to execute identity top up tx");
+
+        // we won't have enough funds
 
         validation_result.errors.first().expect("expected an error");
     }

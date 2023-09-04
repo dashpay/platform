@@ -10,7 +10,12 @@ use serde::{Deserialize, Serialize};
 use crate::ProtocolError;
 use crate::{identity::SecurityLevel, state_transition::StateTransitionFieldTypes};
 
-pub use self::document_transition::{document_base_transition, document_create_transition};
+pub use self::document_transition::{
+    document_base_transition, document_create_transition,
+    document_create_transition::DocumentCreateTransition, document_delete_transition,
+    document_delete_transition::DocumentDeleteTransition, document_replace_transition,
+    document_replace_transition::DocumentReplaceTransition,
+};
 
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_versioning::PlatformVersioned;

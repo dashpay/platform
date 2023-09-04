@@ -344,6 +344,7 @@ pub fn create_domain_data_trigger_v0(
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
+    use dpp::platform_value::Bytes32;
     use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
     use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionActionType;
     use dpp::tests::fixtures::{get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, ParentDocumentOptions};
@@ -394,7 +395,7 @@ mod test {
             .expect("expected to get domain document type");
         let transitions = get_document_transitions_fixture([(
             DocumentTransitionActionType::Create,
-            vec![(document, document_type)],
+            vec![(document, document_type, Bytes32::default())],
         )]);
         let first_transition = transitions.get(0).expect("transition should be present");
 

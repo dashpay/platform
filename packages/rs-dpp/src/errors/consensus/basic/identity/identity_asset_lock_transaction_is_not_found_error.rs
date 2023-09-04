@@ -2,13 +2,17 @@ use bincode::{Decode, Encode};
 use std::fmt::{Display, Formatter};
 
 use crate::consensus::basic::BasicError;
+use crate::errors::ProtocolError;
 use dashcore::hashes::hex::ToHex;
-use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
+#[platform_serialize(unversioned)]
 pub struct IdentityAssetLockTransactionIsNotFoundError {
     /*
 

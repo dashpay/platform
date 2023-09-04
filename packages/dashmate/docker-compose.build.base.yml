@@ -1,0 +1,19 @@
+version: '3.7'
+
+services:
+  _base:
+    build:
+      context: ${DOCKER_BASE_IMAGE_BUILD_CONTEXT:?err}
+      dockerfile: ${DOCKER_BASE_IMAGE_BUILD_DOCKER_FILE:?err}
+      target: ${DOCKER_BASE_IMAGE_BUILD_TARGET}
+      args:
+        RUSTC_WRAPPER: ${RUSTC_WRAPPER}
+        SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
+        SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
+        ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
+        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
+      cache_from:
+        - ${CACHE_BASE_FROM:-${DOCKER_BASE_IMAGE_IMAGE}}
+      cache_to:
+        - ${CACHE_BASE_TO:-type=inline}
+    image: base:local

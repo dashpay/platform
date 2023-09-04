@@ -28,11 +28,14 @@ pub use factory::*;
 pub mod conversion;
 #[cfg(feature = "client")]
 mod data_contract_facade;
+#[cfg(feature = "client")]
+pub use data_contract_facade::DataContractFacade;
 mod methods;
 pub mod serialized_version;
 pub use methods::*;
 pub mod accessors;
 pub mod config;
+pub mod storage_requirements;
 
 pub use v0::*;
 
@@ -245,10 +248,17 @@ impl DataContract {
 
 #[cfg(test)]
 mod tests {
+    use crate::data_contract::accessors::v0::DataContractV0Getters;
+    use crate::data_contract::config::v0::DataContractConfigGettersV0;
+    use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
     use crate::data_contract::DataContract;
     use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use crate::system_data_contracts::load_system_data_contract;
+    use crate::tests::fixtures::{
+        get_dashpay_contract_fixture, get_dashpay_contract_with_generalized_encryption_key_fixture,
+    };
     use crate::version::PlatformVersion;
     use data_contracts::SystemDataContract::Dashpay;
 
@@ -274,5 +284,42 @@ mod tests {
             .expect("expected to deserialize data contract");
 
         assert_eq!(data_contract, unserialized);
+    }
+
+    #[test]
+    fn test_contract_can_have_specialized_contract_encryption_decryption_keys() {
+        let data_contract = get_dashpay_contract_with_generalized_encryption_key_fixture(None, 1)
+            .data_contract_owned();
+        assert_eq!(
+            data_contract
+                .config()
+                .requires_identity_decryption_bounded_key(),
+            Some(StorageKeyRequirements::Unique)
+        );
+        assert_eq!(
+            data_contract
+                .config()
+                .requires_identity_encryption_bounded_key(),
+            Some(StorageKeyRequirements::Unique)
+        );
+    }
+
+    #[test]
+    fn test_contract_document_type_can_have_specialized_contract_encryption_decryption_keys() {
+        let data_contract = get_dashpay_contract_fixture(None, 1).data_contract_owned();
+        assert_eq!(
+            data_contract
+                .document_type_for_name("contactRequest")
+                .expect("expected document type")
+                .requires_identity_decryption_bounded_key(),
+            Some(StorageKeyRequirements::MultipleReferenceToLatest)
+        );
+        assert_eq!(
+            data_contract
+                .document_type_for_name("contactRequest")
+                .expect("expected document type")
+                .requires_identity_encryption_bounded_key(),
+            Some(StorageKeyRequirements::MultipleReferenceToLatest)
+        );
     }
 }

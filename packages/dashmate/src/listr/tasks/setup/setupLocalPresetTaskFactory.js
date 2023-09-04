@@ -1,12 +1,10 @@
 const { Listr } = require('listr2');
 
-const path = require('path');
-
 const {
   PRESET_LOCAL,
-  HOME_DIR_PATH,
   SSL_PROVIDERS,
 } = require('../../../constants');
+
 const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
 const deriveTenderdashNodeId = require('../../../tenderdash/deriveTenderdashNodeId');
 const generateRandomString = require('../../../util/generateRandomString');
@@ -19,6 +17,7 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {resolveDockerHostIp} resolveDockerHostIp
  * @param {configFileRepository} configFileRepository
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
+ * @param {HomeDir} homeDir
  */
 function setupLocalPresetTaskFactory(
   configFile,
@@ -28,6 +27,7 @@ function setupLocalPresetTaskFactory(
   resolveDockerHostIp,
   configFileRepository,
   generateHDPrivateKeys,
+  homeDir,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -179,10 +179,13 @@ function setupLocalPresetTaskFactory(
                 config.set('core.rpc.password', generateRandomString(12));
                 config.set('externalIp', hostDockerInternalIp);
 
-                config.set('docker.network.subnet', `172.24.${nodeIndex}.0/24`);
+                const subnet = config.get('docker.network.subnet').split('.');
+                subnet[2] = nodeIndex;
+
+                config.set('docker.network.subnet', subnet.join('.'));
 
                 // Setup Core debug logs
-                const coreLogFilePath = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'core.log');
+                const coreLogFilePath = homeDir.joinPath('logs', config.getName(), 'core.log');
                 config.set('core.log.file.path', coreLogFilePath);
 
                 if (ctx.debugLogs) {
@@ -192,6 +195,8 @@ function setupLocalPresetTaskFactory(
                 // Although not all nodes are miners, all nodes should be aware of
                 // the miner interval to be able to sync mocked time
                 config.set('core.miner.interval', ctx.minerInterval);
+
+                config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i * 100));
 
                 if (config.getName() === 'local_seed') {
                   config.set('description', 'seed node for local network');
@@ -204,6 +209,7 @@ function setupLocalPresetTaskFactory(
 
                   // Disable platform for the seed node
                   config.set('platform.enable', false);
+                  config.set('platform.drive.tenderdash.mode', 'seed');
                 } else {
                   config.set('description', `local node #${nodeIndex}`);
 
@@ -219,6 +225,8 @@ function setupLocalPresetTaskFactory(
                   config.set('platform.drive.tenderdash.pprof.port', config.get('platform.drive.tenderdash.pprof.port') + (i * 100));
                   config.set('platform.drive.tenderdash.moniker', config.name);
 
+                  config.set('platform.drive.tenderdash.mode', 'validator');
+
                   // Setup logs
                   if (ctx.debugLogs) {
                     config.set('platform.drive.abci.log.stdout.level', 'trace');
@@ -228,12 +236,12 @@ function setupLocalPresetTaskFactory(
                   }
 
                   if (!config.get('platform.drive.abci.log.prettyFile.path')) {
-                    const drivePrettyLogFile = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'drive_pretty.log');
+                    const drivePrettyLogFile = homeDir.joinPath('logs', config.getName(), 'drive_pretty.log');
                     config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
                   }
 
                   if (!config.get('platform.drive.abci.log.jsonFile.path')) {
-                    const driveJsonLogFile = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'drive_json.log');
+                    const driveJsonLogFile = homeDir.joinPath('logs', config.getName(), 'drive_json.log');
                     config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
                   }
 
@@ -258,8 +266,6 @@ function setupLocalPresetTaskFactory(
                     masternodeRewardSharesDerivedSecondPrivateKey.privateKey
                       .toPublicKey().toString(),
                   );
-
-                  config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i * 100));
                 }
               },
               options: {

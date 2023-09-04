@@ -132,7 +132,8 @@ describe.skip('validateAssetLockTransactionFactory', () => {
     expect(error.getOutputIndex()).to.equal(outputIndex);
   });
 
-  it('should return IdentityAssetLockTransactionOutPointAlreadyExistsError if outPoint was already used', async function () {
+  it('should return IdentityAssetLockTransactionOutPointAlreadyExistsError if outPoint was'
+    + ' already used', async function shouldReturn() {
     stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves(true);
 
     const result = await validateAssetLockTransaction(
@@ -161,7 +162,7 @@ describe.skip('validateAssetLockTransactionFactory', () => {
       );
   });
 
-  it('should return valid result', async function () {
+  it('should return valid result', async function shouldReturn() {
     const result = await validateAssetLockTransaction(
       rawTransaction,
       outputIndex,

@@ -11,7 +11,7 @@ use dpp::tests::fixtures::get_masternode_reward_shares_data_contract_fixture;
 use grovedb_costs::OperationCost;
 
 #[cfg(any(feature = "full", feature = "verify"))]
-///DataContract and fetch information
+/// DataContract and fetch information
 #[derive(PartialEq, Debug, Clone)]
 pub struct DataContractFetchInfo {
     /// The contract

@@ -25,7 +25,7 @@ describe.skip('validateIdentityCreateTransitionStateFactory', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(async function () {
+  beforeEach(async function beforeEach() {
     executionContext = new StateTransitionExecutionContext();
     const privateKey = Buffer.from('af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837', 'hex');
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);

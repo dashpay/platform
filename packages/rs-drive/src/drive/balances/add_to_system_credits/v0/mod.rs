@@ -6,10 +6,20 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// We add to the total platform system credits when:
+    /// Adds to the total platform system credits when:
     /// - we create an identity
     /// - we top up an identity
     /// - through the block reward
+    ///
+    /// # Arguments
+    ///
+    /// * `amount` - The amount of system credits to be added.
+    /// * `transaction` - A `TransactionArg` object representing the transaction to be used for adding to the system credits.
+    /// * `platform_version` - A `PlatformVersion` object specifying the version of Platform.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(), Error>` - If successful, returns `Ok(())`. If an error occurs during the operation, returns an `Error`.
     pub(super) fn add_to_system_credits_v0(
         &self,
         amount: u64,

@@ -1,3 +1,4 @@
+pub use data_contract_bounds_not_present_error::*;
 pub use duplicated_identity_public_key_basic_error::*;
 pub use duplicated_identity_public_key_id_basic_error::*;
 pub use identity_asset_lock_proof_locked_transaction_mismatch_error::*;
@@ -24,6 +25,7 @@ pub use invalid_instant_asset_lock_proof_signature_error::*;
 pub use missing_master_public_key_error::*;
 pub use not_implemented_identity_credit_withdrawal_transition_pooling_error::*;
 
+mod data_contract_bounds_not_present_error;
 mod duplicated_identity_public_key_basic_error;
 mod duplicated_identity_public_key_id_basic_error;
 mod identity_asset_lock_proof_locked_transaction_mismatch_error;

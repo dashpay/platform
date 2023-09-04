@@ -16,17 +16,31 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
-// We don't create an enum version of this
-// If this would ever need to be changed all index uniqueness methods would need to be changed
-// Which is an okay trade off as this should seldom ever be changed
+/// Represents a request to determine the uniqueness of data.
+/// This structure is defined to handle index uniqueness within a document.
+/// The purpose is to encapsulate all the required parameters to determine
+/// if a particular data is unique or not.
+///
+/// **Note**: Modifications to this structure are discouraged due to its close coupling
+/// with index uniqueness methods. Any change here might necessitate changes across
+/// all those methods. Given the likely infrequent need for changes, this design choice
+/// is deemed acceptable.
 pub(in crate::drive::document::index_uniqueness) struct UniquenessOfDataRequest<'a> {
+    /// Reference to the associated data contract.
     pub contract: &'a DataContract,
+    /// Reference of the document type.
     pub document_type: DocumentTypeRef<'a>,
+    /// The ID representing the owner.
     pub owner_id: Identifier,
+    /// The ID of the document in question.
     pub document_id: Identifier,
+    /// A flag indicating if the original (existing) document is considered permissible.
     pub allow_original: bool,
+    /// Optional timestamp indicating when the document was created.
     pub created_at: Option<TimestampMillis>,
+    /// Optional timestamp indicating the last time the document was updated.
     pub updated_at: Option<TimestampMillis>,
+    /// The actual data to be checked for uniqueness, represented as a mapping.
     pub data: &'a BTreeMap<String, Value>,
 }
 

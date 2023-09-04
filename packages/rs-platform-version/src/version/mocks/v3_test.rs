@@ -17,11 +17,11 @@ use crate::version::drive_abci_versions::{
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
-    DriveAbciProtocolUpgradeMethodVersions, DriveAbciStateTransitionProcessingMethodVersions,
-    DriveAbciStateTransitionValidationVersion, DriveAbciStateTransitionValidationVersions,
-    DriveAbciStructureVersions, DriveAbciValidationDataTriggerAndBindingVersions,
-    DriveAbciValidationDataTriggerVersions, DriveAbciValidationVersions, DriveAbciVersion,
-    DriveAbciWithdrawalsMethodVersions,
+    DriveAbciProtocolUpgradeMethodVersions, DriveAbciStateTransitionCommonValidationVersions,
+    DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion,
+    DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
+    DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions,
+    DriveAbciValidationVersions, DriveAbciVersion, DriveAbciWithdrawalsMethodVersions,
 };
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
@@ -36,9 +36,10 @@ use crate::version::drive_versions::{
     DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
     DriveEstimatedCostsMethodVersions, DriveFeesMethodVersions, DriveGroveApplyMethodVersions,
     DriveGroveBasicMethodVersions, DriveGroveBatchMethodVersions, DriveGroveCostMethodVersions,
-    DriveGroveMethodVersions, DriveIdentityCostEstimationMethodVersions,
-    DriveIdentityFetchAttributesMethodVersions, DriveIdentityFetchFullIdentityMethodVersions,
-    DriveIdentityFetchMethodVersions, DriveIdentityFetchPartialIdentityMethodVersions,
+    DriveGroveMethodVersions, DriveIdentityContractInfoMethodVersions,
+    DriveIdentityCostEstimationMethodVersions, DriveIdentityFetchAttributesMethodVersions,
+    DriveIdentityFetchFullIdentityMethodVersions, DriveIdentityFetchMethodVersions,
+    DriveIdentityFetchPartialIdentityMethodVersions,
     DriveIdentityFetchPublicKeyHashesMethodVersions, DriveIdentityInsertMethodVersions,
     DriveIdentityKeyHashesToIdentityInsertMethodVersions, DriveIdentityKeysFetchMethodVersions,
     DriveIdentityKeysInsertMethodVersions, DriveIdentityKeysMethodVersions,
@@ -326,9 +327,15 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 insert: DriveIdentityInsertMethodVersions {
                     add_new_identity: 0,
                 },
+                contract_info: DriveIdentityContractInfoMethodVersions {
+                    add_potential_contract_info_for_contract_bounded_key: 0,
+                },
                 cost_estimation: DriveIdentityCostEstimationMethodVersions {
                     for_authentication_keys_security_level_in_key_reference_tree: 0,
                     for_balances: 0,
+                    for_contract_info: 0,
+                    for_contract_info_group: 0,
+                    for_contract_info_group_key_purpose: 0,
                     for_keys_for_identity_id: 0,
                     for_negative_credit: 0,
                     for_purpose_in_key_reference_tree: 0,
@@ -503,7 +510,13 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
         },
         validation_and_processing: DriveAbciValidationVersions {
             state_transitions: DriveAbciStateTransitionValidationVersions {
-                validate_state_transition_identity_signed: 0,
+                common_validation_methods: DriveAbciStateTransitionCommonValidationVersions {
+                    validate_identity_public_key_contract_bounds: 0,
+                    validate_identity_public_key_ids_dont_exist_in_state: 0,
+                    validate_identity_public_key_ids_exist_in_state: 0,
+                    validate_state_transition_identity_signed: 0,
+                    validate_unique_identity_public_key_hashes_in_state: 0,
+                },
                 identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
                     structure: 0,
                     identity_signatures: Some(0),
@@ -680,6 +693,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 hash: 0,
                 duplicated_key_ids_witness: 0,
                 duplicated_keys_witness: 0,
+                validate_identity_public_keys_structure: 0,
             },
         },
         state_transitions: StateTransitionVersions {
@@ -723,6 +737,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                         byte_array_has_no_items_as_parent_validator: 0,
                         pattern_is_valid_regex_validator: 0,
                     },
+                    validate_schema_compatibility: 0,
                 },
                 methods: DocumentTypeMethodVersions {
                     create_document_from_data: 0,

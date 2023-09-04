@@ -23,6 +23,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
 pub mod methods;
 pub use methods::*;
+pub mod contract_bounds;
 #[cfg(feature = "random-public-keys")]
 mod random;
 

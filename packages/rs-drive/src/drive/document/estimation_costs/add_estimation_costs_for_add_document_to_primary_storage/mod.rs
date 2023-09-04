@@ -10,6 +10,31 @@ use std::collections::HashMap;
 mod v0;
 
 impl Drive {
+    /// Adds estimated storage costs for adding a document to primary storage based on platform version.
+    ///
+    /// This function uses the platform version to determine the appropriate method to estimate storage costs
+    /// for adding a document to the primary storage. Currently, it supports version `0` and delegates the estimation
+    /// to `add_estimation_costs_for_add_document_to_primary_storage_v0`.
+    ///
+    /// If an unsupported version is provided, an error indicating a version mismatch will be returned.
+    ///
+    /// # Arguments
+    /// * `document_and_contract_info`: Information about the document and its associated contract.
+    /// * `primary_key_path`: Key path where the document should be stored in primary storage.
+    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a hashmap where the estimated layer
+    ///   information will be stored for the given key path.
+    /// * `platform_version`: Version of the platform being used, which determines the estimation method.
+    ///
+    /// # Returns
+    /// * `Result<(), Error>`: Returns `Ok(())` if the operation succeeds. Returns an `Error` if the provided platform
+    ///   version method is unsupported or if there's any other issue.
+    ///
+    /// # Errors
+    /// * `DriveError::UnknownVersionMismatch`: Returned if the platform version method specified is unsupported.
+    ///
+    /// # Panics
+    /// This function will not panic under normal circumstances. However, unexpected behavior may result
+    /// from incorrect arguments or unforeseen edge cases.
     pub(crate) fn add_estimation_costs_for_add_document_to_primary_storage(
         document_and_contract_info: &DocumentAndContractInfo,
         primary_key_path: [&[u8]; 5],

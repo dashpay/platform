@@ -76,6 +76,7 @@ pub struct PublicKeyInCreationMethodVersions {
     pub hash: FeatureVersion,
     pub duplicated_key_ids_witness: FeatureVersion,
     pub duplicated_keys_witness: FeatureVersion,
+    pub validate_identity_public_keys_structure: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -161,6 +162,7 @@ pub struct DocumentTypeSchemaVersions {
     pub find_identifier_and_binary_paths: FeatureVersion,
     pub validate_max_depth: FeatureVersion,
     pub recursive_schema_validator_versions: RecursiveSchemaValidatorVersions,
+    pub validate_schema_compatibility: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

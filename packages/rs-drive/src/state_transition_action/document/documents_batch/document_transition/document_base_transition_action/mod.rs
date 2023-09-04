@@ -4,6 +4,7 @@ use dpp::platform_value::Identifier;
 
 use std::sync::Arc;
 
+/// transformer module
 pub mod transformer;
 mod v0;
 
@@ -11,8 +12,10 @@ use crate::drive::contract::DataContractFetchInfo;
 
 pub use v0::*;
 
+/// document base transition action
 #[derive(Debug, Clone, From)]
 pub enum DocumentBaseTransitionAction {
+    /// v0
     V0(DocumentBaseTransitionActionV0),
 }
 

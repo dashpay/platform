@@ -14,8 +14,11 @@ impl Drive {
         trust_refresh_reference: bool,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
-        let Element::Reference(reference_path_type, max_reference_hop, flags) = document_reference else {
-            return Err(Error::Drive(DriveError::CorruptedCodeExecution("expected a reference on refresh")));
+        let Element::Reference(reference_path_type, max_reference_hop, flags) = document_reference
+        else {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "expected a reference on refresh",
+            )));
         };
         drive_operations.push(
             LowLevelDriveOperation::refresh_reference_for_known_path_key_reference_info(

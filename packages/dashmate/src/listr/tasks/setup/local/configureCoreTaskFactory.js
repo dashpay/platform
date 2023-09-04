@@ -295,7 +295,7 @@ function configureCoreTaskFactory(
                     result: blockchainInfo,
                   } = await ctx.seedCoreService.getRpcClient().getBlockchainInfo());
 
-                  isDip8Activated = blockchainInfo.bip9_softforks.dip0008.status === 'active';
+                  isDip8Activated = blockchainInfo.softforks.dip0008.active;
 
                   if (isDip8Activated) {
                     break;
@@ -314,7 +314,7 @@ function configureCoreTaskFactory(
                   );
                 } while (!isDip8Activated);
 
-                observer.next(`DIP8 has been activated at height ${blockchainInfo.bip9_softforks.dip0008.since}`);
+                observer.next(`DIP8 has been activated at height ${blockchainInfo.softforks.dip0008.height}`);
 
                 observer.complete();
 
@@ -374,7 +374,8 @@ function configureCoreTaskFactory(
                     result: blockchainInfo,
                   } = await ctx.seedCoreService.getRpcClient().getBlockchainInfo());
 
-                  isV20Activated = blockchainInfo.bip9_softforks && blockchainInfo.bip9_softforks.v20 && blockchainInfo.bip9_softforks.v20.status === 'active';
+                  isV20Activated = blockchainInfo.softforks && blockchainInfo.softforks.v20
+                    && blockchainInfo.softforks.v20.active;
                   if (isV20Activated) {
                     break;
                   }
@@ -392,7 +393,7 @@ function configureCoreTaskFactory(
                   );
                 } while (!isV20Activated);
 
-                observer.next(`V20 fork has been activated at height ${blockchainInfo.bip9_softforks.v20.since}`);
+                observer.next(`V20 fork has been activated at height ${blockchainInfo.softforks.v20.height}`);
 
                 observer.complete();
 

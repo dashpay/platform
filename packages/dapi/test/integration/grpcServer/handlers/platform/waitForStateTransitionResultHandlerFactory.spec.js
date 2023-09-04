@@ -170,7 +170,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     tenderDashWsClientMock = new EventEmitter();
     tenderDashWsClientMock.subscribe = this.sinon.stub();
 
-    const dpp = new DashPlatformProtocol({}, null, null);
+    const dpp = new DashPlatformProtocol(null, 1);
 
     proofFixture = new Proof();
     proofFixture.setGrovedbProof(Buffer.alloc(1, 1));

@@ -1,13 +1,17 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+)]
 #[error(
     "Asset Lock output ${output_index} has invalid public key hash. Must be 20 length bytes hash"
 )]
+#[platform_serialize(unversioned)]
 pub struct InvalidAssetLockTransactionOutputReturnSizeError {
     /*
 

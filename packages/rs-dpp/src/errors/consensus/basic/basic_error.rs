@@ -1,5 +1,6 @@
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
@@ -25,8 +26,8 @@ use crate::consensus::basic::document::{
     MissingDocumentTransitionTypeError, MissingDocumentTypeError,
 };
 use crate::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
-    IdentityAssetLockProofLockedTransactionMismatchError,
+    DataContractBoundsNotPresentError, DuplicatedIdentityPublicKeyBasicError,
+    DuplicatedIdentityPublicKeyIdBasicError, IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     IdentityAssetLockTransactionOutputNotFoundError, InvalidAssetLockProofCoreChainHeightError,
@@ -54,7 +55,7 @@ use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
 
-#[derive(Error, Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode)]
 pub enum BasicError {
     /*
 
@@ -151,6 +152,9 @@ pub enum BasicError {
     // Document
     #[error(transparent)]
     DataContractNotPresentError(DataContractNotPresentError),
+
+    #[error(transparent)]
+    DataContractBoundsNotPresentError(DataContractBoundsNotPresentError),
 
     #[error(transparent)]
     DuplicateDocumentTransitionsWithIdsError(DuplicateDocumentTransitionsWithIdsError),

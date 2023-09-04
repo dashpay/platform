@@ -333,14 +333,18 @@ impl<C> Platform<C> {
                         )));
                     }
                 }
-                let Some(request_type) =  request_type  else {
+                let Some(request_type) = request_type else {
                     return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        QuerySyntaxError::InvalidParameter("key request must be defined".to_string()),
+                        QuerySyntaxError::InvalidParameter(
+                            "key request must be defined".to_string(),
+                        ),
                     )));
                 };
-                let Some(request) =  request_type.request  else {
+                let Some(request) = request_type.request else {
                     return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        QuerySyntaxError::InvalidParameter("key request must be defined".to_string()),
+                        QuerySyntaxError::InvalidParameter(
+                            "key request must be defined".to_string(),
+                        ),
                     )));
                 };
                 let key_request_type =
@@ -1248,6 +1252,7 @@ mod test {
                                 "can't fit u16 limit from the supplied value"
                             );
                         }
+                        _ => panic!("expect contract overflow error"),
                     },
                     _ => panic!("expect contract error"),
                 },
@@ -1284,6 +1289,7 @@ mod test {
                                 "can't fit u16 offset from the supplied value"
                             );
                         }
+                        _ => panic!("expect contract overflow error"),
                     },
                     _ => panic!("expect contract error"),
                 },

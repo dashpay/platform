@@ -166,40 +166,61 @@ fn push_drive_operation_result_optional<T>(
     }
     value.map_err(Error::GroveDB)
 }
+/// Is subtree?
 pub type IsSubTree = bool;
+/// Is sum subtree?
 pub type IsSumSubTree = bool;
+/// Is sum tree?
 pub type IsSumTree = bool;
 
+/// Batch delete apply type
 pub enum BatchDeleteApplyType {
+    /// Stateless batch delete
     StatelessBatchDelete {
         is_sum_tree: bool,
         estimated_value_size: u32,
     },
+    /// Stateful batch delete
     StatefulBatchDelete {
         is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
     },
 }
 
+/// Batch delete up tree apply type
 pub enum BatchDeleteUpTreeApplyType {
+    /// Stateless batch delete
     StatelessBatchDelete {
         estimated_layer_info: IntMap<EstimatedLayerInformation>,
     },
+    /// Stateful batch delete
     StatefulBatchDelete {
         is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
     },
 }
 
+/// batch insert tree apply type
 #[derive(Clone, Copy)]
+/// Batch insert tree apply type
 pub enum BatchInsertTreeApplyType {
+    /// Stateless batch insert tree
     StatelessBatchInsertTree {
         in_tree_using_sums: bool,
         is_sum_tree: bool,
         flags_len: FlagsLen,
     },
+    /// Stateful batch insert tree
     StatefulBatchInsertTree,
 }
 
+/// Represents the types for batch insert operations in a tree structure.
 impl BatchInsertTreeApplyType {
+    /// Converts the current `BatchInsertTreeApplyType` into a corresponding `DirectQueryType`.
+    ///
+    /// # Returns
+    ///
+    /// - A variant of `DirectQueryType::StatelessDirectQuery` if the current type is `BatchInsertTreeApplyType::StatelessBatchInsertTree`.
+    /// - `DirectQueryType::StatefulDirectQuery` if the current type is `BatchInsertTreeApplyType::StatefulBatchInsertTree`.
+    /// ```
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {
             BatchInsertTreeApplyType::StatelessBatchInsertTree {
@@ -217,15 +238,25 @@ impl BatchInsertTreeApplyType {
     }
 }
 
+/// Batch insert apply type
 pub enum BatchInsertApplyType {
+    /// Stateless batch insert
     StatelessBatchInsert {
         in_tree_using_sums: bool,
         target: QueryTarget,
     },
+    /// Stateful batch insert
     StatefulBatchInsert,
 }
 
 impl BatchInsertApplyType {
+    /// Converts the current `BatchInsertApplyType` into a corresponding `DirectQueryType`.
+    ///
+    /// # Returns
+    ///
+    /// - A variant of `DirectQueryType::StatelessDirectQuery` if the current type is `BatchInsertApplyType::StatelessBatchInsert`.
+    /// - `DirectQueryType::StatefulDirectQuery` if the current type is `BatchInsertApplyType::StatefulBatchInsert`.
+    /// ```
     pub(crate) fn to_direct_query_type(&self) -> DirectQueryType {
         match self {
             BatchInsertApplyType::StatelessBatchInsert {
@@ -240,15 +271,21 @@ impl BatchInsertApplyType {
     }
 }
 
+/// Flags length
 pub type FlagsLen = u32;
 
+/// query target
 #[derive(Clone, Copy)]
+/// Query target
 pub enum QueryTarget {
+    /// tree
     QueryTargetTree(FlagsLen, IsSumTree),
+    /// value
     QueryTargetValue(u32),
 }
 
 impl QueryTarget {
+    /// Length
     pub(crate) fn len(&self) -> u32 {
         match self {
             QueryTarget::QueryTargetTree(flags_len, is_sum_tree) => {
@@ -260,12 +297,16 @@ impl QueryTarget {
     }
 }
 
+/// direct query type
 #[derive(Clone, Copy)]
+/// Direct query type
 pub enum DirectQueryType {
+    /// Stateless direct query
     StatelessDirectQuery {
         in_tree_using_sums: bool,
         query_target: QueryTarget,
     },
+    /// Stateful direct query
     StatefulDirectQuery,
 }
 
@@ -286,6 +327,31 @@ impl From<DirectQueryType> for QueryType {
 }
 
 impl DirectQueryType {
+    /// Converts the current `DirectQueryType` into a corresponding `QueryType`
+    /// while associating it with the given reference sizes.
+    ///
+    /// # Parameters
+    ///
+    /// * `reference_sizes`: A vector of `u32` values representing the reference sizes
+    ///   associated with the query.
+    ///
+    /// # Returns
+    ///
+    /// - A variant of `QueryType::StatelessQuery` with the provided reference sizes if
+    ///   the current type is `DirectQueryType::StatelessDirectQuery`.
+    /// - `QueryType::StatefulQuery` if the current type is `DirectQueryType::StatefulDirectQuery`.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let direct_query = DirectQueryType::StatelessDirectQuery {
+    ///     in_tree_using_sums: true,
+    ///     query_target: SomeTarget, // Replace with an actual target instance.
+    /// };
+    ///
+    /// let ref_sizes = vec![100, 200, 300];
+    /// let query_type = direct_query.add_reference_sizes(ref_sizes);
+    /// ```
     #[allow(dead_code)]
     pub(crate) fn add_reference_sizes(self, reference_sizes: Vec<u32>) -> QueryType {
         match self {
@@ -302,13 +368,16 @@ impl DirectQueryType {
     }
 }
 
+/// Query type
 #[derive(Clone)]
 pub enum QueryType {
+    /// Stateless query
     StatelessQuery {
         in_tree_using_sums: bool,
         query_target: QueryTarget,
         estimated_reference_sizes: Vec<u32>,
     },
+    /// Stateful query
     StatefulQuery,
 }
 

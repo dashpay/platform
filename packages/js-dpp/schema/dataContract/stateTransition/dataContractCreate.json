@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
-    "version": {
+    "protocolVersion": {
       "type": "integer",
       "$comment": "Maximum is the latest protocol version"
     },
@@ -32,7 +32,7 @@
   },
   "additionalProperties": false,
   "required": [
-    "version",
+    "protocolVersion",
     "type",
     "dataContract",
     "entropy",

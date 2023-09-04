@@ -1,11 +1,13 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::errors::ProtocolError;
 use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Error, Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 #[error("Parsing of serialized object failed due to: {parsing_error}")]
+#[platform_serialize(unversioned)]
 pub struct SerializedObjectParsingError {
     /*
 
