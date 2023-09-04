@@ -1,6 +1,4 @@
-#[macro_use]
 mod test_vector;
-// mod get_documents;
 
 use core::panic;
 
@@ -21,7 +19,7 @@ use dpp::{
 };
 
 use drive_abci::rpc::core::{CoreRPCLike, DefaultCoreRPC};
-use drive_proof_verifier::{FromProof, QuorumInfoProvider};
+use drive_proof_verifier::{get_proof, FromProof, QuorumInfoProvider};
 use rs_dapi_client::{AddressList, DapiClient, DapiRequest, RequestSettings};
 use test_vector::TestVector;
 use tokio::sync::RwLock;
@@ -143,7 +141,8 @@ impl Api {
             .await
             .expect("unable to perform dapi request");
 
-        let proof = get_proof!(response, get_identity_response::Result);
+        let proof = get_proof!(response, get_identity_response::Result)
+            .expect("proof not present in response");
 
         self.test_vector(&request, &response, proof, None).await
     }
@@ -166,7 +165,8 @@ impl Api {
             mtd.chain_id = "dashmate_local_32".to_string();
         }
 
-        let proof = get_proof!(response, platform_proto::get_data_contract_response::Result);
+        let proof = get_proof!(response, platform_proto::get_data_contract_response::Result)
+            .expect("proof not present in response");
 
         let contract = DataContract::from_proof(&request, &response, &self)
             .expect("get data contract from proof");
@@ -179,9 +179,7 @@ impl Api {
 
     async fn get_documents(&self, data_contract: DataContract, doc_type_name: &str) -> String {
         let data_contract_id = data_contract.id();
-        // let dc: DataContractV0 = data_contract.into_v0().expect("data contract v0");
-        // dc.id();
-        //get_documents::GetDocumentsRequest
+
         let empty: Vec<u8> = Vec::new();
         let empty =
             cbor_serializer::serializable_value_to_cbor(&empty, None).expect("serialize empty vec");
@@ -206,7 +204,8 @@ impl Api {
             .await
             .expect("unable to perform dapi request");
 
-        let proof = get_proof!(response, platform_proto::get_documents_response::Result);
+        let proof = get_proof!(response, platform_proto::get_documents_response::Result)
+            .expect("proof not present in response");
 
         self.test_vector(&request, &response, proof, Some(data_contract))
             .await

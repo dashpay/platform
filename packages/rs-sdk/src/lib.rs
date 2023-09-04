@@ -9,7 +9,6 @@ pub mod core;
 
 pub mod crud;
 
-#[macro_use]
 pub mod dapi;
 
 pub use crud::*;

@@ -3096,6 +3096,7 @@ fn test_dpns_query_contract_verification() {
         contract_proof.as_slice(),
         None,
         false,
+        false,
         contract.id().into_buffer(),
         platform_version,
     )
@@ -3138,6 +3139,7 @@ fn test_contract_keeps_history_fetch_and_verification() {
     let (proof_root_hash, proof_returned_contract) = Drive::verify_contract(
         contract_proof.as_slice(),
         None,
+        false,
         false,
         contract.id().into_buffer(),
         platform_version,

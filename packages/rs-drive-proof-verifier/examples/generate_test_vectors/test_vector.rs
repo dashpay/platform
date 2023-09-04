@@ -1,28 +1,10 @@
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::Proof;
-use dashcore_rpc::{
-    dashcore::{hashes::Hash, QuorumHash},
-    dashcore_rpc_json::QuorumType,
-};
 use dpp::prelude::DataContract;
-use drive_abci::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use serde::Serialize;
 
 // Load TestMetadata
-include!("../../tests/utils.rs");
-
-macro_rules! get_proof {
-    ($response:expr, $result_type:ty) => {{
-        use $result_type as Result;
-        let proof = if let Result::Proof(proof) = $response.result.as_ref().expect("result") {
-            proof
-        } else {
-            panic!("missing proof in response")
-        };
-
-        proof
-    }};
-}
+include!("../../../rs-drive-proof-verifier/tests/utils.rs");
 
 #[async_trait]
 pub trait TestVector {
