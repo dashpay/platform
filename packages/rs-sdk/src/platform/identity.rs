@@ -6,8 +6,8 @@ use rs_dapi_client::{DapiRequest, RequestSettings};
 
 use crate::{
     crud::{Readable, SdkQuery},
-    dapi::DashAPI,
     error::Error,
+    sdk::Sdk,
 };
 
 /// Dash Platform Identity object wrapper
@@ -29,7 +29,7 @@ impl From<dpp::prelude::Identity> for SdkIdentity {
 }
 
 #[async_trait::async_trait]
-impl<API: DashAPI> Readable<API> for SdkIdentity {
+impl<API: Sdk> Readable<API> for SdkIdentity {
     type Identifier = [u8; 32];
 
     async fn read<Q: SdkQuery<Self::Identifier>>(api: &API, id: &Q) -> Result<Self, Error> {

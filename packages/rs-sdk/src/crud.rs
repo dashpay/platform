@@ -2,10 +2,10 @@
 
 use drive::query::DriveQuery;
 
-use crate::{dapi::DashAPI, error::Error, platform::document_query::SdkDocumentQuery};
+use crate::{error::Error, platform::document_query::SdkDocumentQuery, sdk::Sdk};
 
 #[async_trait::async_trait]
-pub trait Readable<API: DashAPI>
+pub trait Readable<API: Sdk>
 where
     Self: Sized,
 {
@@ -16,7 +16,7 @@ where
 
 // TODO this will change, not tested at all
 #[async_trait::async_trait]
-pub trait Writable<A: DashAPI, W>
+pub trait Writable<A: Sdk, W>
 where
     Self: Sized,
 {
@@ -27,7 +27,7 @@ where
 
 // TODO this will change, not tested at all
 #[async_trait::async_trait]
-pub trait Listable<API: DashAPI>
+pub trait Listable<API: Sdk>
 where
     Self: Sized,
 {

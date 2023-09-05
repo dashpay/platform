@@ -9,7 +9,7 @@ pub mod core;
 
 pub mod crud;
 
-pub mod dapi;
+pub mod sdk;
 
 pub use crud::*;
-pub use dapi::{Api, DashAPI};
+pub use sdk::{DashPlatformSdk, Sdk};

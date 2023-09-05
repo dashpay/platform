@@ -2,7 +2,7 @@
 
 // TODO: Move to rs-sdk
 
-use crate::{crud::Readable, dapi::DashAPI, error::Error};
+use crate::{crud::Readable, error::Error, sdk::Sdk};
 use ciborium::Value as CborValue;
 use dapi_grpc::platform::v0::{self as platform_proto, get_documents_request::Start};
 use dpp::{
@@ -36,7 +36,7 @@ pub struct SdkDocumentQuery {
 
 impl SdkDocumentQuery {
     /// Fetch one document with provided document ID
-    pub async fn new_with_document_id<API: DashAPI>(
+    pub async fn new_with_document_id<API: Sdk>(
         api: &API,
         data_contract_id: Identifier,
         document_type_name: &str,

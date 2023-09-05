@@ -6,8 +6,8 @@ use rs_dapi_client::{DapiRequest, RequestSettings};
 
 use crate::{
     crud::{Listable, Readable, SdkQuery},
-    dapi::DashAPI,
     error::Error,
+    sdk::Sdk,
 };
 use drive_proof_verifier::proof::from_proof::{Documents, FromProof, Length};
 
@@ -37,7 +37,7 @@ impl Length for SdkDocument {
     }
 }
 #[async_trait::async_trait]
-impl<API: DashAPI> Readable<API> for SdkDocument {
+impl<API: Sdk> Readable<API> for SdkDocument {
     type Identifier = SdkDocumentQuery;
 
     async fn read<Q: SdkQuery<Self::Identifier>>(api: &API, query: &Q) -> Result<Self, Error> {
@@ -55,7 +55,7 @@ impl<API: DashAPI> Readable<API> for SdkDocument {
 }
 
 #[async_trait::async_trait]
-impl<API: DashAPI> Listable<API> for SdkDocument {
+impl<API: Sdk> Listable<API> for SdkDocument {
     type Request = SdkDocumentQuery;
     async fn list<Q: SdkQuery<Self::Request>>(
         api: &API,

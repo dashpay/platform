@@ -57,7 +57,7 @@ impl QuorumInfoProvider for CoreClient {
                 },
             )?;
         let key = quorum_info.quorum_public_key;
-        let pubkey = <Vec<u8> as TryInto<[u8; 48]>>::try_into(key).map_err(|e| {
+        let pubkey = <Vec<u8> as TryInto<[u8; 48]>>::try_into(key).map_err(|_e| {
             drive_proof_verifier::Error::InvalidQuorum {
                 error: "quorum public key is not 48 bytes long".to_string(),
             }

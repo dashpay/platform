@@ -9,17 +9,17 @@ pub use http::Uri;
 pub use rs_dapi_client::AddressList;
 
 #[async_trait::async_trait]
-pub trait DashAPI: Send + Sync {
+pub trait Sdk: Send + Sync {
     async fn platform_client(&self) -> RwLockWriteGuard<crate::platform::PlatformClient>;
     fn quorum_info_provider<'a>(&'a self) -> Result<&'a dyn QuorumInfoProvider, Error>;
 }
 
-pub struct Api {
+pub struct DashPlatformSdk {
     dapi: tokio::sync::RwLock<crate::platform::PlatformClient>,
     quorum_provider: Box<dyn QuorumInfoProvider>,
 }
 
-impl Api {
+impl DashPlatformSdk {
     pub fn new(
         addresses: AddressList,
         quorum_info_provider: Box<dyn QuorumInfoProvider>,
@@ -33,7 +33,7 @@ impl Api {
 }
 
 #[async_trait::async_trait]
-impl DashAPI for Api {
+impl Sdk for DashPlatformSdk {
     async fn platform_client(&self) -> RwLockWriteGuard<crate::platform::PlatformClient> {
         self.dapi.write().await
     }

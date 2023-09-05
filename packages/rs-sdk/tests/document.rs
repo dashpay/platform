@@ -9,7 +9,7 @@ use rs_sdk::platform::document_query::SdkDocumentQuery;
 
 include!("common.rs");
 
-async fn test_read<API: DashAPI, O: Readable<API>, Q: SdkQuery<O::Identifier>>(
+async fn test_read<API: Sdk, O: Readable<API>, Q: SdkQuery<O::Identifier>>(
     api: &API,
     id: &Q,
     expected: Result<usize, rs_sdk::error::Error>,

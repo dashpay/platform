@@ -2,8 +2,8 @@
 
 use crate::{
     crud::{Readable, SdkQuery},
-    dapi::DashAPI,
     error::Error,
+    sdk::Sdk,
 };
 use dapi_grpc::platform::v0::{self as platform_proto};
 use drive_proof_verifier::proof::from_proof::FromProof;
@@ -28,7 +28,7 @@ impl From<dpp::prelude::DataContract> for SdkDataContract {
 }
 
 #[async_trait::async_trait]
-impl<API: DashAPI> Readable<API> for SdkDataContract {
+impl<API: Sdk> Readable<API> for SdkDataContract {
     type Identifier = [u8; 32];
 
     async fn read<Q: SdkQuery<Self::Identifier>>(api: &API, id: &Q) -> Result<Self, Error> {
