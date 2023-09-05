@@ -934,6 +934,8 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
+        let contract_id = contract.data_contract().id();
+
         let strategy = Strategy {
             contracts_with_updates: vec![(contract, None)],
             operations: vec![],
@@ -1000,6 +1002,13 @@ mod tests {
             .unwrap()
             .expect("expected to execute the fetch of a contract")
             .expect("expected to get a contract");
+
+        let _proven_contract = outcome
+            .abci_app
+            .platform
+            .drive
+            .prove_contract(contract_id.into(), None, platform_version)
+            .expect("contract should be retrieved from proof");
     }
 
     #[test]

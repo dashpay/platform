@@ -7,6 +7,7 @@ pub const CORE_USER: &str = "PdXjj4HC";
 pub const CORE_PASSWORD: &str = "POv4lqSbzO7m";
 pub const PLATFORM_PORT: u16 = 2443;
 
+// allow unused because we just include() this file, and the functions are used in other files
 #[allow(unused)]
 fn setup_api() -> impl DashAPI {
     let core = CoreClient::new(PLATFORM_IP, CORE_PORT, CORE_USER, CORE_PASSWORD)
@@ -19,6 +20,7 @@ fn setup_api() -> impl DashAPI {
     api
 }
 
+// allow unused because we just include() this file, and the functions are used in other files
 #[allow(unused)]
 fn base64_identifier(base64str: &str) -> dpp::prelude::Identifier {
     let b64 = base64::engine::general_purpose::STANDARD;
