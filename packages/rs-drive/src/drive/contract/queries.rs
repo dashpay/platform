@@ -25,7 +25,10 @@ impl Drive {
     /// * `PathQuery` - A `PathQuery` object representing the query for fetching the contract data.
     pub fn fetch_contract_query(contract_id: [u8; 32]) -> PathQuery {
         let contract_path = contract_root_path_vec(contract_id.as_slice());
-        PathQuery::new_single_key(contract_path, vec![0])
+        let mut query = PathQuery::new_single_key(contract_path, vec![0]);
+
+        query.query.limit = Some(1);
+        query
     }
 
     /// Creates a path query for a specified contract.

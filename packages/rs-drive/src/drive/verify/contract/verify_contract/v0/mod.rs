@@ -52,8 +52,6 @@ impl Drive {
             (false, false) => Self::fetch_contract_query(contract_id),
         };
 
-        path_query.query.limit = Some(1);
-
         tracing::trace!(?path_query, "verify contract");
 
         let result = if is_proof_subset {
