@@ -201,12 +201,6 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             }
         }
 
-        // Document schemas should be backward compatible
-        let new_schema = new_data_contract
-            .document_schemas()
-            .to_json_value()
-            .map_err(ProtocolError::ValueError)?;
-
         for (document_type_name, old_document_schema) in old_data_contract.document_schemas() {
             let old_document_schema_json: JsonValue = old_document_schema
                 .clone()
