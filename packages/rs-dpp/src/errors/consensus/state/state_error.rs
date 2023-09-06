@@ -28,6 +28,7 @@ use crate::consensus::state::identity::{
     IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
 };
 use crate::consensus::ConsensusError;
+use crate::consensus::state::identity::identity_public_key_already_exists_for_unique_contract_bounds_error::IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError;
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
@@ -70,6 +71,11 @@ pub enum StateError {
 
     #[error(transparent)]
     IdentityAlreadyExistsError(IdentityAlreadyExistsError),
+
+    #[error(transparent)]
+    IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError(
+        IdentityPublicKeyAlreadyExistsForUniqueContractBoundsError,
+    ),
 
     #[error(transparent)]
     IdentityPublicKeyDisabledAtWindowViolationError(

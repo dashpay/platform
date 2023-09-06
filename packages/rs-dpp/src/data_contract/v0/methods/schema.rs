@@ -122,13 +122,11 @@ mod test {
             },
         });
 
-        let defs_map = Some(defs.into_btree_string_map().expect("should convert to map"));
-
         data_contract
-            .set_schema_defs(defs_map.clone(), true, platform_version)
+            .set_schema_defs(Some(defs.clone()), true, platform_version)
             .expect("should set defs");
 
-        assert_eq!(defs_map.as_ref(), data_contract.schema_defs())
+        assert_eq!(Some(&defs), data_contract.schema_defs())
     }
 
     fn should_set_empty_schema_defs() {
@@ -143,14 +141,12 @@ mod test {
             },
         });
 
-        let defs_map = Some(defs.into_btree_string_map().expect("should convert to map"));
-
         let serialization_format = DataContractInSerializationFormatV0 {
             id: Identifier::random(),
             config,
             version: 0,
             owner_id: Default::default(),
-            schema_defs: defs_map,
+            schema_defs: Some(defs),
             document_schemas: Default::default(),
         };
 

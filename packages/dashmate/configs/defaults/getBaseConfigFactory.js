@@ -65,7 +65,7 @@ function getBaseConfigFactory(homeDir) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:20.0.0-alpha.4',
+          image: 'dashpay/dashd:20.0.0-alpha.6',
         },
         p2p: {
           port: 9999,
@@ -96,11 +96,6 @@ function getBaseConfigFactory(homeDir) {
           interval: '2.5m',
           mediantime: null,
           address: null,
-        },
-        sentinel: {
-          docker: {
-            image: 'dashpay/sentinel:1.7.3',
-          },
         },
         devnet: {
           name: null,

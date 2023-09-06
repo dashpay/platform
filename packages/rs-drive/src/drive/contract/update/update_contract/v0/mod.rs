@@ -92,7 +92,7 @@ impl Drive {
                 "contract should exist",
             )))?;
 
-        if original_contract_fetch_info
+        if !original_contract_fetch_info
             .contract
             .config()
             .is_contract_update_allowed()
@@ -214,13 +214,13 @@ impl Drive {
 
         let drive_version = &platform_version.drive;
 
-        if original_contract.config().is_contract_update_allowed() {
+        if !original_contract.config().is_contract_update_allowed() {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "contract is readonly",
             )));
         }
 
-        if contract.config().is_contract_update_allowed() {
+        if !contract.config().is_contract_update_allowed() {
             return Err(Error::Drive(DriveError::ChangingContractToReadOnly(
                 "contract can not be changed to readonly",
             )));

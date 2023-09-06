@@ -80,7 +80,7 @@ pub struct DriveAbciStateTransitionValidationVersion {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciStateTransitionValidationVersions {
-    pub validate_state_transition_identity_signed: FeatureVersion,
+    pub common_validation_methods: DriveAbciStateTransitionCommonValidationVersions,
     pub identity_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion,
@@ -89,6 +89,15 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub documents_batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciStateTransitionCommonValidationVersions {
+    pub validate_identity_public_key_contract_bounds: FeatureVersion,
+    pub validate_identity_public_key_ids_dont_exist_in_state: FeatureVersion,
+    pub validate_identity_public_key_ids_exist_in_state: FeatureVersion,
+    pub validate_state_transition_identity_signed: FeatureVersion,
+    pub validate_unique_identity_public_key_hashes_in_state: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

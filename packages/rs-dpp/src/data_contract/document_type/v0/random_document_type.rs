@@ -253,6 +253,8 @@ impl DocumentTypeV0 {
             documents_keep_history,
             documents_mutable,
             data_contract_id,
+            requires_identity_encryption_bounded_key: None,
+            requires_identity_decryption_bounded_key: None,
             security_level_requirement: SecurityLevel::HIGH,
             json_schema_validator: StatelessJsonSchemaLazyValidator::new(),
         })

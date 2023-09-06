@@ -107,7 +107,7 @@
       "additionalProperties": false
     },
     "contactRequest": {
-      "documentsMutable": false,
+      "readOnly": true,
       "indices": [
         {
           "properties": [

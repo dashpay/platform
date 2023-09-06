@@ -84,22 +84,6 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
     return info;
   }
 
-  async function getSentinelInfo(config) {
-    // cannot be put in Promise.all, because sentinel will cause exit 1 with simultaneous requests
-    const sentinelStateResponse = await dockerCompose
-      .execCommand(config, 'sentinel', 'python bin/sentinel.py');
-    const sentinelVersionResponse = await dockerCompose
-      .execCommand(config, 'sentinel', 'python bin/sentinel.py -v');
-
-    const [state] = sentinelStateResponse.out.split(/\r?\n/);
-
-    return {
-      state: state === '' ? 'ok' : state,
-      version: sentinelVersionResponse.out
-        .replace(/Dash Sentinel v/, '').trim(),
-    };
-  }
-
   /**
    * Get masternode status scope
    *
@@ -110,10 +94,6 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
   async function getMasternodeScope(config) {
     const scope = {
       syncAsset: null,
-      sentinel: {
-        state: null,
-        version: null,
-      },
       proTxHash: null,
       state: MasternodeStateEnum.UNKNOWN,
       status: null,
@@ -127,28 +107,13 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       },
     };
 
-    const basicResult = await Promise.allSettled([
-      getSyncAsset(config),
-      getSentinelInfo(config),
-    ]);
-
-    if (process.env.DEBUG) {
-      for (const error of basicResult.filter((e) => e.status === 'rejected')) {
+    try {
+      scope.syncAsset = await getSyncAsset(config);
+    } catch (error) {
+      if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
-        console.error(error.reason);
+        console.error(error);
       }
-    }
-
-    const [syncAsset, sentinelInfo] = basicResult
-      .map((result) => (result.status === 'fulfilled' ? result.value : null));
-
-    if (syncAsset) {
-      scope.syncAsset = syncAsset;
-    }
-
-    if (sentinelInfo) {
-      scope.sentinel.state = sentinelInfo.state;
-      scope.sentinel.version = sentinelInfo.version;
     }
 
     if (scope.syncAsset === MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED) {

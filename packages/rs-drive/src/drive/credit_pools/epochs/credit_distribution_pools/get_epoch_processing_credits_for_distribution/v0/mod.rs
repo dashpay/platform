@@ -31,7 +31,7 @@ impl Drive {
         let Element::SumItem(credits, _) = element else {
             return Err(Error::Drive(DriveError::UnexpectedElementType(
                 "epochs processing fee must be an item",
-            )))
+            )));
         };
 
         Ok(credits.to_unsigned())

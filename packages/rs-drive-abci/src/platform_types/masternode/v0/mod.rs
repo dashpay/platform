@@ -10,7 +10,7 @@ use dpp::dashcore::{ProTxHash, Txid};
 use std::net::SocketAddr;
 
 /// `Masternode` represents a masternode on the network.
-#[derive(Clone, PartialEq, Eq, Debug, Encode, Decode)]
+#[derive(Clone, PartialEq, Debug, Encode, Decode)]
 pub struct MasternodeV0 {
     /// The type of masternode (e.g., full, partial).
     pub node_type: MasternodeType,
@@ -25,7 +25,7 @@ pub struct MasternodeV0 {
     /// The address where the collateral is stored.
     pub collateral_address: [u8; 20],
     /// The amount of the operator's reward for running the masternode.
-    pub operator_reward: u32,
+    pub operator_reward: f32,
     /// The current state of the masternode (e.g., enabled, pre-enabled, banned).
     pub state: MasternodeStateV0,
 }

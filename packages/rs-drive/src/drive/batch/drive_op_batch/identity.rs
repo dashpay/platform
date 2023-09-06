@@ -122,6 +122,7 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 unique_keys_to_add,
                 non_unique_keys_to_add,
                 true,
+                &block_info.epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,

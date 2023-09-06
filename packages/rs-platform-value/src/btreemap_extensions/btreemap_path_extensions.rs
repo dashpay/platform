@@ -360,7 +360,9 @@ where
                             .iter()
                             .map(|v| {
                                 let Some(str) = v.as_text() else {
-                                    return Err(Error::StructureError(format!("{path} must be an string")))
+                                    return Err(Error::StructureError(format!(
+                                        "{path} must be an string"
+                                    )));
                                 };
                                 Ok(str.to_string())
                             })

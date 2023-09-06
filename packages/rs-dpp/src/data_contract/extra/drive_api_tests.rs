@@ -131,10 +131,10 @@ mod test {
         .into_v0()
         .unwrap();
 
-        assert!(contract.config.documents_mutability_contract_default());
-        assert!(!contract.config.keeps_previous_contract_versions());
-        assert!(!contract.config().is_contract_update_allowed()); // the contract shouldn't be readonly
-        assert!(!contract.config.documents_keep_history_contract_default());
+        assert!(contract.config().documents_mutability_contract_default());
+        assert!(!contract.config().keeps_previous_contract_versions());
+        assert!(contract.config().is_contract_update_allowed()); // the contract shouldn't be readonly
+        assert!(!contract.config().documents_keep_history_contract_default());
         assert_eq!(contract.document_types.len(), 3);
         assert!(contract.document_types.get("profile").is_some());
         assert!(contract
@@ -193,10 +193,10 @@ mod test {
         .into_v0()
         .unwrap();
 
-        assert!(!contract.config().is_contract_update_allowed());
-        assert!(!contract.config.keeps_previous_contract_versions());
-        assert!(contract.config.documents_mutability_contract_default());
-        assert!(!contract.config.documents_keep_history_contract_default());
+        assert!(contract.config().is_contract_update_allowed());
+        assert!(!contract.config().keeps_previous_contract_versions());
+        assert!(contract.config().documents_mutability_contract_default());
+        assert!(!contract.config().documents_keep_history_contract_default());
 
         contract.config.set_allow_contract_update(true);
         contract.config.set_keeps_previous_contract_versions(true);
@@ -221,6 +221,8 @@ mod test {
                 keeps_previous_contract_versions: true,
                 documents_mutability_contract_default: false,
                 documents_keep_history_contract_default: true,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
             })
         ));
     }
@@ -238,7 +240,7 @@ mod test {
 
         let contract_v0 = contract.as_v0_mut().unwrap();
 
-        assert!(!contract_v0.config().is_contract_update_allowed());
+        assert!(contract_v0.config().is_contract_update_allowed());
         assert!(!contract_v0.config.keeps_previous_contract_versions());
         assert!(contract_v0.config.documents_mutability_contract_default());
         assert!(!contract_v0.config.documents_keep_history_contract_default());
@@ -269,6 +271,8 @@ mod test {
                 keeps_previous_contract_versions: true,
                 documents_mutability_contract_default: false,
                 documents_keep_history_contract_default: true,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
             })
         );
     }

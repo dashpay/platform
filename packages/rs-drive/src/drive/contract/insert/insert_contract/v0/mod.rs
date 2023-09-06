@@ -33,7 +33,7 @@ impl Drive {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         let storage_flags = if contract.config().is_contract_deletion_allowed()
-            || !contract.config().is_contract_update_allowed()
+            || contract.config().is_contract_update_allowed()
         {
             Some(StorageFlags::new_single_epoch(
                 block_info.epoch.index,

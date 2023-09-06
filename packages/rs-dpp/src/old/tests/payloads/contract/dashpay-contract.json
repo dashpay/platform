@@ -105,7 +105,9 @@
             "additionalProperties": false
         },
         "contactRequest": {
-            "documentsMutable": false,
+            "requiresIdentityEncryptionBoundedKey": 2,
+            "requiresIdentityDecryptionBoundedKey": 2,
+            "readOnly": true,
             "indices": [
                 {
                     "properties": [

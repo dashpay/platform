@@ -41,6 +41,75 @@
       "description": "Public key security level. 0 - Master, 1 - Critical, 2 - High, 3 - Medium",
       "$comment": "It can't be changed after adding a key"
     },
+    "contractBounds": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "none",
+            "singleContract",
+            "documentType"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "oneOf" : [
+                  {
+                    "const": "singleContract"
+                  },
+                  {
+                    "const": "documentType"
+                  }
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "id": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "documentType"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "documentType": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "documentType"
+            ]
+          }
+        }
+      ],
+      "required": [
+        "type"
+      ],
+      "description": "Defines if the key is bound to a data contract. 0 - No bounds, 1 - Bounded to a contract, 2 - Bounded to a document type",
+      "$comment": "It can't be changed after adding a key"
+    },
     "data": true,
     "readOnly": {
       "type": "boolean",

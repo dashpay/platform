@@ -104,8 +104,14 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             ))
         }
 
-        if old_data_contract.config().is_contract_update_allowed() {
-            validation_result.add_error(DataContractIsReadonlyError::new(new_data_contract.id()));
+        let config_validation_result = old_data_contract.config().validate_config_update(
+            new_data_contract.config(),
+            self.data_contract().id(),
+            platform_version,
+        )?;
+
+        if !config_validation_result.is_valid() {
+            validation_result.merge(config_validation_result);
             return Ok(validation_result);
         }
 
@@ -140,17 +146,6 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         }
 
         if !validation_result.is_valid() {
-            return Ok(validation_result);
-        }
-
-        let config_validation_result = old_data_contract.config().validate_config_update(
-            new_data_contract.config(),
-            self.data_contract().id(),
-            platform_version,
-        )?;
-
-        if !config_validation_result.is_valid() {
-            validation_result.merge(config_validation_result);
             return Ok(validation_result);
         }
 

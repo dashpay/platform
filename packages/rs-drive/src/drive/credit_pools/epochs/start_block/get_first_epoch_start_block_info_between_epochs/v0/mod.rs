@@ -65,7 +65,9 @@ impl Drive {
         }
 
         let Element::Item(item, _) = element else {
-            return Err(Error::Drive(DriveError::UnexpectedElementType("start block core height must be an item")));
+            return Err(Error::Drive(DriveError::UnexpectedElementType(
+                "start block core height must be an item",
+            )));
         };
 
         let next_start_block_core_height =
@@ -84,7 +86,9 @@ impl Drive {
         }
 
         let Element::Item(item, _) = element else {
-            return Err(Error::Drive(DriveError::UnexpectedElementType("start block must be an item")));
+            return Err(Error::Drive(DriveError::UnexpectedElementType(
+                "start block must be an item",
+            )));
         };
 
         let next_start_block_height =

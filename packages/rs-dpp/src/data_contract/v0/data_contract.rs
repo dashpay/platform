@@ -7,6 +7,7 @@ use crate::data_contract::{DefinitionName, DocumentName};
 
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::DocumentType;
+use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::metadata::Metadata;
 
 /// `DataContractV0` represents a data contract in a decentralized platform.

@@ -1,5 +1,7 @@
 /* eslint-disable no-param-reassign */
 
+const { NETWORK_LOCAL, NETWORK_TESTNET } = require('../src/constants');
+
 /**
  * @param {HomeDir} homeDir
  * @param {DefaultConfigs} defaultConfigs
@@ -120,6 +122,17 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
               options.platform.drive.tenderdash.mode = 'validator';
             } else {
               options.platform.drive.tenderdash.mode = 'full';
+            }
+          });
+        return configFile;
+      },
+      '0.25.0-dev.18': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            delete options.core.sentinel;
+
+            if ([NETWORK_LOCAL, NETWORK_TESTNET].includes(options.network)) {
+              options.core.docker.image = base.get('core.docker.image');
             }
           });
         return configFile;

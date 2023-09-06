@@ -27,7 +27,9 @@ impl Drive {
             .map_err(Error::GroveDB)?;
 
         let Element::Item(encoded_start_block_core_height, _) = element else {
-            return Err(Error::Drive(DriveError::UnexpectedElementType("start block height must be an item")));
+            return Err(Error::Drive(DriveError::UnexpectedElementType(
+                "start block height must be an item",
+            )));
         };
 
         let start_block_core_height = u32::from_be_bytes(

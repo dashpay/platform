@@ -37,7 +37,7 @@ impl Drive {
 
         // we only store the owner_id storage
         let storage_flags = if contract.config().is_contract_deletion_allowed()
-            || !contract.config().is_contract_update_allowed()
+            || contract.config().is_contract_update_allowed()
         {
             Some(StorageFlags::approximate_size(true, None))
         } else {
