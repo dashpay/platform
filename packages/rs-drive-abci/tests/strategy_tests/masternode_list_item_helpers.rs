@@ -96,7 +96,7 @@ mod tests {
             collateral_hash: Txid::from_inner(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
             collateral_address: [0; 20],
-            operator_reward: 0,
+            operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
                     .unwrap(),
