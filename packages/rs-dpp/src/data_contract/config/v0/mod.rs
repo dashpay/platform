@@ -1,8 +1,11 @@
+use crate::data_contract::config;
 use crate::data_contract::config::DataContractConfig;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 pub const DEFAULT_CONTRACT_KEEPS_HISTORY: bool = false;
 pub const DEFAULT_ALLOW_CONTRACT_DELETION: bool = false;
@@ -67,7 +70,7 @@ pub trait DataContractConfigSettersV0 {
     fn set_documents_mutability_contract_default(&mut self, value: bool);
 }
 
-impl Default for DataContractConfigV0 {
+impl std::default::Default for DataContractConfigV0 {
     fn default() -> Self {
         DataContractConfigV0 {
             allow_contract_deletion: DEFAULT_ALLOW_CONTRACT_DELETION,

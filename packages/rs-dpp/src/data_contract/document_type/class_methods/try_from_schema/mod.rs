@@ -1,9 +1,9 @@
-use crate::data_contract::document_type::config::DocumentTypeConfig;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 mod v0;
 
@@ -13,7 +13,8 @@ impl DocumentType {
         name: &str,
         schema: Value,
         schema_defs: Option<&Value>,
-        config: DocumentTypeConfig,
+        default_keeps_history: bool,
+        default_mutability: bool,
         validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -29,7 +30,8 @@ impl DocumentType {
                 name,
                 schema,
                 schema_defs,
-                config,
+                default_keeps_history,
+                default_mutability,
                 validate,
                 platform_version,
             )

@@ -20,8 +20,6 @@ use crate::data_contract::document_type::schema::{
     traversal_validator, validate_max_depth,
 };
 
-use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::document_type::config::DocumentTypeConfig;
 use crate::data_contract::document_type::schema::enrich_with_base_schema;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::{DataContractError, StructureError};
@@ -50,7 +48,8 @@ impl DocumentTypeV0 {
         name: &str,
         schema: Value,
         schema_defs: Option<&Value>,
-        config: DocumentTypeConfig,
+        default_keeps_history: bool,
+        default_mutability: bool,
         validate: bool, // we don't need to validate if loaded from state
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
@@ -112,6 +111,20 @@ impl DocumentTypeV0 {
                 "document schema must be an object: {err}"
             )))
         })?;
+
+        // TODO: These properties aren't defined in JSON meta schema
+        // Do documents of this type keep history? (Overrides contract value)
+        let documents_keep_history: bool =
+            Value::inner_optional_bool_value(schema_map, property_names::KEEP_HISTORY)
+                .map_err(ProtocolError::ValueError)?
+                .unwrap_or(default_keeps_history);
+
+        // Are documents of this type mutable? (Overrides contract value)
+        let documents_mutable: bool =
+            Value::inner_optional_bool_value(schema_map, property_names::DOCUMENTS_READ_ONLY)
+                .map_err(ProtocolError::ValueError)?
+                // mutable true == readOnly false
+                .map_or(default_mutability, |v| !v);
 
         // Extract the properties
         let property_values =
@@ -312,6 +325,12 @@ impl DocumentTypeV0 {
                 .document_type_versions,
         )?;
 
+        let security_level_requirement = schema
+            .get_optional_integer::<u8>(property_names::SECURITY_LEVEL_REQUIREMENT)?
+            .map(SecurityLevel::try_from)
+            .transpose()?
+            .unwrap_or(SecurityLevel::HIGH);
+
         Ok(DocumentTypeV0 {
             name: String::from(name),
             schema,
@@ -322,8 +341,10 @@ impl DocumentTypeV0 {
             identifier_paths,
             binary_paths,
             required_fields,
+            documents_keep_history,
+            documents_mutable,
             data_contract_id,
-            config,
+            security_level_requirement,
             #[cfg(feature = "validation")]
             json_schema_validator,
         })

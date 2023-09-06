@@ -7,7 +7,7 @@ use crate::data_contract::document_type::{DocumentType, DocumentTypeMutRef, Docu
 
 use platform_value::{Identifier, Value};
 
-use crate::data_contract::document_type::config::DocumentTypeConfig;
+use crate::identity::SecurityLevel;
 use std::collections::{BTreeMap, BTreeSet};
 pub use v0::*;
 
@@ -72,15 +72,27 @@ impl DocumentTypeV0Getters for DocumentType {
         }
     }
 
+    fn documents_keep_history(&self) -> bool {
+        match self {
+            DocumentType::V0(v0) => v0.documents_keep_history(),
+        }
+    }
+
+    fn documents_mutable(&self) -> bool {
+        match self {
+            DocumentType::V0(v0) => v0.documents_mutable(),
+        }
+    }
+
     fn data_contract_id(&self) -> Identifier {
         match self {
             DocumentType::V0(v0) => v0.data_contract_id(),
         }
     }
 
-    fn config(&self) -> &DocumentTypeConfig {
+    fn security_level_requirement(&self) -> SecurityLevel {
         match self {
-            DocumentType::V0(v0) => v0.config(),
+            DocumentType::V0(v0) => v0.security_level_requirement(),
         }
     }
 }
@@ -146,15 +158,27 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeRef<'a> {
         }
     }
 
+    fn documents_keep_history(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.documents_keep_history(),
+        }
+    }
+
+    fn documents_mutable(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(v0) => v0.documents_mutable(),
+        }
+    }
+
     fn data_contract_id(&self) -> Identifier {
         match self {
             DocumentTypeRef::V0(v0) => v0.data_contract_id(),
         }
     }
 
-    fn config(&self) -> &DocumentTypeConfig {
+    fn security_level_requirement(&self) -> SecurityLevel {
         match self {
-            DocumentTypeRef::V0(v0) => v0.config(),
+            DocumentTypeRef::V0(v0) => v0.security_level_requirement(),
         }
     }
 }
@@ -220,15 +244,27 @@ impl<'a> DocumentTypeV0Getters for DocumentTypeMutRef<'a> {
         }
     }
 
+    fn documents_keep_history(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.documents_keep_history(),
+        }
+    }
+
+    fn documents_mutable(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(v0) => v0.documents_mutable(),
+        }
+    }
+
     fn data_contract_id(&self) -> Identifier {
         match self {
             DocumentTypeMutRef::V0(v0) => v0.data_contract_id(),
         }
     }
 
-    fn config(&self) -> &DocumentTypeConfig {
+    fn security_level_requirement(&self) -> SecurityLevel {
         match self {
-            DocumentTypeMutRef::V0(v0) => v0.config(),
+            DocumentTypeMutRef::V0(v0) => v0.security_level_requirement(),
         }
     }
 }

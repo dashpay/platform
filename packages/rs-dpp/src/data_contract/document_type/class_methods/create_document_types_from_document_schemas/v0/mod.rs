@@ -1,4 +1,3 @@
-use crate::data_contract::document_type::config::DocumentTypeConfig;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DocumentName;
@@ -12,12 +11,12 @@ impl DocumentTypeV0 {
         data_contract_id: Identifier,
         document_schemas: BTreeMap<DocumentName, Value>,
         schema_defs: Option<&Value>,
+        documents_keep_history_contract_default: bool,
+        documents_mutable_contract_default: bool,
         validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
         let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
-
-        let config = DocumentTypeConfig::default_with_platform_version(platform_version)?;
 
         for (name, schema) in document_schemas.into_iter() {
             let document_type = match platform_version
@@ -31,7 +30,8 @@ impl DocumentTypeV0 {
                     &name,
                     schema,
                     schema_defs,
-                    config.clone(),
+                    documents_keep_history_contract_default,
+                    documents_mutable_contract_default,
                     validate,
                     platform_version,
                 )?,

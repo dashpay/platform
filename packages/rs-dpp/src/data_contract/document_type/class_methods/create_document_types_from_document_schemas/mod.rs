@@ -52,6 +52,8 @@ impl DocumentType {
                 data_contract_id,
                 document_schemas,
                 schema_defs,
+                documents_keep_history_contract_default,
+                documents_mutable_contract_default,
                 validate,
                 platform_version,
             ),

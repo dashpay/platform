@@ -97,7 +97,6 @@ impl RandomDocumentTypeParameters {
     }
 }
 
-use crate::data_contract::document_type::config::DocumentTypeConfig;
 use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::v0::{DocumentTypeV0, StatelessJsonSchemaLazyValidator};
 use crate::data_contract::document_type::{
@@ -240,8 +239,6 @@ impl DocumentTypeV0 {
                 .document_type_versions,
         )?;
 
-        let config = DocumentTypeConfig::default_with_platform_version(platform_version)?;
-
         // TODO: It might not work properly
         Ok(DocumentTypeV0 {
             name,
@@ -253,8 +250,10 @@ impl DocumentTypeV0 {
             identifier_paths,
             binary_paths,
             required_fields,
-            config,
+            documents_keep_history,
+            documents_mutable,
             data_contract_id,
+            security_level_requirement: SecurityLevel::HIGH,
             json_schema_validator: StatelessJsonSchemaLazyValidator::new(),
         })
     }

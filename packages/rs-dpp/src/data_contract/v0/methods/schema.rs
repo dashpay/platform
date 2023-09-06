@@ -1,6 +1,5 @@
 use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::config::DocumentTypeConfig;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::v0::DataContractV0;
@@ -38,14 +37,13 @@ impl DataContractSchemaMethodsV0 for DataContractV0 {
         validate: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
-        let config = DocumentTypeConfig::default_with_platform_version(platform_version)?;
-
         let document_type = DocumentType::try_from_schema(
             self.id,
             name,
             schema,
             self.schema_defs.as_ref(),
-            config,
+            self.config.documents_keep_history_contract_default(),
+            self.config.documents_mutability_contract_default(),
             validate,
             platform_version,
         )?;

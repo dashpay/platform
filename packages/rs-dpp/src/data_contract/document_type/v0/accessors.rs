@@ -6,7 +6,7 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 
 use platform_value::{Identifier, Value};
 
-use crate::data_contract::document_type::config::DocumentTypeConfig;
+use crate::identity::SecurityLevel;
 use std::collections::{BTreeMap, BTreeSet};
 
 impl DocumentTypeV0Getters for DocumentTypeV0 {
@@ -50,11 +50,19 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
         &self.required_fields
     }
 
+    fn documents_keep_history(&self) -> bool {
+        self.documents_keep_history
+    }
+
+    fn documents_mutable(&self) -> bool {
+        self.documents_mutable
+    }
+
     fn data_contract_id(&self) -> Identifier {
         self.data_contract_id
     }
 
-    fn config(&self) -> &DocumentTypeConfig {
-        &self.config
+    fn security_level_requirement(&self) -> SecurityLevel {
+        self.security_level_requirement
     }
 }
