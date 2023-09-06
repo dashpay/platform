@@ -93,6 +93,7 @@ pub struct StateTransitionSerializationVersions {
     pub identity_top_up_state_transition: FeatureVersionBounds,
     pub identity_credit_withdrawal_state_transition: FeatureVersionBounds,
     pub identity_credit_transfer_state_transition: FeatureVersionBounds,
+    pub masternode_vote_state_transition: FeatureVersionBounds,
     pub contract_create_state_transition: FeatureVersionBounds,
     pub contract_update_state_transition: FeatureVersionBounds,
     pub documents_batch_state_transition: FeatureVersionBounds,

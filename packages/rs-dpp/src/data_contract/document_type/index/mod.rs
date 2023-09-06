@@ -49,6 +49,7 @@ pub enum ContestedIndexFieldMatch {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ContestedIndexInformation {
+    pub contested_field_temp_replacement_name: String,
     pub contested_field_name: String,
     pub field_match: ContestedIndexFieldMatch,
     pub resolution: ContestedIndexResolution,
@@ -57,6 +58,7 @@ pub struct ContestedIndexInformation {
 impl Default for ContestedIndexInformation {
     fn default() -> Self {
         ContestedIndexInformation {
+            contested_field_temp_replacement_name: "".to_string(),
             contested_field_name: "".to_string(),
             field_match: Regex(String::new()),
             resolution: ContestedIndexResolution::MasternodeVote,
@@ -271,6 +273,11 @@ impl TryFrom<&[(Value, Value)]> for Index {
                             "regexPattern" => {
                                 let regex = contested_value.to_str()?.to_owned();
                                 contested_index_information.field_match = Regex(regex);
+                            }
+                            "name" => {
+                                let field = contested_value.to_str()?.to_owned();
+                                contested_index_information.contested_field_temp_replacement_name =
+                                    field;
                             }
                             "fieldMatch" => {
                                 let field = contested_value.to_str()?.to_owned();

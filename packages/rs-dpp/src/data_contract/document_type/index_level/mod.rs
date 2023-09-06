@@ -154,6 +154,50 @@ impl IndexLevel {
                     current_level.has_index_with_uniqueness = Some(index.unique);
                 }
             }
+
+            if let Some(contested_index) = &index.contested_index {
+                let mut current_level = &mut index_level;
+                let mut properties_iter = index.properties.iter().peekable();
+
+                while let Some(index_part) = properties_iter.next() {
+                    let level_name = if contested_index.contested_field_name == index_part.name {
+                        &contested_index.contested_field_temp_replacement_name
+                    } else {
+                        &index_part.name
+                    };
+                    current_level = current_level
+                        .sub_index_levels
+                        .entry(level_name.clone())
+                        .or_insert_with(|| {
+                            counter += 1;
+                            IndexLevel {
+                                level_identifier: counter,
+                                sub_index_levels: Default::default(),
+                                has_index_with_uniqueness: None,
+                            }
+                        });
+
+                    // The last property
+                    if properties_iter.peek().is_none() {
+                        // This level already has been initialized.
+                        // It means there are two indices with the same combination of properties.
+
+                        // We might need to take into account the sorting order when we have it
+                        if current_level.has_index_with_uniqueness.is_some() {
+                            // an index already exists return error
+                            return Err(ConsensusError::BasicError(
+                                BasicError::DuplicateIndexError(DuplicateIndexError::new(
+                                    document_type_name.to_owned(),
+                                    level_name.clone(),
+                                )),
+                            )
+                            .into());
+                        }
+
+                        current_level.has_index_with_uniqueness = Some(false);
+                    }
+                }
+            }
         }
 
         Ok(index_level)

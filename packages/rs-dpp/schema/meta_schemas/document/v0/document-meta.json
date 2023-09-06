@@ -408,6 +408,33 @@
           },
           "unique": {
             "type": "boolean"
+          },
+          "contested": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "fieldMatch": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "regexPattern": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "resolution": {
+                "type": "integer",
+                "enum": [
+                  0
+                ],
+                "description": "Resolution. 0 - Masternode Vote"
+              }
+            }
           }
         },
         "required": [

@@ -640,6 +640,11 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 max_version: 0,
                 default_current_version: 0,
             },
+            masternode_vote_state_transition: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
             contract_create_state_transition: FeatureVersionBounds {
                 min_version: 0,
                 max_version: 0,

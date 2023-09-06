@@ -37,6 +37,7 @@ use crate::consensus::ConsensusError;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitionSignable;
 pub use state_transitions::*;
 
 use crate::serialization::Signable;
@@ -74,6 +75,7 @@ use crate::state_transition::identity_topup_transition::{
 use crate::state_transition::identity_update_transition::{
     IdentityUpdateTransition, IdentityUpdateTransitionSignable,
 };
+use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::state_transitions::document::documents_batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 
 pub type GetDataContractSecurityLevelRequirementFn =
@@ -90,6 +92,7 @@ macro_rules! call_method {
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
             StateTransition::IdentityUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
+            StateTransition::MasternodeVote(st) => st.$method($args),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -102,6 +105,7 @@ macro_rules! call_method {
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
             StateTransition::IdentityUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
+            StateTransition::MasternodeVote(st) => st.$method(),
         }
     };
 }
@@ -117,6 +121,7 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.$method($args)),
             StateTransition::IdentityUpdate(st) => Some(st.$method($args)),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method($args)),
+            StateTransition::MasternodeVote(st) => Some(st.$method($args)),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -129,6 +134,7 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::IdentityCreditWithdrawal(st) => Some(st.$method()),
             StateTransition::IdentityUpdate(st) => Some(st.$method()),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method()),
+            StateTransition::MasternodeVote(st) => Some(st.$method()),
         }
     };
 }
@@ -144,6 +150,7 @@ macro_rules! call_method_identity_signed {
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
             StateTransition::IdentityUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
+            StateTransition::MasternodeVote(st) => st.$method($args),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -156,6 +163,7 @@ macro_rules! call_method_identity_signed {
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
             StateTransition::IdentityUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
+            StateTransition::MasternodeVote(st) => st.$method(),
         }
     };
 }
@@ -175,6 +183,7 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::IdentityCreditWithdrawal(st) => st.$method($args),
             StateTransition::IdentityUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
+            StateTransition::MasternodeVote(st) => st.$method($args),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -191,6 +200,7 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::IdentityCreditWithdrawal(st) => st.$method(),
             StateTransition::IdentityUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
+            StateTransition::MasternodeVote(st) => st.$method(),
         }
     };
 }
@@ -210,6 +220,7 @@ macro_rules! call_static_method {
             StateTransition::IdentityCreditTransfer(_) => {
                 IdentityCreditTransferTransition::$method()
             }
+            StateTransition::MasternodeVote(_) => MasternodeVote::$method(),
         }
     };
 }
@@ -241,6 +252,7 @@ pub enum StateTransition {
     IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition),
     IdentityUpdate(IdentityUpdateTransition),
     IdentityCreditTransfer(IdentityCreditTransferTransition),
+    MasternodeVote(MasternodeVoteTransition),
 }
 
 impl StateTransition {
@@ -367,6 +379,10 @@ impl StateTransition {
                 return Err(ProtocolError::CorruptedCodeExecution(
                     "identity top up can not be called for identity signing".to_string(),
                 ))
+            }
+            StateTransition::MasternodeVote(st) => {
+                st.verify_public_key_level_and_purpose(identity_public_key)?;
+                st.verify_public_key_is_enabled(identity_public_key)?;
             }
         }
         let data = self.signable_bytes()?;
