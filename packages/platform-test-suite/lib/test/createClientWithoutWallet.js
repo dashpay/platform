@@ -6,7 +6,7 @@ const getDAPISeeds = require('./getDAPISeeds');
 
 function createClientWithoutWallet() {
   return new Dash.Client({
-    dapiAddresses: getDAPISeeds(),
+    seeds: getDAPISeeds(),
     network: process.env.NETWORK,
     timeout: 25000,
     apps: {

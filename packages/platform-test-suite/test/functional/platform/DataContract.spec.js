@@ -16,7 +16,7 @@ const {
   },
 } = Dash;
 
-describe.only('Platform', () => {
+describe('Platform', () => {
   describe('Data Contract', function main() {
     this.timeout(700000);
 

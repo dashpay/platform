@@ -23,8 +23,7 @@ async function createClientWithFundedWallet(amount, HDPrivateKey = undefined) {
   const seeds = getDAPISeeds();
 
   const clientOpts = {
-    // seeds,
-    dapiAddresses: seeds,
+    seeds,
     network: process.env.NETWORK,
     timeout: 25000,
     apps: {
