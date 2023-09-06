@@ -41,6 +41,20 @@ impl DataContractConfig {
             );
         }
 
+        if new_config.can_be_deleted() != self.can_be_deleted() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractConfigUpdateError::new(
+                    contract_id,
+                    format!(
+                        "contract can not change whether it can be delete: changing from {} to {}",
+                        self.can_be_deleted(),
+                        new_config.can_be_deleted()
+                    ),
+                )
+                .into(),
+            );
+        }
+
         if new_config.documents_keep_history_contract_default()
             != self.documents_keep_history_contract_default()
         {
@@ -62,6 +76,30 @@ impl DataContractConfig {
                     "contract can not change the default of whether documents are mutable",
                 )
                 .into(),
+            );
+        }
+
+        if new_config.requires_identity_encryption_bounded_key()
+            != self.requires_identity_encryption_bounded_key()
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractConfigUpdateError::new(
+                    contract_id,
+                    "contract can not change the requirement of needing a document encryption bounded key",
+                )
+                    .into(),
+            );
+        }
+
+        if new_config.requires_identity_decryption_bounded_key()
+            != self.requires_identity_decryption_bounded_key()
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractConfigUpdateError::new(
+                    contract_id,
+                    "contract can not change the requirement of needing a document decryption bounded key",
+                )
+                    .into(),
             );
         }
 
