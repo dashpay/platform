@@ -12,10 +12,10 @@ use platform_value::Value;
 #[derive(
     Error, Debug, Clone, PartialEq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Data Contract updated schema is not backward compatible with one defined in Data Contract wid id {data_contract_id}. Field: '{field_path}', Operation: '{operation}'"
+#[error("New document schema is not backward compatible with existing one. Field: '{field_path}', Operation: '{operation}'"
 )]
 #[platform_serialize(unversioned)]
-pub struct IncompatibleDataContractSchemaError {
+pub struct IncompatibleDocumentSchemaError {
     data_contract_id: Identifier,
     operation: String,
     field_path: String,
@@ -23,7 +23,7 @@ pub struct IncompatibleDataContractSchemaError {
     new_schema: Value,
 }
 
-impl IncompatibleDataContractSchemaError {
+impl IncompatibleDocumentSchemaError {
     pub fn new(
         data_contract_id: Identifier,
         operation: String,
@@ -57,8 +57,8 @@ impl IncompatibleDataContractSchemaError {
     }
 }
 
-impl From<IncompatibleDataContractSchemaError> for ConsensusError {
-    fn from(err: IncompatibleDataContractSchemaError) -> Self {
+impl From<IncompatibleDocumentSchemaError> for ConsensusError {
+    fn from(err: IncompatibleDocumentSchemaError) -> Self {
         Self::BasicError(BasicError::IncompatibleDataContractSchemaError(err))
     }
 }

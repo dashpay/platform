@@ -97,6 +97,8 @@ class GrpcTransport {
         throw new MaxRetriesReachedError(responseError);
       }
 
+      console.error(error);
+
       const hasAddresses = await dapiAddressProvider.hasLiveAddresses();
       if (!hasAddresses) {
         throw new NoAvailableAddressesForRetryError(responseError);

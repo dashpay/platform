@@ -23,7 +23,7 @@ use derive_more::From;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
 
-pub(self) mod property_names {
+pub mod property_names {
     pub const KEEP_HISTORY: &str = "keepHistory";
     pub const DOCUMENTS_READ_ONLY: &str = "readOnly";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";

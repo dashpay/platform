@@ -63,6 +63,7 @@ impl ErrorWithCode for BasicError {
             Self::DataContractUniqueIndicesChangedError { .. } => 1053,
             Self::DataContractInvalidIndexDefinitionUpdateError { .. } => 1054,
             Self::DataContractHaveNewUniqueIndexError { .. } => 1055,
+            Self::DocumentTypeRemovedError { .. } => 1068,
 
             // Document
             Self::DataContractNotPresentError { .. } => 1018,

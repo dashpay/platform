@@ -1,11 +1,10 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use serde::Serialize;
 
 use dpp::consensus::basic::data_contract::{
-    DataContractInvalidIndexDefinitionUpdateError, IncompatibleDataContractSchemaError,
-    InvalidDataContractVersionError,
+    DataContractInvalidIndexDefinitionUpdateError, DocumentTypeRemovedError,
+    IncompatibleDocumentSchemaError, InvalidDataContractVersionError,
 };
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
@@ -15,22 +14,19 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::property_names;
 use dpp::data_contract::document_type::schema::{
-    get_operation_and_property_name_json, validate_schema_compatibility, EMPTY_JSON,
+    get_operation_and_property_name_json, validate_schema_compatibility,
 };
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::JsonValue;
-use dpp::platform_value::converter::serde_json::{
-    BTreeValueJsonConverter, BTreeValueRefJsonConverter,
-};
-use dpp::platform_value::{Value, ValueMap};
+use dpp::platform_value::Value;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::ProtocolError;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 
 use drive::grovedb::TransactionArg;
@@ -166,7 +162,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         if let Some(old_defs) = old_data_contract.schema_defs() {
             let Some(new_defs) = self.data_contract().schema_defs() else {
                 validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
-                    IncompatibleDataContractSchemaError::new(
+                    IncompatibleDocumentSchemaError::new(
                         self.data_contract().id(),
                         "remove".to_string(),
                         "$defs".to_string(),
@@ -191,12 +187,12 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             let diffs =
                 validate_schema_compatibility(&old_defs_json, &new_defs_json, platform_version)?;
 
-            if diffs.len() > 0 {
+            if !diffs.is_empty() {
                 let (operation_name, property_name) =
                     get_operation_and_property_name_json(&diffs[0]);
 
                 validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
-                    IncompatibleDataContractSchemaError::new(
+                    IncompatibleDocumentSchemaError::new(
                         self.data_contract().id(),
                         operation_name.to_owned(),
                         property_name.to_owned(),
@@ -209,16 +205,26 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             }
         }
 
-        for (document_type_name, old_document_schema) in old_data_contract.document_schemas() {
+        // Validate incompatible document schema changes
+        for (name, old_document_type) in old_data_contract.document_types() {
+            let old_document_schema = old_document_type.schema().clone();
+
             let old_document_schema_json: JsonValue = old_document_schema
                 .clone()
                 .try_into()
                 .map_err(ProtocolError::ValueError)?;
 
-            let new_document_schema = new_data_contract
-                .document_type_optional_for_name(&document_type_name)
-                .map(|document_type| document_type.schema().clone())
-                .unwrap_or(ValueMap::new().into());
+            let Some(new_document_type) = new_data_contract.document_type_optional_for_name(name)
+            else {
+                validation_result.add_error(DocumentTypeRemovedError::new(
+                    self.data_contract().id(),
+                    name.to_string(),
+                ));
+
+                return Ok(validation_result);
+            };
+
+            let new_document_schema = new_document_type.schema().clone();
 
             let new_document_schema_json: JsonValue = new_document_schema
                 .clone()
@@ -231,18 +237,73 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 platform_version,
             )?;
 
-            if diffs.len() > 0 {
+            if !diffs.is_empty() {
                 let (operation_name, property_name) =
                     get_operation_and_property_name_json(&diffs[0]);
 
                 validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
-                    IncompatibleDataContractSchemaError::new(
+                    IncompatibleDocumentSchemaError::new(
                         self.data_contract().id(),
                         operation_name.to_owned(),
                         property_name.to_owned(),
-                        old_document_schema.clone(),
+                        old_document_schema,
                         new_document_schema,
                     ),
+                ));
+
+                return Ok(validation_result);
+            }
+
+            // Validate that document type configuration is not changed.
+            if old_document_type.documents_mutable() != new_document_type.documents_mutable() {
+                validation_result.add_error(IncompatibleDocumentSchemaError::new(
+                    self.data_contract().id(),
+                    "replace".to_string(),
+                    property_names::DOCUMENTS_READ_ONLY.to_string(),
+                    old_document_schema,
+                    new_document_schema,
+                ));
+
+                return Ok(validation_result);
+            }
+
+            if old_document_type.documents_keep_history()
+                != old_document_type.documents_keep_history()
+            {
+                validation_result.add_error(IncompatibleDocumentSchemaError::new(
+                    self.data_contract().id(),
+                    "replace".to_string(),
+                    property_names::KEEP_HISTORY.to_string(),
+                    old_document_schema,
+                    new_document_schema,
+                ));
+
+                return Ok(validation_result);
+            }
+
+            if old_document_type.requires_identity_decryption_bounded_key()
+                != new_document_type.requires_identity_decryption_bounded_key()
+            {
+                validation_result.add_error(IncompatibleDocumentSchemaError::new(
+                    self.data_contract().id(),
+                    "replace".to_string(),
+                    property_names::REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY.to_string(),
+                    old_document_schema,
+                    new_document_schema,
+                ));
+
+                return Ok(validation_result);
+            }
+
+            if old_document_type.requires_identity_encryption_bounded_key()
+                != new_document_type.requires_identity_encryption_bounded_key()
+            {
+                validation_result.add_error(IncompatibleDocumentSchemaError::new(
+                    self.data_contract().id(),
+                    "replace".to_string(),
+                    property_names::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY.to_string(),
+                    old_document_schema,
+                    new_document_schema,
                 ));
 
                 return Ok(validation_result);

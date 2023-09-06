@@ -7,9 +7,9 @@ use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error
 use crate::consensus::basic::data_contract::{
     DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
     DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError,
-    DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError,
-    IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError,
-    InvalidDataContractVersionError, InvalidIndexPropertyTypeError,
+    DocumentTypeRemovedError, DuplicateIndexError, DuplicateIndexNameError,
+    IncompatibleDocumentSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
+    InvalidDataContractIdError, InvalidDataContractVersionError, InvalidIndexPropertyTypeError,
     InvalidIndexedPropertyConstraintError, InvalidJsonSchemaRefError,
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
@@ -135,7 +135,7 @@ pub enum BasicError {
     InvalidDataContractVersionError(InvalidDataContractVersionError),
 
     #[error(transparent)]
-    IncompatibleDataContractSchemaError(IncompatibleDataContractSchemaError),
+    IncompatibleDataContractSchemaError(IncompatibleDocumentSchemaError),
 
     #[error(transparent)]
     DataContractImmutablePropertiesUpdateError(DataContractImmutablePropertiesUpdateError),
@@ -294,6 +294,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     StateTransitionMaxSizeExceededError(StateTransitionMaxSizeExceededError),
+
+    #[error(transparent)]
+    DocumentTypeRemovedError(DocumentTypeRemovedError),
 }
 
 impl From<BasicError> for ConsensusError {

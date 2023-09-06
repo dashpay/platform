@@ -1,5 +1,5 @@
 use crate::buffer::Buffer;
-use dpp::consensus::basic::data_contract::IncompatibleDataContractSchemaError;
+use dpp::consensus::basic::data_contract::IncompatibleDocumentSchemaError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformSerializable;
@@ -7,11 +7,11 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IncompatibleDataContractSchemaError)]
 pub struct IncompatibleDataContractSchemaErrorWasm {
-    inner: IncompatibleDataContractSchemaError,
+    inner: IncompatibleDocumentSchemaError,
 }
 
-impl From<&IncompatibleDataContractSchemaError> for IncompatibleDataContractSchemaErrorWasm {
-    fn from(e: &IncompatibleDataContractSchemaError) -> Self {
+impl From<&IncompatibleDocumentSchemaError> for IncompatibleDataContractSchemaErrorWasm {
+    fn from(e: &IncompatibleDocumentSchemaError) -> Self {
         Self { inner: e.clone() }
     }
 }
