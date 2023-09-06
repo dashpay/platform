@@ -1,5 +1,5 @@
 use dpp::dashcore::{
-    blockdata::{script::Script, transaction::txout::TxOut},
+    blockdata::{script::ScriptBuf, transaction::txout::TxOut},
     consensus::encode::serialize,
 };
 
@@ -26,7 +26,7 @@ struct TxOutJS {
     #[serde(rename = "satoshis")]
     value: u64,
     #[serde(rename = "script")]
-    script_pubkey: Script,
+    script_pubkey: ScriptBuf,
 }
 
 #[derive(Serialize)]
