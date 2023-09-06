@@ -42,7 +42,6 @@ use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
-use dpp::platform_value::platform_value;
 use serde_json::{json, Value};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
@@ -426,7 +425,7 @@ where
                 height, round, block_hash.to_hex(),
                 block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
-            .into())
+                .into())
         } else {
             // we only want to sign the hash of the transaction
             let extensions = block_execution_context
@@ -482,7 +481,7 @@ where
                 height, round,block_hash.to_hex(),
                 block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
-            .into());
+                .into());
         }
 
         let got: withdrawal_txs::v0::WithdrawalTxs = vote_extensions.into();
@@ -592,17 +591,16 @@ where
             Ok(validation_result) => {
                 let platform_state = self.platform.state.read().unwrap();
                 let platform_version = platform_state.current_platform_version()?;
-                let validation_error = validation_result.errors.first();
+                let first_consensus_error = validation_result.errors.first();
 
-                let (code, info) = if let Some(validation_error) = validation_error {
-                    let serialized_error = platform_value!(validation_error
+                let (code, info) = if let Some(consensus_error) = first_consensus_error {
+                    let consensus_error_bytes = consensus_error
                         .serialize_to_bytes_with_platform_version(platform_version)
-                        .map_err(|e| ResponseException::from(Error::Protocol(e)))?);
+                        .map_err(|e| ResponseException::from(Error::Protocol(e)))?;
 
                     let error_data = json!({
-                        "message": "Drive check_tx error",
                         "data": {
-                            "serializedError": serialized_error
+                            "serializedError": consensus_error_bytes
                         }
                     });
 
@@ -611,8 +609,8 @@ where
                         .map_err(|e| e.to_string())?;
 
                     (
-                        validation_error.code(),
-                        encode(&error_data_buffer, Encoding::Base64),
+                        consensus_error.code(),
+                        encode(&consensus_error_bytes, Encoding::Base64),
                     )
                 } else {
                     // If there are no execution errors the code will be 0
@@ -623,6 +621,7 @@ where
                     .data
                     .map(|fee_result| fee_result.total_base_fee())
                     .unwrap_or_default();
+
                 Ok(ResponseCheckTx {
                     code,
                     data: vec![],
@@ -635,16 +634,17 @@ where
             }
             Err(error) => {
                 let error_data = json!({
-                    "message": "Drive check_tx system error",
-                    "error": error.to_string()
+                    "message": "Internal error",
                 });
 
                 let mut error_data_buffer: Vec<u8> = Vec::new();
                 ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
                     .map_err(|e| e.to_string())?;
 
+                tracing::error!(method = "check_tx", ?error, "check_tx failed");
+
                 Ok(ResponseCheckTx {
-                    code: 1, //todo: replace with error.code()
+                    code: 13, // Internal error gRPC code
                     data: vec![],
                     info: encode(&error_data_buffer, Encoding::Base64),
                     gas_wanted: 0 as SignedCredits,
