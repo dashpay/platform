@@ -1,3 +1,23 @@
+## [0.25.0-dev.20](https://github.com/dashpay/platform/compare/v0.25.0-dev.19...v0.25.0-dev.20) (2023-09-06)
+
+
+### Features
+
+* **drive:** better error handling on check_tx ([#1372](https://github.com/dashpay/platform/issues/1372))
+
+
+### Bug Fixes
+
+* **drive:** deserialization and identity not existing on check_tx ([#1371](https://github.com/dashpay/platform/issues/1371))
+
+## [0.25.0-dev.19](https://github.com/dashpay/platform/compare/v0.25.0-dev.18...v0.25.0-dev.19) (2023-09-06)
+
+
+### Bug Fixes
+
+* **dpp:** some contract options are updatable ([#1364](https://github.com/dashpay/platform/issues/1364))
+* **drive:** invalid mn operator reward type ([#1366](https://github.com/dashpay/platform/issues/1366))
+
 ## [0.25.0-dev.18](https://github.com/dashpay/platform/compare/v0.25.0-dev.17...v0.25.0-dev.18) (2023-09-04)
 
 
