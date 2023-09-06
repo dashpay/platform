@@ -7,6 +7,7 @@ use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::Revision;
 
 use dpp::version::PlatformVersion;
+use dpp::voting::resource_vote::ResourceVote;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -68,6 +69,14 @@ pub enum IdentityOperationType {
         identity_id: [u8; 32],
         /// The revision we are updating to
         revision: Revision,
+    },
+
+    /// Updates an identities revision.
+    MasternodeResourceVote {
+        /// The pro tx hash of the masternode
+        pro_tx_hash: [u8; 32],
+        /// The resource vote
+        resource_vote: ResourceVote,
     },
 }
 
@@ -158,6 +167,10 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 estimated_costs_only_with_layer_info,
                 platform_version,
             )?]),
+            IdentityOperationType::MasternodeResourceVote {
+                identity_id,
+                resource_vote,
+            } => {}
         }
     }
 }
