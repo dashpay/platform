@@ -977,7 +977,7 @@ mod test {
             data_contract
                 .config_mut()
                 .set_keeps_previous_contract_versions(true);
-            data_contract.config_mut().set_allow_contract_update(false);
+            data_contract.config_mut().set_allow_contract_update(true);
 
             platform
                 .drive

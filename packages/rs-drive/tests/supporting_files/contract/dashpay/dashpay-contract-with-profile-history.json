@@ -6,7 +6,7 @@
   "documentSchemas": {
     "profile": {
       "type": "object",
-      "documentsKeepHistory": true,
+      "keepHistory": true,
       "indices": [
         {
           "properties": [

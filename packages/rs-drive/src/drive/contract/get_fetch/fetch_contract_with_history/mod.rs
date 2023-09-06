@@ -192,7 +192,7 @@ mod tests {
         data_contract
             .config_mut()
             .set_keeps_previous_contract_versions(true);
-        data_contract.config_mut().set_allow_contract_update(false);
+        data_contract.config_mut().set_allow_contract_update(true);
 
         let original_data_contract = data_contract.clone();
 

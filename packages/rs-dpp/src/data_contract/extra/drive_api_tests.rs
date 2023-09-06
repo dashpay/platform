@@ -198,7 +198,7 @@ mod test {
         assert!(contract.config().documents_mutability_contract_default());
         assert!(!contract.config().documents_keep_history_contract_default());
 
-        contract.config.set_allow_contract_update(true);
+        contract.config.set_allow_contract_update(false);
         contract.config.set_keeps_previous_contract_versions(true);
         contract
             .config
@@ -217,7 +217,7 @@ mod test {
             deserialized_contract.config(),
             DataContractConfig::V0(DataContractConfigV0 {
                 allow_contract_deletion: false,
-                allow_contract_update: true,
+                allow_contract_update: false,
                 keeps_previous_contract_versions: true,
                 documents_mutability_contract_default: false,
                 documents_keep_history_contract_default: true,
@@ -245,7 +245,7 @@ mod test {
         assert!(contract_v0.config.documents_mutability_contract_default());
         assert!(!contract_v0.config.documents_keep_history_contract_default());
 
-        contract_v0.config.set_allow_contract_update(true);
+        contract_v0.config.set_allow_contract_update(false);
         contract_v0
             .config
             .set_keeps_previous_contract_versions(true);
@@ -267,7 +267,7 @@ mod test {
             deserialized_contract.as_v0().unwrap().config,
             DataContractConfig::V0(DataContractConfigV0 {
                 allow_contract_deletion: false,
-                allow_contract_update: true,
+                allow_contract_update: false,
                 keeps_previous_contract_versions: true,
                 documents_mutability_contract_default: false,
                 documents_keep_history_contract_default: true,

@@ -6,7 +6,7 @@
   "documentSchemas": {
     "person": {
       "type": "object",
-      "documentsKeepHistory": true,
+      "keepHistory": true,
       "indices": [
         {
           "properties": [

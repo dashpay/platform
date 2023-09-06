@@ -30,6 +30,7 @@ use dpp::state_transition::data_contract_update_transition::accessors::DataContr
 use dpp::ProtocolError;
 
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 
 use drive::grovedb::TransactionArg;
@@ -95,6 +96,13 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         };
 
         let old_data_contract = &contract_fetch_info.contract;
+
+        // Return an error if contract update is not allowed
+        if !old_data_contract.config().is_contract_update_allowed() {
+            validation_result.add_error(DataContractIsReadonlyError::new(new_data_contract.id()));
+
+            return Ok(validation_result);
+        }
 
         let new_version = new_data_contract.version();
         let old_version = old_data_contract.version();

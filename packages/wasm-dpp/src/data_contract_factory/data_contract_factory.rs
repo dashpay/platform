@@ -69,9 +69,9 @@ impl DataContractFactoryWasm {
         let identifier = Identifier::from_bytes(&owner_id)
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
-        //todo: contract config
+
         self.0
-            .create_with_value_config(identifier, documents_object, contract_config, None)
+            .create(identifier, documents_object, contract_config, None)
             .map(Into::into)
             .with_js_error()
     }
