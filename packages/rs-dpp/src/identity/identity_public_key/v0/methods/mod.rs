@@ -28,7 +28,7 @@ impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
                         )));
                     }
                 };
-                Ok(key.pubkey_hash().into_inner())
+                Ok(key.pubkey_hash().to_byte_array())
             }
             KeyType::BLS12_381 => {
                 if self.data.len() != 48 {
