@@ -42,7 +42,6 @@ use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
-use dpp::platform_value::platform_value;
 use serde_json::{json, Value};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
@@ -645,7 +644,7 @@ where
                 tracing::error!(method = "check_tx", ?error, "check_tx failed");
 
                 Ok(ResponseCheckTx {
-                    code: 13,
+                    code: 13, // Internal error gRPC code
                     data: vec![],
                     info: encode(&error_data_buffer, Encoding::Base64),
                     gas_wanted: 0 as SignedCredits,
