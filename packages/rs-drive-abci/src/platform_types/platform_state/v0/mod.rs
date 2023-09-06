@@ -99,29 +99,29 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
                         quorum_type,
                         quorum_extended_info
                             .into_iter()
-                            .map(|(k, v)| (k.into_inner().into(), v))
+                            .map(|(k, v)| (k.to_byte_array().into(), v))
                             .collect(),
                     )
                 })
                 .collect(),
             current_validator_set_quorum_hash: value
                 .current_validator_set_quorum_hash
-                .into_inner()
+                .to_byte_array()
                 .into(),
             next_validator_set_quorum_hash: value
                 .next_validator_set_quorum_hash
-                .map(|quorum_hash| quorum_hash.into_inner().into()),
+                .map(|quorum_hash| quorum_hash.to_byte_array().into()),
             validator_sets: value
                 .validator_sets
                 .into_iter()
-                .map(|(k, v)| (k.into_inner().into(), v))
+                .map(|(k, v)| (k.to_byte_array().into(), v))
                 .collect(),
             full_masternode_list: value
                 .full_masternode_list
                 .into_iter()
                 .map(|(k, v)| {
                     Ok((
-                        k.into_inner().into(),
+                        k.to_byte_array().into(),
                         v.try_into_platform_versioned(platform_version)?,
                     ))
                 })
@@ -131,7 +131,7 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
                 .into_iter()
                 .map(|(k, v)| {
                     Ok((
-                        k.into_inner().into(),
+                        k.to_byte_array().into(),
                         v.try_into_platform_versioned(platform_version)?,
                     ))
                 })
@@ -155,31 +155,31 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
                         quorum_type,
                         quorum_extended_info
                             .into_iter()
-                            .map(|(k, v)| (QuorumHash::from_inner(k.to_buffer()), v))
+                            .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
                             .collect(),
                     )
                 })
                 .collect(),
-            current_validator_set_quorum_hash: QuorumHash::from_inner(
+            current_validator_set_quorum_hash: QuorumHash::from_byte_array(
                 value.current_validator_set_quorum_hash.to_buffer(),
             ),
             next_validator_set_quorum_hash: value
                 .next_validator_set_quorum_hash
-                .map(|bytes| QuorumHash::from_inner(bytes.to_buffer())),
+                .map(|bytes| QuorumHash::from_byte_array(bytes.to_buffer())),
             validator_sets: value
                 .validator_sets
                 .into_iter()
-                .map(|(k, v)| (QuorumHash::from_inner(k.to_buffer()), v))
+                .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
                 .collect(),
             full_masternode_list: value
                 .full_masternode_list
                 .into_iter()
-                .map(|(k, v)| (ProTxHash::from_inner(k.to_buffer()), v.into()))
+                .map(|(k, v)| (ProTxHash::from_byte_array(k.to_buffer()), v.into()))
                 .collect(),
             hpmn_masternode_list: value
                 .hpmn_masternode_list
                 .into_iter()
-                .map(|(k, v)| (ProTxHash::from_inner(k.to_buffer()), v.into()))
+                .map(|(k, v)| (ProTxHash::from_byte_array(k.to_buffer()), v.into()))
                 .collect(),
             initialization_information: value.initialization_information,
         }
@@ -204,7 +204,7 @@ impl PlatformStateV0 {
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
             quorums_extended_info: Default::default(),
-            current_validator_set_quorum_hash: Default::default(),
+            current_validator_set_quorum_hash: QuorumHash::all_zeros(),
             next_validator_set_quorum_hash: None,
             validator_sets: Default::default(),
             full_masternode_list: Default::default(),

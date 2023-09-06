@@ -54,10 +54,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use dashcore_rpc::dashcore::{
-        hashes::hex::{FromHex, ToHex},
-        BlockHash,
-    };
+    use dashcore_rpc::dashcore::BlockHash;
+    use std::str::FromStr;
 
     use serde_json::json;
 
@@ -77,7 +75,7 @@ mod tests {
             .expect_get_block_hash()
             .withf(|height| *height == 1)
             .returning(|_| {
-                Ok(BlockHash::from_hex(
+                Ok(BlockHash::from_str(
                     "0000000000000000000000000000000000000000000000000000000000000000",
                 )
                 .unwrap())
@@ -87,7 +85,7 @@ mod tests {
             .expect_get_block_hash()
             .withf(|height| *height == 2)
             .returning(|_| {
-                Ok(BlockHash::from_hex(
+                Ok(BlockHash::from_str(
                     "1111111111111111111111111111111111111111111111111111111111111111",
                 )
                 .unwrap())
@@ -96,7 +94,8 @@ mod tests {
         mock_rpc_client
             .expect_get_block_json()
             .withf(|bh| {
-                bh.to_hex() == "0000000000000000000000000000000000000000000000000000000000000000"
+                hex::encode(bh)
+                    == "0000000000000000000000000000000000000000000000000000000000000000"
             })
             .returning(|_| {
                 Ok(json!({
@@ -107,7 +106,8 @@ mod tests {
         mock_rpc_client
             .expect_get_block_json()
             .withf(|bh| {
-                bh.to_hex() == "1111111111111111111111111111111111111111111111111111111111111111"
+                hex::encode(bh)
+                    == "1111111111111111111111111111111111111111111111111111111111111111"
             })
             .returning(|_| {
                 Ok(json!({

@@ -40,7 +40,6 @@ use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::platform_value::platform_value;
 use serde_json::{json, Value};
@@ -70,6 +69,7 @@ use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
+use dpp::dashcore::hashes::Hash;
 use dpp::fee::SignedCredits;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -423,8 +423,8 @@ where
         )? {
             Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round, block_hash.to_hex(),
-                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
+                height, round, hex::encode(block_hash),
+                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| hex::encode(block_hash)).unwrap_or("None".to_string())
             )))
             .into())
         } else {
@@ -434,7 +434,7 @@ where
                 .keys()
                 .map(|tx_id| ExtendVoteExtension {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
-                    extension: tx_id.to_vec(),
+                    extension: tx_id.to_byte_array().to_vec(),
                 })
                 .collect();
             Ok(proto::ResponseExtendVote {
@@ -479,8 +479,8 @@ where
         )? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received verify vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round,block_hash.to_hex(),
-                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
+                height, round, hex::encode(block_hash),
+                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| hex::encode(block_hash)).unwrap_or("None".to_string())
             )))
             .into());
         }
@@ -491,7 +491,7 @@ where
             .keys()
             .map(|tx_id| ExtendVoteExtension {
                 r#type: VoteExtensionType::ThresholdRecover as i32,
-                extension: tx_id.to_vec(),
+                extension: tx_id.to_byte_array().to_vec(),
             })
             .collect::<Vec<_>>()
             .into();

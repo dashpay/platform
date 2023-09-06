@@ -72,7 +72,7 @@ impl FetchAssetLockProofTxOutV0 for AssetLockProof {
                         return Ok(ValidationResult::new_with_error(
                             BasicError::IdentityAssetLockTransactionIsNotFoundError(
                                 IdentityAssetLockTransactionIsNotFoundError::new(
-                                    transaction_hash.as_hash().into_inner(),
+                                    transaction_hash.to_byte_array(),
                                 ),
                             )
                             .into(),
@@ -106,7 +106,7 @@ impl FetchAssetLockProofTxOutV0 for AssetLockProof {
                                     return Ok(ValidationResult::new_with_error(
                                         BasicError::IdentityAssetLockTransactionIsNotFoundError(
                                             IdentityAssetLockTransactionIsNotFoundError::new(
-                                                transaction_hash.as_hash().into_inner(),
+                                                transaction_hash.to_byte_array(),
                                             ),
                                         )
                                         .into(),
