@@ -87,7 +87,7 @@ pub trait FromProof<Req> {
 ///
 /// It defines a single method `get_quorum_public_key` which retrieves the public key of a given quorum.
 #[cfg_attr(feature = "uniffi", uniffi::export(callback_interface))]
-#[cfg_attr(feature = "mock", mockall::automock)]
+#[cfg_attr(feature = "mocks", mockall::automock)]
 pub trait QuorumInfoProvider: Send + Sync {
     /// Fetches the public key for a specified quorum.
     ///
@@ -109,7 +109,7 @@ pub trait QuorumInfoProvider: Send + Sync {
     ) -> Result<[u8; 48], Error>; // public key is 48 bytes
 }
 
-#[cfg_attr(feature = "mock", mockall::automock)]
+#[cfg_attr(feature = "mocks", mockall::automock)]
 impl FromProof<platform::GetIdentityRequest> for Identity {
     type Response = platform::GetIdentityResponse;
 
@@ -207,7 +207,7 @@ impl FromProof<platform::GetIdentityByPublicKeyHashesRequest> for Identity {
     }
 }
 
-#[cfg_attr(feature = "mock", mockall::automock)]
+#[cfg_attr(feature = "mocks", mockall::automock)]
 impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
     type Response = platform::GetIdentityKeysResponse;
 
@@ -365,7 +365,7 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
     Ok(request_type)
 }
 
-#[cfg_attr(feature = "mock", mockall::automock)]
+#[cfg_attr(feature = "mocks", mockall::automock)]
 impl FromProof<platform::GetIdentityRequest> for IdentityBalance {
     type Response = platform::GetIdentityBalanceResponse;
 
@@ -412,7 +412,7 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalance {
     }
 }
 
-#[cfg_attr(feature = "mock", mockall::automock)]
+#[cfg_attr(feature = "mocks", mockall::automock)]
 impl FromProof<platform::GetIdentityRequest> for IdentityBalanceAndRevision {
     type Response = platform::GetIdentityBalanceAndRevisionResponse;
 
@@ -459,7 +459,7 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalanceAndRevision {
     }
 }
 
-#[cfg_attr(feature = "mock", mockall::automock)]
+#[cfg_attr(feature = "mocks", mockall::automock)]
 impl FromProof<platform::GetDataContractRequest> for DataContract {
     type Response = platform::GetDataContractResponse;
 
@@ -508,7 +508,7 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
     }
 }
 
-#[cfg_attr(feature = "mock", mockall::automock)]
+#[cfg_attr(feature = "mocks", mockall::automock)]
 impl FromProof<platform::GetDataContractsRequest> for DataContracts {
     type Response = platform::GetDataContractsResponse;
 
@@ -620,7 +620,7 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
     }
 }
 
-// #[cfg_attr(feature = "mock", mockall::automock)]
+// #[cfg_attr(feature = "mocks", mockall::automock)]
 impl<'dq, Q> FromProof<Q> for Documents
 where
     Q: TryInto<DriveQuery<'dq>> + Clone + 'dq,

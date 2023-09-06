@@ -48,8 +48,8 @@ uniffi = { git = "https://github.com/mozilla/uniffi-rs", features = [
 ], optional = true }
 
 [features]
-default = ["mock", "json"]
+default = ["mocks", "json"]
 bindgen = ["uniffi/cli", "dep:camino"]
-mock = ["drive/mockall", "dep:mockall"]
+mocks = ["drive/mockall", "dep:mockall"]
 json = ["dep:serde_json"]
 uniffi = ["dep:uniffi"]
