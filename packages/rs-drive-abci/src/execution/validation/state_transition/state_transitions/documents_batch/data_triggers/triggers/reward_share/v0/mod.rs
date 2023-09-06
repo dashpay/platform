@@ -246,7 +246,7 @@ mod test {
             collateral_hash: Txid::from_str("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash"),
             collateral_index: 0,
             collateral_address: [0;20],
-            operator_reward: 0,
+            operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.2.3.4:1234").unwrap(),
                 registered_height: 0,
@@ -277,7 +277,7 @@ mod test {
             collateral_hash: Txid::from_str("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash"),
             collateral_index: 0,
             collateral_address: [0;20],
-            operator_reward: 0,
+            operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.2.3.5:1234").unwrap(),
                 registered_height: 0,

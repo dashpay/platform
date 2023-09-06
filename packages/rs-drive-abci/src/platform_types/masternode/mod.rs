@@ -10,7 +10,7 @@ mod accessors;
 pub mod v0;
 
 /// `Masternode` represents a masternode on the network.
-#[derive(Clone, PartialEq, Eq, Debug, Encode, Decode)]
+#[derive(Clone, PartialEq, Debug, Encode, Decode)]
 pub enum Masternode {
     /// Version 0
     V0(MasternodeV0),
