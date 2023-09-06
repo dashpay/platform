@@ -11,6 +11,12 @@ impl DataContractConfig {
         new_config: &DataContractConfig,
         contract_id: Identifier,
     ) -> SimpleConsensusValidationResult {
+        if !self.is_contract_update_allowed() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractIsReadonlyError::new(contract_id).into(),
+            );
+        }
+
         if new_config != self {
             return SimpleConsensusValidationResult::new_with_error(
                 DataContractConfigUpdateError::new(
