@@ -52,6 +52,7 @@ criterion = "0.3.5"
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
+anyhow = "1.0.71"
 dpp = { path = "../rs-dpp", features = [
   "drive",
   "document-cbor-conversion",
