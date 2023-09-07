@@ -723,6 +723,35 @@ impl<K, T> Length for BTreeMap<K, Option<T>> {
     }
 }
 
+/// Implement Length trait for a type
+///
+/// # Arguments
+///
+/// * `$object`: The type for which to implement Length trait
+/// * `$len`: A closure that returns the length of the object; if ommitted, defaults to 1
+macro_rules! define_length {
+    ($object:ty,$len:expr) => {
+        impl Length for $object {
+            fn count_some(&self) -> usize {
+                $len(self)
+            }
+        }
+    };
+    ($object:ty) => {
+        define_length!($object, |_| 1);
+    };
+}
+
+define_length!(DataContract);
+define_length!(DataContractHistory, |d: &DataContractHistory| d.len());
+// define_length!(DataContracts, |d: &DataContracts| d.count_some());
+define_length!(Document);
+// define_length!(Documents, |x: &Documents| x.len());
+define_length!(Identity);
+define_length!(IdentityBalance);
+define_length!(IdentityBalanceAndRevision);
+// define_length!(IdentityPublicKeys, |d: &IdentityPublicKeys| d.count_some());
+
 #[macro_export]
 macro_rules! get_proof {
     ($response:expr, $result_type:ty) => {{

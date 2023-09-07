@@ -1,5 +1,5 @@
-use dpp::prelude::Identifier;
-use rs_sdk::crud::Readable;
+use dpp::prelude::{DataContract, Identifier};
+use rs_sdk::platform::Fetch;
 
 include!("common.rs");
 
@@ -10,7 +10,7 @@ async fn test_data_contract_read_not_found() {
 
     let api = setup_api();
 
-    let result = rs_sdk::platform::data_contract::SdkDataContract::read(&api, &id).await;
+    let result = DataContract::fetch(&api, id).await;
 
     assert!(matches!(
         result,

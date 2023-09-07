@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-platform_integration_tests = [ ]
+mocks = ["dep:mockall"]
+platform_integration_tests = []
+
 
 [dependencies]
 backon = "0.4.1"
@@ -15,6 +17,8 @@ rand = { version = "0.8.5", features = ["small_rng"] }
 thiserror = "1.0.41"
 tonic = "0.9.2"
 tracing = "0.1.37"
+mockall = { version = "0.11", optional = true }
+
 
 [dev-dependencies]
 tokio = { version = "1.32.0", features = ["macros"] }

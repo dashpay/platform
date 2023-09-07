@@ -102,7 +102,10 @@ include!("utils.rs");
 macro_rules! test_maybe_from_proof {
     ($name:ident,$req:ty,$resp:ty,$object:ty,$vector:expr,$expected:expr) => {
         #[test]
-        fn $name() {
+        fn $name()
+        where
+            $object: FromProof<$req> + Length,
+        {
             enable_logs();
 
             let expected: Result<usize, drive_proof_verifier::Error> = $expected;
@@ -119,11 +122,7 @@ macro_rules! test_maybe_from_proof {
                 ), // Note: not tested
                 Ok(None) => assert!(expected.expect("Expected error, got None") == 0),
                 Ok(Some(o)) => {
-                    let object: TestedObject = o.into();
-                    assert_eq!(
-                        expected.expect("Expected error, got Some"),
-                        object.count_some()
-                    );
+                    assert_eq!(expected.expect("Expected error, got Some"), o.count_some());
                 }
             }
         }
@@ -361,44 +360,9 @@ test_maybe_from_proof! {
     Ok(0)
 }
 
-// ==== UTILS ==== //
-
-#[derive(derive_more::From)]
-enum TestedObject {
-    DataContract(DataContract),
-    DataContractHistory(DataContractHistory),
-    DataContracts(DataContracts),
-    Document(Document),
-    Documents(Documents),
-    Identity(Identity),
-    IdentityBalance(IdentityBalance),
-    IdentityBalanceAndRevision(IdentityBalanceAndRevision),
-    IdentityPublicKeys(IdentityPublicKeys),
-}
-
-impl Length for TestedObject {
-    fn count_some(&self) -> usize {
-        use TestedObject::*;
-        match self {
-            DataContract(_d) => 1,
-            DataContractHistory(d) => d.len(),
-            DataContracts(d) => d.count_some(),
-            Identity(_d) => 1,
-            IdentityBalance(_d) => 1,
-            IdentityBalanceAndRevision(_d) => 1,
-            IdentityPublicKeys(d) => d.count_some(),
-            Document(_d) => 1,
-            Documents(d) => d.len(),
-        }
-    }
-}
-
+// As some IDEs don't support tests generted my macros, you might want to
+// manually call all tests here.
 #[test]
 fn run_test() {
     data_contracts_no_history_1_ok()
-}
-
-#[test]
-pub fn test_ok() {
-    identity_keys_good_identity_wrong_keys()
 }

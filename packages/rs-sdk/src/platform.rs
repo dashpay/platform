@@ -5,10 +5,29 @@
 // generated types. Later these re-exports could be swapped with actual rs-sdk's requests
 // and while it will change the substance, the API structure will remain the same.
 
-pub use dapi_grpc::platform::v0::{self as proto};
-pub use rs_dapi_client::DapiClient as PlatformClient;
+mod document_query;
+mod fetch;
+mod list;
+mod query;
 
-pub mod data_contract;
-pub mod document;
-pub mod document_query;
-pub mod identity;
+/// Client for the Platform API.
+pub type PlatformClient = rs_dapi_client::DapiClient;
+
+pub use dapi_grpc::platform::v0::{self as proto};
+pub use dpp::document::Document;
+pub use dpp::prelude::{
+    DataContract, Identifier, Identity, IdentityPublicKey, Revision, TimestampMillis,
+};
+pub use {document_query::DocumentQuery, fetch::Fetch, list::List, query::Query};
+
+// use crate::{error::Error, sdk::Sdk};
+// TODO this will change, not tested at all
+// #[async_trait::async_trait]
+// pub trait Modify<A: Sdk, W>
+// where
+//     Self: Sized,
+// {
+//     async fn create(self, api: &A, wallet: &W) -> Result<Self, Error>;
+//     async fn update(self, api: &A, wallet: &W) -> Result<Self, Error>;
+//     async fn delete(self, api: &A, wallet: &W) -> Result<(), Error>;
+// }

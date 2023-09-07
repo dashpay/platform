@@ -2,22 +2,27 @@
 
 use std::fmt::Debug;
 
+use dpp::document::Document;
 use drive_proof_verifier::proof::from_proof::Length;
-use rs_sdk::crud::{Readable, SdkQuery};
-use rs_sdk::platform::document::SdkDocument;
-use rs_sdk::platform::document_query::SdkDocumentQuery;
+use drive_proof_verifier::FromProof;
+use rs_dapi_client::transport::TransportRequest;
+use rs_sdk::platform::DocumentQuery;
+use rs_sdk::platform::{Fetch, Query};
 
 include!("common.rs");
 
-async fn test_read<API: Sdk, O: Readable<API>, Q: SdkQuery<O::Identifier>>(
+async fn test_read<API: rs_sdk::Sdk, O: Fetch<API>, Q: Query<O::Request>>(
     api: &API,
-    id: &Q,
+    id: Q,
     expected: Result<usize, rs_sdk::error::Error>,
-) -> Result<O, rs_sdk::error::Error>
+) -> Result<Option<O>, rs_sdk::error::Error>
 where
-    O: Length + Debug + Clone,
+    O: Debug + Clone + Send,
+    Option<O>: Length,
+    <O as FromProof<<O as Fetch<API>>::Request>>::Response:
+        From<<<O as Fetch<API>>::Request as TransportRequest>::Response>,
 {
-    let result: Result<O, rs_sdk::error::Error> = O::read(api, id).await;
+    let result = O::fetch(api, id).await;
 
     match expected {
         Ok(count) => {
@@ -52,7 +57,7 @@ async fn document_read() {
     let data_contract_id = base64_identifier(DATA_CONTRACT_ID);
     let document_id = base64_identifier(DOCUMENT_ID);
 
-    let query = SdkDocumentQuery::new_with_document_id(
+    let query = DocumentQuery::new_with_document_id(
         &api,
         data_contract_id,
         DOCUMENT_TYPE_NAME,
@@ -61,7 +66,7 @@ async fn document_read() {
     .await
     .expect("create SdkDocumentQuery");
 
-    let _res: Result<SdkDocument, rs_sdk::error::Error> = test_read(&api, &query, Ok(1)).await;
+    let _res: Result<Option<Document>, rs_sdk::error::Error> = test_read(&api, query, Ok(1)).await;
 }
 
 pub fn setup_logs() {

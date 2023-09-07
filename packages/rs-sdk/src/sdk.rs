@@ -10,8 +10,19 @@ pub use rs_dapi_client::AddressList;
 
 #[async_trait::async_trait]
 pub trait Sdk: Send + Sync {
-    async fn platform_client(&self) -> RwLockWriteGuard<crate::platform::PlatformClient>;
+    async fn platform_client<'a>(&self) -> RwLockWriteGuard<'a, crate::platform::PlatformClient>
+    where
+        'life0: 'a;
     fn quorum_info_provider<'a>(&'a self) -> Result<&'a dyn QuorumInfoProvider, Error>;
+}
+
+mockall::mock! {
+    pub DashPlatformSdk {}
+    #[async_trait::async_trait]
+    impl Sdk for DashPlatformSdk {
+        async fn platform_client<'a>(&self) -> RwLockWriteGuard<'a, crate::platform::PlatformClient>;
+        fn quorum_info_provider<'a>(&'a self) -> Result<&'a dyn QuorumInfoProvider, Error>;
+    }
 }
 
 pub struct DashPlatformSdk {
@@ -34,7 +45,10 @@ impl DashPlatformSdk {
 
 #[async_trait::async_trait]
 impl Sdk for DashPlatformSdk {
-    async fn platform_client(&self) -> RwLockWriteGuard<crate::platform::PlatformClient> {
+    async fn platform_client<'a>(&self) -> RwLockWriteGuard<'a, crate::platform::PlatformClient>
+    where
+        'life0: 'a,
+    {
         self.dapi.write().await
     }
     fn quorum_info_provider<'a>(&'a self) -> Result<&'a dyn QuorumInfoProvider, Error> {

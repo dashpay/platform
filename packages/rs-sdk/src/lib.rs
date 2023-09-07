@@ -7,9 +7,8 @@ pub mod error;
 
 pub mod core;
 
-pub mod crud;
-
 pub mod sdk;
 
-pub use crud::*;
+#[cfg(feature = "mocks")]
+pub use sdk::MockDashPlatformSdk;
 pub use sdk::{DashPlatformSdk, Sdk};

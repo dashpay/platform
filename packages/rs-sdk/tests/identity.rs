@@ -1,5 +1,5 @@
 use dpp::{identity::accessors::IdentityGettersV0, prelude::Identifier};
-use rs_sdk::crud::Readable;
+use rs_sdk::platform::Fetch;
 
 include!("common.rs");
 
@@ -13,9 +13,10 @@ async fn test_identity_read() {
 
     let api = setup_api();
 
-    let identity = rs_sdk::platform::identity::SdkIdentity::read(&api, &id)
+    let identity = dpp::prelude::Identity::fetch(&api, id)
         .await
-        .unwrap();
+        .unwrap()
+        .expect("identity should exist");
 
-    assert_eq!(identity.inner.id(), &id);
+    assert_eq!(identity.id(), &id);
 }
