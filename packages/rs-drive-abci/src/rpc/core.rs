@@ -1,5 +1,4 @@
 use dashcore_rpc::dashcore::ephemerealdata::chain_lock::ChainLock;
-use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult, GetChainTipsResult,
@@ -7,7 +6,7 @@ use dashcore_rpc::dashcore_rpc_json::{
 };
 use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
-use dpp::dashcore::InstantLock;
+use dpp::dashcore::{hashes::Hash, InstantLock};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -179,7 +178,7 @@ impl CoreRPCLike for DefaultCoreRPC {
         } = self.inner.get_best_chain_lock()?;
         Ok(CoreChainLock {
             core_block_height: height,
-            core_block_hash: blockhash.to_vec(),
+            core_block_hash: blockhash.to_byte_array().to_vec(),
             signature,
         })
     }
@@ -260,12 +259,12 @@ impl CoreRPCLike for DefaultCoreRPC {
             max_height
         );
 
-        let request_id = instant_lock.request_id()?.to_hex();
+        let request_id = hex::encode(instant_lock.request_id()?);
 
         retry!(self.inner.get_verifyislock(
             request_id.as_str(),
             &instant_lock.txid.to_hex(),
-            &instant_lock.signature.to_hex(),
+            hex::encode(instant_lock.signature).as_str(),
             max_height,
         ))
     }
@@ -286,8 +285,8 @@ impl CoreRPCLike for DefaultCoreRPC {
         );
 
         retry!(self.inner.get_verifychainlock(
-            chain_lock.block_hash.to_hex().as_str(),
-            chain_lock.signature.to_hex().as_str(),
+            hex::encode(chain_lock.block_hash).as_str(),
+            hex::encode(chain_lock.signature).as_str(),
             max_height
         ))
     }

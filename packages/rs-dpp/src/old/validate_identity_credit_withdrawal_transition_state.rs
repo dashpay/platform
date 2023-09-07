@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::sync::Arc;
 
 use anyhow::Result;
-use dashcore::{consensus, BlockHeader};
+use dashcore::{consensus, Header as BlockHeader};
 use platform_value::platform_value;
 
 use crate::consensus::signature::IdentityNotFoundError;

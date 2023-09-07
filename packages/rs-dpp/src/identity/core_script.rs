@@ -6,7 +6,7 @@ use dashcore::blockdata::opcodes;
 use std::fmt;
 use std::ops::Deref;
 
-use dashcore::{Script as DashcoreScript, Script};
+use dashcore::{ScriptBuf as DashcoreScript, ScriptBuf};
 use platform_value::string_encoding::{self, Encoding};
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -40,24 +40,24 @@ impl CoreScript {
     }
 
     pub fn random_p2pkh(rng: &mut StdRng) -> Self {
-        let mut bytes = vec![
-            opcodes::all::OP_DUP.into_u8(),
-            opcodes::all::OP_HASH160.into_u8(),
-            opcodes::all::OP_PUSHBYTES_20.into_u8(),
+        let mut bytes: Vec<u8> = vec![
+            opcodes::all::OP_DUP.to_u8(),
+            opcodes::all::OP_HASH160.to_u8(),
+            opcodes::all::OP_PUSHBYTES_20.to_u8(),
         ];
         bytes.append(&mut rng.gen::<[u8; 20]>().to_vec());
-        bytes.push(opcodes::all::OP_EQUALVERIFY.into_u8());
-        bytes.push(opcodes::all::OP_CHECKSIG.into_u8());
+        bytes.push(opcodes::all::OP_EQUALVERIFY.to_u8());
+        bytes.push(opcodes::all::OP_CHECKSIG.to_u8());
         Self::from_bytes(bytes)
     }
 
     pub fn random_p2sh(rng: &mut StdRng) -> Self {
         let mut bytes = vec![
-            opcodes::all::OP_HASH160.into_u8(),
-            opcodes::all::OP_PUSHBYTES_20.into_u8(),
+            opcodes::all::OP_HASH160.to_u8(),
+            opcodes::all::OP_PUSHBYTES_20.to_u8(),
         ];
         bytes.append(&mut rng.gen::<[u8; 20]>().to_vec());
-        bytes.push(opcodes::all::OP_EQUAL.into_u8());
+        bytes.push(opcodes::all::OP_EQUAL.to_u8());
         Self::from_bytes(bytes)
     }
 }
@@ -88,7 +88,7 @@ impl Decode for CoreScript {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
         let bytes = Vec::<u8>::decode(decoder)?;
         // Create a CoreScript instance using the decoded DashCoreScript
-        Ok(CoreScript(Script(bytes.into_boxed_slice())))
+        Ok(CoreScript(ScriptBuf(bytes)))
     }
 }
 
@@ -122,7 +122,7 @@ impl<'de> BorrowDecode<'de> for CoreScript {
         }
 
         // Convert Vec<u8> to Box<[u8]> and create a DashCoreScript instance
-        let dash_core_script = DashcoreScript(bytes.into_boxed_slice());
+        let dash_core_script = DashcoreScript(bytes);
 
         // Create a CoreScript instance using the decoded DashCoreScript
         Ok(CoreScript(dash_core_script))

@@ -137,7 +137,7 @@ mod tests {
 
     use dpp::consensus::ConsensusError;
     use dpp::dashcore::secp256k1::Secp256k1;
-    use dpp::dashcore::{signer, KeyPair, Network, PrivateKey};
+    use dpp::dashcore::{key::KeyPair, signer, Network, PrivateKey};
 
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;

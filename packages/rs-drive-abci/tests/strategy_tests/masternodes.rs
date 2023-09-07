@@ -196,11 +196,11 @@ pub fn generate_test_masternodes(
             .expect("expected to get public key")
             .to_bytes()
             .to_vec();
-        let pro_tx_hash = ProTxHash::from_inner(rng.gen::<[u8; 32]>());
+        let pro_tx_hash = ProTxHash::from_byte_array(rng.gen::<[u8; 32]>());
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
             pro_tx_hash,
-            collateral_hash: Txid::from_inner(rng.gen::<[u8; 32]>()),
+            collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
             collateral_address: [0; 20],
             operator_reward: 0.0,
@@ -334,8 +334,8 @@ pub fn generate_test_masternodes(
             .to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Evo,
-            pro_tx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
-            collateral_hash: Txid::from_inner(rng.gen::<[u8; 32]>()),
+            pro_tx_hash: ProTxHash::from_byte_array(rng.gen::<[u8; 32]>()),
+            collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
             collateral_address: [0; 20],
             operator_reward: 0.0,
@@ -528,7 +528,7 @@ where
     (0..count)
         .enumerate()
         .map(|(index, _)| {
-            let quorum_hash: QuorumHash = QuorumHash::from_inner(rng.gen());
+            let quorum_hash: QuorumHash = QuorumHash::from_byte_array(rng.gen());
             let validator_pro_tx_hashes = proposers
                 .clone()
                 .filter(|m| m.node_type == MasternodeType::Evo)
