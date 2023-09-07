@@ -49,12 +49,15 @@ describe.skip('DataContractFactory', () => {
 
     it('should pass config', () => {
       const config = {
-        canBeDeleted: false,
-        readonly: false,
-        keepsHistory: true,
+        allowContractDeletion: false,
+        allowContractUpdate: true,
+        keepsPreviousContractVersions: false,
         documentsKeepHistoryContractDefault: false,
-        documentsMutableContractDefault: true,
+        documentsMutabilityContractDefault: true,
+        requiresIdentityDecryptionBoundedKey: null,
+        requiresIdentityEncryptionBoundedKey: null,
       };
+
       const contract = factory.create(
         dataContract.getOwnerId(),
         rawDataContract.documents,

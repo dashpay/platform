@@ -142,12 +142,15 @@ describe('Platform', () => {
       // here to avoid the error, as original contract has a non-default
       // value here
       fetchedDataContract.setConfig({
-        canBeDeleted: false,
-        readonly: false,
-        keepsHistory: true,
+        allowContractDeletion: false,
+        allowContractUpdate: true,
+        keepsPreviousContractVersions: false,
         documentsKeepHistoryContractDefault: false,
-        documentsMutableContractDefault: true,
+        documentsMutabilityContractDefault: true,
+        requiresIdentityDecryptionBoundedKey: null,
+        requiresIdentityEncryptionBoundedKey: null,
       });
+
       fetchedDataContract.setDocumentSchema(newDocumentType, {
         type: 'object',
         indices: [

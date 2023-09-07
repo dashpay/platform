@@ -261,11 +261,14 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
   );
 
   const config = {
-    canBeDeleted: false,
-    readonly: false,
-    keepsHistory: true,
+    $format_version: '0',
+    allowContractDeletion: false,
+    allowContractUpdate: true,
+    keepsPreviousContractVersions: false,
     documentsKeepHistoryContractDefault: false,
-    documentsMutableContractDefault: true,
+    documentsMutabilityContractDefault: true,
+    requiresIdentityDecryptionBoundedKey: null,
+    requiresIdentityEncryptionBoundedKey: null,
   };
 
   return factory.create(ownerId, documents, config);
