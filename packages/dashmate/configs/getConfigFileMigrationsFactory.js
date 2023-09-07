@@ -137,6 +137,15 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
           });
         return configFile;
       },
+      '0.25.0-dev.22': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.dapi.api.docker.image = base.get('platform.dapi.api.docker.image');
+            options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+          });
+        return configFile;
+      },
     };
   }
 
