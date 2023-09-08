@@ -617,7 +617,7 @@ where
 
                     (
                         consensus_error.code(),
-                        encode(&consensus_error_bytes, Encoding::Base64),
+                        encode(&error_data_buffer, Encoding::Base64),
                     )
                 } else {
                     // If there are no execution errors the code will be 0
