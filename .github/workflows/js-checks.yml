@@ -116,7 +116,7 @@ jobs:
 
       - name: Load Docker mount cache
         if: ${{ inputs.start-local-network }}
-        uses: dcginfra/buildkit-cache-dance/inject@main
+        uses: dcginfra/buildkit-cache-dance/inject@set-mtime
         with:
           bucket: multi-runner-linux-x64-platform-cache-gy9micic
           mounts: |
