@@ -37,12 +37,10 @@
 
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
-use ciborium::cbor;
 
-use crate::error::Error;
+use crate::error::{Error, ErrorCodes};
 use crate::rpc::core::CoreRPCLike;
 use dpp::errors::consensus::codes::ErrorWithCode;
-use serde_json::{json, Value};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{self as proto, ExtendVoteExtension, ResponseException};
@@ -72,9 +70,9 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
 use dpp::dashcore::hashes::Hash;
 use dpp::fee::SignedCredits;
+use dpp::platform_value::platform_value;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
-use serde_json::Map;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
@@ -600,20 +598,13 @@ where
                         .serialize_to_bytes_with_platform_version(platform_version)
                         .map_err(|e| ResponseException::from(Error::Protocol(e)))?;
 
-                    let error_data = cbor!({
-                        "data" => {
-                            "serializedError" => consensus_error_bytes
+                    let error_data_buffer = platform_value!({
+                        "data": {
+                            "serializedError": consensus_error_bytes
                         }
                     })
-                    .map_err(|err| {
-                        Error::Serialization(SerializationError::CorruptedSerialization(format!(
-                            "can't create cbor: {err}"
-                        )))
-                    })?;
-
-                    let mut error_data_buffer: Vec<u8> = Vec::new();
-                    ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
-                        .map_err(|e| e.to_string())?;
+                    .to_cbor_buffer()
+                    .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
 
                     (
                         consensus_error.code(),
@@ -640,23 +631,16 @@ where
                 })
             }
             Err(error) => {
-                let error_data = cbor!({
-                    "message" => "Internal error",
+                let error_data_buffer = platform_value!({
+                    "message": format!("Internal error {}", error.to_string()),
                 })
-                .map_err(|err| {
-                    Error::Serialization(SerializationError::CorruptedSerialization(format!(
-                        "can't create cbor: {err}"
-                    )))
-                })?;
-
-                let mut error_data_buffer: Vec<u8> = Vec::new();
-                ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
-                    .map_err(|e| e.to_string())?;
+                .to_cbor_buffer()
+                .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
 
                 tracing::error!(method = "check_tx", ?error, "check_tx failed");
 
                 Ok(ResponseCheckTx {
-                    code: 13, // Internal error gRPC code
+                    code: ErrorCodes::InternalError as u32, // Internal error gRPC code
                     data: vec![],
                     info: encode(&error_data_buffer, Encoding::Base64),
                     gas_wanted: 0 as SignedCredits,
@@ -674,12 +658,16 @@ where
         let RequestQuery { data, path, .. } = &request;
 
         let Some(platform_version) = PlatformVersion::get_maybe_current() else {
+            let error_data_buffer = platform_value!({
+                "message": "Platform not initialized",
+            })
+            .to_cbor_buffer()
+            .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
+
             let response = ResponseQuery {
-                //todo: right now just put GRPC error codes,
-                //  later we will use own error codes
-                code: 1,
+                code: ErrorCodes::InternalError as u32,
                 log: "".to_string(),
-                info: "Platform not initialized".to_string(),
+                info: encode(&error_data_buffer, Encoding::Base64),
                 index: 0,
                 key: vec![],
                 value: vec![],
@@ -707,16 +695,20 @@ where
                 "Unknown Drive error".to_string()
             };
 
-            let mut error_data = Map::new();
-            error_data.insert("message".to_string(), Value::String(error_message));
+            let error_data_buffer = platform_value!({
+                "message": error_message,
+            })
+            .to_cbor_buffer()
+            .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
 
-            let mut error_data_buffer: Vec<u8> = Vec::new();
-            ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
-                .map_err(|e| e.to_string())?;
-            // TODO(rs-drive-abci): restore different error codes?
+            // TODO(error-codes): restore different error codes?
             //   For now return error code 2, because it is recognized by DAPI as UNKNOWN error
             //   and error code 1 corresponds to CANCELED grpc request which is not suitable
-            (2, vec![], encode(&error_data_buffer, Encoding::Base64))
+            (
+                ErrorCodes::Unknown as u32,
+                vec![],
+                encode(&error_data_buffer, Encoding::Base64),
+            )
         };
 
         let response = ResponseQuery {
