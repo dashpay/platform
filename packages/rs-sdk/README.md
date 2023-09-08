@@ -23,6 +23,23 @@ The crud module provides a comprehensive interface for Create, Read, Update, and
 - Listable: This trait allows listing of data from the Dash Platform. It uses the SdkQuery to define the search criteria for the data to be listed.
 - Writable: This trait is currently under development. Once completed, it will enable modification of data on the Dash Platform.
 
+## Testability
+
+TODO
+
+As a developer, I want to execute code that uses rs-sdk without sending actual requests to the server.
+I can store requests (test vectors) as dapi_grpc objects, or JSON files on disk.
+
+The same code (but with different setup) should work when connected to the server.
+
+## Error handling
+
+TODO
+
+- use thiserror crate
+- prefer returning Error object
+- only panic on non-recoverable errors
+
 ## Logging
 
 This project uses the `tracing` crate for instrumentation and logging. The `tracing` ecosystem provides a powerful, flexible framework for adding structured, context-aware logs to your program.
