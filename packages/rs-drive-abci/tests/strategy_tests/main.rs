@@ -94,7 +94,7 @@ mod tests {
         for i in 0..n {
             let i_bytes = [i as u8; 32];
 
-            let hash = QuorumHash::from_inner(i_bytes);
+            let hash = QuorumHash::from_byte_array(i_bytes);
 
             let details = ExtendedQuorumDetails {
                 creation_height: i,
@@ -778,7 +778,7 @@ mod tests {
             .fetch_full_identities(
                 proposers
                     .into_iter()
-                    .map(|proposer| proposer.masternode.pro_tx_hash.into_inner())
+                    .map(|proposer| proposer.masternode.pro_tx_hash.to_byte_array())
                     .collect::<Vec<_>>()
                     .as_slice(),
                 None,
@@ -1698,6 +1698,8 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_identities() {
+        drive_abci::logging::init_for_tests(1); // Errors only. Use 5 to print everything
+
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![Operation {
@@ -2384,6 +2386,7 @@ mod tests {
 
     #[test]
     fn run_chain_stop_and_restart_with_rotation() {
+        drive_abci::logging::init_for_tests(1); // Errors only. Use 5 to print everything
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],

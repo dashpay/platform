@@ -1,6 +1,6 @@
 use std::convert::{TryFrom, TryInto};
 
-use dashcore::consensus::{Decodable, Encodable};
+use dashcore::consensus::{deserialize, Encodable};
 use dashcore::{InstantLock, Transaction, TxIn, TxOut};
 use platform_value::{BinaryData, Value};
 
@@ -164,9 +164,9 @@ impl TryFrom<RawInstantLock> for InstantAssetLockProof {
     type Error = ProtocolError;
 
     fn try_from(raw_instant_lock: RawInstantLock) -> Result<Self, Self::Error> {
-        let transaction = Transaction::consensus_decode(raw_instant_lock.transaction.as_slice())
+        let transaction = deserialize(raw_instant_lock.transaction.as_slice())
             .map_err(|e| ProtocolError::DecodingError(e.to_string()))?;
-        let instant_lock = InstantLock::consensus_decode(raw_instant_lock.instant_lock.as_slice())
+        let instant_lock = deserialize(raw_instant_lock.instant_lock.as_slice())
             .map_err(|e| ProtocolError::DecodingError(e.to_string()))?;
 
         Ok(Self {

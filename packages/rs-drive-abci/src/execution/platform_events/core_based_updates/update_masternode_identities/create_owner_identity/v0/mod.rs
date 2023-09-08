@@ -26,7 +26,7 @@ where
     }
 
     fn get_owner_identifier(masternode: &MasternodeListItem) -> Result<[u8; 32], Error> {
-        let masternode_identifier: [u8; 32] = masternode.pro_tx_hash.into_inner();
+        let masternode_identifier: [u8; 32] = masternode.pro_tx_hash.into();
         Ok(masternode_identifier)
     }
 }

@@ -3,7 +3,6 @@ use std::fmt::{Display, Formatter};
 
 use crate::consensus::basic::BasicError;
 use crate::errors::ProtocolError;
-use dashcore::hashes::hex::ToHex;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
@@ -24,7 +23,7 @@ pub struct IdentityAssetLockTransactionIsNotFoundError {
 
 impl Display for IdentityAssetLockTransactionIsNotFoundError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let hex = self.transaction_id.to_hex();
+        let hex = hex::encode(self.transaction_id);
         let message = format!("Asset Lock transaction {hex} is not found");
         f.write_str(&message)
     }

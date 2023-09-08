@@ -50,5 +50,5 @@ runs:
       shell: bash
       run: |
         sudo apt update -qq
-        sudo apt install -qq --yes clang
+        sudo apt install -qq --yes clang llvm
         sudo update-alternatives --set cc /usr/bin/clang

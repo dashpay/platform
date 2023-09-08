@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use dashcore::{consensus, BlockHeader};
+use dashcore::{consensus, Header as BlockHeader};
 use lazy_static::__Deref;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
