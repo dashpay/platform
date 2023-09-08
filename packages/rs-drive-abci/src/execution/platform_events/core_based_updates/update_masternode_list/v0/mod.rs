@@ -82,7 +82,7 @@ where
                 self.drive.remove_validators_proposed_app_versions(
                     removed_masternodes
                         .into_keys()
-                        .map(|pro_tx_hash| pro_tx_hash.into_inner()),
+                        .map(|pro_tx_hash| pro_tx_hash.into()),
                     Some(transaction),
                     &platform_version.drive,
                 )?;

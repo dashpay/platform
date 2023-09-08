@@ -45,6 +45,7 @@ console_error_panic_hook = { version = "0.1.7" }
 log = { version = "0.4.6" }
 wasm-logger = { version = "0.2.0" }
 num_enum = "0.5.7"
+hex = { version = "0.4" }
 
 wasm-bindgen-futures = "0.4.33"
 async-trait = "0.1.59"

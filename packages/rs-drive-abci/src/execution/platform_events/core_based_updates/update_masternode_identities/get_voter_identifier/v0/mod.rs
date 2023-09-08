@@ -23,7 +23,7 @@ where
         masternode: &MasternodeListItem,
         platform_version: &PlatformVersion,
     ) -> Result<[u8; 32], Error> {
-        let pro_tx_hash = &masternode.pro_tx_hash.into_inner();
+        let pro_tx_hash = &masternode.pro_tx_hash.into();
         let voting_address = &masternode.state.voting_address;
         Self::get_voter_identifier(pro_tx_hash, voting_address, platform_version)
     }

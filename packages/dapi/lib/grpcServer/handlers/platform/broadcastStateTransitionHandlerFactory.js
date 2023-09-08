@@ -41,7 +41,7 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
 
     if (jsonRpcError) {
       if (jsonRpcError.data === 'tx already exists in cache') {
-        throw new AlreadyExistsGrpcError('State transition already in chain', jsonRpcError);
+        throw new AlreadyExistsGrpcError('State transition already in chain');
       }
 
       const error = new Error();

@@ -7,9 +7,8 @@ use crate::strategy::{
     ValidatorVersionMigration,
 };
 use crate::verify_state_transitions::verify_state_transitions_were_executed;
-use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
+use dashcore_rpc::dashcore::{BlockHash, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, Bip9SoftforkStatus, DMNStateDiff, ExtendedQuorumDetails, MasternodeListDiff,
     MasternodeListItem, QuorumInfoResult, QuorumType, SoftforkType,
@@ -220,7 +219,7 @@ pub(crate) fn run_chain_for_strategy(
                 ExtendedQuorumDetails {
                     creation_height: 0,
                     quorum_index: None,
-                    mined_block_hash: Default::default(),
+                    mined_block_hash: BlockHash::all_zeros(),
                     num_valid_members: 0,
                     health_ratio: 0.0,
                 },
@@ -314,7 +313,7 @@ pub(crate) fn run_chain_for_strategy(
         .returning(move |_, quorum_hash: &QuorumHash, _| {
             Ok(quorums_info
                 .get(quorum_hash)
-                .unwrap_or_else(|| panic!("expected to get quorum {}", quorum_hash.to_hex()))
+                .unwrap_or_else(|| panic!("expected to get quorum {}", hex::encode(quorum_hash)))
                 .clone())
         });
 
@@ -543,7 +542,7 @@ pub(crate) fn start_chain_for_strategy(
                         sum: Some(Bls12381(validator_in_quorum.public_key.to_bytes().to_vec())),
                     }),
                     power: 100,
-                    pro_tx_hash: validator_in_quorum.pro_tx_hash.to_vec(),
+                    pro_tx_hash: validator_in_quorum.pro_tx_hash.to_byte_array().to_vec(),
                     node_address: "".to_string(),
                 },
             )
@@ -553,7 +552,7 @@ pub(crate) fn start_chain_for_strategy(
                 current_quorum_with_test_info.public_key.to_bytes().to_vec(),
             )),
         }),
-        quorum_hash: current_quorum_hash.to_vec(),
+        quorum_hash: current_quorum_hash.to_byte_array().to_vec(),
     });
 
     let ResponseInitChain {
@@ -708,7 +707,7 @@ pub(crate) fn continue_chain_for_strategy(
             app_version,
         } = abci_app
             .mimic_execute_block(
-                proposer.pro_tx_hash.into_inner(),
+                proposer.pro_tx_hash.into(),
                 current_quorum_with_test_info,
                 proposed_version,
                 block_info,
@@ -764,7 +763,7 @@ pub(crate) fn continue_chain_for_strategy(
         if let Some(query_strategy) = &strategy.query_testing {
             query_strategy.query_chain_for_strategy(
                 &ProofVerification {
-                    quorum_hash: current_quorum_with_test_info.quorum_hash.as_inner(),
+                    quorum_hash: &current_quorum_with_test_info.quorum_hash.into(),
                     quorum_type: config.quorum_type(),
                     app_version,
                     chain_id: drive_abci::mimic::CHAIN_ID.to_string(),
@@ -783,7 +782,8 @@ pub(crate) fn continue_chain_for_strategy(
             )
         }
 
-        let next_quorum_hash = QuorumHash::from_inner(next_validator_set_hash.try_into().unwrap());
+        let next_quorum_hash =
+            QuorumHash::from_byte_array(next_validator_set_hash.try_into().unwrap());
         if current_quorum_hash != next_quorum_hash {
             current_quorum_hash = next_quorum_hash;
             i = 0;
@@ -801,7 +801,7 @@ pub(crate) fn continue_chain_for_strategy(
             .fetch_identities_balances(
                 &proposers_with_updates
                     .iter()
-                    .map(|proposer| proposer.pro_tx_hash().into_inner())
+                    .map(|proposer| proposer.pro_tx_hash().into())
                     .collect(),
                 None,
             )

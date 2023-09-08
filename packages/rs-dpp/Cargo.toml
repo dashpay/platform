@@ -21,8 +21,8 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
     "secp-recovery",
     "rand",
     "signer",
-    "use-serde",
-], default-features = false, branch = "feat/addons" }
+    "serde",
+], default-features = false, branch = "master" }
 env_logger = { version = "0.9" }
 enum-map = { version = "2.5.0"}
 futures = { version = "0.3" }

@@ -36,7 +36,7 @@ where
             return Ok(());
         };
 
-        let owner_identifier: [u8; 32] = pro_tx_hash.into_inner();
+        let owner_identifier: [u8; 32] = pro_tx_hash.to_byte_array();
 
         let key_request = IdentityKeysRequest {
             identity_id: owner_identifier,

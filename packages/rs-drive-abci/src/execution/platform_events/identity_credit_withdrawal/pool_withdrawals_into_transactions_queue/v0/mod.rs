@@ -148,8 +148,9 @@ where
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
+    use dashcore_rpc::dashcore::QuorumHash;
+    use dpp::dashcore::hashes::Hash;
 
     use dpp::data_contracts::SystemDataContract;
     use dpp::identifier::Identifier;
@@ -206,7 +207,7 @@ mod tests {
                     current_protocol_version_in_consensus: 0,
                     next_epoch_protocol_version: 0,
                     quorums_extended_info: Default::default(),
-                    current_validator_set_quorum_hash: Default::default(),
+                    current_validator_set_quorum_hash: QuorumHash::all_zeros(),
                     next_validator_set_quorum_hash: None,
                     validator_sets: Default::default(),
                     full_masternode_list: Default::default(),

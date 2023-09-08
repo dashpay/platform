@@ -137,7 +137,7 @@ mod tests {
 
     use dpp::consensus::ConsensusError;
     use dpp::dashcore::secp256k1::Secp256k1;
-    use dpp::dashcore::{signer, KeyPair, Network, PrivateKey};
+    use dpp::dashcore::{key::KeyPair, signer, Network, PrivateKey};
 
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -237,9 +237,6 @@ mod tests {
 
         let check_result = platform.check_tx(&tx).expect("expected to check tx");
 
-        dbg!(&check_result);
-        //assert!(check_result.errors.is_empty());
-
         let result = platform
             .platform
             .process_raw_state_transitions(
@@ -250,8 +247,6 @@ mod tests {
                 platform_version,
             )
             .expect("expected to process state transition");
-
-        dbg!(result);
     }
 
     #[test]
