@@ -37,6 +37,7 @@
 
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
+use ciborium::cbor;
 
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
@@ -56,6 +57,7 @@ use super::AbciError;
 
 use dpp::platform_value::string_encoding::{encode, Encoding};
 
+use crate::error::serialization::SerializationError;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
     BlockExecutionContextV0Setters,
@@ -598,11 +600,16 @@ where
                         .serialize_to_bytes_with_platform_version(platform_version)
                         .map_err(|e| ResponseException::from(Error::Protocol(e)))?;
 
-                    let error_data = json!({
-                        "data": {
+                    let error_data = cbor!({
+                        "data" => {
                             "serializedError": consensus_error_bytes
                         }
-                    });
+                    })
+                    .map_err(|err| {
+                        Error::Serialization(SerializationError::CorruptedSerialization(format!(
+                            "can't create cbor: {err}"
+                        )))
+                    })?;
 
                     let mut error_data_buffer: Vec<u8> = Vec::new();
                     ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
@@ -633,9 +640,14 @@ where
                 })
             }
             Err(error) => {
-                let error_data = json!({
-                    "message": "Internal error",
-                });
+                let error_data = cbor!({
+                    "message" => "Internal error",
+                })
+                .map_err(|err| {
+                    Error::Serialization(SerializationError::CorruptedSerialization(format!(
+                        "can't create cbor: {err}"
+                    )))
+                })?;
 
                 let mut error_data_buffer: Vec<u8> = Vec::new();
                 ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
