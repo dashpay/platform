@@ -67,7 +67,7 @@ jobs:
   test-suite:
     name: Run Platform Test Suite
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     timeout-minutes: 120
     steps:
       - name: Check out repo
@@ -178,7 +178,7 @@ jobs:
   test-suite-browsers:
     name: Run Platform Test Suite in Browsers
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     timeout-minutes: 120
     steps:
       - name: Login to DockerHub
@@ -289,7 +289,7 @@ jobs:
   codeql:
     name: Code security audit
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    if: ${{ github.event_name == 'push' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     permissions:
       actions: read
       contents: read
