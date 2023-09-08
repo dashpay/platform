@@ -136,7 +136,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     RUSTFLAGS="-C target-feature=-crt-static" \
-    CARGO_TARGET_DIR="/platform/target" \
+    CARGO_TARGET_DIR="/platform/target" CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     # TODO: Build wasm with build.rs
     # Meanwhile if you want to update wasm-bindgen you also need to update version in:
     #  - packages/wasm-dpp/Cargo.toml
@@ -170,6 +170,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo build \
         --profile "$CARGO_BUILD_PROFILE" \
         --package drive-abci && \
