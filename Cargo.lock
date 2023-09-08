@@ -1261,6 +1261,7 @@ dependencies = [
  "sqlparser",
  "tempfile",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -3967,7 +3968,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-abci"
 version = "0.13.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#00454dbc5d1e452e62ea0c4af7192404467a7655"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#f2b15b89f38a252dbd95f971ed813b3e53831abb"
 dependencies = [
  "bytes",
  "futures",
@@ -3982,12 +3983,13 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid 1.4.1",
 ]
 
 [[package]]
 name = "tenderdash-proto"
 version = "0.13.0-dev.2"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#00454dbc5d1e452e62ea0c4af7192404467a7655"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#f2b15b89f38a252dbd95f971ed813b3e53831abb"
 dependencies = [
  "bytes",
  "chrono",
@@ -4005,7 +4007,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto-compiler"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#00454dbc5d1e452e62ea0c4af7192404467a7655"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#f2b15b89f38a252dbd95f971ed813b3e53831abb"
 dependencies = [
  "fs_extra",
  "prost-build",
@@ -4536,6 +4538,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "79daa5ed5740825c40b389c5e50312b9c86df53fccd33f281df655642b43869d"
 dependencies = [
  "getrandom",
+ "rand",
 ]
 
 [[package]]

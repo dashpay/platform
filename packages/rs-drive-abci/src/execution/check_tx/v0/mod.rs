@@ -237,9 +237,6 @@ mod tests {
 
         let check_result = platform.check_tx(&tx).expect("expected to check tx");
 
-        dbg!(&check_result);
-        //assert!(check_result.errors.is_empty());
-
         let result = platform
             .platform
             .process_raw_state_transitions(
@@ -250,8 +247,6 @@ mod tests {
                 platform_version,
             )
             .expect("expected to process state transition");
-
-        dbg!(result);
     }
 
     #[test]
