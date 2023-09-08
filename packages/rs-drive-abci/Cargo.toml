@@ -53,7 +53,7 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
     "tracing-log",
 ], optional = false }
 atty = { version = "0.2.14", optional = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "bdbe283da23632559de7bd3278f8b83c551dc06a" }
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "8de550d9dd44fdf1404132570170f39979e8b2be" }
 # tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }
 anyhow = { version = "1.0.70" }
 lazy_static = "1.4.0"
