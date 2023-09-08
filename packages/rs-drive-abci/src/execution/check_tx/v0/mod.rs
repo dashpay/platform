@@ -247,12 +247,6 @@ mod tests {
                 platform_version,
             )
             .expect("expected to process state transition");
-
-        tracing::trace!(
-            ?check_result,
-            ?result,
-            "verify_check_tx_on_data_contract_create finished"
-        );
     }
 
     #[test]

@@ -101,7 +101,6 @@ where
                 .unwrap_or_default(),
         };
 
-        tracing::info!("info executed");
         Ok(response)
     }
 
@@ -110,6 +109,8 @@ where
         request: RequestInitChain,
     ) -> Result<ResponseInitChain, ResponseException> {
         self.start_transaction();
+        let chain_id = request.chain_id.to_string();
+
         // We need to drop the block execution context just in case init chain had already been called
         let mut block_execution_context = self.platform.block_execution_context.write().unwrap();
         let block_context = block_execution_context.take(); //drop the block execution context
@@ -133,7 +134,11 @@ where
 
         let app_hash = hex::encode(&response.app_hash);
 
-        tracing::info!(app_hash, "init chain executed");
+        tracing::info!(
+            app_hash,
+            chain_id,
+            "platform chain initialized, initial state is created"
+        );
         Ok(response)
     }
 
@@ -715,7 +720,6 @@ where
             height: self.platform.state.read().unwrap().height() as i64,
             codespace: "".to_string(),
         };
-        tracing::trace!("query executed");
 
         Ok(response)
     }
