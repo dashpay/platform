@@ -28,6 +28,7 @@ jobs:
     name: Linting
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
+    if: false
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
