@@ -602,7 +602,7 @@ where
 
                     let error_data = cbor!({
                         "data" => {
-                            "serializedError": consensus_error_bytes
+                            "serializedError" => consensus_error_bytes
                         }
                     })
                     .map_err(|err| {
