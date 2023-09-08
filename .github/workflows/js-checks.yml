@@ -155,6 +155,9 @@ jobs:
         with:
           name: dashpay/base
 
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+
       - name: Start local network
         if: ${{ inputs.start-local-network }}
         run: yarn start
