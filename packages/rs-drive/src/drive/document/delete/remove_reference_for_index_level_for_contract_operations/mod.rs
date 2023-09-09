@@ -13,6 +13,7 @@ use grovedb::batch::KeyInfoPath;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
+use dpp::data_contract::document_type::IndexType;
 
 impl Drive {
     /// Removes the terminal reference.
@@ -37,7 +38,7 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
-        unique: bool,
+        index_type: IndexType,
         any_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
@@ -59,7 +60,7 @@ impl Drive {
             0 => self.remove_reference_for_index_level_for_contract_operations_v0(
                 document_and_contract_info,
                 index_path_info,
-                unique,
+                index_type,
                 any_fields_null,
                 storage_flags,
                 previous_batch_operations,

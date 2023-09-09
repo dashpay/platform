@@ -7,6 +7,7 @@ use grovedb::{EstimatedLayerInformation, TransactionArg};
 
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
+use dpp::data_contract::document_type::IndexType;
 
 use crate::drive::defaults::{CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8};
 use crate::drive::document::document_reference_size;
@@ -26,7 +27,7 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
-        unique: bool,
+        index_type: IndexType,
         any_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,

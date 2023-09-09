@@ -5,12 +5,12 @@ impl From<MasternodeVoteTransitionV0> for MasternodeVoteTransitionActionV0 {
     fn from(value: MasternodeVoteTransitionV0) -> Self {
         let MasternodeVoteTransitionV0 {
             pro_tx_hash,
-            resource_vote,
+            vote,
             ..
         } = value;
         MasternodeVoteTransitionActionV0 {
             pro_tx_hash,
-            resource_vote,
+            vote,
         }
     }
 }
@@ -19,12 +19,12 @@ impl From<&MasternodeVoteTransitionV0> for MasternodeVoteTransitionActionV0 {
     fn from(value: &MasternodeVoteTransitionV0) -> Self {
         let MasternodeVoteTransitionV0 {
             pro_tx_hash,
-            resource_vote,
+            vote,
             ..
         } = value;
         MasternodeVoteTransitionActionV0 {
             pro_tx_hash: *pro_tx_hash,
-            resource_vote: *resource_vote,
+            vote: vote.clone(),
         }
     }
 }

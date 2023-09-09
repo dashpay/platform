@@ -5,13 +5,29 @@ use crate::data_contract::document_type::Index;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use std::collections::BTreeMap;
+use crate::data_contract::document_type::index_level::IndexType::{ContestedResourceIndex, NonUniqueIndex, UniqueIndex};
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum IndexType {
+    /// A normal non unique index
+    NonUniqueIndex,
+    /// A unique index, that means that the values for this index are unique
+    /// As long as one of the values is not nil
+    UniqueIndex,
+    /// A contested resource: This is a unique index but that can be contested through a resolution
+    /// The simplest to understand resolution is a masternode vote, but could also be something
+    /// like a bidding war.
+    /// For example the path/name in the dpns contract must be unique but it is a contested potentially
+    /// valuable resource.
+    ContestedResourceIndex,
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct IndexLevel {
     /// the lower index levels from this level
     sub_index_levels: BTreeMap<String, IndexLevel>,
     /// did an index terminate at this level
-    has_index_with_uniqueness: Option<bool>,
+    has_index_with_type: Option<IndexType>,
     /// unique level identifier
     level_identifier: u64,
 }
@@ -25,8 +41,8 @@ impl IndexLevel {
         &self.sub_index_levels
     }
 
-    pub fn has_index_with_uniqueness(&self) -> Option<bool> {
-        self.has_index_with_uniqueness
+    pub fn has_index_with_type(&self) -> Option<IndexType> {
+        self.has_index_with_type
     }
 
     /// Checks whether the given `rhs` IndexLevel is a subset of the current IndexLevel (`self`).
@@ -111,7 +127,7 @@ impl IndexLevel {
     ) -> Result<Self, ProtocolError> {
         let mut index_level = IndexLevel {
             sub_index_levels: Default::default(),
-            has_index_with_uniqueness: None,
+            has_index_with_type: None,
             level_identifier: 0,
         };
 
@@ -130,7 +146,7 @@ impl IndexLevel {
                         IndexLevel {
                             level_identifier: counter,
                             sub_index_levels: Default::default(),
-                            has_index_with_uniqueness: None,
+                            has_index_with_type: None,
                         }
                     });
 
@@ -140,7 +156,7 @@ impl IndexLevel {
                     // It means there are two indices with the same combination of properties.
 
                     // We might need to take into account the sorting order when we have it
-                    if current_level.has_index_with_uniqueness.is_some() {
+                    if current_level.has_index_with_type.is_some() {
                         // an index already exists return error
                         return Err(ConsensusError::BasicError(BasicError::DuplicateIndexError(
                             DuplicateIndexError::new(
@@ -151,7 +167,13 @@ impl IndexLevel {
                         .into());
                     }
 
-                    current_level.has_index_with_uniqueness = Some(index.unique);
+                    let index_type = if index.unique {
+                        UniqueIndex
+                    } else {
+                        NonUniqueIndex
+                    };
+
+                    current_level.has_index_with_type = Some(index_type);
                 }
             }
 
@@ -173,7 +195,7 @@ impl IndexLevel {
                             IndexLevel {
                                 level_identifier: counter,
                                 sub_index_levels: Default::default(),
-                                has_index_with_uniqueness: None,
+                                has_index_with_type: None,
                             }
                         });
 
@@ -183,7 +205,7 @@ impl IndexLevel {
                         // It means there are two indices with the same combination of properties.
 
                         // We might need to take into account the sorting order when we have it
-                        if current_level.has_index_with_uniqueness.is_some() {
+                        if current_level.has_index_with_type.is_some() {
                             // an index already exists return error
                             return Err(ConsensusError::BasicError(
                                 BasicError::DuplicateIndexError(DuplicateIndexError::new(
@@ -194,7 +216,7 @@ impl IndexLevel {
                             .into());
                         }
 
-                        current_level.has_index_with_uniqueness = Some(false);
+                        current_level.has_index_with_type = Some(ContestedResourceIndex);
                     }
                 }
             }

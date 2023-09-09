@@ -37,7 +37,7 @@ impl MasternodeVoteStateTransitionStateValidationV0 for MasternodeVoteTransition
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let maybe_existing_identity_balance = platform.drive.fetch_identity_balance(
-            self.identity_id().to_buffer(),
+            self.pro_tx_hash().to_buffer(),
             tx,
             platform_version,
         )?;
