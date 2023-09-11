@@ -416,33 +416,19 @@ where
                     "block execution context must be set in block begin handler for extend vote",
                 )))?;
 
-        let block_state_info = &block_execution_context.block_state_info();
-
-        if !block_state_info.matches_current_block(
-            height as u64,
-            round as u32,
-            block_hash.clone(),
-        )? {
-            Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
-                "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round, hex::encode(block_hash),
-                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| hex::encode(block_hash)).unwrap_or("None".to_string())
-            )))
-                .into())
-        } else {
-            // we only want to sign the hash of the transaction
-            let extensions = block_execution_context
-                .withdrawal_transactions()
-                .keys()
-                .map(|tx_id| ExtendVoteExtension {
-                    r#type: VoteExtensionType::ThresholdRecover as i32,
-                    extension: tx_id.to_byte_array().to_vec(),
-                })
-                .collect();
-            Ok(proto::ResponseExtendVote {
-                vote_extensions: extensions,
+        // we only want to sign the hash of the transaction
+        let extensions = block_execution_context
+            .withdrawal_transactions()
+            .keys()
+            .map(|tx_id| ExtendVoteExtension {
+                r#type: VoteExtensionType::ThresholdRecover as i32,
+                extension: tx_id.to_byte_array().to_vec(),
             })
-        }
+            .collect();
+
+        Ok(proto::ResponseExtendVote {
+            vote_extensions: extensions,
+        })
     }
 
     /// Todo: Verify vote extension not really needed because extend vote is deterministic
@@ -471,21 +457,6 @@ where
         let platform_version = block_execution_context
             .block_platform_state()
             .current_platform_version()?;
-
-        let block_state_info = &block_execution_context.block_state_info();
-
-        if !block_state_info.matches_current_block(
-            height as u64,
-            round as u32,
-            block_hash.clone(),
-        )? {
-            return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
-                "received verify vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round, hex::encode(block_hash),
-                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| hex::encode(block_hash)).unwrap_or("None".to_string())
-            )))
-                .into());
-        }
 
         let got: withdrawal_txs::v0::WithdrawalTxs = vote_extensions.into();
         let expected = block_execution_context
