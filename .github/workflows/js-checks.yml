@@ -28,7 +28,6 @@ jobs:
     name: Linting
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
-    if: false
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -121,7 +120,7 @@ jobs:
 
       - name: Load Docker mount cache
         if: ${{ inputs.start-local-network }}
-        uses: dcginfra/buildkit-cache-dance/inject@aws-cli
+        uses: dcginfra/buildkit-cache-dance/inject@main
         with:
           bucket: multi-runner-linux-x64-platform-cache-gy9micic
           mounts: |
@@ -160,9 +159,6 @@ jobs:
         with:
           name: dashpay/base
 
-      # - name: Setup tmate session
-      #   uses: mxschmitt/action-tmate@v3
-
       - name: Start local network
         if: ${{ inputs.start-local-network }}
         run: yarn start
@@ -178,7 +174,7 @@ jobs:
 
       - name: Store Docker mount cache
         if: ${{ inputs.start-local-network }}
-        uses: dcginfra/buildkit-cache-dance/extract@aws-cli
+        uses: dcginfra/buildkit-cache-dance/extract@main
         with:
           bucket: multi-runner-linux-x64-platform-cache-gy9micic
           mounts: |
