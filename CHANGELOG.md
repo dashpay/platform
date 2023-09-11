@@ -1,3 +1,17 @@
+## [0.25.0-dev.22](https://github.com/dashpay/platform/compare/v0.25.0-dev.21...v0.25.0-dev.22) (2023-09-08)
+
+
+### Features
+
+* **drive:** improve ABCI logging ([#1382](https://github.com/dashpay/platform/issues/1382))
+* support a new dashcore version ([#1368](https://github.com/dashpay/platform/issues/1368))
+
+
+### Bug Fixes
+
+* **drive:** -32603 error code on broadcast ([#1381](https://github.com/dashpay/platform/issues/1381))
+* **drive:** query fix for 1 value and no where clause ([#1378](https://github.com/dashpay/platform/issues/1378))
+
 ## [0.25.0-dev.21](https://github.com/dashpay/platform/compare/v0.25.0-dev.20...v0.25.0-dev.21) (2023-09-07)
 
 ## [0.25.0-dev.20](https://github.com/dashpay/platform/compare/v0.25.0-dev.19...v0.25.0-dev.20) (2023-09-06)
