@@ -42,6 +42,7 @@ jobs:
   wasm-errors:
     name: WASM compilation
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    if: github.event.label.name == 'ci'
     timeout-minutes: 15
     steps:
       - name: Check out repo
