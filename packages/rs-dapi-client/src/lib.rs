@@ -5,7 +5,7 @@
 mod address_list;
 mod dapi_client;
 mod request_settings;
-pub mod transport;
+mod transport;
 
 use futures::{future::BoxFuture, FutureExt};
 pub use http::Uri;

@@ -94,14 +94,3 @@ impl AddressList {
             .choose(&mut rng)
     }
 }
-
-impl<U: Into<http::Uri>> From<Vec<U>> for AddressList {
-    fn from(value: Vec<U>) -> Self {
-        let mut address_list = Self::new();
-        for uri in value {
-            address_list.add_uri(uri.into());
-        }
-
-        address_list
-    }
-}
