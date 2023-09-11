@@ -66,25 +66,13 @@ jobs:
         with:
           firefox-version: "latest"
 
-      - name: Install tree
-        run: sudo apt-get install -y tree
-
       - name: Check out repo
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
-      - name: Check timestamps
-        run: |
-          pwd
-          ls -lha
-          tree -D -L 4 --timefmt '%Y-%m-%d %H:%M:%S' .
-
       - name: Restore timestamps
         uses: chetan/git-restore-mtime-action@v2
-
-      - name: Check timestamps
-        run: tree -D -L 4 --timefmt '%Y-%m-%d %H:%M:%S' .
 
       - name: Login to DockerHub
         uses: docker/login-action@v2
