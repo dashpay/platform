@@ -416,6 +416,32 @@ where
                     "block execution context must be set in block begin handler for extend vote",
                 )))?;
 
+        let block_state_info = &block_execution_context.block_state_info();
+
+        if !block_state_info.matches_current_block(
+            height as u64,
+            round as u32,
+            block_hash.clone(),
+        )? {
+            let expected_block_hash = block_state_info
+                .block_hash()
+                .map(hex::encode)
+                .unwrap_or("None".to_string());
+
+            let error = Error::from(AbciError::RequestForWrongBlockReceived(format!(
+                "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
+                height,
+                round,
+                hex::encode(block_hash),
+                block_state_info.height(),
+                block_state_info.round(),
+                expected_block_hash,
+            )))
+                .into();
+
+            return Err(error);
+        }
+
         // we only want to sign the hash of the transaction
         let extensions = block_execution_context
             .withdrawal_transactions()
