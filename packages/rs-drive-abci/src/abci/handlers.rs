@@ -424,38 +424,26 @@ where
             round as u32,
             block_hash.clone(),
         )? {
-            let expected_block_hash = block_state_info
-                .block_hash()
-                .map(hex::encode)
-                .unwrap_or("None".to_string());
-
-            let error = Error::from(AbciError::RequestForWrongBlockReceived(format!(
+            Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height,
-                round,
-                hex::encode(block_hash),
-                block_state_info.height(),
-                block_state_info.round(),
-                expected_block_hash,
+                height, round, hex::encode(block_hash),
+                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| hex::encode(block_hash)).unwrap_or("None".to_string())
             )))
-                .into();
-
-            return Err(error);
-        }
-
-        // we only want to sign the hash of the transaction
-        let extensions = block_execution_context
-            .withdrawal_transactions()
-            .keys()
-            .map(|tx_id| ExtendVoteExtension {
-                r#type: VoteExtensionType::ThresholdRecover as i32,
-                extension: tx_id.to_byte_array().to_vec(),
+                .into())
+        } else {
+            // we only want to sign the hash of the transaction
+            let extensions = block_execution_context
+                .withdrawal_transactions()
+                .keys()
+                .map(|tx_id| ExtendVoteExtension {
+                    r#type: VoteExtensionType::ThresholdRecover as i32,
+                    extension: tx_id.to_byte_array().to_vec(),
+                })
+                .collect();
+            Ok(proto::ResponseExtendVote {
+                vote_extensions: extensions,
             })
-            .collect();
-
-        Ok(proto::ResponseExtendVote {
-            vote_extensions: extensions,
-        })
+        }
     }
 
     /// Todo: Verify vote extension not really needed because extend vote is deterministic
