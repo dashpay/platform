@@ -465,11 +465,10 @@ where
         let _timer = crate::metrics::abci_request_duration("verify_vote_extension");
 
         let proto::RequestVerifyVoteExtension {
-            hash: block_hash,
-            validator_pro_tx_hash: _,
             height,
             round,
             vote_extensions,
+            ..
         } = request;
 
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
