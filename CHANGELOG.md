@@ -1,3 +1,15 @@
+## [0.25.0-dev.23](https://github.com/dashpay/platform/compare/v0.25.0-dev.22...v0.25.0-dev.23) (2023-09-11)
+
+
+### Bug Fixes
+
+* **drive:** vote extensions are allowed only for the current block and round ([#1387](https://github.com/dashpay/platform/issues/1387))
+
+
+### Continuous Integration
+
+* macos dashmate build broken due to bad qemu install ([#1374](https://github.com/dashpay/platform/issues/1374))
+
 ## [0.25.0-dev.22](https://github.com/dashpay/platform/compare/v0.25.0-dev.21...v0.25.0-dev.22) (2023-09-08)
 
 
