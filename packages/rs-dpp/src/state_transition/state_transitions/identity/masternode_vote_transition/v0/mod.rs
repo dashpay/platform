@@ -13,11 +13,11 @@ use crate::identity::KeyID;
 use crate::prelude::Identifier;
 
 use crate::protocol_error::ProtocolError;
+use crate::voting::Vote;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
-use crate::voting::Vote;
 
 #[derive(
     Debug,
@@ -53,10 +53,10 @@ mod test {
 
     use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
     use crate::voting::resource_vote::ResourceVote;
+    use crate::voting::Vote;
     use platform_value::Identifier;
     use rand::Rng;
     use std::fmt::Debug;
-    use crate::voting::Vote;
 
     fn test_masternode_vote_transition<
         T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
@@ -76,7 +76,13 @@ mod test {
         let mut rng = rand::thread_rng();
         let transition = MasternodeVoteTransitionV0 {
             pro_tx_hash: Identifier::random(),
-            vote: Vote::ContestedDocumentResourceVote(Identifier::random(), "hello".to_string(), "index_1".to_string(), vec![], ResourceVote::TowardsIdentity(Identifier::random())),
+            vote: Vote::ContestedDocumentResourceVote(
+                Identifier::random(),
+                "hello".to_string(),
+                "index_1".to_string(),
+                vec![],
+                ResourceVote::TowardsIdentity(Identifier::random()),
+            ),
             signature_public_key_id: rng.gen(),
             signature: [0; 65].to_vec().into(),
         };

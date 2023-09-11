@@ -5,9 +5,9 @@ use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::{AllReference, AllSubtrees};
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
+use dpp::data_contract::document_type::IndexType;
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
-use dpp::data_contract::document_type::IndexType;
 
 use crate::drive::defaults::{CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8};
 use crate::drive::document::document_reference_size;

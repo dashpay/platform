@@ -1,8 +1,8 @@
 mod transformer;
 
 use dpp::platform_value::Identifier;
-use serde::{Deserialize, Serialize};
 use dpp::voting::Vote;
+use serde::{Deserialize, Serialize};
 
 /// action v0
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]

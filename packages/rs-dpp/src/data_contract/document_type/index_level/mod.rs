@@ -1,11 +1,13 @@
 use crate::consensus::basic::data_contract::DuplicateIndexError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::data_contract::document_type::index_level::IndexType::{
+    ContestedResourceIndex, NonUniqueIndex, UniqueIndex,
+};
 use crate::data_contract::document_type::Index;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use std::collections::BTreeMap;
-use crate::data_contract::document_type::index_level::IndexType::{ContestedResourceIndex, NonUniqueIndex, UniqueIndex};
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum IndexType {

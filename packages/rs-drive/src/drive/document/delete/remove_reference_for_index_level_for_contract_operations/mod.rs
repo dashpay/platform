@@ -11,9 +11,9 @@ use dpp::version::PlatformVersion;
 
 use grovedb::batch::KeyInfoPath;
 
+use dpp::data_contract::document_type::IndexType;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
-use dpp::data_contract::document_type::IndexType;
 
 impl Drive {
     /// Removes the terminal reference.

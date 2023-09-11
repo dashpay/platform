@@ -4,23 +4,16 @@ use dpp::state_transition::state_transitions::identity::masternode_vote_transiti
 impl From<MasternodeVoteTransitionV0> for MasternodeVoteTransitionActionV0 {
     fn from(value: MasternodeVoteTransitionV0) -> Self {
         let MasternodeVoteTransitionV0 {
-            pro_tx_hash,
-            vote,
-            ..
+            pro_tx_hash, vote, ..
         } = value;
-        MasternodeVoteTransitionActionV0 {
-            pro_tx_hash,
-            vote,
-        }
+        MasternodeVoteTransitionActionV0 { pro_tx_hash, vote }
     }
 }
 
 impl From<&MasternodeVoteTransitionV0> for MasternodeVoteTransitionActionV0 {
     fn from(value: &MasternodeVoteTransitionV0) -> Self {
         let MasternodeVoteTransitionV0 {
-            pro_tx_hash,
-            vote,
-            ..
+            pro_tx_hash, vote, ..
         } = value;
         MasternodeVoteTransitionActionV0 {
             pro_tx_hash: *pro_tx_hash,
