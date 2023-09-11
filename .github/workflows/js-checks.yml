@@ -27,7 +27,7 @@ jobs:
   lint:
     name: Linting
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    if: github.event.label.name == 'ci'
+    if: contains( github.event.pull_request.labels.*.name, 'ci')
     timeout-minutes: 15
     steps:
       - name: Check out repo
@@ -57,9 +57,8 @@ jobs:
   test:
     name: Tests
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    if: github.event.label.name == 'ci'
+    if: ${{ !inputs.skip-tests && contains( github.event.pull_request.labels.*.name, 'ci') }}
     timeout-minutes: 120
-    if: ${{ !inputs.skip-tests }}
     steps:
       - name: Setup Firefox
         uses: browser-actions/setup-firefox@latest
