@@ -416,6 +416,7 @@ where
                     "block execution context must be set in block begin handler for extend vote",
                 )))?;
 
+        // Verify Tenderdash that it called this handler correctly
         let block_state_info = &block_execution_context.block_state_info();
 
         if !block_state_info.matches_current_block(
@@ -453,11 +454,10 @@ where
         let _timer = crate::metrics::abci_request_duration("verify_vote_extension");
 
         let proto::RequestVerifyVoteExtension {
-            hash: block_hash,
-            validator_pro_tx_hash: _,
             height,
             round,
             vote_extensions,
+            ..
         } = request;
 
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
@@ -471,21 +471,6 @@ where
         let platform_version = block_execution_context
             .block_platform_state()
             .current_platform_version()?;
-
-        let block_state_info = &block_execution_context.block_state_info();
-
-        if !block_state_info.matches_current_block(
-            height as u64,
-            round as u32,
-            block_hash.clone(),
-        )? {
-            return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
-                "received verify vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round, hex::encode(block_hash),
-                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| hex::encode(block_hash)).unwrap_or("None".to_string())
-            )))
-                .into());
-        }
 
         let got: withdrawal_txs::v0::WithdrawalTxs = vote_extensions.into();
         let expected = block_execution_context
