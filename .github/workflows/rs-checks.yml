@@ -65,8 +65,10 @@ jobs:
 
   check_structure_changes:
     runs-on: ubuntu-latest
-
     steps:
+      - name: Debug github context
+        run: echo "${{ toJson(github) }}"
+
       - name: Checkout base commit
         uses: actions/checkout@v2
         with:
