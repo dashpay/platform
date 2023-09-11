@@ -416,6 +416,7 @@ where
                     "block execution context must be set in block begin handler for extend vote",
                 )))?;
 
+        // Verify Tenderdash that it called this handler correctly
         let block_state_info = &block_execution_context.block_state_info();
 
         if !block_state_info.matches_current_block(
