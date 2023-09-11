@@ -37,6 +37,7 @@
 
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
+use ciborium::cbor;
 
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
@@ -56,6 +57,7 @@ use super::AbciError;
 
 use dpp::platform_value::string_encoding::{encode, Encoding};
 
+use crate::error::serialization::SerializationError;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
     BlockExecutionContextV0Setters,
@@ -101,7 +103,6 @@ where
                 .unwrap_or_default(),
         };
 
-        tracing::info!(method = "info", ?request, ?response, "info executed");
         Ok(response)
     }
 
@@ -110,14 +111,13 @@ where
         request: RequestInitChain,
     ) -> Result<ResponseInitChain, ResponseException> {
         self.start_transaction();
+        let chain_id = request.chain_id.to_string();
+
         // We need to drop the block execution context just in case init chain had already been called
         let mut block_execution_context = self.platform.block_execution_context.write().unwrap();
         let block_context = block_execution_context.take(); //drop the block execution context
         if block_context.is_some() {
-            tracing::debug!(
-                method = "init_chain",
-                "block context was present during init chain, restarting"
-            );
+            tracing::warn!("block context was present during init chain, restarting");
             let protocol_version_in_consensus = self.platform.config.initial_protocol_version;
             let mut platform_state_write_guard = self.platform.state.write().unwrap();
             *platform_state_write_guard = PlatformState::default_with_protocol_versions(
@@ -136,7 +136,11 @@ where
 
         let app_hash = hex::encode(&response.app_hash);
 
-        tracing::info!(method = "init_chain", app_hash, "init chain executed");
+        tracing::info!(
+            app_hash,
+            chain_id,
+            "platform chain initialized, initial state is created"
+        );
         Ok(response)
     }
 
@@ -166,7 +170,6 @@ where
 
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
             tracing::info!(
-                method = "prepare_proposal",
                 "chain lock update to height {} at block {}",
                 core_chain_lock_update.core_block_height,
                 request.height
@@ -529,7 +532,6 @@ where
             })
         } else {
             tracing::error!(
-                method = "verify_vote_extension",
                 ?got,
                 ?expected,
                 ?validation_result.errors,
@@ -598,11 +600,16 @@ where
                         .serialize_to_bytes_with_platform_version(platform_version)
                         .map_err(|e| ResponseException::from(Error::Protocol(e)))?;
 
-                    let error_data = json!({
-                        "data": {
-                            "serializedError": consensus_error_bytes
+                    let error_data = cbor!({
+                        "data" => {
+                            "serializedError" => consensus_error_bytes
                         }
-                    });
+                    })
+                    .map_err(|err| {
+                        Error::Serialization(SerializationError::CorruptedSerialization(format!(
+                            "can't create cbor: {err}"
+                        )))
+                    })?;
 
                     let mut error_data_buffer: Vec<u8> = Vec::new();
                     ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
@@ -610,7 +617,7 @@ where
 
                     (
                         consensus_error.code(),
-                        encode(&consensus_error_bytes, Encoding::Base64),
+                        encode(&error_data_buffer, Encoding::Base64),
                     )
                 } else {
                     // If there are no execution errors the code will be 0
@@ -633,15 +640,20 @@ where
                 })
             }
             Err(error) => {
-                let error_data = json!({
-                    "message": "Internal error",
-                });
+                let error_data = cbor!({
+                    "message" => "Internal error",
+                })
+                .map_err(|err| {
+                    Error::Serialization(SerializationError::CorruptedSerialization(format!(
+                        "can't create cbor: {err}"
+                    )))
+                })?;
 
                 let mut error_data_buffer: Vec<u8> = Vec::new();
                 ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
                     .map_err(|e| e.to_string())?;
 
-                tracing::error!(method = "check_tx", ?error, "check_tx failed");
+                tracing::error!(?error, "check_tx failed");
 
                 Ok(ResponseCheckTx {
                     code: 13, // Internal error gRPC code
@@ -675,7 +687,7 @@ where
                 height: self.platform.state.read().unwrap().height() as i64,
                 codespace: "".to_string(),
             };
-            tracing::trace!(method = "query", ?request, ?response);
+            tracing::error!(?response, "platform version not initialized");
 
             return Ok(response);
         };
@@ -720,7 +732,6 @@ where
             height: self.platform.state.read().unwrap().height() as i64,
             codespace: "".to_string(),
         };
-        tracing::trace!(method = "query", ?request, ?response);
 
         Ok(response)
     }
