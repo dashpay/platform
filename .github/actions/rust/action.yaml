@@ -48,6 +48,7 @@ runs:
     - name: Install clang
       id: deps-clang
       shell: bash
+      if: runner.os == 'Linux'
       run: |
         sudo apt update -qq
         sudo apt install -qq --yes clang llvm
