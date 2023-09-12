@@ -72,6 +72,11 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Restore timestamps
+        uses: chetan/git-restore-mtime-action@v2
 
       - name: Login to DockerHub
         uses: docker/login-action@v2
@@ -189,6 +194,11 @@ jobs:
 
       - name: Check out repo
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Restore timestamps
+        uses: chetan/git-restore-mtime-action@v2
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
