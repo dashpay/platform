@@ -72,3 +72,12 @@ impl From<AbciError> for String {
         value.to_string()
     }
 }
+
+pub enum AbciErrorCodes {
+    /// Unexpected internal drive error
+    Internal = 1,
+    /// Invalid query argument
+    InvalidArgument = 2,
+    /// Entity not found error
+    NotFound = 3,
+}

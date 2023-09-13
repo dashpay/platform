@@ -55,6 +55,7 @@ use super::AbciError;
 
 use dpp::platform_value::string_encoding::{encode, Encoding};
 
+use crate::abci::error::AbciErrorCodes;
 use crate::error::serialization::SerializationError;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
@@ -633,6 +634,9 @@ where
             Err(error) => {
                 let error_data_buffer = platform_value!({
                     "message": format!("Internal error {}", error.to_string()),
+                    // TODO: consider capturing stack with one of the libs
+                    //   and send it to the client
+                    //"stack": "..."
                 })
                 .to_cbor_buffer()
                 .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
@@ -640,7 +644,7 @@ where
                 tracing::error!(method = "check_tx", ?error, "check_tx failed");
 
                 Ok(ResponseCheckTx {
-                    code: ErrorCodes::InternalError as u32, // Internal error gRPC code
+                    code: AbciErrorCodes::Internal as u32, // Internal error gRPC code
                     data: vec![],
                     info: encode(&error_data_buffer, Encoding::Base64),
                     gas_wanted: 0 as SignedCredits,
@@ -660,12 +664,15 @@ where
         let Some(platform_version) = PlatformVersion::get_maybe_current() else {
             let error_data_buffer = platform_value!({
                 "message": "Platform not initialized",
+                // TODO: consider capturing stack with one of the libs
+                //   and send it to the client
+                //"stack": "..."
             })
             .to_cbor_buffer()
             .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
 
             let response = ResponseQuery {
-                code: ErrorCodes::InternalError as u32,
+                code: AbciErrorCodes::Internal as u32,
                 log: "".to_string(),
                 info: encode(&error_data_buffer, Encoding::Base64),
                 index: 0,
