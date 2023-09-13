@@ -66,7 +66,7 @@ ObtainCommand.flags = {
   'no-retry': Flags.boolean({ description: 'do not retry on IP verification failure', default: false }),
   force: Flags.boolean({ description: 'renew even if certificate is valid', default: false }),
   'expiration-days': Flags.integer({
-    description: 'renew even if expiration period is greater than'
+    description: 'renew if certificate expires within the'
       + ' specified number of days',
     default: EXPIRATION_LIMIT_DAYS,
   }),
