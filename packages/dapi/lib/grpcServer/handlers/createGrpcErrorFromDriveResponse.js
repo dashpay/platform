@@ -39,7 +39,7 @@ const COMMON_ERROR_CLASSES = {
   // [GrpcErrorCodes.INTERNAL]: InternalGrpcError,
   // [GrpcErrorCodes.INVALID_ARGUMENT]: InvalidArgumentGrpcError,
   // [GrpcErrorCodes.DEADLINE_EXCEEDED]: DeadlineExceededGrpcError,
-  // [GrpcErrorCodes.NOT_FOUND]: NotFoundGrpcError,
+  [DriveErrorCodes.NOT_FOUND]: NotFoundGrpcError,
   // [GrpcErrorCodes.ALREADY_EXISTS]: AlreadyExistsGrpcError,
   // [GrpcErrorCodes.RESOURCE_EXHAUSTED]: ResourceExhaustedGrpcError,
   // [GrpcErrorCodes.FAILED_PRECONDITION]: FailedPreconditionGrpcError,
@@ -67,6 +67,14 @@ async function createGrpcErrorFromDriveResponse(code, info) {
 
   // gRPC error codes
   if (code <= 3) {
+    const CommonErrorClass = COMMON_ERROR_CLASSES[code.toString()];
+    if (CommonErrorClass) {
+      return new CommonErrorClass(
+        message,
+        createRawMetadata(data),
+      );
+    }
+
     if (code === DriveErrorCodes.INTERNAL) {
       const error = new Error(message);
 

@@ -80,4 +80,6 @@ pub enum AbciErrorCodes {
     InvalidArgument = 2,
     /// Entity not found error
     NotFound = 3,
+    /// Unknown drive error
+    Unknown = 4,
 }

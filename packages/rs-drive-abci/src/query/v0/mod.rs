@@ -122,6 +122,13 @@ impl<C> Platform<C> {
                         None,
                         &platform_version.drive
                     ));
+
+                    if proof.is_empty() {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
+                            format!("identity {} not found", identity_id),
+                        )));
+                    }
+
                     GetIdentityResponse {
                         result: Some(get_identity_response::Result::Proof(Proof {
                             grovedb_proof: proof,
@@ -135,16 +142,19 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 } else {
-                    let identity = check_validation_result_with_data!(self
+                    let maybe_identity = check_validation_result_with_data!(self
                         .drive
                         .fetch_full_identity(identity_id.into_buffer(), None, platform_version)
-                        .map_err(QueryError::Drive)
+                        .map_err(QueryError::Drive));
+
+                    let identity = check_validation_result_with_data!(maybe_identity
+                        .ok_or_else(|| {
+                            QueryError::NotFound(format!("identity {} not found", identity_id))
+                        })
                         .and_then(|identity| identity
-                            .map(|identity| identity
-                                .serialize_consume_to_bytes()
-                                .map_err(QueryError::Protocol))
-                            .transpose()))
-                    .unwrap_or_default();
+                            .serialize_consume_to_bytes()
+                            .map_err(QueryError::Protocol)));
+
                     GetIdentityResponse {
                         result: Some(get_identity_response::Result::Identity(identity)),
                         metadata: Some(metadata),
@@ -396,6 +406,13 @@ impl<C> Platform<C> {
                         None,
                         platform_version
                     ));
+
+                    if proof.is_empty() {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
+                            format!("data contract {} not found", contract_id),
+                        )));
+                    }
+
                     GetDataContractResponse {
                         result: Some(get_data_contract_response::Result::Proof(Proof {
                             grovedb_proof: proof,
@@ -409,7 +426,7 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 } else {
-                    let contract = check_validation_result_with_data!(self
+                    let maybe_data_contract = check_validation_result_with_data!(self
                         .drive
                         .fetch_contract(
                             contract_id.into_buffer(),
@@ -418,16 +435,20 @@ impl<C> Platform<C> {
                             None,
                             platform_version
                         )
-                        .unwrap())
-                    .map(|contract| {
-                        contract
+                        .unwrap());
+
+                    let data_contract = check_validation_result_with_data!(maybe_data_contract
+                        .ok_or_else(|| {
+                            QueryError::NotFound(format!("data contract {} not found", contract_id))
+                        })
+                        .and_then(|data_contract| data_contract
                             .contract
                             .serialize_to_bytes_with_platform_version(platform_version)
-                    })
-                    .transpose()?;
+                            .map_err(QueryError::Protocol)));
+
                     GetDataContractResponse {
                         result: Some(get_data_contract_response::Result::DataContract(
-                            contract.unwrap_or_default(),
+                            data_contract,
                         )),
                         metadata: Some(metadata),
                     }
@@ -756,6 +777,13 @@ impl<C> Platform<C> {
                             None,
                             platform_version
                         ));
+
+                    if proof.is_empty() {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
+                            format!("identity {} not found", hex::encode(public_key_hash)),
+                        )));
+                    }
+
                     GetIdentityByPublicKeyHashesResponse {
                         metadata: Some(metadata),
                         result: Some(get_identity_by_public_key_hashes_response::Result::Proof(
@@ -779,13 +807,21 @@ impl<C> Platform<C> {
                             platform_version
                         ));
                     let serialized_identity = check_validation_result_with_data!(maybe_identity
-                        .map(|identity| identity.serialize_consume_to_bytes())
-                        .transpose());
+                        .ok_or_else(|| {
+                            QueryError::NotFound(format!(
+                                "identity {} not found",
+                                hex::encode(public_key_hash)
+                            ))
+                        })
+                        .and_then(|identity| identity
+                            .serialize_consume_to_bytes()
+                            .map_err(QueryError::Protocol)));
+
                     GetIdentityByPublicKeyHashesResponse {
                         metadata: Some(metadata),
                         result: Some(
                             get_identity_by_public_key_hashes_response::Result::Identity(
-                                serialized_identity.unwrap_or_default(),
+                                serialized_identity,
                             ),
                         ),
                     }

@@ -38,7 +38,7 @@
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
 
-use crate::error::{Error, ErrorCodes};
+use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
@@ -56,6 +56,7 @@ use super::AbciError;
 use dpp::platform_value::string_encoding::{encode, Encoding};
 
 use crate::abci::error::AbciErrorCodes;
+use crate::error::query::QueryError;
 use crate::error::serialization::SerializationError;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
@@ -696,10 +697,18 @@ where
         } else {
             let error = result.errors.first();
 
-            let error_message = if let Some(error) = error {
-                error.to_string()
+            let (code, error_message) = if let Some(error) = error {
+                match error {
+                    QueryError::NotFound(message) => {
+                        (AbciErrorCodes::NotFound as u32, message.to_owned())
+                    }
+                    _ => (2, error.to_string()),
+                }
             } else {
-                "Unknown Drive error".to_string()
+                (
+                    AbciErrorCodes::Unknown as u32,
+                    "Unknown Drive error".to_string(),
+                )
             };
 
             let error_data_buffer = platform_value!({
@@ -708,14 +717,7 @@ where
             .to_cbor_buffer()
             .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
 
-            // TODO(error-codes): restore different error codes?
-            //   For now return error code 2, because it is recognized by DAPI as UNKNOWN error
-            //   and error code 1 corresponds to CANCELED grpc request which is not suitable
-            (
-                ErrorCodes::Unknown as u32,
-                vec![],
-                encode(&error_data_buffer, Encoding::Base64),
-            )
+            (code, vec![], encode(&error_data_buffer, Encoding::Base64))
         };
 
         let response = ResponseQuery {

@@ -64,11 +64,3 @@ impl From<Error> for ResponseException {
         }
     }
 }
-
-/// A set of error codes to respond to clients with
-pub enum ErrorCodes {
-    /// Unknown drive error
-    Unknown = 2,
-    /// Internal drive error
-    InternalError = 13,
-}
