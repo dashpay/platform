@@ -52,7 +52,7 @@
     "@dashevo/dashcore-lib": "~0.20.9",
     "@dashevo/dashd-rpc": "^18.2.0",
     "@dashevo/dashpay-contract": "workspace:*",
-    "@dashevo/docker-compose": "^0.24.2",
+    "@dashevo/docker-compose": "^0.24.3",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/dpp": "workspace:*",
     "@dashevo/feature-flags-contract": "workspace:*",
