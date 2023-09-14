@@ -339,7 +339,7 @@ class DockerCompose {
         commandOptions,
       });
 
-      return services;
+      return services.map((service) => service.name);
     } catch (e) {
       if (e.err && e.err.startsWith('no such service:')) {
         return [];
