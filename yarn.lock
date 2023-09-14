@@ -6157,7 +6157,7 @@ __metadata:
     cron: ^2.1.0
     dash: "workspace:*"
     dirty-chai: ^2.0.1
-    dockerode: ^3.2.0
+    dockerode: ^3.3.5
     dot: ^1.1.3
     dotenv: ^8.6.0
     enquirer: "github:dashpay/enquirer#patch-1"
@@ -6563,7 +6563,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dockerode@npm:^3.2.0, dockerode@npm:^3.2.1":
+"dockerode@npm:^3.2.1, dockerode@npm:^3.3.5":
   version: 3.3.5
   resolution: "dockerode@npm:3.3.5"
   dependencies:
