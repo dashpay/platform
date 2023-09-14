@@ -1698,6 +1698,8 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_identities() {
+        drive_abci::logging::init_for_tests(1); // Errors only. Use 5 to print everything
+
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![Operation {
@@ -2384,6 +2386,7 @@ mod tests {
 
     #[test]
     fn run_chain_stop_and_restart_with_rotation() {
+        drive_abci::logging::init_for_tests(1); // Errors only. Use 5 to print everything
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],

@@ -32,7 +32,10 @@ impl Drive {
         if self.config.batching_consistency_verification {
             let consistency_results = GroveDbOp::verify_consistency_of_operations(&ops.operations);
             if !consistency_results.is_empty() {
-                println!("consistency_results {:#?}", consistency_results);
+                tracing::error!(
+                    ?consistency_results,
+                    "grovedb consistency verification failed"
+                );
                 return Err(Error::Drive(DriveError::GroveDBInsertion(
                     "insertion order error",
                 )));

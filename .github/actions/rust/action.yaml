@@ -32,6 +32,10 @@ runs:
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
 
+    - uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-region: eu-west-1
+
     - name: Cache Rust build artifacts
       uses: everpcpc/actions-cache@v1
       with:
@@ -48,6 +52,7 @@ runs:
     - name: Install clang
       id: deps-clang
       shell: bash
+      if: runner.os == 'Linux'
       run: |
         sudo apt update -qq
         sudo apt install -qq --yes clang llvm
