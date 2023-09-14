@@ -702,7 +702,13 @@ where
                     QueryError::NotFound(message) => {
                         (AbciErrorCodes::NotFound as u32, message.to_owned())
                     }
-                    _ => (2, error.to_string()),
+                    QueryError::InvalidArgument(message) => {
+                        (AbciErrorCodes::InvalidArgument as u32, message.to_owned())
+                    }
+                    QueryError::Query(error) => {
+                        (AbciErrorCodes::InvalidArgument as u32, error.to_string())
+                    }
+                    _ => (AbciErrorCodes::Unknown as u32, error.to_string()),
                 }
             } else {
                 (

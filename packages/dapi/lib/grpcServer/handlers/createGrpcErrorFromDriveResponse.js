@@ -37,7 +37,7 @@ function createRawMetadata(data) {
 
 const COMMON_ERROR_CLASSES = {
   // [GrpcErrorCodes.INTERNAL]: InternalGrpcError,
-  // [GrpcErrorCodes.INVALID_ARGUMENT]: InvalidArgumentGrpcError,
+  [DriveErrorCodes.INVALID_ARGUMENT]: InvalidArgumentGrpcError,
   // [GrpcErrorCodes.DEADLINE_EXCEEDED]: DeadlineExceededGrpcError,
   [DriveErrorCodes.NOT_FOUND]: NotFoundGrpcError,
   // [GrpcErrorCodes.ALREADY_EXISTS]: AlreadyExistsGrpcError,
