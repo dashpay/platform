@@ -137,7 +137,7 @@ class DockerCompose {
     });
 
     return serviceContainers
-      .find((container) => container.state === 'running') !== undefined;
+      .find((container) => container.State === 'running') !== undefined;
   }
 
   /**
@@ -154,7 +154,7 @@ class DockerCompose {
       filterServiceNames: serviceName,
     });
 
-    return container?.state === 'running';
+    return container?.State === 'running';
   }
 
   /**
@@ -365,7 +365,7 @@ class DockerCompose {
       all = false,
     } = {},
   ) {
-    const commandOptions = [];
+    const commandOptions = ['--format', 'json'];
 
     if (all) {
       commandOptions.push('--all');
@@ -376,12 +376,12 @@ class DockerCompose {
     }
 
     try {
-      const { data: { services } } = await dockerCompose.ps({
+      const { data: { json } } = await dockerCompose.ps({
         ...this.#createOptions(config),
         commandOptions,
       });
 
-      return services;
+      return json;
     } catch (e) {
       if (e.err && e.err.startsWith('no such service:')) {
         return [];
