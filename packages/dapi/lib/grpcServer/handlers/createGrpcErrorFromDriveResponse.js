@@ -5,11 +5,8 @@ const {
     error: {
       InternalGrpcError,
       InvalidArgumentGrpcError,
-      DeadlineExceededGrpcError,
-      ResourceExhaustedGrpcError,
       NotFoundGrpcError,
       FailedPreconditionGrpcError,
-      UnavailableGrpcError,
       GrpcError,
     },
   },
@@ -18,7 +15,6 @@ const {
 const { default: loadWasmDpp, deserializeConsensusError } = require('@dashevo/wasm-dpp');
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const AlreadyExistsGrpcError = require('@dashevo/grpc-common/lib/server/error/AlreadyExistsGrpcError');
 const DriveErrorCodes = require('../../externalApis/drive/ErrorCodes');
 
 /**
@@ -36,14 +32,8 @@ function createRawMetadata(data) {
 }
 
 const COMMON_ERROR_CLASSES = {
-  // [GrpcErrorCodes.INTERNAL]: InternalGrpcError,
   [DriveErrorCodes.INVALID_ARGUMENT]: InvalidArgumentGrpcError,
-  // [GrpcErrorCodes.DEADLINE_EXCEEDED]: DeadlineExceededGrpcError,
   [DriveErrorCodes.NOT_FOUND]: NotFoundGrpcError,
-  // [GrpcErrorCodes.ALREADY_EXISTS]: AlreadyExistsGrpcError,
-  // [GrpcErrorCodes.RESOURCE_EXHAUSTED]: ResourceExhaustedGrpcError,
-  // [GrpcErrorCodes.FAILED_PRECONDITION]: FailedPreconditionGrpcError,
-  // [GrpcErrorCodes.UNAVAILABLE]: UnavailableGrpcError,
 };
 
 /**

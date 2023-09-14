@@ -7,7 +7,7 @@ const dirtyChai = require('dirty-chai');
 
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+
 const {
   v0: {
     GetIdentitiesByPublicKeyHashesRequest,
@@ -26,6 +26,7 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const DriveClient = require('../../../../lib/externalApis/drive/DriveClient');
+const DriveErrorCodes = require('../../../../lib/externalApis/drive/ErrorCodes');
 
 const RPCError = require('../../../../lib/rpcServer/RPCError');
 
@@ -68,7 +69,7 @@ describe('DriveClient', () => {
       .resolves({
         result: {
           response: {
-            code: GrpcErrorCodes.INVALID_ARGUMENT,
+            code: DriveErrorCodes.INVALID_ARGUMENT,
             info: cbor.encode({
               data: {
                 name: 'someData',
