@@ -71,20 +71,20 @@ fn convert_key_request_type(
             let purpose_map = search_key.purpose_map.into_iter().map(|(purpose, security_level_map)| {
                 let security_level_map = security_level_map.security_level_map.into_iter().map(|(security_level, key_kind_request_type)| {
                     if security_level > u8::MAX as u32 {
-                        return Err(QueryError::Query(QuerySyntaxError::InvalidKeyParameter("security level out of bounds".to_string())));
+                        return Err(QueryError::DocumentQuery(QuerySyntaxError::InvalidKeyParameter("security level out of bounds".to_string())));
                     }
-                    let security_level = SecurityLevel::try_from(security_level as u8).map_err(|_| QueryError::Query(QuerySyntaxError::InvalidKeyParameter(format!("security level {} not recognized", security_level))))?;
+                    let security_level = SecurityLevel::try_from(security_level as u8).map_err(|_| QueryError::DocumentQuery(QuerySyntaxError::InvalidKeyParameter(format!("security level {} not recognized", security_level))))?;
 
-                    let key_kind_request_type = from_i32_to_key_kind_request_type(key_kind_request_type).ok_or(QueryError::Query(QuerySyntaxError::InvalidKeyParameter(format!("unknown key kind request type {}", key_kind_request_type))))?;
+                    let key_kind_request_type = from_i32_to_key_kind_request_type(key_kind_request_type).ok_or(QueryError::DocumentQuery(QuerySyntaxError::InvalidKeyParameter(format!("unknown key kind request type {}", key_kind_request_type))))?;
                     Ok((
                         security_level as u8,
                         key_kind_request_type,
                     ))
                 }).collect::<Result<BTreeMap<SecurityLevelU8, KeyKindRequestType>, QueryError>>()?;
                 if purpose > u8::MAX as u32 {
-                    return Err(QueryError::Query(QuerySyntaxError::InvalidKeyParameter("purpose out of bounds".to_string())));
+                    return Err(QueryError::DocumentQuery(QuerySyntaxError::InvalidKeyParameter("purpose out of bounds".to_string())));
                 }
-                let purpose = Purpose::try_from(purpose as u8).map_err(|_| QueryError::Query(QuerySyntaxError::InvalidKeyParameter(format!("purpose {} not recognized", purpose))))?;
+                let purpose = Purpose::try_from(purpose as u8).map_err(|_| QueryError::DocumentQuery(QuerySyntaxError::InvalidKeyParameter(format!("purpose {} not recognized", purpose))))?;
 
                 Ok((purpose as u8, security_level_map))
             }).collect::<Result<BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>, QueryError>>()?;
@@ -343,40 +343,44 @@ impl<C> Platform<C> {
                     )));
                 if let Some(limit) = limit {
                     if limit > u16::MAX as u32 {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                            QuerySyntaxError::InvalidParameter("limit out of bounds".to_string()),
-                        )));
+                        return Ok(QueryValidationResult::new_with_error(
+                            QueryError::DocumentQuery(QuerySyntaxError::InvalidParameter(
+                                "limit out of bounds".to_string(),
+                            )),
+                        ));
                     }
                     if limit as u16 > self.config.drive.max_query_limit {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                            QuerySyntaxError::InvalidLimit(format!(
+                        return Ok(QueryValidationResult::new_with_error(
+                            QueryError::DocumentQuery(QuerySyntaxError::InvalidLimit(format!(
                                 "limit greater than max limit {}",
                                 self.config.drive.max_query_limit
-                            )),
-                        )));
+                            ))),
+                        ));
                     }
                 }
 
                 if let Some(offset) = offset {
                     if offset > u16::MAX as u32 {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                            QuerySyntaxError::InvalidParameter("limit out of bounds".to_string()),
-                        )));
+                        return Ok(QueryValidationResult::new_with_error(
+                            QueryError::DocumentQuery(QuerySyntaxError::InvalidParameter(
+                                "limit out of bounds".to_string(),
+                            )),
+                        ));
                     }
                 }
                 let Some(request_type) = request_type else {
-                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        QuerySyntaxError::InvalidParameter(
+                    return Ok(QueryValidationResult::new_with_error(
+                        QueryError::DocumentQuery(QuerySyntaxError::InvalidParameter(
                             "key request must be defined".to_string(),
-                        ),
-                    )));
+                        )),
+                    ));
                 };
                 let Some(request) = request_type.request else {
-                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        QuerySyntaxError::InvalidParameter(
+                    return Ok(QueryValidationResult::new_with_error(
+                        QueryError::DocumentQuery(QuerySyntaxError::InvalidParameter(
                             "key request must be defined".to_string(),
-                        ),
-                    )));
+                        )),
+                    ));
                 };
                 let key_request_type =
                     check_validation_result_with_data!(convert_key_request_type(request));
@@ -685,7 +689,7 @@ impl<C> Platform<C> {
                         platform_version,
                     ));
                 let contract = check_validation_result_with_data!(contract.ok_or(
-                    QueryError::Query(QuerySyntaxError::DataContractNotFound(
+                    QueryError::DocumentQuery(QuerySyntaxError::DataContractNotFound(
                         "contract not found when querying from value with contract info",
                     ))
                 ));
@@ -701,7 +705,7 @@ impl<C> Platform<C> {
                         r#where.as_slice()
                     )
                     .map_err(|_| {
-                        QueryError::Query(QuerySyntaxError::DeserializationError(
+                        QueryError::DocumentQuery(QuerySyntaxError::DeserializationError(
                             "unable to decode 'where' query from cbor".to_string(),
                         ))
                     }))
@@ -715,7 +719,7 @@ impl<C> Platform<C> {
                         order_by.as_slice()
                     )
                     .map_err(|_| {
-                        QueryError::Query(QuerySyntaxError::DeserializationError(
+                        QueryError::DocumentQuery(QuerySyntaxError::DeserializationError(
                             "unable to decode 'order_by' query from cbor".to_string(),
                         ))
                     }))
@@ -729,7 +733,7 @@ impl<C> Platform<C> {
                             false,
                             Some(check_validation_result_with_data!(after
                                 .try_into()
-                                .map_err(|_| QueryError::Query(
+                                .map_err(|_| QueryError::DocumentQuery(
                                     QuerySyntaxError::InvalidStartsWithClause(
                                         "start after should be a 32 byte identifier",
                                     )
@@ -738,9 +742,11 @@ impl<C> Platform<C> {
                         Start::StartAt(at) => (
                             true,
                             Some(check_validation_result_with_data!(at.try_into().map_err(
-                                |_| QueryError::Query(QuerySyntaxError::InvalidStartsWithClause(
-                                    "start at should be a 32 byte identifier",
-                                ))
+                                |_| QueryError::DocumentQuery(
+                                    QuerySyntaxError::InvalidStartsWithClause(
+                                        "start at should be a 32 byte identifier",
+                                    )
+                                )
                             ))),
                         ),
                     }
@@ -749,9 +755,12 @@ impl<C> Platform<C> {
                 };
 
                 if limit > u16::MAX as u32 {
-                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        QuerySyntaxError::InvalidLimit(format!("limit {} out of bounds", limit)),
-                    )));
+                    return Ok(QueryValidationResult::new_with_error(
+                        QueryError::DocumentQuery(QuerySyntaxError::InvalidLimit(format!(
+                            "limit {} out of bounds",
+                            limit
+                        ))),
+                    ));
                 }
 
                 let drive_query =
