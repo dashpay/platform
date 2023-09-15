@@ -29,6 +29,11 @@ use tracing_subscriber::Registry;
 
 use crate::config::FromEnv;
 
+const LOG_DESTINATION_STDOUT: &str = "stdout";
+const LOG_DESTINATION_STDERR: &str = "stderr";
+#[cfg(test)]
+const LOG_DESTINATION_BYTES: &str = "bytes";
+
 /// Logging configuration.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LogConfig {
@@ -37,13 +42,13 @@ pub struct LogConfig {
     /// One of:
     /// * "stdout",
     /// * "stderr",
-    /// * absolute path to existing directory where log files will be stored
+    /// * absolute path to log file
     ///
     /// For testing, also "bytes" is available.
     pub destination: String,
-    /// Verbosity level, 0 to 5; see `-v` option in `drive-abci --help` for more details.
+    /// Log level: silent, error, info, warn, debug, trace
     #[serde(default)]
-    pub verbosity: u8,
+    pub level: LogLevelPreset,
     /// Whether or not to use colorful output; defaults to autodetect
     #[serde(default)]
     pub color: Option<bool>,
@@ -67,11 +72,76 @@ pub struct LogConfig {
 impl Default for LogConfig {
     fn default() -> Self {
         Self {
-            destination: String::from("stderr"),
-            verbosity: 0,
-            color: None,
+            destination: LOG_DESTINATION_STDOUT.to_string(),
+            level: Default::default(),
+            color: Default::default(),
             format: Default::default(),
-            max_files: 0,
+            max_files: Default::default(),
+        }
+    }
+}
+
+/// Log level presets
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum LogLevelPreset {
+    /// No logs
+    Silent,
+    /// Uses RUST_LOG env or info level if not set
+    Custom,
+    /// Only errors
+    Error,
+    /// Warnings and errors. Errors for 3rd party dependencies
+    Warn,
+    /// Info level and lower. Warnings for 3rd party dependencies
+    #[default]
+    Info,
+    /// Debug level and lower. Info level for 3rd party dependencies
+    Debug,
+    /// Trace level and lower. Debug level for 3rd party dependencies
+    Trace,
+    /// Trace level for everything
+    Paranoid,
+}
+
+/// Creates log level preset from verbosity level
+impl TryFrom<u8> for LogLevelPreset {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self, <LogLevelPreset as TryFrom<u8>>::Error> {
+        let level = match value {
+            0 => LogLevelPreset::Custom,
+            1 => LogLevelPreset::Debug,
+            2 => LogLevelPreset::Trace,
+            3 => LogLevelPreset::Paranoid,
+            verbosity => return Err(Error::InvalidVerbosityLevel(verbosity)),
+        };
+
+        Ok(level)
+    }
+}
+
+impl From<&LogLevelPreset> for EnvFilter {
+    fn from(value: &LogLevelPreset) -> Self {
+        match value {
+            LogLevelPreset::Silent => EnvFilter::default(),
+            LogLevelPreset::Custom => EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy(),
+            LogLevelPreset::Error => EnvFilter::new("error"),
+            LogLevelPreset::Warn => {
+                EnvFilter::new("error,tenderdash_abci=warn,drive_abci=warn,drive=warn,dpp=warn")
+            }
+            LogLevelPreset::Info => {
+                EnvFilter::new("error,tenderdash_abci=info,drive_abci=info,drive=info,dpp=info")
+            }
+            LogLevelPreset::Debug => {
+                EnvFilter::new("info,tenderdash_abci=debug,drive_abci=debug,drive=debug,dpp=debug")
+            }
+            LogLevelPreset::Trace => {
+                EnvFilter::new("debug,tenderdash_abci=trace,drive_abci=trace,drive=trace,dpp=trace")
+            }
+            LogLevelPreset::Paranoid => EnvFilter::new("trace"),
         }
     }
 }
@@ -80,6 +150,7 @@ impl Default for LogConfig {
 ///
 /// See https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/index.html#formatters
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
 pub enum LogFormat {
     /// Default, human-readable, single-line logs
     #[default]
@@ -106,11 +177,11 @@ pub enum LogFormat {
 /// ```bash
 /// # First logger, logging to stderr on verbosity level 5
 /// ABCI_LOG_STDERR_DESTINATION=stderr
-/// ABCI_LOG_STDERR_VERBOSITY=6
+/// ABCI_LOG_STDERR_LEVEL=trace
 ///
 /// # Second logger, logging to stdout on verbosity level 1
 /// ABCI_LOG_STDOUT_DESTINATION=stdout
-/// ABCI_LOG_STDOUT_VERBOSITY=1
+/// ABCI_LOG_STDOUT_LEVEL=info
 /// ```
 ///
 ///
@@ -167,6 +238,10 @@ pub enum Error {
     /// Duplicate config
     #[error("duplicate log configuration name {0}")]
     DuplicateConfigName(String),
+
+    /// Undefined verbosity level
+    #[error("undefined log verbosity level {0}")]
+    InvalidVerbosityLevel(u8),
 }
 
 /// Name of logging configuration
@@ -525,7 +600,7 @@ impl std::io::Write for LogDestination {
     }
 }
 
-impl TryFrom<&LogConfig> for file_rotate::FileRotate<AppendTimestamp> {
+impl TryFrom<&LogConfig> for FileRotate<AppendTimestamp> {
     type Error = Error;
     /// Configure new FileRotate based on log configuration.
     ///
@@ -536,8 +611,11 @@ impl TryFrom<&LogConfig> for file_rotate::FileRotate<AppendTimestamp> {
         let compression = file_rotate::compression::Compression::OnRotate(2);
         // Only owner can see logs
         let mode = Some(0o600);
-        let path = log_file_path(PathBuf::from(&config.destination))?;
-        let f = file_rotate::FileRotate::new(path, suffix_scheme, content_limit, compression, mode);
+        let path = PathBuf::from(&config.destination);
+
+        validate_log_path(&path)?;
+
+        let f = FileRotate::new(path, suffix_scheme, content_limit, compression, mode);
 
         Ok(f)
     }
@@ -549,7 +627,9 @@ impl TryFrom<&LogConfig> for File {
     fn try_from(config: &LogConfig) -> Result<Self, Self::Error> {
         // Only owner can see logs
         let mode = 0o600;
-        let path = log_file_path(PathBuf::from(&config.destination))?;
+        let path = PathBuf::from(&config.destination);
+
+        validate_log_path(&path)?;
 
         let f = OpenOptions::new()
             .create(true)
@@ -568,8 +648,8 @@ struct Logger {
     /// Destination of logs; either absolute path to dir where log files will be stored, `stdout` or `stderr`
     destination: Arc<Mutex<LogDestination>>,
 
-    /// Log verbosity level, number; see [super::Cli::verbose].
-    verbosity: u8,
+    /// Log verbosity level preset
+    level: LogLevelPreset,
 
     /// Whether to use colored output
     color: Option<bool>,
@@ -582,10 +662,10 @@ impl TryFrom<&LogConfig> for Logger {
     type Error = Error;
     fn try_from(config: &LogConfig) -> Result<Self, Self::Error> {
         let destination = match config.destination.to_lowercase().as_str() {
-            "stdout" => LogDestination::StdOut,
-            "stderr" => LogDestination::StdErr,
+            LOG_DESTINATION_STDOUT => LogDestination::StdOut,
+            LOG_DESTINATION_STDERR => LogDestination::StdErr,
             #[cfg(test)]
-            "bytes" => LogDestination::Bytes(Vec::<u8>::new().into()),
+            LOG_DESTINATION_BYTES => LogDestination::Bytes(Vec::<u8>::new().into()),
             dest => {
                 // we refer directly to config.destination, as dest was converted to lowercase
                 let path = PathBuf::from(&config.destination);
@@ -601,15 +681,12 @@ impl TryFrom<&LogConfig> for Logger {
                 }
             }
         };
-        let verbosity = config.verbosity;
-        let color = config.color;
-        let format = config.format;
 
         Ok(Self {
             destination: Arc::new(Mutex::new(destination)),
-            verbosity,
-            color,
-            format,
+            level: config.level.clone(),
+            color: config.color,
+            format: config.format,
         })
     }
 }
@@ -617,8 +694,8 @@ impl TryFrom<&LogConfig> for Logger {
 impl Default for Logger {
     fn default() -> Self {
         Self {
-            destination: Arc::new(Mutex::new(LogDestination::StdErr)),
-            verbosity: 0,
+            destination: Arc::new(Mutex::new(LogDestination::StdOut)),
+            level: LogLevelPreset::Info,
             color: None,
             format: LogFormat::Full,
         }
@@ -640,7 +717,7 @@ impl Logger {
         let cloned = self.destination.clone();
         let make_writer = { move || Writer(Arc::clone(&cloned)) };
 
-        let filter = self.env_filter();
+        let filter = EnvFilter::from(&self.level);
 
         let formatter = fmt::layer::<Registry>()
             .with_writer(make_writer)
@@ -653,31 +730,17 @@ impl Logger {
             LogFormat::Json => formatter.json().with_filter(filter).boxed(),
         }
     }
-
-    fn env_filter(&self) -> EnvFilter {
-        match self.verbosity {
-            0 => EnvFilter::builder()
-                .with_default_directive(LevelFilter::INFO.into())
-                .from_env_lossy(),
-            1 => EnvFilter::new("error,tenderdash_abci=info,drive_abci=info"),
-            2 => EnvFilter::new("info,tenderdash_abci=debug,drive_abci=debug"),
-            3 => EnvFilter::new("debug"),
-            4 => EnvFilter::new("debug,tenderdash_abci=trace,drive_abci=trace"),
-            5 => EnvFilter::new("trace"),
-            _ => panic!("max verbosity level is 5"),
-        }
-    }
 }
 
 /// Helper that initializes logging in unit tests
 ///
 ///
 /// For verbosity, see drive-abci --help or use 0 or 5
-pub fn init_for_tests(verbosity: u8) {
+pub fn init_for_tests(level: LogLevelPreset) {
     let mut logger_builder = LogBuilder::new();
     let config = LogConfig {
-        destination: "stderr".to_string(),
-        verbosity,
+        destination: LOG_DESTINATION_STDOUT.to_string(),
+        level,
         color: None,
         format: LogFormat::Full,
         max_files: 0,
@@ -686,26 +749,23 @@ pub fn init_for_tests(verbosity: u8) {
     logger_builder
         .add("default", &config)
         .expect("cannot configure default logger");
+
     logger_builder.build().try_install().ok();
 }
 
 /// Verify log directory path and determine absolute path to log file.
-fn log_file_path<T: AsRef<Path>>(log_dir: T) -> Result<PathBuf, Error> {
+fn validate_log_path<T: AsRef<Path>>(log_dir: T) -> Result<(), Error> {
     let log_dir = log_dir.as_ref();
+
+    // TODO: Why it should be absolute?
     if !log_dir.is_absolute() {
         return Err(Error::FilePath(
             log_dir.to_owned(),
             "log path must be absolute".to_string(),
         ));
     }
-    if !log_dir.is_dir() {
-        return Err(Error::FilePath(
-            log_dir.to_owned(),
-            "log path must point to an existing directory".to_string(),
-        ));
-    }
-    let path = log_dir.join("drive-abci.log");
-    Ok(path)
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -744,53 +804,45 @@ mod tests {
     #[test]
     fn test_logging() {
         let logger_stdout = LogConfig {
-            destination: "stdout".to_string(),
-            verbosity: 0,
+            destination: LOG_DESTINATION_STDOUT.to_string(),
+            level: LogLevelPreset::Info,
             format: LogFormat::Pretty,
             ..Default::default()
         };
 
         let logger_stderr = LogConfig {
-            destination: "stderr".to_string(),
-            verbosity: 4,
+            destination: LOG_DESTINATION_STDERR.to_string(),
+            level: LogLevelPreset::Debug,
             ..Default::default()
         };
 
         let logger_v0 = LogConfig {
-            destination: "bytes".to_string(),
-            verbosity: 0,
+            destination: LOG_DESTINATION_BYTES.to_string(),
+            level: LogLevelPreset::Info,
             ..Default::default()
         };
 
         let logger_v4 = LogConfig {
             destination: "bytes".to_string(),
-            verbosity: 4,
+            level: LogLevelPreset::Debug,
             format: LogFormat::Json,
             ..Default::default()
         };
 
-        let dir_v0 = TempDir::new().unwrap();
-        let logger_dir_v0 = LogConfig {
-            destination: dir_v0
-                .path()
-                .canonicalize()
-                .unwrap()
-                .to_string_lossy()
-                .to_string(),
-            verbosity: 0,
+        let dir = TempDir::new().unwrap();
+
+        let file_v0_path = dir.path().join("log.v0");
+        let logger_file_v0 = LogConfig {
+            destination: file_v0_path.to_string_lossy().to_string(),
+            level: LogLevelPreset::Info,
             max_files: 4,
             ..Default::default()
         };
 
-        let dir_v4 = TempDir::new().unwrap();
+        let file_v4_path = dir.path().join("log.v4");
         let logger_file_v4 = LogConfig {
-            destination: dir_v4
-                .path()
-                .canonicalize()
-                .unwrap()
-                .to_string_lossy()
-                .to_string(),
-            verbosity: 4,
+            destination: file_v4_path.to_string_lossy().to_string(),
+            level: LogLevelPreset::Debug,
             max_files: 0, // no rotation
             ..Default::default()
         };
@@ -804,7 +856,7 @@ mod tests {
             .unwrap()
             .with_config("v4", &logger_v4)
             .unwrap()
-            .with_config("dir_v0", &logger_dir_v0)
+            .with_config("file_v0", &logger_file_v0)
             .unwrap()
             .with_config("file_v4", &logger_file_v4)
             .unwrap()
@@ -823,9 +875,8 @@ mod tests {
 
         let result_verb_0 = dest_read_as_string(logging.0["v0"].destination.clone());
         let result_verb_4 = dest_read_as_string(logging.0["v4"].destination.clone());
-        let result_dir_verb_0 = dest_read_as_string(logging.0["dir_v0"].destination.clone());
+        let result_dir_verb_0 = dest_read_as_string(logging.0["file_v0"].destination.clone());
 
-        let file_v4_path = super::log_file_path(&dir_v4).unwrap();
         let result_file_verb_4 = std::fs::read_to_string(&file_v4_path)
             .map_err(|e| panic!("{:?}: {:?}", file_v4_path.clone(), e.to_string()))
             .unwrap();

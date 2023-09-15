@@ -65,7 +65,6 @@ StopCommand.flags = {
     description: 'stop only platform',
     default: false,
   }),
-
 };
 
 module.exports = StopCommand;
