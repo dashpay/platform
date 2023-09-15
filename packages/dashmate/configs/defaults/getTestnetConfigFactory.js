@@ -36,7 +36,6 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
         },
         log: {
           file: {
-            categories: [],
             path: homeDir.joinPath('logs', 'testnet', 'core.log'),
           },
         },

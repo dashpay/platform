@@ -201,6 +201,7 @@ function getBaseConfigFactory(homeDir) {
             log: {
               level: 'debug',
               format: 'plain',
+              path: null,
             },
             node: {
               id: null,

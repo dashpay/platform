@@ -15,7 +15,7 @@
 proxy-app = "tcp://drive_abci:26658"
 
 # A custom human readable name for this node
-{{?it.platform.drive.tenderdash.moniker}}moniker = "{{=it.platform.drive.tenderdash.moniker}}"{{??}}{{?}}
+{{?it.platform.drive.tenderdash.moniker}}moniker = "{{=it.platform.drive.tenderdash.moniker}}"{{?}}
 
 # Mode of Node: full | validator | seed
 # * validator node
@@ -57,12 +57,15 @@ db-dir = "data"
 # Output level for logging, including package level options
 log-level = "{{=it.platform.drive.tenderdash.log.level}}"
 
+# Path to the log file. This parameter is an additional option to the existing stderr output
+{{? it.platform.drive.tenderdash.log.path }}log-file-path = "/var/log/tenderdash/{{= it.platform.drive.tenderdash.log.path.split('/').pop() }}"{{?}}
+
 # Output format: 'plain' (colored text) or 'json'
 log-format = "{{=it.platform.drive.tenderdash.log.format}}"
 
 ##### additional base config options #####
 
-# Path to the JSON file containing the initial validator set and other meta data
+# Path to the JSON file containing the initial validator set and other metadata
 genesis-file = "config/genesis.json"
 
 # Path to the JSON file containing the private key to use for node authentication in the p2p protocol

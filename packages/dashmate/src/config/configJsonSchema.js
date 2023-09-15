@@ -503,6 +503,10 @@ module.exports = {
                       type: 'string',
                       enum: ['plain', 'json'],
                     },
+                    path: {
+                      type: ['string', 'null'],
+                      minLength: 1,
+                    },
                   },
                   required: ['level', 'format'],
                   additionalProperties: false,
