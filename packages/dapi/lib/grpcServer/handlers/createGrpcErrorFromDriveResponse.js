@@ -5,8 +5,11 @@ const {
     error: {
       InternalGrpcError,
       InvalidArgumentGrpcError,
+      DeadlineExceededGrpcError,
+      ResourceExhaustedGrpcError,
       NotFoundGrpcError,
       FailedPreconditionGrpcError,
+      UnavailableGrpcError,
       GrpcError,
     },
   },
@@ -15,7 +18,7 @@ const {
 const { default: loadWasmDpp, deserializeConsensusError } = require('@dashevo/wasm-dpp');
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const DriveErrorCodes = require('../../externalApis/drive/ErrorCodes');
+const AlreadyExistsGrpcError = require('@dashevo/grpc-common/lib/server/error/AlreadyExistsGrpcError');
 
 /**
  * @param {Object} data
@@ -32,8 +35,13 @@ function createRawMetadata(data) {
 }
 
 const COMMON_ERROR_CLASSES = {
-  [DriveErrorCodes.INVALID_ARGUMENT]: InvalidArgumentGrpcError,
-  [DriveErrorCodes.NOT_FOUND]: NotFoundGrpcError,
+  [GrpcErrorCodes.INVALID_ARGUMENT]: InvalidArgumentGrpcError,
+  [GrpcErrorCodes.DEADLINE_EXCEEDED]: DeadlineExceededGrpcError,
+  [GrpcErrorCodes.NOT_FOUND]: NotFoundGrpcError,
+  [GrpcErrorCodes.ALREADY_EXISTS]: AlreadyExistsGrpcError,
+  [GrpcErrorCodes.RESOURCE_EXHAUSTED]: ResourceExhaustedGrpcError,
+  [GrpcErrorCodes.FAILED_PRECONDITION]: FailedPreconditionGrpcError,
+  [GrpcErrorCodes.UNAVAILABLE]: UnavailableGrpcError,
 };
 
 /**
@@ -55,8 +63,8 @@ async function createGrpcErrorFromDriveResponse(code, info) {
   const message = decodedInfo.message;
   const data = decodedInfo.data || {};
 
-  // Drive error codes
-  if (code <= 3) {
+  // gRPC error codes
+  if (code <= 16) {
     const CommonErrorClass = COMMON_ERROR_CLASSES[code.toString()];
     if (CommonErrorClass) {
       return new CommonErrorClass(
@@ -65,7 +73,13 @@ async function createGrpcErrorFromDriveResponse(code, info) {
       );
     }
 
-    if (code === DriveErrorCodes.INTERNAL) {
+    // TODO(rs-drive-abci): revisit.
+    //   Rust does not provide stack trace in case of an error.
+    //   It is possible however to use Backtrace crate to report stack.
+    //   Decide whether it worth using Backtrace in rs-drive-abci queries
+    //   and remove if not needed
+    // Restore stack for internal error
+    if (code === GrpcErrorCodes.INTERNAL) {
       const error = new Error(message);
 
       // in case of verbose internal error
@@ -77,10 +91,16 @@ async function createGrpcErrorFromDriveResponse(code, info) {
 
       return new InternalGrpcError(error, createRawMetadata(data));
     }
+
+    return new GrpcError(
+      code,
+      message,
+      createRawMetadata(data),
+    );
   }
 
   // Undefined Drive and DAPI errors
-  if (code >= 3 && code < 1000) {
+  if (code >= 17 && code < 1000) {
     return new GrpcError(
       GrpcErrorCodes.UNKNOWN,
       message,

@@ -5,14 +5,13 @@ const InternalGrpcError = require('@dashevo/grpc-common/lib/server/error/Interna
 const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 const FailedPreconditionGrpcError = require('@dashevo/grpc-common/lib/server/error/FailedPreconditionGrpcError');
 const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
+
 const {
   default: loadWasmDpp, ProtocolVersionParsingError,
   IdentityNotFoundError,
   BalanceIsNotEnoughError,
   DataContractAlreadyPresentError,
 } = require('@dashevo/wasm-dpp');
-const DriveErrorCodes = require('../../../../lib/externalApis/drive/ErrorCodes');
-
 const createGrpcErrorFromDriveResponse = require(
   '../../../../lib/grpcServer/handlers/createGrpcErrorFromDriveResponse',
 );
@@ -38,23 +37,18 @@ describe('createGrpcErrorFromDriveResponse', () => {
     encodedInfo = cbor.encode(info).toString('base64');
   });
 
-  const COMMON_ERROR_CLASSES = {
-    [DriveErrorCodes.INVALID_ARGUMENT]: GrpcErrorCodes.INVALID_ARGUMENT,
-    [DriveErrorCodes.NOT_FOUND]: GrpcErrorCodes.NOT_FOUND,
-  };
-
-  Object.entries(DriveErrorCodes)
+  Object.entries(GrpcErrorCodes)
     // We have special tests below for these error codes
     .filter(([, code]) => (
-      ![DriveErrorCodes.INTERNAL].includes(code)
+      ![GrpcErrorCodes.VERSION_MISMATCH, GrpcErrorCodes.INTERNAL].includes(code)
     ))
     .forEach(([codeClass, code]) => {
-      it(`should throw ${codeClass} if drive error code is ${code}`, async () => {
+      it(`should throw ${codeClass} if response code is ${code}`, async () => {
         const error = await createGrpcErrorFromDriveResponse(code, encodedInfo);
 
         expect(error).to.be.an.instanceOf(GrpcError);
         expect(error.getMessage()).to.equal(message);
-        expect(error.getCode()).to.equal(COMMON_ERROR_CLASSES[code]);
+        expect(error.getCode()).to.equal(code);
         expect(error.getRawMetadata()).to.deep.equal({
           'drive-error-data-bin': cbor.encode(info.data),
         });
@@ -161,7 +155,7 @@ describe('createGrpcErrorFromDriveResponse', () => {
     expect(error.getError().message).to.deep.equal('Drive’s error code is empty');
   });
 
-  it('should return InternalGrpcError if DriveCode is internal error', async () => {
+  it('should return InternalGrpcError if code = 13', async () => {
     const errorInfo = {
       message,
       data: {
@@ -171,7 +165,7 @@ describe('createGrpcErrorFromDriveResponse', () => {
     };
 
     const error = await createGrpcErrorFromDriveResponse(
-      DriveErrorCodes.INTERNAL,
+      GrpcErrorCodes.INTERNAL,
       cbor.encode(errorInfo).toString('base64'),
     );
 

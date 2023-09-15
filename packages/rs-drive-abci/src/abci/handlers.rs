@@ -55,9 +55,7 @@ use super::AbciError;
 
 use dpp::platform_value::string_encoding::{encode, Encoding};
 
-use crate::abci::error::AbciErrorCodes;
-use crate::error::query::QueryError;
-use crate::error::serialization::SerializationError;
+use crate::error::handlers::{HandlerError, HandlerErrorCode};
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
     BlockExecutionContextV0Setters,
@@ -630,7 +628,7 @@ where
                 tracing::error!(?error, "check_tx failed");
 
                 Ok(ResponseCheckTx {
-                    code: AbciErrorCodes::Internal as u32, // Internal error gRPC code
+                    code: HandlerErrorCode::Internal as u32,
                     data: vec![],
                     info: encode(&error_data_buffer, Encoding::Base64),
                     gas_wanted: 0 as SignedCredits,
@@ -658,7 +656,7 @@ where
             .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
 
             let response = ResponseQuery {
-                code: AbciErrorCodes::Internal as u32,
+                code: HandlerErrorCode::Internal as u32,
                 log: "".to_string(),
                 info: encode(&error_data_buffer, Encoding::Base64),
                 index: 0,
@@ -680,35 +678,24 @@ where
         let (code, data, info) = if result.is_valid() {
             (0, result.data.unwrap_or_default(), "success".to_string())
         } else {
-            let error = result.errors.first();
+            let error = result
+                .errors
+                .first()
+                .expect("validation result should have at least one error");
 
-            let (code, error_message) = if let Some(error) = error {
-                match error {
-                    QueryError::NotFound(message) => {
-                        (AbciErrorCodes::NotFound as u32, message.to_owned())
-                    }
-                    QueryError::InvalidArgument(message) => {
-                        (AbciErrorCodes::InvalidArgument as u32, message.to_owned())
-                    }
-                    QueryError::Query(error) => {
-                        (AbciErrorCodes::InvalidArgument as u32, error.to_string())
-                    }
-                    _ => (AbciErrorCodes::Unknown as u32, error.to_string()),
-                }
-            } else {
-                (
-                    AbciErrorCodes::Unknown as u32,
-                    "Unknown Drive error".to_string(),
-                )
-            };
+            let handler_error = HandlerError::from(error);
 
             let error_data_buffer = platform_value!({
-                "message": error_message,
+                "message": handler_error.to_string(),
             })
             .to_cbor_buffer()
             .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
 
-            (code, vec![], encode(&error_data_buffer, Encoding::Base64))
+            (
+                handler_error.code() as u32,
+                vec![],
+                encode(&error_data_buffer, Encoding::Base64),
+            )
         };
 
         let response = ResponseQuery {
