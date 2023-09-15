@@ -55,7 +55,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
   const message = decodedInfo.message;
   const data = decodedInfo.data || {};
 
-  // gRPC error codes
+  // Drive error codes
   if (code <= 3) {
     const CommonErrorClass = COMMON_ERROR_CLASSES[code.toString()];
     if (CommonErrorClass) {
