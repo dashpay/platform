@@ -1,3 +1,23 @@
+## [0.25.0-dev.24](https://github.com/dashpay/platform/compare/v0.25.0-dev.23...v0.25.0-dev.24) (2023-09-15)
+
+
+### Bug Fixes
+
+* drive file logs ([#1395](https://github.com/dashpay/platform/issues/1395))
+
+
+### Continuous Integration
+
+* disable apt install step on macos release job ([#1390](https://github.com/dashpay/platform/issues/1390))
+* fix cache mtime ([#1385](https://github.com/dashpay/platform/issues/1385))
+* make actions-cache steps access S3 using the correct region ([#1391](https://github.com/dashpay/platform/issues/1391))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** support new docker version ([#1393](https://github.com/dashpay/platform/issues/1393))
+* update tenderdash to v0.13.1 ([#1392](https://github.com/dashpay/platform/issues/1392))
+
 ## [0.25.0-dev.23](https://github.com/dashpay/platform/compare/v0.25.0-dev.22...v0.25.0-dev.23) (2023-09-11)
 
 
