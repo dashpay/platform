@@ -17,10 +17,6 @@ runs:
       shell: bash
       run: npm config set audit false
 
-    - uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-region: eu-west-1
-
     - name: Cache NPM build artifacts
       uses: everpcpc/actions-cache@v1
       with:
