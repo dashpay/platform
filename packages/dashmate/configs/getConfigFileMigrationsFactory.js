@@ -137,20 +137,6 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
           });
         return configFile;
       },
-      '0.25.0-dev.23': (configFile) => {
-        Object.entries(configFile.configs)
-          .forEach(([, options]) => {
-            if (options.platform.drive.abci.log.jsonFile.level === 'fatal') {
-              options.platform.drive.abci.log.jsonFile.level = 'error';
-            }
-
-            if (options.platform.drive.abci.log.prettyFile.level === 'fatal') {
-              options.platform.drive.abci.log.prettyFile.level = 'error';
-            }
-          });
-
-        return configFile;
-      },
     };
   }
 

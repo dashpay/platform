@@ -77,7 +77,7 @@ module.exports = {
       properties: {
         level: {
           type: 'string',
-          enum: ['error', 'warn', 'info', 'debug', 'trace', 'silent'],
+          enum: ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'],
         },
         path: {
           type: 'string',
