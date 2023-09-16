@@ -81,7 +81,6 @@ mod tests {
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
     use drive_abci::config::PlatformTestConfig;
-    use drive_abci::logging::LogLevelPreset;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
     use itertools::Itertools;
@@ -1699,7 +1698,7 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_identities() {
-        drive_abci::logging::init_for_tests(LogLevelPreset::Silent);
+        drive_abci::logging::init_for_tests(1); // Errors only. Use 5 to print everything
 
         let strategy = Strategy {
             contracts_with_updates: vec![],
@@ -2387,8 +2386,7 @@ mod tests {
 
     #[test]
     fn run_chain_stop_and_restart_with_rotation() {
-        drive_abci::logging::init_for_tests(LogLevelPreset::Silent);
-
+        drive_abci::logging::init_for_tests(1); // Errors only. Use 5 to print everything
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],

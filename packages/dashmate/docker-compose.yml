@@ -46,8 +46,7 @@ services:
     restart: unless-stopped
     volumes:
       - drive_abci_data:/var/lib/dash/rs-drive-abci
-      - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH:?err}:/var/log/pretty
-      - ${PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH:?err}:/var/log/json
+      - drive_abci_logs:/var/log/dash
     environment:
       - BLOCK_SPACING_MS=3000 # TODO: sync with tenderdash
       - CHAIN_ID=devnet # TODO: sync with tenderdash chain id
@@ -69,15 +68,8 @@ services:
       - WITHDRAWALS_SECOND_PUBLIC_KEY=${PLATFORM_WITHDRAWALS_SECOND_PUBLIC_KEY}
       - QUORUM_SIZE=5 # TODO: sync with Tenderdash
       - QUORUM_TYPE=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_LLMQ_TYPE:?err}
-      - NETWORK=${NETWORK:?err}
-      - TENDERDASH_P2P_PORT=${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}
-      - ABCI_LOG_STDOUT_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_STDOUT_LEVEL:?err}
-      - ABCI_LOG_PRETTY_DESTINATION=/var/log/pretty/${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME:?err}
-      - ABCI_LOG_PRETTY_VERBOSITY=${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_LEVEL:?err}
-      - ABCI_LOG_PRETTY_FORMAT=pretty
-      - ABCI_LOG_JSON_DESTINATION=/var/log/json/${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME:?err}
-      - ABCI_LOG_JSON_VERBOSITY=${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_LEVEL:?err}
-      - ABCI_LOG_JSON_FORMAT=json
+      - NETWORK=${NETWORK}
+      - TENDERDASH_P2P_PORT=${PLATFORM_DRIVE_TENDERDASH_P2P_PORT}
     stop_grace_period: 30s
     profiles:
       - platform
