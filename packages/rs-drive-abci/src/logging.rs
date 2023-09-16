@@ -55,10 +55,10 @@ pub struct LogConfig {
     /// Output format to use.
     ///
     /// One of:
-    /// * Full
-    /// * Compact
-    /// * Pretty
-    /// * Json
+    /// * full
+    /// * compact
+    /// * pretty
+    /// * json
     ///
     /// See https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/format/index.html#formatters for more
     /// detailed description.
