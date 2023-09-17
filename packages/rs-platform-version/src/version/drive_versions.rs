@@ -20,6 +20,7 @@ pub struct DriveMethodVersions {
     pub protocol_upgrade: DriveProtocolUpgradeVersions,
     pub balances: DriveBalancesMethodVersions,
     pub document: DriveDocumentMethodVersions,
+    pub vote: DriveVoteMethodVersions,
     pub contract: DriveContractMethodVersions,
     pub fees: DriveFeesMethodVersions,
     pub estimated_costs: DriveEstimatedCostsMethodVersions,
@@ -195,6 +196,16 @@ pub struct DriveSystemProtocolVersionMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveSystemEstimationCostsMethodVersions {
     pub for_total_system_credits_update: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVoteMethodVersions {
+    pub insert: DriveVoteInsertMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVoteInsertMethodVersions {
+    pub add_new_masternode_vote_type: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -120,14 +120,14 @@ impl Drive {
 
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
-            &[RootTree::Misc as u8],
+            &[RootTree::Votes as u8],
             transaction,
             None,
             &mut drive_operations,
             drive_version,
         )?;
 
-        //Row 3 (3/8 taken)
+        //Row 3 (5/8 taken)
 
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
@@ -150,6 +150,15 @@ impl Drive {
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
             &[RootTree::SpentAssetLockTransactions as u8],
+            transaction,
+            None,
+            &mut drive_operations,
+            drive_version,
+        )?;
+
+        self.grove_insert_empty_tree(
+            SubtreePath::empty(),
+            &[RootTree::Misc as u8],
             transaction,
             None,
             &mut drive_operations,

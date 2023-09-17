@@ -10,5 +10,6 @@ use serde::{Deserialize, Serialize};
 pub enum CommonVote {
     YES,
     NO,
+    #[default]
     ABSTAIN,
 }

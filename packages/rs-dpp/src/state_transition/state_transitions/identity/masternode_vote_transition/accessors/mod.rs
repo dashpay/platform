@@ -1,9 +1,9 @@
 mod v0;
 
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-use crate::voting::resource_vote::ResourceVote;
 use platform_value::Identifier;
 pub use v0::*;
+use crate::voting::Vote;
 
 impl MasternodeVoteTransitionAccessorsV0 for MasternodeVoteTransition {
     fn pro_tx_hash(&self) -> Identifier {
@@ -20,16 +20,16 @@ impl MasternodeVoteTransitionAccessorsV0 for MasternodeVoteTransition {
         }
     }
 
-    fn resource_vote(&self) -> ResourceVote {
+    fn vote(&self) -> &Vote {
         match self {
-            MasternodeVoteTransition::V0(transition) => transition.resource_vote,
+            MasternodeVoteTransition::V0(transition) => &transition.vote,
         }
     }
 
-    fn set_resource_vote(&mut self, resource_vote: ResourceVote) {
+    fn set_vote(&mut self, vote: Vote) {
         match self {
             MasternodeVoteTransition::V0(transition) => {
-                transition.resource_vote = resource_vote;
+                transition.vote = vote;
             }
         }
     }

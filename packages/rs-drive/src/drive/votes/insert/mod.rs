@@ -1,0 +1,1 @@
+mod add_new_masternode_vote_type;

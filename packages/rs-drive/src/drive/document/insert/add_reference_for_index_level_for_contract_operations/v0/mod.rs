@@ -9,7 +9,6 @@ use crate::drive::object_size_info::DocumentInfo::{
 };
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
-use crate::drive::object_size_info::PathKeyElementInfo::PathKeyElement;
 use crate::drive::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyElementInfo};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -19,7 +18,6 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::IndexType;
 use dpp::data_contract::document_type::IndexType::{ContestedResourceIndex, NonUniqueIndex};
 use dpp::document::DocumentV0Getters;
-use dpp::platform_value::Value::Identifier;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
@@ -142,7 +140,7 @@ impl Drive {
                 // here we should return an error if the element already exists
                 self.batch_insert(path_key_element_info, batch_operations, drive_version)?;
             } else {
-                // Contested Resource index
+                // Contested Resource Index
                 // Under each tree we have all identifiers of identities that want the contested resource
                 // We get something like
                 //                      item name contested (there will be another path with item_name)
