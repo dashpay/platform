@@ -1,3 +1,63 @@
+## [0.25.0-dev.26](https://github.com/dashpay/platform/compare/v0.25.0-dev.25...v0.25.0-dev.26) (2023-09-16)
+
+### Reverted
+
+* drive file logs ([#1400]((https://github.com/dashpay/platform/pull/1400)))
+
+
+## [0.25.0-dev.25](https://github.com/dashpay/platform/compare/v0.25.0-dev.24...v0.25.0-dev.25) (2023-09-15)
+
+### Reverted
+
+* make actions-cache steps access S3 using the correct region ([#1398](https://github.com/dashpay/platform/pull/1398))
+
+
+## [0.25.0-dev.24](https://github.com/dashpay/platform/compare/v0.25.0-dev.23...v0.25.0-dev.24) (2023-09-15)
+
+
+### Bug Fixes
+
+* drive file logs ([#1395](https://github.com/dashpay/platform/issues/1395))
+
+
+### Continuous Integration
+
+* disable apt install step on macos release job ([#1390](https://github.com/dashpay/platform/issues/1390))
+* fix cache mtime ([#1385](https://github.com/dashpay/platform/issues/1385))
+* make actions-cache steps access S3 using the correct region ([#1391](https://github.com/dashpay/platform/issues/1391))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** support new docker version ([#1393](https://github.com/dashpay/platform/issues/1393))
+* update tenderdash to v0.13.1 ([#1392](https://github.com/dashpay/platform/issues/1392))
+
+## [0.25.0-dev.23](https://github.com/dashpay/platform/compare/v0.25.0-dev.22...v0.25.0-dev.23) (2023-09-11)
+
+
+### Bug Fixes
+
+* **drive:** vote extensions are allowed only for the current block and round ([#1387](https://github.com/dashpay/platform/issues/1387))
+
+
+### Continuous Integration
+
+* macos dashmate build broken due to bad qemu install ([#1374](https://github.com/dashpay/platform/issues/1374))
+
+## [0.25.0-dev.22](https://github.com/dashpay/platform/compare/v0.25.0-dev.21...v0.25.0-dev.22) (2023-09-08)
+
+
+### Features
+
+* **drive:** improve ABCI logging ([#1382](https://github.com/dashpay/platform/issues/1382))
+* support a new dashcore version ([#1368](https://github.com/dashpay/platform/issues/1368))
+
+
+### Bug Fixes
+
+* **drive:** -32603 error code on broadcast ([#1381](https://github.com/dashpay/platform/issues/1381))
+* **drive:** query fix for 1 value and no where clause ([#1378](https://github.com/dashpay/platform/issues/1378))
+
 ## [0.25.0-dev.21](https://github.com/dashpay/platform/compare/v0.25.0-dev.20...v0.25.0-dev.21) (2023-09-07)
 
 ## [0.25.0-dev.20](https://github.com/dashpay/platform/compare/v0.25.0-dev.19...v0.25.0-dev.20) (2023-09-06)

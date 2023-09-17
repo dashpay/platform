@@ -294,10 +294,10 @@ mod tests {
             last_block_app_hash,
         } = abci_app
             .info(RequestInfo {
-                version: "0.13.0".to_string(),
+                version: tenderdash_abci::proto::meta::TENDERDASH_VERSION.to_string(),
                 block_version: 0,
                 p2p_version: 0,
-                abci_version: "0.22.0".to_string(),
+                abci_version: tenderdash_abci::proto::meta::ABCI_VERSION.to_string(),
             })
             .expect("expected to call info");
 
@@ -1698,6 +1698,8 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_identities() {
+        drive_abci::logging::init_for_tests(1); // Errors only. Use 5 to print everything
+
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![Operation {
@@ -2384,6 +2386,7 @@ mod tests {
 
     #[test]
     fn run_chain_stop_and_restart_with_rotation() {
+        drive_abci::logging::init_for_tests(1); // Errors only. Use 5 to print everything
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
@@ -2468,10 +2471,10 @@ mod tests {
             last_block_app_hash,
         } = abci_app
             .info(RequestInfo {
-                version: "0.13.0".to_string(),
+                version: tenderdash_abci::proto::meta::TENDERDASH_VERSION.to_string(),
                 block_version: 0,
                 p2p_version: 0,
-                abci_version: "0.22.0".to_string(),
+                abci_version: tenderdash_abci::proto::meta::ABCI_VERSION.to_string(),
             })
             .expect("expected to call info");
 
