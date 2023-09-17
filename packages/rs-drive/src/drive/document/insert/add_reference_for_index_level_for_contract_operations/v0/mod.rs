@@ -151,7 +151,7 @@ impl Drive {
                 //                             |
                 //              0 (for the termination of the index)
                 //                  /                    \
-                //            Sam's Id                Ivan's Id
+                //       Sam's Document Id         Ivan's Document Id
                 //             /    \                  /      \
                 //         0 (ref)   1 (sum tree)    0 (ref)   1 (sum tree)
                 //
@@ -194,16 +194,20 @@ impl Drive {
                         }
                     };
 
-                let document_key_path_info = document.id_ref().as_slice();
+                let document_key_path_info = KeyRef(document_id.as_slice());
+
+                let mut document_path_info = index_path_info.clone();
+
+                document_path_info.push(document_key_path_info)?;
 
                 let ref_key_path_info = KeyRef(&[0]);
 
                 let votes_key_path_info = KeyRef(&[1]);
 
-                let ref_path_key_info = ref_key_path_info.add_path_info(index_path_info.clone());
+                let ref_path_key_info = ref_key_path_info.add_path_info(document_path_info.clone());
 
                 let votes_path_key_info =
-                    votes_key_path_info.add_path_info(index_path_info.clone());
+                    votes_key_path_info.add_path_info(document_path_info.clone());
 
                 if let Some(estimated_costs_only_with_layer_info) =
                     estimated_costs_only_with_layer_info
@@ -242,9 +246,20 @@ impl Drive {
                     key_element_info,
                 )?;
 
-                // here we should return an error if the element already exists
-                self.batch_insert_empty_tree_if_not_exists(
-                    path_key_element_info,
+                // here we are the tree that will contain the ref and the voting tree
+                self.batch_insert_empty_tree(
+                    document_path_info,
+                    *storage_flags,
+                    previous_batch_operations,
+                    batch_operations,
+                    drive_version,
+                )?;
+
+                // here we are the tree that will contain the ref and the voting tree
+                self.batch_insert_empty_tree(
+                    document_path_info,
+                    *storage_flags,
+                    previous_batch_operations,
                     batch_operations,
                     drive_version,
                 )?;
