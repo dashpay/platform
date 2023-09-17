@@ -1,14 +1,18 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::prelude::Identifier;
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 use dpp::version::PlatformVersion;
+use sha2::digest::generic_array::functional::FunctionalSequence;
 
 use drive::drive::batch::DriveOperation;
+use drive::error::drive::DriveError;
 use drive::grovedb::Transaction;
 
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
@@ -59,17 +63,32 @@ where
             )));
         };
 
-        let core_transactions = self.fetch_core_block_transactions(
-            last_synced_core_height,
-            block_execution_context
-                .block_state_info()
-                .core_chain_locked_height(),
-            platform_version,
-        )?;
-
         let broadcasted_withdrawal_documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
             Some(transaction),
+            platform_version,
+        )?;
+
+        // Collecting only documents that have been updated
+        let transactions_to_check: Vec<Identifier> = broadcasted_withdrawal_documents
+            .iter()
+            .map(|document| {
+                document
+                    .properties()
+                    .get_identifier(withdrawal::properties::TRANSACTION_ID)
+                    .map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedDriveResponse(
+                            "Can't get transactionId from withdrawal document".to_string(),
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<Identifier>, Error>>()?;
+
+        let core_transactions_statuses = self.fetch_transactions_block_inclusion_status(
+            block_execution_context
+                .block_state_info()
+                .core_chain_locked_height(),
+            transactions_to_check,
             platform_version,
         )?;
 
@@ -81,55 +100,59 @@ where
             .map(|mut document| {
                 let transaction_sign_height: u32 = document
                     .properties()
-                    .get_integer(withdrawal::properties::TRANSACTION_SIGN_HEIGHT)
-                    .map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't get transactionSignHeight from withdrawal document",
-                        ))
-                    })?;
+                    .get_optional_integer(withdrawal::properties::TRANSACTION_SIGN_HEIGHT)?
+                    .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                        "Can't get transactionSignHeight from withdrawal document".to_string(),
+                    )))?;
 
-                let transaction_id_bytes = document
+                let transaction_id = document
                     .properties()
-                    .get_bytes(withdrawal::properties::TRANSACTION_ID)
-                    .map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't get transactionId from withdrawal document",
-                        ))
-                    })?;
+                    .get_optional_identifier(withdrawal::properties::TRANSACTION_ID)?
+                    .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                        "Can't get transactionId from withdrawal document".to_string(),
+                    )))?;
 
                 let transaction_index = document
                     .properties()
-                    .get_integer(withdrawal::properties::TRANSACTION_INDEX)
-                    .map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't get transactionIdex from withdrawal document",
-                        ))
-                    })?;
+                    .get_optional_integer(withdrawal::properties::TRANSACTION_INDEX)?
+                    .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                        "Can't get transaction index from withdrawal document".to_string(),
+                    )))?;
 
-                let transaction_id = hex::encode(transaction_id_bytes);
+                let current_status: WithdrawalStatus = document
+                    .properties()
+                    .get_optional_integer::<u8>(withdrawal::properties::STATUS)?
+                    .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                        "Can't get transaction index from withdrawal document".to_string(),
+                    )))?
+                    .try_into()?;
 
                 let block_height_difference = block_execution_context
                     .block_state_info()
                     .core_chain_locked_height()
                     - transaction_sign_height;
 
-                let status;
+                let mut status =
+                    *core_transactions_statuses
+                        .get(&transaction_id)
+                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "we should always have a withdrawal status",
+                        )))?;
 
-                if core_transactions.contains(&transaction_id) {
-                    status = withdrawals_contract::WithdrawalStatus::COMPLETE;
-                } else if block_height_difference > NUMBER_OF_BLOCKS_BEFORE_EXPIRED {
-                    status = withdrawals_contract::WithdrawalStatus::EXPIRED;
-                } else {
-                    return Ok(None);
-                };
-
-                document.set_u8(withdrawal::properties::STATUS, status.into());
+                if status == WithdrawalStatus::BROADCASTED
+                    && block_height_difference > NUMBER_OF_BLOCKS_BEFORE_EXPIRED
+                {
+                    status = WithdrawalStatus::EXPIRED;
+                }
+                if current_status != status {
+                    document.set_u8(withdrawal::properties::STATUS, status.into());
+                }
 
                 document.set_u64(withdrawal::properties::UPDATED_AT, block_info.time_ms);
 
                 document.increment_revision().map_err(Error::Protocol)?;
 
-                if status == withdrawals_contract::WithdrawalStatus::EXPIRED {
+                if status == WithdrawalStatus::EXPIRED {
                     self.drive.add_insert_expired_index_operation(
                         transaction_index,
                         &mut drive_operations,
