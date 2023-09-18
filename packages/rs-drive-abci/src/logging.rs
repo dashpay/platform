@@ -464,9 +464,7 @@ impl Loggers {
                             .and_then(|_| Ok(inner.handle().reopen()));
                     }
                 }
-                d => {
-                    tracing::trace!("log destination {} does not support rotation", d.name())
-                }
+                _ => {}
             }
         }
         result
