@@ -2579,10 +2579,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/docker-compose", [\
-        ["npm:0.24.2", {\
-          "packageLocation": "./.yarn/cache/@dashevo-docker-compose-npm-0.24.2-73c929613f-f8803c8ab5.zip/node_modules/@dashevo/docker-compose/",\
+        ["npm:0.24.4", {\
+          "packageLocation": "./.yarn/cache/@dashevo-docker-compose-npm-0.24.4-1e0677c86b-261df4d6df.zip/node_modules/@dashevo/docker-compose/",\
           "packageDependencies": [\
-            ["@dashevo/docker-compose", "npm:0.24.2"],\
+            ["@dashevo/docker-compose", "npm:0.24.4"],\
             ["yaml", "npm:2.2.2"]\
           ],\
           "linkType": "HARD"\
@@ -8197,7 +8197,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
-            ["@dashevo/docker-compose", "npm:0.24.2"],\
+            ["@dashevo/docker-compose", "npm:0.24.4"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
