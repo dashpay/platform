@@ -190,14 +190,9 @@ where
             }
         }
 
-        let last_synced_core_height = block_execution_context
-            .block_state_info
-            .core_chain_locked_height();
-
         let mut block_execution_context: BlockExecutionContext = block_execution_context.into();
 
         self.update_broadcasted_withdrawal_transaction_statuses(
-            last_synced_core_height,
             &block_execution_context,
             transaction,
             platform_version,
