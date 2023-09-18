@@ -66,7 +66,7 @@ pub struct LogConfig {
     /// detailed description.
     #[serde(default)]
     pub format: LogFormat,
-    /// Max number of daily files to store; only used when storing logs in file; defaults to 0 - rotation disabled
+    /// Max number of daily files to store, excluding active one; only used when storing logs in file; defaults to 0 - rotation disabled
     #[serde(default)]
     pub max_files: usize,
 }
@@ -454,15 +454,11 @@ impl Loggers {
                     };
                 }
                 LogDestination::File(ref f) => {
-                    {
-                        let mut inner = f.0.lock().expect("logging lock poisoned");
+                    let mut inner = f.0.lock().expect("logging lock poisoned");
 
-                        // let inner = guard.get_mut();
-                        result = inner
-                            .flush()
-                            .map_err(|e| Error::FileRotate(e))
-                            .and_then(|_| Ok(inner.handle().reopen()));
-                    }
+                    result = inner.flush().map_err(Error::FileRotate).map(|_| {
+                        inner.handle().reopen();
+                    })
                 }
                 _ => {}
             }
@@ -791,7 +787,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use std::str::from_utf8;
+    use std::{fs, str::from_utf8};
 
     /// Reads data written to provided destination.
     ///
@@ -911,5 +907,131 @@ mod tests {
         assert!(!result_dir_verb_0.contains(TEST_STRING_DEBUG));
         assert!(result_verb_4.contains(TEST_STRING_DEBUG));
         assert!(result_file_verb_4.contains(TEST_STRING_DEBUG));
+    }
+
+    /// Test rotation of RotationWriter destination.
+    ///
+    /// Given that the RotationWriter is rotated 3 times, we expect to see 4 files:
+    /// - 1 file with the original name
+    /// - 3 files with the original name and timestamp suffix
+    #[test]
+    fn test_rotation_writer_rotate() {
+        let tempdir = TempDir::new().unwrap();
+        let config = LogConfig {
+            destination: tempdir.path().to_string_lossy().to_string(),
+            verbosity: 4,
+            format: LogFormat::Pretty,
+            max_files: 3,
+            ..Default::default()
+        };
+
+        let loggers = LogBuilder::new()
+            .with_config("rotate", &config)
+            .expect("configure log builder")
+            .build();
+        let logger = loggers.0.get("rotate").expect("get logger");
+
+        for i in 0..config.max_files + 2 {
+            logger
+                .destination
+                .lock()
+                .unwrap()
+                .write_all(format!("file {}\n", i).as_bytes())
+                .unwrap();
+
+            loggers.rotate().expect("rotate logs");
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+        }
+        let mut counter = 0;
+        tempdir.path().read_dir().unwrap().for_each(|entry| {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let path = path.to_string_lossy();
+            println!("{}", path);
+            assert!(path.contains("drive-abci.log"));
+            counter = counter + 1;
+        });
+        assert_eq!(counter, config.max_files + 1);
+    }
+
+    /// Test rotation of File destination.
+    ///
+    /// Given that we move the File and then Rotate it, we expect the file to be recreated in new location.
+    #[test]
+    fn test_file_rotate() {
+        const ITERATIONS: usize = 4;
+
+        let tempdir = TempDir::new().unwrap();
+        let filepath = tempdir.path().join("drive-abci.log");
+        let config = LogConfig {
+            destination: tempdir.path().to_string_lossy().to_string(),
+            verbosity: 4,
+            format: LogFormat::Pretty,
+            max_files: 0,
+            ..Default::default()
+        };
+
+        let loggers = LogBuilder::new()
+            .with_config("rotate", &config)
+            .expect("configure log builder")
+            .build();
+        let logger = loggers.0.get("rotate").expect("get logger");
+
+        for i in 0..ITERATIONS {
+            let mut guard = logger.destination.lock().unwrap();
+            guard
+                .write_all(format!("file {}, before rotate\n", i).as_bytes())
+                .unwrap();
+
+            fs::rename(
+                &filepath,
+                tempdir.path().join(format!("drive-abci.log.{}", i)),
+            )
+            .unwrap();
+            // rotate() locks, so we need to drop guard here
+            drop(guard);
+
+            loggers.rotate().expect("rotate logs");
+            let mut guard = logger.destination.lock().unwrap();
+            guard
+                .write_all(format!("file {}, after rotate\n", i + 1).as_bytes())
+                .unwrap();
+            guard.flush().unwrap();
+
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        // Close all files, so that we can read them
+        drop(loggers);
+
+        let mut counter = 0;
+        tempdir.path().read_dir().unwrap().for_each(|entry| {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let path_str = path.to_string_lossy();
+            let read = fs::read_to_string(&path).unwrap();
+            println!("{}: {}", path_str, read);
+            assert!(path_str.contains("drive-abci.log"));
+
+            if counter < ITERATIONS - 1 {
+                assert!(
+                    read.contains(format!("file {}, before rotate\n", counter).as_str()),
+                    "expect: file {}, before rotate, read: {}",
+                    counter,
+                    read
+                )
+            };
+            if counter > 0 {
+                assert!(
+                    read.contains(format!("file {}, after rotate\n", counter).as_str()),
+                    "expect: file {}, after rotate, read: {}",
+                    counter,
+                    read
+                )
+            }
+
+            counter = counter + 1;
+        });
+        assert_eq!(counter, ITERATIONS + 1);
     }
 }
