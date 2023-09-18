@@ -1566,12 +1566,12 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/docker-compose@npm:^0.24.3":
-  version: 0.24.3
-  resolution: "@dashevo/docker-compose@npm:0.24.3"
+"@dashevo/docker-compose@npm:^0.24.4":
+  version: 0.24.4
+  resolution: "@dashevo/docker-compose@npm:0.24.4"
   dependencies:
     yaml: ^2.2.2
-  checksum: 32ae310e2fe7269cc0a5fb0c3907cc49830b4ce755c8c1dc9fe825635eb3d044b5ee41ae3a6ed34bb7f75a1cb6007a978a1d10276e2ede98c487eb4c7d2e5e43
+  checksum: 261df4d6df78e823ec1bf6188ba9c1c8549f82d54478eefeb901a9d0129add67770c6f294923cd378e1e4d570d3ff4b6fa6ea28069be7ea06cc9d57d6fd2277a
   languageName: node
   linkType: hard
 
@@ -6136,7 +6136,7 @@ __metadata:
     "@dashevo/dashcore-lib": ~0.20.9
     "@dashevo/dashd-rpc": ^18.2.0
     "@dashevo/dashpay-contract": "workspace:*"
-    "@dashevo/docker-compose": ^0.24.3
+    "@dashevo/docker-compose": ^0.24.4
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
