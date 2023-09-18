@@ -6,12 +6,14 @@ use file_rotate::TimeFrequency;
 use itertools::Itertools;
 use lazy_static::__Deref;
 use regex::Regex;
+use reopen::Reopen;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fs::File;
 use std::fs::OpenOptions;
+use std::io::Write;
 use std::os::unix::prelude::OpenOptionsExt;
 use std::path::Path;
 use std::path::PathBuf;
@@ -444,13 +446,28 @@ impl Loggers {
             let cloned = logger.destination.clone();
             let guard = cloned.lock().expect("logging lock poisoned");
 
-            if let LogDestination::RotationWriter(writer) = guard.deref() {
-                let mut inner = writer.0.lock().expect("logging lock poisoned");
-                // let inner = guard.get_mut();
-                if let Err(e) = inner.rotate() {
-                    result = Err(Error::FileRotate(e));
-                };
-            };
+            match guard.deref() {
+                LogDestination::RotationWriter(ref writer) => {
+                    let mut inner = writer.0.lock().expect("logging lock poisoned");
+                    if let Err(e) = inner.rotate() {
+                        result = Err(Error::FileRotate(e));
+                    };
+                }
+                LogDestination::File(ref f) => {
+                    {
+                        let mut inner = f.0.lock().expect("logging lock poisoned");
+
+                        // let inner = guard.get_mut();
+                        result = inner
+                            .flush()
+                            .map_err(|e| Error::FileRotate(e))
+                            .and_then(|_| Ok(inner.handle().reopen()));
+                    }
+                }
+                d => {
+                    tracing::trace!("log destination {} does not support rotation", d.name())
+                }
+            }
         }
         result
     }
@@ -536,7 +553,7 @@ enum LogDestination {
     /// Standard out
     StdOut,
     /// Standard file
-    File(Writer<std::fs::File>),
+    File(Writer<reopen::Reopen<std::fs::File>>),
     /// File that is logrotated
     RotationWriter(Writer<FileRotate<AppendTimestamp>>),
     #[cfg(test)]
@@ -621,7 +638,7 @@ impl TryFrom<&LogConfig> for FileRotate<AppendTimestamp> {
     }
 }
 
-impl TryFrom<&LogConfig> for File {
+impl TryFrom<&LogConfig> for Reopen<File> {
     type Error = Error;
     /// Configure new File based on log configuration.
     fn try_from(config: &LogConfig) -> Result<Self, Self::Error> {
@@ -631,14 +648,17 @@ impl TryFrom<&LogConfig> for File {
 
         validate_log_path(&path)?;
 
-        let f = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .mode(mode)
-            .open(&path)
-            .map_err(|e| Error::FileCreate(path, e))?;
+        let opened_path = path.clone();
+        let open_fn = move || {
+            OpenOptions::new()
+                .create(true)
+                .write(true)
+                .append(true)
+                .mode(mode)
+                .open(&opened_path)
+        };
 
-        Ok(f)
+        Reopen::new(Box::new(open_fn)).map_err(|e| Error::FileCreate(path, e))
     }
 }
 
@@ -676,7 +696,7 @@ impl TryFrom<&LogConfig> for Logger {
                     let file: FileRotate<AppendTimestamp> = FileRotate::try_from(config)?;
                     LogDestination::RotationWriter(file.into())
                 } else {
-                    let file: File = File::try_from(config)?;
+                    let file: Reopen<File> = config.try_into()?;
                     LogDestination::File(file.into())
                 }
             }
