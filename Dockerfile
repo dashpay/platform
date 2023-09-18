@@ -203,23 +203,22 @@ FROM alpine:${ALPINE_VERSION} AS drive-abci
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="Drive ABCI Rust"
 
-WORKDIR /var/lib/dash
-
 RUN apk add --no-cache libgcc libstdc++
+
+ENV DB_PATH=/var/lib/dash/rs-drive-abci/db
+
+RUN mkdir -p /var/log/dash \
+    /var/lib/dash/rs-drive-abci
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
 COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.example /var/lib/dash/rs-drive-abci/.env
 
-# Double-check that we don't have missing deps
-RUN ldd /usr/bin/drive-abci
-
 # Create a volume
-VOLUME /var/lib/dash
+VOLUME /var/lib/dash/rs-drive-abci/db
 VOLUME /var/log/dash
 
-RUN mkdir -p /var/log/dash
-
-ENV DB_PATH=/var/lib/dash/rs-drive-abci/db
+# Double-check that we don't have missing deps
+RUN ldd /usr/bin/drive-abci
 
 #
 # Create new non-root user

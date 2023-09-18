@@ -45,9 +45,9 @@ services:
       org.dashmate.service.title: "Drive ABCI"
     restart: unless-stopped
     volumes:
-      - drive_abci_data:/var/lib/dash/rs-drive-abci
-      - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH:?err}:/var/log/pretty
-      - ${PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH:?err}:/var/log/json
+      - drive_abci_data:/var/lib/dash/rs-drive-abci/db
+      - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH:?err}:/var/log/dash/drive/pretty
+      - ${PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH:?err}:/var/log/dash/drive/json
     environment:
       - BLOCK_SPACING_MS=3000 # TODO: sync with tenderdash
       - CHAIN_ID=devnet # TODO: sync with tenderdash chain id
@@ -72,10 +72,10 @@ services:
       - NETWORK=${NETWORK:?err}
       - TENDERDASH_P2P_PORT=${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}
       - ABCI_LOG_STDOUT_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_STDOUT_LEVEL:?err}
-      - ABCI_LOG_PRETTY_DESTINATION=/var/log/pretty/${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME:?err}
+      - ABCI_LOG_PRETTY_DESTINATION=/var/log/dash/drive/pretty/${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME:?err}
       - ABCI_LOG_PRETTY_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_LEVEL:?err}
       - ABCI_LOG_PRETTY_FORMAT=pretty
-      - ABCI_LOG_JSON_DESTINATION=/var/log/json/${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME:?err}
+      - ABCI_LOG_JSON_DESTINATION=/var/log/dash/drive/json/${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME:?err}
       - ABCI_LOG_JSON_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_LEVEL:?err}
       - ABCI_LOG_JSON_FORMAT=json
     stop_grace_period: 30s

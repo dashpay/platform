@@ -576,7 +576,7 @@ impl LogDestination {
             LogDestination::File(_) => "file",
             LogDestination::RotationWriter(_) => "RotationWriter",
             #[cfg(test)]
-            LogDestination::Bytes(_) => "ByteBuffer",
+            LogDestination::Bytes(_) => "bytes",
         };
 
         String::from(s)
@@ -590,7 +590,7 @@ impl Debug for LogDestination {
 }
 
 /// Whenever we want to write to log destination, we delegate to the Writer implementation
-impl std::io::Write for LogDestination {
+impl Write for LogDestination {
     delegate::delegate! {
         to self.to_write() {
             #[inline]
