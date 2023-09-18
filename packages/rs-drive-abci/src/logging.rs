@@ -917,8 +917,9 @@ mod tests {
     #[test]
     fn test_rotation_writer_rotate() {
         let tempdir = TempDir::new().unwrap();
+        let filepath = tempdir.path().join("drive-abci.log");
         let config = LogConfig {
-            destination: tempdir.path().to_string_lossy().to_string(),
+            destination: filepath.to_string_lossy().to_string(),
             level: LogLevelPreset::Trace,
             format: LogFormat::Pretty,
             max_files: 3,
@@ -964,7 +965,7 @@ mod tests {
         let tempdir = TempDir::new().unwrap();
         let filepath = tempdir.path().join("drive-abci.log");
         let config = LogConfig {
-            destination: tempdir.path().to_string_lossy().to_string(),
+            destination: filepath.to_string_lossy().to_string(),
             level: LogLevelPreset::Trace,
             format: LogFormat::Pretty,
             max_files: 0,
