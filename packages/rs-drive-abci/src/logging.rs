@@ -919,7 +919,7 @@ mod tests {
         let tempdir = TempDir::new().unwrap();
         let config = LogConfig {
             destination: tempdir.path().to_string_lossy().to_string(),
-            verbosity: 4,
+            level: LogLevelPreset::Trace,
             format: LogFormat::Pretty,
             max_files: 3,
             ..Default::default()
@@ -965,7 +965,7 @@ mod tests {
         let filepath = tempdir.path().join("drive-abci.log");
         let config = LogConfig {
             destination: tempdir.path().to_string_lossy().to_string(),
-            verbosity: 4,
+            level: LogLevelPreset::Trace,
             format: LogFormat::Pretty,
             max_files: 0,
             ..Default::default()
