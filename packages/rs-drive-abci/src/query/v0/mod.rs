@@ -32,6 +32,7 @@ use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
 use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_response::BalanceAndRevision;
 
+use dapi_grpc::platform::v0::get_data_contract_history_response::DataContractHistoryEntry;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use dpp::version::PlatformVersion;
@@ -684,39 +685,42 @@ impl<C> Platform<C> {
                     )));
 
                 // TODO: make a cast safe
-                let limit = limit
+                let limit = check_validation_result_with_data!(limit
                     .map(|limit| {
                         u16::try_from(limit).map_err(|_| {
-                            Error::Drive(drive::error::Error::DataContract(
-                                DataContractError::Overflow(
-                                    "can't fit u16 limit from the supplied value",
-                                ),
-                            ))
+                            QueryError::InvalidArgument(
+                                "can't fit u16 limit from the supplied value".to_string(),
+                            )
                         })
                     })
-                    .transpose()?;
-                let offset = offset
+                    .transpose());
+
+                let offset = check_validation_result_with_data!(offset
                     .map(|offset| {
                         u16::try_from(offset).map_err(|_| {
-                            Error::Drive(drive::error::Error::DataContract(
-                                DataContractError::Overflow(
-                                    "can't fit u16 offset from the supplied value",
-                                ),
-                            ))
+                            QueryError::InvalidArgument(
+                                "can't fit u16 offset from the supplied value".to_string(),
+                            )
                         })
                     })
-                    .transpose()?;
+                    .transpose());
 
                 let response_data = if prove {
-                    let proof =
-                        check_validation_result_with_data!(self.drive.prove_contract_history(
-                            contract_id.to_buffer(),
-                            None,
-                            start_at_ms,
-                            limit,
-                            offset,
-                            platform_version,
-                        ));
+                    let proof = self.drive.prove_contract_history(
+                        contract_id.to_buffer(),
+                        None,
+                        start_at_ms,
+                        limit,
+                        offset,
+                        platform_version,
+                    )?;
+
+                    if proof.is_empty() {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
+                            format!("data contract {} history proof not found", contract_id),
+                        )));
+                    }
+
                     GetDataContractHistoryResponse {
                         metadata: Some(metadata),
                         result: Some(get_data_contract_history_response::Result::Proof(Proof {
@@ -730,29 +734,38 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 } else {
-                    let contracts =
-                        check_validation_result_with_data!(self.drive.fetch_contract_with_history(
-                            contract_id.to_buffer(),
-                            None,
-                            start_at_ms,
-                            limit,
-                            offset,
-                            platform_version,
-                        ));
+                    let contracts = self.drive.fetch_contract_with_history(
+                        contract_id.to_buffer(),
+                        None,
+                        start_at_ms,
+                        limit,
+                        offset,
+                        platform_version,
+                    )?;
 
-                    let contract_historical_entries = check_validation_result_with_data!(contracts
+                    if contracts.is_empty() {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
+                            format!("data contract {} history not found", contract_id),
+                        )));
+                    }
+
+                    let contract_historical_entries: Vec<DataContractHistoryEntry> = contracts
                         .into_iter()
-                        .map(|(date_in_seconds, data_contract)| Ok::<
-                            get_data_contract_history_response::DataContractHistoryEntry,
-                            ProtocolError,
-                        >(
-                            get_data_contract_history_response::DataContractHistoryEntry {
-                                date: date_in_seconds,
-                                value: data_contract
-                                    .serialize_to_bytes_with_platform_version(platform_version)?
-                            }
-                        ))
-                        .collect());
+                        .map(|(date_in_seconds, data_contract)| {
+                            Ok::<
+                                get_data_contract_history_response::DataContractHistoryEntry,
+                                ProtocolError,
+                            >(
+                                get_data_contract_history_response::DataContractHistoryEntry {
+                                    date: date_in_seconds,
+                                    value: data_contract.serialize_to_bytes_with_platform_version(
+                                        platform_version,
+                                    )?,
+                                },
+                            )
+                        })
+                        .collect::<Result<Vec<DataContractHistoryEntry>, ProtocolError>>()?;
+
                     GetDataContractHistoryResponse {
                         result: Some(
                             get_data_contract_history_response::Result::DataContractHistory(
@@ -781,25 +794,27 @@ impl<C> Platform<C> {
                         "invalid query proto message: {}",
                         e.to_string()
                     ))));
+
                 let contract_id: Identifier = check_validation_result_with_data!(data_contract_id
                     .try_into()
                     .map_err(|_| QueryError::InvalidArgument(
                         "id must be a valid identifier (32 bytes long)".to_string()
                     )));
-                let (_, contract) = check_validation_result_with_data!(self
-                    .drive
-                    .get_contract_with_fetch_info_and_fee(
-                        contract_id.to_buffer(),
-                        None,
-                        true,
-                        None,
-                        platform_version,
-                    ));
+
+                let (_, contract) = self.drive.get_contract_with_fetch_info_and_fee(
+                    contract_id.to_buffer(),
+                    None,
+                    true,
+                    None,
+                    platform_version,
+                )?;
+
                 let contract = check_validation_result_with_data!(contract.ok_or(
                     QueryError::DocumentQuery(QuerySyntaxError::DataContractNotFound(
                         "contract not found when querying from value with contract info",
                     ))
                 ));
+
                 let contract_ref = &contract.contract;
                 let document_type = check_validation_result_with_data!(
                     contract_ref.document_type_for_name(document_type_name.as_str())
