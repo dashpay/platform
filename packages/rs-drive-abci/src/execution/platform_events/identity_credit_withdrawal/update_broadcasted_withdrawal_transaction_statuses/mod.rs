@@ -20,7 +20,6 @@ where
     ///
     /// # Arguments
     ///
-    /// * `last_synced_core_height` - The height of the last synced core block.
     /// * `block_execution_context` - Contextual information about the current block execution.
     /// * `transaction` - A transaction argument to interact with the underlying storage.
     ///
@@ -38,7 +37,6 @@ where
     /// * There is an error getting the transactionId or transactionSignHeight from the withdrawal document.
     pub fn update_broadcasted_withdrawal_transaction_statuses(
         &self,
-        last_synced_core_height: u32,
         block_execution_context: &BlockExecutionContext,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
@@ -50,7 +48,6 @@ where
             .update_broadcasted_withdrawal_transaction_statuses
         {
             0 => self.update_broadcasted_withdrawal_transaction_statuses_v0(
-                last_synced_core_height,
                 block_execution_context,
                 transaction,
                 platform_version,
