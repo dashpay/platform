@@ -265,7 +265,11 @@ impl<C> Platform<C> {
             }
             "/identity/balance" => {
                 let GetIdentityRequest { id, prove } =
-                    check_validation_result_with_data!(GetIdentityRequest::decode(query_data));
+                    check_validation_result_with_data!(GetIdentityRequest::decode(query_data)
+                        .map_err(|e| QueryError::InvalidArgument(format!(
+                            "invalid query proto message: {}",
+                            e.to_string()
+                        ))));
                 let identity_id: Identifier = check_validation_result_with_data!(id
                     .try_into()
                     .map_err(|_| QueryError::InvalidArgument(
@@ -306,7 +310,11 @@ impl<C> Platform<C> {
             }
             "/identity/balanceAndRevision" => {
                 let GetIdentityRequest { id, prove } =
-                    check_validation_result_with_data!(GetIdentityRequest::decode(query_data));
+                    check_validation_result_with_data!(GetIdentityRequest::decode(query_data)
+                        .map_err(|e| QueryError::InvalidArgument(format!(
+                            "invalid query proto message: {}",
+                            e.to_string()
+                        ))));
                 let identity_id: Identifier = check_validation_result_with_data!(id
                     .try_into()
                     .map_err(|_| QueryError::InvalidArgument(
@@ -362,7 +370,11 @@ impl<C> Platform<C> {
                     limit,
                     offset,
                     prove,
-                } = check_validation_result_with_data!(GetIdentityKeysRequest::decode(query_data));
+                } = check_validation_result_with_data!(GetIdentityKeysRequest::decode(query_data)
+                    .map_err(|e| QueryError::InvalidArgument(format!(
+                        "invalid query proto message: {}",
+                        e.to_string()
+                    ))));
                 let identity_id: Identifier = check_validation_result_with_data!(identity_id
                     .try_into()
                     .map_err(|_| QueryError::InvalidArgument(
@@ -450,7 +462,11 @@ impl<C> Platform<C> {
             }
             "/dataContract" => {
                 let GetDataContractRequest { id, prove } =
-                    check_validation_result_with_data!(GetDataContractRequest::decode(query_data));
+                    check_validation_result_with_data!(GetDataContractRequest::decode(query_data)
+                        .map_err(|e| QueryError::InvalidArgument(format!(
+                            "invalid query proto message: {}",
+                            e.to_string()
+                        ))));
                 let contract_id: Identifier = check_validation_result_with_data!(id
                     .try_into()
                     .map_err(|_| QueryError::InvalidArgument(
@@ -514,7 +530,11 @@ impl<C> Platform<C> {
             }
             "/dataContracts" => {
                 let GetDataContractsRequest { ids, prove } =
-                    check_validation_result_with_data!(GetDataContractsRequest::decode(query_data));
+                    check_validation_result_with_data!(GetDataContractsRequest::decode(query_data)
+                        .map_err(|e| QueryError::InvalidArgument(format!(
+                            "invalid query proto message: {}",
+                            e.to_string()
+                        ))));
                 let contract_ids = check_validation_result_with_data!(ids
                     .into_iter()
                     .map(|contract_id_vec| {
@@ -600,7 +620,11 @@ impl<C> Platform<C> {
                     prove,
                 } = check_validation_result_with_data!(GetDataContractHistoryRequest::decode(
                     query_data
-                ));
+                )
+                .map_err(|e| QueryError::InvalidArgument(format!(
+                    "invalid query proto message: {}",
+                    e.to_string()
+                ))));
                 let contract_id: Identifier = check_validation_result_with_data!(id
                     .try_into()
                     .map_err(|_| QueryError::InvalidArgument(
@@ -700,7 +724,11 @@ impl<C> Platform<C> {
                     limit,
                     prove,
                     start,
-                } = check_validation_result_with_data!(GetDocumentsRequest::decode(query_data));
+                } = check_validation_result_with_data!(GetDocumentsRequest::decode(query_data)
+                    .map_err(|e| QueryError::InvalidArgument(format!(
+                        "invalid query proto message: {}",
+                        e.to_string()
+                    ))));
                 let contract_id: Identifier = check_validation_result_with_data!(data_contract_id
                     .try_into()
                     .map_err(|_| QueryError::InvalidArgument(
@@ -841,7 +869,12 @@ impl<C> Platform<C> {
                     public_key_hash,
                     prove,
                 } = check_validation_result_with_data!(
-                    GetIdentityByPublicKeyHashesRequest::decode(query_data)
+                    GetIdentityByPublicKeyHashesRequest::decode(query_data).map_err(|e| {
+                        QueryError::InvalidArgument(format!(
+                            "invalid query proto message: {}",
+                            e.to_string()
+                        ))
+                    })
                 );
                 let public_key_hash =
                     check_validation_result_with_data!(Bytes20::from_vec(public_key_hash)
@@ -914,7 +947,12 @@ impl<C> Platform<C> {
                     public_key_hashes,
                     prove,
                 } = check_validation_result_with_data!(
-                    GetIdentitiesByPublicKeyHashesRequest::decode(query_data)
+                    GetIdentitiesByPublicKeyHashesRequest::decode(query_data).map_err(|e| {
+                        QueryError::InvalidArgument(format!(
+                            "invalid query proto message: {}",
+                            e.to_string()
+                        ))
+                    })
                 );
                 let public_key_hashes = check_validation_result_with_data!(public_key_hashes
                     .into_iter()
@@ -984,7 +1022,11 @@ impl<C> Platform<C> {
                     identities,
                     contracts,
                     documents,
-                } = check_validation_result_with_data!(GetProofsRequest::decode(query_data));
+                } = check_validation_result_with_data!(GetProofsRequest::decode(query_data)
+                    .map_err(|e| QueryError::InvalidArgument(format!(
+                        "invalid query proto message: {}",
+                        e.to_string()
+                    ))));
                 let contract_ids = check_validation_result_with_data!(contracts
                     .into_iter()
                     .map(|contract_request| {
