@@ -517,11 +517,11 @@ impl<C> Platform<C> {
                         "id must be a valid identifier (32 bytes long)".to_string()
                     )));
                 let response_data = if prove {
-                    let proof = check_validation_result_with_data!(self.drive.prove_contract(
+                    let proof = self.drive.prove_contract(
                         contract_id.into_buffer(),
                         None,
-                        platform_version
-                    ));
+                        platform_version,
+                    )?;
 
                     if proof.is_empty() {
                         return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
@@ -542,29 +542,34 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 } else {
-                    let maybe_data_contract = check_validation_result_with_data!(self
+                    let maybe_data_contract_fetch_info = self
                         .drive
                         .fetch_contract(
                             contract_id.into_buffer(),
                             None,
                             None,
                             None,
-                            platform_version
+                            platform_version,
                         )
-                        .unwrap());
+                        .unwrap()?;
 
-                    let data_contract = check_validation_result_with_data!(maybe_data_contract
-                        .ok_or_else(|| {
-                            QueryError::NotFound(format!("data contract {} not found", contract_id))
-                        })
-                        .and_then(|data_contract| data_contract
-                            .contract
-                            .serialize_to_bytes_with_platform_version(platform_version)
-                            .map_err(QueryError::Protocol)));
+                    let data_contract_fetch_info =
+                        check_validation_result_with_data!(maybe_data_contract_fetch_info
+                            .ok_or_else(|| {
+                                QueryError::NotFound(format!(
+                                    "data contract {} not found",
+                                    contract_id
+                                ))
+                            }));
+
+                    let serialized_data_contract = data_contract_fetch_info
+                        .contract
+                        .serialize_to_bytes_with_platform_version(platform_version)
+                        .map_err(Error::Protocol)?;
 
                     GetDataContractResponse {
                         result: Some(get_data_contract_response::Result::DataContract(
-                            data_contract,
+                            serialized_data_contract,
                         )),
                         metadata: Some(metadata),
                     }
