@@ -91,19 +91,19 @@ class DockerCompose {
     let containerName;
 
     try {
-      ({ out: containerName } = await dockerCompose.run(
+      const { out } = await dockerCompose.run(
         serviceName,
         command,
         {
           ...this.#createOptions(config),
           commandOptions: options,
         },
-      ));
+      );
+
+      containerName = out.trim();
     } catch (e) {
       throw new DockerComposeError(e);
     }
-
-    containerName = containerName.trim().split(/\r?\n/).pop();
 
     this.#startedContainers.addContainer(containerName);
 
@@ -133,18 +133,11 @@ class DockerCompose {
     const filterServiceNames = serviceList.map((service) => service.name);
 
     const serviceContainers = await this.getContainersList(config, {
-      formatJson: true,
       filterServiceNames,
-      ...options,
     });
 
-    for (const { State: state } of serviceContainers) {
-      if (state === 'running') {
-        return true;
-      }
-    }
-
-    return false;
+    return serviceContainers
+      .find((container) => container.State === 'running') !== undefined;
   }
 
   /**
@@ -159,7 +152,6 @@ class DockerCompose {
 
     const [container] = await this.getContainersList(config, {
       filterServiceNames: serviceName,
-      formatJson: true,
     });
 
     return container?.State === 'running';
@@ -261,14 +253,13 @@ class DockerCompose {
    *
    * @param {Config} config
    * @param {string} serviceName
-   * @return {Promise<object>}
+   * @return {Promise<Object>}
    */
   async inspectService(config, serviceName) {
     await this.throwErrorIfNotInstalled();
 
-    const containerIds = await this.getContainersList(config, {
+    const containerIds = await this.getContainerIds(config, {
       filterServiceNames: serviceName,
-      quiet: true,
     });
 
     if (containerIds.length === 0) {
@@ -317,54 +308,38 @@ class DockerCompose {
   }
 
   /**
-   * Get list of Docker containers
+   * Get compose container ids
    *
    * @param {Config} config
    * @param {Object} [options={}] optional
-   * @param {string|string[]} [options.filterServiceNames=false] - Filter by service name
-   * @param {boolean} [options.returnServiceNames] - Return only service names
-   * @param {boolean} [options.quiet=false] - Return only container ids
-   * @param {boolean} [options.formatJson=false] - Return as json with details
+   * @param {string|string[]} [options.filterServiceNames] - Filter by service name
    * @param {boolean} [options.all=false] - Return stopped containers as well
-   * @return {Promise<string[]|object[]>}
+   * @return {Promise<string[]>}
    */
-  async getContainersList(
+  async getContainerIds(
     config,
     {
       filterServiceNames = undefined,
-      returnServiceNames = false,
-      quiet = false,
-      formatJson = false,
       all = false,
-      profiles = [],
     } = {},
   ) {
-    let psOutput;
-    const commandOptions = [];
-
-    if (returnServiceNames) {
-      commandOptions.push('--services');
-    }
-
-    if (quiet) {
-      commandOptions.push('--quiet');
-    }
-
-    if (formatJson) {
-      commandOptions.push('--format', 'json');
-    }
+    const commandOptions = ['--quiet'];
 
     if (all) {
       commandOptions.push('--all');
     }
 
-    commandOptions.push(filterServiceNames);
+    if (filterServiceNames) {
+      commandOptions.push(filterServiceNames);
+    }
 
     try {
-      ({ out: psOutput } = await dockerCompose.ps({
-        ...this.#createOptions(config, { profiles }),
+      const { data: { services } } = await dockerCompose.ps({
+        ...this.#createOptions(config),
         commandOptions,
-      }));
+      });
+
+      return services.map((service) => service.name);
     } catch (e) {
       if (e.err && e.err.startsWith('no such service:')) {
         return [];
@@ -372,17 +347,48 @@ class DockerCompose {
 
       throw new DockerComposeError(e);
     }
+  }
 
-    const containerList = psOutput
-      .trim()
-      .split(/\r?\n/)
-      .filter(Boolean);
+  /**
+   * Get list of compose containers
+   *
+   * @param {Config} config
+   * @param {Object} [options={}] optional
+   * @param {string|string[]} [options.filterServiceNames] - Filter by service name
+   * @param {boolean} [options.all=false] - Return stopped containers as well
+   * @return {Promise<object[]>}
+   */
+  async getContainersList(
+    config,
+    {
+      filterServiceNames = undefined,
+      all = false,
+    } = {},
+  ) {
+    const commandOptions = ['--format', 'json'];
 
-    if (containerList.length > 0 && formatJson) {
-      return JSON.parse(containerList[0]);
+    if (all) {
+      commandOptions.push('--all');
     }
 
-    return containerList;
+    if (filterServiceNames) {
+      commandOptions.push(filterServiceNames);
+    }
+
+    try {
+      const { data: { json } } = await dockerCompose.ps({
+        ...this.#createOptions(config),
+        commandOptions,
+      });
+
+      return json;
+    } catch (e) {
+      if (e.err && e.err.startsWith('no such service:')) {
+        return [];
+      }
+
+      throw new DockerComposeError(e);
+    }
   }
 
   /**
@@ -394,19 +400,15 @@ class DockerCompose {
    * @return {Promise<string[]>}
    */
   async getVolumeNames(config, options = {}) {
-    let volumeOutput;
-
     try {
-      ({ out: volumeOutput } = await dockerCompose.configVolumes({
+      const { data: { volumes } } = await dockerCompose.configVolumes({
         ...this.#createOptions(config, options),
-      }));
+      });
+
+      return volumes;
     } catch (e) {
       throw new DockerComposeError(e);
     }
-
-    return volumeOutput
-      .trim()
-      .split(/\r?\n/);
   }
 
   /**
@@ -489,28 +491,30 @@ class DockerCompose {
       throw new Error(`Docker is not installed. Please follow instructions ${dockerInstallLink}`);
     }
 
-    let dockerVersion;
+    let dockerVersionInfo;
     try {
-      dockerVersion = await new Promise((resolve, reject) => {
-        this.#docker.version((err, data) => {
-          if (err) {
-            return reject(err);
-          }
-
-          return resolve(data.Version);
-        });
-      });
+      dockerVersionInfo = await this.#docker.version();
     } catch (e) {
       throw new Error(`Can't connect to Docker Engine: ${e.message}.\n\nPossible reasons:\n1. Docker is not started\n2. Permission issues ${dockerPostInstallLinuxLink}\n3. Wrong context ${dockerContextLink}`);
     }
 
-    if (semver.lt(semver.coerce(dockerVersion), DockerCompose.DOCKER_MIN_VERSION)) {
-      throw new Error(`Update Docker to version ${DockerCompose.DOCKER_MIN_VERSION} or higher. Please follow instructions ${dockerInstallLink}`);
+    if (typeof dockerVersionInfo === 'string') {
+      // Old versions
+      const version = semver.coerce(dockerVersionInfo);
+      if (semver.lt(version, DockerCompose.DOCKER_MIN_VERSION)) {
+        throw new Error(`Update Docker to version ${DockerCompose.DOCKER_MIN_VERSION} or higher. Please follow instructions ${dockerInstallLink}`);
+      }
+    } else {
+      // Since 1.39
+      const version = semver.coerce(dockerVersionInfo.Components[0].Details.ApiVersion);
+      const minVersion = '1.25.0';
+      if (semver.lt(version, minVersion)) {
+        throw new Error(`Update Docker Engine to version ${minVersion} or higher. Please follow instructions ${dockerInstallLink}`);
+      }
     }
 
-    let version;
-
     // Check docker compose
+    let version;
     try {
       ({ out: version } = await dockerCompose.version());
     } catch (e) {

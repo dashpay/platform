@@ -113,6 +113,8 @@ class VerificationServer {
       throw new Error('Setup server first');
     }
 
+    await this.server.remove();
+
     fs.rmSync(this.configPath, { force: true });
 
     this.server = null;

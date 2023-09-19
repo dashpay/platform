@@ -1566,12 +1566,12 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/docker-compose@npm:^0.24.2":
-  version: 0.24.2
-  resolution: "@dashevo/docker-compose@npm:0.24.2"
+"@dashevo/docker-compose@npm:^0.24.4":
+  version: 0.24.4
+  resolution: "@dashevo/docker-compose@npm:0.24.4"
   dependencies:
     yaml: ^2.2.2
-  checksum: f8803c8ab5ccdaaa2f33b71c830a5ea7aaa9794a7c6e5698cd42190d7f05d0bc2df3cfb998d59ca3d4526bfb75503003b46f3f454ec5f52a61a21b3e089cb80c
+  checksum: 261df4d6df78e823ec1bf6188ba9c1c8549f82d54478eefeb901a9d0129add67770c6f294923cd378e1e4d570d3ff4b6fa6ea28069be7ea06cc9d57d6fd2277a
   languageName: node
   linkType: hard
 
@@ -6136,7 +6136,7 @@ __metadata:
     "@dashevo/dashcore-lib": ~0.20.9
     "@dashevo/dashd-rpc": ^18.2.0
     "@dashevo/dashpay-contract": "workspace:*"
-    "@dashevo/docker-compose": ^0.24.2
+    "@dashevo/docker-compose": ^0.24.4
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
@@ -6157,7 +6157,7 @@ __metadata:
     cron: ^2.1.0
     dash: "workspace:*"
     dirty-chai: ^2.0.1
-    dockerode: ^3.2.0
+    dockerode: ^3.3.5
     dot: ^1.1.3
     dotenv: ^8.6.0
     enquirer: "github:dashpay/enquirer#patch-1"
@@ -6563,7 +6563,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dockerode@npm:^3.2.0, dockerode@npm:^3.2.1":
+"dockerode@npm:^3.2.1, dockerode@npm:^3.3.5":
   version: 3.3.5
   resolution: "dockerode@npm:3.3.5"
   dependencies:
