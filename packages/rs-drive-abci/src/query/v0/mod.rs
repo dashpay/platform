@@ -949,14 +949,13 @@ impl<C> Platform<C> {
                         .map_err(|_| QueryError::InvalidArgument(
                             "public key hash must be 20 bytes long".to_string()
                         )));
+
                 let response_data = if prove {
-                    let proof = check_validation_result_with_data!(self
-                        .drive
-                        .prove_full_identity_by_unique_public_key_hash(
-                            public_key_hash,
-                            None,
-                            platform_version
-                        ));
+                    let proof = self.drive.prove_full_identity_by_unique_public_key_hash(
+                        public_key_hash,
+                        None,
+                        platform_version,
+                    )?;
 
                     if proof.is_empty() {
                         return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
@@ -979,23 +978,23 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 } else {
-                    let maybe_identity = check_validation_result_with_data!(self
-                        .drive
-                        .fetch_full_identity_by_unique_public_key_hash(
-                            public_key_hash,
-                            None,
-                            platform_version
-                        ));
-                    let serialized_identity = check_validation_result_with_data!(maybe_identity
-                        .ok_or_else(|| {
+                    let maybe_identity = self.drive.fetch_full_identity_by_unique_public_key_hash(
+                        public_key_hash,
+                        None,
+                        platform_version,
+                    )?;
+
+                    let identity =
+                        check_validation_result_with_data!(maybe_identity.ok_or_else(|| {
                             QueryError::NotFound(format!(
                                 "identity {} not found",
                                 hex::encode(public_key_hash)
                             ))
-                        })
-                        .and_then(|identity| identity
-                            .serialize_consume_to_bytes()
-                            .map_err(QueryError::Protocol)));
+                        }));
+
+                    let serialized_identity = identity
+                        .serialize_consume_to_bytes()
+                        .map_err(Error::Protocol)?;
 
                     GetIdentityByPublicKeyHashesResponse {
                         metadata: Some(metadata),
