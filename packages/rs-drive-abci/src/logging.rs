@@ -576,7 +576,7 @@ impl LogDestination {
             LogDestination::File(_) => "file",
             LogDestination::RotationWriter(_) => "RotationWriter",
             #[cfg(test)]
-            LogDestination::Bytes(_) => "bytes",
+            LogDestination::Bytes(_) => "ByteBuffer",
         };
 
         String::from(s)
