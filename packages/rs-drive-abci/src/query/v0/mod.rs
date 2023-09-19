@@ -1110,6 +1110,7 @@ impl<C> Platform<C> {
                         "invalid query proto message: {}",
                         e.to_string()
                     ))));
+
                 let contract_ids = check_validation_result_with_data!(contracts
                     .into_iter()
                     .map(|contract_request| {
@@ -1122,6 +1123,7 @@ impl<C> Platform<C> {
                             })
                     })
                     .collect::<Result<Vec<[u8; 32]>, QueryError>>());
+
                 let identity_requests = check_validation_result_with_data!(identities
                     .into_iter()
                     .map(|identity_request| {
@@ -1139,6 +1141,7 @@ impl<C> Platform<C> {
                         })
                     })
                     .collect::<Result<Vec<IdentityDriveQuery>, QueryError>>());
+
                 let document_queries = check_validation_result_with_data!(documents
                     .into_iter()
                     .map(|document_proof_request| {
@@ -1165,13 +1168,15 @@ impl<C> Platform<C> {
                         })
                     })
                     .collect::<Result<Vec<_>, QueryError>>());
-                let proof = check_validation_result_with_data!(self.drive.prove_multiple(
+
+                let proof = self.drive.prove_multiple(
                     &identity_requests,
                     &contract_ids,
                     &document_queries,
                     None,
                     platform_version,
-                ));
+                )?;
+
                 let response_data = GetProofsResponse {
                     proof: Some(Proof {
                         grovedb_proof: proof,
@@ -1184,6 +1189,7 @@ impl<C> Platform<C> {
                     metadata: Some(metadata),
                 }
                 .encode_to_vec();
+
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
             other => Ok(QueryValidationResult::new_with_error(
