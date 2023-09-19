@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.25.0-dev.26",
+  "version": "0.25.0-dev.27",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
@@ -52,7 +52,7 @@
     "@dashevo/dashcore-lib": "~0.20.9",
     "@dashevo/dashd-rpc": "^18.2.0",
     "@dashevo/dashpay-contract": "workspace:*",
-    "@dashevo/docker-compose": "^0.24.3",
+    "@dashevo/docker-compose": "^0.24.4",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/dpp": "workspace:*",
     "@dashevo/feature-flags-contract": "workspace:*",
