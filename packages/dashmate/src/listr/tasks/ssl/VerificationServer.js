@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const dots = require('dot');
+const os = require('os');
 const { TEMPLATES_DIR } = require('../../../constants');
 
 class VerificationServer {
@@ -75,16 +76,17 @@ class VerificationServer {
       return false;
     }
 
-    // TODO: Make it work with Envoy from config
-    const image = 'envoyproxy/envoy:v1.22-latest';
-    // const image = this.config.get('platform.dapi.envoy.docker.image');
+    const image = this.config.get('platform.dapi.envoy.docker.image');
 
     const name = 'dashmate-zerossl-validation';
+
+    const { uid, gid } = os.userInfo();
 
     const opts = {
       name,
       Image: image,
       Tty: false,
+      Env: [`ENVOY_UID=${uid}`, `ENVOY_GID=${gid}`],
       ExposedPorts: { '80/tcp': {} },
       HostConfig: {
         AutoRemove: true,
