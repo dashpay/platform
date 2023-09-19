@@ -276,12 +276,18 @@ impl<C> Platform<C> {
                         "id must be a valid identifier (32 bytes long)".to_string()
                     )));
                 let response_data = if prove {
-                    let proof =
-                        check_validation_result_with_data!(self.drive.prove_identity_balance(
-                            identity_id.into_buffer(),
-                            None,
-                            &platform_version.drive
-                        ));
+                    let proof = self.drive.prove_identity_balance(
+                        identity_id.into_buffer(),
+                        None,
+                        &platform_version.drive,
+                    )?;
+
+                    if proof.is_empty() {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
+                            format!("identity {} balance proof not found", identity_id),
+                        )));
+                    }
+
                     GetIdentityBalanceResponse {
                         result: Some(get_identity_balance_response::Result::Proof(Proof {
                             grovedb_proof: proof,
@@ -295,16 +301,23 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 } else {
-                    let balance = check_validation_result_with_data!(self
-                        .drive
-                        .fetch_identity_balance(identity_id.into_buffer(), None, platform_version));
-                    GetIdentityBalanceResponse {
-                        result: Some(get_identity_balance_response::Result::Balance(
-                            balance.unwrap(),
-                        )),
-                        metadata: Some(metadata),
+                    let maybe_balance = self.drive.fetch_identity_balance(
+                        identity_id.into_buffer(),
+                        None,
+                        platform_version,
+                    )?;
+
+                    if let Some(balance) = maybe_balance {
+                        GetIdentityBalanceResponse {
+                            result: Some(get_identity_balance_response::Result::Balance(balance)),
+                            metadata: Some(metadata),
+                        }
+                        .encode_to_vec()
+                    } else {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
+                            format!("identity {} balance not found", identity_id),
+                        )));
                     }
-                    .encode_to_vec()
                 };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
