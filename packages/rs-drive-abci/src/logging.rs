@@ -787,7 +787,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use std::{fs, str::from_utf8};
+    use std::{cmp::Ordering, fs, str::from_utf8};
 
     /// Reads data written to provided destination.
     ///
@@ -1006,33 +1006,52 @@ mod tests {
         drop(loggers);
 
         let mut counter = 0;
-        tempdir.path().read_dir().unwrap().for_each(|entry| {
-            let entry = entry.unwrap();
-            let path = entry.path();
-            let path_str = path.to_string_lossy();
-            let read = fs::read_to_string(&path).unwrap();
-            println!("{}: {}", path_str, read);
-            assert!(path_str.contains("drive-abci.log"));
+        tempdir
+            .path()
+            .read_dir()
+            .unwrap()
+            .sorted_by(|a, b| {
+                let a = a.as_ref().unwrap().path();
+                let b = b.as_ref().unwrap().path();
+                if a.eq(&b) {
+                    return Ordering::Equal;
+                }
+                if a.ends_with("drive-abci.log") {
+                    return Ordering::Greater;
+                }
+                if b.ends_with("drive-abci.log") {
+                    return Ordering::Greater;
+                }
 
-            if counter < ITERATIONS - 1 {
-                assert!(
-                    read.contains(format!("file {}, before rotate\n", counter).as_str()),
-                    "expect: file {}, before rotate, read: {}",
-                    counter,
-                    read
-                )
-            };
-            if counter > 0 {
-                assert!(
-                    read.contains(format!("file {}, after rotate\n", counter).as_str()),
-                    "expect: file {}, after rotate, read: {}",
-                    counter,
-                    read
-                )
-            }
+                a.cmp(&b)
+            })
+            .for_each(|entry| {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                let path_str = path.to_string_lossy();
+                let read = fs::read_to_string(&path).unwrap();
+                println!("{}: {}", path_str, read);
+                assert!(path_str.contains("drive-abci.log"));
 
-            counter = counter + 1;
-        });
+                if counter < ITERATIONS - 1 {
+                    assert!(
+                        read.contains(format!("file {}, before rotate\n", counter).as_str()),
+                        "expect: file {}, before rotate, read: {}",
+                        counter,
+                        read
+                    )
+                };
+                if counter > 0 {
+                    assert!(
+                        read.contains(format!("file {}, after rotate\n", counter).as_str()),
+                        "expect: file {}, after rotate, read: {}",
+                        counter,
+                        read
+                    )
+                }
+
+                counter = counter + 1;
+            });
         assert_eq!(counter, ITERATIONS + 1);
     }
 }
