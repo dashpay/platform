@@ -810,12 +810,11 @@ impl<C> Platform<C> {
                 )?;
 
                 let contract = check_validation_result_with_data!(contract.ok_or(
-                    QueryError::DocumentQuery(QuerySyntaxError::DataContractNotFound(
-                        "contract not found when querying from value with contract info",
-                    ))
+                    QueryError::NotFound(format!("data contract {} not found", contract_id))
                 ));
 
                 let contract_ref = &contract.contract;
+
                 let document_type = check_validation_result_with_data!(
                     contract_ref.document_type_for_name(document_type_name.as_str())
                 );
@@ -833,9 +832,6 @@ impl<C> Platform<C> {
                     }))
                 };
 
-                // TODO: fix?
-                //   Fails with "query syntax error: deserialization error: unable to decode 'order_by' query from cbor"
-                //   cbor deserialization fails if order_by is empty
                 let order_by = if !order_by.is_empty() {
                     check_validation_result_with_data!(ciborium::de::from_reader(
                         order_by.as_slice()
@@ -885,26 +881,30 @@ impl<C> Platform<C> {
                     ));
                 }
 
-                let drive_query =
-                    check_validation_result_with_data!(DriveQuery::from_decomposed_values(
-                        where_clause,
-                        order_by,
-                        Some(if limit == 0 {
-                            self.config.drive.default_query_limit
-                        } else {
-                            limit as u16
-                        }),
-                        start_at,
-                        start_at_included,
-                        None,
-                        contract_ref,
-                        document_type,
-                        &self.config.drive,
-                    ));
+                let drive_query = DriveQuery::from_decomposed_values(
+                    where_clause,
+                    order_by,
+                    Some(if limit == 0 {
+                        self.config.drive.default_query_limit
+                    } else {
+                        limit as u16
+                    }),
+                    start_at,
+                    start_at_included,
+                    None,
+                    contract_ref,
+                    document_type,
+                    &self.config.drive,
+                )?;
+
                 let response_data = if prove {
-                    let (proof, _) = check_validation_result_with_data!(
-                        drive_query.execute_with_proof(&self.drive, None, None, platform_version)
-                    );
+                    let (proof, _) = drive_query.execute_with_proof(
+                        &self.drive,
+                        None,
+                        None,
+                        platform_version,
+                    )?;
+
                     GetDocumentsResponse {
                         result: Some(get_documents_response::Result::Proof(Proof {
                             grovedb_proof: proof,
@@ -918,9 +918,9 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 } else {
-                    let results = check_validation_result_with_data!(drive_query
-                        .execute_raw_results_no_proof(&self.drive, None, None, platform_version))
-                    .0;
+                    let results = drive_query
+                        .execute_raw_results_no_proof(&self.drive, None, None, platform_version)?
+                        .0;
                     GetDocumentsResponse {
                         result: Some(get_documents_response::Result::Documents(
                             get_documents_response::Documents { documents: results },
