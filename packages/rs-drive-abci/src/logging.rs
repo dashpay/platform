@@ -768,7 +768,7 @@ pub fn init_for_tests(level: LogLevelPreset) {
 }
 
 /// Verify log directory path and determine absolute path to log file.
-fn validate_log_path<T: AsRef<Path>>(log_dir: T) -> Result<(), Error> {
+fn validate_log_path<T: AsRef<Path>>(log_file: T) -> Result<(), Error> {
     let log_dir = log_dir.as_ref();
 
     // TODO: Why it should be absolute?
