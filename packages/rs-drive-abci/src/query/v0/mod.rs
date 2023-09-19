@@ -114,22 +114,28 @@ impl<C> Platform<C> {
         match query_path {
             "/identity" => {
                 let GetIdentityRequest { id, prove } =
-                    check_validation_result_with_data!(GetIdentityRequest::decode(query_data));
+                    check_validation_result_with_data!(GetIdentityRequest::decode(query_data)
+                        .map_err(|e| QueryError::InvalidArgument(format!(
+                            "invalid query proto message: {}",
+                            e.to_string()
+                        ))));
+
                 let identity_id: Identifier = check_validation_result_with_data!(id
                     .try_into()
                     .map_err(|_| QueryError::InvalidArgument(
                         "id must be a valid identifier (32 bytes long)".to_string()
                     )));
+
                 let response_data = if prove {
-                    let proof = check_validation_result_with_data!(self.drive.prove_full_identity(
+                    let proof = self.drive.prove_full_identity(
                         identity_id.into_buffer(),
                         None,
-                        &platform_version.drive
-                    ));
+                        &platform_version.drive,
+                    )?;
 
                     if proof.is_empty() {
                         return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
-                            format!("identity {} not found", identity_id),
+                            format!("identity {} proof not found", identity_id),
                         )));
                     }
 
@@ -146,21 +152,22 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 } else {
-                    let maybe_identity = check_validation_result_with_data!(self
+                    let maybe_identity = self
                         .drive
                         .fetch_full_identity(identity_id.into_buffer(), None, platform_version)
-                        .map_err(QueryError::Drive));
+                        .map_err(Error::Drive)?;
 
-                    let identity = check_validation_result_with_data!(maybe_identity
-                        .ok_or_else(|| {
+                    let identity =
+                        check_validation_result_with_data!(maybe_identity.ok_or_else(|| {
                             QueryError::NotFound(format!("identity {} not found", identity_id))
-                        })
-                        .and_then(|identity| identity
-                            .serialize_consume_to_bytes()
-                            .map_err(QueryError::Protocol)));
+                        }));
+
+                    let serialzied_identity = identity
+                        .serialize_consume_to_bytes()
+                        .map_err(Error::Protocol)?;
 
                     GetIdentityResponse {
-                        result: Some(get_identity_response::Result::Identity(identity)),
+                        result: Some(get_identity_response::Result::Identity(serialzied_identity)),
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()

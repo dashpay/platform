@@ -645,6 +645,8 @@ where
 
         let RequestQuery { data, path, .. } = &request;
 
+        // TODO: consider exposing query API only after platform got initialized instead of putting this
+        //   as a consensus error.
         let Some(platform_version) = PlatformVersion::get_maybe_current() else {
             let error_data_buffer = platform_value!({
                 "message": "Platform not initialized",
@@ -678,6 +680,9 @@ where
         let (code, data, info) = if result.is_valid() {
             (0, result.data.unwrap_or_default(), "success".to_string())
         } else {
+            // TODO: consider rolling back to the check of option is_some,
+            //   it might not be necessary to put error into the validation result
+            //   (e.g. if we want to just fail with text message)
             let error = result
                 .errors
                 .first()
