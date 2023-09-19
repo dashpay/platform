@@ -785,15 +785,37 @@ fn validate_log_path<T: AsRef<Path>>(log_file_path: T) -> Result<(), Error> {
         ));
     }
 
-    if log_file_path.extension().is_none()
-        || log_file_path.ends_with(String::from(path::MAIN_SEPARATOR))
-    {
+    if log_file_path.exists() {
+        // Make sure log file is writable
+        if log_file_path.is_dir() {
+            return Err(Error::FilePath(
+                log_file_path.to_owned(),
+                "log file path must point to file".to_string(),
+            ));
+        }
+
+        let md = fs::metadata(log_file_path).map_err(|e| {
+            Error::FilePath(
+                log_file_path.to_owned(),
+                format!("cannot read log file metadata: {}", e),
+            )
+        })?;
+
+        if md.permissions().readonly() {
+            return Err(Error::FilePath(
+                log_file_path.to_owned(),
+                "log file is readonly".to_string(),
+            ));
+        }
+    } else if log_file_path.ends_with(String::from(path::MAIN_SEPARATOR)) {
+        // If file doesn't exist we need to do at least simple validation
         return Err(Error::FilePath(
             log_file_path.to_owned(),
             "log file path must point to file".to_string(),
         ));
     }
 
+    // Make sure parent directly is writable so log rotation can work
     let Some(parent_dir) = log_file_path.parent() else {
         return Err(Error::FilePath(
             log_file_path.to_owned(),
@@ -801,7 +823,6 @@ fn validate_log_path<T: AsRef<Path>>(log_file_path: T) -> Result<(), Error> {
         ));
     };
 
-    // Make sure directly is writable so log rotation can work
     let md = fs::metadata(parent_dir).map_err(|e| {
         Error::FilePath(
             log_file_path.to_owned(),
@@ -810,8 +831,7 @@ fn validate_log_path<T: AsRef<Path>>(log_file_path: T) -> Result<(), Error> {
     })?;
 
     let permissions = md.permissions();
-    let readonly = permissions.readonly();
-    if readonly {
+    if permissions.readonly() {
         return Err(Error::FilePath(
             log_file_path.to_owned(),
             "parent directory is readonly".to_string(),
