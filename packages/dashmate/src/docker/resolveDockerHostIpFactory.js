@@ -37,6 +37,7 @@ function resolveDockerHostIpFactory(docker, dockerPull) {
         Entrypoint: ['sh', '-c', 'ping -c1 host.docker.internal | sed -nE \'s/^PING[^(]+\\(([^)]+)\\).*/\\1/p\''],
         HostConfig: hostConfig,
       },
+      {},
     );
 
     const output = writableStream.toString();

@@ -294,10 +294,10 @@ mod tests {
             last_block_app_hash,
         } = abci_app
             .info(RequestInfo {
-                version: "0.13.0".to_string(),
+                version: tenderdash_abci::proto::meta::TENDERDASH_VERSION.to_string(),
                 block_version: 0,
                 p2p_version: 0,
-                abci_version: "0.22.0".to_string(),
+                abci_version: tenderdash_abci::proto::meta::ABCI_VERSION.to_string(),
             })
             .expect("expected to call info");
 
@@ -2471,10 +2471,10 @@ mod tests {
             last_block_app_hash,
         } = abci_app
             .info(RequestInfo {
-                version: "0.13.0".to_string(),
+                version: tenderdash_abci::proto::meta::TENDERDASH_VERSION.to_string(),
                 block_version: 0,
                 p2p_version: 0,
-                abci_version: "0.22.0".to_string(),
+                abci_version: tenderdash_abci::proto::meta::ABCI_VERSION.to_string(),
             })
             .expect("expected to call info");
 
