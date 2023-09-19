@@ -333,14 +333,23 @@ impl<C> Platform<C> {
                     .map_err(|_| QueryError::InvalidArgument(
                         "id must be a valid identifier (32 bytes long)".to_string()
                     )));
+
                 let response_data = if prove {
-                    let proof = check_validation_result_with_data!(self
-                        .drive
-                        .prove_identity_balance_and_revision(
-                            identity_id.into_buffer(),
-                            None,
-                            &platform_version.drive
-                        ));
+                    let proof = self.drive.prove_identity_balance_and_revision(
+                        identity_id.into_buffer(),
+                        None,
+                        &platform_version.drive,
+                    )?;
+
+                    if proof.is_empty() {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
+                            format!(
+                                "identity {} balance and revision proof not found",
+                                identity_id
+                            ),
+                        )));
+                    }
+
                     GetIdentityBalanceResponse {
                         result: Some(get_identity_balance_response::Result::Proof(Proof {
                             grovedb_proof: proof,
@@ -354,26 +363,43 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 } else {
-                    let balance = check_validation_result_with_data!(self
-                        .drive
-                        .fetch_identity_balance(identity_id.into_buffer(), None, platform_version));
-                    let revision =
-                        check_validation_result_with_data!(self.drive.fetch_identity_revision(
-                            identity_id.into_buffer(),
-                            true,
-                            None,
-                            platform_version
-                        ));
-                    GetIdentityBalanceAndRevisionResponse {
-                        result: Some(
-                            get_identity_balance_and_revision_response::Result::BalanceAndRevision(
-                                BalanceAndRevision { balance, revision },
+                    let maybe_balance = self.drive.fetch_identity_balance(
+                        identity_id.into_buffer(),
+                        None,
+                        platform_version,
+                    )?;
+
+                    let maybe_revision = self.drive.fetch_identity_revision(
+                        identity_id.into_buffer(),
+                        true,
+                        None,
+                        platform_version,
+                    )?;
+
+                    match (maybe_balance, maybe_revision) {
+                        (Some(balance), Some(revision)) => {
+                            GetIdentityBalanceAndRevisionResponse {
+                                result: Some(
+                                    get_identity_balance_and_revision_response::Result::BalanceAndRevision(
+                                        BalanceAndRevision {
+                                            balance: Some(balance),
+                                            revision: Some(revision)
+                                        }
+                                    ),
+                                ),
+                                metadata: Some(metadata),
+                            }
+                                .encode_to_vec()
+                        },
+                        _ => return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
+                            format!(
+                                "identity {} balance and revision not found",
+                                identity_id
                             ),
-                        ),
-                        metadata: Some(metadata),
+                        )))
                     }
-                    .encode_to_vec()
                 };
+
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
             "/identity/keys" => {
