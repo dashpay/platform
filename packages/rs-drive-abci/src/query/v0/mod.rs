@@ -414,11 +414,13 @@ impl<C> Platform<C> {
                         "invalid query proto message: {}",
                         e.to_string()
                     ))));
+
                 let identity_id: Identifier = check_validation_result_with_data!(identity_id
                     .try_into()
                     .map_err(|_| QueryError::InvalidArgument(
                         "id must be a valid identifier (32 bytes long)".to_string()
                     )));
+
                 if let Some(limit) = limit {
                     if limit > u16::MAX as u32 {
                         return Ok(QueryValidationResult::new_with_error(
@@ -441,7 +443,7 @@ impl<C> Platform<C> {
                     if offset > u16::MAX as u32 {
                         return Ok(QueryValidationResult::new_with_error(
                             QueryError::DocumentQuery(QuerySyntaxError::InvalidParameter(
-                                "limit out of bounds".to_string(),
+                                "offset out of bounds".to_string(),
                             )),
                         ));
                     }
@@ -462,41 +464,44 @@ impl<C> Platform<C> {
                 };
                 let key_request_type =
                     check_validation_result_with_data!(convert_key_request_type(request));
+
                 let key_request = IdentityKeysRequest {
                     identity_id: identity_id.into_buffer(),
                     request_type: key_request_type,
                     limit: limit.map(|l| l as u16),
                     offset: offset.map(|o| o as u16),
                 };
-                let response_data =
-                    if prove {
-                        let proof = check_validation_result_with_data!(self
-                            .drive
-                            .prove_identity_keys(key_request, None, platform_version));
-                        GetIdentityKeysResponse {
-                            result: Some(get_identity_keys_response::Result::Proof(Proof {
-                                grovedb_proof: proof,
-                                quorum_hash: state.last_quorum_hash().to_vec(),
-                                signature: state.last_block_signature().to_vec(),
-                                round: state.last_block_round(),
-                                block_id_hash: state.last_block_id_hash().to_vec(),
-                                quorum_type,
-                            })),
-                            metadata: Some(metadata),
-                        }
-                        .encode_to_vec()
-                    } else {
-                        let keys: SerializedKeyVec = check_validation_result_with_data!(self
-                            .drive
-                            .fetch_identity_keys(key_request, None, platform_version));
-                        GetIdentityKeysResponse {
-                            result: Some(get_identity_keys_response::Result::Keys(
-                                get_identity_keys_response::Keys { keys_bytes: keys },
-                            )),
-                            metadata: Some(metadata),
-                        }
-                        .encode_to_vec()
-                    };
+
+                let response_data = if prove {
+                    let proof =
+                        self.drive
+                            .prove_identity_keys(key_request, None, platform_version)?;
+
+                    GetIdentityKeysResponse {
+                        result: Some(get_identity_keys_response::Result::Proof(Proof {
+                            grovedb_proof: proof,
+                            quorum_hash: state.last_quorum_hash().to_vec(),
+                            signature: state.last_block_signature().to_vec(),
+                            round: state.last_block_round(),
+                            block_id_hash: state.last_block_id_hash().to_vec(),
+                            quorum_type,
+                        })),
+                        metadata: Some(metadata),
+                    }
+                    .encode_to_vec()
+                } else {
+                    let keys: SerializedKeyVec =
+                        self.drive
+                            .fetch_identity_keys(key_request, None, platform_version)?;
+
+                    GetIdentityKeysResponse {
+                        result: Some(get_identity_keys_response::Result::Keys(
+                            get_identity_keys_response::Keys { keys_bytes: keys },
+                        )),
+                        metadata: Some(metadata),
+                    }
+                    .encode_to_vec()
+                };
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
             "/dataContract" => {
