@@ -75,7 +75,9 @@ class VerificationServer {
       return false;
     }
 
-    const image = this.config.get('platform.dapi.envoy.docker.image');
+    // TODO: Make it work with Envoy from config
+    const image = 'envoyproxy/envoy:v1.22-latest';
+    // const image = this.config.get('platform.dapi.envoy.docker.image');
 
     const name = 'dashmate-zerossl-validation';
 
