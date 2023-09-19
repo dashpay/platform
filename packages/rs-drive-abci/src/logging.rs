@@ -950,7 +950,7 @@ mod tests {
             let path = path.to_string_lossy();
             println!("{}", path);
             assert!(path.contains("drive-abci.log"));
-            counter = counter + 1;
+            counter += 1;
         });
         assert_eq!(counter, config.max_files + 1);
     }
