@@ -19,6 +19,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::{fs, path};
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
@@ -774,14 +775,46 @@ pub fn init_for_tests(level: LogLevelPreset) {
 /// - if the log file exists, it is writable for the current user
 /// - parent directory of the file exists and is writable for current user
 /// - path is absolute
-fn validate_log_path<T: AsRef<Path>>(log_file: T) -> Result<(), Error> {
-    let log_dir = log_dir.as_ref();
+fn validate_log_path<T: AsRef<Path>>(log_file_path: T) -> Result<(), Error> {
+    let log_file_path = log_file_path.as_ref();
 
-    // TODO: Why it should be absolute?
-    if !log_dir.is_absolute() {
+    if !log_file_path.is_absolute() {
         return Err(Error::FilePath(
-            log_dir.to_owned(),
-            "log path must be absolute".to_string(),
+            log_file_path.to_owned(),
+            "log file path must be absolute".to_string(),
+        ));
+    }
+
+    if log_file_path.extension().is_none()
+        || log_file_path.ends_with(String::from(path::MAIN_SEPARATOR))
+    {
+        return Err(Error::FilePath(
+            log_file_path.to_owned(),
+            "log file path must point to file".to_string(),
+        ));
+    }
+
+    let Some(parent_dir) = log_file_path.parent() else {
+        return Err(Error::FilePath(
+            log_file_path.to_owned(),
+            "log file path must have parent directory".to_string(),
+        ));
+    };
+
+    // Make sure directly is writable so log rotation can work
+    let md = fs::metadata(parent_dir).map_err(|e| {
+        Error::FilePath(
+            log_file_path.to_owned(),
+            format!("cannot read parent directory: {}", e),
+        )
+    })?;
+
+    let permissions = md.permissions();
+    let readonly = permissions.readonly();
+    if readonly {
+        return Err(Error::FilePath(
+            log_file_path.to_owned(),
+            "parent directory is readonly".to_string(),
         ));
     }
 
