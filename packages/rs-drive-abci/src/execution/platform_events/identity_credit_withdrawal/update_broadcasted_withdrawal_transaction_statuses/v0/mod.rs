@@ -5,15 +5,14 @@ use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::platform_value::Bytes32;
 use dpp::prelude::Identifier;
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 use dpp::version::PlatformVersion;
-use sha2::digest::generic_array::functional::FunctionalSequence;
 use std::collections::BTreeMap;
 
 use drive::drive::batch::DriveOperation;
-use drive::error::drive::DriveError;
 use drive::grovedb::Transaction;
 
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
@@ -70,19 +69,19 @@ where
         )?;
 
         // Collecting only documents that have been updated
-        let transactions_to_check: Vec<Identifier> = broadcasted_withdrawal_documents
+        let transactions_to_check: Vec<[u8; 32]> = broadcasted_withdrawal_documents
             .iter()
             .map(|document| {
                 document
                     .properties()
-                    .get_identifier(withdrawal::properties::TRANSACTION_ID)
+                    .get_hash256_bytes(withdrawal::properties::TRANSACTION_ID)
                     .map_err(|_| {
                         Error::Execution(ExecutionError::CorruptedDriveResponse(
                             "Can't get transactionId from withdrawal document".to_string(),
                         ))
                     })
             })
-            .collect::<Result<Vec<Identifier>, Error>>()?;
+            .collect::<Result<Vec<[u8; 32]>, Error>>()?;
 
         let core_transactions_statuses = if transactions_to_check.is_empty() {
             BTreeMap::new()
@@ -111,7 +110,7 @@ where
 
                 let transaction_id = document
                     .properties()
-                    .get_optional_identifier(withdrawal::properties::TRANSACTION_ID)?
+                    .get_optional_hash256_bytes(withdrawal::properties::TRANSACTION_ID)?
                     .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
                         "Can't get transactionId from withdrawal document".to_string(),
                     )))?;
@@ -131,9 +130,9 @@ where
                     )))?
                     .try_into()
                     .map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedDriveResponse(format!(
-                            "Withdrawal status unknown"
-                        )))
+                        Error::Execution(ExecutionError::CorruptedDriveResponse(
+                            "Withdrawal status unknown".to_string(),
+                        ))
                     })?;
 
                 let block_height_difference = block_execution_context
@@ -154,11 +153,13 @@ where
                     status = WithdrawalStatus::COMPLETE;
                 } else if block_height_difference > NUMBER_OF_BLOCKS_BEFORE_EXPIRED {
                     status = WithdrawalStatus::EXPIRED;
+                } else {
+                    // todo: there could be a problem here where we always get the same withdrawals
+                    //  and don't cycle them most likely when we query withdrawals
+                    return Ok(None);
                 }
 
-                if current_status != status {
-                    document.set_u8(withdrawal::properties::STATUS, status.into());
-                }
+                document.set_u8(withdrawal::properties::STATUS, status.into());
 
                 document.set_u64(withdrawal::properties::UPDATED_AT, block_info.time_ms);
 

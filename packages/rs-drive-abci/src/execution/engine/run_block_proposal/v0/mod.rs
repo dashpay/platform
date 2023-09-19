@@ -192,11 +192,21 @@ where
 
         let mut block_execution_context: BlockExecutionContext = block_execution_context.into();
 
-        self.update_broadcasted_withdrawal_transaction_statuses(
-            &block_execution_context,
-            transaction,
-            platform_version,
-        )?;
+        // >>>>>> Withdrawal Status Update <<<<<<<
+        // Only update the broadcasted withdrawal statuses if the core chain lock height has
+        // changed. If it hasn't changed there should be no way a status could update
+
+        if block_execution_context
+            .block_state_info()
+            .core_chain_locked_height()
+            != last_block_core_height
+        {
+            self.update_broadcasted_withdrawal_transaction_statuses(
+                &block_execution_context,
+                transaction,
+                platform_version,
+            )?;
+        }
 
         // This takes withdrawals from the transaction queue
         let unsigned_withdrawal_transaction_bytes = self

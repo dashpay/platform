@@ -2,7 +2,6 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use std::collections::BTreeMap;
@@ -29,9 +28,9 @@ where
     pub(in crate::execution::platform_events::identity_credit_withdrawal) fn fetch_transactions_block_inclusion_status(
         &self,
         current_chain_locked_core_height: u32,
-        transaction_identifiers: Vec<Identifier>,
+        transaction_identifiers: Vec<[u8; 32]>,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<Identifier, bool>, Error> {
+    ) -> Result<BTreeMap<[u8; 32], bool>, Error> {
         match platform_version
             .drive_abci
             .methods
