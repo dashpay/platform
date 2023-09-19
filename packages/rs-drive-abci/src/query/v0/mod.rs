@@ -176,7 +176,12 @@ impl<C> Platform<C> {
             }
             "/identities" => {
                 let GetIdentitiesRequest { ids, prove } =
-                    check_validation_result_with_data!(GetIdentitiesRequest::decode(query_data));
+                    check_validation_result_with_data!(GetIdentitiesRequest::decode(query_data)
+                        .map_err(|e| QueryError::InvalidArgument(format!(
+                            "invalid query proto message: {}",
+                            e.to_string()
+                        ))));
+
                 let identity_ids = check_validation_result_with_data!(ids
                     .into_iter()
                     .map(|identity_id_vec| {
@@ -189,13 +194,13 @@ impl<C> Platform<C> {
                             })
                     })
                     .collect::<Result<Vec<[u8; 32]>, QueryError>>());
+
                 let response_data = if prove {
-                    let proof =
-                        check_validation_result_with_data!(self.drive.prove_full_identities(
-                            identity_ids.as_slice(),
-                            None,
-                            &platform_version.drive
-                        ));
+                    let proof = self.drive.prove_full_identities(
+                        identity_ids.as_slice(),
+                        None,
+                        &platform_version.drive,
+                    )?;
                     GetIdentitiesResponse {
                         metadata: Some(metadata),
                         result: Some(get_identities_response::Result::Proof(Proof {
@@ -209,32 +214,47 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 } else {
-                    let identities = check_validation_result_with_data!(self
-                        .drive
-                        .fetch_full_identities(identity_ids.as_slice(), None, platform_version));
+                    let identities = self.drive.fetch_full_identities(
+                        identity_ids.as_slice(),
+                        None,
+                        platform_version,
+                    )?;
 
-                    let identities = check_validation_result_with_data!(identities
-                        .into_iter()
-                        .map(|(key, maybe_identity)| Ok::<IdentityEntry, ProtocolError>(
-                            get_identities_response::IdentityEntry {
-                                key: key.to_vec(),
-                                value: maybe_identity
-                                    .map(|identity| Ok::<
-                                        get_identities_response::IdentityValue,
-                                        ProtocolError,
-                                    >(
-                                        get_identities_response::IdentityValue {
-                                            value: identity.serialize_consume_to_bytes()?
-                                        }
-                                    ))
-                                    .transpose()?,
-                            }
-                        ))
-                        .collect());
+                    let maybe_serialized_identities: Result<Vec<IdentityEntry>, ProtocolError> =
+                        identities
+                            .into_iter()
+                            .map(|(key, maybe_identity)| {
+                                Ok::<IdentityEntry, ProtocolError>(
+                                    get_identities_response::IdentityEntry {
+                                        key: key.to_vec(),
+                                        value: maybe_identity
+                                            .map(|identity| {
+                                                Ok::<
+                                                    get_identities_response::IdentityValue,
+                                                    ProtocolError,
+                                                >(
+                                                    get_identities_response::IdentityValue {
+                                                        value: identity
+                                                            .serialize_consume_to_bytes()?,
+                                                    },
+                                                )
+                                            })
+                                            .transpose()?,
+                                    },
+                                )
+                            })
+                            .collect();
+
+                    if let Err(e) = maybe_serialized_identities {
+                        return Err(Error::Protocol(e));
+                    }
+
+                    let serialized_identities = maybe_serialized_identities.unwrap();
+
                     GetIdentitiesResponse {
                         result: Some(get_identities_response::Result::Identities(
                             get_identities_response::Identities {
-                                identity_entries: identities,
+                                identity_entries: serialized_identities,
                             },
                         )),
                         metadata: Some(metadata),
