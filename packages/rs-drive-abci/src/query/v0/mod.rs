@@ -1020,6 +1020,7 @@ impl<C> Platform<C> {
                         ))
                     })
                 );
+
                 let public_key_hashes = check_validation_result_with_data!(public_key_hashes
                     .into_iter()
                     .map(|pub_key_hash_vec| {
@@ -1032,14 +1033,22 @@ impl<C> Platform<C> {
                             })
                     })
                     .collect::<Result<Vec<[u8; 20]>, QueryError>>());
+
                 let response_data = if prove {
-                    let proof = check_validation_result_with_data!(self
+                    let proof = self
                         .drive
                         .prove_full_identities_by_unique_public_key_hashes(
                             &public_key_hashes,
                             None,
                             platform_version,
-                        ));
+                        )?;
+
+                    if proof.is_empty() {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
+                            "identities not found".to_string(),
+                        )));
+                    }
+
                     GetIdentitiesByPublicKeyHashesResponse {
                         result: Some(get_identities_by_public_key_hashes_response::Result::Proof(
                             Proof {
@@ -1056,24 +1065,32 @@ impl<C> Platform<C> {
                     .encode_to_vec()
                 } else {
                     //todo: fix this so we return optionals
-                    let identities = check_validation_result_with_data!(self
+                    let identities = self
                         .drive
                         .fetch_full_identities_by_unique_public_key_hashes(
                             public_key_hashes.as_slice(),
                             None,
                             platform_version,
-                        ));
-                    let identities = check_validation_result_with_data!(identities
+                        )?;
+
+                    if identities.is_empty() {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
+                            "identities not found".to_string(),
+                        )));
+                    }
+
+                    let serialized_identities = identities
                         .into_values()
-                        .filter_map(|maybe_identity| Some(
-                            maybe_identity?.serialize_consume_to_bytes()
-                        ))
-                        .collect::<Result<Vec<Vec<u8>>, ProtocolError>>());
+                        .filter_map(|maybe_identity| {
+                            Some(maybe_identity?.serialize_consume_to_bytes())
+                        })
+                        .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()?;
+
                     GetIdentitiesByPublicKeyHashesResponse {
                         result: Some(
                             get_identities_by_public_key_hashes_response::Result::Identities(
                                 get_identities_by_public_key_hashes_response::Identities {
-                                    identities,
+                                    identities: serialized_identities,
                                 },
                             ),
                         ),
