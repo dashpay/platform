@@ -767,7 +767,13 @@ pub fn init_for_tests(level: LogLevelPreset) {
     logger_builder.build().try_install().ok();
 }
 
-/// Verify log directory path and determine absolute path to log file.
+/// Verify log file path.
+///
+/// Ensure that the log file path is correct, that is:
+/// - it points to a file, not a directory
+/// - if the log file exists, it is writable for the current user
+/// - parent directory of the file exists and is writable for current user
+/// - path is absolute
 fn validate_log_path<T: AsRef<Path>>(log_file: T) -> Result<(), Error> {
     let log_dir = log_dir.as_ref();
 
