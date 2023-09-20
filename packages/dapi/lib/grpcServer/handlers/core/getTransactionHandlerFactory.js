@@ -54,8 +54,16 @@ function getTransactionHandlerFactory(coreRPCClient) {
 
     response.setTransaction(transaction.toBuffer());
     response.setBlockHash(blockHash);
-    response.setHeight(rawTransaction.height);
-    response.setConfirmations(rawTransaction.confirmations);
+
+    // Validate for uint32
+    if (rawTransaction.height > 0) {
+      response.setHeight(rawTransaction.height);
+    }
+
+    // Validate for uint32
+    if (rawTransaction.confirmations >= 0) {
+      response.setConfirmations(rawTransaction.confirmations);
+    }
     response.setIsInstantLocked(rawTransaction.instantlock_internal);
     response.setIsChainLocked(rawTransaction.chainlock);
 
