@@ -1,12 +1,16 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contracts::withdrawals_contract::WithdrawalStatus;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::platform_value::Bytes32;
+use dpp::prelude::Identifier;
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 use dpp::version::PlatformVersion;
+use std::collections::BTreeMap;
 
 use drive::drive::batch::DriveOperation;
 use drive::grovedb::Transaction;
@@ -30,7 +34,6 @@ where
     /// Update statuses for broadcasted withdrawals
     pub(super) fn update_broadcasted_withdrawal_transaction_statuses_v0(
         &self,
-        last_synced_core_height: u32,
         block_execution_context: &BlockExecutionContext,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
@@ -59,19 +62,38 @@ where
             )));
         };
 
-        let core_transactions = self.fetch_core_block_transactions(
-            last_synced_core_height,
-            block_execution_context
-                .block_state_info()
-                .core_chain_locked_height(),
-            platform_version,
-        )?;
-
         let broadcasted_withdrawal_documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
             Some(transaction),
             platform_version,
         )?;
+
+        // Collecting only documents that have been updated
+        let transactions_to_check: Vec<[u8; 32]> = broadcasted_withdrawal_documents
+            .iter()
+            .map(|document| {
+                document
+                    .properties()
+                    .get_hash256_bytes(withdrawal::properties::TRANSACTION_ID)
+                    .map_err(|_| {
+                        Error::Execution(ExecutionError::CorruptedDriveResponse(
+                            "Can't get transactionId from withdrawal document".to_string(),
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<[u8; 32]>, Error>>()?;
+
+        let core_transactions_statuses = if transactions_to_check.is_empty() {
+            BTreeMap::new()
+        } else {
+            self.fetch_transactions_block_inclusion_status(
+                block_execution_context
+                    .block_state_info()
+                    .core_chain_locked_height(),
+                transactions_to_check,
+                platform_version,
+            )?
+        };
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
 
@@ -81,47 +103,61 @@ where
             .map(|mut document| {
                 let transaction_sign_height: u32 = document
                     .properties()
-                    .get_integer(withdrawal::properties::TRANSACTION_SIGN_HEIGHT)
-                    .map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't get transactionSignHeight from withdrawal document",
-                        ))
-                    })?;
+                    .get_optional_integer(withdrawal::properties::TRANSACTION_SIGN_HEIGHT)?
+                    .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                        "Can't get transactionSignHeight from withdrawal document".to_string(),
+                    )))?;
 
-                let transaction_id_bytes = document
+                let transaction_id = document
                     .properties()
-                    .get_bytes(withdrawal::properties::TRANSACTION_ID)
-                    .map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't get transactionId from withdrawal document",
-                        ))
-                    })?;
+                    .get_optional_hash256_bytes(withdrawal::properties::TRANSACTION_ID)?
+                    .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                        "Can't get transactionId from withdrawal document".to_string(),
+                    )))?;
 
                 let transaction_index = document
                     .properties()
-                    .get_integer(withdrawal::properties::TRANSACTION_INDEX)
+                    .get_optional_integer(withdrawal::properties::TRANSACTION_INDEX)?
+                    .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                        "Can't get transaction index from withdrawal document".to_string(),
+                    )))?;
+
+                let current_status: WithdrawalStatus = document
+                    .properties()
+                    .get_optional_integer::<u8>(withdrawal::properties::STATUS)?
+                    .ok_or(Error::Execution(ExecutionError::CorruptedDriveResponse(
+                        "Can't get transaction index from withdrawal document".to_string(),
+                    )))?
+                    .try_into()
                     .map_err(|_| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            "Can't get transactionIdex from withdrawal document",
+                        Error::Execution(ExecutionError::CorruptedDriveResponse(
+                            "Withdrawal status unknown".to_string(),
                         ))
                     })?;
-
-                let transaction_id = hex::encode(transaction_id_bytes);
 
                 let block_height_difference = block_execution_context
                     .block_state_info()
                     .core_chain_locked_height()
                     - transaction_sign_height;
 
-                let status;
+                let is_chain_locked =
+                    *core_transactions_statuses
+                        .get(&transaction_id)
+                        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "we should always have a withdrawal status",
+                        )))?;
 
-                if core_transactions.contains(&transaction_id) {
-                    status = withdrawals_contract::WithdrawalStatus::COMPLETE;
+                let mut status = current_status;
+
+                if is_chain_locked {
+                    status = WithdrawalStatus::COMPLETE;
                 } else if block_height_difference > NUMBER_OF_BLOCKS_BEFORE_EXPIRED {
-                    status = withdrawals_contract::WithdrawalStatus::EXPIRED;
+                    status = WithdrawalStatus::EXPIRED;
                 } else {
+                    // todo: there could be a problem here where we always get the same withdrawals
+                    //  and don't cycle them most likely when we query withdrawals
                     return Ok(None);
-                };
+                }
 
                 document.set_u8(withdrawal::properties::STATUS, status.into());
 
@@ -129,7 +165,7 @@ where
 
                 document.increment_revision().map_err(Error::Protocol)?;
 
-                if status == withdrawals_contract::WithdrawalStatus::EXPIRED {
+                if status == WithdrawalStatus::EXPIRED {
                     self.drive.add_insert_expired_index_operation(
                         transaction_index,
                         &mut drive_operations,
@@ -173,6 +209,7 @@ where
 #[cfg(test)]
 mod tests {
     use dashcore_rpc::dashcore::{hashes::hex::FromHex, BlockHash, QuorumHash};
+    use dashcore_rpc::dashcore_rpc_json::GetTransactionLockedResult;
     use dpp::{
         data_contracts::withdrawals_contract, tests::fixtures::get_withdrawal_document_fixture,
     };
@@ -193,7 +230,9 @@ mod tests {
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::platform_value;
 
+    use crate::platform_types::platform::Platform;
     use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::Txid;
     use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
     use dpp::version::PlatformVersion;
     use dpp::withdrawal::Pooling;
@@ -211,6 +250,32 @@ mod tests {
             .set_initial_state_structure();
 
         let mut mock_rpc_client = MockCoreRPCLike::new();
+
+        mock_rpc_client
+            .expect_get_transactions_are_chain_locked()
+            .returning(move |tx_ids: Vec<Txid>| {
+                Ok(tx_ids
+                    .into_iter()
+                    .map(|tx_id| {
+                        if tx_id.to_byte_array()
+                            == [
+                                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                                1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                            ]
+                        {
+                            GetTransactionLockedResult {
+                                height: Some(93),
+                                chain_lock: true,
+                            }
+                        } else {
+                            GetTransactionLockedResult {
+                                height: None,
+                                chain_lock: false,
+                            }
+                        }
+                    })
+                    .collect())
+            });
 
         mock_rpc_client
             .expect_get_block_hash()
@@ -366,7 +431,6 @@ mod tests {
 
         platform
             .update_broadcasted_withdrawal_transaction_statuses_v0(
-                95,
                 &block_execution_context.into(),
                 &transaction,
                 platform_version,
