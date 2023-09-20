@@ -66,7 +66,7 @@ function getTransactionHandlerFactory(coreRPCClient) {
     if (rawTransaction.confirmations >= 0) {
       response.setConfirmations(rawTransaction.confirmations);
     }
-    
+
     response.setIsInstantLocked(rawTransaction.instantlock_internal);
     response.setIsChainLocked(rawTransaction.chainlock);
 
