@@ -1,3 +1,17 @@
+## [0.25.0-dev.28](https://github.com/dashpay/platform/compare/v0.25.0-dev.27...v0.25.0-dev.28) (2023-09-19)
+
+
+### Bug Fixes
+
+* **dashmate:** config format is not conventional ([#1410](https://github.com/dashpay/platform/issues/1410))
+* **dashmate:** ssl verification container already exists ([#1409](https://github.com/dashpay/platform/issues/1409))
+* **drive:** withdrawal transactions query ([#1402](https://github.com/dashpay/platform/issues/1402))
+
+
+### Styles
+
+* **dpp:** remove unused cbor import ([#1384](https://github.com/dashpay/platform/issues/1384))
+
 ## [0.25.0-dev.27](https://github.com/dashpay/platform/compare/v0.25.0-dev.26...v0.25.0-dev.27) (2023-09-18)
 
 

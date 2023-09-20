@@ -137,7 +137,7 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
           });
         return configFile;
       },
-      '0.25.0-dev.23': (configFile) => {
+      '0.25.0-dev.29': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             if (options.platform.drive.abci.log.jsonFile.level === 'fatal') {
@@ -147,8 +147,11 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
             if (options.platform.drive.abci.log.prettyFile.level === 'fatal') {
               options.platform.drive.abci.log.prettyFile.level = 'error';
             }
-          });
 
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+            }
+          });
         return configFile;
       },
     };
