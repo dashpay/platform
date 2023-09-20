@@ -816,7 +816,9 @@ fn validate_log_path<T: AsRef<Path>>(log_file_path: T) -> Result<(), Error> {
     }
 
     // Make sure parent directly is writable so log rotation can work
-    let parent_dir = log_file_path.parent().unwrap();
+    let parent_dir = log_file_path
+        .parent()
+        .expect("absolute log file path will always have parent");
 
     let md = fs::metadata(parent_dir).map_err(|e| {
         Error::FilePath(
