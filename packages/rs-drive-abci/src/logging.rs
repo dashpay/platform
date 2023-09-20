@@ -846,7 +846,10 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+    use std::fs::OpenOptions;
+    use std::os::unix::fs::PermissionsExt;
     use std::{cmp::Ordering, fs, str::from_utf8};
+    use tempfile::tempdir;
 
     /// Reads data written to provided destination.
     ///
@@ -1112,5 +1115,86 @@ mod tests {
                 counter = counter + 1;
             });
         assert_eq!(counter, ITERATIONS + 1);
+    }
+
+    #[test]
+    fn test_validate_log_path_file_exists_and_writable() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("log.txt");
+        OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&file_path)
+            .unwrap();
+
+        assert!(validate_log_path(&file_path).is_ok());
+    }
+
+    #[test]
+    fn test_validate_log_path_file_exists_but_readonly() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("log.txt");
+        OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&file_path)
+            .unwrap();
+        let mut perms = fs::metadata(&file_path).unwrap().permissions();
+        perms.set_mode(0o444);
+        fs::set_permissions(&file_path, perms).unwrap();
+
+        if let Err(Error::FilePath(_, message)) = validate_log_path(&file_path) {
+            assert_eq!(message, "log file is readonly");
+        } else {
+            panic!("Expected error did not occur");
+        }
+    }
+
+    #[test]
+    fn test_validate_log_path_parent_directory_not_writable() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("log.txt");
+        let mut perms = fs::metadata(dir.path()).unwrap().permissions();
+        perms.set_mode(0o555);
+        fs::set_permissions(dir.path(), perms).unwrap();
+
+        if let Err(Error::FilePath(_, message)) = validate_log_path(&file_path) {
+            assert_eq!(message, "parent directory is readonly");
+        } else {
+            panic!("Expected error did not occur");
+        }
+    }
+
+    #[test]
+    fn test_validate_log_path_points_to_directory() {
+        let dir = tempdir().unwrap();
+
+        if let Err(Error::FilePath(_, message)) = validate_log_path(dir.path()) {
+            assert_eq!(message, "log file path must point to file");
+        } else {
+            panic!("Expected error did not occur");
+        }
+    }
+
+    #[test]
+    fn test_validate_log_path_not_absolute() {
+        let relative_path = Path::new("log.txt");
+
+        if let Err(Error::FilePath(_, message)) = validate_log_path(relative_path) {
+            assert_eq!(message, "log file path must be absolute");
+        } else {
+            panic!("Expected error did not occur");
+        }
+    }
+
+    #[test]
+    fn test_validate_log_path_no_parent_dir() {
+        let root_file_path = Path::new("/log.txt");
+
+        if let Err(Error::FilePath(_, message)) = validate_log_path(root_file_path) {
+            assert_eq!(message, "log file path must have parent directory");
+        } else {
+            panic!("Expected error did not occur");
+        }
     }
 }
