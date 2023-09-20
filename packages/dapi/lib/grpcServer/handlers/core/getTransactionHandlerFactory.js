@@ -56,7 +56,7 @@ function getTransactionHandlerFactory(coreRPCClient) {
     response.setBlockHash(blockHash);
 
     // Validate for uint32
-    if (rawTransaction.height > 0) {
+    if (rawTransaction.height >= 0) {
       response.setHeight(rawTransaction.height);
     }
 
