@@ -14,6 +14,8 @@ const createJsonTransportError = require('./transport/JsonRpcTransport/createJso
 const BlockHeadersProvider = require('./BlockHeadersProvider/BlockHeadersProvider');
 const createBlockHeadersProviderFromOptions = require('./BlockHeadersProvider/createBlockHeadersProviderFromOptions');
 
+const logger = require('./logger');
+
 const EVENTS = {
   ERROR: 'error',
 };
@@ -30,6 +32,10 @@ class DAPIClient extends EventEmitter {
       timeout: 10000,
       retries: 5,
       blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
+      loggerOptions: {
+        level: 'info',
+        identifier: '',
+      },
       ...options,
     };
 
@@ -52,6 +58,7 @@ class DAPIClient extends EventEmitter {
 
     this.core = new CoreMethodsFacade(jsonRpcTransport, grpcTransport);
     this.platform = new PlatformMethodsFacade(grpcTransport);
+    this.logger = logger.getForId(this.options.loggerOptions.identifier);
 
     this.initBlockHeadersProvider();
   }
@@ -81,6 +88,8 @@ DAPIClient.EVENTS = EVENTS;
  * @property {number} [retries=3]
  * @property {number} [baseBanTime=60000]
  * @property {boolean} [throwDeadlineExceeded]
+ * @property {object} [loggerOptions]
+ * @property {string} [loggerOptions.identifier] - logger identifier, produces output like "[DAPIClient: <identifier>]: Message..."
  * @property {BlockHeadersProvider} [blockHeadersProvider]
  * @property {BlockHeadersProviderOptions} [blockHeadersProviderOptions]
  */

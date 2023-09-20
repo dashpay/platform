@@ -78,6 +78,9 @@ export class Client extends EventEmitter {
     // Initialize DAPI Client
     const dapiClientOptions = {
       network: this.network,
+      loggerOptions: {
+        identifier: '',
+      },
     };
 
     [
@@ -96,8 +99,6 @@ export class Client extends EventEmitter {
       }
     });
 
-    this.dapiClient = new DAPIClient(dapiClientOptions);
-
     // Initialize a wallet if `wallet` option is preset
     if (this.options.wallet !== undefined) {
       if (this.options.wallet.network !== undefined
@@ -105,10 +106,8 @@ export class Client extends EventEmitter {
         throw new Error('Wallet and Client networks are different');
       }
 
-      const transport = new DAPIClientTransport(this.dapiClient);
-
       this.wallet = new Wallet({
-        transport,
+        transport: undefined,
         network: this.network,
         ...this.options.wallet,
       });
@@ -117,6 +116,14 @@ export class Client extends EventEmitter {
       this.wallet.on('error', (error, context) => (
         this.emit('error', error, { wallet: context })
       ));
+    }
+
+    dapiClientOptions.loggerOptions.identifier = this.wallet ? this.wallet.walletId : 'noid';
+
+    this.dapiClient = new DAPIClient(dapiClientOptions);
+
+    if (this.wallet) {
+      this.wallet.transport = new DAPIClientTransport(this.dapiClient);
     }
 
     this.defaultAccountIndex = this.options.wallet?.defaultAccountIndex || 0;
