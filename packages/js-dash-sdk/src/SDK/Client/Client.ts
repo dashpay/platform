@@ -107,7 +107,7 @@ export class Client extends EventEmitter {
       }
 
       this.wallet = new Wallet({
-        transport: undefined,
+        transport: null,
         network: this.network,
         ...this.options.wallet,
       });
