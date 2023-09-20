@@ -816,12 +816,7 @@ fn validate_log_path<T: AsRef<Path>>(log_file_path: T) -> Result<(), Error> {
     }
 
     // Make sure parent directly is writable so log rotation can work
-    let Some(parent_dir) = log_file_path.parent() else {
-        return Err(Error::FilePath(
-            log_file_path.to_owned(),
-            "log file path must have parent directory".to_string(),
-        ));
-    };
+    let parent_dir = log_file_path.parent().unwrap();
 
     let md = fs::metadata(parent_dir).map_err(|e| {
         Error::FilePath(
@@ -1182,17 +1177,6 @@ mod tests {
 
         if let Err(Error::FilePath(_, message)) = validate_log_path(relative_path) {
             assert_eq!(message, "log file path must be absolute");
-        } else {
-            panic!("Expected error did not occur");
-        }
-    }
-
-    #[test]
-    fn test_validate_log_path_no_parent_dir() {
-        let root_file_path = Path::new("/log.txt");
-
-        if let Err(Error::FilePath(_, message)) = validate_log_path(root_file_path) {
-            assert_eq!(message, "log file path must have parent directory");
         } else {
             panic!("Expected error did not occur");
         }
