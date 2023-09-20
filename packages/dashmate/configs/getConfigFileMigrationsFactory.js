@@ -137,6 +137,15 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
           });
         return configFile;
       },
+      '0.25.0-dev.29': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+            }
+          });
+        return configFile;
+      },
     };
   }
 
