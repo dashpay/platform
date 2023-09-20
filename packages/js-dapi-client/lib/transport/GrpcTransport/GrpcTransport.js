@@ -83,6 +83,8 @@ class GrpcTransport {
     } catch (error) {
       this.lastUsedAddress = address;
 
+      this.logger.error(`GRPC Request ${method} to ${address.toString()} failed with error: ${error.message}`);
+
       // for unknown errors
       if (error.code === undefined) {
         throw error;
