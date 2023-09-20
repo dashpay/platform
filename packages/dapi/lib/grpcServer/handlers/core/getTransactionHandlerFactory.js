@@ -55,15 +55,18 @@ function getTransactionHandlerFactory(coreRPCClient) {
     response.setTransaction(transaction.toBuffer());
     response.setBlockHash(blockHash);
 
-    // Validate for uint32
+    // The height is -1 if transaction is not in the block yet.
+    // Do not set it in this case since Protobuf expects uint32
     if (rawTransaction.height >= 0) {
       response.setHeight(rawTransaction.height);
     }
 
-    // Validate for uint32
+    // Set confirmations might not be present in Core RPC response
+    // Double check it just in case
     if (rawTransaction.confirmations >= 0) {
       response.setConfirmations(rawTransaction.confirmations);
     }
+    
     response.setIsInstantLocked(rawTransaction.instantlock_internal);
     response.setIsChainLocked(rawTransaction.chainlock);
 
