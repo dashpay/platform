@@ -1,6 +1,6 @@
 /* eslint-disable no-param-reassign */
 
-const { NETWORK_LOCAL, NETWORK_TESTNET } = require('../src/constants');
+const { NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_MAINNET } = require('../src/constants');
 
 /**
  * @param {HomeDir} homeDir
@@ -140,8 +140,18 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
       '0.25.0-dev.29': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
+            if (options.network !== NETWORK_MAINNET) {
+              options.core.docker.image = base.get('core.docker.image');
+
+              options.platform.dapi.api.docker.image = base.get('platform.dapi.api.docker.image');
+              options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
+              options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            }
+
             if (options.network === NETWORK_TESTNET) {
-              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+              options.platform.drive.tenderdash
+                .genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
             }
           });
         return configFile;
