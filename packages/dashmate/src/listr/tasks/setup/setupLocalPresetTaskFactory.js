@@ -223,6 +223,7 @@ function setupLocalPresetTaskFactory(
                   config.set('platform.drive.tenderdash.p2p.port', config.get('platform.drive.tenderdash.p2p.port') + (i * 100));
                   config.set('platform.drive.tenderdash.rpc.port', config.get('platform.drive.tenderdash.rpc.port') + (i * 100));
                   config.set('platform.drive.tenderdash.pprof.port', config.get('platform.drive.tenderdash.pprof.port') + (i * 100));
+                  config.set('platform.drive.tenderdash.metrics.port', config.get('platform.drive.tenderdash.metrics.port') + (i * 100));
                   config.set('platform.drive.tenderdash.moniker', config.name);
 
                   config.set('platform.drive.tenderdash.mode', 'validator');

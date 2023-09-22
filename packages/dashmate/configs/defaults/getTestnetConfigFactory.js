@@ -85,6 +85,12 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
             rpc: {
               port: 36657,
             },
+            pprof: {
+              port: 36060,
+            },
+            metrics: {
+              port: 36660,
+            },
             genesis: {
               genesis_time: '2023-04-26T10:43:20.921Z',
               chain_id: 'dash-testnet-24',
