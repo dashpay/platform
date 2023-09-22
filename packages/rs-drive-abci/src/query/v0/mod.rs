@@ -127,12 +127,6 @@ impl<C> Platform<C> {
                         &platform_version.drive
                     ));
 
-                    if proof.is_empty() {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
-                            format!("identity {} not found", identity_id),
-                        )));
-                    }
-
                     GetIdentityResponse {
                         result: Some(get_identity_response::Result::Proof(Proof {
                             grovedb_proof: proof,
@@ -431,12 +425,6 @@ impl<C> Platform<C> {
                         None,
                         platform_version
                     ));
-
-                    if proof.is_empty() {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
-                            format!("data contract {} not found", contract_id),
-                        )));
-                    }
 
                     GetDataContractResponse {
                         result: Some(get_data_contract_response::Result::Proof(Proof {
@@ -821,12 +809,6 @@ impl<C> Platform<C> {
                             None,
                             platform_version
                         ));
-
-                    if proof.is_empty() {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
-                            format!("identity {} not found", hex::encode(public_key_hash)),
-                        )));
-                    }
 
                     GetIdentityByPublicKeyHashesResponse {
                         metadata: Some(metadata),
