@@ -498,4 +498,4 @@ prometheus-listen-addr = ":{{= it.platform.drive.tenderdash.metrics.port }}"
 max-open-connections = 3
 
 # Instrumentation namespace
-namespace = "drive_tendermint"
+namespace = "drive_tenderdash"
