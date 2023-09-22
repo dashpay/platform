@@ -4,52 +4,52 @@ use crate::error::query::QueryError;
 #[derive(Debug, thiserror::Error)]
 pub enum HandlerError {
     /// ABCI Handler error (Cancelled)
-    #[error("ABCI Handler error (Cancelled): {0}")]
+    #[error("{0}")]
     Cancelled(String),
     /// ABCI Handler error (Unknown)
-    #[error("ABCI Handler error (Unknown): {0}")]
+    #[error("{0}")]
     Unknown(String),
     /// ABCI Handler error (InvalidArgument)
-    #[error("ABCI Handler error (InvalidArgument): {0}")]
+    #[error("{0}")]
     InvalidArgument(String),
     /// ABCI Handler error (DeadlineExceeded)
-    #[error("ABCI Handler error (DeadlineExceeded): {0}")]
+    #[error("{0}")]
     DeadlineExceeded(String),
     /// ABCI Handler error (NotFound)
-    #[error("ABCI Handler error (NotFound): {0}")]
+    #[error("{0}")]
     NotFound(String),
     /// ABCI Handler error (AlreadyExists)
-    #[error("ABCI Handler error (AlreadyExists): {0}")]
+    #[error("{0}")]
     AlreadyExists(String),
     /// ABCI Handler error (PermissionDenied)
-    #[error("ABCI Handler error (PermissionDenied): {0}")]
+    #[error("{0}")]
     PermissionDenied(String),
     /// ABCI Handler error (ResourceExhausted)
-    #[error("ABCI Handler error (ResourceExhausted): {0}")]
+    #[error("{0}")]
     ResourceExhausted(String),
     /// ABCI Handler error (FailedPrecondition)
-    #[error("ABCI Handler error (FailedPrecondition): {0}")]
+    #[error("{0}")]
     FailedPrecondition(String),
     /// ABCI Handler error (Aborted)
-    #[error("ABCI Handler error (Aborted): {0}")]
+    #[error("{0}")]
     Aborted(String),
     /// ABCI Handler error (OutOfRange)
-    #[error("ABCI Handler error (OutOfRange): {0}")]
+    #[error("{0}")]
     OutOfRange(String),
     /// ABCI Handler error (Unimplemented)
-    #[error("ABCI Handler error (Unimplemented): {0}")]
+    #[error("{0}")]
     Unimplemented(String),
     /// ABCI Handler error (Internal)
-    #[error("ABCI Handler error (Internal): {0}")]
+    #[error("{0}")]
     Internal(String),
     /// ABCI Handler error (Unavailable)
-    #[error("ABCI Handler error (Unavailable): {0}")]
+    #[error("{0}")]
     Unavailable(String),
     /// ABCI Handler error (DataLoss)
-    #[error("ABCI Handler error (DataLoss): {0}")]
+    #[error("{0}")]
     DataLoss(String),
     /// ABCI Handler error (Unauthenticated)
-    #[error("ABCI Handler error (Unauthenticated): {0}")]
+    #[error("{0}")]
     Unauthenticated(String),
 }
 
