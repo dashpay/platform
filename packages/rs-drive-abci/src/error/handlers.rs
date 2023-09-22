@@ -141,7 +141,7 @@ impl HandlerError {
         }
     }
 
-    // Returns base64-encoded message for info field of ABCI handler responses
+    /// Returns base64-encoded message for info field of ABCI handler responses
     pub fn response_info(&self) -> Result<String, ResponseException> {
         let error_data_buffer = platform_value!({
             "message": self.message().to_string(),
