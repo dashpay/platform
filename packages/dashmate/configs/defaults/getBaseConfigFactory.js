@@ -194,6 +194,10 @@ function getBaseConfigFactory(homeDir) {
               enabled: false,
               port: 6060,
             },
+            metrics: {
+              enabled: false,
+              port: 26660,
+            },
             consensus: {
               createEmptyBlocks: true,
               createEmptyBlocksInterval: '3m',
