@@ -33,7 +33,6 @@ class DAPIClient extends EventEmitter {
       retries: 5,
       blockHeadersProviderOptions: BlockHeadersProvider.defaultOptions,
       loggerOptions: {
-        level: 'info',
         identifier: '',
       },
       ...options,
@@ -89,7 +88,7 @@ DAPIClient.EVENTS = EVENTS;
  * @property {number} [baseBanTime=60000]
  * @property {boolean} [throwDeadlineExceeded]
  * @property {object} [loggerOptions]
- * @property {string} [loggerOptions.identifier] - logger identifier, produces output like "[DAPIClient: <identifier>]: Message..."
+ * @property {string} [loggerOptions.identifier]
  * @property {BlockHeadersProvider} [blockHeadersProvider]
  * @property {BlockHeadersProviderOptions} [blockHeadersProviderOptions]
  */

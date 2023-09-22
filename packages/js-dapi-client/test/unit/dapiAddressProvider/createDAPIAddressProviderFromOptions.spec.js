@@ -113,6 +113,9 @@ describe('createDAPIAddressProviderFromOptions', () => {
       options = {
         seeds: ['127.0.0.1'],
         network: 'local',
+        loggerOptions: {
+          identifier: '',
+        },
       };
     });
 
@@ -129,6 +132,9 @@ describe('createDAPIAddressProviderFromOptions', () => {
     beforeEach(() => {
       options = {
         network: Object.keys(networkConfigs)[0],
+        loggerOptions: {
+          identifier: '',
+        },
       };
     });
 
