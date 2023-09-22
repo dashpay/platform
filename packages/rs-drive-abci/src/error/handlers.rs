@@ -165,7 +165,7 @@ impl From<&QueryError> for HandlerError {
             QueryError::InvalidArgument(message) => {
                 HandlerError::InvalidArgument(message.to_owned())
             }
-            QueryError::DocumentQuery(error) => HandlerError::InvalidArgument(error.to_string()),
+            QueryError::Query(error) => HandlerError::InvalidArgument(error.to_string()),
             _ => HandlerError::Unknown(value.to_string()),
         }
     }
