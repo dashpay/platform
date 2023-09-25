@@ -530,6 +530,20 @@ module.exports = {
                   required: ['enabled', 'port'],
                   additionalProperties: false,
                 },
+                metrics: {
+                  description: 'Prometheus metrics',
+                  type: 'object',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                    },
+                    port: {
+                      $ref: '#/definitions/port',
+                    },
+                  },
+                  required: ['enabled', 'port'],
+                  additionalProperties: false,
+                },
                 node: {
                   type: 'object',
                   properties: {
@@ -549,7 +563,7 @@ module.exports = {
                   type: 'object',
                 },
               },
-              required: ['mode', 'docker', 'p2p', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis'],
+              required: ['mode', 'docker', 'p2p', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis', 'metrics'],
               additionalProperties: false,
             },
           },
