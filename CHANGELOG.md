@@ -1,3 +1,42 @@
+## [0.25.0-dev.29](https://github.com/dashpay/platform/compare/v0.25.0-dev.28...v0.25.0-dev.29) (2023-09-22)
+
+
+### Features
+
+* **dashmate:** expose tenderdash metics ([#1419](https://github.com/dashpay/platform/issues/1419))
+
+
+### Bug Fixes
+
+* **dapi:** getTransaction google-protobuf AssertionError ([#1416](https://github.com/dashpay/platform/issues/1416))
+* **dashmate:** platform reset failure ([#1415](https://github.com/dashpay/platform/issues/1415))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** add images migrations for v25 ([#1377](https://github.com/dashpay/platform/issues/1377))
+* update testnet genesis config for testnet-24 ([#1413](https://github.com/dashpay/platform/issues/1413))
+
+
+### Continuous Integration
+
+* make self-hosted actions-cache steps access S3 from correct region ([#1407](https://github.com/dashpay/platform/issues/1407))
+* update cache target bucket ([#1418](https://github.com/dashpay/platform/issues/1418))
+
+## [0.25.0-dev.28](https://github.com/dashpay/platform/compare/v0.25.0-dev.27...v0.25.0-dev.28) (2023-09-19)
+
+
+### Bug Fixes
+
+* **dashmate:** config format is not conventional ([#1410](https://github.com/dashpay/platform/issues/1410))
+* **dashmate:** ssl verification container already exists ([#1409](https://github.com/dashpay/platform/issues/1409))
+* **drive:** withdrawal transactions query ([#1402](https://github.com/dashpay/platform/issues/1402))
+
+
+### Styles
+
+* **dpp:** remove unused cbor import ([#1384](https://github.com/dashpay/platform/issues/1384))
+
 ## [0.25.0-dev.27](https://github.com/dashpay/platform/compare/v0.25.0-dev.26...v0.25.0-dev.27) (2023-09-18)
 
 

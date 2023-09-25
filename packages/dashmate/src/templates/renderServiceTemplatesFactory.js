@@ -17,7 +17,12 @@ function renderServiceTemplatesFactory(renderTemplate) {
   function renderServiceTemplates(config) {
     dots.templateSettings.strip = false;
 
-    const templatePaths = glob.sync(`${TEMPLATES_DIR}/**/*.dot`);
+    const templatePaths = glob.sync(`${TEMPLATES_DIR}/**/*.dot`, {
+      ignore: {
+        // Ignore manual rendered templates
+        ignored: (p) => p.name.startsWith('_'),
+      },
+    });
 
     const configFiles = {};
     for (const templatePath of templatePaths) {
