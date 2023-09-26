@@ -44,7 +44,6 @@ const defaultOptions = {
 
 /* eslint-disable no-underscore-dangle */
 const _initializeAccount = require('./_initializeAccount');
-const _addAccountToWallet = require('./_addAccountToWallet');
 const _loadStrategy = require('./_loadStrategy');
 
 const getNetwork = require('./_getNetwork');
@@ -56,6 +55,7 @@ class Account extends EventEmitter {
     if (!wallet || wallet.constructor.name !== Wallet.name) throw new Error('Expected wallet to be passed as param');
     if (!_.has(wallet, 'walletId')) throw new Error('Missing walletID to create an account');
     this.walletId = wallet.walletId;
+    this.wallet = wallet;
     this.logger = logger.getForWallet(this.walletId);
 
     this.logger.debug(`Loading up wallet ${this.walletId}`);
@@ -104,11 +104,15 @@ class Account extends EventEmitter {
     this.storage.on(EVENTS.CONFIGURED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.REHYDRATE_STATE_FAILED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.REHYDRATE_STATE_SUCCESS, (ev) => this.emit(ev.type, ev));
-    this.storage.on(EVENTS.FETCHED_CONFIRMED_TRANSACTION, (ev) => this.emit(ev.type, ev));
+    this.storage.on(EVENTS.FETCHED_CONFIRMED_TRANSACTION, (ev) => {
+      this.emit(ev.type, ev);
+      wallet.emit(EVENTS.FETCHED_CONFIRMED_TRANSACTION, ev.payload.transaction);
+    });
     this.storage.on(EVENTS.UNCONFIRMED_BALANCE_CHANGED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.CONFIRMED_BALANCE_CHANGED, (ev) => this.emit(ev.type, ev));
     this.storage.on(EVENTS.TX_METADATA, (ev) => {
       this.emit(`${ev.type}:${ev.payload.hash}`, ev.payload.metadata);
+      wallet.emit(EVENTS.TX_METADATA, ev.payload);
     });
     this.storage.on(EVENTS.BLOCKHEADER, (ev) => this.emit(ev.type, ev));
 
@@ -215,16 +219,11 @@ class Account extends EventEmitter {
     return `${EVENTS.INSTANT_LOCK}:${transactionHash}`;
   }
 
-  // It's actually Account that mutates wallet.accounts to add itself.
-  // We might want to get rid of that as it can be really confusing.
-  // It would gives that responsability to createAccount to create
-  // (and therefore push to accounts).
   async init(wallet) {
     if (this.state.isInitialized) {
       return true;
     }
-    await _addAccountToWallet(this, wallet);
-    await _initializeAccount(this, wallet.plugins);
+    await _initializeAccount(this, wallet ? wallet.plugins : this.wallet.plugins);
     return true;
   }
 

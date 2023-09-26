@@ -2,14 +2,20 @@ const _ = require('lodash');
 const { is } = require('../../../utils');
 const EVENTS = require('../../../EVENTS');
 
+const defaultOpts = {
+  index: 0,
+  synchronize: true,
+};
+
 /**
  * Get a specific account per accounts index
  * @param accountOpts - If the account doesn't exist yet, we create it passing these options
  * @param accountOpts.index - Default: 0, set a specific index to get
+ * @param accountOpts.synchronize - Default: true, specifies whether account has to be synchronized
  * @return {Account}
  */
 
-async function getAccount(accountOpts = {}) {
+async function getAccount(accountOpts = defaultOpts) {
   if (!this.storage.configured) {
     await new Promise((resolve) => this.storage.once(EVENTS.CONFIGURED, resolve));
   }
@@ -27,7 +33,7 @@ async function getAccount(accountOpts = {}) {
   const baseOpts = { index: accountIndex };
 
   const opts = Object.assign(baseOpts, accountOpts);
-  return (acc[0]) || this.createAccount(opts);
+  return acc[0] || this.createAccount(opts);
 }
 
 module.exports = getAccount;

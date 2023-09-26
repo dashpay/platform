@@ -28,8 +28,29 @@ async function createAccount(accountOpts) {
   const opts = Object.assign(baseOpts, accountOpts);
 
   const account = new Account(this, opts);
+
+  // Add default derivation paths
+  account.addDefaultPaths();
+
+  // Issue additional derivation paths in case we have transactions in the store
+  // at the moment of initialization (from persistent storage)
+  account.createPathsForTransactions();
+
+  // Add block headers from storage into the SPV chain if there are any
+  const chainStore = this.storage.getDefaultChainStore();
+  const { blockHeaders, lastSyncedHeaderHeight } = chainStore.state;
+  if (!this.offlineMode && blockHeaders.length > 0) {
+    const { blockHeadersProvider } = this.transport.client;
+    blockHeadersProvider.initializeWith(blockHeaders, lastSyncedHeaderHeight);
+  }
+
+  this.accounts.push(account);
+
   try {
-    await account.init(this);
+    if (opts.synchronize) {
+      await account.init(this);
+    }
+
     return account;
   } catch (e) {
     await account.disconnect();
