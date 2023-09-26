@@ -7,6 +7,10 @@ const Dash = require('dash');
 
 const mnemonic = '';
 
+// Synchronization will take a lot of time with this configuration. 
+// We can use `unsafeOptions.skipSynchronizationBeforeHeigth` option
+// in combination with progress events as described here
+// https://github.com/dashpay/platform/tree/v0.25-dev/packages/wallet-lib#usage
 const client = new Dash.Client({
   wallet: {
     mnemonic,
