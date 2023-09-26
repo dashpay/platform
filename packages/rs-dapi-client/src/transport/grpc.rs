@@ -9,24 +9,35 @@ use http::Uri;
 use tonic::{transport::Channel, IntoRequest};
 
 use super::{CanRetry, TransportClient, TransportRequest};
+#[cfg(feature = "mocks")]
+use crate::mock::MockableClient;
 use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 
-type PlatformGrpcClient = PlatformClient<Channel>;
-type CoreGrpcClient = CoreClient<Channel>;
+pub(crate) type PlatformGrpcClient = PlatformClient<Channel>;
+pub(crate) type CoreGrpcClient = CoreClient<Channel>;
 
 impl TransportClient for PlatformGrpcClient {
+    type Inner = Self;
     type Error = tonic::Status;
 
     fn with_uri(uri: Uri) -> Self {
-        PlatformGrpcClient::new(Channel::builder(uri).connect_lazy())
+        Self::new(Channel::builder(uri).connect_lazy())
+    }
+    fn as_mut_inner(&mut self) -> Option<&mut Self::Inner> {
+        Some(self)
     }
 }
 
 impl TransportClient for CoreGrpcClient {
+    type Inner = Self;
     type Error = tonic::Status;
 
     fn with_uri(uri: Uri) -> Self {
-        CoreGrpcClient::new(Channel::builder(uri).connect_lazy())
+        Self::new(Channel::builder(uri).connect_lazy())
+    }
+
+    fn as_mut_inner(&mut self) -> Option<&mut Self::Inner> {
+        Some(self)
     }
 }
 
@@ -53,6 +64,9 @@ impl CanRetry for tonic::Status {
 macro_rules! impl_transport_request_grpc {
     ($request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
         impl TransportRequest for $request {
+            #[cfg(feature = "mocks")]
+            type Client = MockableClient<$client>;
+            #[cfg(not(feature = "mocks"))]
             type Client = $client;
 
             type Response = $response;
@@ -65,6 +79,7 @@ macro_rules! impl_transport_request_grpc {
                 settings: &AppliedRequestSettings,
             ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>>
             {
+                let client = client.as_mut_inner().expect("Cannot use mock client for real requests, wrap with MockRequest instead");
                 let mut grpc_request = self.into_request();
                 grpc_request.set_timeout(settings.timeout);
 

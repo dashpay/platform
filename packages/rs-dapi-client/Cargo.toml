@@ -4,7 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-mocks = ["dep:mockall"]
+default = ["mocks"]
+mocks = [
+    "dep:mockall",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:drive-proof-verifier",
+    "dep:dpp",
+]
 platform_integration_tests = []
 
 
@@ -18,7 +25,15 @@ thiserror = "1.0.41"
 tonic = "0.9.2"
 tracing = "0.1.37"
 mockall = { version = "0.11", optional = true }
-
+serde = { version = "1.0.171", default-features = false, optional = true }
+serde_json = { version = "1.0.103", features = [
+    "preserve_order",
+], optional = true }
+drive-proof-verifier = { path = "../rs-drive-proof-verifier", features = [
+    "mocks",
+], optional = true }
+# FIXME: we don't need all features, but it doesn't build when we limit it
+dpp = { path = "../rs-dpp", default-features = false, optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.32.0", features = ["macros"] }

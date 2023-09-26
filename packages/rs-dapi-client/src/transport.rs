@@ -32,9 +32,16 @@ pub trait TransportRequest: Clone + Send + Sync + Debug {
 
 /// Generic way to create a transport client from provided [Uri].
 pub trait TransportClient: Send {
+    /// Inner type that is returned by [as_mut_inner], or Self if it is not wrapped.
+    type Inner;
     /// Error type for the specific client.
     type Error: CanRetry + Send + Debug;
 
     /// Build client using peer's url.
     fn with_uri(uri: Uri) -> Self;
+
+    /// Returns inner implementation of the transport client, or self if it is not wrapped.
+    ///
+    /// Returns None if the inner implementation is not usable (eg. mock client).
+    fn as_mut_inner(&mut self) -> Option<&mut Self::Inner>;
 }
