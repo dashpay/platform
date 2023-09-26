@@ -118,7 +118,7 @@ jobs:
           done
 
   test:
-    name: Testing3
+    name: Testing4
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
     steps:
