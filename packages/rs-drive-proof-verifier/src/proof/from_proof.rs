@@ -29,6 +29,7 @@ lazy_static::lazy_static! {
 
 /// Create an object based on proof received from DAPI
 pub trait FromProof<Req> {
+    type Request;
     type Response;
     /// Parse and verify the received proof and retrieve the requested object, if any.
     ///
@@ -44,9 +45,9 @@ pub trait FromProof<Req> {
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
     /// For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
-    fn maybe_from_proof<'a>(
-        request: &Req,
-        response: &Self::Response,
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
@@ -69,9 +70,9 @@ pub trait FromProof<Req> {
     /// * `Ok(object)` when the requested object was found in the proof.
     /// * `Err(Error::DocumentMissingInProof)` when the requested object was not found in the proof.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
-    fn from_proof<'a>(
-        request: &Req,
-        response: &Self::Response,
+    fn from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Self, Error>
     where
@@ -108,19 +109,25 @@ pub trait QuorumInfoProvider: Send + Sync {
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], Error>; // public key is 48 bytes
 }
-
-#[cfg_attr(feature = "mocks", mockall::automock)]
+fn a() {
+    let mut m = MockQuorumInfoProvider::new();
+    m.expect_get_quorum_public_key()
+        .returning(move |_, _, _| (Ok([0; 48])));
+}
 impl FromProof<platform::GetIdentityRequest> for Identity {
+    type Request = platform::GetIdentityRequest;
     type Response = platform::GetIdentityResponse;
 
-    fn maybe_from_proof<'a>(
-        request: &platform::GetIdentityRequest,
-        response: &platform::GetIdentityResponse,
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         Identity: Sized + 'a,
     {
+        let request: platform::GetIdentityRequest = request.into();
+        let response: Self::Response = response.into();
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_response::Result::Proof(p) => p,
@@ -158,16 +165,19 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
 
 // TODO: figure out how to deal with mock::automock
 impl FromProof<platform::GetIdentityByPublicKeyHashesRequest> for Identity {
+    type Request = platform::GetIdentityByPublicKeyHashesRequest;
     type Response = platform::GetIdentityByPublicKeyHashesResponse;
 
-    fn maybe_from_proof<'a>(
-        request: &platform::GetIdentityByPublicKeyHashesRequest,
-        response: &platform::GetIdentityByPublicKeyHashesResponse,
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         Identity: 'a,
     {
+        let request = request.into();
+        let response = response.into();
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_by_public_key_hashes_response::Result::Proof(p) => p,
@@ -201,24 +211,27 @@ impl FromProof<platform::GetIdentityByPublicKeyHashesRequest> for Identity {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(&proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_identity)
     }
 }
 
-#[cfg_attr(feature = "mocks", mockall::automock)]
 impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
+    type Request = platform::GetIdentityKeysRequest;
     type Response = platform::GetIdentityKeysResponse;
 
-    fn maybe_from_proof<'a>(
-        request: &platform::GetIdentityKeysRequest,
-        response: &Self::Response,
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         IdentityPublicKeys: 'a,
     {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_keys_response::Result::Proof(p) => p,
@@ -365,18 +378,21 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
     Ok(request_type)
 }
 
-#[cfg_attr(feature = "mocks", mockall::automock)]
 impl FromProof<platform::GetIdentityRequest> for IdentityBalance {
+    type Request = platform::GetIdentityRequest;
     type Response = platform::GetIdentityBalanceResponse;
 
-    fn maybe_from_proof<'a>(
-        request: &platform::GetIdentityRequest,
-        response: &Self::Response,
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         IdentityBalance: 'a,
     {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_balance_response::Result::Proof(p) => p,
@@ -406,24 +422,27 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalance {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(&proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_identity)
     }
 }
 
-#[cfg_attr(feature = "mocks", mockall::automock)]
 impl FromProof<platform::GetIdentityRequest> for IdentityBalanceAndRevision {
+    type Request = platform::GetIdentityRequest;
     type Response = platform::GetIdentityBalanceAndRevisionResponse;
 
-    fn maybe_from_proof<'a>(
-        request: &platform::GetIdentityRequest,
-        response: &Self::Response,
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         IdentityBalanceAndRevision: 'a,
     {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_identity_balance_and_revision_response::Result::Proof(p) => p,
@@ -459,18 +478,21 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalanceAndRevision {
     }
 }
 
-#[cfg_attr(feature = "mocks", mockall::automock)]
 impl FromProof<platform::GetDataContractRequest> for DataContract {
+    type Request = platform::GetDataContractRequest;
     type Response = platform::GetDataContractResponse;
 
-    fn maybe_from_proof<'a>(
-        request: &platform::GetDataContractRequest,
-        response: &Self::Response,
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         DataContract: 'a,
     {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_data_contract_response::Result::Proof(p) => p,
@@ -502,24 +524,27 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(&proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_contract)
     }
 }
 
-#[cfg_attr(feature = "mocks", mockall::automock)]
 impl FromProof<platform::GetDataContractsRequest> for DataContracts {
+    type Request = platform::GetDataContractsRequest;
     type Response = platform::GetDataContractsResponse;
 
-    fn maybe_from_proof<'a>(
-        request: &platform::GetDataContractsRequest,
-        response: &Self::Response,
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         DataContracts: 'a,
     {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_data_contracts_response::Result::Proof(p) => p,
@@ -557,7 +582,7 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(&proof, mtd, &root_hash, provider)?;
 
         let maybe_contracts = if contracts.count_some() > 0 {
             Some(contracts)
@@ -570,16 +595,20 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
 }
 
 impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory {
+    type Request = platform::GetDataContractHistoryRequest;
     type Response = platform::GetDataContractHistoryResponse;
 
-    fn maybe_from_proof<'a>(
-        request: &platform::GetDataContractHistoryRequest,
-        response: &Self::Response,
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: Sized + 'a,
     {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
         // Parse response to read proof and metadata
         let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
             platform::get_data_contract_history_response::Result::Proof(p) => p,
@@ -614,7 +643,7 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(&proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_history)
     }
@@ -626,16 +655,20 @@ where
     Q: TryInto<DriveQuery<'dq>> + Clone + 'dq,
     Q::Error: std::fmt::Display,
 {
+    type Request = Q;
     type Response = platform::GetDocumentsResponse;
 
-    fn maybe_from_proof<'a>(
-        request: &Q,
-        response: &Self::Response,
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: 'a,
     {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
         let request: DriveQuery<'dq> =
             request
                 .clone()
@@ -663,7 +696,7 @@ where
                 error: e.to_string(),
             })?;
 
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(&proof, mtd, &root_hash, provider)?;
 
         if documents.is_empty() {
             Ok(None)

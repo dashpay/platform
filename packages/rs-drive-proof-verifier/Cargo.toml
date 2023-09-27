@@ -6,6 +6,13 @@ rust-version = "1.70"
 
 crate-type = ["cdylib"]
 
+[features]
+default = ["mocks", "json"]
+bindgen = ["uniffi/cli", "dep:camino"]
+mocks = ["drive/mockall", "dep:mockall"]
+json = ["dep:serde_json"]
+uniffi = ["dep:uniffi"]
+
 [dependencies]
 uniffi = { git = "https://github.com/mozilla/uniffi-rs", optional = true }
 thiserror = { version = "1.0.39" }
@@ -48,10 +55,3 @@ async-trait = { version = "0.1.73" }
 uniffi = { git = "https://github.com/mozilla/uniffi-rs", features = [
     "build",
 ], optional = true }
-
-[features]
-default = ["mocks", "json"]
-bindgen = ["uniffi/cli", "dep:camino"]
-mocks = ["drive/mockall", "dep:mockall"]
-json = ["dep:serde_json"]
-uniffi = ["dep:uniffi"]

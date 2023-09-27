@@ -21,7 +21,7 @@ use drive_abci::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive_proof_verifier::{get_proof, FromProof, QuorumInfoProvider};
 use rs_dapi_client::{AddressList, DapiClient, DapiRequest, RequestSettings};
 use test_vector::TestVector;
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
 pub const PLATFORM_IP: &str = "10.56.229.104";
 pub const CORE_PORT: u16 = 30002;
@@ -84,9 +84,9 @@ async fn run_tests(api: Api) {
     );
 }
 struct Api {
-    dapi: RwLock<DapiClient>,
+    dapi: Mutex<DapiClient>,
     // TODO: Replace with rs-sdk implementation when it's ready
-    core: RwLock<DefaultCoreRPC>,
+    core: Mutex<DefaultCoreRPC>,
 }
 
 impl Default for Api {
@@ -122,8 +122,8 @@ impl Api {
                 .expect("connect to core");
 
         Self {
-            dapi: RwLock::new(dapi),
-            core: RwLock::new(core),
+            dapi: Mutex::new(dapi),
+            core: Mutex::new(core),
         }
     }
 
@@ -133,7 +133,7 @@ impl Api {
             prove: true,
         };
 
-        let mut client = self.dapi.write().await;
+        let mut client = self.dapi.lock().await;
         let response: GetIdentityResponse = request
             .clone()
             .execute(&mut client, RequestSettings::default())
@@ -153,7 +153,7 @@ impl Api {
         };
         println!("Contract ID: {}", hex::encode(id));
 
-        let mut client = self.dapi.write().await;
+        let mut client = self.dapi.lock().await;
         let mut response: platform_proto::GetDataContractResponse = request
             .clone()
             .execute(&mut client, RequestSettings::default())
@@ -167,7 +167,7 @@ impl Api {
         let proof = get_proof!(response, platform_proto::get_data_contract_response::Result)
             .expect("proof not present in response");
 
-        let contract = DataContract::from_proof(&request, &response, &self)
+        let contract = DataContract::from_proof(request.clone(), response.clone(), &self)
             .expect("get data contract from proof");
 
         (
@@ -196,7 +196,7 @@ impl Api {
 
         // return serde_json::to_string_pretty(&request).expect("request json serialization");
 
-        let mut client = self.dapi.write().await;
+        let mut client = self.dapi.lock().await;
         let response: platform_proto::GetDocumentsResponse = request
             .clone()
             .execute(&mut client, RequestSettings::default())
@@ -213,7 +213,7 @@ impl Api {
     async fn get_quorum_key(&self, quorum_hash: &[u8], quorum_type: u32) -> Vec<u8> {
         let quorum_hash = QuorumHash::from_slice(quorum_hash).expect("valid quorum hash expected");
 
-        let core = self.core.write().await;
+        let core = self.core.lock().await;
         let quorum_info = core
             .get_quorum_info(
                 dashcore_rpc::dashcore_rpc_json::QuorumType::from(quorum_type),
