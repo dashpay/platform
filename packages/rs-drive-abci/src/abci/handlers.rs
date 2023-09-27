@@ -171,15 +171,19 @@ where
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
             // We can't add this, as it slows down CI way too much
             // todo: find a way to re-enable this without destroying CI
-            if request.height % 100 == 0 {
-                tracing::info!(
-                    "chain lock update to height {} at block {}",
-                    core_chain_lock_update.core_block_height,
+            // tracing::info!(
+            //     "chain lock update to height {} at block {}",
+            //     core_chain_lock_update.core_block_height,
+            //     request.height
+            // );
+            block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
+        }
+
+        if request.height % 100 == 0 {
+            println!(
+                    "block {}",
                     request.height
                 );
-            }
-
-            block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
         }
 
         let transaction_guard = if request.height == self.platform.config.abci.genesis_height as i64
