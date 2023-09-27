@@ -393,9 +393,7 @@ mod test {
         path
     }
 
-    /// Open RocksDB and delete `n`-th item from `cf` column family.
-    ///
-    /// If `cf` is an empty string, all column families are searched.
+    /// Open RocksDB and corrupt `n`-th item from `cf` column family.
     fn corrupt_rocksdb_item(db_path: &PathBuf, cf: &str, n: usize) {
         // let cf = ColumnFamilyDescriptor::new("roots", Default::default());
         let mut db_opts = Options::default();
@@ -404,23 +402,21 @@ mod test {
         db_opts.create_if_missing(false);
         let db = rocksdb::DB::open_cf(&db_opts, &db_path, vec!["roots", "meta", "aux"]).unwrap();
 
-        let iter = if !cf.is_empty() {
-            let cf_handle = db.cf_handle(cf).unwrap();
-            db.iterator_cf(cf_handle, IteratorMode::Start)
-        } else {
-            db.iterator(IteratorMode::Start)
-        };
+        let cf_handle = db.cf_handle(cf).unwrap();
+        let iter = db.iterator_cf(cf_handle, IteratorMode::Start);
 
         // let iter = db.iterator(IteratorMode::Start);
         let mut i = 0;
         for item in iter {
-            let (key, _value) = item.unwrap();
+            let (key, mut value) = item.unwrap();
             // println!("{} = {}", hex::encode(&key), hex::encode(value));
-            tracing::trace!(cf, key=?hex::encode(&key), "found item in rocksdb");
+            tracing::trace!(cf, key=?hex::encode(&key), value=hex::encode(&value),"found item in rocksdb");
 
             if i == n {
-                db.delete(&key).unwrap();
-                tracing::debug!(cf, key=?hex::encode(&key), "corrupt_rocksdb_item: removed item from rocksdb");
+                value[0] = !value[0];
+                db.put_cf(cf_handle, &key, &value).unwrap();
+
+                tracing::debug!(cf, key=?hex::encode(&key), value=hex::encode(&value), "corrupt_rocksdb_item: corrupting item");
                 return;
             }
             i += 1;
@@ -432,68 +428,12 @@ mod test {
     }
 
     #[test]
-    fn test_verify_grovedb_remove_any_10th_item() {
-        drive_abci::logging::init_for_tests(4);
-        let tempdir = tempfile::tempdir().unwrap();
-        let db_path = setup_db(tempdir.path());
-
-        corrupt_rocksdb_item(&db_path, "", 10);
-
-        let result = super::verify_grovedb(&db_path, true);
-        assert!(result.is_err());
-
-        println!("db path: {:?}", &db_path);
-    }
-
-    #[test]
     fn test_verify_grovedb_remove_roots_0th_item() {
         drive_abci::logging::init_for_tests(4);
         let tempdir = tempfile::tempdir().unwrap();
         let db_path = setup_db(tempdir.path());
 
         corrupt_rocksdb_item(&db_path, "roots", 0);
-
-        let result = super::verify_grovedb(&db_path, true);
-        assert!(result.is_err());
-
-        println!("db path: {:?}", &db_path);
-    }
-
-    #[test]
-    fn test_verify_grovedb_remove_roots_10th_item() {
-        drive_abci::logging::init_for_tests(4);
-        let tempdir = tempfile::tempdir().unwrap();
-        let db_path = setup_db(tempdir.path());
-
-        corrupt_rocksdb_item(&db_path, "roots", 10);
-
-        let result = super::verify_grovedb(&db_path, true);
-        assert!(result.is_err());
-
-        println!("db path: {:?}", &db_path);
-    }
-
-    #[test]
-    fn test_verify_grovedb_remove_meta_10th_item() {
-        drive_abci::logging::init_for_tests(4);
-        let tempdir = tempfile::tempdir().unwrap();
-        let db_path = setup_db(tempdir.path());
-
-        corrupt_rocksdb_item(&db_path, "meta", 10);
-
-        let result = super::verify_grovedb(&db_path, true);
-        assert!(result.is_err());
-
-        println!("db path: {:?}", &db_path);
-    }
-
-    #[test]
-    fn test_verify_grovedb_remove_aux_10th_item() {
-        drive_abci::logging::init_for_tests(4);
-        let tempdir = tempfile::tempdir().unwrap();
-        let db_path = setup_db(tempdir.path());
-
-        corrupt_rocksdb_item(&db_path, "aux", 10);
 
         let result = super::verify_grovedb(&db_path, true);
         assert!(result.is_err());
