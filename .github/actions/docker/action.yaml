@@ -72,12 +72,12 @@ runs:
               keepBytes = 30000000000 # 30 GB
               keepDuration = 864000 # 10 days
 
-    - name: Load Docker mount cache
-      uses: dcginfra/buildkit-cache-dance/inject@main
-      if: ${{ inputs.cache_mounts != '' }}
-      with:
-        bucket: multi-runner-linux-x64-platform-cache-ui535z23
-        mounts: ${{ inputs.cache_mounts }}
+    # - name: Load Docker mount cache
+    #   uses: dcginfra/buildkit-cache-dance/inject@main
+    #   if: ${{ inputs.cache_mounts != '' }}
+    #   with:
+    #     bucket: multi-runner-linux-x64-platform-cache-ui535z23
+    #     mounts: ${{ inputs.cache_mounts }}
 
     - name: Set suffix
       uses: actions/github-script@v6
