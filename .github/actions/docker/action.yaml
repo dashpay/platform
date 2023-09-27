@@ -23,9 +23,6 @@ inputs:
   platforms:
     description: Docker image platform to build
     default: amd64,arm64
-  cache_type:
-    description: Type of cache to use, i.e. s3 or github
-    default: github
   cache_mounts:
     description: Load cache mounts cache
   cargo_profile:
@@ -75,9 +72,9 @@ runs:
               keepBytes = 30000000000 # 30 GB
               keepDuration = 864000 # 10 days
 
-    - name: Load s3 Docker mount cache
+    - name: Load Docker mount cache
       uses: dcginfra/buildkit-cache-dance/inject@main
-      if: ${{ inputs.cache_mounts != '' && inputs.cache_type == 's3' }}
+      if: ${{ inputs.cache_mounts != '' }}
       with:
         bucket: multi-runner-linux-x64-platform-cache-ui535z23
         mounts: ${{ inputs.cache_mounts }}
@@ -111,22 +108,12 @@ runs:
           suffix=${{ steps.suffix.outputs.result }},onlatest=true
           latest=${{ github.event_name == 'release' }}
 
-    - name: Configure s3 docker layer cache
+    - name: Configure docker layer cache
       uses: ./.github/actions/s3-layer-cache-settings
-      if: ${{ inputs.cache_type == 's3' }}
       id: layer_cache_settings
       with:
         name: ${{ inputs.image }}
         head_ref: ${{ inputs.image_tag }}
-
-    - name: Configure Github docker layer cache
-      uses: actions/github-script@v6
-      if: ${{ inputs.cache_type == 'github' }}
-      id: layer_cache_settings
-      with:
-        script: |
-          core.setOutput('cache_from', 'type=gha');
-          core.setOutput('cache_to', 'type=gha,mode=max');
 
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
@@ -147,7 +134,7 @@ runs:
 
     - name: Save Docker mount cache
       uses: dcginfra/buildkit-cache-dance/extract@main
-      if: ${{ inputs.cache_mounts != '' && inputs.cache_type == 's3' }}
+      if: ${{ inputs.cache_mounts != '' }}
       with:
         bucket: multi-runner-linux-x64-platform-cache-ui535z23
         mounts: ${{ inputs.cache_mounts }}
