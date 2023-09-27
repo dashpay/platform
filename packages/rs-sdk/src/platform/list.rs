@@ -83,8 +83,8 @@ where
         let response: <Vec<Self> as FromProof<<Self as List<API>>::Request>>::Response =
             response.into();
         let object = <Vec<Self> as FromProof<Self::Request>>::maybe_from_proof(
-            &request,
-            &response,
+            request,
+            response,
             api.quorum_info_provider()?,
         )?;
 
@@ -116,7 +116,11 @@ impl<API: Sdk> List<API> for Document {
 
         tracing::trace!(request=?document_query, response=?response, "list documents");
 
-        match Documents::maybe_from_proof(&drive_query, &response, api.quorum_info_provider()?)? {
+        match <Documents as FromProof<Self::Request>>::maybe_from_proof(
+            &drive_query,
+            response,
+            api.quorum_info_provider()?,
+        )? {
             Some(documents) => Ok(Some(documents.into_iter().map(|doc| doc.into()).collect())),
             None => Ok(None),
         }

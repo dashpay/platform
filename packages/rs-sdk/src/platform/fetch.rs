@@ -93,7 +93,10 @@ where
     ///
     /// ## Error Handling
     /// Any errors encountered during the execution are returned as [Error] instances.
-    async fn fetch<Q: Query<Self::Request>>(api: &API, query: Q) -> Result<Option<Self>, Error> {
+    async fn fetch<Q: Query<<Self as Fetch<API>>::Request>>(
+        api: &API,
+        query: Q,
+    ) -> Result<Option<Self>, Error> {
         let request = query.query()?;
 
         let mut client = api.platform_client().await;
@@ -104,9 +107,13 @@ where
 
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
-        let response = response.into();
+        let response: Self::Response = response.into();
 
-        let object = Self::maybe_from_proof(&request, &response, api.quorum_info_provider()?)?;
+        let object = <Self as FromProof<<Self as Fetch<API>>::Request>>::maybe_from_proof(
+            request,
+            response,
+            api.quorum_info_provider()?,
+        )?;
 
         match object {
             Some(item) => Ok(item.into()),

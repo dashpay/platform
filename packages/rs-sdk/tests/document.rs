@@ -11,7 +11,7 @@ use rs_sdk::platform::{Fetch, Query};
 
 include!("common.rs");
 
-async fn test_read<API: rs_sdk::Sdk, O: Fetch<API>, Q: Query<O::Request>>(
+async fn test_read<API: rs_sdk::Sdk, O: Fetch<API>, Q: Query<<O as Fetch<API>>::Request>>(
     api: &API,
     id: Q,
     expected: Result<usize, rs_sdk::error::Error>,

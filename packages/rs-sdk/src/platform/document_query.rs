@@ -107,17 +107,20 @@ impl TransportRequest for DocumentQuery {
 }
 
 impl FromProof<DocumentQuery> for Document {
+    type Request = DocumentQuery;
     type Response = platform_proto::GetDocumentsResponse;
-    fn maybe_from_proof<'a>(
-        request: &DocumentQuery,
-        response: &Self::Response,
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
         provider: &'a dyn drive_proof_verifier::QuorumInfoProvider,
     ) -> Result<Option<Self>, drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
     {
+        let request: Self::Request = request.into();
+
         let documents: Option<Vec<Document>> =
-            <Vec<Self>>::maybe_from_proof(request, response, provider)?;
+            <Vec<Self> as FromProof<Self::Request>>::maybe_from_proof(request, response, provider)?;
 
         match documents {
             None => Ok(None),
@@ -133,24 +136,26 @@ impl FromProof<DocumentQuery> for Document {
 }
 
 impl FromProof<DocumentQuery> for Vec<Document> {
+    type Request = DocumentQuery;
     type Response = platform_proto::GetDocumentsResponse;
-    fn maybe_from_proof<'a>(
-        request: &DocumentQuery,
-        response: &Self::Response,
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
         provider: &'a dyn drive_proof_verifier::QuorumInfoProvider,
     ) -> Result<Option<Self>, drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
     {
+        let request: Self::Request = request.into();
         let drive_query: DriveQuery =
-            request
+            (&request)
                 .try_into()
                 .map_err(|e| drive_proof_verifier::Error::RequestDecodeError {
                     error: format!("Failed to convert DocumentQuery to DriveQuery: {}", e),
                 })?;
 
-        drive_proof_verifier::proof::from_proof::Documents::maybe_from_proof(
-            &drive_query,
+        <drive_proof_verifier::proof::from_proof::Documents as FromProof<DriveQuery>>::maybe_from_proof(
+            drive_query,
             response,
             provider,
         )
