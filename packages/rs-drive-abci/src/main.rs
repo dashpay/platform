@@ -115,6 +115,7 @@ fn main() -> Result<(), ExitCode> {
     // The runtime will be reused by Prometheus and rs-tenderdash-abci.
     let runtime = Builder::new_multi_thread()
         .enable_all()
+        .thread_stack_size(8 * 1024 * 1024)
         .build()
         .expect("cannot initialize tokio runtime");
     let rt_guard = runtime.enter();

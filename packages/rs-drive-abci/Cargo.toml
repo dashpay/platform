@@ -11,9 +11,6 @@ authors = [
 edition = "2021"
 license = "MIT"
 
-[build]
-rustflags = ["-C", "stack-size=4194304"]
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
