@@ -98,7 +98,7 @@ jobs:
             if [[ $file == *.rs ]]; then
               awk '/@append_only/,/}/' $file > "$(basename $file).append_only.pr"
               awk '/@immutable/,/}/' $file > "$(basename $file).immutable.pr"
-          
+
               # Check append_only structures
               if ! diff -u "${{ steps.base_structures.outputs.base_dir }}/$(basename $file).append_only.base" "$(basename $file).append_only.pr" | grep "^-" | grep -v "@append_only" | grep -v "^-" | grep -v "^///" | grep -v "^//" | grep -v "^-$"; then
                 echo "No deletions detected in @append_only structures in $file. Test passed."
@@ -106,7 +106,7 @@ jobs:
                 echo "Deletions detected in @append_only structures in $file. Test failed."
                 exit 1
               fi
-          
+
               # Check immutable structures
               if ! diff -u "${{ steps.base_structures.outputs.base_dir }}/$(basename $file).immutable.base" "$(basename $file).immutable.pr" | grep -E "^\+[^/+]|^-[^/-]" ; then
                 echo "No code changes detected in @immutable structures in $file. Test passed."
@@ -118,7 +118,7 @@ jobs:
           done
 
   test:
-    name: Testing6
+    name: Tests
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
     steps:
