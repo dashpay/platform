@@ -179,10 +179,12 @@ where
             block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
         }
 
+        if request.height > 1300 {
             println!(
-                    "block {}",
-                    request.height
-                );
+                "block {}",
+                request.height
+            );
+        }
 
         let transaction_guard = if request.height == self.platform.config.abci.genesis_height as i64
         {

@@ -30,6 +30,7 @@ impl<C> Platform<C> {
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<u16, Error> {
+        println!("add_epoch_pool_to_proposers_payout_operations_v0");
         let mut drive_operations = vec![];
         let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index())?;
 
