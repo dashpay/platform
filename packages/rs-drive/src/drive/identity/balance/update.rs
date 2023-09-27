@@ -55,7 +55,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 530020,
+                    processing_fee: 517620,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -150,7 +150,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 1201880,
+                    processing_fee: 1176280,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -232,7 +232,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 875150,
+                    processing_fee: 849550,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -295,7 +295,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 10175440,
+                    processing_fee: 9751440,
                     ..Default::default()
                 }
             );
@@ -363,7 +363,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 530020,
+                    processing_fee: 517620,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -429,7 +429,7 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 5431170,
+                    processing_fee: 5418770,
                     ..Default::default()
                 }
             );
