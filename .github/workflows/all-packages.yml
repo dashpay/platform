@@ -159,17 +159,17 @@ jobs:
           CACHE_BASE_FROM: ${{ steps.base_layer_cache_settings.outputs.cache_from }}
           CACHE_BASE_TO: ${{ steps.base_layer_cache_settings.outputs.cache_to }}
 
-      - name: Store Docker mount cache
-        uses: dcginfra/buildkit-cache-dance/extract@main
-        with:
-          bucket: multi-runner-linux-x64-platform-cache-ui535z23
-          mounts: |
-            cargo_registry_index
-            cargo_registry_cache
-            cargo_git
-            target_amd64
-            target_wasm
-            unplugged_amd64
+      # - name: Store Docker mount cache
+      #   uses: dcginfra/buildkit-cache-dance/extract@main
+      #   with:
+      #     bucket: multi-runner-linux-x64-platform-cache-ui535z23
+      #     mounts: |
+      #       cargo_registry_index
+      #       cargo_registry_cache
+      #       cargo_git
+      #       target_amd64
+      #       target_wasm
+      #       unplugged_amd64
 
       - name: Run test suite
         run: yarn test:suite
@@ -274,17 +274,17 @@ jobs:
           CACHE_BASE_FROM: ${{ steps.deps_layer_cache_settings.outputs.cache_from }}
           CACHE_BASE_TO: ${{ steps.deps_layer_cache_settings.outputs.cache_to }}
 
-      - name: Store Docker mount cache
-        uses: dcginfra/buildkit-cache-dance/extract@main
-        with:
-          bucket: multi-runner-linux-x64-platform-cache-ui535z23
-          mounts: |
-            cargo_registry_index
-            cargo_registry_cache
-            cargo_git
-            target_amd64
-            target_wasm
-            unplugged_amd64
+      # - name: Store Docker mount cache
+      #   uses: dcginfra/buildkit-cache-dance/extract@main
+      #   with:
+      #     bucket: multi-runner-linux-x64-platform-cache-ui535z23
+      #     mounts: |
+      #       cargo_registry_index
+      #       cargo_registry_cache
+      #       cargo_git
+      #       target_amd64
+      #       target_wasm
+      #       unplugged_amd64
 
       - name: Run test suite in browsers
         run: yarn test:suite:browsers
