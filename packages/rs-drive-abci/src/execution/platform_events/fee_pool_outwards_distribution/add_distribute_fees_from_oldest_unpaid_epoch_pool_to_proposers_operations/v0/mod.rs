@@ -25,7 +25,7 @@ impl<C> Platform<C> {
         batch: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<proposer_payouts::v0::ProposersPayouts>, Error> {
-        println!("add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations_v0");
+        println!("add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations_v0 {}", current_epoch_index);
         let unpaid_epoch = self.find_oldest_epoch_needing_payment(
             current_epoch_index,
             cached_current_epoch_start_block_height,
