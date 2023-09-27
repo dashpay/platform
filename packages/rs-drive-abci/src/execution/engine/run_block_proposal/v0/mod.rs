@@ -68,6 +68,11 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
+
+        if block_proposal.height > 1300 {
+            println!("run_block_proposal_v0 a {}", block_proposal.height);
+        }
+
         // Start by getting information from the state
         let state = self.state.read().unwrap();
 
@@ -85,6 +90,10 @@ where
             &block_proposal,
             last_block_time_ms,
         );
+
+        if block_proposal.height > 1300 {
+            println!("run_block_proposal_v0 b {}", block_proposal.height);
+        }
 
         // First let's check that this is the follower to a previous block
         if !block_state_info.next_block_to(last_block_height, last_block_core_height)? {
@@ -122,6 +131,10 @@ where
         )?;
         drop(state);
 
+        if block_proposal.height > 1300 {
+            println!("run_block_proposal_v0 c {}", block_proposal.height);
+        }
+
         // Update the validator proposed app version
         self.drive
             .update_validator_proposed_app_version(
@@ -142,6 +155,11 @@ where
             block_platform_state,
             proposer_results: None,
         };
+
+        if block_proposal.height > 1300 {
+            println!("run_block_proposal_v0 d {}", block_proposal.height);
+        }
+
 
         // Determine a new protocol version if enough proposers voted
         if block_execution_context
@@ -180,6 +198,10 @@ where
             }
         }
 
+        if block_proposal.height > 1300 {
+            println!("run_block_proposal_v0 e {}", block_proposal.height);
+        }
+        
         let mut block_execution_context: BlockExecutionContext = block_execution_context.into();
 
         // >>>>>> Withdrawal Status Update <<<<<<<

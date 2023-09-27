@@ -81,6 +81,9 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<processed_block_fees_outcome::v0::ProcessedBlockFeesOutcome, Error> {
+        if block_info.height() > 1300 {
+            println!("process_block_fees_v0 {}", block_info.height());
+        }
         let current_epoch = Epoch::new(epoch_info.current_epoch_index())?;
 
         let mut batch = vec![];
