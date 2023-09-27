@@ -65,7 +65,7 @@ jobs:
 
   test-suite:
     name: Run Platform Test Suite
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    runs-on: ubuntu-22.04
     timeout-minutes: 120
     steps:
       - name: Check out repo
@@ -180,7 +180,7 @@ jobs:
 
   test-suite-browsers:
     name: Run Platform Test Suite in Browsers
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    runs-on: ubuntu-22.04
     timeout-minutes: 120
     steps:
       - name: Login to DockerHub
@@ -295,7 +295,7 @@ jobs:
 
   codeql:
     name: Code security audit
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    runs-on: ubuntu-22.04
     permissions:
       actions: read
       contents: read

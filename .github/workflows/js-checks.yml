@@ -26,7 +26,7 @@ on:
 jobs:
   lint:
     name: Linting
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
       - name: Check out repo
@@ -55,7 +55,7 @@ jobs:
 
   test:
     name: Tests
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    runs-on: ubuntu-22.04
     timeout-minutes: 120
     if: ${{ !inputs.skip-tests }}
     steps:
