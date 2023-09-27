@@ -175,6 +175,10 @@ where
                         .next_epoch_protocol_version(),
                 );
 
+            if block_proposal.height > 1300 {
+                println!("run_block_proposal_v0 dde {}", block_proposal.height);
+            }
+
             // Determine new protocol version based on votes for the next epoch
             let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
                 block_execution_context.hpmn_count,
@@ -183,6 +187,11 @@ where
                     .current_protocol_version_in_consensus(),
                 transaction,
             )?;
+
+            if block_proposal.height > 1300 {
+                println!("run_block_proposal_v0 ddf {}", block_proposal.height);
+            }
+
             if let Some(new_protocol_version) = maybe_new_protocol_version {
                 block_execution_context
                     .block_platform_state
