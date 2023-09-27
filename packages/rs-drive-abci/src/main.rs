@@ -346,19 +346,25 @@ fn install_panic_hook(cancel: CancellationToken) {
 
 #[cfg(test)]
 mod test {
-    use std::{fs, path::PathBuf, thread};
-
-    use ::drive::{
-        drive::Drive,
-        fee_pools::epochs::{epoch_key_constants, paths::EpochProposers},
-        query::Element,
+    use std::{
+        fs,
+        path::{Path, PathBuf},
     };
+
+    use ::drive::{drive::Drive, fee_pools::epochs::paths::EpochProposers, query::Element};
     use dpp::block::epoch::Epoch;
 
     use platform_version::version::PlatformVersion;
+    use rocksdb::{IteratorMode, Options};
 
-    fn setup_drive(path: &PathBuf) -> Drive {
-        let drive = Drive::open(path, None).expect("open drive");
+    /// Setup drive database by creating initial state structure and inserting some data.
+    ///
+    /// Returns path to the database.
+    fn setup_db(tempdir: &Path) -> PathBuf {
+        let path = tempdir.join("db");
+        fs::create_dir(&path).expect("create db dir");
+
+        let drive = Drive::open(&path, None).expect("open drive");
 
         let platform_version = PlatformVersion::latest();
         drive
@@ -368,40 +374,130 @@ mod test {
         let transaction = drive.grove.start_transaction();
         let epoch = Epoch::new(0).unwrap();
 
-        drive
-            .grove
-            .insert(
-                &epoch.get_path(),
-                epoch_key_constants::KEY_FEE_MULTIPLIER.as_slice(),
-                Element::Item(123u128.to_be_bytes().to_vec(), None),
-                None,
-                Some(&transaction),
-            )
-            .unwrap()
-            .expect("should insert data");
+        for i in 0..10 {
+            drive
+                .grove
+                .insert(
+                    &epoch.get_path(),
+                    &(i as u128).to_be_bytes(), //   epoch_key_constants::KEY_FEE_MULTIPLIER.as_slice()
+                    Element::Item((i as u128).to_be_bytes().to_vec(), None),
+                    None,
+                    Some(&transaction),
+                )
+                .unwrap()
+                .expect("should insert data");
+        }
+
         transaction.commit().unwrap();
 
-        drive
+        path
+    }
+
+    /// Open RocksDB and delete `n`-th item from `cf` column family.
+    ///
+    /// If `cf` is an empty string, all column families are searched.
+    fn corrupt_rocksdb_item(db_path: &PathBuf, cf: &str, n: usize) {
+        // let cf = ColumnFamilyDescriptor::new("roots", Default::default());
+        let mut db_opts = Options::default();
+
+        db_opts.create_missing_column_families(false);
+        db_opts.create_if_missing(false);
+        let db = rocksdb::DB::open_cf(&db_opts, &db_path, vec!["roots", "meta", "aux"]).unwrap();
+
+        let iter = if !cf.is_empty() {
+            let cf_handle = db.cf_handle(cf).unwrap();
+            db.iterator_cf(cf_handle, IteratorMode::Start)
+        } else {
+            db.iterator(IteratorMode::Start)
+        };
+
+        // let iter = db.iterator(IteratorMode::Start);
+        let mut i = 0;
+        for item in iter {
+            let (key, _value) = item.unwrap();
+            // println!("{} = {}", hex::encode(&key), hex::encode(value));
+            tracing::trace!(cf, key=?hex::encode(&key), "found item in rocksdb");
+
+            if i == n {
+                db.delete(&key).unwrap();
+                tracing::debug!(cf, key=?hex::encode(&key), "corrupt_rocksdb_item: removed item from rocksdb");
+                return;
+            }
+            i += 1;
+        }
+        panic!(
+            "cannot corrupt db: cannot find {}-th item in rocksdb column family {}",
+            n, cf
+        );
     }
 
     #[test]
-    fn test_verify_grovedb() {
+    fn test_verify_grovedb_remove_any_10th_item() {
+        drive_abci::logging::init_for_tests(4);
         let tempdir = tempfile::tempdir().unwrap();
+        let db_path = setup_db(tempdir.path());
 
-        let mut db_path = tempdir.path().to_path_buf();
-        db_path.push("db");
+        corrupt_rocksdb_item(&db_path, "", 10);
 
-        fs::create_dir(&db_path).expect("create db dir");
-
-        let drive = setup_drive(&db_path);
-        // let grovedb = drive::grovedb::GroveDb::open(&db_path).expect("open grovedb");
-        drop(drive);
-
-        // TODO: Break data in grovedb here
-
-        super::verify_grovedb(&db_path, true).unwrap();
+        let result = super::verify_grovedb(&db_path, true);
+        assert!(result.is_err());
 
         println!("db path: {:?}", &db_path);
-        thread::sleep(std::time::Duration::from_secs(30));
+    }
+
+    #[test]
+    fn test_verify_grovedb_remove_roots_0th_item() {
+        drive_abci::logging::init_for_tests(4);
+        let tempdir = tempfile::tempdir().unwrap();
+        let db_path = setup_db(tempdir.path());
+
+        corrupt_rocksdb_item(&db_path, "roots", 0);
+
+        let result = super::verify_grovedb(&db_path, true);
+        assert!(result.is_err());
+
+        println!("db path: {:?}", &db_path);
+    }
+
+    #[test]
+    fn test_verify_grovedb_remove_roots_10th_item() {
+        drive_abci::logging::init_for_tests(4);
+        let tempdir = tempfile::tempdir().unwrap();
+        let db_path = setup_db(tempdir.path());
+
+        corrupt_rocksdb_item(&db_path, "roots", 10);
+
+        let result = super::verify_grovedb(&db_path, true);
+        assert!(result.is_err());
+
+        println!("db path: {:?}", &db_path);
+    }
+
+    #[test]
+    fn test_verify_grovedb_remove_meta_10th_item() {
+        drive_abci::logging::init_for_tests(4);
+        let tempdir = tempfile::tempdir().unwrap();
+        let db_path = setup_db(tempdir.path());
+
+        corrupt_rocksdb_item(&db_path, "meta", 10);
+
+        let result = super::verify_grovedb(&db_path, true);
+        assert!(result.is_err());
+
+        println!("db path: {:?}", &db_path);
+    }
+
+    #[test]
+    fn test_verify_grovedb_remove_aux_10th_item() {
+        drive_abci::logging::init_for_tests(4);
+        let tempdir = tempfile::tempdir().unwrap();
+        let db_path = setup_db(tempdir.path());
+
+        corrupt_rocksdb_item(&db_path, "aux", 10);
+
+        let result = super::verify_grovedb(&db_path, true);
+        assert!(result.is_err());
+
+        println!("db path: {:?}", &db_path);
     }
 }
