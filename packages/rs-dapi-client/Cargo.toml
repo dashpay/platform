@@ -32,6 +32,8 @@ serde_json = { version = "1.0.103", features = [
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", features = [
     "mocks",
 ], optional = true }
+tokio = { version = "1.32.0", default-features = false }
+
 # FIXME: we don't need all features, but it doesn't build when we limit it
 dpp = { path = "../rs-dpp", default-features = false, optional = true }
 

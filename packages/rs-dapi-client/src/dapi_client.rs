@@ -1,6 +1,10 @@
 //! [DapiClient] definition.
 
+use std::ops::DerefMut;
+
 use backon::{ExponentialBuilder, Retryable};
+use tokio::sync::MutexGuard;
+use tonic::async_trait;
 use tracing::Instrument;
 
 use crate::{
@@ -29,6 +33,34 @@ impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
     }
 }
 
+#[async_trait]
+/// DAPI client trait.
+pub trait Dapi {
+    /// Execute request using this DAPI client.
+    async fn execute<R>(
+        &mut self,
+        request: R,
+        settings: RequestSettings,
+    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
+    where
+        R: TransportRequest;
+}
+
+#[async_trait]
+impl<'a, T: Dapi + Send> Dapi for MutexGuard<'a, T> {
+    async fn execute<R>(
+        &mut self,
+        request: R,
+        settings: RequestSettings,
+    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
+    where
+        R: TransportRequest,
+    {
+        let dapi: &mut T = self.deref_mut();
+        dapi.execute(request, settings).await
+    }
+}
+
 /// Access point to DAPI.
 #[derive(Debug)]
 pub struct DapiClient {
@@ -44,9 +76,12 @@ impl DapiClient {
             settings,
         }
     }
+}
 
+#[async_trait]
+impl Dapi for DapiClient {
     /// Execute the [DapiRequest].
-    pub(crate) async fn execute<R>(
+    async fn execute<R>(
         &mut self,
         request: R,
         settings: RequestSettings,

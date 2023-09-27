@@ -31,7 +31,7 @@ pub trait TransportRequest: Clone + Send + Sync + Debug {
 }
 
 /// Generic way to create a transport client from provided [Uri].
-pub trait TransportClient: Send {
+pub trait TransportClient: Send + Sized {
     /// Inner type that is returned by [as_mut_inner], or Self if it is not wrapped.
     type Inner;
     /// Error type for the specific client.
@@ -39,6 +39,11 @@ pub trait TransportClient: Send {
 
     /// Build client using peer's url.
     fn with_uri(uri: Uri) -> Self;
+
+    /// Build client using mock implementation.
+    fn mock() -> Self {
+        unimplemented!("Use MockRequest to mock transport layer")
+    }
 
     /// Returns inner implementation of the transport client, or self if it is not wrapped.
     ///
