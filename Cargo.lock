@@ -1299,6 +1299,7 @@ dependencies = [
  "prost",
  "rand",
  "regex",
+ "rocksdb",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -1754,8 +1755,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2450b5791de217465b03891586fa847bea3b761362233504e201f72d19bb7449"
+source = "git+https://github.com/dashpay/grovedb?rev=75b4df1177a830a7a280d65a8c179c93c225fe73#75b4df1177a830a7a280d65a8c179c93c225fe73"
 dependencies = [
  "bincode 1.3.3",
  "grovedb-costs",
@@ -1777,8 +1777,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5d0318f90811a3001b9c37aeeb2bf5243a760ccb87b35b640578f27fd0b017b"
+source = "git+https://github.com/dashpay/grovedb?rev=75b4df1177a830a7a280d65a8c179c93c225fe73#75b4df1177a830a7a280d65a8c179c93c225fe73"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1788,8 +1787,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24a2c2282ad812281faff6ec45d2c9fa126727b3281be9951732d6173f32731f"
+source = "git+https://github.com/dashpay/grovedb?rev=75b4df1177a830a7a280d65a8c179c93c225fe73#75b4df1177a830a7a280d65a8c179c93c225fe73"
 dependencies = [
  "blake3",
  "byteorder",
@@ -1813,14 +1811,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62b0ae650cd3e696e8016f3390c074719eba19a96bcb6b4e075567b5ca62678b"
+source = "git+https://github.com/dashpay/grovedb?rev=75b4df1177a830a7a280d65a8c179c93c225fe73#75b4df1177a830a7a280d65a8c179c93c225fe73"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7752c194cf97445cdc037cfea754fc363153bcc85fee0b02996d4e87c5d880aa"
+source = "git+https://github.com/dashpay/grovedb?rev=75b4df1177a830a7a280d65a8c179c93c225fe73#75b4df1177a830a7a280d65a8c179c93c225fe73"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -1839,8 +1835,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b36deef35537c149ed523baee2a0ae9d0d09a8f3b025bca3d17fcbea573f9c08"
+source = "git+https://github.com/dashpay/grovedb?rev=75b4df1177a830a7a280d65a8c179c93c225fe73#75b4df1177a830a7a280d65a8c179c93c225fe73"
 dependencies = [
  "hex",
  "itertools",

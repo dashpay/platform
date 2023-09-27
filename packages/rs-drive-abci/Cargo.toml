@@ -93,6 +93,9 @@ dpp = { path = "../rs-dpp", features = [
 ] }
 drive = { path = "../rs-drive" }
 
+# For tests of grovedb verify
+rocksdb = { version = "0.21.0" }
+
 [features]
 default = ["server", "mocks"]
 server = ["clap", "dotenvy"]

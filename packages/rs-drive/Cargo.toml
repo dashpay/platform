@@ -43,10 +43,14 @@ rust_decimal = { version = "1.2.5", optional = true }
 rust_decimal_macros = { version = "1.25.0", optional = true }
 lazy_static = { version = "1.4.0", optional = true }
 mockall = { version = "0.11", optional = true }
-grovedb = { version = "1.0.0-rc.1", optional = true }
-grovedb-costs = { version = "1.0.0-rc.1", optional = true }
-grovedb-path = { version = "1.0.0-rc.1" }
-grovedb-storage = { version = "1.0.0-rc.1", optional = true }
+# grovedb = { version = "1.0.0-rc.1", optional = true }
+# grovedb-costs = { version = "1.0.0-rc.1", optional = true }
+# grovedb-path = { version = "1.0.0-rc.1" }
+# grovedb-storage = { version = "1.0.0-rc.1", optional = true }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "75b4df1177a830a7a280d65a8c179c93c225fe73", optional = true }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "75b4df1177a830a7a280d65a8c179c93c225fe73", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "75b4df1177a830a7a280d65a8c179c93c225fe73" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "75b4df1177a830a7a280d65a8c179c93c225fe73", optional = true }
 
 [dev-dependencies]
 criterion = "0.3.5"

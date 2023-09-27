@@ -9,6 +9,7 @@ use drive_abci::logging::{LogBuilder, LogConfig, Loggers};
 use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
 use drive_abci::rpc::core::DefaultCoreRPC;
 use itertools::Itertools;
+use std::fs::remove_file;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use tokio::runtime::Builder;
@@ -35,6 +36,15 @@ enum Commands {
     /// Returns 0 on success.
     #[command()]
     Status,
+
+    /// Verify integrity of database.
+    ///
+    /// This command will execute GroveDB integrity checks.
+    ///
+    /// You can also enforce grovedb integrity checks during `drive-abci start`
+    /// by creating `.fsck` file in database directory (`DB_PATH`).
+    #[command()]
+    Verify,
 }
 
 /// Server that accepts connections from Tenderdash, and
@@ -76,6 +86,8 @@ impl Cli {
     fn run(self, config: PlatformConfig, cancel: CancellationToken) -> Result<(), String> {
         match self.command {
             Commands::Start => {
+                verify_grovedb(&config.db_path, false)?;
+
                 let core_rpc = DefaultCoreRPC::open(
                     config.core.rpc.url().as_str(),
                     config.core.rpc.username.clone(),
@@ -95,6 +107,7 @@ impl Cli {
             }
             Commands::Config => dump_config(&config)?,
             Commands::Status => check_status(&config)?,
+            Commands::Verify => verify_grovedb(&config.db_path, true)?,
         };
 
         Ok(())
@@ -228,6 +241,51 @@ fn check_status(config: &PlatformConfig) -> Result<(), String> {
     }
 }
 
+/// Verify GroveDB integrity.
+///
+/// This function will execute GroveDB integrity checks if one of the following conditions is met:
+/// - `force` is `true`
+/// - file `.fsck` in `config.db_path` exists
+///
+/// After successful verification, .fsck file is removed.
+fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
+    let fsck = PathBuf::from(db_path).join(".fsck");
+    if !force && !fsck.exists() {
+        tracing::info!("no {} file, grovedb verification skipped", fsck.display());
+
+        return Ok(());
+    }
+
+    let grovedb = drive::grovedb::GroveDb::open(db_path).expect("open grovedb");
+    let result = grovedb
+        .visualize_verify_grovedb()
+        .map_err(|e| e.to_string());
+
+    match result {
+        Ok(data) => {
+            for result in data {
+                tracing::warn!(?result, "grovedb verification")
+            }
+            tracing::info!("grovedb verification finished");
+
+            if fsck.exists() {
+                if let Err(e) = remove_file(&fsck) {
+                    tracing::warn!(
+                        error = ?e,
+                        path  =fsck.display().to_string(),
+                        "grovedb verification: cannot remove .fsck file: please remove it manually to avoid running verification again",
+                    );
+                }
+            }
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!("grovedb verification failed: {}", e);
+            Err(e)
+        }
+    }
+}
+
 fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
     if let Some(path) = path {
         if let Err(e) = dotenvy::from_path(path) {
@@ -284,4 +342,66 @@ fn install_panic_hook(cancel: CancellationToken) {
         tracing::error!(panic=%info, "panic");
         cancel.cancel();
     }));
+}
+
+#[cfg(test)]
+mod test {
+    use std::{fs, path::PathBuf, thread};
+
+    use ::drive::{
+        drive::Drive,
+        fee_pools::epochs::{epoch_key_constants, paths::EpochProposers},
+        query::Element,
+    };
+    use dpp::block::epoch::Epoch;
+
+    use platform_version::version::PlatformVersion;
+
+    fn setup_drive(path: &PathBuf) -> Drive {
+        let drive = Drive::open(path, None).expect("open drive");
+
+        let platform_version = PlatformVersion::latest();
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("should create root tree successfully");
+
+        let transaction = drive.grove.start_transaction();
+        let epoch = Epoch::new(0).unwrap();
+
+        drive
+            .grove
+            .insert(
+                &epoch.get_path(),
+                epoch_key_constants::KEY_FEE_MULTIPLIER.as_slice(),
+                Element::Item(123u128.to_be_bytes().to_vec(), None),
+                None,
+                Some(&transaction),
+            )
+            .unwrap()
+            .expect("should insert data");
+        transaction.commit().unwrap();
+
+        drive
+    }
+
+    #[test]
+    fn test_verify_grovedb() {
+        let tempdir = tempfile::tempdir().unwrap();
+
+        let mut db_path = tempdir.path().to_path_buf();
+        db_path.push("db");
+
+        fs::create_dir(&db_path).expect("create db dir");
+
+        let drive = setup_drive(&db_path);
+        // let grovedb = drive::grovedb::GroveDb::open(&db_path).expect("open grovedb");
+        drop(drive);
+
+        // TODO: Break data in grovedb here
+
+        super::verify_grovedb(&db_path, true).unwrap();
+
+        println!("db path: {:?}", &db_path);
+        thread::sleep(std::time::Duration::from_secs(30));
+    }
 }
