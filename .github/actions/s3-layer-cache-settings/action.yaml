@@ -1,4 +1,4 @@
-name: 'Get S3 Docker Layer Cache settings'
+name: "Get S3 Docker Layer Cache settings"
 description: |
   This action generates string with s3-based cache configuration for docker buildx.
   It defines three manifests:
@@ -8,10 +8,10 @@ description: |
 
 inputs:
   name:
-    description: 'Cache key name will be used as a prefix for all docker image manifests'
+    description: "Cache key name will be used as a prefix for all docker image manifests"
     required: true
   head_ref:
-    description: 'Head ref for an additional manifest to hit all builds for this head'
+    description: "Head ref for an additional manifest to hit all builds for this head"
     default: ${{ github.head_ref }}
   region:
     description: S3 region
@@ -21,17 +21,17 @@ inputs:
     default: multi-runner-linux-x64-platform-cache-16w9s18k
   prefix:
     description: S3 key prefix
-    default: 'cache-layers/'
+    default: "cache-layers/"
   mode:
     description: Cache mode
     default: max
 
 outputs:
   cache_to:
-    description: 'String with s3-based cache configuration for docker buildx cache-to option'
+    description: "String with s3-based cache configuration for docker buildx cache-to option"
     value: ${{ steps.script.outputs.cache_to }}
   cache_from:
-    description: 'String with s3-based cache configuration for docker buildx cache-from option'
+    description: "String with s3-based cache configuration for docker buildx cache-from option"
     value: ${{ steps.script.outputs.cache_from }}
 
 runs:
@@ -62,5 +62,5 @@ runs:
             .map(([key, value]) => `${key}=${value}`)
             .join(',');
 
-          core.setOutput('cache_from', settingsString);
-          core.setOutput('cache_to', `${settingsString},mode=${{ inputs.mode }}`);
+          core.setOutput('cache_from', 'type=gha');
+          core.setOutput('cache_to', 'type=gha,mode=max');
