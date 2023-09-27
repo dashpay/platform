@@ -18,7 +18,7 @@ jobs:
   release-npm:
     name: Release NPM packages
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
+    timeout-minutes: 150
     if: github.event_name != 'workflow_dispatch'
     steps:
       - name: Check out repo

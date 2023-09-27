@@ -27,7 +27,7 @@ jobs:
   lint:
     name: Linting
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
+    timeout-minutes: 150
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
