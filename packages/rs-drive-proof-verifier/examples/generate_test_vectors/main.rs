@@ -2,15 +2,10 @@ mod test_vector;
 
 use base64::Engine;
 use dapi_grpc::platform::v0::{self as platform_proto, get_identity_response, GetIdentityResponse};
-use dashcore_rpc::{
-    dashcore::{hashes::Hash, QuorumHash},
-    dashcore_rpc_json::QuorumType,
-};
+use dashcore_rpc::dashcore::{hashes::Hash, QuorumHash};
 
 use dpp::{
-    data_contract::{
-        accessors::v0::DataContractV0Getters, document_type::accessors::DocumentTypeV0Getters,
-    },
+    data_contract::accessors::v0::DataContractV0Getters,
     prelude::DataContract,
     serialization::PlatformDeserializableWithBytesLenFromVersionedStructure,
     util::cbor_serializer,
@@ -54,7 +49,7 @@ async fn run_tests(api: Api) {
     );
 
     let b64 = base64::engine::general_purpose::STANDARD;
-    let contract_id: [u8; 32] = b64
+    let _contract_id: [u8; 32] = b64
         .decode(CONTRACT_ID)
         .expect("base64 decode")
         .try_into()
