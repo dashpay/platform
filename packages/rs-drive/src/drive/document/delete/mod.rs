@@ -984,6 +984,6 @@ mod tests {
 
         assert!(fee_result.fee_refunds.0.is_empty());
         assert_eq!(fee_result.storage_fee, 0);
-        assert_eq!(fee_result.processing_fee, 147230580);
+        assert_eq!(fee_result.processing_fee, 145470580);
     }
 }

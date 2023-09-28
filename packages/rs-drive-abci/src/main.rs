@@ -113,8 +113,13 @@ fn main() -> Result<(), ExitCode> {
 
     // Start tokio runtime and thread listening for signals.
     // The runtime will be reused by Prometheus and rs-tenderdash-abci.
+
+    // 8 MB stack threads as some recursions in GroveDB can be pretty deep
+    // We could remove such a stack stack size once deletion of a node doesn't recurse in grovedb
+
     let runtime = Builder::new_multi_thread()
         .enable_all()
+        .thread_stack_size(8 * 1024 * 1024)
         .build()
         .expect("cannot initialize tokio runtime");
     let rt_guard = runtime.enter();

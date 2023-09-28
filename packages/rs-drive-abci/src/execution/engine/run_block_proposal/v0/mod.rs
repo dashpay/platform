@@ -165,6 +165,7 @@ where
                     .current_protocol_version_in_consensus(),
                 transaction,
             )?;
+
             if let Some(new_protocol_version) = maybe_new_protocol_version {
                 block_execution_context
                     .block_platform_state
