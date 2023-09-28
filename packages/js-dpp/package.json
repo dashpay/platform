@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dpp",
-  "version": "0.25.0-dev.29",
+  "version": "0.25.0-dev.30",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "scripts": {
     "lint": "eslint .",
@@ -47,7 +47,7 @@
     "assert": "^2.0.0",
     "babel-loader": "^8.2.2",
     "buffer": "^6.0.3",
-    "chai": "^4.3.4",
+    "chai": "^4.3.9",
     "chai-as-promised": "^7.1.1",
     "chai-exclude": "^2.1.0",
     "chai-string": "^1.5.0",

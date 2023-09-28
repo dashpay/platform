@@ -42,7 +42,7 @@ use ciborium::cbor;
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
 use dpp::errors::consensus::codes::ErrorWithCode;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{self as proto, ExtendVoteExtension, ResponseException};
@@ -169,11 +169,13 @@ where
         let mut block_proposal: BlockProposal = (&request).try_into()?;
 
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
-            tracing::info!(
-                "chain lock update to height {} at block {}",
-                core_chain_lock_update.core_block_height,
-                request.height
-            );
+            // We can't add this, as it slows down CI way too much
+            // todo: find a way to re-enable this without destroying CI
+            // tracing::info!(
+            //     "chain lock update to height {} at block {}",
+            //     core_chain_lock_update.core_block_height,
+            //     request.height
+            // );
             block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
         }
 

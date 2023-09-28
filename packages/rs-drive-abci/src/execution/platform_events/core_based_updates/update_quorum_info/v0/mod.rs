@@ -10,6 +10,7 @@ use crate::rpc::core::CoreRPCLike;
 
 use dpp::dashcore::QuorumHash;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
 impl<C> Platform<C>
 where
@@ -137,7 +138,18 @@ where
             block_platform_state.validator_sets()
         );
 
-        block_platform_state.set_quorums_extended_info(quorum_list.quorums_by_type);
+        let quorums_by_type = quorum_list
+            .quorums_by_type
+            .into_iter()
+            .map(|(quorum_type, quorum_list)| {
+                let sorted_quorum_list = quorum_list.into_iter().collect();
+
+                (quorum_type, sorted_quorum_list)
+            })
+            .collect();
+
+        block_platform_state.set_quorums_extended_info(quorums_by_type);
+
         Ok(())
     }
 }

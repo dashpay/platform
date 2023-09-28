@@ -1,6 +1,6 @@
 {
   "name": "dash",
-  "version": "3.25.0-dev.29",
+  "version": "3.25.0-dev.30",
   "description": "Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)",
   "main": "build/index.js",
   "unpkg": "dist/dash.min.js",
@@ -66,7 +66,7 @@
     "assert": "^2.0.0",
     "browserify-zlib": "^0.2.0",
     "buffer": "^6.0.3",
-    "chai": "^4.3.4",
+    "chai": "^4.3.9",
     "chai-as-promised": "^7.1.1",
     "chance": "^1.1.6",
     "crypto-browserify": "^3.12.0",
