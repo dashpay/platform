@@ -20,7 +20,6 @@ impl<C> Platform<C> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<unpaid_epoch::v0::UnpaidEpochV0>, Error> {
-        println!("find_oldest_epoch_needing_payment_v0");
         // Since we are paying for passed epochs there is nothing to do on genesis epoch
         if current_epoch_index == GENESIS_EPOCH_INDEX {
             return Ok(None);

@@ -68,10 +68,6 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-        if block_proposal.height > 1300 {
-            println!("run_block_proposal_v0 a {}", block_proposal.height);
-        }
-
         // Start by getting information from the state
         let state = self.state.read().unwrap();
 
@@ -89,10 +85,6 @@ where
             &block_proposal,
             last_block_time_ms,
         );
-
-        if block_proposal.height > 1300 {
-            println!("run_block_proposal_v0 b {}", block_proposal.height);
-        }
 
         // First let's check that this is the follower to a previous block
         if !block_state_info.next_block_to(last_block_height, last_block_core_height)? {
@@ -130,10 +122,6 @@ where
         )?;
         drop(state);
 
-        if block_proposal.height > 1300 {
-            println!("run_block_proposal_v0 c {}", block_proposal.height);
-        }
-
         // Update the validator proposed app version
         self.drive
             .update_validator_proposed_app_version(
@@ -155,10 +143,6 @@ where
             proposer_results: None,
         };
 
-        if block_proposal.height > 1300 {
-            println!("run_block_proposal_v0 d {}", block_proposal.height);
-        }
-
         // Determine a new protocol version if enough proposers voted
         if block_execution_context
             .epoch_info
@@ -173,10 +157,6 @@ where
                         .next_epoch_protocol_version(),
                 );
 
-            if block_proposal.height > 1300 {
-                println!("run_block_proposal_v0 dde {}", block_proposal.height);
-            }
-
             // Determine new protocol version based on votes for the next epoch
             let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
                 block_execution_context.hpmn_count,
@@ -185,10 +165,6 @@ where
                     .current_protocol_version_in_consensus(),
                 transaction,
             )?;
-
-            if block_proposal.height > 1300 {
-                println!("run_block_proposal_v0 ddf {}", block_proposal.height);
-            }
 
             if let Some(new_protocol_version) = maybe_new_protocol_version {
                 block_execution_context
@@ -203,10 +179,6 @@ where
                             .current_protocol_version_in_consensus(),
                     );
             }
-        }
-
-        if block_proposal.height > 1300 {
-            println!("run_block_proposal_v0 e {}", block_proposal.height);
         }
 
         let mut block_execution_context: BlockExecutionContext = block_execution_context.into();

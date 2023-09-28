@@ -20,8 +20,6 @@ impl<C> Platform<C> {
         current_protocol_version_in_consensus: ProtocolVersion,
         transaction: &Transaction,
     ) -> Result<Option<ProtocolVersion>, Error> {
-        println!("check_for_desired_protocol_upgrade_v0 qq a");
-
         let required_upgraded_hpns = 1
             + (total_hpmns as u64)
                 .checked_mul(PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED)
@@ -29,8 +27,6 @@ impl<C> Platform<C> {
                 .ok_or(Error::Execution(ExecutionError::Overflow(
                     "overflow for required block count",
                 )))?;
-
-        println!("check_for_desired_protocol_upgrade_v0 qq b");
 
         // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
         // were on the future version
@@ -52,8 +48,6 @@ impl<C> Platform<C> {
             })
             .unwrap_or_default();
 
-        println!("check_for_desired_protocol_upgrade_v0 qq c");
-
         if versions_passing_threshold.len() > 1 {
             return Err(Error::Execution(
                 ExecutionError::ProtocolUpgradeIncoherence(
@@ -65,8 +59,6 @@ impl<C> Platform<C> {
         if !versions_passing_threshold.is_empty() {
             // same as equals 1
             let new_version = versions_passing_threshold.remove(0);
-
-            println!("check_for_desired_protocol_upgrade_v0 qq d");
             // Persist current and next epoch protocol versions
             // we also drop all protocol version votes information
             self.drive
@@ -77,20 +69,14 @@ impl<C> Platform<C> {
                 )
                 .map_err(Error::Drive)?;
 
-            println!("check_for_desired_protocol_upgrade_v0 qq e");
-
             Ok(Some(new_version))
         } else {
-            println!("check_for_desired_protocol_upgrade_v0 qq f");
-
             // we need to drop all version information
             let current_platform_version =
                 PlatformVersion::get(current_protocol_version_in_consensus)?;
             self.drive
                 .clear_version_information(Some(transaction), &current_platform_version.drive)
                 .map_err(Error::Drive)?;
-
-            println!("check_for_desired_protocol_upgrade_v0 qq e");
 
             Ok(None)
         }

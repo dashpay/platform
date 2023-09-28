@@ -31,7 +31,6 @@ impl<C> Platform<C> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
-        println!("fetch_reward_shares_list_for_masternode_v0");
         let document_type = self
             .drive
             .system_contracts
