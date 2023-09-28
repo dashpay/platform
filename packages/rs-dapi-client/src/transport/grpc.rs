@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use dapi_grpc::core::v0::{core_client::CoreClient};
+use dapi_grpc::core::v0::core_client::CoreClient;
 use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
 use http::Uri;
@@ -11,8 +11,8 @@ use tonic::{transport::Channel, IntoRequest};
 use super::{CanRetry, TransportClient, TransportRequest, TransportResponse};
 use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 
-pub(crate) type PlatformGrpcClient = PlatformClient<Channel>;
-pub(crate) type CoreGrpcClient = CoreClient<Channel>;
+type PlatformGrpcClient = PlatformClient<Channel>;
+type CoreGrpcClient = CoreClient<Channel>;
 
 impl TransportClient for PlatformGrpcClient {
     type Inner = Self;
@@ -151,6 +151,8 @@ impl_transport_request_grpc!(
 
 // Link to each core gRPC request what client and method to use:
 /*
+TODO: Implement serde on Core gRPC requests and responses
+
 impl_transport_request_grpc!(
     core_proto::GetTransactionRequest,
     core_proto::GetTransactionResponse,
