@@ -43,10 +43,10 @@ rust_decimal = { version = "1.2.5", optional = true }
 rust_decimal_macros = { version = "1.25.0", optional = true }
 lazy_static = { version = "1.4.0", optional = true }
 mockall = { version = "0.11", optional = true }
-grovedb = { git = "https://github.com/dashpay/grovedb", rev = "5bed4f5696e2c693685453047ed3b285e9aa6478", optional = true }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "5bed4f5696e2c693685453047ed3b285e9aa6478", optional = true }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "5bed4f5696e2c693685453047ed3b285e9aa6478" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "5bed4f5696e2c693685453047ed3b285e9aa6478", optional = true }
+grovedb = { git = "https://github.com/dashpay/grovedb", branch = "test/testingStackOverflow", optional = true }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", branch = "test/testingStackOverflow", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", branch = "test/testingStackOverflow" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", branch = "test/testingStackOverflow", optional = true }
 
 [dev-dependencies]
 criterion = "0.3.5"
