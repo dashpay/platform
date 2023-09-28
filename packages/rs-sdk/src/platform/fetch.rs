@@ -65,15 +65,14 @@ where
             <Self as Fetch<API>>::Request,
             Response = <<Self as Fetch<API>>::Request as DapiRequest>::Response,
         >,
-    <Self as Fetch<API>>::Request:
-        Into<<Self as FromProof<<Self as Fetch<API>>::Request>>::Request>,
 {
     /// Type of request used to fetch data from the platform.
     ///
     /// Most likely, one of the types defined in `dapi_grpc::platform::v0`.
     ///
     /// This type must implement `TransportRequest`.
-    type Request: TransportRequest;
+    type Request: TransportRequest
+        + Into<<Self as FromProof<<Self as Fetch<API>>::Request>>::Request>;
 
     /// Fetch object from the Platfom.
     ///
@@ -108,6 +107,7 @@ where
 
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
+        let response: Self::Response = response.into();
 
         let object = <Self as FromProof<<Self as Fetch<API>>::Request>>::maybe_from_proof(
             request,
