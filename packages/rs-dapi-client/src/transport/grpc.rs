@@ -15,7 +15,6 @@ type PlatformGrpcClient = PlatformClient<Channel>;
 type CoreGrpcClient = CoreClient<Channel>;
 
 impl TransportClient for PlatformGrpcClient {
-    type Inner = Self;
     type Error = tonic::Status;
 
     fn with_uri(uri: Uri) -> Self {
@@ -24,7 +23,6 @@ impl TransportClient for PlatformGrpcClient {
 }
 
 impl TransportClient for CoreGrpcClient {
-    type Inner = Self;
     type Error = tonic::Status;
 
     fn with_uri(uri: Uri) -> Self {

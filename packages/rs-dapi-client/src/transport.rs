@@ -38,8 +38,6 @@ pub trait TransportResponse:
 
 /// Generic way to create a transport client from provided [Uri].
 pub trait TransportClient: Send + Sized {
-    /// Inner type that is returned by [as_mut_inner], or Self if it is not wrapped.
-    type Inner;
     /// Error type for the specific client.
     type Error: CanRetry + Send + Debug;
 
