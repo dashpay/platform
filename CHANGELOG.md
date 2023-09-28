@@ -1,3 +1,131 @@
+## [0.25.0-dev.29](https://github.com/dashpay/platform/compare/v0.25.0-dev.28...v0.25.0-dev.29) (2023-09-22)
+
+
+### Features
+
+* **dashmate:** expose tenderdash metics ([#1419](https://github.com/dashpay/platform/issues/1419))
+
+
+### Bug Fixes
+
+* **dapi:** getTransaction google-protobuf AssertionError ([#1416](https://github.com/dashpay/platform/issues/1416))
+* **dashmate:** platform reset failure ([#1415](https://github.com/dashpay/platform/issues/1415))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** add images migrations for v25 ([#1377](https://github.com/dashpay/platform/issues/1377))
+* update testnet genesis config for testnet-24 ([#1413](https://github.com/dashpay/platform/issues/1413))
+
+
+### Continuous Integration
+
+* make self-hosted actions-cache steps access S3 from correct region ([#1407](https://github.com/dashpay/platform/issues/1407))
+* update cache target bucket ([#1418](https://github.com/dashpay/platform/issues/1418))
+
+## [0.25.0-dev.28](https://github.com/dashpay/platform/compare/v0.25.0-dev.27...v0.25.0-dev.28) (2023-09-19)
+
+
+### Bug Fixes
+
+* **dashmate:** config format is not conventional ([#1410](https://github.com/dashpay/platform/issues/1410))
+* **dashmate:** ssl verification container already exists ([#1409](https://github.com/dashpay/platform/issues/1409))
+* **drive:** withdrawal transactions query ([#1402](https://github.com/dashpay/platform/issues/1402))
+
+
+### Styles
+
+* **dpp:** remove unused cbor import ([#1384](https://github.com/dashpay/platform/issues/1384))
+
+## [0.25.0-dev.27](https://github.com/dashpay/platform/compare/v0.25.0-dev.26...v0.25.0-dev.27) (2023-09-18)
+
+
+### Bug Fixes
+
+* **dashmate:** obtain new certificates with helper failure ([#1403](https://github.com/dashpay/platform/issues/1403))
+
+## [0.25.0-dev.26](https://github.com/dashpay/platform/compare/v0.25.0-dev.25...v0.25.0-dev.26) (2023-09-16)
+
+### Reverted
+
+* drive file logs ([#1400]((https://github.com/dashpay/platform/pull/1400)))
+
+
+## [0.25.0-dev.25](https://github.com/dashpay/platform/compare/v0.25.0-dev.24...v0.25.0-dev.25) (2023-09-15)
+
+### Reverted
+
+* make actions-cache steps access S3 using the correct region ([#1398](https://github.com/dashpay/platform/pull/1398))
+
+
+## [0.25.0-dev.24](https://github.com/dashpay/platform/compare/v0.25.0-dev.23...v0.25.0-dev.24) (2023-09-15)
+
+
+### Bug Fixes
+
+* drive file logs ([#1395](https://github.com/dashpay/platform/issues/1395))
+
+
+### Continuous Integration
+
+* disable apt install step on macos release job ([#1390](https://github.com/dashpay/platform/issues/1390))
+* fix cache mtime ([#1385](https://github.com/dashpay/platform/issues/1385))
+* make actions-cache steps access S3 using the correct region ([#1391](https://github.com/dashpay/platform/issues/1391))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** support new docker version ([#1393](https://github.com/dashpay/platform/issues/1393))
+* update tenderdash to v0.13.1 ([#1392](https://github.com/dashpay/platform/issues/1392))
+
+## [0.25.0-dev.23](https://github.com/dashpay/platform/compare/v0.25.0-dev.22...v0.25.0-dev.23) (2023-09-11)
+
+
+### Bug Fixes
+
+* **drive:** vote extensions are allowed only for the current block and round ([#1387](https://github.com/dashpay/platform/issues/1387))
+
+
+### Continuous Integration
+
+* macos dashmate build broken due to bad qemu install ([#1374](https://github.com/dashpay/platform/issues/1374))
+
+## [0.25.0-dev.22](https://github.com/dashpay/platform/compare/v0.25.0-dev.21...v0.25.0-dev.22) (2023-09-08)
+
+
+### Features
+
+* **drive:** improve ABCI logging ([#1382](https://github.com/dashpay/platform/issues/1382))
+* support a new dashcore version ([#1368](https://github.com/dashpay/platform/issues/1368))
+
+
+### Bug Fixes
+
+* **drive:** -32603 error code on broadcast ([#1381](https://github.com/dashpay/platform/issues/1381))
+* **drive:** query fix for 1 value and no where clause ([#1378](https://github.com/dashpay/platform/issues/1378))
+
+## [0.25.0-dev.21](https://github.com/dashpay/platform/compare/v0.25.0-dev.20...v0.25.0-dev.21) (2023-09-07)
+
+## [0.25.0-dev.20](https://github.com/dashpay/platform/compare/v0.25.0-dev.19...v0.25.0-dev.20) (2023-09-06)
+
+
+### Features
+
+* **drive:** better error handling on check_tx ([#1372](https://github.com/dashpay/platform/issues/1372))
+
+
+### Bug Fixes
+
+* **drive:** deserialization and identity not existing on check_tx ([#1371](https://github.com/dashpay/platform/issues/1371))
+
+## [0.25.0-dev.19](https://github.com/dashpay/platform/compare/v0.25.0-dev.18...v0.25.0-dev.19) (2023-09-06)
+
+
+### Bug Fixes
+
+* **dpp:** some contract options are updatable ([#1364](https://github.com/dashpay/platform/issues/1364))
+* **drive:** invalid mn operator reward type ([#1366](https://github.com/dashpay/platform/issues/1366))
+
 ## [0.25.0-dev.18](https://github.com/dashpay/platform/compare/v0.25.0-dev.17...v0.25.0-dev.18) (2023-09-04)
 
 

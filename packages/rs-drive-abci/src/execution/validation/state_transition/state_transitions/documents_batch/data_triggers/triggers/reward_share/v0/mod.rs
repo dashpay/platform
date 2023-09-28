@@ -240,13 +240,15 @@ mod test {
         let top_level_identifier =
             Identifier::from_bytes(&hex::decode(top_level_identifier_hex).unwrap()).unwrap();
 
-        platform_state.hpmn_masternode_list.insert(ProTxHash::from_inner(top_level_identifier.to_buffer()), MasternodeListItem {
+        let pro_tx_hash = ProTxHash::from_byte_array(top_level_identifier.to_buffer());
+
+        platform_state.hpmn_masternode_list.insert(pro_tx_hash, MasternodeListItem {
             node_type: MasternodeType::Evo,
-            pro_tx_hash: ProTxHash::from_inner(top_level_identifier.to_buffer()),
+            pro_tx_hash,
             collateral_hash: Txid::from_str("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash"),
             collateral_index: 0,
             collateral_address: [0;20],
-            operator_reward: 0,
+            operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.2.3.4:1234").unwrap(),
                 registered_height: 0,
@@ -264,12 +266,9 @@ mod test {
             },
         });
 
-        let pro_tx_hash = ProTxHash::from_inner(
-            hex::decode("a3e1edc6bd352eeaf0ae58e30781ef4b127854241a3fe7fddf36d5b7e1dc2b3f")
-                .expect("expected to decode collateral hash")
-                .try_into()
-                .expect("expected 32 bytes"),
-        );
+        let pro_tx_hash =
+            ProTxHash::from_str("a3e1edc6bd352eeaf0ae58e30781ef4b127854241a3fe7fddf36d5b7e1dc2b3f")
+                .expect("expected to create pro-tx-hash from slice");
 
         platform_state.hpmn_masternode_list.insert(pro_tx_hash, MasternodeListItem {
             node_type: MasternodeType::Evo,
@@ -277,7 +276,7 @@ mod test {
             collateral_hash: Txid::from_str("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash"),
             collateral_index: 0,
             collateral_address: [0;20],
-            operator_reward: 0,
+            operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.2.3.5:1234").unwrap(),
                 registered_height: 0,

@@ -7,8 +7,7 @@ use crate::platform_types::platform_state::v0::{
 };
 
 use crate::platform_types::validator_set::ValidatorSet;
-use crate::rpc::core::QuorumListExtendedInfo;
-use dashcore_rpc::dashcore_rpc_json::{MasternodeListItem, QuorumType};
+use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, MasternodeListItem, QuorumType};
 use derive_more::From;
 use dpp::bincode::{config, Decode, Encode};
 use dpp::block::epoch::Epoch;
@@ -304,7 +303,9 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn quorums_extended_info(&self) -> &HashMap<QuorumType, QuorumListExtendedInfo> {
+    fn quorums_extended_info(
+        &self,
+    ) -> &BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>> {
         match self {
             PlatformState::V0(v0) => &v0.quorums_extended_info,
         }
@@ -364,7 +365,10 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn set_quorums_extended_info(&mut self, info: HashMap<QuorumType, QuorumListExtendedInfo>) {
+    fn set_quorums_extended_info(
+        &mut self,
+        info: BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>>,
+    ) {
         match self {
             PlatformState::V0(v0) => v0.set_quorums_extended_info(info),
         }
@@ -424,7 +428,9 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn quorums_extended_info_mut(&mut self) -> &mut HashMap<QuorumType, QuorumListExtendedInfo> {
+    fn quorums_extended_info_mut(
+        &mut self,
+    ) -> &mut BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>> {
         match self {
             PlatformState::V0(v0) => v0.quorums_extended_info_mut(),
         }

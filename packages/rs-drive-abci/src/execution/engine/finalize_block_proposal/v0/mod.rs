@@ -1,4 +1,4 @@
-use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
+use dashcore_rpc::dashcore::hashes::Hash;
 
 use dpp::block::epoch::Epoch;
 
@@ -122,18 +122,18 @@ where
                 "received a block for h: {} r: {}, block hash: {}, core height: {}, expected h: {} r: {}, block hash: {}, core height: {}",
                 height,
                 round,
-                hash.to_hex(),
+                hex::encode(hash),
                 block_header.core_chain_locked_height,
                 block_state_info.height(),
                 block_state_info.round(),
-                block_state_info.block_hash().map(|a| a.to_hex()).unwrap_or("None".to_string()),
+                block_state_info.block_hash().map(|a| hex::encode(a)).unwrap_or("None".to_string()),
                 block_state_info.core_chain_locked_height()
             )));
             return Ok(validation_result.into());
         }
 
         let state_cache = self.state.read().unwrap();
-        let current_quorum_hash = state_cache.current_validator_set_quorum_hash().into_inner();
+        let current_quorum_hash = state_cache.current_validator_set_quorum_hash().into();
         if current_quorum_hash != commit_info.quorum_hash {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",

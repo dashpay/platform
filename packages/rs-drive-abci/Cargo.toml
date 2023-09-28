@@ -13,7 +13,6 @@ license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-
 [dependencies]
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
@@ -32,7 +31,7 @@ bs58 = "0.4.0"
 hex = "0.4.3"
 indexmap = { version = "1.9.3", features = ["serde"] }
 sha2 = "0.10.6"
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev="7840fe65fbdf4f083ff8632f6e7afac11a31ca63" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.1" }
 dpp = { path = "../rs-dpp", features = ["abci"] }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
@@ -56,7 +55,7 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
     "tracing-log",
 ], optional = false }
 atty = { version = "0.2.14", optional = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci" }
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.13" }
 # tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }
 anyhow = { version = "1.0.70" }
 lazy_static = "1.4.0"

@@ -50,6 +50,12 @@ function getLocalConfigFactory(getBaseConfig) {
             rpc: {
               port: 46657,
             },
+            pprof: {
+              port: 46060,
+            },
+            metrics: {
+              port: 46660,
+            },
           },
           abci: {
             validatorSet: {

@@ -1,5 +1,4 @@
 //todo: move this file to transition
-use dpp::dashcore::anyhow;
 use dpp::platform_value::{BinaryData, ReplacementType, Value};
 use dpp::serialization::ValueConvertible;
 use dpp::state_transition::public_key_in_creation::accessors::{

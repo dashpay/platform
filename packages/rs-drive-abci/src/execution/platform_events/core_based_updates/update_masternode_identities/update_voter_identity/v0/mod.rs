@@ -82,7 +82,7 @@ where
 
         // Part 2 : Create or Update Voting identity based on new key
         let new_voter_identity = Self::create_voter_identity(
-            pro_tx_hash.as_inner(),
+            &(pro_tx_hash.to_byte_array()),
             &new_voting_address,
             platform_version,
         )?;
