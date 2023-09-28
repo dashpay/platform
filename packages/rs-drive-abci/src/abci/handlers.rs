@@ -180,10 +180,7 @@ where
         }
 
         if request.height > 1300 {
-            println!(
-                "block {}",
-                request.height
-            );
+            println!("block {}", request.height);
         }
 
         let transaction_guard = if request.height == self.platform.config.abci.genesis_height as i64

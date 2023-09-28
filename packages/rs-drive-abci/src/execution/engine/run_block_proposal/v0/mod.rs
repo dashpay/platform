@@ -68,7 +68,6 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-
         if block_proposal.height > 1300 {
             println!("run_block_proposal_v0 a {}", block_proposal.height);
         }
@@ -160,7 +159,6 @@ where
             println!("run_block_proposal_v0 d {}", block_proposal.height);
         }
 
-
         // Determine a new protocol version if enough proposers voted
         if block_execution_context
             .epoch_info
@@ -210,7 +208,7 @@ where
         if block_proposal.height > 1300 {
             println!("run_block_proposal_v0 e {}", block_proposal.height);
         }
-        
+
         let mut block_execution_context: BlockExecutionContext = block_execution_context.into();
 
         // >>>>>> Withdrawal Status Update <<<<<<<

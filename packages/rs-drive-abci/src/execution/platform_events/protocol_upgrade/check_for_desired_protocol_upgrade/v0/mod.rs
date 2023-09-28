@@ -20,7 +20,7 @@ impl<C> Platform<C> {
         current_protocol_version_in_consensus: ProtocolVersion,
         transaction: &Transaction,
     ) -> Result<Option<ProtocolVersion>, Error> {
-            println!("check_for_desired_protocol_upgrade_v0 qq a");
+        println!("check_for_desired_protocol_upgrade_v0 qq a");
 
         let required_upgraded_hpns = 1
             + (total_hpmns as u64)
@@ -81,7 +81,6 @@ impl<C> Platform<C> {
 
             Ok(Some(new_version))
         } else {
-
             println!("check_for_desired_protocol_upgrade_v0 qq f");
 
             // we need to drop all version information

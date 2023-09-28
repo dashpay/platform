@@ -134,15 +134,14 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             };
 
         let payouts = if epoch_info.is_epoch_change() {
-            self
-                .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
-                    epoch_info.current_epoch_index(),
-                    cached_current_epoch_start_block_height,
-                    cached_current_epoch_start_block_core_height,
-                    transaction,
-                    &mut batch,
-                    platform_version,
-                )?
+            self.add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
+                epoch_info.current_epoch_index(),
+                cached_current_epoch_start_block_height,
+                cached_current_epoch_start_block_core_height,
+                transaction,
+                &mut batch,
+                platform_version,
+            )?
         } else {
             None
         };

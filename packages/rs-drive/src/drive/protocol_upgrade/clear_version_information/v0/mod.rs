@@ -58,13 +58,15 @@ impl Drive {
             versions_counter_path_vec(),
             Query::new_single_query_item(QueryItem::RangeFull(RangeFull)),
         );
-        let results = self.grove_get_path_query(
-            &path_query,
-            transaction,
-            QueryResultType::QueryKeyElementPairResultType,
-            &mut vec![],
-            drive_version,
-        )?.0;
+        let results = self
+            .grove_get_path_query(
+                &path_query,
+                transaction,
+                QueryResultType::QueryKeyElementPairResultType,
+                &mut vec![],
+                drive_version,
+            )?
+            .0;
         for key in results.to_keys() {
             self.batch_delete(
                 (&versions_counter_path()).into(),
