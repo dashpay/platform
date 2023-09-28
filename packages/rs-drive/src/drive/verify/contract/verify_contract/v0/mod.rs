@@ -1,9 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::drive::contract::paths::{
-    contract_keeping_history_storage_path, contract_root_path, contract_root_path_vec,
-    contract_storage_path_vec,
-};
+use crate::drive::contract::paths::{contract_keeping_history_storage_path, contract_root_path};
 use crate::drive::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
@@ -13,11 +10,8 @@ use dpp::prelude::DataContract;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use platform_version::version::PlatformVersion;
 
-use crate::common::decode;
-use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
-use dpp::dashcore::hashes::hex::ToHex;
-use grovedb::{Element, GroveDb, PathQuery};
+use grovedb::GroveDb;
 
 impl Drive {
     /// Verifies that the contract is included in the proof.

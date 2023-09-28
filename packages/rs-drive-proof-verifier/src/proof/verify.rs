@@ -1,5 +1,5 @@
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
-use dpp::{bls_signatures, dashcore::hashes::hex::ToHex};
+use dpp::bls_signatures;
 pub use drive::drive::verify::RootHash;
 use tenderdash_abci::{
     proto::types::{CanonicalVote, SignedMsgType, StateId},
@@ -82,8 +82,8 @@ pub(crate) fn verify_tenderdash_proof(
 
     tracing::trace!(
         ?state_id,
-        signature = signature.to_hex(),
-        sign_digest = sign_digest.to_hex(),
+        signature = hex::encode(&signature),
+        sign_digest = hex::encode(&sign_digest),
         ?pubkey,
         "verify signature"
     );

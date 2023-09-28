@@ -241,6 +241,12 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
                 limit: Some(1),
                 offset: None,
             },
+            KeyRequestType::ContractBoundKey(_, _, _) => {
+                unimplemented!("contract bound keys not supported")
+            }
+            KeyRequestType::ContractDocumentTypeBoundKey(_, _, _, _) => {
+                unimplemented!("contract document type bound keys not supported")
+            }
         };
 
         tracing::debug!(?identity_id, "checking proof of identity keys");
@@ -459,6 +465,7 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
         let (root_hash, maybe_contract) = Drive::verify_contract(
             &proof.grovedb_proof,
             None,
+            false,
             false,
             id.into_buffer(),
             &PLATFORM_VERSION,
