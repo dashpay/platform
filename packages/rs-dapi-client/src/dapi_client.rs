@@ -21,6 +21,10 @@ pub enum DapiClientError<TE> {
     /// There are no valid peer addresses to use.
     #[error("no available addresses to use")]
     NoAvailableAddresses,
+    #[cfg(feature = "mocks")]
+    /// Expectation not found
+    #[error("mock expectation not found for request: {0}")]
+    MockExpectationNotFound(String),
 }
 
 impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
@@ -29,6 +33,8 @@ impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
         match self {
             NoAvailableAddresses => false,
             Transport(transport_error) => transport_error.can_retry(),
+            #[cfg(feature = "mocks")]
+            MockExpectationNotFound(_) => false,
         }
     }
 }

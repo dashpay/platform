@@ -11,6 +11,7 @@ mocks = [
     "dep:serde_json",
     "dep:drive-proof-verifier",
     "dep:dpp",
+    "dep:bincode",
 ]
 platform_integration_tests = []
 
@@ -32,6 +33,7 @@ serde_json = { version = "1.0.103", features = [
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", features = [
     "mocks",
 ], optional = true }
+bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
 tokio = { version = "1.32.0", default-features = false }
 
 # FIXME: we don't need all features, but it doesn't build when we limit it

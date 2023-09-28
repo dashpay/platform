@@ -25,7 +25,7 @@ use super::fetch::Fetch;
 
 /// Request documents.
 // TODO: is it needed or we use drivequery?
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct DocumentQuery {
     /// Data contract ID
     pub data_contract: DataContract,

@@ -12,12 +12,12 @@ use crate::{CanRetry, RequestSettings};
 
 /// Generic transport layer request.
 /// Requires [Clone] as could be retried and a client in general consumes a request.
-pub trait TransportRequest: Clone + Send + Sync + Debug {
+pub trait TransportRequest: Clone + Send + Sync + Debug + serde::Serialize {
     /// A client specific to this type of transport.
     type Client: TransportClient;
 
     /// Transport layer response.
-    type Response: Clone + Send + Sync + Debug;
+    type Response: TransportResponse;
 
     /// Settings that will override [DapiClient](crate::DapiClient)'s ones each time the request is executed.
     const SETTINGS_OVERRIDES: RequestSettings;
@@ -30,6 +30,12 @@ pub trait TransportRequest: Clone + Send + Sync + Debug {
     ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>>;
 }
 
+/// Generic transport layer response.
+pub trait TransportResponse:
+    Clone + Send + Sync + Debug + serde::Serialize + for<'de> serde::Deserialize<'de>
+{
+}
+
 /// Generic way to create a transport client from provided [Uri].
 pub trait TransportClient: Send + Sized {
     /// Inner type that is returned by [as_mut_inner], or Self if it is not wrapped.
@@ -39,14 +45,4 @@ pub trait TransportClient: Send + Sized {
 
     /// Build client using peer's url.
     fn with_uri(uri: Uri) -> Self;
-
-    /// Build client using mock implementation.
-    fn mock() -> Self {
-        unimplemented!("Use MockRequest to mock transport layer")
-    }
-
-    /// Returns inner implementation of the transport client, or self if it is not wrapped.
-    ///
-    /// Returns None if the inner implementation is not usable (eg. mock client).
-    fn as_mut_inner(&mut self) -> Option<&mut Self::Inner>;
 }

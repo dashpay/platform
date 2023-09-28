@@ -34,7 +34,7 @@ use dpp::platform_value::Value;
 use grovedb::Error;
 
 /// Order clause struct
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct OrderClause {
     /// Field
     pub field: String,

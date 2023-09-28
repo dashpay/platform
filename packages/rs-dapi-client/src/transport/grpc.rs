@@ -8,9 +8,7 @@ use futures::{future::BoxFuture, FutureExt, TryFutureExt};
 use http::Uri;
 use tonic::{transport::Channel, IntoRequest};
 
-use super::{CanRetry, TransportClient, TransportRequest};
-#[cfg(feature = "mocks")]
-use crate::mock::MockableClient;
+use super::{CanRetry, TransportClient, TransportRequest, TransportResponse};
 use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 
 pub(crate) type PlatformGrpcClient = PlatformClient<Channel>;
@@ -23,9 +21,6 @@ impl TransportClient for PlatformGrpcClient {
     fn with_uri(uri: Uri) -> Self {
         Self::new(Channel::builder(uri).connect_lazy())
     }
-    fn as_mut_inner(&mut self) -> Option<&mut Self::Inner> {
-        Some(self)
-    }
 }
 
 impl TransportClient for CoreGrpcClient {
@@ -34,10 +29,6 @@ impl TransportClient for CoreGrpcClient {
 
     fn with_uri(uri: Uri) -> Self {
         Self::new(Channel::builder(uri).connect_lazy())
-    }
-
-    fn as_mut_inner(&mut self) -> Option<&mut Self::Inner> {
-        Some(self)
     }
 }
 
@@ -64,9 +55,6 @@ impl CanRetry for tonic::Status {
 macro_rules! impl_transport_request_grpc {
     ($request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
         impl TransportRequest for $request {
-            #[cfg(feature = "mocks")]
-            type Client = MockableClient<$client>;
-            #[cfg(not(feature = "mocks"))]
             type Client = $client;
 
             type Response = $response;
@@ -79,7 +67,6 @@ macro_rules! impl_transport_request_grpc {
                 settings: &AppliedRequestSettings,
             ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>>
             {
-                let client = client.as_mut_inner().expect("Cannot use mock client for real requests, wrap with MockRequest instead");
                 let mut grpc_request = self.into_request();
                 grpc_request.set_timeout(settings.timeout);
 
@@ -89,6 +76,7 @@ macro_rules! impl_transport_request_grpc {
                     .boxed()
             }
         }
+        impl TransportResponse for $response {}
     };
 }
 
@@ -162,7 +150,7 @@ impl_transport_request_grpc!(
 );
 
 // Link to each core gRPC request what client and method to use:
-
+/*
 impl_transport_request_grpc!(
     core_proto::GetTransactionRequest,
     core_proto::GetTransactionResponse,
@@ -186,3 +174,4 @@ impl_transport_request_grpc!(
     RequestSettings::default(),
     broadcast_transaction
 );
+*/

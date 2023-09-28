@@ -74,7 +74,7 @@ fn sql_value_to_platform_value(sql_value: ast::Value) -> Option<Value> {
 }
 
 /// Where operator arguments
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum WhereOperator {
     /// Equal
     Equal,
@@ -228,7 +228,7 @@ impl From<WhereOperator> for Value {
 }
 
 /// Where clause struct
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct WhereClause {
     /// Field
     pub field: String,
