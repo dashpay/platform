@@ -1752,7 +1752,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=test/testingStackOverflow#9cad88d60144a3d4b231330054e322cd7971d4ef"
+source = "git+https://github.com/dashpay/grovedb?branch=test/testingStackOverflow#a5b78de5e8cb34cdce51aa474eae0e59dab10c51"
 dependencies = [
  "bincode 1.3.3",
  "grovedb-costs",
@@ -1774,7 +1774,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=test/testingStackOverflow#9cad88d60144a3d4b231330054e322cd7971d4ef"
+source = "git+https://github.com/dashpay/grovedb?branch=test/testingStackOverflow#a5b78de5e8cb34cdce51aa474eae0e59dab10c51"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1784,7 +1784,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=test/testingStackOverflow#9cad88d60144a3d4b231330054e322cd7971d4ef"
+source = "git+https://github.com/dashpay/grovedb?branch=test/testingStackOverflow#a5b78de5e8cb34cdce51aa474eae0e59dab10c51"
 dependencies = [
  "backtrace",
  "blake3",
@@ -1800,6 +1800,7 @@ dependencies = [
  "indexmap 1.9.3",
  "integer-encoding",
  "jemallocator",
+ "lazy_static",
  "num_cpus",
  "rand",
  "thiserror",
@@ -1809,12 +1810,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=test/testingStackOverflow#9cad88d60144a3d4b231330054e322cd7971d4ef"
+source = "git+https://github.com/dashpay/grovedb?branch=test/testingStackOverflow#a5b78de5e8cb34cdce51aa474eae0e59dab10c51"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=test/testingStackOverflow#9cad88d60144a3d4b231330054e322cd7971d4ef"
+source = "git+https://github.com/dashpay/grovedb?branch=test/testingStackOverflow#a5b78de5e8cb34cdce51aa474eae0e59dab10c51"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -1833,7 +1834,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=test/testingStackOverflow#9cad88d60144a3d4b231330054e322cd7971d4ef"
+source = "git+https://github.com/dashpay/grovedb?branch=test/testingStackOverflow#a5b78de5e8cb34cdce51aa474eae0e59dab10c51"
 dependencies = [
  "hex",
  "itertools",
