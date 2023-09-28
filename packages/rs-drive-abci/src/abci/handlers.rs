@@ -42,7 +42,7 @@ use ciborium::cbor;
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
 use dpp::errors::consensus::codes::ErrorWithCode;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{self as proto, ExtendVoteExtension, ResponseException};
@@ -177,10 +177,6 @@ where
             //     request.height
             // );
             block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
-        }
-
-        if request.height > 1300 {
-            println!("block {}", request.height);
         }
 
         let transaction_guard = if request.height == self.platform.config.abci.genesis_height as i64

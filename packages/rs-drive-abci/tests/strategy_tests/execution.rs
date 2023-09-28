@@ -793,8 +793,6 @@ pub(crate) fn continue_chain_for_strategy(
         }
     } // for block_height
 
-    println!("finished");
-
     let masternode_identity_balances = if strategy.dont_finalize_block() && i == 0 {
         BTreeMap::new()
     } else {
