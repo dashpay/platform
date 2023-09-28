@@ -1,6 +1,6 @@
 [package]
 name = "dpp"
-version = "0.1.0"
+version = "0.25.0-dev.30"
 edition = "2021"
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>", "Samuel Westrich <sam@dash.org>", "Ivan Shumkov <ivan@shumkov.ru>", "Djavid Gabibiyan <djavid@dash.org>", "Igor Markin <igor.markin@dash.org>"]
 
