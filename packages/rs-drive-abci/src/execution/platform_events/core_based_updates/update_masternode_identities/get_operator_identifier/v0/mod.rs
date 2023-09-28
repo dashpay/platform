@@ -23,7 +23,7 @@ where
         masternode: &MasternodeListItem,
         platform_version: &PlatformVersion,
     ) -> Result<[u8; 32], Error> {
-        let pro_tx_hash = &masternode.pro_tx_hash.into_inner();
+        let pro_tx_hash = &masternode.pro_tx_hash.into();
         Self::get_operator_identifier_v0(
             pro_tx_hash,
             masternode.state.pub_key_operator.as_slice(),

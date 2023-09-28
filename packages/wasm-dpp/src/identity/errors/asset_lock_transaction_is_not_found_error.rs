@@ -1,4 +1,3 @@
-use dpp::dashcore::hashes::hex::ToHex;
 use dpp::identity::errors::AssetLockTransactionIsNotFoundError;
 use wasm_bindgen::prelude::*;
 
@@ -15,6 +14,6 @@ impl From<&AssetLockTransactionIsNotFoundError> for AssetLockTransactionIsNotFou
 impl AssetLockTransactionIsNotFoundErrorWasm {
     #[wasm_bindgen(js_name=getTransactionId)]
     pub fn transaction_id(&self) -> JsValue {
-        self.0.transaction_id().to_hex().into()
+        hex::encode(self.0.transaction_id()).into()
     }
 }

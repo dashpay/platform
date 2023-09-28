@@ -82,7 +82,7 @@ class ConfigFileJsonRepository {
   write(configFile) {
     const configFileJSON = JSON.stringify(configFile.toObject(), undefined, 2);
 
-    fs.writeFileSync(this.configFilePath, configFileJSON, 'utf8');
+    fs.writeFileSync(this.configFilePath, `${configFileJSON}\n`, 'utf8');
   }
 }
 

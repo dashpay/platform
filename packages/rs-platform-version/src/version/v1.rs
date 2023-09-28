@@ -483,7 +483,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             identity_credit_withdrawal: DriveAbciIdentityCreditWithdrawalMethodVersions {
                 build_withdrawal_transactions_from_documents: 0,
                 fetch_and_prepare_unsigned_withdrawal_transactions: 0,
-                fetch_core_block_transactions: 0,
+                fetch_transactions_block_inclusion_status: 0,
                 pool_withdrawals_into_transactions_queue: 0,
                 update_broadcasted_withdrawal_transaction_statuses: 0,
             },

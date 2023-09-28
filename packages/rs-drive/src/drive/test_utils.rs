@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use dpp::{dashcore::anyhow, util::entropy_generator::EntropyGenerator};
+use dpp::util::entropy_generator::EntropyGenerator;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
 
 /// test entropy generator

@@ -486,10 +486,10 @@ psql-conn = ""
 # When true, Prometheus metrics are served under /metrics on
 # PrometheusListenAddr.
 # Check out the documentation for the list of available metrics.
-prometheus = false
+prometheus = {{? it.platform.drive.tenderdash.metrics.enabled }}true{{??}}false{{?}}
 
 # Address to listen for Prometheus collector(s) connections
-prometheus-listen-addr = ":26660"
+prometheus-listen-addr = ":{{= it.platform.drive.tenderdash.metrics.port }}"
 
 # Maximum number of simultaneous connections.
 # If you want to accept a larger number than the default, make sure
@@ -498,4 +498,4 @@ prometheus-listen-addr = ":26660"
 max-open-connections = 3
 
 # Instrumentation namespace
-namespace = "drive_tendermint"
+namespace = "drive_tenderdash"

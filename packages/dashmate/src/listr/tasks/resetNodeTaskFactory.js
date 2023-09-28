@@ -40,8 +40,9 @@ function resetNodeTaskFactory(
       {
         title: 'Check services are not running',
         skip: (ctx) => ctx.isForce,
-        task: async () => {
-          if (await dockerCompose.isNodeRunning(config)) {
+        task: async (ctx) => {
+          if (await dockerCompose.isNodeRunning(config,
+            { profiles: ctx.isPlatformOnlyReset ? ['platform'] : [] })) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
         },

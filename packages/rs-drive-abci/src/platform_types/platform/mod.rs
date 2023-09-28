@@ -10,6 +10,7 @@ use crate::rpc::core::MockCoreRPCLike;
 use dashcore_rpc::dashcore::hashes::hex::FromHex;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::RwLock;
 
 use dashcore_rpc::dashcore::BlockHash;
@@ -127,7 +128,7 @@ impl Platform<MockCoreRPCLike> {
         let mut core_rpc_mock = MockCoreRPCLike::new();
 
         core_rpc_mock.expect_get_block_hash().returning(|_| {
-            Ok(BlockHash::from_hex(
+            Ok(BlockHash::from_str(
                 "0000000000000000000000000000000000000000000000000000000000000000",
             )
             .unwrap())
