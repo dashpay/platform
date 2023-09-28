@@ -826,6 +826,14 @@ mod tests {
 
     #[test]
     fn run_chain_version_upgrade_multiple_versions() {
+        // Define the desired stack size
+        let stack_size = 2 * 1024 * 1024; // 8 MB for example
+
+        let builder = std::thread::Builder::new()
+            .stack_size(stack_size)
+            .name("custom_stack_size_thread".into());
+
+        let handler = builder.spawn(|| {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
@@ -1027,5 +1035,9 @@ mod tests {
                 (None, Some(&3), Some(&155))
             );
         }
+        }).expect("Failed to create thread with custom stack size");
+
+        // Wait for the thread to finish and assert that it didn't panic.
+        handler.join().expect("Thread has panicked");
     }
 }
