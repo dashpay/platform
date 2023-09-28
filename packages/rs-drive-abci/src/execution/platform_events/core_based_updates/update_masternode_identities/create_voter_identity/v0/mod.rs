@@ -32,7 +32,7 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<Identity, Error> {
         Self::create_voter_identity_v0(
-            masternode.pro_tx_hash.as_inner(),
+            &masternode.pro_tx_hash.to_byte_array(),
             &masternode.state.voting_address,
             platform_version,
         )

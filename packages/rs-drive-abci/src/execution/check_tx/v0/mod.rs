@@ -9,6 +9,8 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+use dpp::consensus::basic::decode::SerializedObjectParsingError;
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformDeserializable;
@@ -74,8 +76,16 @@ where
         &self,
         raw_tx: &[u8],
     ) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
-        let state_transition =
-            StateTransition::deserialize_from_bytes(raw_tx).map_err(Error::Protocol)?;
+        let state_transition = match StateTransition::deserialize_from_bytes(raw_tx) {
+            Ok(state_transition) => state_transition,
+            Err(err) => {
+                return Ok(ValidationResult::new_with_error(
+                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
+                        SerializedObjectParsingError::new(err.to_string()),
+                    )),
+                ))
+            }
+        };
         let state_read_guard = self.state.read().unwrap();
         let platform_ref = PlatformRef {
             drive: &self.drive,
@@ -127,14 +137,14 @@ mod tests {
 
     use dpp::consensus::ConsensusError;
     use dpp::dashcore::secp256k1::Secp256k1;
-    use dpp::dashcore::{signer, KeyPair, Network, PrivateKey};
+    use dpp::dashcore::{key::KeyPair, signer, Network, PrivateKey};
 
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contracts::dpns_contract;
     use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::DocumentV0Setters;
-    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 
     use dpp::identity::KeyType::ECDSA_SECP256K1;
     use dpp::identity::{Identity, IdentityV0, KeyType, Purpose, SecurityLevel};
@@ -151,7 +161,7 @@ mod tests {
     use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-    use dpp::state_transition::StateTransition;
+    use dpp::state_transition::{StateTransition, StateTransitionLike};
     use dpp::tests::fixtures::{get_dashpay_contract_fixture, instant_asset_lock_proof_fixture};
     use dpp::version::PlatformVersion;
     use dpp::NativeBlsModule;
@@ -164,6 +174,80 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;
+
+    // This test needs to be finished, but is still useful for debugging
+    #[test]
+    #[ignore]
+    fn verify_check_tx_on_data_contract_create() {
+        let platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig::default())
+            .build_with_mock_rpc();
+
+        let state = platform.state.read().unwrap();
+        let protocol_version = state.current_protocol_version_in_consensus();
+        let platform_version = PlatformVersion::get(protocol_version).unwrap();
+
+        let tx: Vec<u8> = vec![
+            0, 0, 0, 104, 37, 39, 102, 34, 99, 205, 58, 189, 155, 27, 93, 128, 49, 86, 24, 164, 86,
+            171, 102, 203, 151, 25, 88, 2, 9, 48, 215, 150, 16, 127, 114, 0, 0, 0, 0, 0, 1, 0, 0,
+            1, 14, 28, 76, 152, 45, 91, 51, 175, 52, 203, 177, 193, 171, 28, 8, 215, 207, 185, 149,
+            86, 192, 251, 146, 195, 126, 232, 156, 190, 183, 97, 59, 20, 0, 1, 4, 110, 111, 116,
+            101, 22, 3, 18, 4, 116, 121, 112, 101, 18, 6, 111, 98, 106, 101, 99, 116, 18, 10, 112,
+            114, 111, 112, 101, 114, 116, 105, 101, 115, 22, 1, 18, 7, 109, 101, 115, 115, 97, 103,
+            101, 22, 1, 18, 4, 116, 121, 112, 101, 18, 6, 115, 116, 114, 105, 110, 103, 18, 20, 97,
+            100, 100, 105, 116, 105, 111, 110, 97, 108, 80, 114, 111, 112, 101, 114, 116, 105, 101,
+            115, 19, 0, 116, 200, 180, 23, 82, 251, 127, 70, 3, 242, 82, 189, 127, 198, 107, 151,
+            75, 27, 64, 150, 39, 22, 110, 95, 101, 7, 155, 2, 98, 160, 95, 223, 2, 65, 32, 202, 64,
+            174, 15, 169, 140, 53, 129, 120, 106, 230, 25, 0, 70, 207, 222, 171, 52, 147, 135, 100,
+            195, 27, 202, 108, 185, 188, 243, 196, 149, 82, 46, 55, 224, 244, 182, 158, 107, 149,
+            217, 221, 43, 251, 104, 84, 78, 35, 20, 237, 188, 237, 240, 216, 62, 79, 208, 96, 149,
+            116, 62, 82, 187, 135, 219,
+        ];
+        let state_transitions = StateTransition::deserialize_many(&vec![tx.clone()])
+            .expect("expected a state transition");
+        let state_transition = state_transitions.first().unwrap();
+        let StateTransition::DataContractCreate(contract_create) = state_transition else {
+            panic!("expecting a data contract create");
+        };
+
+        let identifier = contract_create.owner_id();
+
+        let mut identity =
+            Identity::random_identity(3, Some(50), platform_version).expect("got an identity");
+
+        identity.set_id(identifier);
+
+        platform
+            .drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create structure");
+
+        platform
+            .drive
+            .add_new_identity(
+                identity,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add identity");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let check_result = platform.check_tx(&tx).expect("expected to check tx");
+
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![tx],
+                &state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+            )
+            .expect("expected to process state transition");
+    }
 
     #[test]
     fn data_contract_create_check_tx() {

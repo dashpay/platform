@@ -8,7 +8,9 @@ use crate::platform_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Get
 use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
 
+use dpp::dashcore::QuorumHash;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
 impl<C> Platform<C>
 where
@@ -80,7 +82,7 @@ where
             .filter(|(key, _)| {
                 !block_platform_state
                     .validator_sets()
-                    .contains_key(key.as_ref())
+                    .contains_key::<QuorumHash>(key)
             })
             .map(|(key, _)| {
                 let quorum_info_result =
@@ -136,7 +138,18 @@ where
             block_platform_state.validator_sets()
         );
 
-        block_platform_state.set_quorums_extended_info(quorum_list.quorums_by_type);
+        let quorums_by_type = quorum_list
+            .quorums_by_type
+            .into_iter()
+            .map(|(quorum_type, quorum_list)| {
+                let sorted_quorum_list = quorum_list.into_iter().collect();
+
+                (quorum_type, sorted_quorum_list)
+            })
+            .collect();
+
+        block_platform_state.set_quorums_extended_info(quorums_by_type);
+
         Ok(())
     }
 }
