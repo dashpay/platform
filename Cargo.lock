@@ -1297,6 +1297,7 @@ dependencies = [
  "prost",
  "rand",
  "regex",
+ "rocksdb",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
