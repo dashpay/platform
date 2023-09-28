@@ -39,7 +39,7 @@ enum Commands {
 
     /// Verify integrity of database.
     ///
-    /// This command will execute GroveDB integrity checks.
+    /// This command will execute GroveDB hash integrity checks.
     ///
     /// You can also enforce grovedb integrity checks during `drive-abci start`
     /// by creating `.fsck` file in database directory (`DB_PATH`).
@@ -255,10 +255,15 @@ fn check_status(config: &PlatformConfig) -> Result<(), String> {
 /// After successful verification, .fsck file is removed.
 fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
     let fsck = PathBuf::from(db_path).join(".fsck");
-    if !force && !fsck.exists() {
-        tracing::info!("no {} file, grovedb verification skipped", fsck.display());
 
-        return Ok(());
+    if !force {
+        if !fsck.exists() {
+            return Ok(());
+        }
+        tracing::info!(
+            "found {} file, starting grovedb verification",
+            fsck.display()
+        );
     }
 
     let grovedb = drive::grovedb::GroveDb::open(db_path).expect("open grovedb");
@@ -358,6 +363,7 @@ mod test {
 
     use ::drive::{drive::Drive, fee_pools::epochs::paths::EpochProposers, query::Element};
     use dpp::block::epoch::Epoch;
+    use drive::fee_pools::epochs::epoch_key_constants;
 
     use platform_version::version::PlatformVersion;
     use rocksdb::{IteratorMode, Options};
@@ -379,19 +385,19 @@ mod test {
         let transaction = drive.grove.start_transaction();
         let epoch = Epoch::new(0).unwrap();
 
-        for i in 0..10 {
-            drive
-                .grove
-                .insert(
-                    &epoch.get_path(),
-                    &(i as u128).to_be_bytes(), //   epoch_key_constants::KEY_FEE_MULTIPLIER.as_slice()
-                    Element::Item((i as u128).to_be_bytes().to_vec(), None),
-                    None,
-                    Some(&transaction),
-                )
-                .unwrap()
-                .expect("should insert data");
-        }
+        let i = 100;
+
+        drive
+            .grove
+            .insert(
+                &epoch.get_path(),
+                epoch_key_constants::KEY_FEE_MULTIPLIER.as_slice(),
+                Element::Item((i as u128).to_be_bytes().to_vec(), None),
+                None,
+                Some(&transaction),
+            )
+            .unwrap()
+            .expect("should insert data");
 
         transaction.commit().unwrap();
 
@@ -400,11 +406,11 @@ mod test {
 
     /// Open RocksDB and corrupt `n`-th item from `cf` column family.
     fn corrupt_rocksdb_item(db_path: &PathBuf, cf: &str, n: usize) {
-        // let cf = ColumnFamilyDescriptor::new("roots", Default::default());
         let mut db_opts = Options::default();
 
         db_opts.create_missing_column_families(false);
         db_opts.create_if_missing(false);
+
         let db = rocksdb::DB::open_cf(&db_opts, &db_path, vec!["roots", "meta", "aux"]).unwrap();
 
         let cf_handle = db.cf_handle(cf).unwrap();
@@ -433,7 +439,7 @@ mod test {
     }
 
     #[test]
-    fn test_verify_grovedb_remove_roots_0th_item() {
+    fn test_verify_grovedb_corrupt_0th_root() {
         drive_abci::logging::init_for_tests(4);
         let tempdir = tempfile::tempdir().unwrap();
         let db_path = setup_db(tempdir.path());
