@@ -62,7 +62,7 @@ impl DocumentQuery {
                     data_contract_id, document_id, document_type_name
                 )))?;
 
-        data_contract.document_type_for_name(&document_type_name)?;
+        data_contract.document_type_for_name(document_type_name)?;
 
         let where_clauses = vec![WhereClause {
             field: "id".to_string(),
@@ -77,7 +77,7 @@ impl DocumentQuery {
         }];
 
         Ok(DocumentQuery {
-            data_contract: data_contract.into(),
+            data_contract,
             document_type_name: document_type_name.to_string(),
             where_clauses,
             order_by_clauses,
@@ -219,11 +219,10 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveQuery<'a> {
         // let data_contract = request.data_contract.clone();
         let document_type = request
             .data_contract
-            .document_type_for_name(&request.document_type_name)?
-            .clone();
+            .document_type_for_name(&request.document_type_name)?;
 
         let internal_clauses = InternalClauses::extract_from_clauses(request.where_clauses.clone())
-            .map_err(|e: drive::error::Error| Error::Drive(e))?;
+            .map_err(Error::Drive)?;
 
         let limit = if request.limit != 0 {
             Some(request.limit as u16)
@@ -232,7 +231,7 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveQuery<'a> {
         };
         let query = Self {
             contract: &request.data_contract,
-            document_type: document_type.clone(),
+            document_type,
             internal_clauses,
             offset: None,
             limit,

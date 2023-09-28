@@ -121,7 +121,7 @@ impl<API: Sdk> List<API> for Document {
             response,
             api.quorum_info_provider()?,
         )? {
-            Some(documents) => Ok(Some(documents.into_iter().map(|doc| doc.into()).collect())),
+            Some(documents) => Ok(Some(documents)),
             None => Ok(None),
         }
     }

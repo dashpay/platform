@@ -13,7 +13,7 @@ pub trait Sdk: Send + Sync {
     async fn platform_client<'a>(&self) -> MutexGuard<'a, crate::platform::PlatformClient>
     where
         'life0: 'a;
-    fn quorum_info_provider<'a>(&'a self) -> Result<&'a dyn QuorumInfoProvider, Error>;
+    fn quorum_info_provider(&self) -> Result<&dyn QuorumInfoProvider, Error>;
 }
 
 mockall::mock! {
@@ -51,7 +51,7 @@ impl Sdk for DashPlatformSdk {
     {
         self.dapi.lock().await
     }
-    fn quorum_info_provider<'a>(&'a self) -> Result<&'a dyn QuorumInfoProvider, Error> {
+    fn quorum_info_provider(&self) -> Result<&dyn QuorumInfoProvider, Error> {
         let provider = self.quorum_provider.as_ref();
         Ok(provider)
     }
