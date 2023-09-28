@@ -2370,7 +2370,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["ajv", "npm:8.8.1"],\
             ["bs58", "npm:4.0.1"],\
             ["cbor", "npm:8.1.0"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["dotenv", "npm:8.6.0"],\
@@ -2413,7 +2413,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["bs58", "npm:4.0.1"],\
             ["buffer", "npm:6.0.3"],\
             ["cbor", "npm:8.1.0"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["comment-parser", "npm:0.7.6"],\
             ["core-js", "npm:3.19.1"],\
@@ -2461,7 +2461,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/protobufjs", "npm:6.10.5"],\
             ["@grpc/grpc-js", "npm:1.4.4"],\
             ["@improbable-eng/grpc-web", "virtual:c60802fb91064892a66eac238372b1f92273bed401eb316b63f9eae73923158c5dcd2982eb1e735f7e36e089d74b3ee3773666256e3b50594593c762aa939877#npm:0.15.0"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["eslint", "npm:7.32.0"],\
@@ -2494,7 +2494,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dark-gravity-wave", "npm:1.1.1"],\
             ["@dashevo/dash-util", "npm:2.0.3"],\
             ["@dashevo/dashcore-lib", "npm:0.20.9"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.25.3"],\
@@ -2566,7 +2566,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
@@ -2608,7 +2608,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
@@ -2644,7 +2644,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["bs58", "npm:4.0.1"],\
             ["buffer", "npm:6.0.3"],\
             ["cbor", "npm:8.1.0"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["chai-exclude", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.0"],\
             ["chai-string", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:1.5.0"],\
@@ -2693,7 +2693,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
@@ -2714,7 +2714,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@grpc/grpc-js", "npm:1.4.4"],\
             ["@grpc/proto-loader", "npm:0.5.6"],\
             ["cbor", "npm:8.1.0"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["eslint", "npm:7.32.0"],\
@@ -2738,7 +2738,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
@@ -2812,7 +2812,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["browserify-zlib", "npm:0.2.0"],\
             ["buffer", "npm:6.0.3"],\
             ["bufferutil", "npm:4.0.6"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["crypto-browserify", "npm:3.12.0"],\
             ["dash", "workspace:packages/js-dash-sdk"],\
@@ -2901,7 +2901,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["browserify-zlib", "npm:0.2.0"],\
             ["buffer", "npm:6.0.3"],\
             ["cbor", "npm:8.1.0"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["crypto-browserify", "npm:3.12.0"],\
             ["crypto-js", "npm:4.1.1"],\
@@ -2965,7 +2965,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["assert", "npm:2.0.0"],\
             ["bs58", "npm:4.0.1"],\
             ["buffer", "npm:6.0.3"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["chai-exclude", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.0"],\
             ["chai-string", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:1.5.0"],\
@@ -3022,7 +3022,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
@@ -7015,14 +7015,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["chai", [\
-        ["npm:4.3.4", {\
-          "packageLocation": "./.yarn/cache/chai-npm-4.3.4-808f3b5355-772c522b3b.zip/node_modules/chai/",\
+        ["npm:4.3.9", {\
+          "packageLocation": "./.yarn/cache/chai-npm-4.3.9-f6d7b8659a-0bcc79b882.zip/node_modules/chai/",\
           "packageDependencies": [\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["assertion-error", "npm:1.1.0"],\
-            ["check-error", "npm:1.0.2"],\
-            ["deep-eql", "npm:3.0.1"],\
+            ["check-error", "npm:1.0.3"],\
+            ["deep-eql", "npm:4.1.3"],\
             ["get-func-name", "npm:2.0.0"],\
+            ["loupe", "npm:2.3.6"],\
             ["pathval", "npm:1.1.1"],\
             ["type-detect", "npm:4.0.8"]\
           ],\
@@ -7042,7 +7043,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["@types/chai", null],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["check-error", "npm:1.0.2"]\
           ],\
           "packagePeers": [\
@@ -7056,7 +7057,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["chai-as-promised", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:7.1.1"],\
             ["@types/chai", "npm:4.2.22"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["check-error", "npm:1.0.2"]\
           ],\
           "packagePeers": [\
@@ -7079,7 +7080,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["chai-exclude", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.0"],\
             ["@types/chai", null],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["fclone", "npm:1.0.11"]\
           ],\
           "packagePeers": [\
@@ -7102,7 +7103,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["chai-string", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:1.5.0"],\
             ["@types/chai", null],\
-            ["chai", "npm:4.3.4"]\
+            ["chai", "npm:4.3.9"]\
           ],\
           "packagePeers": [\
             "@types/chai",\
@@ -7176,6 +7177,14 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/check-error-npm-1.0.2-00c540c6e9-d9d1065044.zip/node_modules/check-error/",\
           "packageDependencies": [\
             ["check-error", "npm:1.0.2"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["npm:1.0.3", {\
+          "packageLocation": "./.yarn/cache/check-error-npm-1.0.3-137994eabc-e2131025cf.zip/node_modules/check-error/",\
+          "packageDependencies": [\
+            ["check-error", "npm:1.0.3"],\
+            ["get-func-name", "npm:2.0.2"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -8173,7 +8182,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["browserify-zlib", "npm:0.2.0"],\
             ["bs58", "npm:4.0.1"],\
             ["buffer", "npm:6.0.3"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["chai-as-promised", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:7.1.1"],\
             ["chance", "npm:1.1.8"],\
             ["crypto-browserify", "npm:3.12.0"],\
@@ -8245,7 +8254,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["awilix", "npm:4.3.4"],\
             ["babel-eslint", "virtual:27dae49067a60fa65fec6e1c3adad1497d0dda3f71eda711624109131ff3b7d1061a20f55e89b5a0a219da1f7a0a1a0a76bc414d36870315bd60acf5bdcb7f55#npm:10.1.0"],\
             ["begoo", "npm:2.0.2"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["chalk", "npm:4.1.2"],\
             ["cron", "npm:2.1.0"],\
@@ -8497,10 +8506,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["deep-eql", [\
-        ["npm:3.0.1", {\
-          "packageLocation": "./.yarn/cache/deep-eql-npm-3.0.1-9a66c09c65-4f4c9fb79e.zip/node_modules/deep-eql/",\
+        ["npm:4.1.3", {\
+          "packageLocation": "./.yarn/cache/deep-eql-npm-4.1.3-020a64f862-7f6d30cb41.zip/node_modules/deep-eql/",\
           "packageDependencies": [\
-            ["deep-eql", "npm:3.0.1"],\
+            ["deep-eql", "npm:4.1.3"],\
             ["type-detect", "npm:4.0.8"]\
           ],\
           "linkType": "HARD"\
@@ -8746,7 +8755,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["@types/chai", null],\
-            ["chai", "npm:4.3.4"]\
+            ["chai", "npm:4.3.9"]\
           ],\
           "packagePeers": [\
             "@types/chai",\
@@ -8759,7 +8768,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["dirty-chai", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:2.0.1"],\
             ["@types/chai", "npm:4.2.22"],\
-            ["chai", "npm:4.3.4"]\
+            ["chai", "npm:4.3.9"]\
           ],\
           "packagePeers": [\
             "@types/chai",\
@@ -10462,6 +10471,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/get-func-name-npm-2.0.0-afbf363765-8d82e69f3e.zip/node_modules/get-func-name/",\
           "packageDependencies": [\
             ["get-func-name", "npm:2.0.0"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["npm:2.0.2", {\
+          "packageLocation": "./.yarn/cache/get-func-name-npm-2.0.2-409dbe3703-3f62f4c236.zip/node_modules/get-func-name/",\
+          "packageDependencies": [\
+            ["get-func-name", "npm:2.0.2"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -12503,7 +12519,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["karma-chai", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:0.1.0"],\
             ["@types/chai", null],\
             ["@types/karma", null],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["karma", "npm:6.4.1"]\
           ],\
           "packagePeers": [\
@@ -12520,7 +12536,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["karma-chai", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:0.1.0"],\
             ["@types/chai", "npm:4.2.22"],\
             ["@types/karma", null],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["karma", "npm:6.4.1"]\
           ],\
           "packagePeers": [\
@@ -13120,6 +13136,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/long-npm-5.2.0-bbbd23a9e6-37aa4e67b9.zip/node_modules/long/",\
           "packageDependencies": [\
             ["long", "npm:5.2.0"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
+      ["loupe", [\
+        ["npm:2.3.6", {\
+          "packageLocation": "./.yarn/cache/loupe-npm-2.3.6-b8b37d55e7-cc83f1b124.zip/node_modules/loupe/",\
+          "packageDependencies": [\
+            ["loupe", "npm:2.3.6"],\
+            ["get-func-name", "npm:2.0.0"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -16595,7 +16621,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"],\
             ["@types/chai", null],\
             ["@types/sinon", null],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["sinon", "npm:11.1.2"]\
           ],\
           "packagePeers": [\
@@ -16612,7 +16638,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["sinon-chai", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:3.7.0"],\
             ["@types/chai", "npm:4.2.22"],\
             ["@types/sinon", "npm:9.0.11"],\
-            ["chai", "npm:4.3.4"],\
+            ["chai", "npm:4.3.9"],\
             ["sinon", "npm:11.1.2"]\
           ],\
           "packagePeers": [\
