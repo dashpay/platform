@@ -38,8 +38,7 @@ function reindexNodeTaskFactory(
    */
   async function getCoreContainer(config) {
     const [containerId] = await dockerCompose
-      .getContainersList(config, {
-        quiet: true,
+      .getContainerIds(config, {
         all: true,
         filterServiceNames: 'core',
       });

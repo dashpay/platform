@@ -56,7 +56,7 @@ impl ValidatorV0 {
             pro_tx_hash,
             public_key,
             node_ip: service.ip().to_string(),
-            node_id: PubkeyHash::from_inner(platform_node_id),
+            node_id: PubkeyHash::from_byte_array(platform_node_id),
             core_port: service.port(),
             platform_http_port: *platform_http_port as u16,
             platform_p2p_port: *platform_p2p_port as u16,

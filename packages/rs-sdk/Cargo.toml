@@ -22,7 +22,7 @@ serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
 tracing = { version = "0.1.37" }
 
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev = "7840fe65fbdf4f083ff8632f6e7afac11a31ca63" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.1" }
 # drive-abci is only needed for core rpc; TODO remove once we have correct core rpc impl
 drive-abci = { path = "../rs-drive-abci", default-features = false }
 mockall = { version = "0.11", optional = true }
