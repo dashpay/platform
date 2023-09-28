@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use dapi_grpc::core::v0::{self as core_proto, core_client::CoreClient};
+use dapi_grpc::core::v0::{core_client::CoreClient};
 use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
 use http::Uri;

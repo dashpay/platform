@@ -11,17 +11,13 @@
 //!
 //! See `tests/mock_dapi_client.rs` for an example.
 
-use dpp::dashcore::hashes::{sha256, Hash, HashEngine};
-use futures::FutureExt;
-use std::{collections::HashMap, fmt::Debug, fs::File, io::Write};
+use std::collections::HashMap;
 use tonic::async_trait;
 
 use crate::{
-    transport::{grpc::PlatformGrpcClient, TransportClient, TransportRequest},
-    Dapi, DapiClientError, DapiRequest, RequestSettings,
+    transport::{TransportClient, TransportRequest},
+    Dapi, DapiClientError, RequestSettings,
 };
-use dapi_grpc::{platform::v0 as platform_proto, Message};
-use drive_proof_verifier::proof::from_proof::MockQuorumInfoProvider;
 
 /// Mock DAPI client.
 ///
@@ -64,7 +60,7 @@ impl MockDapiClient {
 
         self.expectations
             .get(&key)
-            .map(|v| bincode::serde::decode_from_slice(&v, config).expect("decode response"))
+            .map(|v| bincode::serde::decode_from_slice(v, config).expect("decode response"))
             .map(|(v, _)| v)
     }
 }
