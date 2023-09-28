@@ -13,17 +13,12 @@ use dapi_grpc::platform::v0 as platform_proto;
 use drive_proof_verifier::proof::from_proof::MockQuorumInfoProvider;
 
 /// Mock DAPI client
+#[derive(Default)]
 pub struct MockDapiClient {}
 impl MockDapiClient {
     /// Create a new mock client
     pub fn new() -> Self {
         Self::default()
-    }
-}
-
-impl Default for MockDapiClient {
-    fn default() -> Self {
-        Self {}
     }
 }
 
@@ -42,7 +37,7 @@ impl Dapi for MockDapiClient {
         request
             .execute_transport(&mut transport, &settings)
             .await
-            .map_err(|e| DapiClientError::Transport(e))
+            .map_err(DapiClientError::Transport)
     }
 }
 
@@ -154,7 +149,7 @@ impl<Req: DapiRequest> MockRequest<Req> {
     }
 }
 
-impl<'r, Req: DapiRequest> TransportRequest for MockRequest<Req>
+impl<Req: DapiRequest> TransportRequest for MockRequest<Req>
 where
     Req: Sync + Send + Debug + Clone,
     Req::Response: Sync + Send + Debug + Clone,
