@@ -1752,7 +1752,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/improvingMerkDeletion#cf5e472cd0aa8ff382d199180705c517816e50ef"
+source = "git+https://github.com/dashpay/grovedb?rev=eade3e078a4ba93398d94aade9144f8305632a9b#eade3e078a4ba93398d94aade9144f8305632a9b"
 dependencies = [
  "bincode 1.3.3",
  "grovedb-costs",
@@ -1774,7 +1774,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/improvingMerkDeletion#cf5e472cd0aa8ff382d199180705c517816e50ef"
+source = "git+https://github.com/dashpay/grovedb?rev=eade3e078a4ba93398d94aade9144f8305632a9b#eade3e078a4ba93398d94aade9144f8305632a9b"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1784,7 +1784,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/improvingMerkDeletion#cf5e472cd0aa8ff382d199180705c517816e50ef"
+source = "git+https://github.com/dashpay/grovedb?rev=eade3e078a4ba93398d94aade9144f8305632a9b#eade3e078a4ba93398d94aade9144f8305632a9b"
 dependencies = [
  "blake3",
  "byteorder",
@@ -1808,12 +1808,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/improvingMerkDeletion#cf5e472cd0aa8ff382d199180705c517816e50ef"
+source = "git+https://github.com/dashpay/grovedb?rev=eade3e078a4ba93398d94aade9144f8305632a9b#eade3e078a4ba93398d94aade9144f8305632a9b"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/improvingMerkDeletion#cf5e472cd0aa8ff382d199180705c517816e50ef"
+source = "git+https://github.com/dashpay/grovedb?rev=eade3e078a4ba93398d94aade9144f8305632a9b#eade3e078a4ba93398d94aade9144f8305632a9b"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -1832,7 +1832,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?branch=fix/improvingMerkDeletion#cf5e472cd0aa8ff382d199180705c517816e50ef"
+source = "git+https://github.com/dashpay/grovedb?rev=eade3e078a4ba93398d94aade9144f8305632a9b#eade3e078a4ba93398d94aade9144f8305632a9b"
 dependencies = [
  "hex",
  "itertools",
