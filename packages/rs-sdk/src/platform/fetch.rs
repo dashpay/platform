@@ -108,7 +108,6 @@ where
 
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
-        let response: Self::Response = response.into();
 
         let object = <Self as FromProof<<Self as Fetch<API>>::Request>>::maybe_from_proof(
             request,
