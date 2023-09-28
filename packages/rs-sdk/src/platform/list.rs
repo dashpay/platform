@@ -32,16 +32,17 @@ use crate::{
 pub trait List<API: Sdk>
 where
     Self: Sized + Debug,
-    Vec<Self>: FromProof<Self::Request> + Sync,
-    <Vec<Self> as FromProof<Self::Request>>::Response:
-        From<<Self::Request as TransportRequest>::Response>,
+    Vec<Self>: FromProof<
+            Self::Request,
+            Response = <<Self as List<API>>::Request as TransportRequest>::Response,
+        > + Sync,
 {
     /// Type of request used to fetch data from the platform.
     ///
     /// Most likely, one of the types defined in `dapi_grpc::platform::v0`.
     ///
     /// This type must implement `TransportRequest`.
-    type Request: TransportRequest;
+    type Request: TransportRequest + Into<<Vec<Self> as FromProof<Self::Request>>::Request>;
 
     /// # List or Search for Multiple Objects on the Platform
     ///

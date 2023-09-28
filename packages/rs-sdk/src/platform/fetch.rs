@@ -59,16 +59,20 @@ use super::document_query::DocumentQuery;
 #[async_trait::async_trait]
 pub trait Fetch<API: Sdk>
 where
-    Self: Sized + Debug + FromProof<Self::Request>,
-    <Self as FromProof<Self::Request>>::Response:
-        From<<Self::Request as TransportRequest>::Response>,
+    Self: Sized
+        + Debug
+        + FromProof<
+            <Self as Fetch<API>>::Request,
+            Response = <<Self as Fetch<API>>::Request as DapiRequest>::Response,
+        >,
 {
     /// Type of request used to fetch data from the platform.
     ///
     /// Most likely, one of the types defined in `dapi_grpc::platform::v0`.
     ///
     /// This type must implement `TransportRequest`.
-    type Request: TransportRequest;
+    type Request: TransportRequest
+        + Into<<Self as FromProof<<Self as Fetch<API>>::Request>>::Request>;
 
     /// Fetch object from the Platfom.
     ///
