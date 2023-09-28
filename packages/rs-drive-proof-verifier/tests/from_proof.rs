@@ -1,11 +1,8 @@
 use dapi_grpc::platform::v0::{self as grpc};
-use dpp::{
-    document::Document,
-    prelude::{DataContract, Identity},
-};
+use dpp::prelude::{DataContract, Identity};
 use drive_proof_verifier::proof::from_proof::{
-    DataContractHistory, DataContracts, Documents, FromProof, IdentityBalance,
-    IdentityBalanceAndRevision, IdentityPublicKeys, Length,
+    DataContractHistory, DataContracts, FromProof, IdentityBalance, IdentityBalanceAndRevision,
+    IdentityPublicKeys, Length,
 };
 
 include!("utils.rs");
