@@ -1007,7 +1007,7 @@ mod tests {
             .abci_app
             .platform
             .drive
-            .prove_contract(contract_id.into(), None, platform_version)
+            .prove_contract(contract_id.into_buffer(), None, platform_version)
             .expect("contract should be retrieved from proof");
     }
 

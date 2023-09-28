@@ -1,13 +1,12 @@
 mod test_vector;
 
-use core::panic;
-
 use base64::Engine;
 use dapi_grpc::platform::v0::{self as platform_proto, get_identity_response, GetIdentityResponse};
 use dashcore_rpc::{
     dashcore::{hashes::Hash, QuorumHash},
     dashcore_rpc_json::QuorumType,
 };
+
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters, document_type::accessors::DocumentTypeV0Getters,
@@ -216,7 +215,11 @@ impl Api {
 
         let core = self.core.write().await;
         let quorum_info = core
-            .get_quorum_info(QuorumType::from(quorum_type), &quorum_hash, None)
+            .get_quorum_info(
+                dashcore_rpc::dashcore_rpc_json::QuorumType::from(quorum_type),
+                &quorum_hash,
+                None,
+            )
             .expect("get quorum info");
 
         quorum_info.quorum_public_key
