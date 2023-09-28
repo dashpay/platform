@@ -44,7 +44,6 @@ impl Drive {
         let grove_db_operations =
             LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
         if !grove_db_operations.is_empty() {
-            println!("ops {:?}", grove_db_operations);
             self.apply_batch_grovedb_operations(
                 None,
                 transaction,
@@ -52,8 +51,6 @@ impl Drive {
                 &mut vec![],
                 &platform_version.drive,
             )?;
-
-            println!("ops end");
         }
         Ok(())
     }
