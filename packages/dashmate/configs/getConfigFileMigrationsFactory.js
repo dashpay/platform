@@ -169,7 +169,7 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
           });
         return configFile;
       },
-      '0.25.0-dev.31': (configFile) => {
+      '0.25.0-dev.32': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             if (options.network !== NETWORK_MAINNET) {
