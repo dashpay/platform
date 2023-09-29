@@ -12,6 +12,7 @@ use(dirtyChai);
 use(chaiAsPromised);
 
 dotenvSafe.config({
+  allowEmptyValues: true,
   path: path.resolve(__dirname, '..', '..', '.env'),
 });
 

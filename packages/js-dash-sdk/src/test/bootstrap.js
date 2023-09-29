@@ -8,6 +8,7 @@ const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 
 dotenvSafe.config({
+  allowEmptyValues: true,
   path: path.resolve(__dirname, '..', '..', '.env'),
 });
 
