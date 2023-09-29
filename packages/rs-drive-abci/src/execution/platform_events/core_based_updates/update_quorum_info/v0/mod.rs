@@ -9,7 +9,6 @@ use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::dashcore::QuorumHash;
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 impl<C> Platform<C>
@@ -46,18 +45,30 @@ where
             "update of quorums for height {}",
             core_block_height
         );
+
         let quorum_list = self
             .core_rpc
             .get_quorum_listextended(Some(core_block_height))?;
-        let quorum_info = quorum_list
+
+        let quorums_by_type: BTreeMap<_, BTreeMap<_, _>> = quorum_list
             .quorums_by_type
-            .get(&self.config.quorum_type())
-            .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
-                format!(
-                    "expected quorums of type {}, but did not receive any from Dash Core",
-                    self.config.quorum_type
-                ),
-            )))?;
+            .into_iter()
+            .map(|(quorum_type, quorum_list)| {
+                let sorted_quorum_list = quorum_list.into_iter().collect();
+
+                (quorum_type, sorted_quorum_list)
+            })
+            .collect();
+
+        let quorum_info =
+            quorums_by_type
+                .get(&self.config.quorum_type())
+                .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
+                    format!(
+                        "expected quorums of type {}, but did not receive any from Dash Core",
+                        self.config.quorum_type
+                    ),
+                )))?;
 
         tracing::debug!(
             method = "update_quorum_info_v0",
@@ -113,16 +124,17 @@ where
                 Ok((key, validator_set))
             })
             .collect::<Result<Vec<_>, Error>>()?;
+
         // Add new validator_sets entries
         block_platform_state
             .validator_sets_mut()
-            .extend(new_quorums.into_iter());
+            .extend(new_quorums);
 
         block_platform_state
             .validator_sets_mut()
             .sort_by(|_, quorum_a, _, quorum_b| {
                 let primary_comparison = quorum_b.core_height().cmp(&quorum_a.core_height());
-                if primary_comparison == Ordering::Equal {
+                if primary_comparison == std::cmp::Ordering::Equal {
                     quorum_b
                         .quorum_hash()
                         .cmp(quorum_a.quorum_hash())
@@ -137,16 +149,6 @@ where
             "new {:?}",
             block_platform_state.validator_sets()
         );
-
-        let quorums_by_type = quorum_list
-            .quorums_by_type
-            .into_iter()
-            .map(|(quorum_type, quorum_list)| {
-                let sorted_quorum_list = quorum_list.into_iter().collect();
-
-                (quorum_type, sorted_quorum_list)
-            })
-            .collect();
 
         block_platform_state.set_quorums_extended_info(quorums_by_type);
 
