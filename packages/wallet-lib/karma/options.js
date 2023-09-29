@@ -1,7 +1,4 @@
 /* eslint-disable import/no-extraneous-dependencies */
-const webpack = require('webpack');
-const dotenvResult = require('dotenv-safe').config();
-
 const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
 const karmaChai = require('karma-chai');
@@ -23,9 +20,6 @@ module.exports = {
     devtool: 'inline-source-map',
     plugins: [
       ...webpackConfig.plugins,
-      new webpack.EnvironmentPlugin(
-        dotenvResult.parsed,
-      ),
     ],
     resolve: webpackConfig.resolve,
   },
