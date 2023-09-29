@@ -363,6 +363,7 @@ mod test {
     use dpp::block::epoch::Epoch;
     use drive::fee_pools::epochs::epoch_key_constants;
 
+    use drive_abci::logging::LogLevelPreset;
     use platform_version::version::PlatformVersion;
     use rocksdb::{IteratorMode, Options};
 
@@ -438,7 +439,7 @@ mod test {
 
     #[test]
     fn test_verify_grovedb_corrupt_0th_root() {
-        drive_abci::logging::init_for_tests(4);
+        drive_abci::logging::init_for_tests(LogLevelPreset::Silent);
         let tempdir = tempfile::tempdir().unwrap();
         let db_path = setup_db(tempdir.path());
 
