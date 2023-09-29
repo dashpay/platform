@@ -1,4 +1,4 @@
-const dotenvSafe = require('dotenv-safe');
+const dotenv = require('dotenv');
 const path = require('path');
 
 const sinon = require('sinon');
@@ -7,8 +7,7 @@ const { use } = require('chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 
-dotenvSafe.config({
-  allowEmptyValues: true,
+dotenv.config({
   path: path.resolve(__dirname, '..', '..', '.env'),
 });
 

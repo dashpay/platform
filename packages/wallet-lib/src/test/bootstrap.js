@@ -1,7 +1,7 @@
 const { use } = require('chai');
 const { expect } = require('chai');
 const path = require('path');
-const dotenvSafe = require('dotenv-safe');
+const dotenv = require('dotenv');
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
@@ -11,8 +11,7 @@ use(sinonChai);
 use(dirtyChai);
 use(chaiAsPromised);
 
-dotenvSafe.config({
-  allowEmptyValues: true,
+dotenv.config({
   path: path.resolve(__dirname, '..', '..', '.env'),
 });
 
