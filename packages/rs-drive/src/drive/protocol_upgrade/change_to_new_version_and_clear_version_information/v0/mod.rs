@@ -24,11 +24,7 @@ impl Drive {
         let platform_version =
             PlatformVersion::get(current_version).map_err(ProtocolError::PlatformVersionError)?;
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        self.clear_version_information_operations_v0(
-            transaction,
-            &mut batch_operations,
-            &platform_version.drive,
-        )?;
+
         self.set_current_protocol_version_operations(
             current_version,
             transaction,
@@ -52,6 +48,9 @@ impl Drive {
                 &platform_version.drive,
             )?;
         }
+
+        self.clear_version_information(transaction, &platform_version.drive)?;
+
         Ok(())
     }
 }
