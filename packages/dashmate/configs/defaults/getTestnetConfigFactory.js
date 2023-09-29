@@ -92,8 +92,8 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
               port: 36660,
             },
             genesis: {
-              genesis_time: '2023-04-26T10:43:20.921Z',
-              chain_id: 'dash-testnet-24',
+              genesis_time: '2023-09-29T00:43:20.921Z',
+              chain_id: 'dash-testnet-25',
               initial_core_chain_locked_height: 901228,
               consensus_params: {
                 timeout: {
