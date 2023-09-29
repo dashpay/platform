@@ -1,4 +1,7 @@
 /* eslint-disable import/no-extraneous-dependencies */
+const webpack = require('webpack');
+const dotenvResult = require('dotenv').config();
+
 const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
 const karmaChai = require('karma-chai');
@@ -13,6 +16,9 @@ module.exports = {
     mode: 'development',
     plugins: [
       ...webpackBaseConfig.plugins,
+      new webpack.EnvironmentPlugin(
+        dotenvResult.parsed,
+      ),
     ],
   },
   reporters: ['mocha'],
