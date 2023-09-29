@@ -1169,7 +1169,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "0.1.0"
+version = "0.25.0-dev.30"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1224,7 +1224,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "0.24.0-dev.1"
+version = "0.25.0-dev.30"
 dependencies = [
  "anyhow",
  "base64 0.21.4",
@@ -1264,7 +1264,7 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "0.1.0"
+version = "0.25.0-dev.30"
 dependencies = [
  "anyhow",
  "atty",
