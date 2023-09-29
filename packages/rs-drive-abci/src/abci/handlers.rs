@@ -167,11 +167,13 @@ where
         let mut block_proposal: BlockProposal = (&request).try_into()?;
 
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
-            tracing::info!(
-                "chain lock update to height {} at block {}",
-                core_chain_lock_update.core_block_height,
-                request.height
-            );
+            // We can't add this, as it slows down CI way too much
+            // todo: find a way to re-enable this without destroying CI
+            // tracing::info!(
+            //     "chain lock update to height {} at block {}",
+            //     core_chain_lock_update.core_block_height,
+            //     request.height
+            // );
             block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
         }
 

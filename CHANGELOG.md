@@ -1,6 +1,37 @@
+## [0.25.0-dev.31](https://github.com/dashpay/platform/compare/v0.25.0-dev.30...v0.25.0-dev.31) (2023-09-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** a unique key with that hash already exists (#1429)
+
+### Features
+
+* **drive:** drive-abci verify grovedb CLI ([#1427](https://github.com/dashpay/platform/issues/1427))
+
+
+### Bug Fixes
+
+* **drive:** a unique key with that hash already exists ([#1429](https://github.com/dashpay/platform/issues/1429))
+
+## [0.25.0-dev.30](https://github.com/dashpay/platform/compare/v0.25.0-dev.29...v0.25.0-dev.30) (2023-09-28)
+
+### Bug Fixes
+
+* **drive:** update grovedb after just in time fix ([#1426](https://github.com/dashpay/platform/issues/1426))
+* **drive:** non-deterministic extended quorum info ([#1425](https://github.com/dashpay/platform/issues/1425))
+
+### Security Threats
+
+* **drive:** chaijs/get-func-name vulnerable to ReDoS ([#1431](https://github.com/dashpay/platform/issues/1431))
+
+### Miscellaneous Chores
+
+* update seed ip addresses ([#1424](https://github.com/dashpay/platform/issues/1424))
+* update s3 bucket ([#1430](https://github.com/dashpay/platform/issues/1430))
+
+
 ## [0.25.0-dev.29](https://github.com/dashpay/platform/compare/v0.25.0-dev.28...v0.25.0-dev.29) (2023-09-22)
-
-
 ### Features
 
 * **dashmate:** expose tenderdash metics ([#1419](https://github.com/dashpay/platform/issues/1419))

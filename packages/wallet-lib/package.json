@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wallet-lib",
-  "version": "7.25.0-dev.29",
+  "version": "7.25.0-dev.31",
   "description": "Light wallet library for Dash",
   "main": "src/index.js",
   "unpkg": "dist/wallet-lib.min.js",
@@ -61,7 +61,7 @@
     "assert": "^2.0.0",
     "browserify-zlib": "^0.2.0",
     "buffer": "^6.0.3",
-    "chai": "^4.3.4",
+    "chai": "^4.3.9",
     "chai-as-promised": "^7.1.1",
     "crypto-browserify": "^3.12.0",
     "dirty-chai": "^2.0.1",
