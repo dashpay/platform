@@ -11,10 +11,6 @@ const karmaWebpack = require('karma-webpack');
 
 const webpackConfig = require('../webpack.config');
 
-if (dotenvResult.error) {
-  throw dotenvResult.error;
-}
-
 module.exports = {
   client: {
     mocha: {
