@@ -1,5 +1,5 @@
 /* eslint-disable import/no-extraneous-dependencies */
-const dotenvResult = require('dotenv-safe').config();
+const dotenvResult = require('dotenv').config();
 const options = require('./options');
 
 if (dotenvResult.error) {
