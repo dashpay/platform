@@ -169,6 +169,15 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
           });
         return configFile;
       },
+      '0.25.0-dev.31': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if (options.network !== NETWORK_MAINNET) {
+              options.core.docker.image = base.get('core.docker.image');
+            }
+          });
+        return configFile;
+      },
     };
   }
 
