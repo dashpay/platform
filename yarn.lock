@@ -1370,7 +1370,7 @@ __metadata:
     bs58: ^4.0.1
     buffer: ^6.0.3
     cbor: ^8.0.0
-    chai: ^4.3.4
+    chai: ^4.3.9
     chai-as-promised: ^7.1.1
     comment-parser: ^0.7.6
     core-js: ^3.17.2
@@ -1416,7 +1416,7 @@ __metadata:
     "@dashevo/protobufjs": 6.10.5
     "@grpc/grpc-js": ^1.3.7
     "@improbable-eng/grpc-web": ^0.15.0
-    chai: ^4.3.4
+    chai: ^4.3.9
     chai-as-promised: ^7.1.1
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
@@ -1448,7 +1448,7 @@ __metadata:
     ajv: ^8.6.0
     bs58: ^4.0.1
     cbor: ^8.0.0
-    chai: ^4.3.4
+    chai: ^4.3.9
     chai-as-promised: ^7.1.1
     dirty-chai: ^2.0.1
     dotenv: ^8.6.0
@@ -1487,7 +1487,7 @@ __metadata:
     "@dashevo/dark-gravity-wave": ^1.1.1
     "@dashevo/dash-util": ^2.0.3
     "@dashevo/dashcore-lib": ~0.20.9
-    chai: ^4.3.4
+    chai: ^4.3.9
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
@@ -1555,7 +1555,7 @@ __metadata:
   resolution: "@dashevo/dashpay-contract@workspace:packages/dashpay-contract"
   dependencies:
     "@dashevo/dpp": "workspace:*"
-    chai: ^4.3.4
+    chai: ^4.3.9
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
@@ -1593,7 +1593,7 @@ __metadata:
   resolution: "@dashevo/dpns-contract@workspace:packages/dpns-contract"
   dependencies:
     "@dashevo/dpp": "workspace:*"
-    chai: ^4.3.4
+    chai: ^4.3.9
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
@@ -1627,7 +1627,7 @@ __metadata:
     bs58: ^4.0.1
     buffer: ^6.0.3
     cbor: ^8.0.0
-    chai: ^4.3.4
+    chai: ^4.3.9
     chai-as-promised: ^7.1.1
     chai-exclude: ^2.1.0
     chai-string: ^1.5.0
@@ -1674,7 +1674,7 @@ __metadata:
   resolution: "@dashevo/feature-flags-contract@workspace:packages/feature-flags-contract"
   dependencies:
     "@dashevo/dpp": "workspace:*"
-    chai: ^4.3.4
+    chai: ^4.3.9
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
@@ -1693,7 +1693,7 @@ __metadata:
     "@grpc/grpc-js": ^1.3.7
     "@grpc/proto-loader": ^0.5.2
     cbor: ^8.0.0
-    chai: ^4.3.4
+    chai: ^4.3.9
     chai-as-promised: ^7.1.1
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
@@ -1715,7 +1715,7 @@ __metadata:
   resolution: "@dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract"
   dependencies:
     "@dashevo/dpp": "workspace:*"
-    chai: ^4.3.4
+    chai: ^4.3.9
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
@@ -1772,7 +1772,7 @@ __metadata:
     browserify-zlib: ^0.2.0
     buffer: ^6.0.3
     bufferutil: ^4.0.6
-    chai: ^4.3.4
+    chai: ^4.3.9
     chai-as-promised: ^7.1.1
     crypto-browserify: ^3.12.0
     dash: "workspace:*"
@@ -1869,7 +1869,7 @@ __metadata:
     browserify-zlib: ^0.2.0
     buffer: ^6.0.3
     cbor: ^8.0.0
-    chai: ^4.3.4
+    chai: ^4.3.9
     chai-as-promised: ^7.1.1
     crypto-browserify: ^3.12.0
     crypto-js: ^4.0.0
@@ -1931,7 +1931,7 @@ __metadata:
     assert: ^2.0.0
     bs58: ^4.0.1
     buffer: ^6.0.3
-    chai: ^4.3.4
+    chai: ^4.3.9
     chai-as-promised: ^7.1.1
     chai-exclude: ^2.1.0
     chai-string: ^1.5.0
@@ -1984,7 +1984,7 @@ __metadata:
   resolution: "@dashevo/withdrawals-contract@workspace:packages/withdrawals-contract"
   dependencies:
     "@dashevo/dpp": "workspace:*"
-    chai: ^4.3.4
+    chai: ^4.3.9
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
@@ -5133,17 +5133,18 @@ __metadata:
   languageName: node
   linkType: hard
 
-"chai@npm:^4.3.4":
-  version: 4.3.4
-  resolution: "chai@npm:4.3.4"
+"chai@npm:^4.3.9":
+  version: 4.3.9
+  resolution: "chai@npm:4.3.9"
   dependencies:
     assertion-error: ^1.1.0
-    check-error: ^1.0.2
-    deep-eql: ^3.0.1
+    check-error: ^1.0.3
+    deep-eql: ^4.1.2
     get-func-name: ^2.0.0
+    loupe: ^2.3.1
     pathval: ^1.1.1
     type-detect: ^4.0.5
-  checksum: 772c522b3bfe3fcf0e0e74edfe584cd886b0e85a73126dec750095300e023d4e1ec6d40e3c35a80d2bd8f33dca46c42767a36f5f50f32dca6fa31c88b5f49ab8
+  checksum: 0bcc79b8829bf9e567375be4427d8efe148fca4f5d29c82b05fcd8502f3a151fc80d3a9531e519c053d4c11d7dca68d7f81555073bbdea9dedf0fae2e6a80e42
   languageName: node
   linkType: hard
 
@@ -5209,6 +5210,15 @@ __metadata:
   version: 1.0.2
   resolution: "check-error@npm:1.0.2"
   checksum: d9d106504404b8addd1ee3f63f8c0eaa7cd962a1a28eb9c519b1c4a1dc7098be38007fc0060f045ee00f075fbb7a2a4f42abcf61d68323677e11ab98dc16042e
+  languageName: node
+  linkType: hard
+
+"check-error@npm:^1.0.3":
+  version: 1.0.3
+  resolution: "check-error@npm:1.0.3"
+  dependencies:
+    get-func-name: ^2.0.2
+  checksum: e2131025cf059b21080f4813e55b3c480419256914601750b0fee3bd9b2b8315b531e551ef12560419b8b6d92a3636511322752b1ce905703239e7cc451b6399
   languageName: node
   linkType: hard
 
@@ -6102,7 +6112,7 @@ __metadata:
     browserify-zlib: ^0.2.0
     bs58: ^4.0.1
     buffer: ^6.0.3
-    chai: ^4.3.4
+    chai: ^4.3.9
     chai-as-promised: ^7.1.1
     chance: ^1.1.6
     crypto-browserify: ^3.12.0
@@ -6172,7 +6182,7 @@ __metadata:
     awilix: ^4.2.6
     babel-eslint: ^10.1.0
     begoo: ^2.0.2
-    chai: ^4.3.4
+    chai: ^4.3.9
     chai-as-promised: ^7.1.1
     chalk: ^4.1.0
     cron: ^2.1.0
@@ -6339,12 +6349,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"deep-eql@npm:^3.0.1":
-  version: 3.0.1
-  resolution: "deep-eql@npm:3.0.1"
+"deep-eql@npm:^4.1.2":
+  version: 4.1.3
+  resolution: "deep-eql@npm:4.1.3"
   dependencies:
     type-detect: ^4.0.0
-  checksum: 4f4c9fb79eb994fb6e81d4aa8b063adc40c00f831588aa65e20857d5d52f15fb23034a6576ecf886f7ff6222d5ae42e71e9b7d57113e0715b1df7ea1e812b125
+  checksum: 7f6d30cb41c713973dc07eaadded848b2ab0b835e518a88b91bea72f34e08c4c71d167a722a6f302d3a6108f05afd8e6d7650689a84d5d29ec7fe6220420397f
   languageName: node
   linkType: hard
 
@@ -7934,6 +7944,13 @@ fsevents@~2.3.2:
   version: 2.0.0
   resolution: "get-func-name@npm:2.0.0"
   checksum: 8d82e69f3e7fab9e27c547945dfe5cc0c57fc0adf08ce135dddb01081d75684a03e7a0487466f478872b341d52ac763ae49e660d01ab83741f74932085f693c3
+  languageName: node
+  linkType: hard
+
+"get-func-name@npm:^2.0.2":
+  version: 2.0.2
+  resolution: "get-func-name@npm:2.0.2"
+  checksum: 3f62f4c23647de9d46e6f76d2b3eafe58933a9b3830c60669e4180d6c601ce1b4aa310ba8366143f55e52b139f992087a9f0647274e8745621fa2af7e0acf13b
   languageName: node
   linkType: hard
 
@@ -10214,6 +10231,15 @@ fsevents@~2.3.2:
   version: 5.2.0
   resolution: "long@npm:5.2.0"
   checksum: 37aa4e67b9c3eebc6d9d675adcc9d06f06059ca268922a71273de389746bf07f0ff282f9e604d17fdf84c4149099b44e936ea2b621a6c4759a216621afa97efd
+  languageName: node
+  linkType: hard
+
+"loupe@npm:^2.3.1":
+  version: 2.3.6
+  resolution: "loupe@npm:2.3.6"
+  dependencies:
+    get-func-name: ^2.0.0
+  checksum: cc83f1b124a1df7384601d72d8d1f5fe95fd7a8185469fec48bb2e4027e45243949e7a013e8d91051a138451ff0552310c32aa9786e60b6a30d1e801bdc2163f
   languageName: node
   linkType: hard
 

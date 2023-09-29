@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dashpay-contract",
-  "version": "0.25.0-dev.29",
+  "version": "0.25.0-dev.31",
   "description": "Reference contract of the DashPay DPA on Dash Evolution",
   "scripts": {
     "lint": "eslint .",
@@ -26,7 +26,7 @@
   "homepage": "https://github.com/dashevo/dashpay-contract#readme",
   "devDependencies": {
     "@dashevo/dpp": "workspace:*",
-    "chai": "^4.3.4",
+    "chai": "^4.3.9",
     "dirty-chai": "^2.0.1",
     "eslint": "^7.32.0",
     "eslint-config-airbnb-base": "^14.2.1",

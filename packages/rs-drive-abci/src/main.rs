@@ -9,6 +9,7 @@ use drive_abci::logging::{LogBuilder, LogConfig, Loggers};
 use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
 use drive_abci::rpc::core::DefaultCoreRPC;
 use itertools::Itertools;
+use std::fs::remove_file;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use tokio::runtime::Builder;
@@ -35,6 +36,15 @@ enum Commands {
     /// Returns 0 on success.
     #[command()]
     Status,
+
+    /// Verify integrity of database.
+    ///
+    /// This command will execute GroveDB hash integrity checks.
+    ///
+    /// You can also enforce grovedb integrity checks during `drive-abci start`
+    /// by creating `.fsck` file in database directory (`DB_PATH`).
+    #[command()]
+    Verify,
 }
 
 /// Server that accepts connections from Tenderdash, and
@@ -74,6 +84,8 @@ impl Cli {
     fn run(self, config: PlatformConfig, cancel: CancellationToken) -> Result<(), String> {
         match self.command {
             Commands::Start => {
+                verify_grovedb(&config.db_path, false)?;
+
                 let core_rpc = DefaultCoreRPC::open(
                     config.core.rpc.url().as_str(),
                     config.core.rpc.username.clone(),
@@ -93,6 +105,7 @@ impl Cli {
             }
             Commands::Config => dump_config(&config)?,
             Commands::Status => check_status(&config)?,
+            Commands::Verify => verify_grovedb(&config.db_path, true)?,
         };
 
         Ok(())
@@ -111,8 +124,13 @@ fn main() -> Result<(), ExitCode> {
 
     // Start tokio runtime and thread listening for signals.
     // The runtime will be reused by Prometheus and rs-tenderdash-abci.
+
+    // 8 MB stack threads as some recursions in GroveDB can be pretty deep
+    // We could remove such a stack stack size once deletion of a node doesn't recurse in grovedb
+
     let runtime = Builder::new_multi_thread()
         .enable_all()
+        .thread_stack_size(8 * 1024 * 1024)
         .build()
         .expect("cannot initialize tokio runtime");
     let rt_guard = runtime.enter();
@@ -226,6 +244,56 @@ fn check_status(config: &PlatformConfig) -> Result<(), String> {
     }
 }
 
+/// Verify GroveDB integrity.
+///
+/// This function will execute GroveDB integrity checks if one of the following conditions is met:
+/// - `force` is `true`
+/// - file `.fsck` in `config.db_path` exists
+///
+/// After successful verification, .fsck file is removed.
+fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
+    let fsck = PathBuf::from(db_path).join(".fsck");
+
+    if !force {
+        if !fsck.exists() {
+            return Ok(());
+        }
+        tracing::info!(
+            "found {} file, starting grovedb verification",
+            fsck.display()
+        );
+    }
+
+    let grovedb = drive::grovedb::GroveDb::open(db_path).expect("open grovedb");
+    let result = grovedb
+        .visualize_verify_grovedb()
+        .map_err(|e| e.to_string());
+
+    match result {
+        Ok(data) => {
+            for result in data {
+                tracing::warn!(?result, "grovedb verification")
+            }
+            tracing::info!("grovedb verification finished");
+
+            if fsck.exists() {
+                if let Err(e) = remove_file(&fsck) {
+                    tracing::warn!(
+                        error = ?e,
+                        path  =fsck.display().to_string(),
+                        "grovedb verification: cannot remove .fsck file: please remove it manually to avoid running verification again",
+                    );
+                }
+            }
+            Ok(())
+        }
+        Err(e) => {
+            tracing::error!("grovedb verification failed: {}", e);
+            Err(e)
+        }
+    }
+}
+
 fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
     if let Some(path) = path {
         if let Err(e) = dotenvy::from_path(path) {
@@ -282,4 +350,103 @@ fn install_panic_hook(cancel: CancellationToken) {
         tracing::error!(panic=%info, "panic");
         cancel.cancel();
     }));
+}
+
+#[cfg(test)]
+mod test {
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
+
+    use ::drive::{drive::Drive, fee_pools::epochs::paths::EpochProposers, query::Element};
+    use dpp::block::epoch::Epoch;
+    use drive::fee_pools::epochs::epoch_key_constants;
+
+    use platform_version::version::PlatformVersion;
+    use rocksdb::{IteratorMode, Options};
+
+    /// Setup drive database by creating initial state structure and inserting some data.
+    ///
+    /// Returns path to the database.
+    fn setup_db(tempdir: &Path) -> PathBuf {
+        let path = tempdir.join("db");
+        fs::create_dir(&path).expect("create db dir");
+
+        let drive = Drive::open(&path, None).expect("open drive");
+
+        let platform_version = PlatformVersion::latest();
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("should create root tree successfully");
+
+        let transaction = drive.grove.start_transaction();
+        let epoch = Epoch::new(0).unwrap();
+
+        let i = 100;
+
+        drive
+            .grove
+            .insert(
+                &epoch.get_path(),
+                epoch_key_constants::KEY_FEE_MULTIPLIER.as_slice(),
+                Element::Item((i as u128).to_be_bytes().to_vec(), None),
+                None,
+                Some(&transaction),
+            )
+            .unwrap()
+            .expect("should insert data");
+
+        transaction.commit().unwrap();
+
+        path
+    }
+
+    /// Open RocksDB and corrupt `n`-th item from `cf` column family.
+    fn corrupt_rocksdb_item(db_path: &PathBuf, cf: &str, n: usize) {
+        let mut db_opts = Options::default();
+
+        db_opts.create_missing_column_families(false);
+        db_opts.create_if_missing(false);
+
+        let db = rocksdb::DB::open_cf(&db_opts, &db_path, vec!["roots", "meta", "aux"]).unwrap();
+
+        let cf_handle = db.cf_handle(cf).unwrap();
+        let iter = db.iterator_cf(cf_handle, IteratorMode::Start);
+
+        // let iter = db.iterator(IteratorMode::Start);
+        let mut i = 0;
+        for item in iter {
+            let (key, mut value) = item.unwrap();
+            // println!("{} = {}", hex::encode(&key), hex::encode(value));
+            tracing::trace!(cf, key=?hex::encode(&key), value=hex::encode(&value),"found item in rocksdb");
+
+            if i == n {
+                value[0] = !value[0];
+                db.put_cf(cf_handle, &key, &value).unwrap();
+
+                tracing::debug!(cf, key=?hex::encode(&key), value=hex::encode(&value), "corrupt_rocksdb_item: corrupting item");
+                return;
+            }
+            i += 1;
+        }
+        panic!(
+            "cannot corrupt db: cannot find {}-th item in rocksdb column family {}",
+            n, cf
+        );
+    }
+
+    #[test]
+    fn test_verify_grovedb_corrupt_0th_root() {
+        drive_abci::logging::init_for_tests(4);
+        let tempdir = tempfile::tempdir().unwrap();
+        let db_path = setup_db(tempdir.path());
+
+        corrupt_rocksdb_item(&db_path, "roots", 0);
+
+        let result = super::verify_grovedb(&db_path, true);
+        assert!(result.is_err());
+
+        println!("db path: {:?}", &db_path);
+    }
 }
