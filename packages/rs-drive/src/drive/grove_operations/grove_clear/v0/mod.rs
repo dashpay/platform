@@ -3,6 +3,7 @@ use crate::error::Error;
 use grovedb::operations::delete::ClearOptions;
 use grovedb::TransactionArg;
 use grovedb_path::SubtreePath;
+use tracing::Level;
 
 impl Drive {
     /// Pushes the `OperationCost` of deleting an element in groveDB to `drive_operations`.
@@ -16,10 +17,35 @@ impl Drive {
             allow_deleting_subtrees: false,
             trying_to_clear_with_subtrees_returns_error: false,
         };
+
+        let maybe_path_for_logs = if tracing::event_enabled!(Level::TRACE) {
+            Some(path.clone())
+        } else {
+            None
+        };
+
         // we will always return true if there is no error when we don't check for subtrees
-        self.grove
+        let result = self
+            .grove
             .clear_subtree(path, Some(options), transaction)
             .map_err(Error::GroveDB)
-            .map(|_| ())
+            .map(|_| ());
+
+        if tracing::event_enabled!(Level::TRACE) && result.is_ok() {
+            let root_hash = self
+                .grove
+                .root_hash(transaction)
+                .unwrap()
+                .map_err(Error::GroveDB)?;
+
+            tracing::trace!(
+                path = ?maybe_path_for_logs.unwrap().to_vec(),
+                root_hash = ?root_hash,
+                is_transactional = transaction.is_some(),
+                "grovedb clear",
+            );
+        }
+
+        result
     }
 }
