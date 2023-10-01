@@ -10,6 +10,7 @@ use crate::rpc::core::CoreRPCLike;
 
 use dpp::dashcore::QuorumHash;
 use std::collections::BTreeMap;
+use tracing::Level;
 
 impl<C> Platform<C>
 where
@@ -32,36 +33,39 @@ where
         core_block_height: u32,
         start_from_scratch: bool,
     ) -> Result<(), Error> {
-        if !start_from_scratch && core_block_height == block_platform_state.core_height() {
+        let _span = tracing::span!(Level::TRACE, "update_quorum_info", core_block_height).entered();
+
+        if start_from_scratch {
+            tracing::debug!("update quorum info from scratch up to {core_block_height}");
+        } else if core_block_height != block_platform_state.core_height() {
             tracing::debug!(
-                method = "update_quorum_info_v0",
-                "no update quorum at height {}",
+                "update quorum info from {} to {}",
+                block_platform_state.core_height(),
                 core_block_height
             );
+        } else {
+            tracing::debug!("quorum info at height {core_block_height} already updated");
+
             return Ok(()); // no need to do anything
         }
-        tracing::debug!(
-            method = "update_quorum_info_v0",
-            "update of quorums for height {}",
-            core_block_height
-        );
 
-        let quorum_list = self
+        let all_quorums_list = self
             .core_rpc
             .get_quorum_listextended(Some(core_block_height))?;
 
-        let quorums_by_type: BTreeMap<_, BTreeMap<_, _>> = quorum_list
+        // Sort into deterministic order
+        let all_quorums_by_type: BTreeMap<_, _> = all_quorums_list
             .quorums_by_type
             .into_iter()
             .map(|(quorum_type, quorum_list)| {
-                let sorted_quorum_list = quorum_list.into_iter().collect();
+                let sorted_quorum_list: BTreeMap<_, _> = quorum_list.into_iter().collect();
 
                 (quorum_type, sorted_quorum_list)
             })
             .collect();
 
-        let quorum_info =
-            quorums_by_type
+        let validator_quorums_list =
+            all_quorums_by_type
                 .get(&self.config.quorum_type())
                 .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
                     format!(
@@ -70,25 +74,19 @@ where
                     ),
                 )))?;
 
-        tracing::debug!(
-            method = "update_quorum_info_v0",
-            "old {:?}",
-            block_platform_state.validator_sets()
-        );
-
-        tracing::debug!(
-            method = "update_quorum_info_v0",
-            "new quorum_info {:?}",
-            quorum_info
-        );
-
         // Remove validator_sets entries that are no longer valid for the core block height
-        block_platform_state
-            .validator_sets_mut()
-            .retain(|key, _| quorum_info.contains_key(key));
+        block_platform_state.validator_sets_mut().retain(|key, _| {
+            let has_quorum = validator_quorums_list.contains_key::<QuorumHash>(key);
 
-        // Fetch quorum info results and their keys from the RPC
-        let mut quorum_infos = quorum_info
+            if has_quorum {
+                tracing::trace!("remove {key} quorum")
+            }
+
+            has_quorum
+        });
+
+        // Fetch quorum info and their keys from the RPC for new quorums
+        let mut quorum_infos = validator_quorums_list
             .iter()
             .filter(|(key, _)| {
                 !block_platform_state
@@ -99,6 +97,7 @@ where
                 let quorum_info_result =
                     self.core_rpc
                         .get_quorum_info(self.config.quorum_type(), key, None)?;
+
                 Ok((*key, quorum_info_result))
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -113,14 +112,17 @@ where
             }
         });
 
-        // Map to quorums
-        let new_quorums = quorum_infos
+        // Map to validator sets
+        let new_validator_sets = quorum_infos
             .into_iter()
             .map(|(key, info_result)| {
                 let validator_set = ValidatorSet::V0(ValidatorSetV0::try_from_quorum_info_result(
                     info_result,
                     block_platform_state,
                 )?);
+
+                tracing::trace!(?validator_set, "add new validator set {key}");
+
                 Ok((key, validator_set))
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -128,8 +130,9 @@ where
         // Add new validator_sets entries
         block_platform_state
             .validator_sets_mut()
-            .extend(new_quorums);
+            .extend(new_validator_sets);
 
+        // Sort all validator sets into deterministic order by core block height of creation
         block_platform_state
             .validator_sets_mut()
             .sort_by(|_, quorum_a, _, quorum_b| {
@@ -144,13 +147,7 @@ where
                 }
             });
 
-        tracing::debug!(
-            method = "update_quorum_info_v0",
-            "new {:?}",
-            block_platform_state.validator_sets()
-        );
-
-        block_platform_state.set_quorums_extended_info(quorums_by_type);
+        block_platform_state.set_quorums_extended_info(all_quorums_by_type);
 
         Ok(())
     }
