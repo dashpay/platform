@@ -76,3 +76,48 @@ export ABCI_LOG_EXAMPLE_MAX_FILES=10
 This configuration specifies that logs for the "EXAMPLE" destination should be stored in the /var/log/example directory, with a verbosity level of 3. Colorful output should not be used, and the logs should be formatted in a human-readable and visually appealing manner. The maximum number of daily log files to store is set to 10.
 
 Ensure that you adjust the values according to your specific logging requirements.
+
+## Integrity checks
+
+## `drive-abci verify`
+
+The `drive-abci verify` command is used to verify the integrity of the database used by `drive-abci`.
+This command will execute GroveDB hash integrity checks to ensure that the database is consistent
+and free of corruption.
+
+### Usage
+
+To use the `drive-abci verify` command, simply run the following command:
+
+```bash
+drive-abci verify
+```
+
+This will execute the GroveDB hash integrity checks and report any errors or inconsistencies found in the database.
+
+### Enforcing Integrity Checks
+
+You can also enforce GroveDB integrity checks during `drive-abci start` by creating a `.fsck` file in the database
+directory (`DB_PATH`). This file should be created before starting `drive-abci`, and can be empty.
+
+When `drive-abci` starts up, it checks for the presence of the `.fsck` file in the database directory.
+If the file is present, it executes the specified integrity checks. After the checks are completed,
+the `.fsck` file is deleted from the database directory.
+
+### Example: Verifying consistency of  `drive-abci` running in Docker
+
+To verify integrity of database when `drive-abci` runs in a Docker container, you can create a `.fsck` file in the
+database directory and and restart the container.
+
+For example, for a drive-abci container `dashmate_ccc1e5c2_local_1-drive_abci-1`, you can execute the following commands:
+
+```bash
+docker exec -ti dashmate_ccc1e5c2_local_1-drive_abci-1 touch db/.fsck 
+docker restart dashmate_ccc1e5c2_local_1-drive_abci-1
+```
+
+You can check the result of verification in logs by running the following command:
+
+```bash
+docker logs dashmate_ccc1e5c2_local_1-drive_abci-1 --tail 1000 2>&1 | grep 'grovedb verification' 
+```

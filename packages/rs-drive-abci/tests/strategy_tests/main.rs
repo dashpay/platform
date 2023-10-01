@@ -294,10 +294,10 @@ mod tests {
             last_block_app_hash,
         } = abci_app
             .info(RequestInfo {
-                version: "0.13.0".to_string(),
+                version: tenderdash_abci::proto::meta::TENDERDASH_VERSION.to_string(),
                 block_version: 0,
                 p2p_version: 0,
-                abci_version: "0.22.0".to_string(),
+                abci_version: tenderdash_abci::proto::meta::ABCI_VERSION.to_string(),
             })
             .expect("expected to call info");
 
@@ -393,7 +393,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864938600)
+        assert_eq!(balance, 99865284600)
     }
 
     #[test]
@@ -920,7 +920,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "7e687e98ee34a9c8af2d3e11dd3cd2c5d7d5dad3ff1be8829c60347ca0344a95".to_string()
+            "590a89878629f4eacf70f7c74dda45aeb2625607284fe336ead7c55690f7fd71".to_string()
         )
     }
 
@@ -1468,7 +1468,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "bc04d96aafa86ba0dbf769d226d75843828068af0d929419e428b55ab82134f8".to_string()
+            "d1797227cd4454b80254983a1cb437aa112556d7f19d87fff62c0c61b5fa2c5b".to_string()
         )
     }
 
@@ -1575,8 +1575,6 @@ mod tests {
         assert_eq!(balance_count, 19); // 1 epoch worth of proposers
     }
 
-    // TODO: This test fails due to a bug in GroveDB. Enable it back when the bug is fixed
-    #[ignore]
     #[test]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_and_deletions_with_epoch_change(
     ) {
@@ -2471,10 +2469,10 @@ mod tests {
             last_block_app_hash,
         } = abci_app
             .info(RequestInfo {
-                version: "0.13.0".to_string(),
+                version: tenderdash_abci::proto::meta::TENDERDASH_VERSION.to_string(),
                 block_version: 0,
                 p2p_version: 0,
-                abci_version: "0.22.0".to_string(),
+                abci_version: tenderdash_abci::proto::meta::ABCI_VERSION.to_string(),
             })
             .expect("expected to call info");
 

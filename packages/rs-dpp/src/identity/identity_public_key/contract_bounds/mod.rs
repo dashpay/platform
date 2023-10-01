@@ -2,7 +2,6 @@ use crate::identifier::Identifier;
 use crate::identity::identity_public_key::contract_bounds::ContractBounds::{
     SingleContract, SingleContractDocumentType,
 };
-use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

@@ -1,6 +1,5 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::rpc::core::QuorumListExtendedInfo;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, MasternodeListItem};
 use dashcore_rpc::json::QuorumType;
@@ -31,7 +30,7 @@ pub struct PlatformStateV0 {
     /// upcoming protocol version
     pub next_epoch_protocol_version: ProtocolVersion,
     /// current quorums
-    pub quorums_extended_info: HashMap<QuorumType, QuorumListExtendedInfo>,
+    pub quorums_extended_info: BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>>,
     /// current quorum
     pub current_validator_set_quorum_hash: QuorumHash,
     /// next quorum
@@ -251,7 +250,9 @@ pub trait PlatformStateV0Methods {
     fn next_epoch_protocol_version(&self) -> ProtocolVersion;
 
     /// Returns extended information about the current quorums.
-    fn quorums_extended_info(&self) -> &HashMap<QuorumType, QuorumListExtendedInfo>;
+    fn quorums_extended_info(
+        &self,
+    ) -> &BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>>;
 
     /// Returns the quorum hash of the current validator set.
     fn current_validator_set_quorum_hash(&self) -> QuorumHash;
@@ -284,7 +285,10 @@ pub trait PlatformStateV0Methods {
     fn set_next_epoch_protocol_version(&mut self, version: ProtocolVersion);
 
     /// Sets the extended info for the current quorums.
-    fn set_quorums_extended_info(&mut self, info: HashMap<QuorumType, QuorumListExtendedInfo>);
+    fn set_quorums_extended_info(
+        &mut self,
+        info: BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>>,
+    );
 
     /// Sets the current validator set quorum hash.
     fn set_current_validator_set_quorum_hash(&mut self, hash: QuorumHash);
@@ -313,7 +317,9 @@ pub trait PlatformStateV0Methods {
     fn next_epoch_protocol_version_mut(&mut self) -> &mut ProtocolVersion;
 
     /// Returns a mutable reference to the extended info for the current quorums.
-    fn quorums_extended_info_mut(&mut self) -> &mut HashMap<QuorumType, QuorumListExtendedInfo>;
+    fn quorums_extended_info_mut(
+        &mut self,
+    ) -> &mut BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>>;
 
     /// Returns a mutable reference to the current validator set quorum hash.
     fn current_validator_set_quorum_hash_mut(&mut self) -> &mut QuorumHash;
@@ -484,7 +490,9 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     }
 
     /// Returns extended information about the current quorums.
-    fn quorums_extended_info(&self) -> &HashMap<QuorumType, QuorumListExtendedInfo> {
+    fn quorums_extended_info(
+        &self,
+    ) -> &BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>> {
         &self.quorums_extended_info
     }
 
@@ -539,7 +547,10 @@ impl PlatformStateV0Methods for PlatformStateV0 {
     }
 
     /// Sets the extended info for the current quorums.
-    fn set_quorums_extended_info(&mut self, info: HashMap<QuorumType, QuorumListExtendedInfo>) {
+    fn set_quorums_extended_info(
+        &mut self,
+        info: BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>>,
+    ) {
         self.quorums_extended_info = info;
     }
 
@@ -585,7 +596,9 @@ impl PlatformStateV0Methods for PlatformStateV0 {
         &mut self.next_epoch_protocol_version
     }
 
-    fn quorums_extended_info_mut(&mut self) -> &mut HashMap<QuorumType, QuorumListExtendedInfo> {
+    fn quorums_extended_info_mut(
+        &mut self,
+    ) -> &mut BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>> {
         &mut self.quorums_extended_info
     }
 

@@ -32,15 +32,30 @@ runs:
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
 
-    - uses: aws-actions/configure-aws-credentials@v4
+    - name: Configure AWS credentials and bucket region
+      uses: aws-actions/configure-aws-credentials@v4
+      if: contains(runner.name, 'ubuntu-platform')
       with:
         aws-region: eu-west-1
 
-    - name: Cache Rust build artifacts
+    - name: Cache Rust build artifacts (S3 bucket cache)
       uses: everpcpc/actions-cache@v1
+      if: contains(runner.name, 'ubuntu-platform')
       with:
-        bucket: multi-runner-linux-x64-platform-cache-gy9micic
+        bucket: multi-runner-linux-x64-platform-cache-ui535z23
         root: actions-cache
+        path: |
+          /home/ubuntu/.cargo/registry/index
+          /home/ubuntu/.cargo/registry/cache
+          /home/ubuntu/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-
+
+    - name: Cache Rust build artifacts (GitHub Actions cache)
+      uses: actions/cache@v3
+      if: ${{ !contains(runner.name, 'ubuntu-platform') }}
+      with:
         path: |
           /home/ubuntu/.cargo/registry/index
           /home/ubuntu/.cargo/registry/cache

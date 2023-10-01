@@ -9,6 +9,8 @@ function migrateConfigFileFactory(getConfigFileMigrations) {
    * @returns {Object}
    */
   function migrateConfigFile(rawConfigFile, fromVersion, toVersion) {
+    // TODO: We just need to migrate up to the latest version in migrations
+    //  to handle properly development process when you work on non-released version
     if (fromVersion === toVersion) {
       return rawConfigFile;
     }
