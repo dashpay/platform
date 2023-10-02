@@ -1,6 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 const webpack = require('webpack');
-const dotenvResult = require('dotenv').config();
+const dotenvSafe = require('dotenv-safe');
 
 const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
@@ -8,6 +8,15 @@ const karmaChai = require('karma-chai');
 const karmaChromeLauncher = require('karma-chrome-launcher');
 const karmaWebpack = require('karma-webpack');
 const webpackBaseConfig = require('../webpack.base.config');
+
+let env = {};
+if (process.env.LOAD_ENV) {
+  const dotenvResult = dotenvSafe.config();
+  if (dotenvResult.error) {
+    throw dotenvResult.error;
+  }
+  env = dotenvResult.parsed;
+}
 
 module.exports = {
   frameworks: ['mocha', 'chai', 'webpack'],
@@ -17,7 +26,7 @@ module.exports = {
     plugins: [
       ...webpackBaseConfig.plugins,
       new webpack.EnvironmentPlugin(
-        dotenvResult.parsed,
+        env,
       ),
     ],
   },

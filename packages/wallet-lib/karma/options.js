@@ -1,6 +1,6 @@
 /* eslint-disable import/no-extraneous-dependencies */
 const webpack = require('webpack');
-const dotenvResult = require('dotenv').config();
+const dotenvSafe = require('dotenv-safe');
 
 const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
@@ -10,6 +10,15 @@ const karmaSourcemapLoader = require('karma-sourcemap-loader');
 const karmaWebpack = require('karma-webpack');
 
 const webpackConfig = require('../webpack.config');
+
+let env = {};
+if (process.env.LOAD_ENV) {
+  const dotenvResult = dotenvSafe.config();
+  if (dotenvResult.error) {
+    throw dotenvResult.error;
+  }
+  env = dotenvResult.parsed;
+}
 
 module.exports = {
   client: {
@@ -24,7 +33,7 @@ module.exports = {
     plugins: [
       ...webpackConfig.plugins,
       new webpack.EnvironmentPlugin(
-        dotenvResult.parsed,
+        env,
       ),
     ],
     resolve: webpackConfig.resolve,

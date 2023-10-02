@@ -1,7 +1,7 @@
 const { use } = require('chai');
 const { expect } = require('chai');
+const dotenvSafe = require('dotenv-safe');
 const path = require('path');
-const dotenv = require('dotenv');
 const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
@@ -11,9 +11,11 @@ use(sinonChai);
 use(dirtyChai);
 use(chaiAsPromised);
 
-dotenv.config({
-  path: path.resolve(__dirname, '..', '..', '.env'),
-});
+if (process.env.LOAD_ENV === 'true') {
+  dotenvSafe.config({
+    path: path.resolve(__dirname, '..', '..', '.env'),
+  });
+}
 
 beforeEach(function beforeEach() {
   if (!this.sinon) {
