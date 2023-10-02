@@ -1,7 +1,10 @@
 use dashcore_rpc::dashcore::secp256k1::SecretKey;
 use dashcore_rpc::dashcore::{Network, PrivateKey};
 use dpp::dashcore::secp256k1::Secp256k1;
-use dpp::dashcore::{InstantLock, OutPoint, Script, Transaction, TxIn, TxOut, Txid};
+use dpp::dashcore::{
+    bls_sig_utils::BLSSignature, hash_types::CycleHash, InstantLock, OutPoint, ScriptBuf,
+    Transaction, TxIn, TxOut, Txid,
+};
 use dpp::identifier::Identifier;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::core_script::CoreScript;
@@ -63,22 +66,22 @@ pub fn instant_asset_lock_proof_transaction_fixture(
     let outpoint = OutPoint::new(txid, 0);
     let input = TxIn {
         previous_output: outpoint,
-        script_sig: Script::new_p2pkh(&public_key_hash),
+        script_sig: ScriptBuf::new_p2pkh(&public_key_hash),
         sequence: 0,
         witness: Default::default(),
     };
-    let one_time_key_hash = one_time_public_key.pubkey_hash().to_vec();
+    let one_time_key_hash = one_time_public_key.pubkey_hash();
     let burn_output = TxOut {
         value: 100000000, // 1 Dash
-        script_pubkey: Script::new_op_return(&one_time_key_hash),
+        script_pubkey: ScriptBuf::new_op_return(&one_time_key_hash),
     };
     let change_output = TxOut {
         value: 5000,
-        script_pubkey: Script::new_p2pkh(&public_key_hash),
+        script_pubkey: ScriptBuf::new_p2pkh(&public_key_hash),
     };
     let unrelated_burn_output = TxOut {
         value: 5000,
-        script_pubkey: Script::new_op_return(&[1, 2, 3]),
+        script_pubkey: ScriptBuf::new_op_return(&[1, 2, 3]),
     };
     Transaction {
         version: 0,
@@ -96,8 +99,8 @@ pub fn instant_asset_lock_is_lock_fixture(tx_id: Txid) -> InstantLock {
             OutPoint { txid: Txid::from_str("6e200d059fb567ba19e92f5c2dcd3dde522fd4e0a50af223752db16158dabb1d").unwrap(), vout: 0 }
         ],
         txid: tx_id,
-        cyclehash: hex_to_array::<32>("7c30826123d0f29fe4c4a8895d7ba4eb469b1fafa6ad7b23896a1a591766a536").unwrap(),
-        signature: hex_to_array::<96>("8967c46529a967b3822e1ba8a173066296d02593f0f59b3a78a30a7eef9c8a120847729e62e4a32954339286b79fe7590221331cd28d576887a263f45b595d499272f656c3f5176987c976239cac16f972d796ad82931d532102a4f95eec7d80").unwrap(),
+        cyclehash: CycleHash::from_str("7c30826123d0f29fe4c4a8895d7ba4eb469b1fafa6ad7b23896a1a591766a536").unwrap(),
+        signature: BLSSignature::from_str("8967c46529a967b3822e1ba8a173066296d02593f0f59b3a78a30a7eef9c8a120847729e62e4a32954339286b79fe7590221331cd28d576887a263f45b595d499272f656c3f5176987c976239cac16f972d796ad82931d532102a4f95eec7d80").unwrap(),
     }
 }
 

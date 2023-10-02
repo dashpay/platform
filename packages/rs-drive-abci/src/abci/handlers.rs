@@ -37,13 +37,12 @@
 
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
+use ciborium::cbor;
 
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
-use dpp::platform_value::platform_value;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{self as proto, ExtendVoteExtension, ResponseException};
@@ -58,6 +57,7 @@ use super::AbciError;
 
 use dpp::platform_value::string_encoding::{encode, Encoding};
 
+use crate::error::serialization::SerializationError;
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
     BlockExecutionContextV0Setters,
@@ -70,6 +70,7 @@ use crate::platform_types::block_proposal::v0::BlockProposal;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
+use dpp::dashcore::hashes::Hash;
 use dpp::fee::SignedCredits;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
@@ -85,7 +86,7 @@ where
         if !tenderdash_abci::check_version(&request.abci_version) {
             return Err(ResponseException::from(format!(
                 "tenderdash requires ABCI version {}, our version is {}",
-                request.version,
+                request.abci_version,
                 tenderdash_abci::proto::ABCI_VERSION
             )));
         }
@@ -102,7 +103,6 @@ where
                 .unwrap_or_default(),
         };
 
-        tracing::info!(method = "info", ?request, ?response, "info executed");
         Ok(response)
     }
 
@@ -111,14 +111,13 @@ where
         request: RequestInitChain,
     ) -> Result<ResponseInitChain, ResponseException> {
         self.start_transaction();
+        let chain_id = request.chain_id.to_string();
+
         // We need to drop the block execution context just in case init chain had already been called
         let mut block_execution_context = self.platform.block_execution_context.write().unwrap();
         let block_context = block_execution_context.take(); //drop the block execution context
         if block_context.is_some() {
-            tracing::debug!(
-                method = "init_chain",
-                "block context was present during init chain, restarting"
-            );
+            tracing::warn!("block context was present during init chain, restarting");
             let protocol_version_in_consensus = self.platform.config.initial_protocol_version;
             let mut platform_state_write_guard = self.platform.state.write().unwrap();
             *platform_state_write_guard = PlatformState::default_with_protocol_versions(
@@ -137,7 +136,11 @@ where
 
         let app_hash = hex::encode(&response.app_hash);
 
-        tracing::info!(method = "init_chain", app_hash, "init chain executed");
+        tracing::info!(
+            app_hash,
+            chain_id,
+            "platform chain initialized, initial state is created"
+        );
         Ok(response)
     }
 
@@ -166,12 +169,13 @@ where
         let mut block_proposal: BlockProposal = (&request).try_into()?;
 
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
-            tracing::info!(
-                method = "prepare_proposal",
-                "chain lock update to height {} at block {}",
-                core_chain_lock_update.core_block_height,
-                request.height
-            );
+            // We can't add this, as it slows down CI way too much
+            // todo: find a way to re-enable this without destroying CI
+            // tracing::info!(
+            //     "chain lock update to height {} at block {}",
+            //     core_chain_lock_update.core_block_height,
+            //     request.height
+            // );
             block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
         }
 
@@ -414,6 +418,7 @@ where
                     "block execution context must be set in block begin handler for extend vote",
                 )))?;
 
+        // Verify Tenderdash that it called this handler correctly
         let block_state_info = &block_execution_context.block_state_info();
 
         if !block_state_info.matches_current_block(
@@ -423,10 +428,10 @@ where
         )? {
             Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round, block_hash.to_hex(),
-                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
+                height, round, hex::encode(block_hash),
+                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| hex::encode(block_hash)).unwrap_or("None".to_string())
             )))
-            .into())
+                .into())
         } else {
             // we only want to sign the hash of the transaction
             let extensions = block_execution_context
@@ -434,7 +439,7 @@ where
                 .keys()
                 .map(|tx_id| ExtendVoteExtension {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
-                    extension: tx_id.to_vec(),
+                    extension: tx_id.to_byte_array().to_vec(),
                 })
                 .collect();
             Ok(proto::ResponseExtendVote {
@@ -451,11 +456,10 @@ where
         let _timer = crate::metrics::abci_request_duration("verify_vote_extension");
 
         let proto::RequestVerifyVoteExtension {
-            hash: block_hash,
-            validator_pro_tx_hash: _,
             height,
             round,
             vote_extensions,
+            ..
         } = request;
 
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
@@ -470,28 +474,13 @@ where
             .block_platform_state()
             .current_platform_version()?;
 
-        let block_state_info = &block_execution_context.block_state_info();
-
-        if !block_state_info.matches_current_block(
-            height as u64,
-            round as u32,
-            block_hash.clone(),
-        )? {
-            return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
-                "received verify vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
-                height, round,block_hash.to_hex(),
-                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
-            )))
-            .into());
-        }
-
         let got: withdrawal_txs::v0::WithdrawalTxs = vote_extensions.into();
         let expected = block_execution_context
             .withdrawal_transactions()
             .keys()
             .map(|tx_id| ExtendVoteExtension {
                 r#type: VoteExtensionType::ThresholdRecover as i32,
-                extension: tx_id.to_vec(),
+                extension: tx_id.to_byte_array().to_vec(),
             })
             .collect::<Vec<_>>()
             .into();
@@ -530,7 +519,6 @@ where
             })
         } else {
             tracing::error!(
-                method = "verify_vote_extension",
                 ?got,
                 ?expected,
                 ?validation_result.errors,
@@ -592,26 +580,30 @@ where
             Ok(validation_result) => {
                 let platform_state = self.platform.state.read().unwrap();
                 let platform_version = platform_state.current_platform_version()?;
-                let validation_error = validation_result.errors.first();
+                let first_consensus_error = validation_result.errors.first();
 
-                let (code, info) = if let Some(validation_error) = validation_error {
-                    let serialized_error = platform_value!(validation_error
+                let (code, info) = if let Some(consensus_error) = first_consensus_error {
+                    let consensus_error_bytes = consensus_error
                         .serialize_to_bytes_with_platform_version(platform_version)
-                        .map_err(|e| ResponseException::from(Error::Protocol(e)))?);
+                        .map_err(|e| ResponseException::from(Error::Protocol(e)))?;
 
-                    let error_data = json!({
-                        "message": "Drive check_tx error",
-                        "data": {
-                            "serializedError": serialized_error
+                    let error_data = cbor!({
+                        "data" => {
+                            "serializedError" => consensus_error_bytes
                         }
-                    });
+                    })
+                    .map_err(|err| {
+                        Error::Serialization(SerializationError::CorruptedSerialization(format!(
+                            "can't create cbor: {err}"
+                        )))
+                    })?;
 
                     let mut error_data_buffer: Vec<u8> = Vec::new();
                     ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
                         .map_err(|e| e.to_string())?;
 
                     (
-                        validation_error.code(),
+                        consensus_error.code(),
                         encode(&error_data_buffer, Encoding::Base64),
                     )
                 } else {
@@ -623,6 +615,7 @@ where
                     .data
                     .map(|fee_result| fee_result.total_base_fee())
                     .unwrap_or_default();
+
                 Ok(ResponseCheckTx {
                     code,
                     data: vec![],
@@ -634,17 +627,23 @@ where
                 })
             }
             Err(error) => {
-                let error_data = json!({
-                    "message": "Drive check_tx system error",
-                    "error": error.to_string()
-                });
+                let error_data = cbor!({
+                    "message" => "Internal error",
+                })
+                .map_err(|err| {
+                    Error::Serialization(SerializationError::CorruptedSerialization(format!(
+                        "can't create cbor: {err}"
+                    )))
+                })?;
 
                 let mut error_data_buffer: Vec<u8> = Vec::new();
                 ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
                     .map_err(|e| e.to_string())?;
 
+                tracing::error!(?error, "check_tx failed");
+
                 Ok(ResponseCheckTx {
-                    code: 1, //todo: replace with error.code()
+                    code: 13, // Internal error gRPC code
                     data: vec![],
                     info: encode(&error_data_buffer, Encoding::Base64),
                     gas_wanted: 0 as SignedCredits,
@@ -675,7 +674,7 @@ where
                 height: self.platform.state.read().unwrap().height() as i64,
                 codespace: "".to_string(),
             };
-            tracing::trace!(method = "query", ?request, ?response);
+            tracing::error!(?response, "platform version not initialized");
 
             return Ok(response);
         };
@@ -720,7 +719,6 @@ where
             height: self.platform.state.read().unwrap().height() as i64,
             codespace: "".to_string(),
         };
-        tracing::trace!(method = "query", ?request, ?response);
 
         Ok(response)
     }

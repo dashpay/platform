@@ -67,6 +67,11 @@ jobs:
 
       - name: Check out repo
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Restore timestamps
+        uses: chetan/git-restore-mtime-action@v2
 
       - name: Login to DockerHub
         uses: docker/login-action@v2
@@ -117,7 +122,7 @@ jobs:
         if: ${{ inputs.start-local-network }}
         uses: dcginfra/buildkit-cache-dance/inject@main
         with:
-          bucket: multi-runner-linux-x64-platform-cache-gy9micic
+          bucket: multi-runner-linux-x64-platform-cache-ui535z23
           mounts: |
             cargo_registry_index
             cargo_registry_cache
@@ -171,7 +176,7 @@ jobs:
         if: ${{ inputs.start-local-network }}
         uses: dcginfra/buildkit-cache-dance/extract@main
         with:
-          bucket: multi-runner-linux-x64-platform-cache-gy9micic
+          bucket: multi-runner-linux-x64-platform-cache-ui535z23
           mounts: |
             cargo_registry_index
             cargo_registry_cache

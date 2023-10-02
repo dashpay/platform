@@ -281,6 +281,7 @@ pub struct DriveGroveBasicMethodVersions {
     pub grove_insert_empty_tree: FeatureVersion,
     pub grove_insert_empty_sum_tree: FeatureVersion,
     pub grove_insert_if_not_exists: FeatureVersion,
+    pub grove_clear: FeatureVersion,
     pub grove_delete: FeatureVersion,
     pub grove_get_raw: FeatureVersion,
     pub grove_get_raw_optional: FeatureVersion,

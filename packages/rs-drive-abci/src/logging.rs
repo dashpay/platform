@@ -669,6 +669,26 @@ impl Logger {
     }
 }
 
+/// Helper that initializes logging in unit tests
+///
+///
+/// For verbosity, see drive-abci --help or use 0 or 5
+pub fn init_for_tests(verbosity: u8) {
+    let mut logger_builder = LogBuilder::new();
+    let config = LogConfig {
+        destination: "stderr".to_string(),
+        verbosity,
+        color: None,
+        format: LogFormat::Full,
+        max_files: 0,
+    };
+
+    logger_builder
+        .add("default", &config)
+        .expect("cannot configure default logger");
+    logger_builder.build().try_install().ok();
+}
+
 /// Verify log directory path and determine absolute path to log file.
 fn log_file_path<T: AsRef<Path>>(log_dir: T) -> Result<PathBuf, Error> {
     let log_dir = log_dir.as_ref();

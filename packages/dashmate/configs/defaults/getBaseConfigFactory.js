@@ -65,7 +65,7 @@ function getBaseConfigFactory(homeDir) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:20.0.0-alpha.6',
+          image: 'dashpay/dashd:20.0.0-alpha.10',
         },
         p2p: {
           port: 9999,
@@ -180,7 +180,7 @@ function getBaseConfigFactory(homeDir) {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:0.13-dev',
+              image: 'dashpay/tenderdash:0.13.1',
             },
             p2p: {
               port: 26656,
@@ -193,6 +193,10 @@ function getBaseConfigFactory(homeDir) {
             pprof: {
               enabled: false,
               port: 6060,
+            },
+            metrics: {
+              enabled: false,
+              port: 26660,
             },
             consensus: {
               createEmptyBlocks: true,

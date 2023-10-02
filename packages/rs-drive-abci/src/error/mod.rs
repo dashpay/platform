@@ -3,6 +3,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::serialization::SerializationError;
 use crate::logging;
 use dashcore_rpc::Error as CoreRpcError;
+use dpp::platform_value::Error as ValueError;
 use dpp::version::PlatformVersionError;
 use drive::dpp::ProtocolError;
 use drive::error::Error as DriveError;
@@ -52,6 +53,13 @@ pub enum Error {
 
 impl From<PlatformVersionError> for Error {
     fn from(value: PlatformVersionError) -> Self {
+        let platform_error: ProtocolError = value.into();
+        platform_error.into()
+    }
+}
+
+impl From<ValueError> for Error {
+    fn from(value: ValueError) -> Self {
         let platform_error: ProtocolError = value.into();
         platform_error.into()
     }

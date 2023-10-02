@@ -30,7 +30,7 @@ impl IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm {
     #[wasm_bindgen(js_name=getTransactionId)]
     pub fn transaction_id(&self) -> Buffer {
         let tx_id = self.inner.transaction_id();
-        let mut tx_id_bytes = tx_id.as_hash().into_inner();
+        let mut tx_id_bytes = tx_id.to_byte_array();
         tx_id_bytes.reverse();
         Buffer::from_bytes(&tx_id_bytes)
     }

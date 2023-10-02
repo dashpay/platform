@@ -81,6 +81,11 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Restore timestamps
+        uses: chetan/git-restore-mtime-action@v2
 
       - name: Get image tag
         uses: actions/github-script@v6
@@ -117,6 +122,11 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Restore timestamps
+        uses: chetan/git-restore-mtime-action@v2
 
       - name: Get image tag
         uses: actions/github-script@v6
@@ -156,6 +166,11 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Restore timestamps
+        uses: chetan/git-restore-mtime-action@v2
 
       - name: Get image tag
         uses: actions/github-script@v6
@@ -195,6 +210,11 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Restore timestamps
+        uses: chetan/git-restore-mtime-action@v2
 
       - name: Get image tag
         uses: actions/github-script@v6

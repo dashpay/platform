@@ -30,7 +30,6 @@
 use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform_types::block_proposal::v0::BlockProposal;
-use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 
@@ -164,8 +163,8 @@ impl BlockStateInfoV0Methods for BlockStateInfoV0 {
             ?height,
             ?round,
             ?core_block_height,
-            proposer_pro_tx_hash = proposer_pro_tx_hash.to_hex(),
-            commit_hash = received_hash.to_hex(),
+            proposer_pro_tx_hash = hex::encode(proposer_pro_tx_hash),
+            commit_hash = hex::encode(received_hash),
             "check if block info matches request"
         );
         Ok(self.height == height

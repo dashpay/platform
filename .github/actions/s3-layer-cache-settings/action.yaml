@@ -18,7 +18,7 @@ inputs:
     default: eu-west-1
   bucket:
     description: S3 bucket name
-    default: multi-runner-linux-x64-platform-cache-gy9micic
+    default: multi-runner-linux-x64-platform-cache-ui535z23
   prefix:
     description: S3 key prefix
     default: 'cache-layers/'

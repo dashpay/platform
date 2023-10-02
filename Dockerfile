@@ -284,8 +284,6 @@ COPY --from=build-dashmate-helper /platform/packages/dpns-contract packages/dpns
 COPY --from=build-dashmate-helper /platform/packages/data-contracts packages/data-contracts
 COPY --from=build-dashmate-helper /platform/packages/wasm-dpp packages/wasm-dpp
 
-USER node
-
 ENV DASHMATE_HOME_DIR=/home/dashmate/.dashmate
 ENV DASHMATE_HELPER=1
 

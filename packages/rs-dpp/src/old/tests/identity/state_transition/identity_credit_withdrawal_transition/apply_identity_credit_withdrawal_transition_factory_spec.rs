@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod apply_identity_credit_withdrawal_transition_factory {
-    use dashcore::{consensus, BlockHeader};
+    use dashcore::{consensus, Header as BlockHeader};
 
     use std::collections::BTreeMap;
 

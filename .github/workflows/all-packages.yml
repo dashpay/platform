@@ -70,6 +70,11 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Restore timestamps
+        uses: chetan/git-restore-mtime-action@v2
 
       - name: Login to DockerHub
         uses: docker/login-action@v2
@@ -106,7 +111,7 @@ jobs:
       - name: Load Docker mount cache
         uses: dcginfra/buildkit-cache-dance/inject@main
         with:
-          bucket: multi-runner-linux-x64-platform-cache-gy9micic
+          bucket: multi-runner-linux-x64-platform-cache-ui535z23
           mounts: |
             cargo_registry_index
             cargo_registry_cache
@@ -157,7 +162,7 @@ jobs:
       - name: Store Docker mount cache
         uses: dcginfra/buildkit-cache-dance/extract@main
         with:
-          bucket: multi-runner-linux-x64-platform-cache-gy9micic
+          bucket: multi-runner-linux-x64-platform-cache-ui535z23
           mounts: |
             cargo_registry_index
             cargo_registry_cache
@@ -186,6 +191,11 @@ jobs:
 
       - name: Check out repo
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Restore timestamps
+        uses: chetan/git-restore-mtime-action@v2
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
@@ -216,7 +226,7 @@ jobs:
       - name: Load Docker mount cache
         uses: dcginfra/buildkit-cache-dance/inject@main
         with:
-          bucket: multi-runner-linux-x64-platform-cache-gy9micic
+          bucket: multi-runner-linux-x64-platform-cache-ui535z23
           mounts: |
             cargo_registry_index
             cargo_registry_cache
@@ -267,7 +277,7 @@ jobs:
       - name: Store Docker mount cache
         uses: dcginfra/buildkit-cache-dance/extract@main
         with:
-          bucket: multi-runner-linux-x64-platform-cache-gy9micic
+          bucket: multi-runner-linux-x64-platform-cache-ui535z23
           mounts: |
             cargo_registry_index
             cargo_registry_cache

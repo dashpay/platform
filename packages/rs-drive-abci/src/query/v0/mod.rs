@@ -17,7 +17,7 @@ use dapi_grpc::platform::v0::{
     GetProofsRequest, GetProofsResponse, Proof, ResponseMetadata,
 };
 use dpp::identifier::Identifier;
-use dpp::platform_value::{Bytes20, Bytes32};
+use dpp::platform_value::{Bytes20, Bytes32, Value};
 use std::collections::BTreeMap;
 
 use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
@@ -635,14 +635,18 @@ impl<C> Platform<C> {
                     contract_ref.document_type_for_name(document_type_name.as_str())
                 );
 
-                let where_clause = check_validation_result_with_data!(ciborium::de::from_reader(
-                    r#where.as_slice()
-                )
-                .map_err(|_| {
-                    QueryError::Query(QuerySyntaxError::DeserializationError(
-                        "unable to decode 'where' query from cbor".to_string(),
-                    ))
-                }));
+                let where_clause = if r#where.is_empty() {
+                    Value::Null
+                } else {
+                    check_validation_result_with_data!(ciborium::de::from_reader(
+                        r#where.as_slice()
+                    )
+                    .map_err(|_| {
+                        QueryError::Query(QuerySyntaxError::DeserializationError(
+                            "unable to decode 'where' query from cbor".to_string(),
+                        ))
+                    }))
+                };
 
                 // TODO: fix?
                 //   Fails with "query syntax error: deserialization error: unable to decode 'order_by' query from cbor"
