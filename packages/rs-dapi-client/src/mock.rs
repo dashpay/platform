@@ -26,7 +26,7 @@ use crate::{
 /// See `tests/mock_dapi_client.rs` for an example.
 #[derive(Default)]
 pub struct MockDapiClient {
-    expectations: HashMap<Vec<u8>, Vec<u8>>,
+    expectations: Expectations,
 }
 impl MockDapiClient {
     /// Create a new mock client
@@ -35,16 +35,13 @@ impl MockDapiClient {
     }
 
     /// Add a new expectation for a request
-    pub fn expect<R>(&mut self, request: &R, response: &R::Response)
+    pub fn expect<R>(&mut self, request: &R, response: &R::Response) -> &mut Self
     where
         R: TransportRequest,
     {
-        let key = bincode::serde::encode_to_vec(request, bincode::config::standard())
-            .expect("encode request");
-        let value = bincode::serde::encode_to_vec(response, bincode::config::standard())
-            .expect("encode response");
+        self.expectations.add(request, response);
 
-        self.expectations.insert(key, value);
+        self
     }
 
     /// Read and deserialize expected response for provided request.
@@ -55,13 +52,7 @@ impl MockDapiClient {
     ///
     /// Panics if the request can't be serialized or response can't be deserialized.
     fn get_expectation<R: TransportRequest>(&self, request: &R) -> Option<R::Response> {
-        let config = bincode::config::standard();
-        let key = bincode::serde::encode_to_vec(request, config).expect("encode request");
-
-        self.expectations
-            .get(&key)
-            .map(|v| bincode::serde::decode_from_slice(v, config).expect("decode response"))
-            .map(|(v, _)| v)
+        self.expectations.get(&request)
     }
 }
 
@@ -85,237 +76,53 @@ impl Dapi for MockDapiClient {
     }
 }
 
-/*
-/// Mock Platform transport, used for testing of the Platform without connecting to a remote node
-type MockPlatformTransport = MockableClient<PlatformGrpcClient>;
-impl MockPlatformTransport {
-    /// Create a new mock client
-    pub fn new() -> Self {
-        Self::default()
-    }
+type ExpectationKey = Vec<u8>;
+type ExpectationValue = Vec<u8>;
+#[derive(Default)]
+/// Requests expected by a mock and their responses.
+pub struct Expectations {
+    expectations: HashMap<ExpectationKey, ExpectationValue>,
 }
 
-/// Wrapper around [TransportClient] to support mocking.
-///
-/// This is a generic enum that can be either a normal client or a mock client.
-/// Usually, you don't need to use it directly, but instead use [MockDapiClient]
-/// and [MockRequest] that uses it internally.
-#[derive(Debug, Clone, Default)]
-pub enum MockableClient<T: TransportClient> {
-    /// Normal client
-    Normal(T),
-    #[cfg(feature = "mocks")]
-    #[default]
-    /// Mock client
-    Mock,
-}
-
-impl<C: TransportClient> TransportClient for MockableClient<C> {
-    type Inner = C;
-    type Error = C::Error;
-
-    fn as_mut_inner(&mut self) -> Option<&mut Self::Inner> {
-        if let Self::Normal(inner) = self {
-            return Some(inner);
-        }
-        None
-    }
-
-    fn mock() -> Self {
-        Self::Mock
-    }
-
-    fn with_uri(uri: crate::Uri) -> Self {
-        Self::Normal(C::with_uri(uri))
-    }
-}
-
-/// Mock request that returns a predefined response.
-///
-/// This is a generic struct that can be used to mock any request implementing [DapiRequest].
-///
-/// ## Example
-///
-/// ```rust
-/// use dapi_grpc::platform::v0::GetIdentityRequest;
-/// use rs_dapi_client::mock::MockRequest;
-///
-/// let req = GetIdentityRequest::default();
-/// let resp = dapi_grpc::platform::v0::GetIdentityResponse::default();
-///
-/// let mock_req = MockRequest::new(req, resp);
-///
-/// let mut client = MockableClient::<PlatformGrpcClient>::Mock;
-/// ```
-///
-/// See `tests/mock_dapi_client.rs` for an example.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct MockRequest<Req>
-where
-    Req: TransportRequest + Send,
-{
-    request: Req,
-    response: Req::Response,
-    metadata: Metadata,
-}
-
-impl<Req: TransportRequest> MockRequest<Req>
-where
-    Req: TransportRequest,
-{
-    /// Create a new mock request with a predefined response
-    pub fn new(request: Req, response: Req::Response) -> Self {
-        Self {
-            request,
-            response,
-            metadata: Default::default(),
-        }
-    }
-
-    /// Create mock based on a file
-    pub fn from_file(path: &str) -> Self
-    where
-        Req: serde::de::DeserializeOwned, // dapi_grpc::Message
-        Req::Response: serde::de::DeserializeOwned,
-    {
-        let f = File::open(path).expect("open file with mock request");
-        todo!("implment from_file");
-        // serde_json::from_reader(f).expect("load mock request")
-    }
-
-    /// Return a [QuorumInfoProvider] that supports the quorum public key in the metadata.
+impl Expectations {
+    /// Add expected request and provide given response.
     ///
-    /// If no provider is given, a default one is created.
-    pub fn quorum_provider(
+    /// If the expectation already exists, it will be silently replaced.
+    pub fn add<I: serde::Serialize, O: serde::Serialize + serde::de::DeserializeOwned>(
+        &mut self,
+        request: &I,
+        response: &O,
+    ) {
+        let key = Self::key(&request);
+        let value = bincode::serde::encode_to_vec(response, bincode::config::standard())
+            .expect("encode response");
+
+        self.expectations.insert(key, value);
+    }
+
+    /// Get the response for a given request.
+    ///
+    /// Returns `None` if the request has not been expected.
+    pub fn get<I: serde::Serialize, O: for<'de> serde::Deserialize<'de>>(
         &self,
-        provider: Option<MockQuorumInfoProvider>,
-    ) -> MockQuorumInfoProvider {
-        let mut provider = provider.unwrap_or_default();
+        request: I,
+    ) -> Option<O> {
+        let config = bincode::config::standard();
+        let key = Self::key(&request);
 
-        let pubkey: [u8; 48] = self
-            .metadata
-            .quorum_public_key
-            .clone()
-            .try_into()
-            .expect("pubkey size");
-
-        let quorum_hash: [u8; 32] = self
-            .metadata
-            .quorum_hash
-            .clone()
-            .try_into()
-            .expect("quorum hash size");
-
-        provider
-            .expect_get_quorum_public_key()
-            .withf(move |_ty, hash, _chainlock| hash == &quorum_hash)
-            .returning(move |_, _, _| Ok(pubkey));
-
-        provider
-    }
-}
-
-impl<'a, Req: TransportRequest + Clone> TransportRequest for MockRequest<Req>
-where
-    Req::Response: 'static,
-{
-    const SETTINGS_OVERRIDES: crate::RequestSettings = crate::RequestSettings::default();
-    type Client = MockableClient<PlatformGrpcClient>;
-    type Response = Req::Response;
-    fn execute_transport<'c>(
-        self,
-        _client: &'c mut Self::Client,
-        _settings: &crate::request_settings::AppliedRequestSettings,
-    ) -> futures::future::BoxFuture<
-        'c,
-        Result<Self::Response, <Self::Client as TransportClient>::Error>,
-    > {
-        // let me = &mut self;
-        let response = self.response.clone();
-        let response = response.to_owned();
-        futures::future::lazy(move |_| Ok(response)).boxed()
-        // futures::future::ready(Ok(response)).boxed()
-    }
-}
-
-/// Metadata for a [MockRequest]
-#[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone, PartialEq)]
-pub struct Metadata {
-    #[serde(with = "dapi_grpc::deserialization::hexstring")]
-    /// Quorum hash used to generate the proof
-    pub quorum_hash: Vec<u8>,
-    #[serde(with = "dapi_grpc::deserialization::hexstring")]
-    /// Quorum public key used to sign proofs and verify it
-    pub quorum_public_key: Vec<u8>,
-    /// Data contract used in the request; only present when processing documents
-    pub data_contract: Option<dpp::prelude::DataContract>,
-}
-
-// ========== Implementation of all requests for MockRequest ==========
-
-// FIXME: can't we just use generic like:
-// `impl<R:DapiRequest> From<MockRequest<R>> for R`?
-
-macro_rules! impl_from {
-    ($request: ty) => {
-        impl From<MockRequest<$request>> for $request {
-            fn from(mock_req: MockRequest<$request>) -> Self {
-                mock_req.request.into()
-            }
-        }
-
-        impl From<MockRequest<$request>> for <$request as TransportRequest>::Response {
-            fn from(mock_req: MockRequest<$request>) -> Self {
-                mock_req.response.into()
-            }
-        }
-    };
-}
-
-impl_from!(platform_proto::GetIdentityRequest);
-impl_from!(platform_proto::GetDocumentsRequest);
-impl_from!(platform_proto::GetDataContractRequest);
-impl_from!(platform_proto::GetConsensusParamsRequest);
-impl_from!(platform_proto::GetDataContractHistoryRequest);
-impl_from!(platform_proto::BroadcastStateTransitionRequest);
-impl_from!(platform_proto::WaitForStateTransitionResultRequest);
-impl_from!(platform_proto::GetIdentitiesByPublicKeyHashesRequest);
-
-#[cfg(test)]
-mod test {
-    use dapi_grpc::platform::v0::GetIdentityRequest;
-
-    use crate::transport::{grpc::PlatformGrpcClient, TransportRequest};
-
-    #[tokio::test]
-    async fn test_mock_platform_transport() {
-        let req = GetIdentityRequest::default();
-        let resp = dapi_grpc::platform::v0::GetIdentityResponse::default();
-
-        let mock_req = super::MockRequest::new(req, resp);
-
-        let mut transport = super::MockPlatformTransport::Mock;
-        let settings = crate::RequestSettings::default().finalize();
-
-        let _answer = mock_req
-            .execute_transport(&mut transport, &settings)
-            .await
-            .unwrap();
+        self.expectations
+            .get(&key)
+            .map(|v| bincode::serde::decode_from_slice(v, config).expect("decode response"))
+            .map(|(v, _)| v)
     }
 
-    #[tokio::test]
-    async fn test_mock_get_identity_from_file() {
-        let req = GetIdentityRequest::default();
-        let resp = dapi_grpc::platform::v0::GetIdentityResponse::default();
+    /// Remove the expectation for a given request.
+    pub fn remove<I: serde::Serialize>(&mut self, request: I) {
+        let key = Self::key(&request);
+        self.expectations.remove(&key);
+    }
 
-        let mock_req = super::MockRequest::new(req, resp);
-
-        let mut client = super::MockableClient::<PlatformGrpcClient>::Mock;
-        let settings = crate::request_settings::RequestSettings::default().finalize();
-        let _answer = mock_req
-            .execute_transport(&mut client, &settings)
-            .await
-            .unwrap();
+    fn key<I: serde::Serialize>(request: &I) -> ExpectationKey {
+        bincode::serde::encode_to_vec(request, bincode::config::standard()).expect("encode request")
     }
 }
-*/
