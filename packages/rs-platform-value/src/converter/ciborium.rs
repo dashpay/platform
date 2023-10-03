@@ -25,11 +25,11 @@ impl Value {
     }
 
     pub fn to_cbor_buffer(&self) -> Result<Vec<u8>, Error> {
-        let mut buffer: Vec<u8> = Vec::new();
-        ciborium::ser::into_writer(self, &mut buffer)
+        let mut test_buffer: Vec<u8> = Vec::new();
+        ciborium::ser::into_writer(self, &mut test_buffer)
             .map_err(|e| Error::CborSerializationError(e.to_string()))?;
 
-        Ok(buffer)
+        Ok(test_buffer)
     }
 }
 
