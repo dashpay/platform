@@ -1,3 +1,31 @@
+## [0.25.0-dev.32](https://github.com/dashpay/platform/compare/v0.25.0-dev.31...v0.25.0-dev.32) (2023-09-29)
+
+
+### Performance Improvements
+
+* **drive:** clear instead of delete for previous masternode version voting ([#1437](https://github.com/dashpay/platform/issues/1437))
+
+
+### Miscellaneous Chores
+
+* update config and migrations for testnet-25 ([#1435](https://github.com/dashpay/platform/issues/1435))
+
+## [0.25.0-dev.31](https://github.com/dashpay/platform/compare/v0.25.0-dev.30...v0.25.0-dev.31) (2023-09-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** a unique key with that hash already exists (#1429)
+
+### Features
+
+* **drive:** drive-abci verify grovedb CLI ([#1427](https://github.com/dashpay/platform/issues/1427))
+
+
+### Bug Fixes
+
+* **drive:** a unique key with that hash already exists ([#1429](https://github.com/dashpay/platform/issues/1429))
+
 ## [0.25.0-dev.30](https://github.com/dashpay/platform/compare/v0.25.0-dev.29...v0.25.0-dev.30) (2023-09-28)
 
 ### Bug Fixes
