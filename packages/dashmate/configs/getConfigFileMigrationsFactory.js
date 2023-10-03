@@ -139,7 +139,7 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
       },
       '0.25.0-dev.29': (configFile) => {
         Object.entries(configFile.configs)
-          .forEach(([, options]) => {
+          .forEach(([name, options]) => {
             if (options.network !== NETWORK_MAINNET) {
               options.core.docker.image = base.get('core.docker.image');
 
@@ -152,6 +152,29 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
               options.platform.drive.tenderdash
                 .genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+            }
+
+            if (defaultConfigs.has(name) && !options.platform.drive.tenderdash.metrics) {
+              options.platform.drive.tenderdash.metrics = defaultConfigs.get(name).get('platform.drive.tenderdash.metrics');
+            }
+          });
+        return configFile;
+      },
+      '0.25.0-dev.30': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.p2p.seeds = testnet.get('platform.drive.tenderdash.p2p.seeds');
+            }
+          });
+        return configFile;
+      },
+      '0.25.0-dev.32': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
             }
           });
         return configFile;

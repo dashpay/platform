@@ -371,6 +371,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 grove_insert_empty_tree: 0,
                 grove_insert_empty_sum_tree: 0,
                 grove_insert_if_not_exists: 0,
+                grove_clear: 0,
                 grove_delete: 0,
                 grove_get_raw: 0,
                 grove_get_raw_optional: 0,
