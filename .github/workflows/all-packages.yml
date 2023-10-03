@@ -171,6 +171,12 @@ jobs:
             target_wasm
             unplugged_amd64
 
+      - name: Run Wallet functional tests
+        run: yarn workspace @dashevo/wallet-lib test:functional
+
+      - name: Run SDK functional tests
+        run: yarn workspace dash test:functional
+
       - name: Run test suite
         run: yarn test:suite
 
@@ -285,6 +291,12 @@ jobs:
             target_amd64
             target_wasm
             unplugged_amd64
+
+      - name: Run Wallet functional tests in browsers
+        run: yarn workspace @dashevo/wallet-lib test:browsers:functional
+
+      - name: Run SDK functional tests in browsers
+        run: yarn workspace dash test:browsers:functional
 
       - name: Run test suite in browsers
         run: yarn test:suite:browsers

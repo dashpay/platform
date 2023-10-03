@@ -10,11 +10,12 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test:unit": "nyc yarn mocha 'src/**/*.spec.js'",
-    "test:functional": "nyc yarn run mocha 'tests/functional/*.js'",
+    "test:functional": "LOAD_ENV=true nyc yarn run mocha 'tests/functional/*.js'",
     "test:integration": "nyc yarn run mocha 'tests/integration/**/*.spec.js'",
-    "test:browsers": "karma start ./karma.conf.js --single-run",
+    "test:browsers": "karma start ./karma/karma.conf.js --single-run",
+    "test:browsers:functional": "LOAD_ENV=true karma start ./karma/karma.functional.conf.js --single-run",
     "test:types": "yarn pnpify tsd",
-    "test": "yarn run test:types && yarn run test:unit && yarn run test:integration && yarn run test:functional && yarn run test:browsers",
+    "test": "yarn run test:types && yarn run test:unit && yarn run test:integration && yarn run test:browsers",
     "prepublishOnly": "yarn run build:web"
   },
   "ultra": {
