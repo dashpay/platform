@@ -8,6 +8,7 @@ use std::ops::Range;
 pub struct Frequency {
     pub times_per_block_range: Range<u16>, //insertion count when block is chosen
     pub chance_per_block: Option<f64>,     //chance of insertion if set
+    pub only_once: bool,                   //if set to true, only do this operation once
 }
 
 impl Frequency {

@@ -157,7 +157,7 @@ pub enum RootTree {
     /// Versions desired by proposers
     Versions = 120,
     /// Registered votes
-    Votes = 112
+    Votes = 112,
 }
 
 /// Storage cost

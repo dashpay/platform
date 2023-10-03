@@ -51,6 +51,7 @@ use crate::version::drive_versions::{
     DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
     DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
     DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions, DriveVersion,
+    DriveVoteInsertMethodVersions, DriveVoteMethodVersions,
 };
 use crate::version::mocks::TEST_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
@@ -177,6 +178,11 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     validate_document_create_transition_action_uniqueness: 0,
                     validate_document_replace_transition_action_uniqueness: 0,
                     validate_uniqueness_of_data: 0,
+                },
+            },
+            vote: DriveVoteMethodVersions {
+                insert: DriveVoteInsertMethodVersions {
+                    add_new_masternode_vote_type: 0,
                 },
             },
             contract: DriveContractMethodVersions {

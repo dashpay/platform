@@ -1,6 +1,5 @@
-
-use platform_value::Identifier;
 use crate::voting::Vote;
+use platform_value::Identifier;
 
 pub trait MasternodeVoteTransitionAccessorsV0 {
     fn pro_tx_hash(&self) -> Identifier;

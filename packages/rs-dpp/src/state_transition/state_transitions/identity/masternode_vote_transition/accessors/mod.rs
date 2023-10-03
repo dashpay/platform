@@ -1,9 +1,9 @@
 mod v0;
 
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use crate::voting::Vote;
 use platform_value::Identifier;
 pub use v0::*;
-use crate::voting::Vote;
 
 impl MasternodeVoteTransitionAccessorsV0 for MasternodeVoteTransition {
     fn pro_tx_hash(&self) -> Identifier {

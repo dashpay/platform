@@ -19,6 +19,7 @@ mod tests {
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
+                only_once: false,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -27,6 +28,7 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
+                only_once: false,
             },
 
             proposer_strategy: Default::default(),
