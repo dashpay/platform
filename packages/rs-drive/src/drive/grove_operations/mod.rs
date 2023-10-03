@@ -131,6 +131,9 @@ pub mod grove_apply_partial_batch_with_add_costs;
 /// Get cost of grove batch operations
 pub mod grove_batch_operations_costs;
 
+/// Clear a subtree in grovedb
+pub mod grove_clear;
+
 use grovedb_costs::CostContext;
 
 use grovedb::EstimatedLayerInformation;
