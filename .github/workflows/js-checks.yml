@@ -57,7 +57,6 @@ jobs:
   test:
     name: Tests
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    if: ${{ !inputs.skip-tests && contains( github.event.pull_request.labels.*.name, 'ci') }}
     timeout-minutes: 120
     if: ${{ !inputs.skip-tests && ( github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft ) }}
     steps:
