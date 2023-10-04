@@ -16,7 +16,7 @@ pub enum QueryError {
 
     /// Syntax Error
     #[error("document query syntax error: {0}")]
-    DocumentQuery(#[from] SyntaxError),
+    Query(#[from] SyntaxError),
 
     /// Protocol Error
     #[error("protocol error: {0}")]

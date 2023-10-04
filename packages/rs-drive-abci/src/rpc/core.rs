@@ -2,7 +2,8 @@ use dashcore_rpc::dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult, GetChainTipsResult,
-    MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
+    GetTransactionLockedResult, MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType,
+    SoftforkInfo,
 };
 use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
@@ -28,6 +29,12 @@ pub trait CoreRPCLike {
 
     /// Get transaction
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
+
+    /// Get transaction finalization status
+    fn get_transactions_are_chain_locked(
+        &self,
+        tx_ids: Vec<Txid>,
+    ) -> Result<Vec<GetTransactionLockedResult>, Error>;
 
     /// Get transaction
     fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error>;
@@ -185,6 +192,13 @@ impl CoreRPCLike for DefaultCoreRPC {
 
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error> {
         retry!(self.inner.get_raw_transaction(tx_id, None))
+    }
+
+    fn get_transactions_are_chain_locked(
+        &self,
+        tx_ids: Vec<Txid>,
+    ) -> Result<Vec<GetTransactionLockedResult>, Error> {
+        retry!(self.inner.get_transaction_are_locked(&tx_ids))
     }
 
     fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error> {

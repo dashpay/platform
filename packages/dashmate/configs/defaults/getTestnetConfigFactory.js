@@ -26,7 +26,7 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:20.0.0-alpha.6',
+          image: 'dashpay/dashd:20.0.0-alpha.10',
         },
         p2p: {
           port: 19999,
@@ -71,12 +71,12 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
               seeds: [
                 {
                   id: '74907790a03b51ac062c8a1453dafd72a08668a3',
-                  host: '35.92.167.154',
+                  host: '35.166.35.250',
                   port: 36656,
                 },
                 {
                   id: '2006632eb20e670923d13d4f53abc24468eaad4d',
-                  host: '52.12.116.10',
+                  host: '35.92.64.72',
                   port: 36656,
                 },
               ],
@@ -85,10 +85,16 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
             rpc: {
               port: 36657,
             },
+            pprof: {
+              port: 36060,
+            },
+            metrics: {
+              port: 36660,
+            },
             genesis: {
-              genesis_time: '2023-04-26T10:43:20.921Z',
-              chain_id: 'dash-testnet-22',
-              initial_core_chain_locked_height: 854281,
+              genesis_time: '2023-09-29T00:43:20.921Z',
+              chain_id: 'dash-testnet-25',
+              initial_core_chain_locked_height: 901228,
               consensus_params: {
                 timeout: {
                   propose: '50000000000',

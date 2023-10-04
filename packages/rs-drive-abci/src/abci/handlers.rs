@@ -167,11 +167,13 @@ where
         let mut block_proposal: BlockProposal = (&request).try_into()?;
 
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
-            tracing::info!(
-                "chain lock update to height {} at block {}",
-                core_chain_lock_update.core_block_height,
-                request.height
-            );
+            // We can't add this, as it slows down CI way too much
+            // todo: find a way to re-enable this without destroying CI
+            // tracing::info!(
+            //     "chain lock update to height {} at block {}",
+            //     core_chain_lock_update.core_block_height,
+            //     request.height
+            // );
             block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
         }
 
@@ -616,21 +618,14 @@ where
                 })
             }
             Err(error) => {
-                let error_data_buffer = platform_value!({
-                    "message": format!("Internal error {}", error.to_string()),
-                    // TODO: consider capturing stack with one of the libs
-                    //   and send it to the client
-                    //"stack": "..."
-                })
-                .to_cbor_buffer()
-                .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
+                let handler_error = HandlerError::Internal(error.to_string());
 
                 tracing::error!(?error, "check_tx failed");
 
                 Ok(ResponseCheckTx {
-                    code: HandlerErrorCode::Internal as u32,
+                    code: handler_error.code(),
                     data: vec![],
-                    info: encode(&error_data_buffer, Encoding::Base64),
+                    info: handler_error.response_info()?,
                     gas_wanted: 0 as SignedCredits,
                     codespace: "".to_string(),
                     sender: "".to_string(),
@@ -645,22 +640,15 @@ where
 
         let RequestQuery { data, path, .. } = &request;
 
-        // TODO: consider exposing query API only after platform got initialized instead of putting this
-        //   as a consensus error.
+        // TODO: It must be ResponseException
         let Some(platform_version) = PlatformVersion::get_maybe_current() else {
-            let error_data_buffer = platform_value!({
-                "message": "Platform not initialized",
-                // TODO: consider capturing stack with one of the libs
-                //   and send it to the client
-                //"stack": "..."
-            })
-            .to_cbor_buffer()
-            .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
+            let handler_error =
+                HandlerError::Unavailable("platform is not initialized".to_string());
 
             let response = ResponseQuery {
-                code: HandlerErrorCode::Internal as u32,
+                code: handler_error.code(),
                 log: "".to_string(),
-                info: encode(&error_data_buffer, Encoding::Base64),
+                info: handler_error.response_info()?,
                 index: 0,
                 key: vec![],
                 value: vec![],
@@ -668,6 +656,7 @@ where
                 height: self.platform.state.read().unwrap().height() as i64,
                 codespace: "".to_string(),
             };
+
             tracing::error!(?response, "platform version not initialized");
 
             return Ok(response);
@@ -680,9 +669,6 @@ where
         let (code, data, info) = if result.is_valid() {
             (0, result.data.unwrap_or_default(), "success".to_string())
         } else {
-            // TODO: consider rolling back to the check of option is_some,
-            //   it might not be necessary to put error into the validation result
-            //   (e.g. if we want to just fail with text message)
             let error = result
                 .errors
                 .first()
@@ -690,17 +676,7 @@ where
 
             let handler_error = HandlerError::from(error);
 
-            let error_data_buffer = platform_value!({
-                "message": handler_error.to_string(),
-            })
-            .to_cbor_buffer()
-            .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
-
-            (
-                handler_error.code() as u32,
-                vec![],
-                encode(&error_data_buffer, Encoding::Base64),
-            )
+            (handler_error.code(), vec![], handler_error.response_info()?)
         };
 
         let response = ResponseQuery {

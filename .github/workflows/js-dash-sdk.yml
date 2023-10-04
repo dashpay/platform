@@ -34,5 +34,4 @@ jobs:
     secrets: inherit
     with:
       package: 'dash'
-      start-local-network: true
       install-browsers: true

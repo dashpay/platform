@@ -1,59 +1,64 @@
 use crate::error::query::QueryError;
+use crate::error::Error;
+use dpp::platform_value::platform_value;
+use dpp::platform_value::string_encoding::{encode, Encoding};
+use tenderdash_abci::proto::abci::ResponseException;
 
 /// ABCI handlers errors
 #[derive(Debug, thiserror::Error)]
 pub enum HandlerError {
     /// ABCI Handler error (Cancelled)
-    #[error("ABCI Handler error (Cancelled): {0}")]
+    #[error("{0}")]
     Cancelled(String),
     /// ABCI Handler error (Unknown)
-    #[error("ABCI Handler error (Unknown): {0}")]
+    #[error("{0}")]
     Unknown(String),
     /// ABCI Handler error (InvalidArgument)
-    #[error("ABCI Handler error (InvalidArgument): {0}")]
+    #[error("{0}")]
     InvalidArgument(String),
     /// ABCI Handler error (DeadlineExceeded)
-    #[error("ABCI Handler error (DeadlineExceeded): {0}")]
+    #[error("{0}")]
     DeadlineExceeded(String),
     /// ABCI Handler error (NotFound)
-    #[error("ABCI Handler error (NotFound): {0}")]
+    #[error("{0}")]
     NotFound(String),
     /// ABCI Handler error (AlreadyExists)
-    #[error("ABCI Handler error (AlreadyExists): {0}")]
+    #[error("{0}")]
     AlreadyExists(String),
     /// ABCI Handler error (PermissionDenied)
-    #[error("ABCI Handler error (PermissionDenied): {0}")]
+    #[error("{0}")]
     PermissionDenied(String),
     /// ABCI Handler error (ResourceExhausted)
-    #[error("ABCI Handler error (ResourceExhausted): {0}")]
+    #[error("{0}")]
     ResourceExhausted(String),
     /// ABCI Handler error (FailedPrecondition)
-    #[error("ABCI Handler error (FailedPrecondition): {0}")]
+    #[error("{0}")]
     FailedPrecondition(String),
     /// ABCI Handler error (Aborted)
-    #[error("ABCI Handler error (Aborted): {0}")]
+    #[error("{0}")]
     Aborted(String),
     /// ABCI Handler error (OutOfRange)
-    #[error("ABCI Handler error (OutOfRange): {0}")]
+    #[error("{0}")]
     OutOfRange(String),
     /// ABCI Handler error (Unimplemented)
-    #[error("ABCI Handler error (Unimplemented): {0}")]
+    #[error("{0}")]
     Unimplemented(String),
     /// ABCI Handler error (Internal)
-    #[error("ABCI Handler error (Internal): {0}")]
+    #[error("{0}")]
     Internal(String),
     /// ABCI Handler error (Unavailable)
-    #[error("ABCI Handler error (Unavailable): {0}")]
+    #[error("{0}")]
     Unavailable(String),
     /// ABCI Handler error (DataLoss)
-    #[error("ABCI Handler error (DataLoss): {0}")]
+    #[error("{0}")]
     DataLoss(String),
     /// ABCI Handler error (Unauthenticated)
-    #[error("ABCI Handler error (Unauthenticated): {0}")]
+    #[error("{0}")]
     Unauthenticated(String),
 }
 
 /// Error codes for ABCI handlers
+#[repr(u32)]
 pub enum HandlerErrorCode {
     /// ABCI Handler error (Cancelled)
     Cancelled = 1,
@@ -91,8 +96,8 @@ pub enum HandlerErrorCode {
 
 impl HandlerError {
     /// Returns ABCI handler error code
-    pub fn code(&self) -> HandlerErrorCode {
-        match self {
+    pub fn code(&self) -> u32 {
+        let code = match self {
             HandlerError::Cancelled(_) => HandlerErrorCode::Cancelled,
             HandlerError::Unknown(_) => HandlerErrorCode::Unknown,
             HandlerError::InvalidArgument(_) => HandlerErrorCode::InvalidArgument,
@@ -109,7 +114,47 @@ impl HandlerError {
             HandlerError::Unavailable(_) => HandlerErrorCode::Unavailable,
             HandlerError::DataLoss(_) => HandlerErrorCode::DataLoss,
             HandlerError::Unauthenticated(_) => HandlerErrorCode::Unauthenticated,
+        };
+
+        code as u32
+    }
+
+    /// Returns error message
+    pub fn message(&self) -> &str {
+        match self {
+            HandlerError::Cancelled(message) => message,
+            HandlerError::Unknown(message) => message,
+            HandlerError::InvalidArgument(message) => message,
+            HandlerError::DeadlineExceeded(message) => message,
+            HandlerError::NotFound(message) => message,
+            HandlerError::AlreadyExists(message) => message,
+            HandlerError::PermissionDenied(message) => message,
+            HandlerError::ResourceExhausted(message) => message,
+            HandlerError::FailedPrecondition(message) => message,
+            HandlerError::Aborted(message) => message,
+            HandlerError::OutOfRange(message) => message,
+            HandlerError::Unimplemented(message) => message,
+            HandlerError::Internal(message) => message,
+            HandlerError::Unavailable(message) => message,
+            HandlerError::DataLoss(message) => message,
+            HandlerError::Unauthenticated(message) => message,
         }
+    }
+
+    /// Returns base64-encoded message for info field of ABCI handler responses
+    pub fn response_info(&self) -> Result<String, ResponseException> {
+        let error_data_buffer = platform_value!({
+            "message": self.message().to_string(),
+            // TODO: consider capturing stack with one of the libs
+            //   and send it to the client
+            //"stack": "..."
+        })
+        .to_cbor_buffer()
+        .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
+
+        let error_data_base64 = encode(&error_data_buffer, Encoding::Base64);
+
+        Ok(error_data_base64)
     }
 }
 
@@ -120,7 +165,7 @@ impl From<&QueryError> for HandlerError {
             QueryError::InvalidArgument(message) => {
                 HandlerError::InvalidArgument(message.to_owned())
             }
-            QueryError::DocumentQuery(error) => HandlerError::InvalidArgument(error.to_string()),
+            QueryError::Query(error) => HandlerError::InvalidArgument(error.to_string()),
             _ => HandlerError::Unknown(value.to_string()),
         }
     }

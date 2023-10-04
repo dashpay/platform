@@ -10,6 +10,7 @@ use dashcore_rpc::json::DMNStateDiff;
 use dpp::block::block_info::BlockInfo;
 
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::KeyID;
 
 use dpp::version::PlatformVersion;
 use drive::drive::batch::DriveOperation;
@@ -61,7 +62,7 @@ where
 
         let last_key_id = *old_withdrawal_identity_keys.keys().max().unwrap(); //todo
 
-        let key_ids_to_disable = old_withdrawal_identity_keys
+        let key_ids_to_disable: Vec<KeyID> = old_withdrawal_identity_keys
             .into_iter()
             .filter_map(|(key_id, key)| {
                 if key.disabled_at().is_some() {
@@ -72,11 +73,21 @@ where
             })
             .collect();
 
-        drive_operations.push(IdentityOperation(DisableIdentityKeys {
-            identity_id: owner_identifier,
-            keys_ids: key_ids_to_disable,
-            disable_at: block_info.time_ms,
-        }));
+        if !key_ids_to_disable.is_empty() {
+            tracing::trace!(
+                identity_id = ?owner_identifier,
+                keys_ids = ?key_ids_to_disable,
+                disable_at = ?block_info.time_ms,
+                method = "update_owner_withdrawal_address_v0",
+                "disable old withdrawal keys in owner identity"
+            );
+
+            drive_operations.push(IdentityOperation(DisableIdentityKeys {
+                identity_id: owner_identifier,
+                keys_ids: key_ids_to_disable,
+                disable_at: block_info.time_ms,
+            }));
+        }
 
         // add the new key
         let new_owner_key = Self::get_owner_identity_key(
@@ -84,6 +95,13 @@ where
             last_key_id + 1,
             platform_version,
         )?;
+
+        tracing::trace!(
+            identity_id = ?owner_identifier,
+            withdrawal_key = ?new_owner_key,
+            method = "update_owner_withdrawal_address_v0",
+            "add new withdrawal key to owner identity"
+        );
 
         drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
             identity_id: owner_identifier,

@@ -15,7 +15,7 @@ pub enum IdentityError {
 
     /// A unique key with that hash already exists
     #[error("a unique key with that hash already exists: {0}")]
-    UniqueKeyAlreadyExists(&'static str),
+    UniqueKeyAlreadyExists(String),
 
     /// Missing required key error
     #[error("missing required key: {0}")]
