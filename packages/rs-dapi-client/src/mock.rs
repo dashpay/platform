@@ -94,8 +94,7 @@ impl Expectations {
         response: &O,
     ) {
         let key = Self::key(&request);
-        let value = bincode::serde::encode_to_vec(response, bincode::config::standard())
-            .expect("encode response");
+        let value = Self::value(response);
 
         self.expectations.insert(key, value);
     }
@@ -107,13 +106,11 @@ impl Expectations {
         &self,
         request: I,
     ) -> Option<O> {
-        let config = bincode::config::standard();
         let key = Self::key(&request);
 
         self.expectations
             .get(&key)
-            .map(|v| bincode::serde::decode_from_slice(v, config).expect("decode response"))
-            .map(|(v, _)| v)
+            .and_then(Self::deserialize_value)
     }
 
     /// Remove the expectation for a given request.
@@ -123,6 +120,18 @@ impl Expectations {
     }
 
     fn key<I: serde::Serialize>(request: &I) -> ExpectationKey {
-        bincode::serde::encode_to_vec(request, bincode::config::standard()).expect("encode request")
+        bincode::serde::encode_to_vec(request, bincode::config::standard()).expect("encode key")
+    }
+
+    fn value<I: serde::Serialize>(request: &I) -> ExpectationValue {
+        // We use json because bincode sometimes fail to deserialize
+        serde_json::to_vec(request).expect("encode value")
+    }
+
+    fn deserialize_value<O: for<'de> serde::Deserialize<'de>>(value: &ExpectationValue) -> O {
+        // We use json because bincode sometimes fail to deserialize
+        let ret = serde_json::from_slice(value).expect("deserialize value");
+
+        ret
     }
 }
