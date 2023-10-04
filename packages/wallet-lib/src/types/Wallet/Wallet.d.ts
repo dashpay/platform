@@ -60,7 +60,7 @@ export declare namespace Wallet {
     interface IWalletOptions {
         offlineMode?: boolean;
         debug?: boolean;
-        transport?: DAPIClientOptions | Transport;
+        transport?: DAPIClientOptions | Transport | null;
         network?: Network | string;
         plugins?: undefined[]|[Plugins];
         passphrase?: string|null;

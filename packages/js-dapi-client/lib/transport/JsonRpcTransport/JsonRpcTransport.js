@@ -1,3 +1,5 @@
+const logger = require('../../logger');
+
 const MaxRetriesReachedError = require('../errors/response/MaxRetriesReachedError');
 const NoAvailableAddressesForRetryError = require('../errors/response/NoAvailableAddressesForRetryError');
 const NoAvailableAddressesError = require('../errors/NoAvailableAddressesError');
@@ -28,6 +30,8 @@ class JsonRpcTransport {
     this.globalOptions = globalOptions;
 
     this.createJsonTransportError = createJsonTransportError;
+
+    this.logger = logger.getForId(globalOptions.loggerOptions.identifier);
 
     this.lastUsedAddress = null;
   }
@@ -62,6 +66,8 @@ class JsonRpcTransport {
     if (options.timeout !== undefined) {
       requestOptions.timeout = options.timeout;
     }
+
+    this.logger.debug(`JSON-RPC Request ${method} to ${address.toString()}`, { options });
 
     try {
       const result = await this.requestJsonRpc(

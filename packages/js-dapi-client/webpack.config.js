@@ -14,11 +14,13 @@ const commonJSConfig = {
       buffer: require.resolve('buffer/'),
       assert: require.resolve('assert-browserify'),
       util: require.resolve('util/'),
+      os: require.resolve('os-browserify/browser'),
       stream: require.resolve('stream-browserify'),
       path: require.resolve('path-browserify'),
       url: require.resolve('url/'),
       events: require.resolve('events/'),
       string_decoder: require.resolve('string_decoder/'),
+      zlib: require.resolve('browserify-zlib'),
     },
   },
   plugins: [
