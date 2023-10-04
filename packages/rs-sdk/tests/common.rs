@@ -4,6 +4,12 @@ pub const CORE_USER: &str = "PdXjj4HC";
 pub const CORE_PASSWORD: &str = "POv4lqSbzO7m";
 pub const PLATFORM_PORT: u16 = 2443;
 
+/// Existing identity ID, created as part of platform test suite run
+pub const IDENTITY_ID_BYTES: [u8; 32] = [
+    65, 63, 57, 243, 204, 9, 106, 71, 187, 2, 94, 221, 190, 127, 141, 114, 137, 209, 243, 50, 60,
+    215, 90, 101, 229, 15, 115, 5, 44, 117, 182, 217,
+];
+
 // allow unused because we just include() this file, and the functions are used in other files
 #[allow(unused)]
 fn setup_api() -> rs_sdk::Sdk {

@@ -2,6 +2,7 @@
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
 use crate::{core::CoreClient, error::Error};
+use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive_proof_verifier::{FromProof, QuorumInfoProvider};
 use rs_dapi_client::{
     transport::{TransportClient, TransportRequest},
@@ -81,7 +82,7 @@ impl Sdk {
     /// Panics if the `self` instance is not a `Mock` variant.
     #[cfg(feature = "mocks")]
     pub fn mock(&mut self) -> &mut MockDashPlatformSdk {
-        if let Self::Mock { ref mut mock } = self {
+        if let Self::Mock { ref mut mock, .. } = self {
             mock
         } else {
             panic!("not a mock")
@@ -132,6 +133,8 @@ pub struct SdkBuilder {
     core_port: u16,
     core_user: String,
     core_password: String,
+
+    version: &'static PlatformVersion,
 }
 
 impl Default for SdkBuilder {
@@ -144,6 +147,8 @@ impl Default for SdkBuilder {
             core_port: 0,
             core_password: "".to_string(),
             core_user: "".to_string(),
+
+            version: PlatformVersion::latest(),
         }
     }
 }
@@ -152,12 +157,7 @@ impl SdkBuilder {
     pub fn new(addresses: AddressList) -> Self {
         Self {
             addresses: Some(addresses),
-            settings: RequestSettings::default(),
-
-            core_ip: "".to_string(),
-            core_port: 0,
-            core_user: "".to_string(),
-            core_password: "".to_string(),
+            ..Default::default()
         }
     }
 
@@ -182,6 +182,8 @@ impl SdkBuilder {
     }
 
     pub fn build(self) -> Result<Sdk, Error> {
+        PlatformVersion::set_current(self.version);
+
         match self.addresses {
             Some(addresses) => {
                 if self.core_ip.is_empty() || self.core_port == 0 {
