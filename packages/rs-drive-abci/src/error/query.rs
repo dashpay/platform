@@ -15,7 +15,7 @@ pub enum QueryError {
     Proof(#[from] ProofError),
 
     /// Syntax Error
-    #[error("document query syntax error: {0}")]
+    #[error("query syntax error: {0}")]
     Query(#[from] SyntaxError),
 
     /// Protocol Error

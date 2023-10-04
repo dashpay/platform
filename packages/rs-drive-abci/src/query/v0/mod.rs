@@ -277,12 +277,6 @@ impl<C> Platform<C> {
                         &platform_version.drive,
                     )?;
 
-                    if proof.is_empty() {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
-                            format!("identity {} balance proof not found", identity_id),
-                        )));
-                    }
-
                     GetIdentityBalanceResponse {
                         result: Some(get_identity_balance_response::Result::Proof(Proof {
                             grovedb_proof: proof,
@@ -335,15 +329,6 @@ impl<C> Platform<C> {
                         None,
                         &platform_version.drive,
                     )?;
-
-                    if proof.is_empty() {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
-                            format!(
-                                "identity {} balance and revision proof not found",
-                                identity_id
-                            ),
-                        )));
-                    }
 
                     GetIdentityBalanceResponse {
                         result: Some(get_identity_balance_response::Result::Proof(Proof {
@@ -699,12 +684,6 @@ impl<C> Platform<C> {
                         platform_version,
                     )?;
 
-                    if proof.is_empty() {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
-                            format!("data contract {} history proof not found", contract_id),
-                        )));
-                    }
-
                     GetDataContractHistoryResponse {
                         metadata: Some(metadata),
                         result: Some(get_data_contract_history_response::Result::Proof(Proof {
@@ -799,9 +778,12 @@ impl<C> Platform<C> {
 
                 let contract_ref = &contract.contract;
 
-                let document_type = check_validation_result_with_data!(
-                    contract_ref.document_type_for_name(document_type_name.as_str())
-                );
+                let document_type = check_validation_result_with_data!(contract_ref
+                    .document_type_for_name(document_type_name.as_str())
+                    .map_err(|_| QueryError::InvalidArgument(format!(
+                        "document type {} not found for contract {}",
+                        document_type_name, contract_id
+                    ))));
 
                 let where_clause = if r#where.is_empty() {
                     Value::Null
@@ -936,12 +918,6 @@ impl<C> Platform<C> {
                         platform_version,
                     )?;
 
-                    if proof.is_empty() {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
-                            format!("identity {} not found", hex::encode(public_key_hash)),
-                        )));
-                    }
-
                     GetIdentityByPublicKeyHashesResponse {
                         metadata: Some(metadata),
                         result: Some(get_identity_by_public_key_hashes_response::Result::Proof(
@@ -1045,12 +1021,6 @@ impl<C> Platform<C> {
                             None,
                             platform_version,
                         )?;
-
-                    if identities.is_empty() {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
-                            "identities not found".to_string(),
-                        )));
-                    }
 
                     let serialized_identities = identities
                         .into_values()
