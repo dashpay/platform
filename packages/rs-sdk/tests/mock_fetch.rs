@@ -1,3 +1,5 @@
+//!
+//!
 use std::collections::BTreeMap;
 
 use dpp::{
@@ -13,6 +15,7 @@ use rs_sdk::platform::Fetch;
 include!("common.rs");
 
 #[tokio::test]
+/// Given some identity ID, when I fetch it using mock API, then I get the same identity
 async fn test_mock_identity() {
     let mut api: rs_sdk::Sdk = setup_mock_api().await;
 
@@ -26,6 +29,36 @@ async fn test_mock_identity() {
         .unwrap()
         .expect("object should exist");
 
+    assert_eq!(retrieved, expected);
+}
+
+fn mock_data_contract() -> DataContract {
+    let platform_version = PlatformVersion::latest();
+    let protocol_version = platform_version.protocol_version;
+
+    let owner_id = Identifier::from_bytes(&IDENTITY_ID_BYTES).unwrap();
+
+    let document = platform_value!(BTreeMap::<String, Value>::new());
+    DataContractFacade::new(protocol_version, None)
+        .unwrap()
+        .create(owner_id, document, None, None)
+        .expect("create data contract")
+        .data_contract_owned()
+}
+
+#[tokio::test]
+async fn test_mock_data_contract() {
+    let mut api: rs_sdk::Sdk = setup_mock_api().await;
+
+    let expected = mock_data_contract();
+    let id = expected.id();
+
+    api.mock().expect_fetch(id, expected.clone());
+
+    let retrieved = DataContract::fetch(&mut api, id)
+        .await
+        .unwrap()
+        .expect("object should exist");
     assert_eq!(retrieved, expected);
 }
 
@@ -54,29 +87,3 @@ async fn test_mock_identity() {
 
 //     assert_eq!(identity.id(), &id);
 // }
-
-#[tokio::test]
-async fn test_mock_data_contract() {
-    let mut api: rs_sdk::Sdk = setup_mock_api().await;
-    let platform_version = PlatformVersion::latest();
-    let protocol_version = platform_version.protocol_version;
-
-    let owner_id = Identifier::from_bytes(&IDENTITY_ID_BYTES).unwrap();
-
-    let document = platform_value!(BTreeMap::<String, Value>::new());
-    let expected = DataContractFacade::new(protocol_version, None)
-        .unwrap()
-        .create(owner_id, document, None, None)
-        .expect("create data contract")
-        .data_contract_owned();
-
-    let id = expected.id();
-
-    api.mock().expect_fetch(id, expected.clone());
-
-    let retrieved = DataContract::fetch(&mut api, id)
-        .await
-        .unwrap()
-        .expect("object should exist");
-    assert_eq!(retrieved, expected);
-}
