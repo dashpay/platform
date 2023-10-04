@@ -1367,6 +1367,7 @@ __metadata:
     "@dashevo/wasm-dpp": "workspace:*"
     assert-browserify: ^2.0.0
     babel-loader: ^8.2.2
+    browserify-zlib: ^0.2.0
     bs58: ^4.0.1
     buffer: ^6.0.3
     cbor: ^8.0.0
@@ -1394,6 +1395,7 @@ __metadata:
     node-fetch: ^2.6.7
     node-inspect-extracted: ^1.0.8
     nyc: ^15.1.0
+    os-browserify: ^0.3.0
     path-browserify: ^1.0.1
     process: ^0.11.10
     sinon: ^11.1.2

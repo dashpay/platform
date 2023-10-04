@@ -2410,6 +2410,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["assert-browserify", "npm:2.0.0"],\
             ["babel-loader", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:8.2.3"],\
+            ["browserify-zlib", "npm:0.2.0"],\
             ["bs58", "npm:4.0.1"],\
             ["buffer", "npm:6.0.3"],\
             ["cbor", "npm:8.1.0"],\
@@ -2437,6 +2438,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["node-fetch", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:2.6.7"],\
             ["node-inspect-extracted", "npm:1.0.8"],\
             ["nyc", "npm:15.1.0"],\
+            ["os-browserify", "npm:0.3.0"],\
             ["path-browserify", "npm:1.0.1"],\
             ["process", "npm:0.11.10"],\
             ["sinon", "npm:11.1.2"],\
