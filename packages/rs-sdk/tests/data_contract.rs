@@ -12,10 +12,14 @@ async fn test_data_contract_read_not_found() {
 
     let result = DataContract::fetch(&mut api, id).await;
 
-    assert!(matches!(
-        result,
-        Err(rs_sdk::error::Error::Proof(
-            drive_proof_verifier::Error::NotFound
-        ))
-    ));
+    assert!(
+        matches!(
+            result,
+            Err(rs_sdk::error::Error::Proof(
+                drive_proof_verifier::Error::NotFound
+            ))
+        ),
+        "result: {:?}",
+        result
+    );
 }
