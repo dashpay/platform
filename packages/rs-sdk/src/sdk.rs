@@ -88,6 +88,11 @@ impl Sdk {
             panic!("not a mock")
         }
     }
+
+    pub fn version<'a>() -> &'a PlatformVersion {
+        PlatformVersion::get_current()
+            .expect("Dash Platform version not initialized properly, this should never happen")
+    }
 }
 
 impl QuorumInfoProvider for Sdk {

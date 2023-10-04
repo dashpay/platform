@@ -2,7 +2,7 @@ use dpp::{
     identity::{accessors::IdentityGettersV0, IdentityV0},
     prelude::Identity,
 };
-use rs_sdk::platform::Fetch;
+use rs_sdk::{platform::Fetch, Sdk};
 
 include!("common.rs");
 
@@ -17,7 +17,7 @@ async fn test_identity_read() {
     let expected_identity = Identity::from(IdentityV0::default());
     let id = expected_identity.id();
 
-    let mut api: rs_sdk::Sdk = setup_mock_api().await;
+    let mut api = Sdk::new_mock();
     // TODO: add expectations
     let expected_identity = Identity::from(IdentityV0::default());
     api.mock().expect_fetch(id, expected_identity);

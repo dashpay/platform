@@ -29,15 +29,6 @@ fn setup_api() -> rs_sdk::Sdk {
 
 // allow unused because we just include() this file, and the functions are used in other files
 #[allow(unused)]
-#[cfg(feature = "mocks")]
-async fn setup_mock_api() -> rs_sdk::Sdk {
-    rs_sdk::SdkBuilder::new_mock()
-        .build()
-        .expect("cannot initialize mock sdk")
-}
-
-// allow unused because we just include() this file, and the functions are used in other files
-#[allow(unused)]
 fn base64_identifier(base64str: &str) -> dpp::prelude::Identifier {
     let b64 = base64::engine::general_purpose::STANDARD;
     let bytes = base64::Engine::decode(&b64, base64str).expect("base64 decode identifier");

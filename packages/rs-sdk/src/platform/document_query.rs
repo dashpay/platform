@@ -50,6 +50,8 @@ impl DocumentQuery {
     }
 
     /// Fetch one document with provided document ID
+    ///
+    /// Note that this method will fetch data contract first.
     pub async fn new_with_document_id(
         api: &mut Sdk,
         data_contract_id: Identifier,
