@@ -1188,6 +1188,7 @@ mod test {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
 
+        use crate::error::query::QueryError;
         use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
         use dpp::data_contract::DataContract;
@@ -1197,7 +1198,6 @@ mod test {
         use dpp::validation::ValidationResult;
         use dpp::version::PlatformVersion;
         use drive::drive::Drive;
-        use drive::error::contract::DataContractError;
         use prost::Message;
 
         fn default_request() -> GetDataContractHistoryRequest {
@@ -1484,24 +1484,19 @@ mod test {
             };
             let request_data = request.encode_to_vec();
 
-            let error = platform
+            let validation_result = platform
                 .query_v0("/dataContractHistory", &request_data, platform_version)
-                .unwrap_err();
+                .expect("To return validation result with an error");
+
+            let error = validation_result
+                .first_error()
+                .expect("expect error to exist");
 
             match error {
-                Error::Drive(drive_error) => match drive_error {
-                    drive::error::Error::DataContract(contract_error) => match contract_error {
-                        DataContractError::Overflow(error_message) => {
-                            assert_eq!(
-                                error_message,
-                                "can't fit u16 limit from the supplied value"
-                            );
-                        }
-                        _ => panic!("expect contract overflow error"),
-                    },
-                    _ => panic!("expect contract error"),
-                },
-                _ => panic!("expect drive error"),
+                QueryError::InvalidArgument(error_message) => {
+                    assert_eq!(error_message, "can't fit u16 limit from the supplied value");
+                }
+                _ => panic!("expect query error"),
             }
         }
 
@@ -1521,24 +1516,22 @@ mod test {
             };
             let request_data = request.encode_to_vec();
 
-            let error = platform
+            let validation_result = platform
                 .query_v0("/dataContractHistory", &request_data, platform_version)
-                .unwrap_err();
+                .expect("To return validation result with an error");
+
+            let error = validation_result
+                .first_error()
+                .expect("expect error to exist");
 
             match error {
-                Error::Drive(drive_error) => match drive_error {
-                    drive::error::Error::DataContract(contract_error) => match contract_error {
-                        DataContractError::Overflow(error_message) => {
-                            assert_eq!(
-                                error_message,
-                                "can't fit u16 offset from the supplied value"
-                            );
-                        }
-                        _ => panic!("expect contract overflow error"),
-                    },
-                    _ => panic!("expect contract error"),
-                },
-                _ => panic!("expect drive error"),
+                QueryError::InvalidArgument(error_message) => {
+                    assert_eq!(
+                        error_message,
+                        "can't fit u16 offset from the supplied value"
+                    );
+                }
+                _ => panic!("expect query error"),
             }
         }
     }
