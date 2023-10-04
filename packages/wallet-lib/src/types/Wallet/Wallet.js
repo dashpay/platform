@@ -178,16 +178,16 @@ class Wallet extends EventEmitter {
       if (typeof opts.transport === 'undefined') {
         // eslint-disable-next-line no-param-reassign
         opts.transport = {};
-
-        // Assign networkName to the transport instead of this.network,
-        // because it needs to distinguish between testnet and regtest/devnet,
-        // and Dashcore.Network aliases regtest/devnet to testnet
-
-        // eslint-disable-next-line no-param-reassign
-        opts.transport.network = networkName;
-
-        this.transport = createTransportFromOptions(opts.transport);
       }
+
+      // Assign networkName to the transport instead of this.network,
+      // because it needs to distinguish between testnet and regtest/devnet,
+      // and Dashcore.Network aliases regtest/devnet to testnet
+
+      // eslint-disable-next-line no-param-reassign
+      opts.transport.network = networkName;
+
+      this.transport = createTransportFromOptions(opts.transport);
     }
 
     this.accounts = [];
