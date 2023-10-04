@@ -17,8 +17,7 @@ use std::fmt::Debug;
 
 use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse};
 use dpp::document::Document;
-use drive::query::DriveQuery;
-use drive_proof_verifier::proof::from_proof::{Documents, FromProof};
+use drive_proof_verifier::proof::from_proof::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 
 use crate::{
@@ -29,12 +28,13 @@ use crate::{
 
 /// Trait implemented by objects that can be listed or searched.
 #[async_trait::async_trait]
-pub trait List<API: Sdk>
+pub trait List
 where
-    Self: Sized + Debug,
+    Self: for<'de> serde::Deserialize<'de> + Sized + Debug,
     Vec<Self>: FromProof<
             Self::Request,
-            Response = <<Self as List<API>>::Request as TransportRequest>::Response,
+            Request = Self::Request,
+            Response = <<Self as List>::Request as TransportRequest>::Response,
         > + Sync,
 {
     /// Type of request used to fetch data from the platform.
@@ -65,28 +65,21 @@ where
     ///
     /// ## Error Handling
     /// Any errors encountered during the execution are returned as [`Error`](crate::error::Error) instances.
-    async fn list<Q: Query<Self::Request>>(
-        api: &API,
+    async fn list<Q: Query<<Self as List>::Request>>(
+        api: &mut Sdk,
         query: Q,
     ) -> Result<Option<Vec<Self>>, Error> {
         let request = query.query()?;
 
-        let mut client = api.platform_client().await;
         let response = request
             .clone()
-            .execute(&mut client, RequestSettings::default())
+            .execute(api, RequestSettings::default())
             .await?;
 
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
 
-        let response: <Vec<Self> as FromProof<<Self as List<API>>::Request>>::Response =
-            response.into();
-        let object = <Vec<Self> as FromProof<Self::Request>>::maybe_from_proof(
-            request,
-            response,
-            api.quorum_info_provider()?,
-        )?;
+        let object: Option<Vec<Self>> = api.parse_proof(request, response)?;
 
         match object {
             Some(items) => Ok(items.into()),
@@ -96,31 +89,26 @@ where
 }
 
 #[async_trait::async_trait]
-impl<API: Sdk> List<API> for Document {
+impl List for Document {
     // We need to use the DocumentQuery type here because the DocumentQuery
     // type stores full contract, which is missing in the GetDocumentsRequest type.
     type Request = DocumentQuery;
-    async fn list<Q: Query<Self::Request>>(
-        api: &API,
+    async fn list<Q: Query<<Self as List>::Request>>(
+        api: &mut Sdk,
         query: Q,
     ) -> Result<Option<Vec<Self>>, Error> {
         let document_query: DocumentQuery = query.query()?;
         // We need DriveQuery to verify the proof, as FromProof is implemented for DriveQuery.
-        let drive_query: DriveQuery = (&document_query).try_into()?;
         let request: GetDocumentsRequest = document_query.clone().try_into()?;
 
-        let mut client = api.platform_client().await;
-        let response: GetDocumentsResponse = request
-            .execute(&mut client, RequestSettings::default())
-            .await?;
+        let response: GetDocumentsResponse =
+            request.execute(api, RequestSettings::default()).await?;
 
         tracing::trace!(request=?document_query, response=?response, "list documents");
 
-        match <Documents as FromProof<Self::Request>>::maybe_from_proof(
-            &drive_query,
-            response,
-            api.quorum_info_provider()?,
-        )? {
+        let object: Option<Vec<Document>> =
+            api.parse_proof::<DocumentQuery, Vec<Document>>(document_query, response)?;
+        match object {
             Some(documents) => Ok(Some(documents)),
             None => Ok(None),
         }

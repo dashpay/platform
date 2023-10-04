@@ -8,9 +8,9 @@ async fn test_data_contract_read_not_found() {
     pub const DATA_CONTRACT_ID_BYTES: [u8; 32] = [1; 32];
     let id = Identifier::from_bytes(&DATA_CONTRACT_ID_BYTES).expect("parse identity id");
 
-    let api = setup_api();
+    let mut api = setup_api();
 
-    let result = DataContract::fetch(&api, id).await;
+    let result = DataContract::fetch(&mut api, id).await;
 
     assert!(matches!(
         result,

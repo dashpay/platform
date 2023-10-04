@@ -2,6 +2,8 @@
 
 // TODO: Move to rs-sdk
 
+use std::sync::Arc;
+
 use crate::{error::Error, sdk::Sdk};
 use ciborium::Value as CborValue;
 use dapi_grpc::platform::v0::{
@@ -25,10 +27,10 @@ use super::fetch::Fetch;
 
 /// Request documents.
 // TODO: is it needed or we use drivequery?
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DocumentQuery {
     /// Data contract ID
-    pub data_contract: DataContract,
+    pub data_contract: Arc<DataContract>,
     /// Document type for the data contract
     pub document_type_name: String,
     /// `where` clauses for the query
@@ -43,13 +45,13 @@ pub struct DocumentQuery {
 
 impl DocumentQuery {
     /// Create new document query based on a [DriveQuery].
-    pub fn new_with_drive_query<API: Sdk>(d: &DriveQuery) -> Self {
+    pub fn new_with_drive_query(d: &DriveQuery) -> Self {
         Self::from(d)
     }
 
     /// Fetch one document with provided document ID
-    pub async fn new_with_document_id<API: Sdk>(
-        api: &API,
+    pub async fn new_with_document_id(
+        api: &mut Sdk,
         data_contract_id: Identifier,
         document_type_name: &str,
         document_id: Identifier,
@@ -77,7 +79,7 @@ impl DocumentQuery {
         }];
 
         Ok(DocumentQuery {
-            data_contract,
+            data_contract: Arc::new(data_contract),
             document_type_name: document_type_name.to_string(),
             where_clauses,
             order_by_clauses,
@@ -202,7 +204,7 @@ impl<'a> From<&'a DriveQuery<'a>> for DocumentQuery {
         };
 
         Self {
-            data_contract,
+            data_contract: Arc::new(data_contract),
             document_type_name: document_type_name.to_string(),
             where_clauses,
             order_by_clauses,

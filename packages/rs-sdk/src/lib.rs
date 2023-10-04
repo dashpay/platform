@@ -10,5 +10,5 @@ pub mod core;
 pub mod sdk;
 
 #[cfg(feature = "mocks")]
-pub use sdk::MockDashPlatformSdk;
-pub use sdk::{DashPlatformSdk, Sdk};
+pub mod mock;
+pub use sdk::{Sdk, SdkBuilder};

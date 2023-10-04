@@ -8,19 +8,20 @@ use drive_proof_verifier::FromProof;
 use rs_dapi_client::transport::TransportRequest;
 use rs_sdk::platform::DocumentQuery;
 use rs_sdk::platform::{Fetch, Query};
+use rs_sdk::Sdk;
 
 include!("common.rs");
 
-async fn test_read<API: rs_sdk::Sdk, O: Fetch<API>, Q: Query<<O as Fetch<API>>::Request>>(
-    api: &API,
+async fn test_read<O: Fetch, Q: Query<<O as Fetch>::Request>>(
+    api: &mut Sdk,
     id: Q,
     expected: Result<usize, rs_sdk::error::Error>,
 ) -> Result<Option<O>, rs_sdk::error::Error>
 where
     O: Debug + Clone + Send,
     Option<O>: Length,
-    <O as FromProof<<O as Fetch<API>>::Request>>::Response:
-        From<<<O as Fetch<API>>::Request as TransportRequest>::Response>,
+    <O as FromProof<<O as Fetch>::Request>>::Response:
+        From<<<O as Fetch>::Request as TransportRequest>::Response>,
 {
     let result = O::fetch(api, id).await;
 
@@ -52,13 +53,13 @@ async fn document_read() {
     const DOCUMENT_TYPE_NAME: &str = "indexedDocument";
     const DOCUMENT_ID: &str = "0DDWWXXPtcooBgJJJTCBDZ4xxinWg5yMPbIf/iv98d4=";
 
-    let api = setup_api();
+    let mut api = setup_api();
 
     let data_contract_id = base64_identifier(DATA_CONTRACT_ID);
     let document_id = base64_identifier(DOCUMENT_ID);
 
     let query = DocumentQuery::new_with_document_id(
-        &api,
+        &mut api,
         data_contract_id,
         DOCUMENT_TYPE_NAME,
         document_id,
@@ -66,7 +67,8 @@ async fn document_read() {
     .await
     .expect("create SdkDocumentQuery");
 
-    let _res: Result<Option<Document>, rs_sdk::error::Error> = test_read(&api, query, Ok(1)).await;
+    let _res: Result<Option<Document>, rs_sdk::error::Error> =
+        test_read(&mut api, query, Ok(1)).await;
 }
 
 pub fn setup_logs() {

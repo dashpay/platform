@@ -6,16 +6,16 @@ pub const PLATFORM_PORT: u16 = 2443;
 
 // allow unused because we just include() this file, and the functions are used in other files
 #[allow(unused)]
-fn setup_api() -> impl rs_sdk::Sdk {
+fn setup_api() -> rs_sdk::Sdk {
     use rs_dapi_client::AddressList;
     use rs_sdk::core::CoreClient;
 
-    let core = CoreClient::new(PLATFORM_IP, CORE_PORT, CORE_USER, CORE_PASSWORD)
-        .expect("core not initialized");
     let uri = http::Uri::from_maybe_shared(format!("http://{}:{}", PLATFORM_IP, PLATFORM_PORT))
         .expect("platform address");
     let addresses = AddressList::from(vec![uri]);
-    let api = rs_sdk::sdk::DashPlatformSdk::new(addresses, Box::new(core))
+    let api = rs_sdk::SdkBuilder::new(addresses)
+        .with_core(PLATFORM_IP, CORE_PORT, CORE_USER, CORE_PASSWORD)
+        .build()
         .expect("cannot initialize api");
 
     api
@@ -24,11 +24,10 @@ fn setup_api() -> impl rs_sdk::Sdk {
 // allow unused because we just include() this file, and the functions are used in other files
 #[allow(unused)]
 #[cfg(feature = "mocks")]
-fn setup_mock_api() -> impl rs_sdk::Sdk {
-    use rs_sdk::MockDashPlatformSdk;
-
-    unimplemented!("mock api not implemented");
-    MockDashPlatformSdk::new()
+async fn setup_mock_api() -> rs_sdk::Sdk {
+    rs_sdk::SdkBuilder::new_mock()
+        .build()
+        .expect("cannot initialize mock sdk")
 }
 
 // allow unused because we just include() this file, and the functions are used in other files

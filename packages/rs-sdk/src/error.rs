@@ -5,6 +5,8 @@ use rs_dapi_client::DapiClientError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Invalid configuration: {0}")]
+    Config(String),
     #[error("Drive error: {0}")]
     Drive(#[from] drive::error::Error),
     #[error("Protocol error: {0}")]

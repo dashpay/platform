@@ -18,7 +18,7 @@ use std::fmt::Debug;
 
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto};
-use dpp::document::Document;
+use dpp::{document::Document, prelude::Identity};
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 
@@ -57,13 +57,15 @@ use super::document_query::DocumentQuery;
 /// of `Fetch` for other types.
 ///
 #[async_trait::async_trait]
-pub trait Fetch<API: Sdk>
+pub trait Fetch
 where
     Self: Sized
         + Debug
+        + for<'de> serde::Deserialize<'de>
         + FromProof<
-            <Self as Fetch<API>>::Request,
-            Response = <<Self as Fetch<API>>::Request as DapiRequest>::Response,
+            <Self as Fetch>::Request,
+            Request = <Self as Fetch>::Request,
+            Response = <<Self as Fetch>::Request as DapiRequest>::Response,
         >,
 {
     /// Type of request used to fetch data from the platform.
@@ -72,7 +74,9 @@ where
     ///
     /// This type must implement `TransportRequest`.
     type Request: TransportRequest
-        + Into<<Self as FromProof<<Self as Fetch<API>>::Request>>::Request>;
+        + serde::Serialize
+        + for<'de> serde::Deserialize<'de>
+        + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>;
 
     /// Fetch object from the Platfom.
     ///
@@ -93,26 +97,21 @@ where
     ///
     /// ## Error Handling
     /// Any errors encountered during the execution are returned as [Error] instances.
-    async fn fetch<Q: Query<<Self as Fetch<API>>::Request>>(
-        api: &API,
+    async fn fetch<Q: Query<<Self as Fetch>::Request>>(
+        api: &mut Sdk,
         query: Q,
     ) -> Result<Option<Self>, Error> {
         let request = query.query()?;
 
-        let mut client = api.platform_client().await;
         let response = request
             .clone()
-            .execute(&mut client, RequestSettings::default())
+            .execute(api, RequestSettings::default())
             .await?;
 
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
 
-        let object = <Self as FromProof<<Self as Fetch<API>>::Request>>::maybe_from_proof(
-            request,
-            response,
-            api.quorum_info_provider()?,
-        )?;
+        let object: Option<Self> = api.parse_proof(request, response)?;
 
         match object {
             Some(item) => Ok(item.into()),
@@ -122,16 +121,16 @@ where
 }
 
 #[async_trait::async_trait]
-impl<API: Sdk> Fetch<API> for dpp::prelude::Identity {
+impl Fetch for Identity {
     type Request = platform_proto::GetIdentityRequest;
 }
 
 #[async_trait::async_trait]
-impl<API: Sdk> Fetch<API> for dpp::prelude::DataContract {
+impl Fetch for dpp::prelude::DataContract {
     type Request = platform_proto::GetDataContractRequest;
 }
 
 #[async_trait::async_trait]
-impl<API: Sdk> Fetch<API> for Document {
+impl Fetch for Document {
     type Request = DocumentQuery;
 }

@@ -7,10 +7,10 @@ include!("../tests/common.rs");
 #[tokio::main(flavor = "multi_thread", worker_threads = 1)]
 async fn main() {
     const DATA_CONTRACT_ID_BYTES: [u8; 32] = [1; 32];
-    let api = setup_api(); // faux
+    let mut api = setup_api();
 
     let id = Identifier::from_bytes(&DATA_CONTRACT_ID_BYTES).expect("parse identity id");
-    let result = DataContract::fetch(&api, id).await;
+    let result = DataContract::fetch(&mut api, id).await;
 
     assert!(matches!(
         result,
