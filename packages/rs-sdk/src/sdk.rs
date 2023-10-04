@@ -154,11 +154,28 @@ impl Default for SdkBuilder {
 }
 
 impl SdkBuilder {
+    /// Create a new SdkBuilder with provided address list.
     pub fn new(addresses: AddressList) -> Self {
         Self {
             addresses: Some(addresses),
             ..Default::default()
         }
+    }
+
+    /// Create a new SdkBuilder that will connect to testnet.
+    ///
+    /// Use for testing only.
+    pub fn new_testnet() -> Self {
+        unimplemented!(
+            "Testnet address list not implemented yet. Use new() and provide address list."
+        )
+    }
+
+    /// Create a new SdkBuilder that will connect to mainnet (production network).
+    pub fn new_mainnet() -> Self {
+        unimplemented!(
+            "Mainnet address list not implemented yet. Use new() and provide address list."
+        )
     }
 
     pub fn new_mock() -> Self {
@@ -169,6 +186,12 @@ impl SdkBuilder {
         self.settings = settings;
         self
     }
+
+    pub fn with_version(mut self, version: &'static PlatformVersion) -> Self {
+        self.version = version;
+        self
+    }
+
     /// Configure connection to Dash Core
     ///
     /// TODO: This is temporary implementation, effective until we integrate SPV into rs-sdk.
