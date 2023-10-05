@@ -1,9 +1,9 @@
-const convertToBase58chars = require('../../../lib/util/convertToBase58chars');
+const convertToHomographSafeChars = require('../../../lib/util/convertToHomographSafeChars');
 
-describe('convertToBase58chars', () => {
-  it('should replace 0 and l to o and 1', () => {
-    const result = convertToBase58chars('a0b0c0dlelfl');
+describe('convertToHomographSafeChars', () => {
+  it('should replace o, l, i to 0 and 1', () => {
+    const result = convertToHomographSafeChars('A0boic0Dlelfl');
 
-    expect(result).to.equals('aobocod1e1f1');
+    expect(result).to.equals('a0b01c0d1e1f1');
   });
 });

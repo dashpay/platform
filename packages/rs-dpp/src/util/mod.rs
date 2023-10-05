@@ -12,5 +12,5 @@ pub mod json_schema;
 pub mod json_value;
 pub mod protocol_data;
 
-pub mod convert_to_base58_chars;
+pub mod strings;
 pub mod vec;

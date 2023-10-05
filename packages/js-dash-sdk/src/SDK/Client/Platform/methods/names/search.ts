@@ -1,6 +1,6 @@
 import { Platform } from '../../Platform';
 
-const convertToBase58chars = require('@dashevo/dpp/lib/util/convertToBase58chars');
+const convertToHomographSafeChars = require('@dashevo/dpp/lib/util/convertToHomographSafeChars');
 
 /**
  *
@@ -11,8 +11,8 @@ const convertToBase58chars = require('@dashevo/dpp/lib/util/convertToBase58chars
 export async function search(this: Platform, labelPrefix: string, parentDomainName: string = '') {
   await this.initialize();
 
-  const normalizedParentDomainName = convertToBase58chars(parentDomainName.toLowerCase());
-  const normalizedLabelPrefix = convertToBase58chars(labelPrefix.toLowerCase());
+  const normalizedParentDomainName = convertToHomographSafeChars(parentDomainName);
+  const normalizedLabelPrefix = convertToHomographSafeChars(labelPrefix);
 
   const documents = await this.documents.get('dpns.domain', {
     where: [

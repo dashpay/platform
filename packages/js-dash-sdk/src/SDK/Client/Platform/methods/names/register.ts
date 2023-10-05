@@ -3,7 +3,7 @@ import { Platform } from '../../Platform';
 
 const crypto = require('crypto');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
-const convertToBase58chars = require('@dashevo/dpp/lib/util/convertToBase58chars');
+const convertToHomographSafeChars = require('@dashevo/dpp/lib/util/convertToHomographSafeChars');
 
 /**
  * Register names to the platform
@@ -43,10 +43,10 @@ export async function register(this: Platform,
     .slice(1)
     .join('.');
 
-  const normalizedParentDomainName = convertToBase58chars(parentDomainName.toLowerCase());
+  const normalizedParentDomainName = convertToHomographSafeChars(parentDomainName);
 
   const [label] = nameLabels;
-  const normalizedLabel = convertToBase58chars(label.toLowerCase());
+  const normalizedLabel = convertToHomographSafeChars(label);
 
   console.log('Label', label, 'normalized', normalizedLabel);
 

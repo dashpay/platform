@@ -42,10 +42,10 @@
       },
       "normalizedLabel": {
         "type": "string",
-        "pattern": "^[a-km-z1-9][a-km-z1-9-]{0,61}[a-km-z1-9]$",
+        "pattern": "^[a-km-np-z0-9][a-km-np-z0-9-]{0,61}[a-km-np-z0-9]$",
         "maxLength": 63,
-        "description": "Domain label converted to lowercase for case-insensitive uniqueness validation. \"0\" and \"l\" replaced to \"o\" and \"1\" respectively to mitigate homograph attack. e.g. 'bob'",
-        "$comment": "Must be equal to the label in lowercase. \"0\" and \"l\" must be replaced to \"o\" and \"1\" respectively."
+        "description": "Domain label converted to lowercase for case-insensitive uniqueness validation. \"o\", \"i\" and \"l\" replaced with \"0\" and \"1\" to mitigate homograph attack. e.g. 'b0b'",
+        "$comment": "Must be equal to the label in lowercase. \"o\", \"i\" and \"l\" must be replaced with \"0\" and \"1\"."
       },
       "parentDomainName": {
         "type": "string",
@@ -56,11 +56,11 @@
       },
       "normalizedParentDomainName": {
         "type": "string",
-        "pattern": "^$|^[a-km-z1-9][a-km-z1-9-\\.]{0,61}[a-km-z1-9]$",
+        "pattern": "^$|^[a-km-z0-9][a-km-z0-9-\\.]{0,61}[a-km-z0-9]$",
         "minLength": 0,
         "maxLength": 63,
-        "description": "A parent domain name in lowercase for case-insensitive uniqueness validation. \"0\" and \"l\" replaced to \"o\" and \"1\" respectively to mitigate homograph attack. e.g. 'dash'",
-        "$comment": "Must either be equal to an existing domain or empty to create a top level domain. \"0\" and \"l\" must be replaced to \"o\" and \"1\" respectively. Only the data contract owner can create top level domains."
+        "description": "A parent domain name in lowercase for case-insensitive uniqueness validation. \"o\", \"i\" and \"l\" replaced with \"0\" and \"1\" to mitigate homograph attack. e.g. 'dash'",
+        "$comment": "Must either be equal to an existing domain or empty to create a top level domain. \"o\", \"i\" and \"l\" must be replaced with \"0\" and \"1\". Only the data contract owner can create top level domains."
       },
       "preorderSalt": {
         "type": "array",

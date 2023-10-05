@@ -1,6 +1,6 @@
 import { Platform } from '../../Platform';
 
-const convertToBase58chars = require('@dashevo/dpp/lib/util/convertToBase58chars');
+const convertToHomographSafeChars = require('@dashevo/dpp/lib/util/convertToHomographSafeChars');
 
 /**
  * This method will allow you to resolve a DPNS record from its humanized name.
@@ -17,7 +17,7 @@ export async function resolve(this: Platform, name: string): Promise<any> {
   // in case of subdomain registration
   // we should split label and parent domain name
   if (name.includes('.')) {
-    const normalizedSegments = convertToBase58chars(name.toLowerCase()).split('.');
+    const normalizedSegments = convertToHomographSafeChars(name).split('.');
 
     [normalizedLabel] = normalizedSegments;
     normalizedParentDomainName = normalizedSegments.slice(1).join('.');

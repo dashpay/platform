@@ -11,7 +11,7 @@ use super::get_dpns_data_contract_fixture;
 
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
-use crate::util::convert_to_base58_chars::convert_to_base58_chars;
+use crate::util::strings::convert_to_homograph_safe_chars;
 
 pub struct ParentDocumentOptions {
     pub label: String,
@@ -37,7 +37,7 @@ pub fn get_dpns_parent_document_fixture(
     let mut pre_order_salt = [0u8; 32];
     let _ = getrandom(&mut pre_order_salt);
 
-    let normalized_label = convert_to_base58_chars(options.label.to_lowercase().as_str());
+    let normalized_label = convert_to_homograph_safe_chars(options.label.as_str());
 
     let mut map = BTreeMap::new();
     map.insert("label".to_string(), Value::Text(options.label));
@@ -85,7 +85,7 @@ pub fn get_dpns_parent_extended_document_fixture(
     let mut pre_order_salt = [0u8; 32];
     let _ = getrandom(&mut pre_order_salt);
 
-    let normalized_label = convert_to_base58_chars(options.label.to_lowercase().as_str());
+    let normalized_label = convert_to_homograph_safe_chars(options.label.as_str());
 
     let mut map = BTreeMap::new();
     map.insert("label".to_string(), Value::Text(options.label));

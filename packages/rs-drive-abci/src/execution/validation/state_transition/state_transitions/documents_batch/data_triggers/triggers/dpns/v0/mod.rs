@@ -20,7 +20,7 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::system_data_contracts::dpns_contract;
 use dpp::system_data_contracts::dpns_contract::document_types::domain::properties::{ALLOW_SUBDOMAINS, DASH_ALIAS_IDENTITY_ID, DASH_UNIQUE_IDENTITY_ID, LABEL, NORMALIZED_LABEL, NORMALIZED_PARENT_DOMAIN_NAME, PREORDER_SALT, RECORDS};
-use dpp::util::convert_to_base58_chars::convert_to_base58_chars;
+use dpp::util::strings::convert_to_homograph_safe_chars;
 use dpp::version::PlatformVersion;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
@@ -117,7 +117,7 @@ pub fn create_domain_data_trigger_v0(
             result.add_error(err)
         }
 
-        if normalized_label != convert_to_base58_chars(label.to_lowercase().as_str()) {
+        if normalized_label != convert_to_homograph_safe_chars(label.as_str()) {
             let err = DataTriggerConditionError::new(
                 data_contract.id(),
                 document_transition.base().id(),
@@ -131,7 +131,7 @@ pub fn create_domain_data_trigger_v0(
         }
 
         if normalized_parent_domain_name
-            != convert_to_base58_chars(parent_domain_name.to_lowercase().as_str())
+            != convert_to_homograph_safe_chars(parent_domain_name.as_str())
         {
             let err = DataTriggerConditionError::new(
                 data_contract.id(),
