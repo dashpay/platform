@@ -172,6 +172,10 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
       '0.25.0-dev.32': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
+            if (options.network !== NETWORK_MAINNET) {
+              options.core.docker.image = base.get('core.docker.image');
+            }
+
             if (options.network === NETWORK_TESTNET) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
               options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
