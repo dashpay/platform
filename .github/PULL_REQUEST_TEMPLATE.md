@@ -26,7 +26,7 @@
 - [ ] I have performed a self-review of my own code
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have added or updated relevant unit/integration/functional/e2e tests
-- [ ] I have added "!" to the title and described breaking changes in the corresponding section if my code includes any
+- [ ] I have added "!" to the title and described breaking changes in the corresponding section if my code contains any
 - [ ] I have made corresponding changes to the documentation if needed
 
 **For repository code-owners and collaborators only**
