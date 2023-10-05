@@ -11,10 +11,10 @@ use super::get_dpns_data_contract_fixture;
 
 #[cfg(feature = "extended-document")]
 use crate::document::ExtendedDocument;
+use crate::util::convert_to_base58_chars::convert_to_base58_chars;
 
 pub struct ParentDocumentOptions {
     pub label: String,
-    pub normalized_label: String,
     pub owner_id: Identifier,
 }
 
@@ -22,7 +22,6 @@ impl Default for ParentDocumentOptions {
     fn default() -> Self {
         Self {
             label: String::from("Parent"),
-            normalized_label: String::from("parent"),
             owner_id: generate_random_identifier_struct(),
         }
     }
@@ -38,12 +37,13 @@ pub fn get_dpns_parent_document_fixture(
     let mut pre_order_salt = [0u8; 32];
     let _ = getrandom(&mut pre_order_salt);
 
+    let normalized_label = convert_to_base58_chars(options.label.to_lowercase().as_str());
+
     let mut map = BTreeMap::new();
     map.insert("label".to_string(), Value::Text(options.label));
-    map.insert(
-        "normalizedLabel".to_string(),
-        Value::Text(options.normalized_label),
-    );
+    map.insert("normalizedLabel".to_string(), Value::Text(normalized_label));
+
+    map.insert("parentDomainName".to_string(), Value::Text(String::new()));
     map.insert(
         "normalizedParentDomainName".to_string(),
         Value::Text(String::new()),
@@ -85,16 +85,18 @@ pub fn get_dpns_parent_extended_document_fixture(
     let mut pre_order_salt = [0u8; 32];
     let _ = getrandom(&mut pre_order_salt);
 
+    let normalized_label = convert_to_base58_chars(options.label.to_lowercase().as_str());
+
     let mut map = BTreeMap::new();
     map.insert("label".to_string(), Value::Text(options.label));
-    map.insert(
-        "normalizedLabel".to_string(),
-        Value::Text(options.normalized_label),
-    );
+    map.insert("normalizedLabel".to_string(), Value::Text(normalized_label));
+
+    map.insert("parentDomainName".to_string(), Value::Text(String::new()));
     map.insert(
         "normalizedParentDomainName".to_string(),
         Value::Text(String::new()),
     );
+
     map.insert("preorderSalt".to_string(), Value::Bytes32(pre_order_salt));
     map.insert(
         "records".to_string(),
