@@ -56,7 +56,7 @@
       },
       "normalizedParentDomainName": {
         "type": "string",
-        "pattern": "^$|^[a-km-z0-9][a-km-z0-9-\\.]{0,61}[a-km-z0-9]$",
+        "pattern": "^$|^[a-km-np-z0-9][a-km-np-z0-9-\\.]{0,61}[a-km-np-z0-9]$",
         "minLength": 0,
         "maxLength": 63,
         "description": "A parent domain name in lowercase for case-insensitive uniqueness validation. \"o\", \"i\" and \"l\" replaced with \"0\" and \"1\" to mitigate homograph attack. e.g. 'dash'",
