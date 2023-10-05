@@ -7,7 +7,6 @@ const {
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForSTPropagated = require('../../lib/waitForSTPropagated');
-const { expect } = require('chai');
 
 const getRandomDomain = () => crypto.randomBytes(10).toString('hex');
 
