@@ -3,6 +3,7 @@ const getDpnsContractFixture = require('./getDpnsContractFixture');
 const DocumentFactory = require('../../document/DocumentFactory');
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 const createDPPMock = require('../mocks/createDPPMock');
+const convertToBase58chars = require('../../util/convertToBase58chars');
 
 const ownerId = generateRandomIdentifier();
 const dataContract = getDpnsContractFixture();
@@ -20,10 +21,11 @@ function getTopDocumentFixture(options = {}) {
   );
 
   const label = options.label || 'grandparent';
-  const normalizedLabel = options.normalizedLabel || label.toLowerCase();
+  const normalizedLabel = options.normalizedLabel || convertToBase58chars(label.toLowerCase());
   const data = {
     label,
     normalizedLabel,
+    parentDomainName: '',
     normalizedParentDomainName: '',
     preorderSalt: crypto.randomBytes(32),
     records: {
@@ -51,7 +53,7 @@ function getParentDocumentFixture(options = {}) {
   );
 
   const label = options.label || 'Parent';
-  const normalizedLabel = options.normalizedLabel || label.toLowerCase();
+  const normalizedLabel = options.normalizedLabel || convertToBase58chars(label.toLowerCase());
   const data = {
     label,
     normalizedLabel,
@@ -82,7 +84,7 @@ function getChildDocumentFixture(options = {}) {
   );
 
   const label = options.label || 'Child';
-  const normalizedLabel = options.normalizedLabel || label.toLowerCase();
+  const normalizedLabel = options.normalizedLabel || convertToBase58chars(label.toLowerCase());
   const parent = getParentDocumentFixture();
   const parentDomainName = `${parent.getData().normalizedLabel}.${parent.getData().normalizedParentDomainName}`;
   const data = {

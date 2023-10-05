@@ -42,18 +42,25 @@
       },
       "normalizedLabel": {
         "type": "string",
-        "pattern": "^[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$",
+        "pattern": "^[a-km-z1-9][a-km-z1-9-]{0,61}[a-km-z1-9]$",
         "maxLength": 63,
-        "description": "Domain label in lowercase for case-insensitive uniqueness validation. e.g. 'bob'",
-        "$comment": "Must be equal to the label in lowercase. This property will be deprecated due to case insensitive indices"
+        "description": "Domain label converted to lowercase for case-insensitive uniqueness validation. \"0\" and \"l\" replaced to \"o\" and \"1\" respectively to mitigate homograph attack. e.g. 'bob'",
+        "$comment": "Must be equal to the label in lowercase. \"0\" and \"l\" must be replaced to \"o\" and \"1\" respectively."
+      },
+      "parentDomainName": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$",
+        "minLength": 3,
+        "maxLength": 63,
+        "description": "A full parent domain name. e.g. 'dash'."
       },
       "normalizedParentDomainName": {
         "type": "string",
-        "pattern": "^$|^[a-z0-9][a-z0-9-\\.]{0,61}[a-z0-9]$",
+        "pattern": "^$|^[a-km-z1-9][a-km-z1-9-\\.]{0,61}[a-km-z1-9]$",
         "minLength": 0,
         "maxLength": 63,
-        "description": "A full parent domain name in lowercase for case-insensitive uniqueness validation. e.g. 'dash'",
-        "$comment": "Must either be equal to an existing domain or empty to create a top level domain. Only the data contract owner can create top level domains."
+        "description": "A parent domain name in lowercase for case-insensitive uniqueness validation. \"0\" and \"l\" replaced to \"o\" and \"1\" respectively to mitigate homograph attack. e.g. 'dash'",
+        "$comment": "Must either be equal to an existing domain or empty to create a top level domain. \"0\" and \"l\" must be replaced to \"o\" and \"1\" respectively. Only the data contract owner can create top level domains."
       },
       "preorderSalt": {
         "type": "array",

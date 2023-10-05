@@ -1,5 +1,7 @@
 import { Platform } from '../../Platform';
 
+const convertToBase58chars = require('@dashevo/dpp/lib/util/convertToBase58chars');
+
 /**
  *
  * @param {string} labelPrefix - label prefix to search for
@@ -9,8 +11,8 @@ import { Platform } from '../../Platform';
 export async function search(this: Platform, labelPrefix: string, parentDomainName: string = '') {
   await this.initialize();
 
-  const normalizedParentDomainName = parentDomainName.toLowerCase();
-  const normalizedLabelPrefix = labelPrefix.toLowerCase();
+  const normalizedParentDomainName = convertToBase58chars(parentDomainName.toLowerCase());
+  const normalizedLabelPrefix = convertToBase58chars(labelPrefix.toLowerCase());
 
   const documents = await this.documents.get('dpns.domain', {
     where: [

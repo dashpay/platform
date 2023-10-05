@@ -237,6 +237,7 @@ impl<C> Platform<C> {
         let document_stub_properties_value = platform_value!({
             "label" : domain,
             "normalizedLabel" : domain,
+            "parentDomainName" : "",
             "normalizedParentDomainName" : "",
             "preorderSalt" : BinaryData::new(DPNS_DASH_TLD_PREORDER_SALT.to_vec()),
             "records" : {
