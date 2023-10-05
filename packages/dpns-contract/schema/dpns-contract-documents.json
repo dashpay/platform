@@ -50,7 +50,7 @@
       "parentDomainName": {
         "type": "string",
         "pattern": "^$|^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$",
-        "minLength": 3,
+        "minLength": 0,
         "maxLength": 63,
         "description": "A full parent domain name. e.g. 'dash'."
       },

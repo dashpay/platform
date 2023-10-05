@@ -3,12 +3,12 @@
  * @return {string}
  */
 function convertToBase58chars(input) {
-  return input.replace(/[oi]/g, (match) => {
-    if (match === 'o') {
-      return '0';
+  return input.replace(/[0l]/g, (match) => {
+    if (match === '0') {
+      return 'o';
     }
 
-    if (match === 'i') {
+    if (match === 'l') {
       return '1';
     }
 

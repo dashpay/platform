@@ -48,6 +48,8 @@ export async function register(this: Platform,
   const [label] = nameLabels;
   const normalizedLabel = convertToBase58chars(label.toLowerCase());
 
+  console.log('Label', label, 'normalized', normalizedLabel);
+
   const preorderSalt = crypto.randomBytes(32);
 
   const isSecondLevelDomain = normalizedParentDomainName.length > 0;
