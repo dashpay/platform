@@ -50,20 +50,9 @@ where
             return Ok(()); // no need to do anything
         }
 
-        let all_quorums_list = self
+        let all_quorums_by_type = self
             .core_rpc
-            .get_quorum_listextended(Some(core_block_height))?;
-
-        // Sort into deterministic order
-        let all_quorums_by_type: BTreeMap<_, _> = all_quorums_list
-            .quorums_by_type
-            .into_iter()
-            .map(|(quorum_type, quorum_list)| {
-                let sorted_quorum_list: BTreeMap<_, _> = quorum_list.into_iter().collect();
-
-                (quorum_type, sorted_quorum_list)
-            })
-            .collect();
+            .get_quorum_listextended_by_type(Some(core_block_height))?;
 
         let validator_quorums_list =
             all_quorums_by_type
@@ -84,7 +73,7 @@ where
                 if has_quorum {
                     tracing::trace!(
                         ?quorum_hash,
-                        quorum_type = self.config.quorum_type()
+                        quorum_type = ?self.config.quorum_type(),
                         "remove validator set {} with quorum type {}",
                         quorum_hash,
                         self.config.quorum_type()
@@ -133,7 +122,7 @@ where
                 tracing::trace!(
                     ?validator_set,
                     ?quorum_hash,
-                    quorum_type = self.config.quorum_type()
+                    quorum_type = ?self.config.quorum_type(),
                     "add new validator set {} with quorum type {}",
                     quorum_hash,
                     self.config.quorum_type()
