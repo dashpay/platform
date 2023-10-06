@@ -44,7 +44,9 @@ impl Drive {
         }
 
         // Clone batch only if we log them
-        let maybe_ops_for_logs = if tracing::event_enabled!(Level::TRACE) {
+        #[cfg(feature = "grovedb_operations_logging")]
+        let maybe_ops_for_logs = if tracing::event_enabled!(target: "grovedb_operations", Level::TRACE)
+        {
             Some(ops.clone())
         } else {
             None
@@ -149,7 +151,10 @@ impl Drive {
             transaction,
         );
 
-        if tracing::event_enabled!(Level::TRACE) && cost_context.value.is_ok() {
+        #[cfg(feature = "grovedb_operations_logging")]
+        if tracing::event_enabled!(target: "grovedb_operations", Level::TRACE)
+            && cost_context.value.is_ok()
+        {
             let root_hash = self
                 .grove
                 .root_hash(transaction)
@@ -157,10 +162,11 @@ impl Drive {
                 .map_err(Error::GroveDB)?;
 
             tracing::trace!(
+                target = "grovedb_operations",
                 ops = ?maybe_ops_for_logs.unwrap(),
                 root_hash = ?root_hash,
                 is_transactional = transaction.is_some(),
-                "apply grovedb batch",
+                "grovedb batch applied",
             );
         }
 

@@ -18,7 +18,9 @@ impl Drive {
             trying_to_clear_with_subtrees_returns_error: false,
         };
 
-        let maybe_path_for_logs = if tracing::event_enabled!(Level::TRACE) {
+        #[cfg(feature = "grovedb_operations_logging")]
+        let maybe_path_for_logs = if tracing::event_enabled!(target: "grovedb_operations", Level::TRACE)
+        {
             Some(path.clone())
         } else {
             None
@@ -31,7 +33,8 @@ impl Drive {
             .map_err(Error::GroveDB)
             .map(|_| ());
 
-        if tracing::event_enabled!(Level::TRACE) && result.is_ok() {
+        #[cfg(feature = "grovedb_operations_logging")]
+        if tracing::event_enabled!(target: "grovedb_operations", Level::TRACE) && result.is_ok() {
             let root_hash = self
                 .grove
                 .root_hash(transaction)
@@ -39,6 +42,7 @@ impl Drive {
                 .map_err(Error::GroveDB)?;
 
             tracing::trace!(
+                target = "grovedb_operations",
                 path = ?maybe_path_for_logs.unwrap().to_vec(),
                 root_hash = ?root_hash,
                 is_transactional = transaction.is_some(),
