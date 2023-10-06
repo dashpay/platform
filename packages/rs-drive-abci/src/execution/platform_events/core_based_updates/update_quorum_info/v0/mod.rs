@@ -39,6 +39,7 @@ where
             tracing::debug!("update quorum info from scratch up to {core_block_height}");
         } else if core_block_height != block_platform_state.core_height() {
             tracing::debug!(
+                previous_core_block_height = block_platform_state.core_height(),
                 "update quorum info from {} to {}",
                 block_platform_state.core_height(),
                 core_block_height
@@ -75,15 +76,23 @@ where
                 )))?;
 
         // Remove validator_sets entries that are no longer valid for the core block height
-        block_platform_state.validator_sets_mut().retain(|key, _| {
-            let has_quorum = validator_quorums_list.contains_key::<QuorumHash>(key);
+        block_platform_state
+            .validator_sets_mut()
+            .retain(|quorum_hash, _| {
+                let has_quorum = validator_quorums_list.contains_key::<QuorumHash>(quorum_hash);
 
-            if has_quorum {
-                tracing::trace!("remove {key} quorum")
-            }
+                if has_quorum {
+                    tracing::trace!(
+                        ?quorum_hash,
+                        quorum_type = self.config.quorum_type()
+                        "remove validator set {} with quorum type {}",
+                        quorum_hash,
+                        self.config.quorum_type()
+                    )
+                }
 
-            has_quorum
-        });
+                has_quorum
+            });
 
         // Fetch quorum info and their keys from the RPC for new quorums
         let mut quorum_infos = validator_quorums_list
@@ -115,15 +124,22 @@ where
         // Map to validator sets
         let new_validator_sets = quorum_infos
             .into_iter()
-            .map(|(key, info_result)| {
+            .map(|(quorum_hash, info_result)| {
                 let validator_set = ValidatorSet::V0(ValidatorSetV0::try_from_quorum_info_result(
                     info_result,
                     block_platform_state,
                 )?);
 
-                tracing::trace!(?validator_set, "add new validator set {key}");
+                tracing::trace!(
+                    ?validator_set,
+                    ?quorum_hash,
+                    quorum_type = self.config.quorum_type()
+                    "add new validator set {} with quorum type {}",
+                    quorum_hash,
+                    self.config.quorum_type()
+                );
 
-                Ok((key, validator_set))
+                Ok((quorum_hash, validator_set))
             })
             .collect::<Result<Vec<_>, Error>>()?;
 
