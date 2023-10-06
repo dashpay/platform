@@ -199,6 +199,9 @@ pub enum ProtocolError {
         raw_identity: Value,
     },
 
+    #[error("vote error {0}")]
+    VoteError(String),
+
     #[error("Public key generation error {0}")]
     PublicKeyGenerationError(String),
 

@@ -51,7 +51,7 @@ use crate::version::drive_versions::{
     DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
     DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
     DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions, DriveVersion,
-    DriveVoteInsertMethodVersions, DriveVoteMethodVersions,
+    DriveVoteContestedResourceInsertMethodVersions, DriveVoteMethodVersions,
 };
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
@@ -178,7 +178,7 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 },
             },
             vote: DriveVoteMethodVersions {
-                insert: DriveVoteInsertMethodVersions {
+                contested_resource_insert: DriveVoteContestedResourceInsertMethodVersions {
                     add_new_masternode_vote_type: 0,
                 },
             },

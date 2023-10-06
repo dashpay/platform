@@ -201,11 +201,30 @@ pub struct DriveSystemEstimationCostsMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveVoteMethodVersions {
     pub insert: DriveVoteInsertMethodVersions,
+    pub contested_resource_insert: DriveVoteContestedResourceInsertMethodVersions,
+    pub cleanup: DriveVoteCleanupMethodVersions,
+    pub setup: DriveVoteSetupMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVoteSetupMethodVersions {
+    pub setup_initial_vote_tree_main_structure: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVoteCleanupMethodVersions {
+    pub remove_votes_for_identity: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVoteInsertMethodVersions {
-    pub add_new_masternode_vote_type: FeatureVersion,
+    pub register_identity_vote: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVoteContestedResourceInsertMethodVersions {
+    pub register_contested_resource_identity_vote: FeatureVersion,
+    pub register_identity_vote_for_identity_queries: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

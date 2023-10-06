@@ -196,6 +196,10 @@ impl Drive {
 
         self.grove_apply_batch(batch, false, transaction, drive_version)?;
 
+        // We can then setup the initial vote tree main structure
+
+        self.setup_initial_vote_tree_main_structure(transaction, platform_version)?;
+
         Ok(())
     }
 }
