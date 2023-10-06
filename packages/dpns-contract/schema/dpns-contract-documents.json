@@ -42,7 +42,7 @@
       },
       "normalizedLabel": {
         "type": "string",
-        "pattern": "^[a-km-np-z0-9][a-km-np-z0-9-]{0,61}[a-km-np-z0-9]$",
+        "pattern": "^[a-hj-km-np-z0-9][a-hj-km-np-z0-9-]{0,61}[a-hj-km-np-z0-9]$",
         "maxLength": 63,
         "description": "Domain label converted to lowercase for case-insensitive uniqueness validation. \"o\", \"i\" and \"l\" replaced with \"0\" and \"1\" to mitigate homograph attack. e.g. 'b0b'",
         "$comment": "Must be equal to the label in lowercase. \"o\", \"i\" and \"l\" must be replaced with \"0\" and \"1\"."
@@ -56,7 +56,7 @@
       },
       "normalizedParentDomainName": {
         "type": "string",
-        "pattern": "^$|^[a-km-np-z0-9][a-km-np-z0-9-\\.]{0,61}[a-km-np-z0-9]$",
+        "pattern": "^$|^[a-hj-km-np-z0-9][a-hj-km-np-z0-9-\\.]{0,61}[a-hj-km-np-z0-9]$",
         "minLength": 0,
         "maxLength": 63,
         "description": "A parent domain name in lowercase for case-insensitive uniqueness validation. \"o\", \"i\" and \"l\" replaced with \"0\" and \"1\" to mitigate homograph attack. e.g. 'dash'",
