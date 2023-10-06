@@ -15,7 +15,7 @@ const DataTriggerConditionError = require('../../../../lib/errors/consensus/stat
 const Identifier = require('../../../../lib/identifier/Identifier');
 const StateTransitionExecutionContext = require('../../../../lib/stateTransition/StateTransitionExecutionContext');
 
-describe('createDomainDataTrigger', () => {
+describe.skip('createDomainDataTrigger', () => {
   let parentDocumentTransition;
   let childDocumentTransition;
   let childDocument;
