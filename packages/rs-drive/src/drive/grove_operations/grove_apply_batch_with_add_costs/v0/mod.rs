@@ -43,7 +43,7 @@ impl Drive {
             }
         }
 
-        // Clone batch only if we log them
+        // Clone ops only if we log them
         #[cfg(feature = "grovedb_operations_logging")]
         let maybe_ops_for_logs = if tracing::event_enabled!(target: "grovedb_operations", Level::TRACE)
         {
