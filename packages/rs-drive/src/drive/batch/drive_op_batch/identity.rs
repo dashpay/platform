@@ -21,6 +21,8 @@ pub enum IdentityOperationType {
     AddNewIdentity {
         /// The identity we wish to insert
         identity: Identity,
+        /// Is this identity a masternode identity
+        /// On Masternode identities we do not add lookup key hashes
         is_masternode_identity: bool,
     },
     /// Adds balance to an identity
