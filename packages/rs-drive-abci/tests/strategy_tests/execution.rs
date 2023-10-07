@@ -260,13 +260,15 @@ pub(crate) fn run_chain_for_strategy(
 
     platform
         .core_rpc
-        .expect_get_quorum_listextended_by_type()
+        .expect_get_quorum_listextended()
         .returning(move |core_height: Option<u32>| {
             if !strategy.rotate_quorums {
-                Ok(BTreeMap::from([(
-                    QuorumType::Llmq100_67,
-                    quorums_details.clone().into_iter().collect(),
-                )]))
+                Ok(dashcore_rpc::dashcore_rpc_json::ExtendedQuorumListResult {
+                    quorums_by_type: HashMap::from([(
+                        QuorumType::Llmq100_67,
+                        quorums_details.clone().into_iter().collect(),
+                    )]),
+                })
             } else {
                 let core_height = core_height.expect("expected a core height");
                 // if we rotate quorums we shouldn't give back the same ones every time
@@ -294,7 +296,9 @@ pub(crate) fn run_chain_for_strategy(
                         .collect()
                 };
 
-                Ok(BTreeMap::from([(QuorumType::Llmq100_67, quorums)]))
+                Ok(dashcore_rpc::dashcore_rpc_json::ExtendedQuorumListResult {
+                    quorums_by_type: HashMap::from([(QuorumType::Llmq100_67, quorums)]),
+                })
             }
         });
 
@@ -308,7 +312,7 @@ pub(crate) fn run_chain_for_strategy(
         .expect_get_quorum_info()
         .returning(move |_, quorum_hash: &QuorumHash, _| {
             Ok(quorums_info
-                .get::<QuorumHash>(quorum_hash)
+                .get(quorum_hash)
                 .unwrap_or_else(|| panic!("expected to get quorum {}", hex::encode(quorum_hash)))
                 .clone())
         });
@@ -521,7 +525,7 @@ pub(crate) fn start_chain_for_strategy(
         .expect("expected quorums to be initialized");
 
     let current_quorum_with_test_info = quorums
-        .get::<QuorumHash>(&current_quorum_hash)
+        .get(&current_quorum_hash)
         .expect("expected a quorum to be found");
 
     // init chain
@@ -631,8 +635,7 @@ pub(crate) fn continue_chain_for_strategy(
 
     let mut total_withdrawals = vec![];
 
-    let mut current_quorum_with_test_info =
-        quorums.get::<QuorumHash>(&current_quorum_hash).unwrap();
+    let mut current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();
 
     let mut validator_set_updates = BTreeMap::new();
 
@@ -659,8 +662,7 @@ pub(crate) fn continue_chain_for_strategy(
             epoch: Epoch::new(epoch_info.current_epoch_index).unwrap(),
         };
         if current_quorum_with_test_info.quorum_hash != current_quorum_hash {
-            current_quorum_with_test_info =
-                quorums.get::<QuorumHash>(&current_quorum_hash).unwrap();
+            current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();
         }
 
         let proposer = current_quorum_with_test_info
@@ -684,7 +686,7 @@ pub(crate) fn continue_chain_for_strategy(
                     next_protocol_version,
                     change_block_height,
                 } = proposer_versions
-                    .get::<ProTxHash>(&proposer.pro_tx_hash)
+                    .get(&proposer.pro_tx_hash)
                     .expect("expected to have version");
                 if &block_height >= change_block_height {
                     *next_protocol_version
