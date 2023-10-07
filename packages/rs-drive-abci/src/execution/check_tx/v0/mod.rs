@@ -226,6 +226,7 @@ mod tests {
             .drive
             .add_new_identity(
                 identity,
+                false,
                 &BlockInfo::default(),
                 true,
                 None,
@@ -294,6 +295,7 @@ mod tests {
             .drive
             .add_new_identity(
                 identity,
+                false,
                 &BlockInfo::default(),
                 true,
                 None,

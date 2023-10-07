@@ -80,14 +80,17 @@ where
 
             drive_operations.push(IdentityOperation(AddNewIdentity {
                 identity: owner_identity,
+                is_masternode_identity: true,
             }));
 
             drive_operations.push(IdentityOperation(AddNewIdentity {
                 identity: voter_identity,
+                is_masternode_identity: true,
             }));
 
             drive_operations.push(IdentityOperation(AddNewIdentity {
                 identity: operator_identity,
+                is_masternode_identity: true,
             }));
         }
 

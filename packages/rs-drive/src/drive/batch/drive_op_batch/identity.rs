@@ -15,9 +15,13 @@ use std::collections::HashMap;
 #[derive(Clone, Debug)]
 pub enum IdentityOperationType {
     /// Inserts a new identity to the `Identities` subtree.
+    /// A masternode identity is an identity, but can not have unique keys.
+    /// It also will skip testing for unique keys when adding non unique keys, so no one will
+    /// take a key, then add it to a masternode
     AddNewIdentity {
         /// The identity we wish to insert
         identity: Identity,
+        is_masternode_identity: bool,
     },
     /// Adds balance to an identity
     AddToIdentityBalance {
@@ -84,15 +88,18 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let _drive_version = &platform_version.drive;
         match self {
-            IdentityOperationType::AddNewIdentity { identity } => drive
-                .add_new_identity_operations(
-                    identity,
-                    block_info,
-                    &mut None,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                    platform_version,
-                ),
+            IdentityOperationType::AddNewIdentity {
+                identity,
+                is_masternode_identity,
+            } => drive.add_new_identity_operations(
+                identity,
+                is_masternode_identity,
+                block_info,
+                &mut None,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             IdentityOperationType::AddToIdentityBalance {
                 identity_id,
                 added_balance,

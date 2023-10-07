@@ -140,6 +140,7 @@ where
             // other is that the
             drive_operations.push(IdentityOperation(AddNewIdentity {
                 identity: new_voter_identity,
+                is_masternode_identity: true,
             }));
         }
         Ok(())
