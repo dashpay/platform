@@ -1119,7 +1119,7 @@ mod tests {
 
         let document_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1191,7 +1191,7 @@ mod tests {
 
         let document_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1273,7 +1273,7 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1373,7 +1373,7 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1487,7 +1487,7 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1590,7 +1590,7 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")

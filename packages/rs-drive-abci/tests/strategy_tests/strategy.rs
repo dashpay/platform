@@ -13,7 +13,7 @@ use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
 
-use dpp::document::DocumentV0Getters;
+use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
 use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
@@ -391,7 +391,7 @@ impl Strategy {
                 let count = rng.gen_range(op.frequency.times_per_block_range.clone());
                 match &op.op_type {
                     OperationType::Document(DocumentOp {
-                        action: DocumentAction::DocumentActionInsert,
+                        action: DocumentAction::DocumentActionInsertRandom,
                         document_type,
                         contract,
                     }) => {
@@ -407,6 +407,94 @@ impl Strategy {
                         documents
                             .into_iter()
                             .for_each(|(document, identity, entropy)| {
+                                let updated_at =
+                                    if document_type.required_fields().contains("$updatedAt") {
+                                        document.created_at()
+                                    } else {
+                                        None
+                                    };
+                                let document_create_transition: DocumentCreateTransition =
+                                    DocumentCreateTransitionV0 {
+                                        base: DocumentBaseTransitionV0 {
+                                            id: document.id(),
+                                            document_type_name: document_type.name().clone(),
+                                            data_contract_id: contract.id(),
+                                        }
+                                        .into(),
+                                        entropy: entropy.to_buffer(),
+                                        created_at: document.created_at(),
+                                        updated_at,
+                                        data: document.properties_consumed(),
+                                    }
+                                    .into();
+
+                                let document_batch_transition: DocumentsBatchTransition =
+                                    DocumentsBatchTransitionV0 {
+                                        owner_id: identity.id(),
+                                        transitions: vec![document_create_transition.into()],
+                                        signature_public_key_id: 0,
+                                        signature: BinaryData::default(),
+                                    }
+                                    .into();
+                                let mut document_batch_transition: StateTransition =
+                                    document_batch_transition.into();
+
+                                let identity_public_key = identity
+                                    .get_first_public_key_matching(
+                                        Purpose::AUTHENTICATION,
+                                        HashSet::from([
+                                            SecurityLevel::HIGH,
+                                            SecurityLevel::CRITICAL,
+                                        ]),
+                                        HashSet::from([
+                                            KeyType::ECDSA_SECP256K1,
+                                            KeyType::BLS12_381,
+                                        ]),
+                                    )
+                                    .expect("expected to get a signing key");
+
+                                document_batch_transition
+                                    .sign_external(
+                                        identity_public_key,
+                                        signer,
+                                        Some(|_data_contract_id, _document_type_name| {
+                                            Ok(SecurityLevel::HIGH)
+                                        }),
+                                    )
+                                    .expect("expected to sign");
+
+                                operations.push(document_batch_transition);
+                            });
+                    }
+                    OperationType::Document(DocumentOp {
+                        action:
+                            DocumentAction::DocumentActionInsertSpecific(
+                                specific_document_key_value_pairs,
+                                identifier_paths,
+                            ),
+                        document_type,
+                        contract,
+                    }) => {
+                        let mut documents = document_type
+                            .random_documents_with_params(
+                                count as u32,
+                                current_identities,
+                                block_info.time_ms,
+                                rng,
+                                platform_version,
+                            )
+                            .expect("expected random_documents_with_params");
+
+                        documents
+                            .into_iter()
+                            .for_each(|(mut document, identity, entropy)| {
+                                document
+                                    .properties_mut()
+                                    .append(&mut specific_document_key_value_pairs.clone());
+                                for identifier_path in identifier_paths {
+                                    document.set(identifier_path, identity.id().into());
+                                }
+                                dbg!(&document);
                                 let updated_at =
                                     if document_type.required_fields().contains("$updatedAt") {
                                         document.created_at()

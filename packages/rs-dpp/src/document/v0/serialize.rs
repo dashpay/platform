@@ -294,7 +294,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             .filter_map(|(key, property)| {
                 let read_value = property
                     .property_type
-                    .read_optionaly_from(&mut buf, property.required);
+                    .read_optionally_from(&mut buf, property.required);
 
                 match read_value {
                     Ok(read_value) => read_value.map(|read_value| Ok((key.clone(), read_value))),
@@ -302,6 +302,8 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
                 }
             })
             .collect::<Result<BTreeMap<String, Value>, ProtocolError>>()?;
+
+        dbg!(&properties);
 
         Ok(DocumentV0 {
             id: Identifier::new(id),

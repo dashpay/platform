@@ -163,9 +163,15 @@ impl CreateRandomDocument for DocumentTypeV0 {
         );
         // dbg!("gen", hex::encode(id), hex::encode(&self.data_contract_id), hex::encode(&owner_id), self.name.as_str(), hex::encode(entropy.as_slice()));
         let properties = self
-            .flattened_properties
+            .properties
             .iter()
-            .map(|(key, property)| (key.clone(), property.property_type.random_value(rng)))
+            .filter_map(|(key, property)| {
+                if property.required {
+                    Some((key.clone(), property.property_type.random_value(rng)))
+                } else {
+                    None
+                }
+            })
             .collect();
 
         let revision = if self.documents_mutable {

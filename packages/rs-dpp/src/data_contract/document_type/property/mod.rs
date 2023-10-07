@@ -264,11 +264,15 @@ impl DocumentPropertyType {
             DocumentPropertyType::Object(sub_fields) => {
                 let value_vec = sub_fields
                     .iter()
-                    .map(|(string, field_type)| {
-                        (
-                            Value::Text(string.clone()),
-                            field_type.property_type.random_value(rng),
-                        )
+                    .filter_map(|(string, field_type)| {
+                        if field_type.required {
+                            Some((
+                                Value::Text(string.clone()),
+                                field_type.property_type.random_value(rng),
+                            ))
+                        } else {
+                            None
+                        }
                     })
                     .collect();
                 Value::Map(value_vec)
@@ -338,7 +342,7 @@ impl DocumentPropertyType {
         }
     }
 
-    pub fn read_optionaly_from(
+    pub fn read_optionally_from(
         &self,
         buf: &mut BufReader<&[u8]>,
         required: bool,
@@ -350,7 +354,7 @@ impl DocumentPropertyType {
                 ))
             })?;
             if marker == 0 {
-                return Ok(Some(Value::Null));
+                return Ok(None);
             }
         }
         match self {
@@ -432,8 +436,9 @@ impl DocumentPropertyType {
                 let values = inner_fields
                     .iter()
                     .filter_map(|(key, field)| {
-                        let read_value =
-                            field.property_type.read_optionaly_from(buf, field.required);
+                        let read_value = field
+                            .property_type
+                            .read_optionally_from(buf, field.required);
                         match read_value {
                             Ok(read_value) => read_value
                                 .map(|read_value| Ok((Value::Text(key.clone()), read_value))),

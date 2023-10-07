@@ -248,6 +248,15 @@ pub(crate) fn verify_state_transitions_were_executed(
                     match document_transition_action {
                         DocumentTransitionAction::CreateAction(creation_action) => {
                             let document = document.expect("expected a document");
+                            dbg!(
+                                &document,
+                                Document::try_from_create_transition(
+                                    creation_action,
+                                    documents_batch_transition.owner_id(),
+                                    platform_version,
+                                )
+                                .expect("expected to get document")
+                            );
                             assert_eq!(
                                 document,
                                 Document::try_from_create_transition(

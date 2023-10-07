@@ -4,11 +4,18 @@ use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract as Contract;
 use dpp::identifier::Identifier;
 use dpp::identity::IdentityPublicKey;
+use dpp::platform_value::Value;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 #[derive(Clone, Debug)]
 pub enum DocumentAction {
-    DocumentActionInsert,
+    DocumentActionInsertRandom,
+    /// Insert a document with specific values
+    /// If a required value is not set, it will use random ones
+    /// The second parameter are the paths that should be set to the current owner id of the
+    /// state transition
+    DocumentActionInsertSpecific(BTreeMap<String, Value>, BTreeSet<String>),
     DocumentActionDelete,
     DocumentActionReplace,
 }
