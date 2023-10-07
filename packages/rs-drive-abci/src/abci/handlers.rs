@@ -211,12 +211,12 @@ where
         } = run_result.into_data().map_err(Error::Protocol)?;
 
         // We need to let Tenderdash know about the transactions we should remove from execution
-        let (tx_results, tx_records): (Vec<Option<ExecTxResult>>, Vec<TxRecord>) = tx_results
+        let (tx_results, tx_records): (Vec<ExecTxResult>, Vec<TxRecord>) = tx_results
             .into_iter()
             .map(|(tx, result)| {
                 if result.code > 0 {
                     (
-                        None,
+                        result,
                         TxRecord {
                             action: TxAction::Removed as i32,
                             tx,
@@ -224,7 +224,7 @@ where
                     )
                 } else {
                     (
-                        Some(result),
+                        result,
                         TxRecord {
                             action: TxAction::Unmodified as i32,
                             tx,
@@ -233,8 +233,6 @@ where
                 }
             })
             .unzip();
-
-        let tx_results = tx_results.into_iter().flatten().collect();
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponsePrepareProposal {

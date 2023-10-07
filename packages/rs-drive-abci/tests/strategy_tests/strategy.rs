@@ -138,6 +138,7 @@ pub enum StrategyMode {
 pub struct FailureStrategy {
     pub deterministic_start_seed: Option<u64>,
     pub dont_finalize_block: bool,
+    pub expect_errors_with_codes: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -400,7 +401,7 @@ impl Strategy {
                 let count = rng.gen_range(op.frequency.times_per_block_range.clone());
                 match &op.op_type {
                     OperationType::Document(DocumentOp {
-                        action: DocumentAction::DocumentActionInsertRandom,
+                        action: DocumentAction::DocumentActionInsertRandom(fill_type, fill_size),
                         document_type,
                         contract,
                     }) => {
@@ -409,6 +410,8 @@ impl Strategy {
                                 count as u32,
                                 current_identities,
                                 block_info.time_ms,
+                                *fill_type,
+                                *fill_size,
                                 rng,
                                 platform_version,
                             )
@@ -480,6 +483,8 @@ impl Strategy {
                             DocumentAction::DocumentActionInsertSpecific(
                                 specific_document_key_value_pairs,
                                 identifier,
+                                fill_type,
+                                fill_size,
                             ),
                         document_type,
                         contract,
@@ -495,6 +500,8 @@ impl Strategy {
                                     count as u32,
                                     &held_identity,
                                     block_info.time_ms,
+                                    *fill_type,
+                                    *fill_size,
                                     rng,
                                     platform_version,
                                 )
@@ -505,6 +512,8 @@ impl Strategy {
                                     count as u32,
                                     current_identities,
                                     block_info.time_ms,
+                                    *fill_type,
+                                    *fill_size,
                                     rng,
                                     platform_version,
                                 )
@@ -941,8 +950,7 @@ pub struct ChainExecutionOutcome<'a> {
     pub withdrawals: Vec<dashcore::Transaction>,
     /// height to the validator set update at that height
     pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
-    pub state_transitions_per_block: BTreeMap<u64, Vec<StateTransition>>,
-    pub state_transition_results_per_block: BTreeMap<u64, Vec<ExecTxResult>>,
+    pub state_transition_results_per_block: BTreeMap<u64, Vec<(StateTransition, ExecTxResult)>>,
 }
 
 impl<'a> ChainExecutionOutcome<'a> {

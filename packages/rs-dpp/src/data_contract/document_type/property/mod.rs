@@ -283,6 +283,46 @@ impl DocumentPropertyType {
         }
     }
 
+    pub fn random_sub_filled_value(&self, rng: &mut StdRng) -> Value {
+        match self {
+            DocumentPropertyType::Integer => Value::I64(rng.gen::<i64>()),
+            DocumentPropertyType::Number => Value::Float(rng.gen::<f64>()),
+            DocumentPropertyType::String(_, _) => {
+                let size = self.min_size().unwrap();
+                Value::Text(
+                    rng.sample_iter(Alphanumeric)
+                        .take(size as usize)
+                        .map(char::from)
+                        .collect(),
+                )
+            }
+            DocumentPropertyType::ByteArray(_, _) => {
+                let size = self.min_size().unwrap();
+                Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
+            }
+            DocumentPropertyType::Boolean => Value::Bool(rng.gen::<bool>()),
+            DocumentPropertyType::Date => {
+                let f: f64 = rng.gen_range(1548910575000.0..1648910575000.0);
+                Value::Float(f.round() / 1000.0)
+            }
+            DocumentPropertyType::Object(sub_fields) => {
+                let value_vec = sub_fields
+                    .iter()
+                    .map(|(string, field_type)| {
+                        (
+                            Value::Text(string.clone()),
+                            field_type.property_type.random_sub_filled_value(rng),
+                        )
+                    })
+                    .collect();
+                Value::Map(value_vec)
+            }
+            DocumentPropertyType::Array(_) => Value::Null,
+            DocumentPropertyType::VariableTypeArray(_) => Value::Null,
+            DocumentPropertyType::Identifier => Value::Identifier(rng.gen()),
+        }
+    }
+
     pub fn random_filled_value(&self, rng: &mut StdRng) -> Value {
         match self {
             DocumentPropertyType::Integer => Value::I64(rng.gen::<i64>()),

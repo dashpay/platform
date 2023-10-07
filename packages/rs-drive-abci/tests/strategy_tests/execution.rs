@@ -6,7 +6,7 @@ use crate::strategy::{
     ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness,
     ValidatorVersionMigration,
 };
-use crate::verify_state_transitions::verify_state_transitions_were_executed;
+use crate::verify_state_transitions::verify_state_transitions_were_or_were_not_executed;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{BlockHash, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
@@ -717,15 +717,18 @@ pub(crate) fn continue_chain_for_strategy(
                 current_quorum_with_test_info,
                 proposed_version,
                 block_info,
+                strategy
+                    .failure_testing
+                    .as_ref()
+                    .map(|a| a.expect_errors_with_codes.clone())
+                    .unwrap_or_default(),
                 false,
-                state_transitions.clone(),
+                state_transitions,
                 MimicExecuteBlockOptions {
                     dont_finalize_block: strategy.dont_finalize_block(),
                 },
             )
             .expect("expected to execute a block");
-
-        state_transition_results_per_block.insert(block_height, state_transaction_results);
 
         if let Some(validator_set_update) = validator_set_update {
             validator_set_updates.insert(block_height, validator_set_update);
@@ -760,13 +763,15 @@ pub(crate) fn continue_chain_for_strategy(
 
         if strategy.verify_state_transition_results {
             //we need to verify state transitions
-            verify_state_transitions_were_executed(
+            verify_state_transitions_were_or_were_not_executed(
                 &abci_app,
                 &root_app_hash,
-                &state_transitions,
+                &state_transaction_results,
                 platform_version,
             );
         }
+
+        state_transition_results_per_block.insert(block_height, state_transaction_results);
 
         if let Some(query_strategy) = &strategy.query_testing {
             query_strategy.query_chain_for_strategy(
@@ -844,7 +849,6 @@ pub(crate) fn continue_chain_for_strategy(
         strategy,
         withdrawals: total_withdrawals,
         validator_set_updates,
-        state_transitions_per_block,
         state_transition_results_per_block,
     }
 }

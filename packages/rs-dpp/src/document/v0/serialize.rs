@@ -303,8 +303,6 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             })
             .collect::<Result<BTreeMap<String, Value>, ProtocolError>>()?;
 
-        dbg!(&properties);
-
         Ok(DocumentV0 {
             id: Identifier::new(id),
             properties,

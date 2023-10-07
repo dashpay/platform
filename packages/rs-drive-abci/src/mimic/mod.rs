@@ -39,7 +39,7 @@ pub const CHAIN_ID: &str = "strategy_tests";
 /// The outcome struct when mimicking block execution
 pub struct MimicExecuteBlockOutcome {
     /// state transaction results
-    pub state_transaction_results: Vec<ExecTxResult>,
+    pub state_transaction_results: Vec<(StateTransition, ExecTxResult)>,
     /// withdrawal transactions
     pub withdrawal_transactions: Vec<dashcore_rpc::dashcore::Transaction>,
     /// The next validators
@@ -73,7 +73,8 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         current_quorum: &TestQuorumInfo,
         proposed_version: ProtocolVersion,
         block_info: BlockInfo,
-        expect_validation_errors: bool,
+        expect_validation_errors: Vec<u32>,
+        expect_vote_extension_errors: bool,
         state_transitions: Vec<StateTransition>,
         options: MimicExecuteBlockOptions,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
@@ -84,7 +85,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         let next_validators_hash: [u8; 32] = rng.gen(); // We fake a block hash for the test
         let serialized_state_transitions = state_transitions
-            .into_iter()
+            .iter()
             .map(|st| st.serialize_to_bytes().map_err(Error::Protocol))
             .collect::<Result<Vec<Vec<u8>>, Error>>()?;
 
@@ -140,18 +141,15 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             core_height = core_chain_lock_update.core_block_height;
         }
 
-        if !expect_validation_errors {
-            if tx_results.len() != tx_records.len() {
-                return Err(Error::Abci(AbciError::GenericWithCode(0)));
+        tx_results.iter().try_for_each(|tx_result| {
+            if tx_result.code > 0 && !expect_validation_errors.contains(&tx_result.code) {
+                Err(Error::Abci(AbciError::GenericWithCode(tx_result.code)))
+            } else {
+                Ok(())
             }
-            tx_results.iter().try_for_each(|tx_result| {
-                if tx_result.code > 0 {
-                    Err(Error::Abci(AbciError::GenericWithCode(tx_result.code)))
-                } else {
-                    Ok(())
-                }
-            })?;
-        }
+        })?;
+
+        let state_transaction_results = state_transitions.into_iter().zip(tx_results).collect();
 
         // PROCESS
 
@@ -246,7 +244,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                         block_info.height, block_info.time_ms, e
                     )
                 });
-            if !expect_validation_errors
+            if !expect_vote_extension_errors
                 && response_validate_vote_extension.status != VerifyStatus::Accept as i32
             {
                 return Err(Error::Abci(AbciError::GenericWithCode(1)));
@@ -440,7 +438,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         }
 
         Ok(MimicExecuteBlockOutcome {
-            state_transaction_results: tx_results,
+            state_transaction_results,
             app_version: APP_VERSION,
             withdrawal_transactions: withdrawals,
             validator_set_update,

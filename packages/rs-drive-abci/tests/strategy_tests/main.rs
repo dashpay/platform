@@ -75,6 +75,9 @@ mod tests {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::document_type::random_document::{
+        DocumentFieldFillSize, DocumentFieldFillType,
+    };
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::tests::json_document::json_document_to_created_contract;
@@ -1147,7 +1150,10 @@ mod tests {
 
         let document_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsertRandom,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1221,7 +1227,10 @@ mod tests {
 
         let document_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsertRandom,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1305,7 +1314,10 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsertRandom,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1407,7 +1419,10 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsertRandom,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1523,7 +1538,10 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsertRandom,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1628,7 +1646,10 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsertRandom,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
