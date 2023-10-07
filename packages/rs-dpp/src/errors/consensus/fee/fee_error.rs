@@ -6,7 +6,7 @@ use thiserror::Error;
 use crate::errors::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 
-#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
+#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone)]
 pub enum FeeError {
     /*
 

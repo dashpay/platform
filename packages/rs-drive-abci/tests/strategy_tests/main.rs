@@ -77,6 +77,7 @@ mod tests {
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::serialization::PlatformDeserializable;
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
@@ -111,6 +112,29 @@ mod tests {
         quorums
     }
 
+    #[test]
+    fn test() {
+        let st = vec![
+            1, 0, 0, 156, 47, 238, 237, 79, 117, 39, 114, 191, 112, 248, 143, 133, 244, 136, 106,
+            183, 230, 248, 8, 251, 121, 215, 167, 213, 71, 111, 140, 230, 164, 13, 90, 0, 0, 0, 1,
+            0, 1, 0, 0, 4, 182, 248, 228, 177, 6, 234, 98, 131, 175, 233, 174, 60, 193, 92, 166,
+            98, 179, 66, 73, 3, 158, 88, 216, 58, 36, 55, 109, 46, 6, 52, 106, 150, 0, 1, 4, 110,
+            111, 116, 101, 22, 3, 18, 4, 116, 121, 112, 101, 18, 6, 111, 98, 106, 101, 99, 116, 18,
+            10, 112, 114, 111, 112, 101, 114, 116, 105, 101, 115, 22, 2, 18, 7, 109, 101, 115, 115,
+            97, 103, 101, 22, 1, 18, 4, 116, 121, 112, 101, 18, 6, 115, 116, 114, 105, 110, 103,
+            18, 6, 97, 117, 116, 104, 111, 114, 22, 1, 18, 4, 116, 121, 112, 101, 18, 6, 115, 116,
+            114, 105, 110, 103, 18, 20, 97, 100, 100, 105, 116, 105, 111, 110, 97, 108, 80, 114,
+            111, 112, 101, 114, 116, 105, 101, 115, 19, 0, 2, 65, 31, 219, 118, 173, 241, 60, 181,
+            105, 97, 226, 185, 7, 124, 198, 64, 216, 1, 45, 18, 192, 84, 42, 236, 200, 99, 2, 124,
+            111, 253, 238, 139, 2, 45, 82, 240, 40, 100, 111, 88, 200, 86, 199, 3, 128, 222, 104,
+            20, 63, 33, 129, 46, 107, 154, 83, 116, 42, 208, 136, 251, 37, 203, 18, 88, 177, 86,
+        ];
+
+        let state_transition =
+            dpp::state_transition::StateTransition::deserialize_from_bytes(&st).unwrap();
+
+        dbg!(state_transition);
+    }
     #[test]
     fn run_chain_nothing_happening() {
         let strategy = Strategy {

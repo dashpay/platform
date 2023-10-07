@@ -45,6 +45,8 @@ pub mod platform;
 pub mod platform_state;
 /// Required identity public key set for system identities
 pub mod required_identity_public_key_set;
+/// The execution result
+pub(crate) mod state_transition_execution_result;
 /// System identity public keys
 pub mod system_identity_public_keys;
 /// The validator module

@@ -35,8 +35,12 @@
 //! can only make changes that are backwards compatible. Otherwise new calls must be made instead.
 //!
 
+mod error;
+mod execution_result;
+
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
+use itertools::Itertools;
 
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
@@ -53,9 +57,6 @@ use tenderdash_abci::proto::types::VoteExtensionType;
 
 use super::AbciError;
 
-use dpp::platform_value::string_encoding::{encode, Encoding};
-
-use crate::error::handlers::{HandlerError, HandlerErrorCode};
 use crate::execution::types::block_execution_context::v0::{
     BlockExecutionContextV0Getters, BlockExecutionContextV0MutableGetters,
     BlockExecutionContextV0Setters,
@@ -73,6 +74,8 @@ use dpp::fee::SignedCredits;
 use dpp::platform_value::platform_value;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use error::consensus::AbciResponseInfoGetter;
+use error::HandlerError;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
@@ -194,6 +197,14 @@ where
         };
 
         let transaction = transaction_guard.as_ref().unwrap();
+
+        // Get current platform version
+        let state = self.platform.state.read().expect("expected to get state");
+        let current_protocol_version = state.current_protocol_version_in_consensus();
+        drop(state);
+        let platform_version = PlatformVersion::get(current_protocol_version)
+            .map_err(|e| ResponseException::from(Error::from(e)))?;
+
         // Running the proposal executes all the state transitions for the block
         let run_result = self
             .platform
@@ -206,15 +217,17 @@ where
 
         let block_execution_outcome::v0::BlockExecutionOutcome {
             app_hash,
-            tx_results,
+            state_transition_results,
             validator_set_update,
         } = run_result.into_data().map_err(Error::Protocol)?;
 
         // We need to let Tenderdash know about the transactions we should remove from execution
-        let (tx_results, tx_records): (Vec<Option<ExecTxResult>>, Vec<TxRecord>) = tx_results
+        let tx_results_and_records = state_transition_results
             .into_iter()
             .map(|(tx, result)| {
-                if result.code > 0 {
+                let tx_result = result.try_into_tx_result(&platform_version)?;
+
+                let tx_record = if tx_result.code > 0 {
                     (
                         None,
                         TxRecord {
@@ -224,15 +237,21 @@ where
                     )
                 } else {
                     (
-                        Some(result),
+                        Some(tx_result),
                         TxRecord {
                             action: TxAction::Unmodified as i32,
                             tx,
                         },
                     )
-                }
+                };
+
+                Ok(tx_record)
             })
-            .unzip();
+            .collect::<Result<Vec<(Option<ExecTxResult>, TxRecord)>, Error>>()
+            .map_err(|e| ResponseException::from(e))?;
+
+        let (tx_results, tx_records): (Vec<Option<ExecTxResult>>, Vec<TxRecord>) =
+            tx_results_and_records.into_iter().unzip();
 
         let tx_results = tx_results.into_iter().flatten().collect();
 
@@ -344,6 +363,7 @@ where
         }
         drop(block_execution_context_guard);
 
+        // Get transaction
         let transaction_guard = if request.height == self.platform.config.abci.genesis_height as i64
         {
             // special logic on init chain
@@ -381,14 +401,30 @@ where
         } else {
             let block_execution_outcome::v0::BlockExecutionOutcome {
                 app_hash,
-                tx_results,
+                state_transition_results,
                 validator_set_update,
             } = run_result.into_data().map_err(Error::Protocol)?;
+
+            // Get current platform version
+            let state = self.platform.state.read().expect("expected to get state");
+            let current_protocol_version = state.current_protocol_version_in_consensus();
+            drop(state);
+            let platform_version = PlatformVersion::get(current_protocol_version)
+                .map_err(|e| ResponseException::from(Error::from(e)))?;
+
+            let tx_results = state_transition_results
+                .into_iter()
+                .map(|(_, value)| {
+                    let tx_result = value.try_into_tx_result(platform_version)?;
+
+                    Ok(tx_result)
+                })
+                .collect::<Result<Vec<ExecTxResult>, Error>>()?;
 
             // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
             let response = ResponseProcessProposal {
                 app_hash: app_hash.to_vec(),
-                tx_results: tx_results.into_iter().map(|(_, value)| value).collect(),
+                tx_results,
                 status: proto::response_process_proposal::ProposalStatus::Accept.into(),
                 validator_set_update,
                 ..Default::default()
@@ -595,7 +631,9 @@ where
 
                     (
                         consensus_error.code(),
-                        encode(&error_data_buffer, Encoding::Base64),
+                        consensus_error
+                            .response_info_for_version(platform_version)
+                            .map_err(ResponseException::from)?,
                     )
                 } else {
                     // If there are no execution errors the code will be 0
