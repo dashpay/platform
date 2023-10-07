@@ -38,7 +38,7 @@ prost = { version = "0.11.6", default-features = false }
 tracing = { version = "0.1.37", default-features = false, features = [] }
 clap = { version = "4.1.8", optional = true, features = ["derive"] }
 envy = { version = "0.4.2" }
-dotenvy = { version = "0.15.6", optional = true }
+dotenvy = { version = "0.15.7", optional = true }
 dapi-grpc = { path = "../dapi-grpc" }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
@@ -58,6 +58,7 @@ anyhow = { version = "1.0.70" }
 lazy_static = "1.4.0"
 itertools = { version = "0.10.5" }
 file-rotate = { version = "0.7.3" }
+reopen = { version = "1.0.3" }
 delegate = { version = "0.9.0" }
 regex = { version = "1.8.1" }
 metrics = { version = "0.21" }

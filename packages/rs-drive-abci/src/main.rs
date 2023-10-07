@@ -65,12 +65,10 @@ struct Cli {
     ///
     /// Repeat `v` multiple times to increase log verbosity:
     ///
-    /// * none     - use RUST_LOG variable, default to `info`{n}
-    /// * `-v`     - `info` from Drive, `error` from libraries{n}
-    /// * `-vv`    - `debug` from Drive, `info` from libraries{n}
-    /// * `-vvv`   - `debug` from all components{n}
-    /// * `-vvvv`  - `trace` from Drive, `debug` from libraries{n}
-    /// * `-vvvvv` - `trace` from all components{n}
+    /// * none   - use RUST_LOG variable, default to `info`{n}
+    /// * `-v`   - `debug` from Drive, `info` from libraries{n}
+    /// * `-vv`  - `trace` from Drive, `debug` from libraries{n}
+    /// * `-vvv` - `trace` from all components{n}
     ///
     /// Note: Using `-v` overrides any settings defined in RUST_LOG.
     ///
@@ -328,7 +326,7 @@ fn configure_logging(
     if configs.is_empty() || cli.verbose > 0 {
         let cli_config = LogConfig {
             destination: "stderr".to_string(),
-            verbosity: cli.verbose,
+            level: cli.verbose.try_into().unwrap(),
             color: cli.color,
             ..Default::default()
         };
@@ -365,6 +363,7 @@ mod test {
     use dpp::block::epoch::Epoch;
     use drive::fee_pools::epochs::epoch_key_constants;
 
+    use drive_abci::logging::LogLevelPreset;
     use platform_version::version::PlatformVersion;
     use rocksdb::{IteratorMode, Options};
 
@@ -440,7 +439,7 @@ mod test {
 
     #[test]
     fn test_verify_grovedb_corrupt_0th_root() {
-        drive_abci::logging::init_for_tests(4);
+        drive_abci::logging::init_for_tests(LogLevelPreset::Silent);
         let tempdir = tempfile::tempdir().unwrap();
         let db_path = setup_db(tempdir.path());
 

@@ -148,6 +148,14 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
               options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
             }
 
+            if (options.platform.drive.abci.log.jsonFile.level === 'fatal') {
+              options.platform.drive.abci.log.jsonFile.level = 'error';
+            }
+
+            if (options.platform.drive.abci.log.prettyFile.level === 'fatal') {
+              options.platform.drive.abci.log.prettyFile.level = 'error';
+            }
+
             if (options.network === NETWORK_TESTNET) {
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
               options.platform.drive.tenderdash

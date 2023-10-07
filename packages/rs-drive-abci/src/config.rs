@@ -289,9 +289,16 @@ mod tests {
     fn test_config_from_env() {
         // ABCI log configs are parsed manually, so they deserve separate handling
         // Notat that STDOUT is also defined in .env.example, but env var should overwrite it.
-        let log_ids = &["STDOUT", "UPPERCASE", "lowercase", "miXedC4s3", "123"];
-        for id in log_ids {
-            env::set_var(format!("ABCI_LOG_{}_DESTINATION", id), "bytes");
+        let vectors = &[
+            ("STDOUT", "pretty"),
+            ("UPPERCASE", "json"),
+            ("lowercase", "pretty"),
+            ("miXedC4s3", "full"),
+            ("123", "compact"),
+        ];
+        for vector in vectors {
+            env::set_var(format!("ABCI_LOG_{}_DESTINATION", vector.0), "bytes");
+            env::set_var(format!("ABCI_LOG_{}_FORMAT", vector.0), vector.1);
         }
 
         let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.example");
@@ -302,8 +309,8 @@ mod tests {
         let config = super::PlatformConfig::from_env().unwrap();
         assert!(config.verify_sum_trees);
         assert_ne!(config.quorum_type(), QuorumType::UNKNOWN);
-        for id in log_ids {
-            assert_eq!(config.abci.log[*id].destination.as_str(), "bytes");
+        for id in vectors {
+            assert_eq!(config.abci.log[id.0].destination.as_str(), "bytes");
         }
     }
 }
