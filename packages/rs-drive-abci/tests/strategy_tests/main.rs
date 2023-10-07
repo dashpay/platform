@@ -116,6 +116,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -133,6 +134,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -164,6 +166,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -181,6 +184,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -212,6 +216,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -229,6 +234,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -340,6 +346,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -357,6 +364,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -401,6 +409,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -418,6 +427,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -449,6 +459,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -466,6 +477,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -505,6 +517,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -522,6 +535,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -584,6 +598,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -607,6 +622,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -647,6 +663,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -674,6 +691,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -713,6 +731,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -736,6 +755,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -806,6 +826,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -828,6 +849,7 @@ mod tests {
                 },
             }),
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -860,6 +882,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -877,6 +900,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -937,6 +961,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![(contract, None)],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -954,6 +979,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1040,6 +1066,7 @@ mod tests {
                 ])),
             )],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1057,6 +1084,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1135,6 +1163,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1152,6 +1181,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1207,6 +1237,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1224,6 +1255,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1307,6 +1339,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1324,6 +1357,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1407,6 +1441,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1424,6 +1459,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1521,6 +1557,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..30,
                 chance_per_block: None,
@@ -1538,6 +1575,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1640,6 +1678,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..6,
                 chance_per_block: None,
@@ -1657,6 +1696,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1707,6 +1747,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1724,6 +1765,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1779,6 +1821,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1798,6 +1841,7 @@ mod tests {
             // because we can add an identity and add keys to it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1860,6 +1904,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1879,6 +1924,7 @@ mod tests {
             // because we can add an identity and remove keys to it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1948,6 +1994,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1967,6 +2014,7 @@ mod tests {
             // because we can add an identity and withdraw from it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -2000,6 +2048,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 //we do this to create some paying transactions
                 times_per_block_range: 1..2,
@@ -2018,6 +2067,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2149,6 +2199,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 //we do this to create some paying transactions
                 times_per_block_range: 1..2,
@@ -2167,6 +2218,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2268,6 +2320,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 //we do this to create some paying transactions
                 times_per_block_range: 1..2,
@@ -2286,6 +2339,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2388,6 +2442,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -2405,6 +2460,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2520,6 +2576,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -2537,6 +2594,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
 
         let config = PlatformConfig {

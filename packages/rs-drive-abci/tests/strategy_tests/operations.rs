@@ -13,9 +13,9 @@ pub enum DocumentAction {
     DocumentActionInsertRandom,
     /// Insert a document with specific values
     /// If a required value is not set, it will use random ones
-    /// The second parameter are the paths that should be set to the current owner id of the
-    /// state transition
-    DocumentActionInsertSpecific(BTreeMap<String, Value>, BTreeSet<String>),
+    /// The second parameter is the owner id of the document
+    /// If none then it should be random
+    DocumentActionInsertSpecific(BTreeMap<String, Value>, Option<Identifier>),
     DocumentActionDelete,
     DocumentActionReplace,
 }

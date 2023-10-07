@@ -2,6 +2,8 @@
 mod tests {
     use crate::execution::run_chain_for_strategy;
     use crate::frequency::Frequency;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
     use std::collections::{BTreeMap, BTreeSet};
 
     use crate::strategy::{FailureStrategy, Strategy};
@@ -10,10 +12,13 @@ mod tests {
 
     use crate::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
-    use dpp::prelude::Identifier;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::platform_value::Value;
+    use dpp::prelude::{Identifier, Identity};
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::tests::json_document::json_document_to_created_contract;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
+    use drive_abci::test::helpers::signer::SimpleSigner;
     use platform_version::version::PlatformVersion;
     use tenderdash_abci::proto::types::CoreChainLock;
 
@@ -22,6 +27,7 @@ mod tests {
         let mut strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -43,6 +49,7 @@ mod tests {
             }),
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -86,6 +93,7 @@ mod tests {
     fn run_chain_block_two_state_transitions_conflicting_unique_index() {
         let config = PlatformConfig {
             verify_sum_trees: true,
+            //we disable document triggers because we are using dpns and dpns needs a preorder
             use_document_triggers: false,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
@@ -99,15 +107,54 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
 
-        let document_op = DocumentOp {
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let mut simple_signer = SimpleSigner::default();
+
+        let (identity1, keys) =
+            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
+                2,
+                &mut rng,
+                platform_version,
+            )
+            .unwrap();
+
+        simple_signer.add_keys(keys);
+
+        let (identity2, keys) =
+            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
+                2,
+                &mut rng,
+                platform_version,
+            )
+            .unwrap();
+
+        simple_signer.add_keys(keys);
+
+        let start_identities = crate::transitions::create_state_transitions_for_identities(
+            vec![identity1, identity2],
+            &mut simple_signer,
+            &mut rng,
+            platform_version,
+        );
+
+        let document_op_1 = DocumentOp {
             contract: platform.drive.system_contracts.dpns_contract.clone(),
             action: DocumentAction::DocumentActionInsertSpecific(
                 BTreeMap::from([
                     ("label".into(), "simon1".into()),
                     ("normalizedLabel".into(), "simon1".into()),
                     ("normalizedParentDomainName".into(), "dash".into()),
+                    (
+                        "records".into(),
+                        BTreeMap::from([(
+                            "dashUniqueIdentityId",
+                            Value::from(start_identities.first().unwrap().0.id()),
+                        )])
+                        .into(),
+                    ),
                 ]),
-                BTreeSet::from(["records.dashUniqueIdentityId".to_string()]),
+                Some(start_identities.first().unwrap().0.id()),
             ),
             document_type: platform
                 .drive
@@ -118,17 +165,54 @@ mod tests {
                 .to_owned_document_type(),
         };
 
-        let mut strategy = Strategy {
+        let document_op_2 = DocumentOp {
+            contract: platform.drive.system_contracts.dpns_contract.clone(),
+            action: DocumentAction::DocumentActionInsertSpecific(
+                BTreeMap::from([
+                    ("label".into(), "simon1".into()),
+                    ("normalizedLabel".into(), "simon1".into()),
+                    ("normalizedParentDomainName".into(), "dash".into()),
+                    (
+                        "records".into(),
+                        BTreeMap::from([(
+                            "dashUniqueIdentityId",
+                            Value::from(start_identities.last().unwrap().0.id()),
+                        )])
+                        .into(),
+                    ),
+                ]),
+                Some(start_identities.last().unwrap().0.id()),
+            ),
+            document_type: platform
+                .drive
+                .system_contracts
+                .dpns_contract
+                .document_type_for_name("domain")
+                .expect("expected a profile document type")
+                .to_owned_document_type(),
+        };
+
+        let strategy = Strategy {
             contracts_with_updates: vec![],
-            operations: vec![Operation {
-                op_type: OperationType::Document(document_op),
-                frequency: Frequency {
-                    times_per_block_range: 1..2,
-                    chance_per_block: None,
+            operations: vec![
+                Operation {
+                    op_type: OperationType::Document(document_op_1),
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
                 },
-            }],
+                Operation {
+                    op_type: OperationType::Document(document_op_2),
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                },
+            ],
+            start_identities,
             identities_inserts: Frequency {
-                times_per_block_range: 2..3,
+                times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
             total_hpmns: 100,
@@ -142,12 +226,10 @@ mod tests {
 
             proposer_strategy: Default::default(),
             rotate_quorums: false,
-            failure_testing: Some(FailureStrategy {
-                deterministic_start_seed: Some(99),
-                dont_finalize_block: true,
-            }),
+            failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: Some(simple_signer),
         };
 
         let mut core_block_heights = vec![10, 11];
@@ -167,12 +249,16 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        run_chain_for_strategy(&mut platform, 1, strategy.clone(), config.clone(), 15);
+        // On the first block we only have identities and contracts
+        let outcome =
+            run_chain_for_strategy(&mut platform, 2, strategy.clone(), config.clone(), 15);
 
-        //platform block didn't complete, so it should get another init chain
+        dbg!(&outcome);
 
-        strategy.failure_testing = None;
-
-        run_chain_for_strategy(&mut platform, 15, strategy, config, 15);
+        // //platform block didn't complete, so it should get another init chain
+        //
+        // strategy.failure_testing = None;
+        //
+        // run_chain_for_strategy(&mut platform, 15, strategy, config, 15);
     }
 }

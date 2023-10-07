@@ -613,7 +613,7 @@ pub(crate) fn continue_chain_for_strategy(
     let quorum_size = config.quorum_size;
     let first_block_time = 0;
     let mut current_identities = vec![];
-    let mut signer = SimpleSigner::default();
+    let mut signer = strategy.signer.clone().unwrap_or_default();
     let mut i = 0;
 
     let blocks_per_epoch = EPOCH_CHANGE_TIME_MS_V0 / config.block_spacing_ms;
@@ -638,6 +638,9 @@ pub(crate) fn continue_chain_for_strategy(
     let mut current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();
 
     let mut validator_set_updates = BTreeMap::new();
+
+    let mut state_transitions_per_block = BTreeMap::new();
+    let mut state_transition_results_per_block = BTreeMap::new();
 
     for block_height in block_start..(block_start + block_count) {
         let epoch_info = EpochInfoV0::calculate(
@@ -678,6 +681,8 @@ pub(crate) fn continue_chain_for_strategy(
                 &mut rng,
             );
 
+        state_transitions_per_block.insert(block_height, state_transitions.clone());
+
         let proposed_version = proposer_versions
             .as_ref()
             .map(|proposer_versions| {
@@ -697,6 +702,7 @@ pub(crate) fn continue_chain_for_strategy(
             .unwrap_or(1);
 
         let MimicExecuteBlockOutcome {
+            state_transaction_results,
             withdrawal_transactions: mut withdrawals_this_block,
             validator_set_update,
             next_validator_set_hash,
@@ -718,6 +724,8 @@ pub(crate) fn continue_chain_for_strategy(
                 },
             )
             .expect("expected to execute a block");
+
+        state_transition_results_per_block.insert(block_height, state_transaction_results);
 
         if let Some(validator_set_update) = validator_set_update {
             validator_set_updates.insert(block_height, validator_set_update);
@@ -836,5 +844,7 @@ pub(crate) fn continue_chain_for_strategy(
         strategy,
         withdrawals: total_withdrawals,
         validator_set_updates,
+        state_transitions_per_block,
+        state_transition_results_per_block,
     }
 }

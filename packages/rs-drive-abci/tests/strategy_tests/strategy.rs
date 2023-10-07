@@ -37,7 +37,7 @@ use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use tenderdash_abci::proto::abci::ValidatorSetUpdate;
+use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::BinaryData;
@@ -49,6 +49,7 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
+use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use drive_abci::test::helpers::signer::SimpleSigner;
 
 #[derive(Clone, Debug, Default)]
@@ -155,6 +156,7 @@ pub struct Strategy {
         Option<BTreeMap<u64, CreatedDataContract>>,
     )>,
     pub operations: Vec<Operation>,
+    pub start_identities: Vec<(Identity, StateTransition)>,
     pub identities_inserts: Frequency,
     pub total_hpmns: u16,
     pub extra_normal_mns: u16,
@@ -166,6 +168,7 @@ pub struct Strategy {
     pub failure_testing: Option<FailureStrategy>,
     pub query_testing: Option<QueryStrategy>,
     pub verify_state_transition_results: bool,
+    pub signer: Option<SimpleSigner>,
 }
 
 #[derive(Clone, Debug)]
@@ -251,23 +254,29 @@ impl Strategy {
 
     pub fn identity_state_transitions_for_block(
         &self,
+        block_info: &BlockInfo,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Vec<(Identity, StateTransition)> {
+        let mut state_transitions = vec![];
+        if block_info.height == 1 && !self.start_identities.is_empty() {
+            state_transitions.append(&mut self.start_identities.clone());
+        }
         let frequency = &self.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
-            crate::transitions::create_identities_state_transitions(
-                count,
-                5,
-                signer,
-                rng,
-                platform_version,
+            state_transitions.append(
+                &mut crate::transitions::create_identities_state_transitions(
+                    count,
+                    5,
+                    signer,
+                    rng,
+                    platform_version,
+                ),
             )
-        } else {
-            vec![]
         }
+        state_transitions
     }
 
     pub fn contract_state_transitions(
@@ -470,20 +479,37 @@ impl Strategy {
                         action:
                             DocumentAction::DocumentActionInsertSpecific(
                                 specific_document_key_value_pairs,
-                                identifier_paths,
+                                identifier,
                             ),
                         document_type,
                         contract,
                     }) => {
-                        let mut documents = document_type
-                            .random_documents_with_params(
-                                count as u32,
-                                current_identities,
-                                block_info.time_ms,
-                                rng,
-                                platform_version,
-                            )
-                            .expect("expected random_documents_with_params");
+                        let documents = if let Some(identifier) = identifier {
+                            let held_identity = vec![current_identities
+                                .iter()
+                                .find(|identity| identity.id() == identifier)
+                                .expect("expected to find identifier, review strategy params")
+                                .clone()];
+                            document_type
+                                .random_documents_with_params(
+                                    count as u32,
+                                    &held_identity,
+                                    block_info.time_ms,
+                                    rng,
+                                    platform_version,
+                                )
+                                .expect("expected random_documents_with_params")
+                        } else {
+                            document_type
+                                .random_documents_with_params(
+                                    count as u32,
+                                    current_identities,
+                                    block_info.time_ms,
+                                    rng,
+                                    platform_version,
+                                )
+                                .expect("expected random_documents_with_params")
+                        };
 
                         documents
                             .into_iter()
@@ -491,10 +517,6 @@ impl Strategy {
                                 document
                                     .properties_mut()
                                     .append(&mut specific_document_key_value_pairs.clone());
-                                for identifier_path in identifier_paths {
-                                    document.set(identifier_path, identity.id().into());
-                                }
-                                dbg!(&document);
                                 let updated_at =
                                     if document_type.required_fields().contains("$updatedAt") {
                                         document.created_at()
@@ -853,7 +875,7 @@ impl Strategy {
             .current_platform_version()
             .expect("expected platform version");
         let identity_state_transitions =
-            self.identity_state_transitions_for_block(signer, rng, platform_version);
+            self.identity_state_transitions_for_block(block_info, signer, rng, platform_version);
         let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
         current_identities.append(&mut identities);
@@ -919,6 +941,8 @@ pub struct ChainExecutionOutcome<'a> {
     pub withdrawals: Vec<dashcore::Transaction>,
     /// height to the validator set update at that height
     pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
+    pub state_transitions_per_block: BTreeMap<u64, Vec<StateTransition>>,
+    pub state_transition_results_per_block: BTreeMap<u64, Vec<ExecTxResult>>,
 }
 
 impl<'a> ChainExecutionOutcome<'a> {

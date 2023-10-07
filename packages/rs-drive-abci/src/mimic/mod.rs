@@ -20,7 +20,7 @@ use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
-use tenderdash_abci::proto::abci::{CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal, ValidatorSetUpdate};
+use tenderdash_abci::proto::abci::{CommitInfo, ExecTxResult, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal, ValidatorSetUpdate};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
     Block, BlockId, Data, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType, StateId, CanonicalVote, SignedMsgType,
@@ -38,6 +38,8 @@ pub const CHAIN_ID: &str = "strategy_tests";
 
 /// The outcome struct when mimicking block execution
 pub struct MimicExecuteBlockOutcome {
+    /// state transaction results
+    pub state_transaction_results: Vec<ExecTxResult>,
     /// withdrawal transactions
     pub withdrawal_transactions: Vec<dashcore_rpc::dashcore::Transaction>,
     /// The next validators
@@ -142,7 +144,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             if tx_results.len() != tx_records.len() {
                 return Err(Error::Abci(AbciError::GenericWithCode(0)));
             }
-            tx_results.into_iter().try_for_each(|tx_result| {
+            tx_results.iter().try_for_each(|tx_result| {
                 if tx_result.code > 0 {
                     Err(Error::Abci(AbciError::GenericWithCode(tx_result.code)))
                 } else {
@@ -438,6 +440,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         }
 
         Ok(MimicExecuteBlockOutcome {
+            state_transaction_results: tx_results,
             app_version: APP_VERSION,
             withdrawal_transactions: withdrawals,
             validator_set_update,
