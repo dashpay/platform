@@ -576,6 +576,7 @@ pub(crate) fn start_chain_for_strategy(
             quorums,
             current_quorum_hash,
             current_proposer_versions: None,
+            start_time_ms: 1681094380000,
             current_time_ms: 1681094380000,
         },
         strategy,
@@ -600,14 +601,14 @@ pub(crate) fn continue_chain_for_strategy(
         quorums,
         mut current_quorum_hash,
         current_proposer_versions,
-        mut current_time_ms,
+        start_time_ms, mut current_time_ms,
     } = chain_execution_parameters;
     let mut rng = match seed {
         StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
         StrategyRandomness::RNGEntropy(rng) => rng,
     };
     let quorum_size = config.quorum_size;
-    let first_block_time = 0;
+    let first_block_time = start_time_ms;
     let mut current_identities = vec![];
     let mut signer = strategy.signer.clone().unwrap_or_default();
     let mut i = 0;

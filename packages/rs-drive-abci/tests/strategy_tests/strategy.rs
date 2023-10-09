@@ -13,7 +13,7 @@ use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
 
-use dpp::document::{DocumentV0Getters, DocumentV0Setters};
+use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
@@ -955,7 +955,7 @@ pub struct ChainExecutionOutcome<'a> {
 
 impl<'a> ChainExecutionOutcome<'a> {
     pub fn current_quorum(&self) -> &TestQuorumInfo {
-        self.quorums.get(&self.current_quorum_hash).unwrap()
+        self.quorums.get::<QuorumHash>(&self.current_quorum_hash).unwrap()
     }
 }
 
@@ -969,5 +969,6 @@ pub struct ChainExecutionParameters {
     // the first option is if it is set
     // the second option is if we are even upgrading
     pub current_proposer_versions: Option<Option<HashMap<ProTxHash, ValidatorVersionMigration>>>,
+    pub start_time_ms: u64,
     pub current_time_ms: u64,
 }

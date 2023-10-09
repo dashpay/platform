@@ -152,7 +152,7 @@ mod tests {
         use super::*;
         use crate::execution::types::block_fees::v0::{BlockFeesV0, BlockFeesV0Methods};
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
-        use crate::platform_types::epoch_info::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
+        use crate::platform_types::epoch_info::v0::EpochInfoV0;
         use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::CreditsPerEpoch;
 
@@ -203,7 +203,7 @@ mod tests {
                 1, 1, 1, 1,
             ];
 
-            let block_time_ms = genesis_time_ms + epoch_index as u64 * EPOCH_CHANGE_TIME_MS_V0;
+            let block_time_ms = genesis_time_ms + epoch_index as u64 * platform.config.execution.epoch_time_length_s * 1000;
 
             let block_info = BlockStateInfoV0 {
                 height: block_height,
@@ -217,7 +217,7 @@ mod tests {
             };
 
             let epoch_info =
-                EpochInfoV0::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
+                EpochInfoV0::from_genesis_time_and_block_info(genesis_time_ms, &block_info, platform.config.execution.epoch_time_length_s)
                     .expect("should calculate epoch info")
                     .into();
 

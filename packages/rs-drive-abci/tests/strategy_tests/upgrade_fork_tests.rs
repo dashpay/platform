@@ -3,6 +3,7 @@ mod tests {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::version::PlatformVersion;
     use tenderdash_abci::proto::types::CoreChainLock;
+    use drive::drive::config::DriveConfig;
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::frequency::Frequency;
@@ -61,6 +62,11 @@ mod tests {
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_quorum_rotation_block_count: 125,
+                        epoch_time_length_s: 1576800,
+                        ..Default::default()
+                    },
+                    drive: DriveConfig {
+                        epochs_per_era: 20,
                         ..Default::default()
                     },
                     block_spacing_ms: twenty_minutes_in_ms,
@@ -173,6 +179,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions.clone()),
+                        start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
                     strategy.clone(),
@@ -237,6 +244,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
+                        start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
                     strategy,
@@ -328,6 +336,11 @@ mod tests {
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_quorum_rotation_block_count: 80,
+                        epoch_time_length_s: 1576800,
+                        ..Default::default()
+                    },
+                    drive: DriveConfig {
+                        epochs_per_era: 20,
                         ..Default::default()
                     },
                     block_spacing_ms: hour_in_ms,
@@ -437,6 +450,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions.clone()),
+                        start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
                     strategy.clone(),
@@ -503,6 +517,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
+                        start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
                     strategy,
@@ -588,6 +603,11 @@ mod tests {
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_quorum_rotation_block_count: 50,
+                        epoch_time_length_s: 1576800,
+                        ..Default::default()
+                    },
+                    drive: DriveConfig {
+                        epochs_per_era: 20,
                         ..Default::default()
                     },
                     block_spacing_ms: hour_in_ms,
@@ -683,6 +703,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
+                        start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
                     strategy,
@@ -790,6 +811,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: None, //restart the proposer versions
+                        start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
                     strategy.clone(),
@@ -855,6 +877,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: Some(current_proposer_versions),
+                        start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
                     strategy,
@@ -952,6 +975,11 @@ mod tests {
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
                         validator_set_quorum_rotation_block_count: 30,
+                        epoch_time_length_s: 1576800,
+                        ..Default::default()
+                    },
+                    drive: DriveConfig {
+                        epochs_per_era: 20,
                         ..Default::default()
                     },
                     block_spacing_ms: hour_in_ms,
@@ -1077,6 +1105,7 @@ mod tests {
                         quorums,
                         current_quorum_hash,
                         current_proposer_versions: None,
+                        start_time_ms: 1681094380000,
                         current_time_ms: end_time_ms,
                     },
                     strategy,

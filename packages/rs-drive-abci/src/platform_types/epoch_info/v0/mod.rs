@@ -147,12 +147,11 @@ impl EpochInfoV0 {
 
         let epoch_index = (block_time - genesis_time) / epoch_change_time;
         let epoch_index_floored = epoch_index.floor();
-
         let is_epoch_change = epoch_index_floored > previous_epoch_index_floored;
 
         let current_epoch_index: u16 = epoch_index_floored.try_into().map_err(|_| {
             Error::Execution(ExecutionError::Conversion(
-                "can't convert epochs index from Decimal to u16",
+                format!("can't convert epochs index {} from Decimal to u16", epoch_index_floored),
             ))
         })?;
 
@@ -161,7 +160,7 @@ impl EpochInfoV0 {
         {
             let previous_epoch_index = previous_epoch_index_floored.try_into().map_err(|_| {
                 Error::Execution(ExecutionError::Conversion(
-                    "can't convert epochs index from Decimal to u16",
+                    format!("can't convert previous epochs index {} from Decimal to u16", previous_epoch_index_floored),
                 ))
             })?;
 

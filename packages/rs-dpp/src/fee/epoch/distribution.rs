@@ -233,8 +233,8 @@ where
 
     let epochs_per_year = Decimal::from(epochs_per_era);
 
-    for year in 0..PERPETUAL_STORAGE_ERAS {
-        let distribution_for_that_era_ratio = FEE_DISTRIBUTION_TABLE[year as usize];
+    for era in 0..PERPETUAL_STORAGE_ERAS {
+        let distribution_for_that_era_ratio = FEE_DISTRIBUTION_TABLE[era as usize];
 
         let year_fee_share = storage_fee_dec * distribution_for_that_era_ratio;
 
@@ -245,7 +245,7 @@ where
             .to_u64()
             .ok_or_else(|| ProtocolError::Overflow("storage fees are not fitting in a u64"))?;
 
-        let year_start_epoch_index = start_epoch_index + epochs_per_era * year;
+        let year_start_epoch_index = start_epoch_index + epochs_per_era * era;
 
         for epoch_index in year_start_epoch_index..year_start_epoch_index + epochs_per_era {
             map_function(epoch_index, epoch_fee_share)?;
