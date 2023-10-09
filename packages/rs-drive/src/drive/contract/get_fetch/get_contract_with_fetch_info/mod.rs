@@ -364,6 +364,7 @@ mod tests {
 
         let mut drive_cache = drive.cache.write().unwrap();
         drive_cache.cached_contracts.merge_block_cache();
+        drive_cache.cached_contracts.clear_block_cache();
         drop(drive_cache);
 
         /*
