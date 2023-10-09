@@ -33,7 +33,9 @@ jobs:
           # These are regex patterns auto-wrapped in `^ $`.
           scopes: |
             dapi
+            platform
             drive
+            drive-abci
             dpp
             dashmate
             contract
@@ -41,6 +43,7 @@ jobs:
             wallet-lib
             test-suite
             bench-suite
+            ci
             release
             dash-spv
           requireScope: false
