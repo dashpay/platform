@@ -82,7 +82,6 @@ mod tests {
         use dpp::fee::epoch::distribution::subtract_refunds_from_epoch_credits_collection;
         use dpp::fee::epoch::{
             perpetual_storage_epochs, CreditsPerEpoch, SignedCreditsPerEpoch, GENESIS_EPOCH_INDEX,
-            PERPETUAL_STORAGE_ERAS,
         };
         use dpp::fee::Credits;
         use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
