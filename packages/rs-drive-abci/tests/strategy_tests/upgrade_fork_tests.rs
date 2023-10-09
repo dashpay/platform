@@ -10,7 +10,7 @@ mod tests {
         ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness,
         UpgradingInfo,
     };
-    use drive_abci::config::{PlatformConfig, PlatformTestConfig};
+    use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
@@ -55,9 +55,12 @@ mod tests {
                 };
                 let twenty_minutes_in_ms = 1000 * 60 * 20;
                 let mut config = PlatformConfig {
-                    verify_sum_trees: true,
                     quorum_size: 100,
-                    validator_set_quorum_rotation_block_count: 125,
+                    execution: ExecutionConfig {
+                        verify_sum_trees: true,
+                        validator_set_quorum_rotation_block_count: 125,
+                        ..Default::default()
+                    },
                     block_spacing_ms: twenty_minutes_in_ms,
                     testing_configs: PlatformTestConfig::default_with_no_block_signing(),
 
@@ -317,9 +320,12 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
-                    verify_sum_trees: true,
                     quorum_size: 40,
-                    validator_set_quorum_rotation_block_count: 80,
+                    execution: ExecutionConfig {
+                        verify_sum_trees: true,
+                        validator_set_quorum_rotation_block_count: 80,
+                        ..Default::default()
+                    },
                     block_spacing_ms: hour_in_ms,
 
                     testing_configs: PlatformTestConfig::default_with_no_block_signing(),
@@ -572,9 +578,12 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let mut config = PlatformConfig {
-                    verify_sum_trees: true,
                     quorum_size: 50,
-                    validator_set_quorum_rotation_block_count: 50,
+                    execution: ExecutionConfig {
+                        verify_sum_trees: true,
+                        validator_set_quorum_rotation_block_count: 50,
+                        ..Default::default()
+                    },
                     block_spacing_ms: hour_in_ms,
 
                     testing_configs: PlatformTestConfig::default_with_no_block_signing(),
@@ -929,9 +938,12 @@ mod tests {
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
-                    verify_sum_trees: true,
                     quorum_size: 50,
-                    validator_set_quorum_rotation_block_count: 30,
+                    execution: ExecutionConfig {
+                        verify_sum_trees: true,
+                        validator_set_quorum_rotation_block_count: 30,
+                        ..Default::default()
+                    },
                     block_spacing_ms: hour_in_ms,
 
                     testing_configs: PlatformTestConfig::default_with_no_block_signing(),

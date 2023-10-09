@@ -6,7 +6,7 @@ mod tests {
 
     use crate::strategy::{FailureStrategy, Strategy};
 
-    use drive_abci::config::{PlatformConfig, PlatformTestConfig};
+    use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
 
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use tenderdash_abci::proto::types::CoreChainLock;
@@ -39,9 +39,12 @@ mod tests {
             verify_state_transition_results: true,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()

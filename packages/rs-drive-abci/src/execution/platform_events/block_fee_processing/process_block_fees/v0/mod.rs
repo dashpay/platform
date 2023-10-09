@@ -187,7 +187,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 .map(|outcome| outcome.refunded_epochs_count),
         };
 
-        if self.config.verify_sum_trees {
+        if self.config.execution.verify_sum_trees {
             // Verify sum trees
             let credits_verified = self
                 .drive
@@ -220,6 +220,7 @@ mod tests {
     use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
     use rust_decimal::prelude::ToPrimitive;
 
+    use crate::config::ExecutionConfig;
     use crate::{config::PlatformConfig, test::helpers::setup::TestPlatformBuilder};
     use drive::common::identities::create_test_masternode_identities;
 
@@ -347,7 +348,10 @@ mod tests {
         // the sum trees
         let platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig {
-                verify_sum_trees: false,
+                execution: ExecutionConfig {
+                    verify_sum_trees: false,
+                    ..Default::default()
+                },
                 ..Default::default()
             })
             .build_with_mock_rpc()

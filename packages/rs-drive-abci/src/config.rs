@@ -113,7 +113,29 @@ impl Default for CoreConfig {
     }
 }
 
-/// Configurtion of Dash Platform.
+/// Configuration of the execution part of Dash Platform.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+// NOTE: in renames, we use lower_snake_case, because uppercase does not work; see
+// https://github.com/softprops/envy/issues/61 and https://github.com/softprops/envy/pull/69
+pub struct ExecutionConfig {
+    /// Should we verify sum trees? Useful to set as `false` for tests
+    #[serde(default = "PlatformConfig::default_verify_sum_trees")]
+    pub verify_sum_trees: bool,
+
+    /// How often should quorums change?
+    pub validator_set_quorum_rotation_block_count: u32,
+
+    /// Epochs per Era
+    pub epochs_per_era: u32,
+
+    /// Eras for storage represents the amount of eras we pay for storage for
+    /// For example if an era is 1 year long and we have 50 eras (platform default)
+    /// then we would be paying for 50 years of storage. This is considered like we are paying
+    /// for storage perpetuity.
+    pub eras_for_storage: u32,
+}
+
+/// Configuration of Dash Platform.
 ///
 /// All fields in this struct can be configured using environment variables.
 /// These variables can also be defined in `.env` file in the current directory
@@ -144,9 +166,9 @@ pub struct PlatformConfig {
     #[serde(flatten)]
     pub abci: AbciConfig,
 
-    /// Should we verify sum trees? Useful to set as `false` for tests
-    #[serde(default = "PlatformConfig::default_verify_sum_trees")]
-    pub verify_sum_trees: bool,
+    /// Execution config
+    #[serde(flatten)]
+    pub execution: ExecutionConfig,
 
     /// The default quorum type
     pub quorum_type: String,
@@ -157,9 +179,6 @@ pub struct PlatformConfig {
     // todo: this should probably be coming from Tenderdash config
     /// Approximately how often are blocks produced
     pub block_spacing_ms: u64,
-
-    /// How often should quorums change?
-    pub validator_set_quorum_rotation_block_count: u32,
 
     /// Initial protocol version
     #[serde(default = "PlatformConfig::default_initial_protocol_version")]
@@ -224,17 +243,27 @@ impl FromEnv for PlatformConfig {
     }
 }
 
-impl Default for PlatformConfig {
+impl Default for ExecutionConfig {
     fn default() -> Self {
         Self {
             verify_sum_trees: true,
+            validator_set_quorum_rotation_block_count: 15,
+            epochs_per_era: 40,
+            eras_for_storage: 50,
+        }
+    }
+}
+
+impl Default for PlatformConfig {
+    fn default() -> Self {
+        Self {
             quorum_type: "llmq_100_67".to_string(),
             quorum_size: 100,
             block_spacing_ms: 5000,
-            validator_set_quorum_rotation_block_count: 15,
             drive: Default::default(),
             abci: Default::default(),
             core: Default::default(),
+            execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: 1,
@@ -298,7 +327,7 @@ mod tests {
         assert_eq!("5", env::var("QUORUM_SIZE").unwrap());
 
         let config = super::PlatformConfig::from_env().unwrap();
-        assert!(config.verify_sum_trees);
+        assert!(config.execution.verify_sum_trees);
         assert_ne!(config.quorum_type(), QuorumType::UNKNOWN);
         for id in vectors {
             assert_eq!(config.abci.log[id.0].destination.as_str(), "bytes");

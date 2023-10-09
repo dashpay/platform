@@ -80,7 +80,7 @@ mod tests {
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
-    use drive_abci::config::PlatformTestConfig;
+    use drive_abci::config::{ExecutionConfig, PlatformTestConfig};
     use drive_abci::logging::LogLevelPreset;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
@@ -136,9 +136,12 @@ mod tests {
             verify_state_transition_results: false,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..ExecutionConfig::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -184,9 +187,12 @@ mod tests {
             verify_state_transition_results: false,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..ExecutionConfig::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default(),
             ..Default::default()
@@ -232,9 +238,12 @@ mod tests {
             verify_state_transition_results: false,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..ExecutionConfig::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default(),
             ..Default::default()
@@ -360,9 +369,12 @@ mod tests {
             verify_state_transition_results: true,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -421,9 +433,12 @@ mod tests {
             verify_state_transition_results: true,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -470,9 +485,12 @@ mod tests {
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
             block_spacing_ms: hour_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -525,9 +543,12 @@ mod tests {
             verify_state_transition_results: true,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 10,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 300,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -610,9 +631,12 @@ mod tests {
             verify_state_transition_results: true,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 10,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 300,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -677,9 +701,12 @@ mod tests {
             verify_state_transition_results: true,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 10,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 300,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -739,9 +766,12 @@ mod tests {
             verify_state_transition_results: true,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 10,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 300,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -831,9 +861,12 @@ mod tests {
             verify_state_transition_results: true,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default(),
             ..Default::default()
@@ -881,9 +914,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -957,9 +993,12 @@ mod tests {
             verify_state_transition_results: true,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1060,9 +1099,12 @@ mod tests {
             verify_state_transition_results: true,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1155,9 +1197,12 @@ mod tests {
             verify_state_transition_results: true,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1228,9 +1273,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1328,9 +1376,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1428,9 +1479,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1544,9 +1598,12 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1663,9 +1720,12 @@ mod tests {
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1727,9 +1787,12 @@ mod tests {
             verify_state_transition_results: true,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1801,9 +1864,12 @@ mod tests {
             verify_state_transition_results: false,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1882,9 +1948,12 @@ mod tests {
             verify_state_transition_results: false,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1970,9 +2039,12 @@ mod tests {
             verify_state_transition_results: false,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -2022,9 +2094,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 3,
-            validator_set_quorum_rotation_block_count: 1,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 1,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -2171,9 +2246,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 3,
-            validator_set_quorum_rotation_block_count: 1,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 1,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -2290,9 +2368,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 3,
-            validator_set_quorum_rotation_block_count: 1,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 1,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -2410,9 +2491,12 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 3,
-            validator_set_quorum_rotation_block_count: 1,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 1,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -2542,9 +2626,12 @@ mod tests {
         };
 
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
