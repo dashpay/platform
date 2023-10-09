@@ -171,7 +171,7 @@ describe('DPNS', () => {
     //   Underlying issue causing retry is different and should be debugged.
     //   (console.log error in dapi-client's GrpcTransport for more details)
     it.skip('should be able to register a second level domain', async () => {
-      registeredDomain = await client.platform.names.register(`${secondLevelDomain}.${topLevelDomain}`, {
+      registeredDomain = await client.platform.names.register(`${secondLevelDomain}0.${topLevelDomain}`, {
         dashUniqueIdentityId: identity.getId(),
       }, identity);
 
@@ -181,6 +181,26 @@ describe('DPNS', () => {
       expect(registeredDomain.getType()).to.equal('domain');
       expect(registeredDomain.getData().label).to.equal(secondLevelDomain);
       expect(registeredDomain.getData().normalizedParentDomainName).to.equal(topLevelDomain);
+    });
+
+    it.skip('should not be able register similar domain name', async () => {
+      let broadcastError;
+
+      try {
+        const domain = `${secondLevelDomain}O.${topLevelDomain}`;
+
+        await client.platform.names.register(domain, {
+          dashAliasIdentityId: identity.getId(),
+        }, identity);
+
+        expect.fail('should throw error');
+      } catch (e) {
+        broadcastError = e;
+      }
+
+      expect(broadcastError).to.exist();
+      expect(broadcastError.code).to.be.equal(4009);
+      expect(broadcastError.message).to.match(/Document \w* has duplicate unique properties \["normalizedLabel", "normalizedParentDomainName"] with other documents/);
     });
 
     // TODO(rs-drive-abci): test randomly returns StateTransition already in chain error,

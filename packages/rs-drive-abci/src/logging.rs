@@ -6,17 +6,20 @@ use file_rotate::TimeFrequency;
 use itertools::Itertools;
 use lazy_static::__Deref;
 use regex::Regex;
+use reopen::Reopen;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fs::File;
 use std::fs::OpenOptions;
+use std::io::Write;
 use std::os::unix::prelude::OpenOptionsExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::{fs, path};
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
@@ -29,6 +32,11 @@ use tracing_subscriber::Registry;
 
 use crate::config::FromEnv;
 
+const LOG_DESTINATION_STDOUT: &str = "stdout";
+const LOG_DESTINATION_STDERR: &str = "stderr";
+#[cfg(test)]
+const LOG_DESTINATION_BYTES: &str = "bytes";
+
 /// Logging configuration.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LogConfig {
@@ -37,29 +45,29 @@ pub struct LogConfig {
     /// One of:
     /// * "stdout",
     /// * "stderr",
-    /// * absolute path to existing directory where log files will be stored
+    /// * absolute path to log file
     ///
     /// For testing, also "bytes" is available.
     pub destination: String,
-    /// Verbosity level, 0 to 5; see `-v` option in `drive-abci --help` for more details.
+    /// Log level: silent, error, info, warn, debug, trace
     #[serde(default)]
-    pub verbosity: u8,
+    pub level: LogLevelPreset,
     /// Whether or not to use colorful output; defaults to autodetect
     #[serde(default)]
     pub color: Option<bool>,
     /// Output format to use.
     ///
     /// One of:
-    /// * Full
-    /// * Compact
-    /// * Pretty
-    /// * Json
+    /// * full
+    /// * compact
+    /// * pretty
+    /// * json
     ///
     /// See https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/format/index.html#formatters for more
     /// detailed description.
     #[serde(default)]
     pub format: LogFormat,
-    /// Max number of daily files to store; only used when storing logs in file; defaults to 0 - rotation disabled
+    /// Max number of daily files to store, excluding active one; only used when storing logs in file; defaults to 0 - rotation disabled
     #[serde(default)]
     pub max_files: usize,
 }
@@ -67,11 +75,76 @@ pub struct LogConfig {
 impl Default for LogConfig {
     fn default() -> Self {
         Self {
-            destination: String::from("stderr"),
-            verbosity: 0,
-            color: None,
+            destination: LOG_DESTINATION_STDOUT.to_string(),
+            level: Default::default(),
+            color: Default::default(),
             format: Default::default(),
-            max_files: 0,
+            max_files: Default::default(),
+        }
+    }
+}
+
+/// Log level presets
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum LogLevelPreset {
+    /// No logs
+    Silent,
+    /// Uses RUST_LOG env or info level if not set
+    Custom,
+    /// Only errors
+    Error,
+    /// Warnings and errors. Errors for 3rd party dependencies
+    Warn,
+    /// Info level and lower. Warnings for 3rd party dependencies
+    #[default]
+    Info,
+    /// Debug level and lower. Info level for 3rd party dependencies
+    Debug,
+    /// Trace level and lower. Debug level for 3rd party dependencies
+    Trace,
+    /// Trace level for everything
+    Paranoid,
+}
+
+/// Creates log level preset from verbosity level
+impl TryFrom<u8> for LogLevelPreset {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self, <LogLevelPreset as TryFrom<u8>>::Error> {
+        let level = match value {
+            0 => LogLevelPreset::Custom,
+            1 => LogLevelPreset::Debug,
+            2 => LogLevelPreset::Trace,
+            3 => LogLevelPreset::Paranoid,
+            verbosity => return Err(Error::InvalidVerbosityLevel(verbosity)),
+        };
+
+        Ok(level)
+    }
+}
+
+impl From<&LogLevelPreset> for EnvFilter {
+    fn from(value: &LogLevelPreset) -> Self {
+        match value {
+            LogLevelPreset::Silent => EnvFilter::default(),
+            LogLevelPreset::Custom => EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy(),
+            LogLevelPreset::Error => EnvFilter::new("error"),
+            LogLevelPreset::Warn => {
+                EnvFilter::new("error,tenderdash_abci=warn,drive_abci=warn,drive=warn,dpp=warn")
+            }
+            LogLevelPreset::Info => {
+                EnvFilter::new("error,tenderdash_abci=info,drive_abci=info,drive=info,dpp=info")
+            }
+            LogLevelPreset::Debug => {
+                EnvFilter::new("info,tenderdash_abci=debug,drive_abci=debug,drive=debug,dpp=debug")
+            }
+            LogLevelPreset::Trace => {
+                EnvFilter::new("debug,tenderdash_abci=trace,drive_abci=trace,drive=trace,dpp=trace")
+            }
+            LogLevelPreset::Paranoid => EnvFilter::new("trace"),
         }
     }
 }
@@ -80,6 +153,7 @@ impl Default for LogConfig {
 ///
 /// See https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/index.html#formatters
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
 pub enum LogFormat {
     /// Default, human-readable, single-line logs
     #[default]
@@ -106,11 +180,11 @@ pub enum LogFormat {
 /// ```bash
 /// # First logger, logging to stderr on verbosity level 5
 /// ABCI_LOG_STDERR_DESTINATION=stderr
-/// ABCI_LOG_STDERR_VERBOSITY=6
+/// ABCI_LOG_STDERR_LEVEL=trace
 ///
 /// # Second logger, logging to stdout on verbosity level 1
 /// ABCI_LOG_STDOUT_DESTINATION=stdout
-/// ABCI_LOG_STDOUT_VERBOSITY=1
+/// ABCI_LOG_STDOUT_LEVEL=info
 /// ```
 ///
 ///
@@ -167,6 +241,10 @@ pub enum Error {
     /// Duplicate config
     #[error("duplicate log configuration name {0}")]
     DuplicateConfigName(String),
+
+    /// Undefined verbosity level
+    #[error("undefined log verbosity level {0}")]
+    InvalidVerbosityLevel(u8),
 }
 
 /// Name of logging configuration
@@ -369,13 +447,22 @@ impl Loggers {
             let cloned = logger.destination.clone();
             let guard = cloned.lock().expect("logging lock poisoned");
 
-            if let LogDestination::RotationWriter(writer) = guard.deref() {
-                let mut inner = writer.0.lock().expect("logging lock poisoned");
-                // let inner = guard.get_mut();
-                if let Err(e) = inner.rotate() {
-                    result = Err(Error::FileRotate(e));
-                };
-            };
+            match guard.deref() {
+                LogDestination::RotationWriter(ref writer) => {
+                    let mut inner = writer.0.lock().expect("logging lock poisoned");
+                    if let Err(e) = inner.rotate() {
+                        result = Err(Error::FileRotate(e));
+                    };
+                }
+                LogDestination::File(ref f) => {
+                    let mut inner = f.0.lock().expect("logging lock poisoned");
+
+                    result = inner.flush().map_err(Error::FileRotate).map(|_| {
+                        inner.handle().reopen();
+                    })
+                }
+                _ => {}
+            }
         }
         result
     }
@@ -461,7 +548,7 @@ enum LogDestination {
     /// Standard out
     StdOut,
     /// Standard file
-    File(Writer<std::fs::File>),
+    File(Writer<reopen::Reopen<std::fs::File>>),
     /// File that is logrotated
     RotationWriter(Writer<FileRotate<AppendTimestamp>>),
     #[cfg(test)]
@@ -504,7 +591,7 @@ impl Debug for LogDestination {
 }
 
 /// Whenever we want to write to log destination, we delegate to the Writer implementation
-impl std::io::Write for LogDestination {
+impl Write for LogDestination {
     delegate::delegate! {
         to self.to_write() {
             #[inline]
@@ -525,7 +612,7 @@ impl std::io::Write for LogDestination {
     }
 }
 
-impl TryFrom<&LogConfig> for file_rotate::FileRotate<AppendTimestamp> {
+impl TryFrom<&LogConfig> for FileRotate<AppendTimestamp> {
     type Error = Error;
     /// Configure new FileRotate based on log configuration.
     ///
@@ -536,29 +623,37 @@ impl TryFrom<&LogConfig> for file_rotate::FileRotate<AppendTimestamp> {
         let compression = file_rotate::compression::Compression::OnRotate(2);
         // Only owner can see logs
         let mode = Some(0o600);
-        let path = log_file_path(PathBuf::from(&config.destination))?;
-        let f = file_rotate::FileRotate::new(path, suffix_scheme, content_limit, compression, mode);
+        let path = PathBuf::from(&config.destination);
+
+        validate_log_path(&path)?;
+
+        let f = FileRotate::new(path, suffix_scheme, content_limit, compression, mode);
 
         Ok(f)
     }
 }
 
-impl TryFrom<&LogConfig> for File {
+impl TryFrom<&LogConfig> for Reopen<File> {
     type Error = Error;
     /// Configure new File based on log configuration.
     fn try_from(config: &LogConfig) -> Result<Self, Self::Error> {
         // Only owner can see logs
         let mode = 0o600;
-        let path = log_file_path(PathBuf::from(&config.destination))?;
+        let path = PathBuf::from(&config.destination);
 
-        let f = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .mode(mode)
-            .open(&path)
-            .map_err(|e| Error::FileCreate(path, e))?;
+        validate_log_path(&path)?;
 
-        Ok(f)
+        let opened_path = path.clone();
+        let open_fn = move || {
+            OpenOptions::new()
+                .create(true)
+                .write(true)
+                .append(true)
+                .mode(mode)
+                .open(&opened_path)
+        };
+
+        Reopen::new(Box::new(open_fn)).map_err(|e| Error::FileCreate(path, e))
     }
 }
 
@@ -568,8 +663,8 @@ struct Logger {
     /// Destination of logs; either absolute path to dir where log files will be stored, `stdout` or `stderr`
     destination: Arc<Mutex<LogDestination>>,
 
-    /// Log verbosity level, number; see [super::Cli::verbose].
-    verbosity: u8,
+    /// Log verbosity level preset
+    level: LogLevelPreset,
 
     /// Whether to use colored output
     color: Option<bool>,
@@ -582,10 +677,10 @@ impl TryFrom<&LogConfig> for Logger {
     type Error = Error;
     fn try_from(config: &LogConfig) -> Result<Self, Self::Error> {
         let destination = match config.destination.to_lowercase().as_str() {
-            "stdout" => LogDestination::StdOut,
-            "stderr" => LogDestination::StdErr,
+            LOG_DESTINATION_STDOUT => LogDestination::StdOut,
+            LOG_DESTINATION_STDERR => LogDestination::StdErr,
             #[cfg(test)]
-            "bytes" => LogDestination::Bytes(Vec::<u8>::new().into()),
+            LOG_DESTINATION_BYTES => LogDestination::Bytes(Vec::<u8>::new().into()),
             dest => {
                 // we refer directly to config.destination, as dest was converted to lowercase
                 let path = PathBuf::from(&config.destination);
@@ -596,20 +691,17 @@ impl TryFrom<&LogConfig> for Logger {
                     let file: FileRotate<AppendTimestamp> = FileRotate::try_from(config)?;
                     LogDestination::RotationWriter(file.into())
                 } else {
-                    let file: File = File::try_from(config)?;
+                    let file: Reopen<File> = config.try_into()?;
                     LogDestination::File(file.into())
                 }
             }
         };
-        let verbosity = config.verbosity;
-        let color = config.color;
-        let format = config.format;
 
         Ok(Self {
             destination: Arc::new(Mutex::new(destination)),
-            verbosity,
-            color,
-            format,
+            level: config.level.clone(),
+            color: config.color,
+            format: config.format,
         })
     }
 }
@@ -617,8 +709,8 @@ impl TryFrom<&LogConfig> for Logger {
 impl Default for Logger {
     fn default() -> Self {
         Self {
-            destination: Arc::new(Mutex::new(LogDestination::StdErr)),
-            verbosity: 0,
+            destination: Arc::new(Mutex::new(LogDestination::StdOut)),
+            level: LogLevelPreset::Info,
             color: None,
             format: LogFormat::Full,
         }
@@ -640,7 +732,7 @@ impl Logger {
         let cloned = self.destination.clone();
         let make_writer = { move || Writer(Arc::clone(&cloned)) };
 
-        let filter = self.env_filter();
+        let filter = EnvFilter::from(&self.level);
 
         let formatter = fmt::layer::<Registry>()
             .with_writer(make_writer)
@@ -653,31 +745,17 @@ impl Logger {
             LogFormat::Json => formatter.json().with_filter(filter).boxed(),
         }
     }
-
-    fn env_filter(&self) -> EnvFilter {
-        match self.verbosity {
-            0 => EnvFilter::builder()
-                .with_default_directive(LevelFilter::INFO.into())
-                .from_env_lossy(),
-            1 => EnvFilter::new("error,tenderdash_abci=info,drive_abci=info"),
-            2 => EnvFilter::new("info,tenderdash_abci=debug,drive_abci=debug"),
-            3 => EnvFilter::new("debug"),
-            4 => EnvFilter::new("debug,tenderdash_abci=trace,drive_abci=trace"),
-            5 => EnvFilter::new("trace"),
-            _ => panic!("max verbosity level is 5"),
-        }
-    }
 }
 
 /// Helper that initializes logging in unit tests
 ///
 ///
 /// For verbosity, see drive-abci --help or use 0 or 5
-pub fn init_for_tests(verbosity: u8) {
+pub fn init_for_tests(level: LogLevelPreset) {
     let mut logger_builder = LogBuilder::new();
     let config = LogConfig {
-        destination: "stderr".to_string(),
-        verbosity,
+        destination: LOG_DESTINATION_STDOUT.to_string(),
+        level,
         color: None,
         format: LogFormat::Full,
         max_files: 0,
@@ -686,26 +764,78 @@ pub fn init_for_tests(verbosity: u8) {
     logger_builder
         .add("default", &config)
         .expect("cannot configure default logger");
+
     logger_builder.build().try_install().ok();
 }
 
-/// Verify log directory path and determine absolute path to log file.
-fn log_file_path<T: AsRef<Path>>(log_dir: T) -> Result<PathBuf, Error> {
-    let log_dir = log_dir.as_ref();
-    if !log_dir.is_absolute() {
+/// Verify log file path.
+///
+/// Ensure that the log file path is correct, that is:
+/// - it points to a file, not a directory
+/// - if the log file exists, it is writable for the current user
+/// - parent directory of the file exists and is writable for current user
+/// - path is absolute
+fn validate_log_path<T: AsRef<Path>>(log_file_path: T) -> Result<(), Error> {
+    let log_file_path = log_file_path.as_ref();
+
+    if !log_file_path.is_absolute() {
         return Err(Error::FilePath(
-            log_dir.to_owned(),
-            "log path must be absolute".to_string(),
+            log_file_path.to_owned(),
+            "log file path must be absolute".to_string(),
         ));
     }
-    if !log_dir.is_dir() {
+
+    if log_file_path.exists() {
+        // Make sure log file is writable
+        if log_file_path.is_dir() {
+            return Err(Error::FilePath(
+                log_file_path.to_owned(),
+                "log file path must point to file".to_string(),
+            ));
+        }
+
+        let md = fs::metadata(log_file_path).map_err(|e| {
+            Error::FilePath(
+                log_file_path.to_owned(),
+                format!("cannot read log file metadata: {}", e),
+            )
+        })?;
+
+        if md.permissions().readonly() {
+            return Err(Error::FilePath(
+                log_file_path.to_owned(),
+                "log file is readonly".to_string(),
+            ));
+        }
+    } else if log_file_path.ends_with(String::from(path::MAIN_SEPARATOR)) {
+        // If file doesn't exist we need to do at least simple validation
         return Err(Error::FilePath(
-            log_dir.to_owned(),
-            "log path must point to an existing directory".to_string(),
+            log_file_path.to_owned(),
+            "log file path must point to file".to_string(),
         ));
     }
-    let path = log_dir.join("drive-abci.log");
-    Ok(path)
+
+    // Make sure parent directly is writable so log rotation can work
+    let parent_dir = log_file_path
+        .parent()
+        .expect("absolute log file path will always have parent");
+
+    let md = fs::metadata(parent_dir).map_err(|e| {
+        Error::FilePath(
+            log_file_path.to_owned(),
+            format!("cannot read parent directory: {}", e),
+        )
+    })?;
+
+    let permissions = md.permissions();
+    if permissions.readonly() {
+        return Err(Error::FilePath(
+            log_file_path.to_owned(),
+            "parent directory is readonly".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -713,7 +843,10 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use std::str::from_utf8;
+    use std::fs::OpenOptions;
+    use std::os::unix::fs::PermissionsExt;
+    use std::{cmp::Ordering, fs, str::from_utf8};
+    use tempfile::tempdir;
 
     /// Reads data written to provided destination.
     ///
@@ -744,53 +877,45 @@ mod tests {
     #[test]
     fn test_logging() {
         let logger_stdout = LogConfig {
-            destination: "stdout".to_string(),
-            verbosity: 0,
+            destination: LOG_DESTINATION_STDOUT.to_string(),
+            level: LogLevelPreset::Info,
             format: LogFormat::Pretty,
             ..Default::default()
         };
 
         let logger_stderr = LogConfig {
-            destination: "stderr".to_string(),
-            verbosity: 4,
+            destination: LOG_DESTINATION_STDERR.to_string(),
+            level: LogLevelPreset::Debug,
             ..Default::default()
         };
 
         let logger_v0 = LogConfig {
-            destination: "bytes".to_string(),
-            verbosity: 0,
+            destination: LOG_DESTINATION_BYTES.to_string(),
+            level: LogLevelPreset::Info,
             ..Default::default()
         };
 
         let logger_v4 = LogConfig {
             destination: "bytes".to_string(),
-            verbosity: 4,
+            level: LogLevelPreset::Debug,
             format: LogFormat::Json,
             ..Default::default()
         };
 
-        let dir_v0 = TempDir::new().unwrap();
-        let logger_dir_v0 = LogConfig {
-            destination: dir_v0
-                .path()
-                .canonicalize()
-                .unwrap()
-                .to_string_lossy()
-                .to_string(),
-            verbosity: 0,
+        let dir = TempDir::new().unwrap();
+
+        let file_v0_path = dir.path().join("log.v0");
+        let logger_file_v0 = LogConfig {
+            destination: file_v0_path.to_string_lossy().to_string(),
+            level: LogLevelPreset::Info,
             max_files: 4,
             ..Default::default()
         };
 
-        let dir_v4 = TempDir::new().unwrap();
+        let file_v4_path = dir.path().join("log.v4");
         let logger_file_v4 = LogConfig {
-            destination: dir_v4
-                .path()
-                .canonicalize()
-                .unwrap()
-                .to_string_lossy()
-                .to_string(),
-            verbosity: 4,
+            destination: file_v4_path.to_string_lossy().to_string(),
+            level: LogLevelPreset::Debug,
             max_files: 0, // no rotation
             ..Default::default()
         };
@@ -804,7 +929,7 @@ mod tests {
             .unwrap()
             .with_config("v4", &logger_v4)
             .unwrap()
-            .with_config("dir_v0", &logger_dir_v0)
+            .with_config("file_v0", &logger_file_v0)
             .unwrap()
             .with_config("file_v4", &logger_file_v4)
             .unwrap()
@@ -823,9 +948,8 @@ mod tests {
 
         let result_verb_0 = dest_read_as_string(logging.0["v0"].destination.clone());
         let result_verb_4 = dest_read_as_string(logging.0["v4"].destination.clone());
-        let result_dir_verb_0 = dest_read_as_string(logging.0["dir_v0"].destination.clone());
+        let result_dir_verb_0 = dest_read_as_string(logging.0["file_v0"].destination.clone());
 
-        let file_v4_path = super::log_file_path(&dir_v4).unwrap();
         let result_file_verb_4 = std::fs::read_to_string(&file_v4_path)
             .map_err(|e| panic!("{:?}: {:?}", file_v4_path.clone(), e.to_string()))
             .unwrap();
@@ -842,5 +966,223 @@ mod tests {
         assert!(!result_dir_verb_0.contains(TEST_STRING_DEBUG));
         assert!(result_verb_4.contains(TEST_STRING_DEBUG));
         assert!(result_file_verb_4.contains(TEST_STRING_DEBUG));
+    }
+
+    /// Test rotation of RotationWriter destination.
+    ///
+    /// Given that the RotationWriter is rotated 3 times, we expect to see 4 files:
+    /// - 1 file with the original name
+    /// - 3 files with the original name and timestamp suffix
+    #[test]
+    fn test_rotation_writer_rotate() {
+        let tempdir = TempDir::new().unwrap();
+        let filepath = tempdir.path().join("drive-abci.log");
+        let config = LogConfig {
+            destination: filepath.to_string_lossy().to_string(),
+            level: LogLevelPreset::Trace,
+            format: LogFormat::Pretty,
+            max_files: 3,
+            ..Default::default()
+        };
+
+        let loggers = LogBuilder::new()
+            .with_config("rotate", &config)
+            .expect("configure log builder")
+            .build();
+        let logger = loggers.0.get("rotate").expect("get logger");
+
+        for i in 0..config.max_files + 2 {
+            logger
+                .destination
+                .lock()
+                .unwrap()
+                .write_all(format!("file {}\n", i).as_bytes())
+                .unwrap();
+
+            loggers.rotate().expect("rotate logs");
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+        }
+        let mut counter = 0;
+        tempdir.path().read_dir().unwrap().for_each(|entry| {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let path = path.to_string_lossy();
+            println!("{}", path);
+            assert!(path.contains("drive-abci.log"));
+            counter += 1;
+        });
+        assert_eq!(counter, config.max_files + 1);
+    }
+
+    // TODO: Not passing on Mac OS
+    /// Test rotation of File destination.
+    ///
+    /// Given that we move the File and then Rotate it, we expect the file to be recreated in new location.
+    #[ignore]
+    #[test]
+    fn test_file_rotate() {
+        const ITERATIONS: usize = 4;
+
+        let tempdir = TempDir::new().unwrap();
+        let filepath = tempdir.path().join("drive-abci.log");
+        let config = LogConfig {
+            destination: filepath.to_string_lossy().to_string(),
+            level: LogLevelPreset::Trace,
+            format: LogFormat::Pretty,
+            max_files: 0,
+            ..Default::default()
+        };
+
+        let loggers = LogBuilder::new()
+            .with_config("rotate", &config)
+            .expect("configure log builder")
+            .build();
+        let logger = loggers.0.get("rotate").expect("get logger");
+
+        for i in 0..ITERATIONS {
+            let mut guard = logger.destination.lock().unwrap();
+            guard
+                .write_all(format!("file {}, before rotate\n", i).as_bytes())
+                .unwrap();
+
+            fs::rename(
+                &filepath,
+                tempdir.path().join(format!("drive-abci.log.{}", i)),
+            )
+            .unwrap();
+            // rotate() locks, so we need to drop guard here
+            drop(guard);
+
+            loggers.rotate().expect("rotate logs");
+            let mut guard = logger.destination.lock().unwrap();
+            guard
+                .write_all(format!("file {}, after rotate\n", i + 1).as_bytes())
+                .unwrap();
+            guard.flush().unwrap();
+
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        // Close all files, so that we can read them
+        drop(loggers);
+
+        let mut counter = 0;
+        tempdir
+            .path()
+            .read_dir()
+            .unwrap()
+            .sorted_by(|a, b| {
+                let a = a.as_ref().unwrap().path();
+                let b = b.as_ref().unwrap().path();
+                if a.eq(&b) {
+                    return Ordering::Equal;
+                }
+                if a.ends_with("drive-abci.log") {
+                    return Ordering::Greater;
+                }
+                if b.ends_with("drive-abci.log") {
+                    return Ordering::Greater;
+                }
+
+                a.cmp(&b)
+            })
+            .for_each(|entry| {
+                let entry = entry.unwrap();
+                let path = entry.path();
+                let path_str = path.to_string_lossy();
+                let read = fs::read_to_string(&path).unwrap();
+                println!("{}: {}", path_str, read);
+                assert!(path_str.contains("drive-abci.log"));
+
+                if counter < ITERATIONS - 1 {
+                    assert!(
+                        read.contains(format!("file {}, before rotate\n", counter).as_str()),
+                        "expect: file {}, before rotate, read: {}",
+                        counter,
+                        read
+                    )
+                };
+                if counter > 0 {
+                    assert!(
+                        read.contains(format!("file {}, after rotate\n", counter).as_str()),
+                        "expect: file {}, after rotate, read: {}",
+                        counter,
+                        read
+                    )
+                }
+
+                counter = counter + 1;
+            });
+        assert_eq!(counter, ITERATIONS + 1);
+    }
+
+    #[test]
+    fn test_validate_log_path_file_exists_and_writable() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("log.txt");
+        OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&file_path)
+            .unwrap();
+
+        assert!(validate_log_path(&file_path).is_ok());
+    }
+
+    #[test]
+    fn test_validate_log_path_file_exists_but_readonly() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("log.txt");
+        OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(&file_path)
+            .unwrap();
+        let mut perms = fs::metadata(&file_path).unwrap().permissions();
+        perms.set_mode(0o444);
+        fs::set_permissions(&file_path, perms).unwrap();
+
+        if let Err(Error::FilePath(_, message)) = validate_log_path(&file_path) {
+            assert_eq!(message, "log file is readonly");
+        } else {
+            panic!("Expected error did not occur");
+        }
+    }
+
+    #[test]
+    fn test_validate_log_path_parent_directory_not_writable() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("log.txt");
+        let mut perms = fs::metadata(dir.path()).unwrap().permissions();
+        perms.set_mode(0o555);
+        fs::set_permissions(dir.path(), perms).unwrap();
+
+        if let Err(Error::FilePath(_, message)) = validate_log_path(&file_path) {
+            assert_eq!(message, "parent directory is readonly");
+        } else {
+            panic!("Expected error did not occur");
+        }
+    }
+
+    #[test]
+    fn test_validate_log_path_points_to_directory() {
+        let dir = tempdir().unwrap();
+
+        if let Err(Error::FilePath(_, message)) = validate_log_path(dir.path()) {
+            assert_eq!(message, "log file path must point to file");
+        } else {
+            panic!("Expected error did not occur");
+        }
+    }
+
+    #[test]
+    fn test_validate_log_path_not_absolute() {
+        let relative_path = Path::new("log.txt");
+
+        if let Err(Error::FilePath(_, message)) = validate_log_path(relative_path) {
+            assert_eq!(message, "log file path must be absolute");
+        } else {
+            panic!("Expected error did not occur");
+        }
     }
 }
