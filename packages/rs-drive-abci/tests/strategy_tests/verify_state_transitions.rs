@@ -16,6 +16,7 @@ use drive::state_transition_action::StateTransitionAction;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use prost::Message;
+use tenderdash_abci::proto::abci::ExecTxResult;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -28,10 +29,10 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransition;
 use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransition;
 
-pub(crate) fn verify_state_transitions_were_executed(
+pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     abci_app: &AbciApplication<MockCoreRPCLike>,
     expected_root_hash: &[u8; 32],
-    state_transitions: &Vec<StateTransition>,
+    state_transitions: &Vec<(StateTransition, ExecTxResult)>,
     platform_version: &PlatformVersion,
 ) -> bool {
     let state = abci_app.platform.state.read().unwrap();
@@ -46,7 +47,7 @@ pub(crate) fn verify_state_transitions_were_executed(
     let actions = state_transitions
         .iter()
         .enumerate()
-        .map(|(num, state_transition)| {
+        .map(|(num, (state_transition, result))| {
             if let StateTransition::DocumentsBatch(batch) = state_transition {
                 let _first = batch.transitions().first().unwrap();
 
@@ -63,16 +64,17 @@ pub(crate) fn verify_state_transitions_were_executed(
                     num, consensus_validation_result.errors
                 )
             }
-            consensus_validation_result.into_data().unwrap_or_else(|_| {
+            let action = consensus_validation_result.into_data().unwrap_or_else(|_| {
                 panic!(
                     "expected state transitions to be valid {:?}",
                     state_transition
                 )
-            })
+            });
+            (action, result.code == 0)
         })
         .collect::<Vec<_>>();
 
-    for action in &actions {
+    for (action, was_executed) in &actions {
         let mut proofs_request = GetProofsRequest {
             identities: vec![],
             contracts: vec![],
@@ -107,17 +109,24 @@ pub(crate) fn verify_state_transitions_were_executed(
                     data_contract_create.data_contract_ref().id().into_buffer(),
                     platform_version,
                 )
-                .expect("expected to verify full identity");
+                .expect("expected to verify contract");
                 assert_eq!(
                     &root_hash,
                     expected_root_hash,
                     "state last block info {:?}",
                     platform.state.last_committed_block_info()
                 );
-                assert_eq!(
-                    &contract.expect("expected a contract"),
-                    data_contract_create.data_contract_ref(),
-                )
+
+                if *was_executed {
+                    assert_eq!(
+                        &contract.expect("expected a contract"),
+                        data_contract_create.data_contract_ref(),
+                    )
+                } else {
+                    //there is the possibility that the state transition was not executed because it already existed,
+                    // we can discount that for now in tests
+                    assert!(contract.is_none(),)
+                }
             }
             StateTransitionAction::DataContractUpdateAction(data_contract_update) => {
                 proofs_request
@@ -153,10 +162,19 @@ pub(crate) fn verify_state_transitions_were_executed(
                     "state last block info {:?}",
                     platform.state.last_committed_block_info()
                 );
-                assert_eq!(
-                    &contract.expect("expected a contract"),
-                    data_contract_update.data_contract_ref(),
-                )
+                if *was_executed {
+                    assert_eq!(
+                        &contract.expect("expected a contract"),
+                        data_contract_update.data_contract_ref(),
+                    );
+                } else if contract.is_some() {
+                    //there is the possibility that the state transition was not executed and the state is equal to the previous
+                    // state, aka there would have been no change anyways, we can discount that for now
+                    assert_ne!(
+                        &contract.expect("expected a contract"),
+                        data_contract_update.data_contract_ref(),
+                    );
+                }
             }
             StateTransitionAction::DocumentsBatchAction(documents_batch_transition) => {
                 documents_batch_transition
@@ -247,29 +265,60 @@ pub(crate) fn verify_state_transitions_were_executed(
 
                     match document_transition_action {
                         DocumentTransitionAction::CreateAction(creation_action) => {
-                            let document = document.expect("expected a document");
-                            assert_eq!(
-                                document,
-                                Document::try_from_create_transition(
-                                    creation_action,
-                                    documents_batch_transition.owner_id(),
-                                    platform_version,
-                                )
-                                .expect("expected to get document")
-                            );
-                        }
-                        DocumentTransitionAction::ReplaceAction(replace_action) => {
-                            // it's also possible we deleted something we replaced
-                            if let Some(document) = document {
-                                assert_eq!(
-                                    document,
-                                    Document::try_from_replace_transition(
-                                        replace_action,
+                            if *was_executed {
+                                let document = document.expect("expected a document");
+                                dbg!(
+                                    &document,
+                                    Document::try_from_create_transition(
+                                        creation_action,
                                         documents_batch_transition.owner_id(),
                                         platform_version,
                                     )
                                     .expect("expected to get document")
                                 );
+                                assert_eq!(
+                                    document,
+                                    Document::try_from_create_transition(
+                                        creation_action,
+                                        documents_batch_transition.owner_id(),
+                                        platform_version,
+                                    )
+                                    .expect("expected to get document")
+                                );
+                            } else {
+                                //there is the possibility that the state transition was not executed because it already existed,
+                                // we can discount that for now in tests
+                                assert!(document.is_none());
+                            }
+                        }
+                        DocumentTransitionAction::ReplaceAction(replace_action) => {
+                            if *was_executed {
+                                // it's also possible we deleted something we replaced
+                                if let Some(document) = document {
+                                    assert_eq!(
+                                        document,
+                                        Document::try_from_replace_transition(
+                                            replace_action,
+                                            documents_batch_transition.owner_id(),
+                                            platform_version,
+                                        )
+                                        .expect("expected to get document")
+                                    );
+                                }
+                            } else {
+                                //there is the possibility that the state transition was not executed and the state is equal to the previous
+                                // state, aka there would have been no change anyways, we can discount that for now
+                                if let Some(document) = document {
+                                    assert_ne!(
+                                        document,
+                                        Document::try_from_replace_transition(
+                                            replace_action,
+                                            documents_batch_transition.owner_id(),
+                                            platform_version,
+                                        )
+                                        .expect("expected to get document")
+                                    );
+                                }
                             }
                         }
                         DocumentTransitionAction::DeleteAction(_) => {
@@ -314,22 +363,28 @@ pub(crate) fn verify_state_transitions_were_executed(
                     "state last block info {:?}",
                     platform.state.last_committed_block_info()
                 );
-                assert_eq!(
-                    identity
-                        .expect("expected an identity")
-                        .into_partial_identity_info_no_balance(),
-                    PartialIdentity {
-                        id: identity_create_transition.identity_id(),
-                        loaded_public_keys: identity_create_transition
-                            .public_keys()
-                            .iter()
-                            .map(|key| (key.id(), key.clone()))
-                            .collect(),
-                        balance: None,
-                        revision: Some(0),
-                        not_found_public_keys: Default::default(),
-                    }
-                )
+                if *was_executed {
+                    assert_eq!(
+                        identity
+                            .expect("expected an identity")
+                            .into_partial_identity_info_no_balance(),
+                        PartialIdentity {
+                            id: identity_create_transition.identity_id(),
+                            loaded_public_keys: identity_create_transition
+                                .public_keys()
+                                .iter()
+                                .map(|key| (key.id(), key.clone()))
+                                .collect(),
+                            balance: None,
+                            revision: Some(0),
+                            not_found_public_keys: Default::default(),
+                        }
+                    )
+                } else {
+                    //there is the possibility that the state transition was not executed because it already existed,
+                    // we can discount that for now in tests
+                    assert!(identity.is_none());
+                }
             }
             StateTransitionAction::IdentityTopUpAction(identity_top_up_transition) => {
                 proofs_request
@@ -367,9 +422,11 @@ pub(crate) fn verify_state_transitions_were_executed(
                     platform.state.last_committed_block_info()
                 );
 
-                //while this isn't 100% sure to be true (in the case of debt,
-                // for the tests we have we can use it
-                assert!(identity_top_up_transition.top_up_balance_amount() <= balance);
+                if *was_executed {
+                    //while this isn't 100% sure to be true (in the case of debt,
+                    // for the tests we have we can use it
+                    assert!(identity_top_up_transition.top_up_balance_amount() <= balance);
+                }
             }
             StateTransitionAction::IdentityCreditWithdrawalAction(
                 identity_credit_withdrawal_transition,
@@ -533,9 +590,11 @@ pub(crate) fn verify_state_transitions_were_executed(
                     platform.state.last_committed_block_info()
                 );
 
-                let balance_recipient = balance_recipient.expect("expected a balance");
+                if *was_executed {
+                    let balance_recipient = balance_recipient.expect("expected a balance");
 
-                assert!(balance_recipient >= identity_credit_transfer_action.transfer_amount());
+                    assert!(balance_recipient >= identity_credit_transfer_action.transfer_amount());
+                }
             }
         }
     }

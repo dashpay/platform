@@ -1,4 +1,6 @@
-use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+use platform_value::btreemap_extensions::{
+    BTreeValueMapInsertionPathHelper, BTreeValueMapPathHelper,
+};
 use platform_value::Value;
 use std::collections::BTreeMap;
 
@@ -61,7 +63,11 @@ pub trait DocumentV0Setters: DocumentV0Getters {
     /// The path supports syntax from the `lodash` JS library. Example: "root.people[0].name".
     /// If parents are not present, they will be automatically created.
     fn set(&mut self, path: &str, value: Value) {
-        self.properties_mut().insert(path.to_string(), value);
+        if !path.is_empty() {
+            self.properties_mut()
+                .insert_at_path(path, value)
+                .expect("path should not be empty, we checked");
+        }
     }
 
     /// Sets a `u8` value for the specified property name.

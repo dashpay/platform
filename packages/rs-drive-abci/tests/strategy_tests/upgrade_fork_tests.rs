@@ -31,6 +31,7 @@ mod tests {
                 let strategy = Strategy {
                     contracts_with_updates: vec![],
                     operations: vec![],
+                    start_identities: vec![],
                     identities_inserts: Frequency {
                         times_per_block_range: Default::default(),
                         chance_per_block: None,
@@ -52,6 +53,7 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
+                    signer: None,
                 };
                 let twenty_minutes_in_ms = 1000 * 60 * 20;
                 let mut config = PlatformConfig {
@@ -293,6 +295,7 @@ mod tests {
                 let strategy = Strategy {
                     contracts_with_updates: vec![],
                     operations: vec![],
+                    start_identities: vec![],
                     identities_inserts: Frequency {
                         times_per_block_range: Default::default(),
                         chance_per_block: None,
@@ -314,6 +317,7 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
+                    signer: None,
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
@@ -548,6 +552,7 @@ mod tests {
                 let strategy = Strategy {
                     contracts_with_updates: vec![],
                     operations: vec![],
+                    start_identities: vec![],
                     identities_inserts: Frequency {
                         times_per_block_range: Default::default(),
                         chance_per_block: None,
@@ -569,6 +574,7 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
+                    signer: None,
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let mut config = PlatformConfig {
@@ -718,6 +724,7 @@ mod tests {
                 let strategy = Strategy {
                     contracts_with_updates: vec![],
                     operations: vec![],
+                    start_identities: vec![],
                     identities_inserts: Frequency {
                         times_per_block_range: Default::default(),
                         chance_per_block: None,
@@ -742,6 +749,7 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
+                    signer: None,
                 };
 
                 let block_start = platform
@@ -901,6 +909,7 @@ mod tests {
                 let strategy = Strategy {
                     contracts_with_updates: vec![],
                     operations: vec![],
+                    start_identities: vec![],
                     identities_inserts: Frequency {
                         times_per_block_range: Default::default(),
                         chance_per_block: None,
@@ -926,6 +935,7 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
+                    signer: None,
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
@@ -1004,6 +1014,7 @@ mod tests {
                 let strategy = Strategy {
                     contracts_with_updates: vec![],
                     operations: vec![],
+                    start_identities: vec![],
                     identities_inserts: Frequency {
                         times_per_block_range: Default::default(),
                         chance_per_block: None,
@@ -1028,6 +1039,7 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
+                    signer: None,
                 };
 
                 // we hit the required threshold to upgrade

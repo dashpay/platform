@@ -140,7 +140,9 @@ mod tests {
     use dpp::dashcore::{key::KeyPair, signer, Network, PrivateKey};
 
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::data_contract::document_type::random_document::{
+        CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
+    };
     use dpp::data_contracts::dpns_contract;
     use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::DocumentV0Setters;
@@ -389,6 +391,8 @@ mod tests {
                 &mut rng,
                 identifier,
                 entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
                 platform_version,
             )
             .expect("expected a random document");
