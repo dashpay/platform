@@ -104,8 +104,8 @@ mod tests {
             execution: ExecutionConfig {
                 //we disable document triggers because we are using dpns and dpns needs a preorder
                 use_document_triggers: false,
-                verify_sum_trees: true,
-                validator_set_quorum_rotation_block_count: 0,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
             },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),

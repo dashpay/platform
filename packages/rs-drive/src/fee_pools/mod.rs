@@ -127,7 +127,9 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let transaction = drive.grove.start_transaction();
 
-            for epoch_index in 0..1000 {
+            let perpetual_storage_epochs = perpetual_storage_epochs(drive.config.epochs_per_era);
+
+            for epoch_index in 0..perpetual_storage_epochs {
                 let epoch = Epoch::new(epoch_index).unwrap();
 
                 let storage_fee = drive
@@ -141,7 +143,7 @@ mod tests {
                 assert_eq!(storage_fee, 0);
             }
 
-            let epoch = Epoch::new(1000).unwrap(); // 1001th epochs pool
+            let epoch = Epoch::new(perpetual_storage_epochs).unwrap(); // 1001th epochs pool
 
             let result = drive.get_epoch_storage_credits_for_distribution(
                 &epoch,

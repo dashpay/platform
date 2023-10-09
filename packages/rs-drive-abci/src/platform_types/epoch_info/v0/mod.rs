@@ -44,9 +44,6 @@ use dpp::ProtocolError;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-/// Lifetime of an epoch in milliseconds.
-pub const EPOCH_CHANGE_TIME_MS_V0: u64 = 1576800000;
-
 /// Info pertinent to the current epoch.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -133,13 +130,14 @@ impl EpochInfoV0 {
         genesis_time_ms: u64,
         block_time_ms: u64,
         previous_block_time_ms: Option<u64>,
+        epoch_time_s: u64,
     ) -> Result<EpochInfoV0, Error> {
         let previous_block_time = match previous_block_time_ms {
             Some(block_time) => block_time,
             None => return Ok(EpochInfoV0::default()),
         };
 
-        let epoch_change_time = Decimal::from(EPOCH_CHANGE_TIME_MS_V0);
+        let epoch_change_time = Decimal::from(epoch_time_s * 1000);
         let block_time = Decimal::from(block_time_ms);
         let genesis_time = Decimal::from(genesis_time_ms);
         let previous_block_time = Decimal::from(previous_block_time);
@@ -184,11 +182,13 @@ impl EpochInfoV0 {
     pub fn from_genesis_time_and_block_info(
         genesis_time_ms: u64,
         block_info: &BlockStateInfoV0,
+        epoch_time_s: u64,
     ) -> Result<EpochInfoV0, Error> {
         Self::calculate(
             genesis_time_ms,
             block_info.block_time_ms,
             block_info.previous_block_time_ms,
+            epoch_time_s,
         )
     }
 }
@@ -222,7 +222,7 @@ mod test {
             let genesis_time_ms: u64 = 1655396517902;
             let block_time_ms: u64 = 1655396517922;
 
-            let epoch_info = EpochInfoV0::calculate(genesis_time_ms, block_time_ms, None)
+            let epoch_info = EpochInfoV0::calculate(genesis_time_ms, block_time_ms, None, 1576800) // 18.25 days
                 .expect("should calculate epochs info");
 
             assert_eq!(epoch_info.current_epoch_index(), 0);
@@ -235,9 +235,13 @@ mod test {
             let block_time_ms: u64 = 1655396517922;
             let prev_block_time_ms: u64 = 1655396517912;
 
-            let epoch_info =
-                EpochInfoV0::calculate(genesis_time_ms, block_time_ms, Some(prev_block_time_ms))
-                    .expect("should calculate epochs info");
+            let epoch_info = EpochInfoV0::calculate(
+                genesis_time_ms,
+                block_time_ms,
+                Some(prev_block_time_ms),
+                1576800,
+            ) // 18.25 days
+            .expect("should calculate epochs info");
 
             assert_eq!(epoch_info.current_epoch_index(), 0);
             assert!(!epoch_info.is_epoch_change());
@@ -249,9 +253,13 @@ mod test {
             let prev_block_time_ms: u64 = 1655396517912;
             let block_time_ms: u64 = 1657125244561;
 
-            let epoch_info =
-                EpochInfoV0::calculate(genesis_time_ms, block_time_ms, Some(prev_block_time_ms))
-                    .expect("should calculate epochs info");
+            let epoch_info = EpochInfoV0::calculate(
+                genesis_time_ms,
+                block_time_ms,
+                Some(prev_block_time_ms),
+                1576800,
+            ) // 18.25 days
+            .expect("should calculate epochs info");
 
             assert_eq!(epoch_info.current_epoch_index(), 1);
             assert!(epoch_info.is_epoch_change());

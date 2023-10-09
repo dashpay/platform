@@ -70,8 +70,8 @@ use drive::fee_pools::epochs::operations_factory::EpochOperations;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Adds operations to the GroveDB batch which initialize the current epoch
-    /// as well as the current+1000 epoch, then distributes storage fees accumulated
-    /// during the previous epoch.
+    /// as well as the current+total epochs (40*50 for mainnet) epoch, then distributes storage fees
+    /// accumulated during the previous epoch.
     ///
     /// `DistributionLeftoverCredits` will be returned, except if we are at Genesis Epoch.
     pub(super) fn add_process_epoch_change_operations_v0(

@@ -24,7 +24,7 @@ use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
-use drive_abci::platform_types::epoch_info::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
+use drive_abci::platform_types::epoch_info::v0::EpochInfoV0;
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;
@@ -612,7 +612,7 @@ pub(crate) fn continue_chain_for_strategy(
     let mut signer = strategy.signer.clone().unwrap_or_default();
     let mut i = 0;
 
-    let blocks_per_epoch = EPOCH_CHANGE_TIME_MS_V0 / config.block_spacing_ms;
+    let blocks_per_epoch = config.execution.epoch_time_length_s / config.block_spacing_ms;
 
     let proposer_versions = current_proposer_versions.unwrap_or(
         strategy.upgrading_info.as_ref().map(|upgrading_info| {
@@ -650,6 +650,7 @@ pub(crate) fn continue_chain_for_strategy(
                 .last_committed_block_info()
                 .as_ref()
                 .map(|block_info| block_info.basic_info().time_ms),
+            config.execution.epoch_time_length_s,
         )
         .expect("should calculate epoch info");
 

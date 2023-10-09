@@ -229,7 +229,7 @@ mod tests {
         use crate::execution::types::block_fees::v0::BlockFeesV0;
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
         use crate::platform_types::epoch_info::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
-        use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
+        use dpp::fee::epoch::{perpetual_storage_epochs, CreditsPerEpoch, GENESIS_EPOCH_INDEX};
 
         /// Process and validate block fees
         pub fn process_and_validate_block_fees<C>(
@@ -293,9 +293,14 @@ mod tests {
                     assert_eq!(aggregated_storage_fees, block_fees.storage_fee());
                 } else {
                     // Assuming leftovers
+                    // we have perpetual_storage_epochs(platform.drive.config.epochs_per_era) as
+                    // there could be 1 per epoch left over
                     assert!(
                         block_fees.storage_fee() <= aggregated_storage_fees
-                            && aggregated_storage_fees < block_fees.storage_fee() + 1000
+                            && aggregated_storage_fees
+                                < block_fees.storage_fee()
+                                    + perpetual_storage_epochs(platform.drive.config.epochs_per_era)
+                                        as u64
                     );
                 };
             } else {

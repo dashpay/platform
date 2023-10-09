@@ -119,15 +119,39 @@ impl Default for CoreConfig {
 // https://github.com/softprops/envy/issues/61 and https://github.com/softprops/envy/pull/69
 pub struct ExecutionConfig {
     /// Should we use document triggers? Useful to set as `false` for tests
-    #[serde(default = "PlatformConfig::default_use_document_triggers")]
+    #[serde(default = "ExecutionConfig::default_use_document_triggers")]
     pub use_document_triggers: bool,
 
     /// Should we verify sum trees? Useful to set as `false` for tests
-    #[serde(default = "PlatformConfig::default_verify_sum_trees")]
+    #[serde(default = "ExecutionConfig::default_verify_sum_trees")]
     pub verify_sum_trees: bool,
 
     /// How often should quorums change?
+    #[serde(
+        default = "ExecutionConfig::default_validator_set_quorum_rotation_block_count",
+        deserialize_with = "from_str_or_number"
+    )]
     pub validator_set_quorum_rotation_block_count: u32,
+
+    /// How long in seconds should an epoch last
+    /// It might last a lot longer if the chain is halted
+    #[serde(
+        default = "ExecutionConfig::default_epoch_time_length_s",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub epoch_time_length_s: u64,
+}
+
+fn from_str_or_number<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de> + std::str::FromStr,
+    <T as std::str::FromStr>::Err: std::fmt::Display,
+{
+    use serde::de::Error;
+
+    let s = String::deserialize(deserializer)?;
+    s.parse::<T>().map_err(Error::custom)
 }
 
 /// Configuration of Dash Platform.
@@ -188,8 +212,7 @@ pub struct PlatformConfig {
     pub testing_configs: PlatformTestConfig,
 }
 
-impl PlatformConfig {
-    // #[allow(unused)]
+impl ExecutionConfig {
     fn default_verify_sum_trees() -> bool {
         true
     }
@@ -198,7 +221,16 @@ impl PlatformConfig {
         true
     }
 
-    // #[allow(unused)]
+    fn default_validator_set_quorum_rotation_block_count() -> u32 {
+        15
+    }
+
+    fn default_epoch_time_length_s() -> u64 {
+        788400
+    }
+}
+
+impl PlatformConfig {
     fn default_initial_protocol_version() -> ProtocolVersion {
         //todo: versioning
         1
@@ -245,9 +277,11 @@ impl FromEnv for PlatformConfig {
 impl Default for ExecutionConfig {
     fn default() -> Self {
         Self {
-            use_document_triggers: true,
-            verify_sum_trees: true,
-            validator_set_quorum_rotation_block_count: 15,
+            use_document_triggers: ExecutionConfig::default_use_document_triggers(),
+            verify_sum_trees: ExecutionConfig::default_verify_sum_trees(),
+            validator_set_quorum_rotation_block_count:
+                ExecutionConfig::default_validator_set_quorum_rotation_block_count(),
+            epoch_time_length_s: ExecutionConfig::default_epoch_time_length_s(),
         }
     }
 }
@@ -324,7 +358,7 @@ mod tests {
         dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
         assert_eq!("5", env::var("QUORUM_SIZE").unwrap());
 
-        let config = super::PlatformConfig::from_env().unwrap();
+        let config = super::PlatformConfig::from_env().expect("expected config from env");
         assert!(config.execution.verify_sum_trees);
         assert_ne!(config.quorum_type(), QuorumType::UNKNOWN);
         for id in vectors {
