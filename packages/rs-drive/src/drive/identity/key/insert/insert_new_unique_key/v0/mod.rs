@@ -17,7 +17,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         identity_key: IdentityPublicKey,
-        with_references: bool,
+        with_searchable_inner_references: bool,
         epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -55,7 +55,7 @@ impl Drive {
             platform_version,
         )?;
 
-        if with_references
+        if with_searchable_inner_references
             && matches!(
                 identity_key.purpose(),
                 Purpose::AUTHENTICATION | Purpose::WITHDRAW

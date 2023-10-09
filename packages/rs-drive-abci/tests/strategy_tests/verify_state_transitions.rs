@@ -267,15 +267,15 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         DocumentTransitionAction::CreateAction(creation_action) => {
                             if *was_executed {
                                 let document = document.expect("expected a document");
-                                dbg!(
-                                    &document,
-                                    Document::try_from_create_transition(
-                                        creation_action,
-                                        documents_batch_transition.owner_id(),
-                                        platform_version,
-                                    )
-                                    .expect("expected to get document")
-                                );
+                                // dbg!(
+                                //     &document,
+                                //     Document::try_from_create_transition(
+                                //         creation_action,
+                                //         documents_batch_transition.owner_id(),
+                                //         platform_version,
+                                //     )
+                                //     .expect("expected to get document")
+                                // );
                                 assert_eq!(
                                     document,
                                     Document::try_from_create_transition(
