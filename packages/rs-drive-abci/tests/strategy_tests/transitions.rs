@@ -317,6 +317,15 @@ pub fn create_identities_state_transitions(
     )
     .expect("expected to create identities");
     signer.add_keys(keys);
+    create_state_transitions_for_identities(identities, signer, rng, platform_version)
+}
+
+pub fn create_state_transitions_for_identities(
+    identities: Vec<Identity>,
+    signer: &mut SimpleSigner,
+    rng: &mut StdRng,
+    platform_version: &PlatformVersion,
+) -> Vec<(Identity, StateTransition)> {
     identities
         .into_iter()
         .map(|mut identity| {

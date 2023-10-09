@@ -22,7 +22,10 @@ impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
             Identity::try_from_identity_create_transition_action(self, platform_version)?;
 
         let drive_operations = vec![
-            IdentityOperation(IdentityOperationType::AddNewIdentity { identity }),
+            IdentityOperation(IdentityOperationType::AddNewIdentity {
+                identity,
+                is_masternode_identity: false,
+            }),
             SystemOperation(SystemOperationType::AddToSystemCredits {
                 amount: initial_balance_amount,
             }),

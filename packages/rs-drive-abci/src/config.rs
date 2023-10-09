@@ -148,6 +148,10 @@ pub struct PlatformConfig {
     #[serde(default = "PlatformConfig::default_verify_sum_trees")]
     pub verify_sum_trees: bool,
 
+    /// Should we use document triggers? Useful to set as `false` for tests
+    #[serde(default = "PlatformConfig::default_use_document_triggers")]
+    pub use_document_triggers: bool,
+
     /// The default quorum type
     pub quorum_type: String,
 
@@ -177,6 +181,10 @@ pub struct PlatformConfig {
 impl PlatformConfig {
     // #[allow(unused)]
     fn default_verify_sum_trees() -> bool {
+        true
+    }
+
+    fn default_use_document_triggers() -> bool {
         true
     }
 
@@ -228,6 +236,7 @@ impl Default for PlatformConfig {
     fn default() -> Self {
         Self {
             verify_sum_trees: true,
+            use_document_triggers: true,
             quorum_type: "llmq_100_67".to_string(),
             quorum_size: 100,
             block_spacing_ms: 5000,
