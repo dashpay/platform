@@ -1,4 +1,5 @@
-name: RS DPP
+---
+name: RS Drive
 
 on:
   workflow_dispatch:
@@ -8,7 +9,7 @@ on:
       - 'v[0-9]+\.[0-9]+-dev'
       - 'v[0-9]+\.[0-9]+-dev-nightly'
     paths:
-      - .github/workflows/rs-dpp.yml
+      - .github/workflows/rs-drive.yml
       - .github/workflows/rs-checks.yml
       - packages/feature-flags-contract/**
       - packages/dpns-contract/**
@@ -21,6 +22,7 @@ on:
       - packages/rs-platform-version/**
       - packages/rs-platform-versioning/**
       - packages/rs-dpp/**
+      - packages/rs-drive/**
   schedule:
     - cron: "30 4 * * *"
 
@@ -33,4 +35,4 @@ jobs:
     name: Rust
     uses: ./.github/workflows/rs-checks.yml
     with:
-      package: "dpp"
+      package: "drive-abci"

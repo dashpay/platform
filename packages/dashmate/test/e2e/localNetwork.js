@@ -32,6 +32,7 @@ describe('Local Network', function main() {
     // Update local config template that will be used to setup nodes
     const localConfig = configFile.getConfig(groupName);
     localConfig.set('dashmate.helper.docker.build.enabled', true);
+    localConfig.set('platform.drive.abci.docker.build.enabled', true);
     localConfig.set('docker.network.subnet', '172.30.0.0/24');
     localConfig.set('dashmate.helper.api.port', 40000);
     localConfig.set('core.p2p.port', 40001);

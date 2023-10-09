@@ -15,6 +15,12 @@ on:
       - packages/dpns-contract/**
       - packages/dashpay-contract/**
       - packages/masternode-reward-shares-contract/**
+      - packages/rs-platform-serialization/**
+      - packages/rs-platform-serialization-derive/**
+      - packages/rs-platform-value/**
+      - packages/rs-platform-value-convertible/**
+      - packages/rs-platform-version/**
+      - packages/rs-platform-versioning/**
       - packages/rs-dpp/**
       - packages/rs-drive/**
       - packages/rs-drive-abci/**
