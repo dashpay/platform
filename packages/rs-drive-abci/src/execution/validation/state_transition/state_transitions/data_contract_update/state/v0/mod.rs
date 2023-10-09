@@ -21,7 +21,7 @@ use dpp::data_contract::document_type::schema::{
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::JsonValue;
 use dpp::platform_value::converter::serde_json::{
-    BTreeValueJsonConverter, BTreeValueRefJsonConverter,
+    BTreeValueJsonConverter,
 };
 use dpp::platform_value::{Value, ValueMap};
 
