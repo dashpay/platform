@@ -8,10 +8,10 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::{Identity, IdentityPublicKey};
+use dpp::identity::Identity;
 
 use crate::drive::identity::key::fetch::{
-    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyIDVec, KeyRequestType, KeyVec,
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
 use crate::error::drive::DriveError;
 use dpp::identity::identity_public_key::accessors::v0::{
@@ -21,7 +21,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use itertools::Itertools;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 
 impl Drive {
     /// Adds a identity by inserting a new identity subtree structure to the `Identities` subtree.
@@ -173,8 +173,8 @@ impl Drive {
 
                 old_masternode_identity_keys_to_reenable.retain(|old_public_key| {
                     public_keys
-                        .iter()
-                        .map(|(_, key)| key.data())
+                        .values()
+                        .map(|key| key.data())
                         .contains(old_public_key.data())
                 });
 
@@ -200,7 +200,7 @@ impl Drive {
 
                 //we might also need to add new keys (in the case of an operator)
 
-                for mut identity_public_key in public_keys.into_iter().map(|(_, key)| key) {
+                for mut identity_public_key in public_keys.into_values() {
                     if old_masternode_identity_keys_to_reenable_data
                         .contains(identity_public_key.data())
                     {

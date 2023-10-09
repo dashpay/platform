@@ -1,17 +1,13 @@
-use crate::drive::{identity_tree_path, Drive};
+use crate::drive::Drive;
 
 use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
+use grovedb::EstimatedLayerCount::ApproximateElements;
 use grovedb::EstimatedLayerInformation;
-use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
+use grovedb::EstimatedLayerSizes::AllReference;
 
 use crate::drive::identity::estimation_costs::KEY_REFERENCE_SIZE;
-use crate::drive::identity::{
-    identity_contract_info_group_path_key_purpose_vec, identity_contract_info_group_path_vec,
-    identity_contract_info_root_path, identity_contract_info_root_path_vec,
-};
+use crate::drive::identity::identity_contract_info_group_path_key_purpose_vec;
 use dpp::identity::Purpose;
-use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
 use std::collections::HashMap;
 
 impl Drive {
