@@ -40,7 +40,6 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
     SerializedKeyVec,
 };
-use drive::error::contract::DataContractError;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{DriveQuery, SingleDocumentDriveQuery};
 use prost::Message;
@@ -118,7 +117,7 @@ impl<C> Platform<C> {
                     check_validation_result_with_data!(GetIdentityRequest::decode(query_data)
                         .map_err(|e| QueryError::InvalidArgument(format!(
                             "invalid query proto message: {}",
-                            e.to_string()
+                            e
                         ))));
 
                 let identity_id: Identifier = check_validation_result_with_data!(id
@@ -174,7 +173,7 @@ impl<C> Platform<C> {
                     check_validation_result_with_data!(GetIdentitiesRequest::decode(query_data)
                         .map_err(|e| QueryError::InvalidArgument(format!(
                             "invalid query proto message: {}",
-                            e.to_string()
+                            e
                         ))));
 
                 let identity_ids = check_validation_result_with_data!(ids
@@ -263,7 +262,7 @@ impl<C> Platform<C> {
                     check_validation_result_with_data!(GetIdentityRequest::decode(query_data)
                         .map_err(|e| QueryError::InvalidArgument(format!(
                             "invalid query proto message: {}",
-                            e.to_string()
+                            e
                         ))));
                 let identity_id: Identifier = check_validation_result_with_data!(id
                     .try_into()
@@ -315,7 +314,7 @@ impl<C> Platform<C> {
                     check_validation_result_with_data!(GetIdentityRequest::decode(query_data)
                         .map_err(|e| QueryError::InvalidArgument(format!(
                             "invalid query proto message: {}",
-                            e.to_string()
+                            e
                         ))));
                 let identity_id: Identifier = check_validation_result_with_data!(id
                     .try_into()
@@ -392,7 +391,7 @@ impl<C> Platform<C> {
                 } = check_validation_result_with_data!(GetIdentityKeysRequest::decode(query_data)
                     .map_err(|e| QueryError::InvalidArgument(format!(
                         "invalid query proto message: {}",
-                        e.to_string()
+                        e
                     ))));
 
                 let identity_id: Identifier = check_validation_result_with_data!(identity_id
@@ -485,7 +484,7 @@ impl<C> Platform<C> {
                     check_validation_result_with_data!(GetDataContractRequest::decode(query_data)
                         .map_err(|e| QueryError::InvalidArgument(format!(
                             "invalid query proto message: {}",
-                            e.to_string()
+                            e
                         ))));
                 let contract_id: Identifier = check_validation_result_with_data!(id
                     .try_into()
@@ -552,7 +551,7 @@ impl<C> Platform<C> {
                     check_validation_result_with_data!(GetDataContractsRequest::decode(query_data)
                         .map_err(|e| QueryError::InvalidArgument(format!(
                             "invalid query proto message: {}",
-                            e.to_string()
+                            e
                         ))));
 
                 let contract_ids = check_validation_result_with_data!(ids
@@ -645,7 +644,7 @@ impl<C> Platform<C> {
                 )
                 .map_err(|e| QueryError::InvalidArgument(format!(
                     "invalid query proto message: {}",
-                    e.to_string()
+                    e
                 ))));
                 let contract_id: Identifier = check_validation_result_with_data!(id
                     .try_into()
@@ -755,7 +754,7 @@ impl<C> Platform<C> {
                 } = check_validation_result_with_data!(GetDocumentsRequest::decode(query_data)
                     .map_err(|e| QueryError::InvalidArgument(format!(
                         "invalid query proto message: {}",
-                        e.to_string()
+                        e
                     ))));
 
                 let contract_id: Identifier = check_validation_result_with_data!(data_contract_id
@@ -898,10 +897,7 @@ impl<C> Platform<C> {
                     prove,
                 } = check_validation_result_with_data!(
                     GetIdentityByPublicKeyHashesRequest::decode(query_data).map_err(|e| {
-                        QueryError::InvalidArgument(format!(
-                            "invalid query proto message: {}",
-                            e.to_string()
-                        ))
+                        QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
                     })
                 );
                 let public_key_hash =
@@ -969,10 +965,7 @@ impl<C> Platform<C> {
                     prove,
                 } = check_validation_result_with_data!(
                     GetIdentitiesByPublicKeyHashesRequest::decode(query_data).map_err(|e| {
-                        QueryError::InvalidArgument(format!(
-                            "invalid query proto message: {}",
-                            e.to_string()
-                        ))
+                        QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
                     })
                 );
 
@@ -1051,7 +1044,7 @@ impl<C> Platform<C> {
                 } = check_validation_result_with_data!(GetProofsRequest::decode(query_data)
                     .map_err(|e| QueryError::InvalidArgument(format!(
                         "invalid query proto message: {}",
-                        e.to_string()
+                        e
                     ))));
 
                 let contract_ids = check_validation_result_with_data!(contracts
