@@ -183,6 +183,23 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
           });
         return configFile;
       },
+      '0.25.0-dev.33': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.log.path = null;
+
+            if (options.platform.drive.abci.log.jsonFile.level === 'fatal') {
+              options.platform.drive.abci.log.jsonFile.level = 'error';
+            }
+
+            if (options.platform.drive.abci.log.prettyFile.level === 'fatal') {
+              options.platform.drive.abci.log.prettyFile.level = 'error';
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 

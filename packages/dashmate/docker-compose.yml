@@ -89,6 +89,7 @@ services:
     volumes:
       - drive_tenderdash:/tenderdash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/tenderdash:/tenderdash/config:ro
+      - ${PLATFORM_DRIVE_TENDERDASH_LOG_DIRECTORY_PATH:?err}:/var/log/tenderdash
     stop_grace_period: 10s
     profiles:
       - platform

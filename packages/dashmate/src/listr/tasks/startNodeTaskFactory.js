@@ -51,6 +51,11 @@ function startNodeTaskFactory(
 
       const jsonFilePath = config.get('platform.drive.abci.log.jsonFile.path');
       ensureFileMountExists(jsonFilePath);
+
+      const tenderdashLogFilePath = config.get('platform.drive.tenderdash.log.path');
+      if (tenderdashLogFilePath !== null) {
+        ensureFileMountExists(tenderdashLogFilePath);
+      }
     }
 
     return new Listr([

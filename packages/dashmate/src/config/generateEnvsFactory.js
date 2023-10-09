@@ -48,6 +48,13 @@ function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
 
     const { uid, gid } = os.userInfo();
 
+    // Determine logs directory to mount into tenderdash container
+    let tenderdashLogDirectoryPath = homeDir.joinPath('logs', config.get('network'));
+    const tenderdashLogFilePath = config.get('platform.drive.tenderdash.log.path');
+    if (tenderdashLogFilePath !== null) {
+      tenderdashLogDirectoryPath = nodePath.dirname(tenderdashLogFilePath);
+    }
+
     return {
       DASHMATE_HOME_DIR: homeDir.getPath(),
       LOCAL_UID: uid,
@@ -75,6 +82,7 @@ function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
       PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME: nodePath.basename(
         config.get('platform.drive.abci.log.jsonFile.path'),
       ),
+      PLATFORM_DRIVE_TENDERDASH_LOG_DIRECTORY_PATH: tenderdashLogDirectoryPath,
       ...convertObjectToEnvs(config.getOptions()),
     };
   }
