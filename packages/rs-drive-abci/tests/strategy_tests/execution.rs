@@ -6,7 +6,7 @@ use crate::strategy::{
     ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness,
     ValidatorVersionMigration,
 };
-use crate::verify_state_transitions::verify_state_transitions_were_executed;
+use crate::verify_state_transitions::verify_state_transitions_were_or_were_not_executed;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{BlockHash, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
@@ -260,15 +260,13 @@ pub(crate) fn run_chain_for_strategy(
 
     platform
         .core_rpc
-        .expect_get_quorum_listextended()
+        .expect_get_quorum_listextended_by_type()
         .returning(move |core_height: Option<u32>| {
             if !strategy.rotate_quorums {
-                Ok(dashcore_rpc::dashcore_rpc_json::ExtendedQuorumListResult {
-                    quorums_by_type: HashMap::from([(
-                        QuorumType::Llmq100_67,
-                        quorums_details.clone().into_iter().collect(),
-                    )]),
-                })
+                Ok(BTreeMap::from([(
+                    QuorumType::Llmq100_67,
+                    quorums_details.clone().into_iter().collect(),
+                )]))
             } else {
                 let core_height = core_height.expect("expected a core height");
                 // if we rotate quorums we shouldn't give back the same ones every time
@@ -296,9 +294,7 @@ pub(crate) fn run_chain_for_strategy(
                         .collect()
                 };
 
-                Ok(dashcore_rpc::dashcore_rpc_json::ExtendedQuorumListResult {
-                    quorums_by_type: HashMap::from([(QuorumType::Llmq100_67, quorums)]),
-                })
+                Ok(BTreeMap::from([(QuorumType::Llmq100_67, quorums)]))
             }
         });
 
@@ -312,7 +308,7 @@ pub(crate) fn run_chain_for_strategy(
         .expect_get_quorum_info()
         .returning(move |_, quorum_hash: &QuorumHash, _| {
             Ok(quorums_info
-                .get(quorum_hash)
+                .get::<QuorumHash>(quorum_hash)
                 .unwrap_or_else(|| panic!("expected to get quorum {}", hex::encode(quorum_hash)))
                 .clone())
         });
@@ -525,7 +521,7 @@ pub(crate) fn start_chain_for_strategy(
         .expect("expected quorums to be initialized");
 
     let current_quorum_with_test_info = quorums
-        .get(&current_quorum_hash)
+        .get::<QuorumHash>(&current_quorum_hash)
         .expect("expected a quorum to be found");
 
     // init chain
@@ -613,7 +609,7 @@ pub(crate) fn continue_chain_for_strategy(
     let quorum_size = config.quorum_size;
     let first_block_time = 0;
     let mut current_identities = vec![];
-    let mut signer = SimpleSigner::default();
+    let mut signer = strategy.signer.clone().unwrap_or_default();
     let mut i = 0;
 
     let blocks_per_epoch = EPOCH_CHANGE_TIME_MS_V0 / config.block_spacing_ms;
@@ -635,9 +631,13 @@ pub(crate) fn continue_chain_for_strategy(
 
     let mut total_withdrawals = vec![];
 
-    let mut current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();
+    let mut current_quorum_with_test_info =
+        quorums.get::<QuorumHash>(&current_quorum_hash).unwrap();
 
     let mut validator_set_updates = BTreeMap::new();
+
+    let mut state_transitions_per_block = BTreeMap::new();
+    let mut state_transition_results_per_block = BTreeMap::new();
 
     for block_height in block_start..(block_start + block_count) {
         let epoch_info = EpochInfoV0::calculate(
@@ -662,7 +662,8 @@ pub(crate) fn continue_chain_for_strategy(
             epoch: Epoch::new(epoch_info.current_epoch_index).unwrap(),
         };
         if current_quorum_with_test_info.quorum_hash != current_quorum_hash {
-            current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();
+            current_quorum_with_test_info =
+                quorums.get::<QuorumHash>(&current_quorum_hash).unwrap();
         }
 
         let proposer = current_quorum_with_test_info
@@ -678,6 +679,8 @@ pub(crate) fn continue_chain_for_strategy(
                 &mut rng,
             );
 
+        state_transitions_per_block.insert(block_height, state_transitions.clone());
+
         let proposed_version = proposer_versions
             .as_ref()
             .map(|proposer_versions| {
@@ -686,7 +689,7 @@ pub(crate) fn continue_chain_for_strategy(
                     next_protocol_version,
                     change_block_height,
                 } = proposer_versions
-                    .get(&proposer.pro_tx_hash)
+                    .get::<ProTxHash>(&proposer.pro_tx_hash)
                     .expect("expected to have version");
                 if &block_height >= change_block_height {
                     *next_protocol_version
@@ -697,6 +700,7 @@ pub(crate) fn continue_chain_for_strategy(
             .unwrap_or(1);
 
         let MimicExecuteBlockOutcome {
+            state_transaction_results,
             withdrawal_transactions: mut withdrawals_this_block,
             validator_set_update,
             next_validator_set_hash,
@@ -711,8 +715,13 @@ pub(crate) fn continue_chain_for_strategy(
                 current_quorum_with_test_info,
                 proposed_version,
                 block_info,
+                strategy
+                    .failure_testing
+                    .as_ref()
+                    .map(|a| a.expect_errors_with_codes.clone())
+                    .unwrap_or_default(),
                 false,
-                state_transitions.clone(),
+                state_transitions,
                 MimicExecuteBlockOptions {
                     dont_finalize_block: strategy.dont_finalize_block(),
                 },
@@ -752,13 +761,15 @@ pub(crate) fn continue_chain_for_strategy(
 
         if strategy.verify_state_transition_results {
             //we need to verify state transitions
-            verify_state_transitions_were_executed(
+            verify_state_transitions_were_or_were_not_executed(
                 &abci_app,
                 &root_app_hash,
-                &state_transitions,
+                &state_transaction_results,
                 platform_version,
             );
         }
+
+        state_transition_results_per_block.insert(block_height, state_transaction_results);
 
         if let Some(query_strategy) = &strategy.query_testing {
             query_strategy.query_chain_for_strategy(
@@ -836,5 +847,6 @@ pub(crate) fn continue_chain_for_strategy(
         strategy,
         withdrawals: total_withdrawals,
         validator_set_updates,
+        state_transition_results_per_block,
     }
 }

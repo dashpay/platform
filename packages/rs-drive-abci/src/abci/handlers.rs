@@ -169,11 +169,11 @@ where
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
             // We can't add this, as it slows down CI way too much
             // todo: find a way to re-enable this without destroying CI
-            // tracing::info!(
-            //     "chain lock update to height {} at block {}",
-            //     core_chain_lock_update.core_block_height,
-            //     request.height
-            // );
+            tracing::debug!(
+                "propose chain lock update to height {} at block {}",
+                core_chain_lock_update.core_block_height,
+                request.height
+            );
             block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
         }
 
@@ -211,12 +211,12 @@ where
         } = run_result.into_data().map_err(Error::Protocol)?;
 
         // We need to let Tenderdash know about the transactions we should remove from execution
-        let (tx_results, tx_records): (Vec<Option<ExecTxResult>>, Vec<TxRecord>) = tx_results
+        let (tx_results, tx_records): (Vec<ExecTxResult>, Vec<TxRecord>) = tx_results
             .into_iter()
             .map(|(tx, result)| {
                 if result.code > 0 {
                     (
-                        None,
+                        result,
                         TxRecord {
                             action: TxAction::Removed as i32,
                             tx,
@@ -224,7 +224,7 @@ where
                     )
                 } else {
                     (
-                        Some(result),
+                        result,
                         TxRecord {
                             action: TxAction::Unmodified as i32,
                             tx,
@@ -233,8 +233,6 @@ where
                 }
             })
             .unzip();
-
-        let tx_results = tx_results.into_iter().flatten().collect();
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponsePrepareProposal {

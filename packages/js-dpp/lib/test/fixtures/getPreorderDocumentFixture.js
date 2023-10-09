@@ -21,16 +21,8 @@ function getPreorderDocumentFixture(options = {}) {
     () => {},
   );
 
-  const label = options.label || 'Preorder';
-  const normalizedLabel = options.normalizedLabel || label.toLowerCase();
   const data = {
-    label,
-    normalizedLabel,
-    parentDomainHash: '',
-    preorderSalt: generateEntropy(),
-    records: {
-      dashIdentity: ownerId,
-    },
+    saltedDomainHash: generateEntropy(),
     ...options,
   };
 
