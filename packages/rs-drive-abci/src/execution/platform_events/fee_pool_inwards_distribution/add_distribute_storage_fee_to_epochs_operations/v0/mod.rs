@@ -32,6 +32,7 @@ impl<C> Platform<C> {
             &mut credits_per_epochs,
             storage_distribution_fees,
             current_epoch_index,
+            self.config.drive.epochs_per_era,
         )?;
 
         // Deduct pending refunds since epoch where data was removed skipping previous
@@ -49,6 +50,7 @@ impl<C> Platform<C> {
                 credits,
                 epoch_index,
                 current_epoch_index,
+                self.config.drive.epochs_per_era,
             )?;
         }
 
@@ -73,16 +75,19 @@ mod tests {
     use super::*;
 
     mod add_distribute_storage_fee_to_epochs_operations {
+        use crate::config::PlatformConfig;
         use dpp::balances::credits::Creditable;
         use dpp::block::block_info::BlockInfo;
         use dpp::block::epoch::Epoch;
         use dpp::fee::epoch::distribution::subtract_refunds_from_epoch_credits_collection;
         use dpp::fee::epoch::{
-            CreditsPerEpoch, SignedCreditsPerEpoch, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS,
+            perpetual_storage_epochs, CreditsPerEpoch, SignedCreditsPerEpoch, GENESIS_EPOCH_INDEX,
+            PERPETUAL_STORAGE_ERAS,
         };
         use dpp::fee::Credits;
         use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use drive::drive::batch::DriveOperation;
+        use drive::drive::config::DriveConfig;
         use drive::drive::Drive;
         use drive::fee_pools::epochs::operations_factory::EpochOperations;
         use drive::fee_pools::update_storage_fee_distribution_pool_operation;
@@ -94,6 +99,13 @@ mod tests {
         #[test]
         fn should_add_operations_to_distribute_distribution_storage_pool_and_refunds() {
             let platform = TestPlatformBuilder::new()
+                .with_config(PlatformConfig {
+                    drive: DriveConfig {
+                        epochs_per_era: 20,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
@@ -146,8 +158,11 @@ mod tests {
 
             let mut inner_batch = GroveDbOpBatch::new();
 
+            let perpetual_storage_epochs =
+                perpetual_storage_epochs(platform.config.drive.epochs_per_era);
+
             // init additional epochs pools as it will be done in epoch_change
-            for i in PERPETUAL_STORAGE_EPOCHS..=PERPETUAL_STORAGE_EPOCHS + current_epoch_index {
+            for i in perpetual_storage_epochs..=perpetual_storage_epochs + current_epoch_index {
                 let epoch = Epoch::new(i).unwrap();
                 epoch
                     .add_init_empty_operations(&mut inner_batch)
@@ -209,7 +224,7 @@ mod tests {
             let storage_fees = platform
                 .drive
                 .get_storage_credits_for_distribution_for_epochs_in_range(
-                    GENESIS_EPOCH_INDEX..current_epoch_index + PERPETUAL_STORAGE_EPOCHS,
+                    GENESIS_EPOCH_INDEX..current_epoch_index + perpetual_storage_epochs,
                     Some(&transaction),
                     platform_version,
                 )
@@ -229,6 +244,7 @@ mod tests {
                         credits,
                         epoch_index,
                         current_epoch_index,
+                        40,
                     )
                     .expect("should subtract refunds");
 

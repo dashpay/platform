@@ -36,7 +36,7 @@
 use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
-use dpp::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_ERAS};
 use dpp::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -92,7 +92,9 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             .map_or(GENESIS_EPOCH_INDEX, |i| i + 1);
 
         for epoch_index in last_initiated_epoch_index..=epoch_info.current_epoch_index() {
-            let next_thousandth_epoch = Epoch::new(epoch_index + PERPETUAL_STORAGE_EPOCHS)?;
+            let next_thousandth_epoch = Epoch::new(
+                epoch_index + perpetual_storage_epochs(self.config.drive.epochs_per_era),
+            )?;
             next_thousandth_epoch.add_init_empty_without_storage_operations(&mut inner_batch);
         }
 
@@ -251,7 +253,10 @@ mod tests {
                 .expect("should apply batch");
 
             // Next thousandth epoch should be created
-            let next_thousandth_epoch = Epoch::new(epoch_index + PERPETUAL_STORAGE_EPOCHS).unwrap();
+            let next_thousandth_epoch = Epoch::new(
+                epoch_index + perpetual_storage_epochs(platform.config.drive.epochs_per_era),
+            )
+            .unwrap();
 
             let has_epoch_tree_exists = platform
                 .drive

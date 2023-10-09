@@ -39,6 +39,7 @@ impl Drive {
             None,
             Some(drive_operations),
             &block_info.epoch,
+            self.config.epochs_per_era,
             platform_version,
         )?;
         Ok(fees)

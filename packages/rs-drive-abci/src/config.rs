@@ -124,15 +124,6 @@ pub struct ExecutionConfig {
 
     /// How often should quorums change?
     pub validator_set_quorum_rotation_block_count: u32,
-
-    /// Epochs per Era
-    pub epochs_per_era: u32,
-
-    /// Eras for storage represents the amount of eras we pay for storage for
-    /// For example if an era is 1 year long and we have 50 eras (platform default)
-    /// then we would be paying for 50 years of storage. This is considered like we are paying
-    /// for storage perpetuity.
-    pub eras_for_storage: u32,
 }
 
 /// Configuration of Dash Platform.
@@ -248,8 +239,6 @@ impl Default for ExecutionConfig {
         Self {
             verify_sum_trees: true,
             validator_set_quorum_rotation_block_count: 15,
-            epochs_per_era: 40,
-            eras_for_storage: 50,
         }
     }
 }
