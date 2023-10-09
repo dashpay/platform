@@ -12,6 +12,7 @@ jobs:
   lint:
     name: Linting
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     timeout-minutes: 15
     steps:
       - name: Check out repo
@@ -30,6 +31,7 @@ jobs:
   formatting:
     name: Formatting
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -46,6 +48,7 @@ jobs:
   compile:
     name: Compilation errors
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     timeout-minutes: 15
     steps:
       - name: Check out repo
@@ -61,7 +64,6 @@ jobs:
 
   check_structure_changes:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout base commit
         uses: actions/checkout@v4
@@ -119,6 +121,7 @@ jobs:
   test:
     name: Tests
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     timeout-minutes: 15
     steps:
       - name: Check out repo
