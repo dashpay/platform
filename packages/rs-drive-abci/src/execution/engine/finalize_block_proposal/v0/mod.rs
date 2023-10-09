@@ -225,6 +225,8 @@ where
 
         // Update global cache with updated contracts
         drive_cache.cached_contracts.merge_block_cache();
+        // This is unnecessary since we clear block cache before every proposal execution
+        drive_cache.cached_contracts.clear_block_cache();
         drop(drive_cache);
 
         // Gather some metrics
