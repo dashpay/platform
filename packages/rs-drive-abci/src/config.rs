@@ -118,6 +118,10 @@ impl Default for CoreConfig {
 // NOTE: in renames, we use lower_snake_case, because uppercase does not work; see
 // https://github.com/softprops/envy/issues/61 and https://github.com/softprops/envy/pull/69
 pub struct ExecutionConfig {
+    /// Should we use document triggers? Useful to set as `false` for tests
+    #[serde(default = "PlatformConfig::default_use_document_triggers")]
+    pub use_document_triggers: bool,
+
     /// Should we verify sum trees? Useful to set as `false` for tests
     #[serde(default = "PlatformConfig::default_verify_sum_trees")]
     pub verify_sum_trees: bool,
@@ -190,6 +194,10 @@ impl PlatformConfig {
         true
     }
 
+    fn default_use_document_triggers() -> bool {
+        true
+    }
+
     // #[allow(unused)]
     fn default_initial_protocol_version() -> ProtocolVersion {
         //todo: versioning
@@ -237,6 +245,7 @@ impl FromEnv for PlatformConfig {
 impl Default for ExecutionConfig {
     fn default() -> Self {
         Self {
+            use_document_triggers: true,
             verify_sum_trees: true,
             validator_set_quorum_rotation_block_count: 15,
         }

@@ -34,7 +34,14 @@ mod tests {
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block_info, true, None, platform_version)
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to insert identity");
 
             let db_transaction = drive.grove.start_transaction();
@@ -342,7 +349,14 @@ mod tests {
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block, true, None, platform_version)
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &block,
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to insert identity");
 
             let db_transaction = drive.grove.start_transaction();

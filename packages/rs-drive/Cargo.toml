@@ -91,4 +91,5 @@ full = [
   "rust_decimal_macros",
   "lazy_static",
 ]
+grovedb_operations_logging = []
 verify = ["grovedb/verify", "grovedb-costs"]

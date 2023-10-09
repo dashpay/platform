@@ -75,6 +75,9 @@ mod tests {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::document_type::random_document::{
+        DocumentFieldFillSize, DocumentFieldFillType,
+    };
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::tests::json_document::json_document_to_created_contract;
@@ -117,6 +120,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -134,6 +138,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -168,6 +173,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -185,6 +191,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -219,6 +226,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -236,6 +244,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -350,6 +359,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -367,6 +377,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -406,7 +417,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99865284600)
+        assert_eq!(balance, 99868433120)
     }
 
     #[test]
@@ -414,6 +425,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -431,6 +443,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -465,6 +478,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -482,6 +496,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -524,6 +539,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -541,6 +557,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -606,6 +623,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -629,6 +647,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -672,6 +691,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -699,6 +719,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -741,6 +762,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -764,6 +786,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -837,6 +860,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -859,6 +883,7 @@ mod tests {
                 },
             }),
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -894,6 +919,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -911,6 +937,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -957,7 +984,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "c7f24ca8edbf2093b4ee2522cf9503f5d7e8fc7cbc5f414af743d9c606407356".to_string()
+            "1409ab0c04a73430c1c88cd21b34cc61b51483944cfa2b17ed76a7fc23f08027".to_string()
         )
     }
 
@@ -974,6 +1001,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![(contract, None)],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -991,6 +1019,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1080,6 +1109,7 @@ mod tests {
                 ])),
             )],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1097,6 +1127,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1162,7 +1193,10 @@ mod tests {
 
         let document_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1178,6 +1212,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1195,6 +1230,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1237,7 +1273,10 @@ mod tests {
 
         let document_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1253,6 +1292,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1270,6 +1310,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1322,7 +1363,10 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1356,6 +1400,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1373,6 +1418,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1425,7 +1471,10 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1459,6 +1508,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1476,6 +1526,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1523,7 +1574,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "413aabf2842e9a057e7420d1f3449c6dd899e07e7a30d5533c423971af185d10".to_string()
+            "5fbeeffc449c8cea80095ced4debc4b33f2246bfc108c567d07b1a45747fd8df".to_string()
         )
     }
 
@@ -1542,7 +1593,10 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1576,6 +1630,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..30,
                 chance_per_block: None,
@@ -1593,6 +1648,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1648,7 +1704,10 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1698,6 +1757,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..6,
                 chance_per_block: None,
@@ -1715,6 +1775,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1768,6 +1829,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1785,6 +1847,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1843,6 +1906,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1862,6 +1926,7 @@ mod tests {
             // because we can add an identity and add keys to it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1927,6 +1992,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1946,6 +2012,7 @@ mod tests {
             // because we can add an identity and remove keys to it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -2018,6 +2085,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -2037,6 +2105,7 @@ mod tests {
             // because we can add an identity and withdraw from it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -2073,6 +2142,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 //we do this to create some paying transactions
                 times_per_block_range: 1..2,
@@ -2091,6 +2161,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2225,6 +2296,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 //we do this to create some paying transactions
                 times_per_block_range: 1..2,
@@ -2243,6 +2315,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2347,6 +2420,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 //we do this to create some paying transactions
                 times_per_block_range: 1..2,
@@ -2365,6 +2439,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2471,6 +2546,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -2488,6 +2564,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2606,6 +2683,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -2623,6 +2701,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
 
         let config = PlatformConfig {

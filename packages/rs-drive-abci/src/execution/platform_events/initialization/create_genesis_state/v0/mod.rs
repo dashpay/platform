@@ -223,7 +223,10 @@ impl<C> Platform<C> {
         operations: &mut Vec<DriveOperation>,
     ) {
         operations.push(DriveOperation::IdentityOperation(
-            IdentityOperationType::AddNewIdentity { identity },
+            IdentityOperationType::AddNewIdentity {
+                identity,
+                is_masternode_identity: false,
+            },
         ))
     }
 

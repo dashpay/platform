@@ -263,7 +263,10 @@ where
                 new_platform_node_id,
                 platform_version,
             )?);
-            drive_operations.push(IdentityOperation(AddNewIdentity { identity }));
+            drive_operations.push(IdentityOperation(AddNewIdentity {
+                identity,
+                is_masternode_identity: true,
+            }));
         }
         Ok(())
     }

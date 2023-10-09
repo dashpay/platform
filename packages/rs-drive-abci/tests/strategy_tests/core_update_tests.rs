@@ -15,6 +15,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -50,6 +51,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
 
         let quorum_size = 100;
@@ -116,6 +118,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -151,6 +154,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
 
         let quorum_size = 100;
@@ -203,6 +207,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -241,6 +246,7 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
 
         let quorum_size = 100;
