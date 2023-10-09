@@ -72,10 +72,20 @@ where
                     let execution_event = state_transition_execution_event.into_data()?;
                     self.execute_event(execution_event, block_info, transaction, platform_version)?
                 } else {
-                    dbg!(
+                    // Re-enable this to see errors during testing
+                    // dbg!(
+                    //     state_transition,
+                    //     state_transition_execution_event.errors.first().clone()
+                    // );
+
+                    tracing::debug!(
+                        method = "process_raw_state_transitions_v0",
+                        "ERRORS: {:?} | state transition: {:?} | state: {:?}",
+                        state_transition_execution_event.errors.first().clone(),
                         state_transition,
-                        state_transition_execution_event.errors.first().clone()
+                        block_platform_state,
                     );
+
                     ConsensusExecutionError(SimpleConsensusValidationResult::new_with_errors(
                         state_transition_execution_event.errors,
                     ))
