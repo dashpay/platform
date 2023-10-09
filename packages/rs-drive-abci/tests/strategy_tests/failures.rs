@@ -100,11 +100,13 @@ mod tests {
         // We use the dpns contract and we insert two documents both with the same "name"
         // This is a common scenario we should see quite often
         let config = PlatformConfig {
-            verify_sum_trees: true,
-            //we disable document triggers because we are using dpns and dpns needs a preorder
-            use_document_triggers: false,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                //we disable document triggers because we are using dpns and dpns needs a preorder
+                use_document_triggers: false,
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 0,
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
