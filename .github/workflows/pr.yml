@@ -43,7 +43,6 @@ jobs:
             wallet-lib
             test-suite
             bench-suite
-            ci
             release
             dash-spv
           requireScope: false
