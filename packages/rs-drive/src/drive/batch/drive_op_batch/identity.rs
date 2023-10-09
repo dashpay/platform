@@ -1,4 +1,6 @@
-use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use crate::drive::batch::drive_op_batch::{
+    DriveLowLevelOperationConverter, DriveOperationCallback, DriveOperationWithCallback,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
@@ -77,6 +79,11 @@ pub enum IdentityOperationType {
     },
 }
 
+impl DriveOperationWithCallback for IdentityOperationType {
+    fn callback(&self, _platform_version: &PlatformVersion) -> Option<DriveOperationCallback> {
+        None
+    }
+}
 impl DriveLowLevelOperationConverter for IdentityOperationType {
     fn into_low_level_drive_operations(
         self,

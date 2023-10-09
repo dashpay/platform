@@ -223,7 +223,9 @@ where
 
         let mut drive_cache = self.drive.cache.write().unwrap();
 
-        drive_cache.cached_contracts.clear_block_cache();
+        // Update global cache with updated contracts
+        drive_cache.cached_contracts.merge_block_cache();
+        drop(drive_cache);
 
         // Gather some metrics
         crate::metrics::abci_last_block_time(block_header.time.seconds as u64);

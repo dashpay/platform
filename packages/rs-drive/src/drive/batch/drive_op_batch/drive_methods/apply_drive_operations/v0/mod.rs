@@ -8,7 +8,9 @@ use dpp::fee::fee_result::FeeResult;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
-use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use crate::drive::batch::drive_op_batch::{
+    DriveLowLevelOperationConverter, DriveOperationCallback, DriveOperationWithCallback,
+};
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -49,7 +51,14 @@ impl Drive {
         } else {
             Some(HashMap::new())
         };
+
+        let mut callbacks: Vec<DriveOperationCallback> = Vec::new();
+
         for drive_op in operations {
+            if let Some(callback) = drive_op.callback(platform_version) {
+                callbacks.push(callback);
+            }
+
             low_level_operations.append(&mut drive_op.into_low_level_drive_operations(
                 self,
                 &mut estimated_costs_only_with_layer_info,
@@ -58,7 +67,9 @@ impl Drive {
                 platform_version,
             )?);
         }
+
         let mut cost_operations = vec![];
+
         self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
@@ -66,6 +77,12 @@ impl Drive {
             &mut cost_operations,
             &platform_version.drive,
         )?;
+
+        // Execute drive operation callbacks after updating state
+        for callback in callbacks {
+            callback(&self);
+        }
+
         Drive::calculate_fee(
             None,
             Some(cost_operations),

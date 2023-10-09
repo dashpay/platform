@@ -177,6 +177,7 @@ where
             block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
         }
 
+        // Prepare transaction
         let transaction_guard = if request.height == self.platform.config.abci.genesis_height as i64
         {
             // special logic on init chain
@@ -194,6 +195,7 @@ where
         };
 
         let transaction = transaction_guard.as_ref().unwrap();
+
         // Running the proposal executes all the state transitions for the block
         let run_result = self
             .platform

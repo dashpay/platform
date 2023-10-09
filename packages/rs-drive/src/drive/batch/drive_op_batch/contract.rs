@@ -1,4 +1,6 @@
-use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use crate::drive::batch::drive_op_batch::{
+    DriveLowLevelOperationConverter, DriveOperationCallback, DriveOperationWithCallback,
+};
 use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -6,6 +8,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -25,6 +28,7 @@ pub enum DataContractOperationType<'a> {
         /// Storage flags for the contract
         storage_flags: Option<Cow<'a, StorageFlags>>,
     },
+    // TODO: split into create and update
     /// Applies a contract without serialization.
     ApplyContract {
         // this is Cow because we want allow the contract to be owned or not
@@ -75,6 +79,22 @@ impl DriveLowLevelOperationConverter for DataContractOperationType<'_> {
                 transaction,
                 platform_version,
             ),
+        }
+    }
+}
+
+impl DriveOperationWithCallback for DataContractOperationType<'_> {
+    fn callback(&self, _platform_version: &PlatformVersion) -> Option<DriveOperationCallback> {
+        match self {
+            DataContractOperationType::ApplyContract { contract, .. } => {
+                let contract_id = contract.id().to_buffer();
+
+                Some(Box::new(move |drive| {
+                    let mut drive_cache = drive.cache.write().unwrap();
+                    drive_cache.cached_contracts.remove(contract_id);
+                }))
+            }
+            _ => None,
         }
     }
 }

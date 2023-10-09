@@ -68,6 +68,11 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
+        // Cleanup block cache before we execute a new proposal
+        let mut drive_cache = self.drive.cache.write().unwrap();
+        drive_cache.cached_contracts.clear_block_cache();
+        drop(drive_cache);
+
         // Start by getting information from the state
         let state = self.state.read().unwrap();
 

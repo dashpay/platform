@@ -1,4 +1,6 @@
-use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use crate::drive::batch::drive_op_batch::{
+    DriveLowLevelOperationConverter, DriveOperationCallback, DriveOperationWithCallback,
+};
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{DocumentRefAndSerialization, DocumentRefInfo};
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
@@ -157,6 +159,12 @@ pub enum DocumentOperationType<'a> {
         /// Add storage flags (like epoch, owner id, etc)
         storage_flags: Option<Cow<'a, StorageFlags>>,
     },
+}
+
+impl DriveOperationWithCallback for DocumentOperationType<'_> {
+    fn callback(&self, _platform_version: &PlatformVersion) -> Option<DriveOperationCallback> {
+        None
+    }
 }
 
 impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {

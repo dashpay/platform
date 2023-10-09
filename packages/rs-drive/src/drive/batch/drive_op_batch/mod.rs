@@ -45,6 +45,24 @@ pub trait DriveLowLevelOperationConverter {
     ) -> Result<Vec<LowLevelDriveOperation>, Error>;
 }
 
+/// Drive operation callback that will be called after successful execution of the drive operation
+pub type DriveOperationCallback = Box<dyn FnOnce(&Drive)>;
+
+/// Enable callbacks for drive operations that will be called after successful execution
+pub trait DriveOperationWithCallback {
+    /// Returns a callback that will be called after successful execution of the drive operation
+    fn callback(
+        &self,
+        // drive: &Drive,
+        // estimated_costs_only_with_layer_info: &mut Option<
+        //     HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        // >,
+        // block_info: &BlockInfo,
+        // transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Option<DriveOperationCallback>;
+}
+
 /// The drive operation context keeps track of changes that might affect other operations
 /// Notably Identity balance changes are kept track of
 pub struct DriveOperationContext {
@@ -131,6 +149,19 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                 .into_iter()
                 .map(GroveOperation)
                 .collect()),
+        }
+    }
+}
+
+impl DriveOperationWithCallback for DriveOperation<'_> {
+    fn callback(&self, platform_version: &PlatformVersion) -> Option<DriveOperationCallback> {
+        match self {
+            DriveOperation::DataContractOperation(o) => o.callback(platform_version),
+            DriveOperation::DocumentOperation(o) => o.callback(platform_version),
+            DriveOperation::WithdrawalOperation(o) => o.callback(platform_version),
+            DriveOperation::IdentityOperation(o) => o.callback(platform_version),
+            DriveOperation::SystemOperation(o) => o.callback(platform_version),
+            DriveOperation::GroveDBOpBatch(_) | DriveOperation::GroveDBOperation(_) => None,
         }
     }
 }
