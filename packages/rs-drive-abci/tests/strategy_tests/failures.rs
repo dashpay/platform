@@ -148,7 +148,7 @@ mod tests {
             action: DocumentAction::DocumentActionInsertSpecific(
                 BTreeMap::from([
                     ("label".into(), "simon1".into()),
-                    ("normalizedLabel".into(), "simon1".into()),
+                    ("normalizedLabel".into(), "s1m0n1".into()),
                     ("normalizedParentDomainName".into(), "dash".into()),
                     (
                         "records".into(),
@@ -177,7 +177,7 @@ mod tests {
             action: DocumentAction::DocumentActionInsertSpecific(
                 BTreeMap::from([
                     ("label".into(), "simon1".into()),
-                    ("normalizedLabel".into(), "simon1".into()),
+                    ("normalizedLabel".into(), "s1m0n1".into()),
                     ("normalizedParentDomainName".into(), "dash".into()),
                     (
                         "records".into(),
