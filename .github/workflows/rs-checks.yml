@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Rust
         uses: ./.github/actions/rust
@@ -23,9 +23,8 @@ jobs:
           toolchain: stable
           components: clippy
 
-      - uses: actions-rs/clippy-check@v1
+      - uses: clechasseur/rs-clippy-check@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-features
 
   formatting:
@@ -33,7 +32,7 @@ jobs:
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Rust
         uses: ./.github/actions/rust
@@ -50,7 +49,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Rust
         uses: ./.github/actions/rust
@@ -65,7 +64,7 @@ jobs:
 
     steps:
       - name: Checkout base commit
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.base.ref }}
 
@@ -90,7 +89,7 @@ jobs:
           echo "::set-output name=base_dir::$(pwd)/base_structures"
 
       - name: Checkout PR commit
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Check structure changes
         run: |
@@ -98,7 +97,7 @@ jobs:
             if [[ $file == *.rs ]]; then
               awk '/@append_only/,/}/' $file > "$(basename $file).append_only.pr"
               awk '/@immutable/,/}/' $file > "$(basename $file).immutable.pr"
-          
+
               # Check append_only structures
               if ! diff -u "${{ steps.base_structures.outputs.base_dir }}/$(basename $file).append_only.base" "$(basename $file).append_only.pr" | grep "^-" | grep -v "@append_only" | grep -v "^-" | grep -v "^///" | grep -v "^//" | grep -v "^-$"; then
                 echo "No deletions detected in @append_only structures in $file. Test passed."
@@ -106,7 +105,7 @@ jobs:
                 echo "Deletions detected in @append_only structures in $file. Test failed."
                 exit 1
               fi
-          
+
               # Check immutable structures
               if ! diff -u "${{ steps.base_structures.outputs.base_dir }}/$(basename $file).immutable.base" "$(basename $file).immutable.pr" | grep -E "^\+[^/+]|^-[^/-]" ; then
                 echo "No code changes detected in @immutable structures in $file. Test passed."
@@ -123,7 +122,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Rust
         uses: ./.github/actions/rust
