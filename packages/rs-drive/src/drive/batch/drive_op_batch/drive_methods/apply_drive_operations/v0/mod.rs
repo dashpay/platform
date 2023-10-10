@@ -14,7 +14,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 
 use crate::drive::batch::drive_op_batch::finalize_task::{
-    DriveOperationFinalizeTask, DriveOperationWithFinalizeTasks,
+    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use std::collections::HashMap;
 
@@ -56,7 +56,7 @@ impl Drive {
         let mut finalize_tasks: Vec<DriveOperationFinalizeTask> = Vec::new();
 
         for drive_op in operations {
-            if let Some(tasks) = drive_op.finalize_tasks(platform_version) {
+            if let Some(tasks) = drive_op.finalization_tasks(platform_version)? {
                 finalize_tasks.extend(tasks);
             }
 

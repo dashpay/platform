@@ -6,7 +6,7 @@ use grovedb::Element;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 
 use crate::drive::batch::drive_op_batch::finalize_task::{
-    DriveOperationFinalizeTask, DriveOperationWithFinalizeTasks,
+    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use crate::drive::grove_operations::BatchDeleteApplyType;
 use crate::drive::identity::withdrawals::paths::{
@@ -48,15 +48,6 @@ pub enum WithdrawalOperationType<'a> {
         /// withdrawal transaction tuple with id and bytes
         id: Vec<u8>,
     },
-}
-
-impl DriveOperationWithFinalizeTasks for WithdrawalOperationType<'_> {
-    fn finalize_tasks(
-        &self,
-        _platform_version: &PlatformVersion,
-    ) -> Option<Vec<DriveOperationFinalizeTask>> {
-        None
-    }
 }
 
 impl DriveLowLevelOperationConverter for WithdrawalOperationType<'_> {

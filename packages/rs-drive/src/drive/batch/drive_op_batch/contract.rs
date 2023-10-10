@@ -7,8 +7,9 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 
 use crate::drive::batch::drive_op_batch::finalize_task::{
-    DriveOperationFinalizeTask, DriveOperationWithFinalizeTasks,
+    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
+use crate::error::drive::DriveError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -84,20 +85,38 @@ impl DriveLowLevelOperationConverter for DataContractOperationType<'_> {
     }
 }
 
-impl DriveOperationWithFinalizeTasks for DataContractOperationType<'_> {
-    fn finalize_tasks(
+impl DriveOperationFinalizationTasks for DataContractOperationType<'_> {
+    fn finalization_tasks(
         &self,
-        _platform_version: &PlatformVersion,
-    ) -> Option<Vec<DriveOperationFinalizeTask>> {
-        let data_contract = match self {
-            Self::ApplyContractWithSerialization { contract, .. } => contract,
-            Self::ApplyContract { contract, .. } => contract,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error> {
+        match platform_version
+            .drive
+            .operations
+            .contracts
+            .finalization_tasks
+        {
+            0 => self.finalization_tasks_v0(),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "finalization_tasks".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+}
+
+impl DataContractOperationType<'_> {
+    fn finalization_tasks_v0(&self) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error> {
+        let tasks = match self {
+            Self::ApplyContractWithSerialization { contract, .. }
+            | Self::ApplyContract { contract, .. } => {
+                vec![DriveOperationFinalizeTask::RemoveDataContractFromCache {
+                    contract_id: contract.id(),
+                }]
+            }
         };
 
-        let tasks = vec![DriveOperationFinalizeTask::RemoveDataContractFromCache {
-            contract_id: data_contract.id(),
-        }];
-
-        Some(tasks)
+        Ok(Some(tasks))
     }
 }

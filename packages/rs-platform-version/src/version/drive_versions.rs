@@ -5,6 +5,7 @@ pub struct DriveVersion {
     pub structure: DriveStructureVersion,
     pub methods: DriveMethodVersions,
     pub grove_methods: DriveGroveMethodVersions,
+    pub operations: DriveOperationsVersion,
 }
 
 impl DriveVersion {
@@ -30,6 +31,17 @@ pub struct DriveMethodVersions {
     pub operations: DriveOperationsMethodVersion,
     pub batch_operations: DriveBatchOperationsMethodVersion,
     pub prove: DriveProveMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveOperationsVersion {
+    pub finalization_tasks: FeatureVersion,
+    pub contracts: DriveDataContractOperationsVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveDataContractOperationsVersion {
+    pub finalization_tasks: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

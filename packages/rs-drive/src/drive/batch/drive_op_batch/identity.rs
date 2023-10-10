@@ -7,7 +7,7 @@ use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::Revision;
 
 use crate::drive::batch::drive_op_batch::finalize_task::{
-    DriveOperationFinalizeTask, DriveOperationWithFinalizeTasks,
+    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -80,14 +80,6 @@ pub enum IdentityOperationType {
     },
 }
 
-impl DriveOperationWithFinalizeTasks for IdentityOperationType {
-    fn finalize_tasks(
-        &self,
-        _platform_version: &PlatformVersion,
-    ) -> Option<Vec<DriveOperationFinalizeTask>> {
-        None
-    }
-}
 impl DriveLowLevelOperationConverter for IdentityOperationType {
     fn into_low_level_drive_operations(
         self,

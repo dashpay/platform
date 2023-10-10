@@ -7,7 +7,7 @@ use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
 
 use crate::drive::batch::drive_op_batch::finalize_task::{
-    DriveOperationFinalizeTask, DriveOperationWithFinalizeTasks,
+    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -32,15 +32,6 @@ pub enum SystemOperationType {
         /// The asset lock outpoint that should be added
         asset_lock_outpoint: Bytes36,
     },
-}
-
-impl DriveOperationWithFinalizeTasks for SystemOperationType {
-    fn finalize_tasks(
-        &self,
-        _platform_version: &PlatformVersion,
-    ) -> Option<Vec<DriveOperationFinalizeTask>> {
-        None
-    }
 }
 
 impl DriveLowLevelOperationConverter for SystemOperationType {

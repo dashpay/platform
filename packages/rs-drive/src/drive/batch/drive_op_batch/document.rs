@@ -17,7 +17,7 @@ use dpp::prelude::Identifier;
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 
 use crate::drive::batch::drive_op_batch::finalize_task::{
-    DriveOperationFinalizeTask, DriveOperationWithFinalizeTasks,
+    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -160,15 +160,6 @@ pub enum DocumentOperationType<'a> {
         /// Add storage flags (like epoch, owner id, etc)
         storage_flags: Option<Cow<'a, StorageFlags>>,
     },
-}
-
-impl DriveOperationWithFinalizeTasks for DocumentOperationType<'_> {
-    fn finalize_tasks(
-        &self,
-        _platform_version: &PlatformVersion,
-    ) -> Option<Vec<DriveOperationFinalizeTask>> {
-        None
-    }
 }
 
 impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {

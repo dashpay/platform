@@ -30,8 +30,9 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 
 use crate::drive::batch::drive_op_batch::finalize_task::{
-    DriveOperationFinalizeTask, DriveOperationWithFinalizeTasks,
+    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
 };
+use crate::error::drive::DriveError;
 use std::collections::{BTreeMap, HashMap};
 
 /// A converter that will get Drive Operations from High Level Operations
@@ -139,18 +140,30 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
     }
 }
 
-impl DriveOperationWithFinalizeTasks for DriveOperation<'_> {
-    fn finalize_tasks(
+impl DriveOperationFinalizationTasks for DriveOperation<'_> {
+    fn finalization_tasks(
         &self,
         platform_version: &PlatformVersion,
-    ) -> Option<Vec<DriveOperationFinalizeTask>> {
+    ) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error> {
+        match platform_version.drive.operations.finalization_tasks {
+            0 => self.finalization_tasks_v0(platform_version),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "finalization_tasks".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+}
+
+impl DriveOperation<'_> {
+    fn finalization_tasks_v0(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error> {
         match self {
-            DriveOperation::DataContractOperation(o) => o.finalize_tasks(platform_version),
-            DriveOperation::DocumentOperation(o) => o.finalize_tasks(platform_version),
-            DriveOperation::WithdrawalOperation(o) => o.finalize_tasks(platform_version),
-            DriveOperation::IdentityOperation(o) => o.finalize_tasks(platform_version),
-            DriveOperation::SystemOperation(o) => o.finalize_tasks(platform_version),
-            DriveOperation::GroveDBOpBatch(_) | DriveOperation::GroveDBOperation(_) => None,
+            DriveOperation::DataContractOperation(o) => o.finalization_tasks(platform_version),
+            _ => Ok(None),
         }
     }
 }
