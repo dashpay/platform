@@ -5,8 +5,9 @@ use dpp::version::PlatformVersion;
 use grovedb::Element;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 
-use crate::drive::batch::drive_op_batch::{DriveOperationCallback, DriveOperationWithCallback};
-use crate::drive::batch::DocumentOperationType;
+use crate::drive::batch::drive_op_batch::finalize_task::{
+    DriveOperationFinalizeTask, DriveOperationWithFinalizeTasks,
+};
 use crate::drive::grove_operations::BatchDeleteApplyType;
 use crate::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path_vec, get_withdrawal_transactions_expired_ids_path,
@@ -49,8 +50,11 @@ pub enum WithdrawalOperationType<'a> {
     },
 }
 
-impl DriveOperationWithCallback for WithdrawalOperationType<'_> {
-    fn callback(&self, _platform_version: &PlatformVersion) -> Option<DriveOperationCallback> {
+impl DriveOperationWithFinalizeTasks for WithdrawalOperationType<'_> {
+    fn finalize_tasks(
+        &self,
+        _platform_version: &PlatformVersion,
+    ) -> Option<Vec<DriveOperationFinalizeTask>> {
         None
     }
 }

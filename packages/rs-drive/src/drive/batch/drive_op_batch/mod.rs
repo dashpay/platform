@@ -1,6 +1,7 @@
 mod contract;
 mod document;
 mod drive_methods;
+mod finalize_task;
 mod identity;
 mod system;
 mod withdrawals;
@@ -28,6 +29,9 @@ use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 
+use crate::drive::batch::drive_op_batch::finalize_task::{
+    DriveOperationFinalizeTask, DriveOperationWithFinalizeTasks,
+};
 use std::collections::{BTreeMap, HashMap};
 
 /// A converter that will get Drive Operations from High Level Operations
@@ -43,15 +47,6 @@ pub trait DriveLowLevelOperationConverter {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error>;
-}
-
-/// Drive operation callback that will be called after successful execution of the drive operation
-pub type DriveOperationCallback = Box<dyn FnOnce(&Drive)>;
-
-/// Enable callbacks for drive operations that will be called after successful execution
-pub trait DriveOperationWithCallback {
-    /// Returns a callback that will be called after successful execution of the drive operation
-    fn callback(&self, platform_version: &PlatformVersion) -> Option<DriveOperationCallback>;
 }
 
 /// The drive operation context keeps track of changes that might affect other operations
@@ -144,14 +139,17 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
     }
 }
 
-impl DriveOperationWithCallback for DriveOperation<'_> {
-    fn callback(&self, platform_version: &PlatformVersion) -> Option<DriveOperationCallback> {
+impl DriveOperationWithFinalizeTasks for DriveOperation<'_> {
+    fn finalize_tasks(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Option<Vec<DriveOperationFinalizeTask>> {
         match self {
-            DriveOperation::DataContractOperation(o) => o.callback(platform_version),
-            DriveOperation::DocumentOperation(o) => o.callback(platform_version),
-            DriveOperation::WithdrawalOperation(o) => o.callback(platform_version),
-            DriveOperation::IdentityOperation(o) => o.callback(platform_version),
-            DriveOperation::SystemOperation(o) => o.callback(platform_version),
+            DriveOperation::DataContractOperation(o) => o.finalize_tasks(platform_version),
+            DriveOperation::DocumentOperation(o) => o.finalize_tasks(platform_version),
+            DriveOperation::WithdrawalOperation(o) => o.finalize_tasks(platform_version),
+            DriveOperation::IdentityOperation(o) => o.finalize_tasks(platform_version),
+            DriveOperation::SystemOperation(o) => o.finalize_tasks(platform_version),
             DriveOperation::GroveDBOpBatch(_) | DriveOperation::GroveDBOperation(_) => None,
         }
     }

@@ -1,6 +1,4 @@
-use crate::drive::batch::drive_op_batch::{
-    DriveLowLevelOperationConverter, DriveOperationCallback, DriveOperationWithCallback,
-};
+use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
@@ -8,6 +6,9 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
 
+use crate::drive::batch::drive_op_batch::finalize_task::{
+    DriveOperationFinalizeTask, DriveOperationWithFinalizeTasks,
+};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -33,8 +34,11 @@ pub enum SystemOperationType {
     },
 }
 
-impl DriveOperationWithCallback for SystemOperationType {
-    fn callback(&self, _platform_version: &PlatformVersion) -> Option<DriveOperationCallback> {
+impl DriveOperationWithFinalizeTasks for SystemOperationType {
+    fn finalize_tasks(
+        &self,
+        _platform_version: &PlatformVersion,
+    ) -> Option<Vec<DriveOperationFinalizeTask>> {
         None
     }
 }

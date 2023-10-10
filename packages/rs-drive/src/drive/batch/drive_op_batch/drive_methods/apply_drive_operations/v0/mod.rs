@@ -8,13 +8,14 @@ use dpp::fee::fee_result::FeeResult;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
-use crate::drive::batch::drive_op_batch::{
-    DriveLowLevelOperationConverter, DriveOperationCallback, DriveOperationWithCallback,
-};
+use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 
+use crate::drive::batch::drive_op_batch::finalize_task::{
+    DriveOperationFinalizeTask, DriveOperationWithFinalizeTasks,
+};
 use std::collections::HashMap;
 
 impl Drive {
@@ -52,11 +53,11 @@ impl Drive {
             Some(HashMap::new())
         };
 
-        let mut callbacks: Vec<DriveOperationCallback> = Vec::new();
+        let mut finalize_tasks: Vec<DriveOperationFinalizeTask> = Vec::new();
 
         for drive_op in operations {
-            if let Some(callback) = drive_op.callback(platform_version) {
-                callbacks.push(callback);
+            if let Some(tasks) = drive_op.finalize_tasks(platform_version) {
+                finalize_tasks.extend(tasks);
             }
 
             low_level_operations.append(&mut drive_op.into_low_level_drive_operations(
@@ -79,8 +80,8 @@ impl Drive {
         )?;
 
         // Execute drive operation callbacks after updating state
-        for callback in callbacks {
-            callback(&self);
+        for task in finalize_tasks {
+            task.execute(self, platform_version);
         }
 
         Drive::calculate_fee(

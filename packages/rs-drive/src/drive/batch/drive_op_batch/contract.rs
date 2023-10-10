@@ -1,6 +1,4 @@
-use crate::drive::batch::drive_op_batch::{
-    DriveLowLevelOperationConverter, DriveOperationCallback, DriveOperationWithCallback,
-};
+use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -8,6 +6,9 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 
+use crate::drive::batch::drive_op_batch::finalize_task::{
+    DriveOperationFinalizeTask, DriveOperationWithFinalizeTasks,
+};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
@@ -83,18 +84,20 @@ impl DriveLowLevelOperationConverter for DataContractOperationType<'_> {
     }
 }
 
-impl DriveOperationWithCallback for DataContractOperationType<'_> {
-    fn callback(&self, _platform_version: &PlatformVersion) -> Option<DriveOperationCallback> {
-        match self {
-            DataContractOperationType::ApplyContract { contract, .. } => {
-                let contract_id = contract.id().to_buffer();
+impl DriveOperationWithFinalizeTasks for DataContractOperationType<'_> {
+    fn finalize_tasks(
+        &self,
+        _platform_version: &PlatformVersion,
+    ) -> Option<Vec<DriveOperationFinalizeTask>> {
+        let data_contract = match self {
+            Self::ApplyContractWithSerialization { contract, .. } => contract,
+            Self::ApplyContract { contract, .. } => contract,
+        };
 
-                Some(Box::new(move |drive| {
-                    let mut drive_cache = drive.cache.write().unwrap();
-                    drive_cache.cached_contracts.remove(contract_id);
-                }))
-            }
-            _ => None,
-        }
+        let tasks = vec![DriveOperationFinalizeTask::RemoveDataContractFromCache {
+            contract_id: data_contract.id(),
+        }];
+
+        Some(tasks)
     }
 }

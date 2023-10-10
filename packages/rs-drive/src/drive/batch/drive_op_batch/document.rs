@@ -1,6 +1,4 @@
-use crate::drive::batch::drive_op_batch::{
-    DriveLowLevelOperationConverter, DriveOperationCallback, DriveOperationWithCallback,
-};
+use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{DocumentRefAndSerialization, DocumentRefInfo};
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
@@ -18,6 +16,9 @@ use dpp::prelude::Identifier;
 
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 
+use crate::drive::batch::drive_op_batch::finalize_task::{
+    DriveOperationFinalizeTask, DriveOperationWithFinalizeTasks,
+};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -161,8 +162,11 @@ pub enum DocumentOperationType<'a> {
     },
 }
 
-impl DriveOperationWithCallback for DocumentOperationType<'_> {
-    fn callback(&self, _platform_version: &PlatformVersion) -> Option<DriveOperationCallback> {
+impl DriveOperationWithFinalizeTasks for DocumentOperationType<'_> {
+    fn finalize_tasks(
+        &self,
+        _platform_version: &PlatformVersion,
+    ) -> Option<Vec<DriveOperationFinalizeTask>> {
         None
     }
 }
