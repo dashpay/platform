@@ -1028,8 +1028,8 @@ version = "0.25.0-dev.6"
 dependencies = [
  "base64 0.21.4",
  "hex",
- "prost",
- "prost-types",
+ "prost 0.11.9",
+ "prost-types 0.11.9",
  "serde",
  "tenderdash-proto",
  "tonic",
@@ -1365,9 +1365,10 @@ dependencies = [
  "platform-serialization",
  "platform-serialization-derive",
  "platform-version",
- "prost",
+ "prost 0.11.9",
  "rand",
  "regex",
+ "reopen",
  "rocksdb",
  "rust_decimal",
  "rust_decimal_macros",
@@ -2335,7 +2336,7 @@ source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-p
 dependencies = [
  "ahash 0.7.6",
  "anyhow",
- "base64 0.21.4",
+ "base64 0.13.1",
  "bytecount",
  "fancy-regex",
  "fraction",
@@ -3203,7 +3204,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b82eaa1d779e9a4bc1c3217db8ffbeabaae1dca241bf70183242128d48681cd"
 dependencies = [
  "bytes",
- "prost-derive",
+ "prost-derive 0.11.9",
+]
+
+[[package]]
+name = "prost"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4fdd22f3b9c31b53c060df4a0613a1c7f062d4115a2b984dd15b1858f7e340d"
+dependencies = [
+ "bytes",
+ "prost-derive 0.12.1",
 ]
 
 [[package]]
@@ -3220,10 +3231,32 @@ dependencies = [
  "multimap",
  "petgraph",
  "prettyplease 0.1.25",
- "prost",
- "prost-types",
+ "prost 0.11.9",
+ "prost-types 0.11.9",
  "regex",
  "syn 1.0.109",
+ "tempfile",
+ "which",
+]
+
+[[package]]
+name = "prost-build"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bdf592881d821b83d471f8af290226c8d51402259e9bb5be7f9f8bdebbb11ac"
+dependencies = [
+ "bytes",
+ "heck",
+ "itertools",
+ "log",
+ "multimap",
+ "once_cell",
+ "petgraph",
+ "prettyplease 0.2.15",
+ "prost 0.12.1",
+ "prost-types 0.12.1",
+ "regex",
+ "syn 2.0.37",
  "tempfile",
  "which",
 ]
@@ -3242,12 +3275,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "265baba7fabd416cf5078179f7d2cbeca4ce7a9041111900675ea7c4cb8a4c32"
+dependencies = [
+ "anyhow",
+ "itertools",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.37",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "213622a1460818959ac1181aaeb2dc9c7f63df720db7d788b3e24eacd1983e13"
 dependencies = [
- "prost",
+ "prost 0.11.9",
+]
+
+[[package]]
+name = "prost-types"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e081b29f63d83a4bc75cfc9f3fe424f9156cf92d8a4f0c9407cce9a1b67327cf"
+dependencies = [
+ "prost 0.12.1",
 ]
 
 [[package]]
@@ -3431,6 +3486,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2571463863a6bd50c32f94402933f03457a3fbaf697a707c5be741e459f08fd"
 dependencies = [
  "bytecheck",
+]
+
+[[package]]
+name = "reopen"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff42cec3acf85845f5b18b3cbb7fec619ccbd4a349f6ecbe1c62ab46d4d98293"
+dependencies = [
+ "autocfg",
 ]
 
 [[package]]
@@ -4166,14 +4230,14 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "0.13.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#45fc4472b4a7b5205f524406b8ae966946f3dc09"
+version = "0.13.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#f413119a5c7f4b519ba3eec5746cd013a73e45db"
 dependencies = [
  "bytes",
  "futures",
  "hex",
  "lhash",
- "prost",
+ "prost 0.12.1",
  "semver",
  "tenderdash-proto",
  "thiserror",
@@ -4187,8 +4251,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "0.13.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#45fc4472b4a7b5205f524406b8ae966946f3dc09"
+version = "0.13.2"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#f413119a5c7f4b519ba3eec5746cd013a73e45db"
 dependencies = [
  "bytes",
  "chrono",
@@ -4196,7 +4260,7 @@ dependencies = [
  "flex-error",
  "num-derive",
  "num-traits",
- "prost",
+ "prost 0.12.1",
  "serde",
  "subtle-encoding",
  "tenderdash-proto-compiler",
@@ -4206,10 +4270,10 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto-compiler"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci#45fc4472b4a7b5205f524406b8ae966946f3dc09"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci#f413119a5c7f4b519ba3eec5746cd013a73e45db"
 dependencies = [
  "fs_extra",
- "prost-build",
+ "prost-build 0.12.1",
  "regex",
  "tempfile",
  "ureq",
@@ -4467,7 +4531,7 @@ dependencies = [
  "hyper-timeout",
  "percent-encoding",
  "pin-project",
- "prost",
+ "prost 0.11.9",
  "rustls-native-certs",
  "rustls-pemfile",
  "tokio",
@@ -4487,7 +4551,7 @@ checksum = "a6fdaae4c2c638bb70fe42803a26fbd6fc6ac8c72f5c59f67ecc2a2dcabf4b07"
 dependencies = [
  "prettyplease 0.1.25",
  "proc-macro2",
- "prost-build",
+ "prost-build 0.11.9",
  "quote",
  "syn 1.0.109",
 ]

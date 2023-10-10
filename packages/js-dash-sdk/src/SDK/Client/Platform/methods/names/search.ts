@@ -1,5 +1,7 @@
 import { Platform } from '../../Platform';
 
+const convertToHomographSafeChars = require('@dashevo/dpp/lib/util/convertToHomographSafeChars');
+
 /**
  *
  * @param {string} labelPrefix - label prefix to search for
@@ -9,8 +11,8 @@ import { Platform } from '../../Platform';
 export async function search(this: Platform, labelPrefix: string, parentDomainName: string = '') {
   await this.initialize();
 
-  const normalizedParentDomainName = parentDomainName.toLowerCase();
-  const normalizedLabelPrefix = labelPrefix.toLowerCase();
+  const normalizedParentDomainName = convertToHomographSafeChars(parentDomainName);
+  const normalizedLabelPrefix = convertToHomographSafeChars(labelPrefix);
 
   const documents = await this.documents.get('dpns.domain', {
     where: [

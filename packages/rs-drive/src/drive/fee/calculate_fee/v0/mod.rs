@@ -13,6 +13,7 @@ impl Drive {
         base_operations: Option<EnumMap<BaseOp, u64>>,
         drive_operations: Option<Vec<LowLevelDriveOperation>>,
         epoch: &Epoch,
+        epochs_per_era: u16,
     ) -> Result<FeeResult, Error> {
         let mut aggregate_fee_result = FeeResult::default();
         if let Some(base_operations) = base_operations {
@@ -30,7 +31,7 @@ impl Drive {
         if let Some(drive_operations) = drive_operations {
             // println!("{:#?}", drive_operations);
             for drive_fee_result in
-                LowLevelDriveOperation::consume_to_fees(drive_operations, epoch)?
+                LowLevelDriveOperation::consume_to_fees(drive_operations, epoch, epochs_per_era)?
             {
                 aggregate_fee_result.checked_add_assign(drive_fee_result)?;
             }

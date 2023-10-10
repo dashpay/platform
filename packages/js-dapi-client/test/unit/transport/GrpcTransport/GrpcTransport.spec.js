@@ -31,6 +31,9 @@ describe('GrpcTransport', () => {
 
     globalOptions = {
       retries: 0,
+      loggerOptions: {
+        identifier: '',
+      },
     };
 
     createDAPIAddressProviderFromOptionsMock = this.sinon.stub().returns(null);
@@ -38,6 +41,7 @@ describe('GrpcTransport', () => {
     grpcTransport = new GrpcTransport(
       createDAPIAddressProviderFromOptionsMock,
       dapiAddressProviderMock,
+      null,
       globalOptions,
     );
 
@@ -73,6 +77,9 @@ describe('GrpcTransport', () => {
 
       globalOptions = {
         retries: 1,
+        loggerOptions: {
+          identifier: '',
+        },
       };
 
       createGrpcTransportErrorMock = this.sinon.stub();

@@ -282,6 +282,27 @@
       },
       "allOf": [
         {
+          "$comment": "allow only byte arrays",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "array"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "byteArray": true
+            },
+            "required": [
+              "byteArray"
+            ]
+          }
+        },
+        {
           "$comment": "array must contain items",
           "if": {
             "properties": {

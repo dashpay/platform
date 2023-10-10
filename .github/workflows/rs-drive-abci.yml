@@ -4,6 +4,7 @@ name: RS Drive ABCI
 on:
   workflow_dispatch:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - master
       - 'v[0-9]+\.[0-9]+-dev'
@@ -15,6 +16,12 @@ on:
       - packages/dpns-contract/**
       - packages/dashpay-contract/**
       - packages/masternode-reward-shares-contract/**
+      - packages/rs-platform-serialization/**
+      - packages/rs-platform-serialization-derive/**
+      - packages/rs-platform-value/**
+      - packages/rs-platform-value-convertible/**
+      - packages/rs-platform-version/**
+      - packages/rs-platform-versioning/**
       - packages/rs-dpp/**
       - packages/rs-drive/**
       - packages/rs-drive-abci/**

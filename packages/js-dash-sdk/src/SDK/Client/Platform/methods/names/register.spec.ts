@@ -68,6 +68,7 @@ describe('Platform', () => {
           {
             label: 'Dash',
             normalizedLabel: 'dash',
+            parentDomainName: '',
             normalizedParentDomainName: '',
             preorderSalt: Buffer.alloc(32),
             records: {
@@ -100,6 +101,7 @@ describe('Platform', () => {
           {
             label: 'User',
             normalizedLabel: 'user',
+            parentDomainName: 'dash',
             normalizedParentDomainName: 'dash',
             preorderSalt: Buffer.alloc(32),
             records: {

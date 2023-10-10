@@ -47,6 +47,7 @@ mod tests {
         drive
             .add_new_identity(
                 identity.clone(),
+                false,
                 &BlockInfo::default(),
                 true,
                 None,

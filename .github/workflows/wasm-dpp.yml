@@ -3,6 +3,7 @@ name: WASM DPP
 on:
   workflow_dispatch:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - master
       - v[0-9]+\.[0-9]+-dev
@@ -42,10 +43,11 @@ jobs:
   wasm-errors:
     name: WASM compilation
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     timeout-minutes: 15
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Rust
         uses: ./.github/actions/rust
