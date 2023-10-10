@@ -38,7 +38,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         identity_key: IdentityPublicKey,
-        with_references: bool,
+        with_searchable_inner_references: bool,
         epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -58,7 +58,7 @@ impl Drive {
             0 => self.insert_new_unique_key_operations_v0(
                 identity_id,
                 identity_key,
-                with_references,
+                with_searchable_inner_references,
                 epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,

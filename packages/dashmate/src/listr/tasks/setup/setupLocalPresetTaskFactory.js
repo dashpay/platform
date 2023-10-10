@@ -229,21 +229,17 @@ function setupLocalPresetTaskFactory(
                   config.set('platform.drive.tenderdash.mode', 'validator');
 
                   // Setup logs
+                  const drivePrettyFilePath = homeDir.joinPath('logs', config.getName(), 'drive-pretty.log');
+                  config.set('platform.drive.abci.log.prettyFile.path', drivePrettyFilePath);
+
+                  const driveJsonFilePath = homeDir.joinPath('logs', config.getName(), 'drive-json.log');
+                  config.set('platform.drive.abci.log.jsonFile.path', driveJsonFilePath);
+
                   if (ctx.debugLogs) {
                     config.set('platform.drive.abci.log.stdout.level', 'trace');
                     config.set('platform.drive.abci.log.prettyFile.level', 'trace');
 
                     config.set('platform.drive.tenderdash.log.level', 'debug');
-                  }
-
-                  if (!config.get('platform.drive.abci.log.prettyFile.path')) {
-                    const drivePrettyLogFile = homeDir.joinPath('logs', config.getName(), 'drive_pretty.log');
-                    config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
-                  }
-
-                  if (!config.get('platform.drive.abci.log.jsonFile.path')) {
-                    const driveJsonLogFile = homeDir.joinPath('logs', config.getName(), 'drive_json.log');
-                    config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
                   }
 
                   config.set('platform.dpns.masterPublicKey', dpnsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());

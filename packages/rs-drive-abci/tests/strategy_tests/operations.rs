@@ -1,14 +1,29 @@
 use crate::frequency::Frequency;
+use dpp::data_contract::document_type::random_document::{
+    DocumentFieldFillSize, DocumentFieldFillType,
+};
 use dpp::data_contract::document_type::v0::random_document_type::RandomDocumentTypeParameters;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract as Contract;
 use dpp::identifier::Identifier;
 use dpp::identity::IdentityPublicKey;
+use dpp::platform_value::Value;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 #[derive(Clone, Debug)]
 pub enum DocumentAction {
-    DocumentActionInsert,
+    DocumentActionInsertRandom(DocumentFieldFillType, DocumentFieldFillSize),
+    /// Insert a document with specific values
+    /// If a required value is not set, it will use random ones
+    /// The second parameter is the owner id of the document
+    /// If none then it should be random
+    DocumentActionInsertSpecific(
+        BTreeMap<String, Value>,
+        Option<Identifier>,
+        DocumentFieldFillType,
+        DocumentFieldFillSize,
+    ),
     DocumentActionDelete,
     DocumentActionReplace,
 }

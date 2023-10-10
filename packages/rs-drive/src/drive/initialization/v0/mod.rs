@@ -186,7 +186,7 @@ impl Drive {
         );
 
         // In Pools: initialize the pools with epochs
-        add_create_fee_pool_trees_operations(&mut batch)?;
+        add_create_fee_pool_trees_operations(&mut batch, self.config.epochs_per_era)?;
 
         // In Withdrawals
         add_initial_withdrawal_state_structure_operations(&mut batch);

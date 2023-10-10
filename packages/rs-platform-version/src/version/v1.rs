@@ -30,7 +30,8 @@ use crate::version::drive_versions::{
     DriveContractProveMethodVersions, DriveContractUpdateMethodVersions,
     DriveCreditPoolEpochsMethodVersions, DriveCreditPoolMethodVersions,
     DriveCreditPoolPendingEpochRefundsMethodVersions,
-    DriveCreditPoolStorageFeeDistributionPoolMethodVersions, DriveDocumentDeleteMethodVersions,
+    DriveCreditPoolStorageFeeDistributionPoolMethodVersions,
+    DriveDataContractOperationMethodVersions, DriveDocumentDeleteMethodVersions,
     DriveDocumentEstimationCostsMethodVersions, DriveDocumentIndexUniquenessMethodVersions,
     DriveDocumentInsertMethodVersions, DriveDocumentMethodVersions,
     DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
@@ -47,6 +48,7 @@ use crate::version::drive_versions::{
     DriveIdentityProveMethodVersions, DriveIdentityUpdateMethodVersions,
     DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
     DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveProveMethodVersions,
+    DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions,
     DriveStructureVersion, DriveSystemEstimationCostsMethodVersions,
     DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
     DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
@@ -365,6 +367,14 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 apply_partial_batch_grovedb_operations: 0,
                 apply_batch_low_level_drive_operations: 0,
                 apply_batch_grovedb_operations: 0,
+            },
+            state_transitions: DriveStateTransitionMethodVersions {
+                operations: DriveStateTransitionOperationMethodVersions {
+                    finalization_tasks: 0,
+                    contracts: DriveDataContractOperationMethodVersions {
+                        finalization_tasks: 0,
+                    },
+                },
             },
             batch_operations: DriveBatchOperationsMethodVersion {
                 convert_drive_operations_to_grove_operations: 0,

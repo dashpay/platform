@@ -31,6 +31,23 @@ pub struct DriveMethodVersions {
     pub operations: DriveOperationsMethodVersion,
     pub batch_operations: DriveBatchOperationsMethodVersion,
     pub prove: DriveProveMethodVersions,
+    pub state_transitions: DriveStateTransitionMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveStateTransitionMethodVersions {
+    pub operations: DriveStateTransitionOperationMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveStateTransitionOperationMethodVersions {
+    pub finalization_tasks: FeatureVersion,
+    pub contracts: DriveDataContractOperationMethodVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveDataContractOperationMethodVersions {
+    pub finalization_tasks: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -1,8 +1,9 @@
 import { Identifier } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
-const { hash } = require('@dashevo/dpp/lib/util/hash');
 const crypto = require('crypto');
+const { hash } = require('@dashevo/dpp/lib/util/hash');
+const convertToHomographSafeChars = require('@dashevo/dpp/lib/util/convertToHomographSafeChars');
 
 /**
  * Register names to the platform
@@ -38,13 +39,16 @@ export async function register(this: Platform,
 
   const nameLabels = name.split('.');
 
-  const normalizedParentDomainName = nameLabels
+  const parentDomainName = nameLabels
     .slice(1)
-    .join('.')
-    .toLowerCase();
+    .join('.');
+
+  const normalizedParentDomainName = convertToHomographSafeChars(parentDomainName);
 
   const [label] = nameLabels;
-  const normalizedLabel = label.toLowerCase();
+  const normalizedLabel = convertToHomographSafeChars(label);
+
+  console.log('Label', label, 'normalized', normalizedLabel);
 
   const preorderSalt = crypto.randomBytes(32);
 
@@ -88,6 +92,7 @@ export async function register(this: Platform,
     {
       label,
       normalizedLabel,
+      parentDomainName,
       normalizedParentDomainName,
       preorderSalt,
       records,

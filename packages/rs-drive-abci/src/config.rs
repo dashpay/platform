@@ -113,7 +113,48 @@ impl Default for CoreConfig {
     }
 }
 
-/// Configurtion of Dash Platform.
+/// Configuration of the execution part of Dash Platform.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+// NOTE: in renames, we use lower_snake_case, because uppercase does not work; see
+// https://github.com/softprops/envy/issues/61 and https://github.com/softprops/envy/pull/69
+pub struct ExecutionConfig {
+    /// Should we use document triggers? Useful to set as `false` for tests
+    #[serde(default = "ExecutionConfig::default_use_document_triggers")]
+    pub use_document_triggers: bool,
+
+    /// Should we verify sum trees? Useful to set as `false` for tests
+    #[serde(default = "ExecutionConfig::default_verify_sum_trees")]
+    pub verify_sum_trees: bool,
+
+    /// How often should quorums change?
+    #[serde(
+        default = "ExecutionConfig::default_validator_set_quorum_rotation_block_count",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub validator_set_quorum_rotation_block_count: u32,
+
+    /// How long in seconds should an epoch last
+    /// It might last a lot longer if the chain is halted
+    #[serde(
+        default = "ExecutionConfig::default_epoch_time_length_s",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub epoch_time_length_s: u64,
+}
+
+fn from_str_or_number<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de> + std::str::FromStr,
+    <T as std::str::FromStr>::Err: std::fmt::Display,
+{
+    use serde::de::Error;
+
+    let s = String::deserialize(deserializer)?;
+    s.parse::<T>().map_err(Error::custom)
+}
+
+/// Configuration of Dash Platform.
 ///
 /// All fields in this struct can be configured using environment variables.
 /// These variables can also be defined in `.env` file in the current directory
@@ -144,9 +185,9 @@ pub struct PlatformConfig {
     #[serde(flatten)]
     pub abci: AbciConfig,
 
-    /// Should we verify sum trees? Useful to set as `false` for tests
-    #[serde(default = "PlatformConfig::default_verify_sum_trees")]
-    pub verify_sum_trees: bool,
+    /// Execution config
+    #[serde(flatten)]
+    pub execution: ExecutionConfig,
 
     /// The default quorum type
     pub quorum_type: String,
@@ -157,9 +198,6 @@ pub struct PlatformConfig {
     // todo: this should probably be coming from Tenderdash config
     /// Approximately how often are blocks produced
     pub block_spacing_ms: u64,
-
-    /// How often should quorums change?
-    pub validator_set_quorum_rotation_block_count: u32,
 
     /// Initial protocol version
     #[serde(default = "PlatformConfig::default_initial_protocol_version")]
@@ -174,13 +212,25 @@ pub struct PlatformConfig {
     pub testing_configs: PlatformTestConfig,
 }
 
-impl PlatformConfig {
-    // #[allow(unused)]
+impl ExecutionConfig {
     fn default_verify_sum_trees() -> bool {
         true
     }
 
-    // #[allow(unused)]
+    fn default_use_document_triggers() -> bool {
+        true
+    }
+
+    fn default_validator_set_quorum_rotation_block_count() -> u32 {
+        15
+    }
+
+    fn default_epoch_time_length_s() -> u64 {
+        788400
+    }
+}
+
+impl PlatformConfig {
     fn default_initial_protocol_version() -> ProtocolVersion {
         //todo: versioning
         1
@@ -224,17 +274,28 @@ impl FromEnv for PlatformConfig {
     }
 }
 
+impl Default for ExecutionConfig {
+    fn default() -> Self {
+        Self {
+            use_document_triggers: ExecutionConfig::default_use_document_triggers(),
+            verify_sum_trees: ExecutionConfig::default_verify_sum_trees(),
+            validator_set_quorum_rotation_block_count:
+                ExecutionConfig::default_validator_set_quorum_rotation_block_count(),
+            epoch_time_length_s: ExecutionConfig::default_epoch_time_length_s(),
+        }
+    }
+}
+
 impl Default for PlatformConfig {
     fn default() -> Self {
         Self {
-            verify_sum_trees: true,
             quorum_type: "llmq_100_67".to_string(),
             quorum_size: 100,
             block_spacing_ms: 5000,
-            validator_set_quorum_rotation_block_count: 15,
             drive: Default::default(),
             abci: Default::default(),
             core: Default::default(),
+            execution: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
             initial_protocol_version: 1,
@@ -280,9 +341,16 @@ mod tests {
     fn test_config_from_env() {
         // ABCI log configs are parsed manually, so they deserve separate handling
         // Notat that STDOUT is also defined in .env.example, but env var should overwrite it.
-        let log_ids = &["STDOUT", "UPPERCASE", "lowercase", "miXedC4s3", "123"];
-        for id in log_ids {
-            env::set_var(format!("ABCI_LOG_{}_DESTINATION", id), "bytes");
+        let vectors = &[
+            ("STDOUT", "pretty"),
+            ("UPPERCASE", "json"),
+            ("lowercase", "pretty"),
+            ("miXedC4s3", "full"),
+            ("123", "compact"),
+        ];
+        for vector in vectors {
+            env::set_var(format!("ABCI_LOG_{}_DESTINATION", vector.0), "bytes");
+            env::set_var(format!("ABCI_LOG_{}_FORMAT", vector.0), vector.1);
         }
 
         let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.example");
@@ -290,11 +358,11 @@ mod tests {
         dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
         assert_eq!("5", env::var("QUORUM_SIZE").unwrap());
 
-        let config = super::PlatformConfig::from_env().unwrap();
-        assert!(config.verify_sum_trees);
+        let config = super::PlatformConfig::from_env().expect("expected config from env");
+        assert!(config.execution.verify_sum_trees);
         assert_ne!(config.quorum_type(), QuorumType::UNKNOWN);
-        for id in log_ids {
-            assert_eq!(config.abci.log[*id].destination.as_str(), "bytes");
+        for id in vectors {
+            assert_eq!(config.abci.log[id.0].destination.as_str(), "bytes");
         }
     }
 }

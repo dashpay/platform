@@ -160,6 +160,7 @@ impl Drive {
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
+                self.config.epochs_per_era,
                 platform_version,
             )?;
             fee_result.processing_fee
@@ -212,6 +213,7 @@ impl Drive {
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
+                self.config.epochs_per_era,
                 platform_version,
             )?;
             fee_result.processing_fee
@@ -249,6 +251,7 @@ impl Drive {
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
+                self.config.epochs_per_era,
                 platform_version,
             )?;
             fee_result.processing_fee
@@ -304,6 +307,7 @@ impl Drive {
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
+                self.config.epochs_per_era,
                 platform_version,
             )?;
             fee_result.processing_fee
@@ -361,6 +365,7 @@ impl Drive {
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
+                self.config.epochs_per_era,
                 platform_version,
             )?;
             fee_result.processing_fee
@@ -445,8 +450,13 @@ impl Drive {
             platform_version,
         )?;
         let cost = if let Some(epoch) = epoch {
-            let fee_result =
-                Drive::calculate_fee(None, Some(drive_operations), epoch, platform_version)?;
+            let fee_result = Drive::calculate_fee(
+                None,
+                Some(drive_operations),
+                epoch,
+                self.config.epochs_per_era,
+                platform_version,
+            )?;
             fee_result.processing_fee
         } else {
             0
