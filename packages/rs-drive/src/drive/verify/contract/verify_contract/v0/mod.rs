@@ -124,6 +124,7 @@ impl Drive {
                         // just return error
                         Err(e)
                     } else {
+                        tracing::debug!(?path_query,error=?e, "retry contract verification with history enabled");
                         Self::verify_contract(
                             proof,
                             Some(true),
