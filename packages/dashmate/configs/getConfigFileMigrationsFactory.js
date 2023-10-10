@@ -197,7 +197,7 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
             options.platform.drive.abci.epochTime = base.get('platform.drive.abci.epochTime');
           });
         return configFile;
-      }
+      },
     };
   }
 
