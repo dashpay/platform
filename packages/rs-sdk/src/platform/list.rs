@@ -6,15 +6,9 @@
 //! - `List`: An async trait that lists items of a specific type from the platform.
 //! - `Document`: An implementation of the `List` trait for documents.
 //!
-//! ## Usage
-//! ```rust
-//! let documents = dpp::prelude::Document::list(&api, query).await?;
-//! ```
-//!
 //! ## Error Handling
 //! Any errors encountered during the execution are returned as Error instances.
 
-use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse};
 use dpp::document::Document;
 use drive_proof_verifier::proof::from_proof::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
@@ -59,10 +53,6 @@ where
     ///
     /// ## Usage
     ///
-    /// ```rust
-    /// let documents = dpp::prelude::Document::list(&api, query).await?;
-    /// ```
-    ///
     /// See `examples/list_documents.rs` for a full example.
     ///
     /// ## Error Handling
@@ -100,16 +90,15 @@ impl List for Document {
         query: Q,
     ) -> Result<Option<Vec<Self>>, Error> {
         let document_query: DocumentQuery = query.query()?;
-        // We need DriveQuery to verify the proof, as FromProof is implemented for DriveQuery.
-        let request: GetDocumentsRequest = document_query.clone().try_into()?;
 
-        let response: GetDocumentsResponse =
-            request.execute(api, RequestSettings::default()).await?;
+        let request = document_query.clone();
+        let response = request.execute(api, RequestSettings::default()).await?;
 
         tracing::trace!(request=?document_query, response=?response, "list documents");
 
         let object: Option<Vec<Document>> =
             api.parse_proof::<DocumentQuery, Vec<Document>>(document_query, response)?;
+
         match object {
             Some(documents) => Ok(Some(documents)),
             None => Ok(None),

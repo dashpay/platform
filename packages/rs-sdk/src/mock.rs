@@ -39,7 +39,7 @@ impl MockDashPlatformSdk {
     pub async fn expect_fetch<O: Fetch, Q: Query<<O as Fetch>::Request>>(
         &mut self,
         query: Q,
-        object: O,
+        object: Option<O>,
     ) -> &mut Self
     where
         Q: MockRequest,
@@ -56,7 +56,7 @@ impl MockDashPlatformSdk {
     pub async fn expect_list<O: List, Q: Query<<O as List>::Request>>(
         &mut self,
         query: Q,
-        object: Vec<O>,
+        object: Option<Vec<O>>,
     ) -> &mut Self
     where
         Q: MockRequest,
@@ -78,7 +78,7 @@ impl MockDashPlatformSdk {
     async fn expect<I: TransportRequest + MockRequest, O: MockResponse>(
         &mut self,
         grpc_request: I,
-        returned_object: O,
+        returned_object: Option<O>,
     ) where
         I::Response: Default,
     {
@@ -149,6 +149,10 @@ impl<T: MockResponse> MockResponse for Option<T> {
     where
         Self: Sized,
     {
+        if buf.is_empty() {
+            return None;
+        }
+
         Some(T::mock_deserialize(mock_sdk, buf))
     }
     fn mock_serialize(&self, mock_sdk: &MockDashPlatformSdk) -> Vec<u8> {

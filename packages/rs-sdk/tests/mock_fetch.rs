@@ -11,7 +11,7 @@ use dpp::{
     document::Document,
     identity::{accessors::IdentityGettersV0, IdentityV0},
     platform_value::platform_value,
-    prelude::{DataContract, Identity},
+    prelude::{DataContract, Identifier, Identity},
 };
 use rs_sdk::{
     platform::{DocumentQuery, Fetch},
@@ -28,7 +28,7 @@ async fn test_mock_fetch_identity() {
     let expected: Identity = Identity::from(IdentityV0::default());
     let id = expected.id();
 
-    api.mock().expect_fetch(id, expected.clone()).await;
+    api.mock().expect_fetch(id, Some(expected.clone())).await;
 
     let retrieved = dpp::prelude::Identity::fetch(&mut api, id)
         .await
@@ -39,13 +39,29 @@ async fn test_mock_fetch_identity() {
 }
 
 #[tokio::test]
+/// Given some random identity ID, when I fetch it using mock API, then I get None
+async fn test_mock_fetch_identity_not_found() {
+    let mut api = Sdk::new_mock();
+
+    let id = Identifier::random();
+
+    api.mock().expect_fetch(id, None as Option<Identity>).await;
+
+    let retrieved = dpp::prelude::Identity::fetch(&mut api, id)
+        .await
+        .expect("fetch should succeed");
+
+    assert!(retrieved.is_none());
+}
+
+#[tokio::test]
 async fn test_mock_fetch_data_contract() {
     let mut api = Sdk::new_mock();
 
     let expected = mock_data_contract(None);
     let id = expected.id();
 
-    api.mock().expect_fetch(id, expected.clone()).await;
+    api.mock().expect_fetch(id, Some(expected.clone())).await;
 
     let retrieved = DataContract::fetch(&mut api, id)
         .await
@@ -70,7 +86,7 @@ async fn test_mock_fetch_document() {
 
     // [DocumentQuery::new_with_document_id] will fetch the data contract first, so we need to define an expectation for it.
     api.mock()
-        .expect_fetch(data_contract.id(), data_contract.clone())
+        .expect_fetch(data_contract.id(), Some(data_contract.clone()))
         .await;
 
     let query = DocumentQuery::new_with_document_id(
@@ -83,7 +99,7 @@ async fn test_mock_fetch_document() {
     .expect("create document query");
 
     api.mock()
-        .expect_fetch(query.clone(), expected.clone())
+        .expect_fetch(query.clone(), Some(expected.clone()))
         .await;
 
     let retrieved = Document::fetch(&mut api, query)

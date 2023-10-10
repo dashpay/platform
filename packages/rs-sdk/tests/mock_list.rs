@@ -29,7 +29,8 @@ async fn test_mock_document_list() {
 
     // [DocumentQuery::new_with_document_id] will fetch the data contract first, so we need to define an expectation for it.
     api.mock()
-        .expect_fetch(data_contract.id(), data_contract.clone());
+        .expect_fetch(data_contract.id(), Some(data_contract.clone()))
+        .await;
 
     let query = DocumentQuery::new_with_document_id(
         &mut api,
@@ -40,7 +41,9 @@ async fn test_mock_document_list() {
     .await
     .expect("create document query");
 
-    api.mock().expect_list(query.clone(), expected.clone());
+    api.mock()
+        .expect_list(query.clone(), Some(expected.clone()))
+        .await;
 
     let retrieved = Document::list(&mut api, query)
         .await

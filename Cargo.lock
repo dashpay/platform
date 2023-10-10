@@ -3554,6 +3554,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.21.4",
+ "bincode 2.0.0-rc.3",
  "ciborium",
  "dapi-grpc",
  "dashcore-rpc",

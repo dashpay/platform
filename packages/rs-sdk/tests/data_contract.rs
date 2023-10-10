@@ -3,6 +3,7 @@ use rs_sdk::platform::Fetch;
 
 include!("common.rs");
 
+#[ignore = "needs working platform"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_data_contract_read_not_found() {
     pub const DATA_CONTRACT_ID_BYTES: [u8; 32] = [1; 32];

@@ -19,11 +19,6 @@ pub trait Query<T: TransportRequest>: Send + Debug + Clone {
     /// On success, this method yields an instance of the `TransportRequest` type (`T`).
     /// On failure, it yields an [`Error`](crate::error::Error).
     ///
-    /// # Usage
-    /// ```rust
-    /// let transport_request = query.query()?;
-    /// ```
-    ///
     /// # Error Handling
     /// This method propagates any errors encountered during the conversion process. These are returned as [`Error`](crate::error::Error) instances.
     fn query(self) -> Result<T, Error>;

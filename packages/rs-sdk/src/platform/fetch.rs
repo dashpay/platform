@@ -49,11 +49,6 @@ use super::document_query::DocumentQuery;
 /// This trait is implemented by the types `dpp::prelude::Identity`, `dpp::prelude::DataContract`,
 /// and `Document`.
 ///
-/// ## Example
-/// ```rust
-/// let identity = dpp::prelude::Identity::fetch(&api, query).await?;
-/// ```
-///
 /// ## Error Handling
 /// Any errors encountered during the execution of a fetch operation are returned as `Error` instances.
 ///
@@ -93,11 +88,6 @@ where
     ///
     /// ## Returns
     /// Returns a `Result` containing either the fetched object or an error.
-    ///
-    /// ## Usage
-    /// ```rust
-    /// let identity = dpp::prelude::Identity::fetch(&api, query).await?;
-    /// ```
     ///
     /// ## Error Handling
     /// Any errors encountered during the execution are returned as [Error] instances.

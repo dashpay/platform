@@ -4,14 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+dpp = { path = "../rs-dpp", features = ["client", "validation"] }
 dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
 rs-dapi-client = { path = "../rs-dapi-client" }
 drive = { path = "../rs-drive", default-features = false, features = [
     "verify",
 ] }
-dpp = { path = "../rs-dpp", features = ["all_features"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
+# drive-abci is only needed for core rpc; TODO remove once we have correct core rpc impl
+drive-abci = { path = "../rs-drive-abci", default-features = false }
 
+bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
 thiserror = "1.0.47"
 tokio = { version = "1.32.0", features = ["macros"] }
 async-trait = { version = "0.1.73" }
@@ -23,13 +26,17 @@ tracing = { version = "0.1.37" }
 
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.1" }
-# drive-abci is only needed for core rpc; TODO remove once we have correct core rpc impl
-drive-abci = { path = "../rs-drive-abci", default-features = false }
+
 mockall = { version = "0.11", optional = true }
 
 [dev-dependencies]
 base64 = { version = "0.21.0" }
 tracing-subscriber = { version = "0.3.16" }
+dpp = { path = "../rs-dpp", features = [
+    "client",
+    "validation",
+    "random-documents",
+] }
 
 
 [features]
@@ -38,7 +45,10 @@ mocks = [
     "dep:mockall",
     "dep:serde_json",
     "rs-dapi-client/mocks",
-    "drive/fixtures-and-mocks",
-    "dpp/fixtures-and-mocks",
+    # "drive/fixtures-and-mocks",
+    # "dpp/fixtures-and-mocks",
+    "dpp/document-cbor-conversion",
+    "dpp/identity-value-conversion",
     "drive-proof-verifier/mocks",
+    "dep:bincode",
 ]

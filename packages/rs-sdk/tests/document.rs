@@ -45,6 +45,7 @@ where
     result
 }
 
+#[ignore = "needs working platform"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn document_read() {
     setup_logs();
