@@ -14,7 +14,6 @@ use dpp::validation::SimpleConsensusValidationResult;
 use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use tenderdash_abci::proto::abci::ExecTxResult;
 
 impl<C> Platform<C>
 where

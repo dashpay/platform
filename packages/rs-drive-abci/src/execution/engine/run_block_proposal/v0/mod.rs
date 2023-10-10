@@ -95,6 +95,11 @@ where
             )).into()));
         }
 
+        // Cleanup block cache before we execute a new proposal
+        let mut drive_cache = self.drive.cache.write().unwrap();
+        drive_cache.cached_contracts.clear_block_cache();
+        drop(drive_cache);
+
         // destructure the block proposal
         let block_proposal::v0::BlockProposal {
             core_chain_locked_height,
