@@ -442,9 +442,13 @@ module.exports = {
                   additionalProperties: false,
                   required: ['llmqType'],
                 },
+                epochTime: {
+                  type: 'integer',
+                  minimum: 180,
+                },
               },
               additionalProperties: false,
-              required: ['docker', 'log', 'validatorSet'],
+              required: ['docker', 'log', 'validatorSet', 'epochTime'],
             },
             tenderdash: {
               type: 'object',
@@ -502,6 +506,10 @@ module.exports = {
                     format: {
                       type: 'string',
                       enum: ['plain', 'json'],
+                    },
+                    path: {
+                      type: ['string', 'null'],
+                      minLength: 1,
                     },
                   },
                   required: ['level', 'format'],

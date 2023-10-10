@@ -101,7 +101,7 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{PlatformConfig, PlatformTestConfig};
+    use crate::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
     use crate::platform_types::platform::PlatformRef;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -144,9 +144,12 @@ mod tests {
             .data_contract_owned();
 
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 10,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 300,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()

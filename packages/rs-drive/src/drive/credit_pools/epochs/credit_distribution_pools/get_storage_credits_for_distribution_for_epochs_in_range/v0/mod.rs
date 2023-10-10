@@ -5,6 +5,7 @@ use crate::drive::Drive;
 
 use dpp::block::epoch::Epoch;
 
+use crate::error::Error;
 use dpp::version::PlatformVersion;
 
 impl Drive {
@@ -14,7 +15,7 @@ impl Drive {
         epoch_range: Range<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Vec<u64> {
+    ) -> Result<Vec<u64>, Error> {
         epoch_range
             .map(|index| {
                 let epoch = Epoch::new(index).unwrap();
@@ -23,7 +24,6 @@ impl Drive {
                     transaction,
                     platform_version,
                 )
-                .expect("should get storage fee")
             })
             .collect()
     }
