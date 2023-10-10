@@ -46,20 +46,6 @@ mod operations;
 mod transitions;
 
 
-pub enum StrategyMode {
-    ProposerOnly,
-    ProposerAndValidatorHashValidationOnly,
-    //ProposerAndValidatorSigning, todo
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct FailureStrategy {
-    pub deterministic_start_seed: Option<u64>,
-    pub dont_finalize_block: bool,
-    pub expect_errors_with_codes: Vec<u32>,
-}
-
-
 #[derive(Clone, Debug)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(
@@ -69,19 +55,11 @@ pub struct Strategy {
     pub operations: Vec<Operation>,
     pub start_identities: Vec<(Identity, StateTransition)>,
     pub identities_inserts: Frequency,
-    pub failure_testing: Option<FailureStrategy>,
-    pub verify_state_transition_results: bool,
     pub signer: Option<SimpleSigner>,
 }
 
 
 impl Strategy {
-    pub fn dont_finalize_block(&self) -> bool {
-        self.failure_testing
-            .as_ref()
-            .map(|failure_strategy| failure_strategy.dont_finalize_block)
-            .unwrap_or(false)
-    }
 
     // TODO: This belongs to `DocumentOp`
     pub fn add_strategy_contracts_into_drive(
@@ -778,9 +756,4 @@ impl Strategy {
 
         (state_transitions, finalize_block_operations)
     }
-}
-
-pub enum StrategyRandomness {
-    SeedEntropy(u64),
-    RNGEntropy(StdRng),
 }
