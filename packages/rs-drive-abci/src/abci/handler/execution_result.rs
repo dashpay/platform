@@ -4,16 +4,18 @@ use crate::platform_types::state_transition_execution_result::StateTransitionExe
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::SignedCredits;
 use dpp::version::PlatformVersion;
+use dpp::version::TryIntoPlatformVersioned;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
 // State transitions are never free, so we should filter out SuccessfulFreeExecution
 // So we use an option
-impl StateTransitionExecutionResult {
-    /// Convert state transition execution result into a Tenderdash tx result
-    pub fn try_into_tx_result(
+impl TryIntoPlatformVersioned<ExecTxResult> for StateTransitionExecutionResult {
+    type Error = Error;
+
+    fn try_into_platform_versioned(
         self,
         platform_version: &PlatformVersion,
-    ) -> Result<ExecTxResult, Error> {
+    ) -> Result<ExecTxResult, Self::Error> {
         let response = match self {
             Self::SuccessfulPaidExecution(dry_run_fee_result, fee_result) => ExecTxResult {
                 code: 0,

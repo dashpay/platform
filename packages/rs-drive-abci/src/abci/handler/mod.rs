@@ -70,6 +70,7 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
 use dpp::dashcore::hashes::Hash;
 use dpp::fee::SignedCredits;
+use dpp::version::TryIntoPlatformVersioned;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use error::consensus::AbciResponseInfoGetter;
 use error::HandlerError;
@@ -223,36 +224,22 @@ where
         } = run_result.into_data().map_err(Error::Protocol)?;
 
         // We need to let Tenderdash know about the transactions we should remove from execution
-        let tx_results_and_records = state_transition_results
-            .into_iter()
-            .map(|(tx, result)| {
-                let tx_result = result.try_into_tx_result(platform_version)?;
+        let mut tx_results = Vec::new();
+        let mut tx_records = Vec::new();
 
-                let tx_record = if tx_result.code > 0 {
-                    (
-                        tx_result,
-                        TxRecord {
-                            action: TxAction::Removed as i32,
-                            tx,
-                        },
-                    )
-                } else {
-                    (
-                        tx_result,
-                        TxRecord {
-                            action: TxAction::Unmodified as i32,
-                            tx,
-                        },
-                    )
-                };
+        for (tx, state_transition_execution_result) in state_transition_results {
+            let tx_result: ExecTxResult =
+                state_transition_execution_result.try_into_platform_versioned(platform_version)?;
 
-                Ok(tx_record)
-            })
-            .collect::<Result<Vec<(ExecTxResult, TxRecord)>, Error>>()
-            .map_err(proto::ResponseException::from)?;
+            let action = if tx_result.code > 0 {
+                TxAction::Removed
+            } else {
+                TxAction::Unmodified
+            } as i32;
 
-        let (tx_results, tx_records): (Vec<ExecTxResult>, Vec<TxRecord>) =
-            tx_results_and_records.into_iter().unzip();
+            tx_results.push(tx_result);
+            tx_records.push(TxRecord { action, tx });
+        }
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponsePrepareProposal {
@@ -413,8 +400,9 @@ where
 
             let tx_results = state_transition_results
                 .into_iter()
-                .map(|(_, value)| {
-                    let tx_result = value.try_into_tx_result(platform_version)?;
+                .map(|(_, execution_result)| {
+                    let tx_result =
+                        execution_result.try_into_platform_versioned(platform_version)?;
 
                     Ok(tx_result)
                 })
