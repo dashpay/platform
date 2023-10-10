@@ -6,7 +6,7 @@ use crate::strategy::{
     ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness,
     ValidatorVersionMigration,
 };
-use crate::verify_state_transitions::verify_state_transitions_were_executed;
+use crate::verify_state_transitions::verify_state_transitions_were_or_were_not_executed;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{BlockHash, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
@@ -24,7 +24,7 @@ use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use drive_abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
-use drive_abci::platform_types::epoch_info::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
+use drive_abci::platform_types::epoch_info::v0::EpochInfoV0;
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;
@@ -576,6 +576,7 @@ pub(crate) fn start_chain_for_strategy(
             quorums,
             current_quorum_hash,
             current_proposer_versions: None,
+            start_time_ms: 1681094380000,
             current_time_ms: 1681094380000,
         },
         strategy,
@@ -600,6 +601,7 @@ pub(crate) fn continue_chain_for_strategy(
         quorums,
         mut current_quorum_hash,
         current_proposer_versions,
+        start_time_ms,
         mut current_time_ms,
     } = chain_execution_parameters;
     let mut rng = match seed {
@@ -607,12 +609,12 @@ pub(crate) fn continue_chain_for_strategy(
         StrategyRandomness::RNGEntropy(rng) => rng,
     };
     let quorum_size = config.quorum_size;
-    let first_block_time = 0;
+    let first_block_time = start_time_ms;
     let mut current_identities = vec![];
-    let mut signer = SimpleSigner::default();
+    let mut signer = strategy.signer.clone().unwrap_or_default();
     let mut i = 0;
 
-    let blocks_per_epoch = EPOCH_CHANGE_TIME_MS_V0 / config.block_spacing_ms;
+    let blocks_per_epoch = config.execution.epoch_time_length_s * 1000 / config.block_spacing_ms;
 
     let proposer_versions = current_proposer_versions.unwrap_or(
         strategy.upgrading_info.as_ref().map(|upgrading_info| {
@@ -636,6 +638,9 @@ pub(crate) fn continue_chain_for_strategy(
 
     let mut validator_set_updates = BTreeMap::new();
 
+    let mut state_transitions_per_block = BTreeMap::new();
+    let mut state_transition_results_per_block = BTreeMap::new();
+
     for block_height in block_start..(block_start + block_count) {
         let epoch_info = EpochInfoV0::calculate(
             first_block_time,
@@ -647,6 +652,7 @@ pub(crate) fn continue_chain_for_strategy(
                 .last_committed_block_info()
                 .as_ref()
                 .map(|block_info| block_info.basic_info().time_ms),
+            config.execution.epoch_time_length_s,
         )
         .expect("should calculate epoch info");
 
@@ -676,6 +682,8 @@ pub(crate) fn continue_chain_for_strategy(
                 &mut rng,
             );
 
+        state_transitions_per_block.insert(block_height, state_transitions.clone());
+
         let proposed_version = proposer_versions
             .as_ref()
             .map(|proposer_versions| {
@@ -695,6 +703,7 @@ pub(crate) fn continue_chain_for_strategy(
             .unwrap_or(1);
 
         let MimicExecuteBlockOutcome {
+            state_transaction_results,
             withdrawal_transactions: mut withdrawals_this_block,
             validator_set_update,
             next_validator_set_hash,
@@ -709,8 +718,13 @@ pub(crate) fn continue_chain_for_strategy(
                 current_quorum_with_test_info,
                 proposed_version,
                 block_info,
+                strategy
+                    .failure_testing
+                    .as_ref()
+                    .map(|a| a.expect_errors_with_codes.clone())
+                    .unwrap_or_default(),
                 false,
-                state_transitions.clone(),
+                state_transitions,
                 MimicExecuteBlockOptions {
                     dont_finalize_block: strategy.dont_finalize_block(),
                 },
@@ -750,13 +764,15 @@ pub(crate) fn continue_chain_for_strategy(
 
         if strategy.verify_state_transition_results {
             //we need to verify state transitions
-            verify_state_transitions_were_executed(
+            verify_state_transitions_were_or_were_not_executed(
                 &abci_app,
                 &root_app_hash,
-                &state_transitions,
+                &state_transaction_results,
                 platform_version,
             );
         }
+
+        state_transition_results_per_block.insert(block_height, state_transaction_results);
 
         if let Some(query_strategy) = &strategy.query_testing {
             query_strategy.query_chain_for_strategy(
@@ -834,5 +850,6 @@ pub(crate) fn continue_chain_for_strategy(
         strategy,
         withdrawals: total_withdrawals,
         validator_set_updates,
+        state_transition_results_per_block,
     }
 }

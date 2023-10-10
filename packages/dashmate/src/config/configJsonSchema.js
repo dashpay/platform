@@ -77,7 +77,7 @@ module.exports = {
       properties: {
         level: {
           type: 'string',
-          enum: ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'],
+          enum: ['error', 'warn', 'info', 'debug', 'trace', 'silent'],
         },
         path: {
           type: 'string',
@@ -502,6 +502,10 @@ module.exports = {
                     format: {
                       type: 'string',
                       enum: ['plain', 'json'],
+                    },
+                    path: {
+                      type: ['string', 'null'],
+                      minLength: 1,
                     },
                   },
                   required: ['level', 'format'],

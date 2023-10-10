@@ -1297,6 +1297,7 @@ dependencies = [
  "prost 0.11.9",
  "rand",
  "regex",
+ "reopen",
  "rocksdb",
  "rust_decimal",
  "rust_decimal_macros",
@@ -3358,6 +3359,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2571463863a6bd50c32f94402933f03457a3fbaf697a707c5be741e459f08fd"
 dependencies = [
  "bytecheck",
+]
+
+[[package]]
+name = "reopen"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff42cec3acf85845f5b18b3cbb7fec619ccbd4a349f6ecbe1c62ab46d4d98293"
+dependencies = [
+ "autocfg",
 ]
 
 [[package]]

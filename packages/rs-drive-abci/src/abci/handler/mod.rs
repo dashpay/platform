@@ -40,14 +40,13 @@ mod execution_result;
 
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
-use itertools::Itertools;
 
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
-use tenderdash_abci::proto::abci::{self as proto, ExtendVoteExtension, ResponseException};
+use tenderdash_abci::proto::abci::{self as proto};
 use tenderdash_abci::proto::abci::{
     ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
@@ -71,8 +70,6 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::withdrawal::withdrawal_txs;
 use dpp::dashcore::hashes::Hash;
 use dpp::fee::SignedCredits;
-use dpp::platform_value::platform_value;
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use error::consensus::AbciResponseInfoGetter;
 use error::HandlerError;
@@ -81,11 +78,14 @@ impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
     C: CoreRPCLike,
 {
-    fn info(&self, request: proto::RequestInfo) -> Result<proto::ResponseInfo, ResponseException> {
+    fn info(
+        &self,
+        request: proto::RequestInfo,
+    ) -> Result<proto::ResponseInfo, proto::ResponseException> {
         let state_guard = self.platform.state.read().unwrap();
 
         if !tenderdash_abci::check_version(&request.abci_version) {
-            return Err(ResponseException::from(format!(
+            return Err(proto::ResponseException::from(format!(
                 "tenderdash requires ABCI version {}, our version is {}",
                 request.abci_version,
                 tenderdash_abci::proto::ABCI_VERSION
@@ -110,7 +110,7 @@ where
     fn init_chain(
         &self,
         request: RequestInitChain,
-    ) -> Result<ResponseInitChain, ResponseException> {
+    ) -> Result<ResponseInitChain, proto::ResponseException> {
         self.start_transaction();
         let chain_id = request.chain_id.to_string();
 
@@ -148,7 +148,7 @@ where
     fn prepare_proposal(
         &self,
         request: RequestPrepareProposal,
-    ) -> Result<ResponsePrepareProposal, ResponseException> {
+    ) -> Result<ResponsePrepareProposal, proto::ResponseException> {
         let _timer = crate::metrics::abci_request_duration("prepare_proposal");
 
         // We should get the latest CoreChainLock from core
@@ -172,11 +172,11 @@ where
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
             // We can't add this, as it slows down CI way too much
             // todo: find a way to re-enable this without destroying CI
-            // tracing::info!(
-            //     "chain lock update to height {} at block {}",
-            //     core_chain_lock_update.core_block_height,
-            //     request.height
-            // );
+            tracing::debug!(
+                "propose chain lock update to height {} at block {}",
+                core_chain_lock_update.core_block_height,
+                request.height
+            );
             block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
         }
 
@@ -203,7 +203,7 @@ where
         let current_protocol_version = state.current_protocol_version_in_consensus();
         drop(state);
         let platform_version = PlatformVersion::get(current_protocol_version)
-            .map_err(|e| ResponseException::from(Error::from(e)))?;
+            .map_err(|e| proto::ResponseException::from(Error::from(e)))?;
 
         // Running the proposal executes all the state transitions for the block
         let run_result = self
@@ -225,11 +225,11 @@ where
         let tx_results_and_records = state_transition_results
             .into_iter()
             .map(|(tx, result)| {
-                let tx_result = result.try_into_tx_result(&platform_version)?;
+                let tx_result = result.try_into_tx_result(platform_version)?;
 
                 let tx_record = if tx_result.code > 0 {
                     (
-                        None,
+                        tx_result,
                         TxRecord {
                             action: TxAction::Removed as i32,
                             tx,
@@ -237,7 +237,7 @@ where
                     )
                 } else {
                     (
-                        Some(tx_result),
+                        tx_result,
                         TxRecord {
                             action: TxAction::Unmodified as i32,
                             tx,
@@ -247,13 +247,11 @@ where
 
                 Ok(tx_record)
             })
-            .collect::<Result<Vec<(Option<ExecTxResult>, TxRecord)>, Error>>()
-            .map_err(|e| ResponseException::from(e))?;
+            .collect::<Result<Vec<(ExecTxResult, TxRecord)>, Error>>()
+            .map_err(proto::ResponseException::from)?;
 
-        let (tx_results, tx_records): (Vec<Option<ExecTxResult>>, Vec<TxRecord>) =
+        let (tx_results, tx_records): (Vec<ExecTxResult>, Vec<TxRecord>) =
             tx_results_and_records.into_iter().unzip();
-
-        let tx_results = tx_results.into_iter().flatten().collect();
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponsePrepareProposal {
@@ -279,7 +277,7 @@ where
     fn process_proposal(
         &self,
         mut request: RequestProcessProposal,
-    ) -> Result<ResponseProcessProposal, ResponseException> {
+    ) -> Result<ResponseProcessProposal, proto::ResponseException> {
         let _timer = crate::metrics::abci_request_duration("process_proposal");
 
         let mut block_execution_context_guard =
@@ -410,7 +408,7 @@ where
             let current_protocol_version = state.current_protocol_version_in_consensus();
             drop(state);
             let platform_version = PlatformVersion::get(current_protocol_version)
-                .map_err(|e| ResponseException::from(Error::from(e)))?;
+                .map_err(|e| proto::ResponseException::from(Error::from(e)))?;
 
             let tx_results = state_transition_results
                 .into_iter()
@@ -463,7 +461,7 @@ where
             Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
                 height, round, hex::encode(block_hash),
-                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(|block_hash| hex::encode(block_hash)).unwrap_or("None".to_string())
+                block_state_info.height(), block_state_info.round(), block_state_info.block_hash().map(hex::encode).unwrap_or("None".to_string())
             )))
                 .into())
         } else {
@@ -471,7 +469,7 @@ where
             let extensions = block_execution_context
                 .withdrawal_transactions()
                 .keys()
-                .map(|tx_id| ExtendVoteExtension {
+                .map(|tx_id| proto::ExtendVoteExtension {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
                     extension: tx_id.to_byte_array().to_vec(),
                 })
@@ -512,7 +510,7 @@ where
         let expected = block_execution_context
             .withdrawal_transactions()
             .keys()
-            .map(|tx_id| ExtendVoteExtension {
+            .map(|tx_id| proto::ExtendVoteExtension {
                 r#type: VoteExtensionType::ThresholdRecover as i32,
                 extension: tx_id.to_byte_array().to_vec(),
             })
@@ -567,7 +565,7 @@ where
     fn finalize_block(
         &self,
         request: RequestFinalizeBlock,
-    ) -> Result<ResponseFinalizeBlock, ResponseException> {
+    ) -> Result<ResponseFinalizeBlock, proto::ResponseException> {
         let _timer = crate::metrics::abci_request_duration("finalize_block");
 
         let transaction_guard = self.transaction.read().unwrap();
@@ -606,7 +604,10 @@ where
         })
     }
 
-    fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
+    fn check_tx(
+        &self,
+        request: RequestCheckTx,
+    ) -> Result<ResponseCheckTx, proto::ResponseException> {
         let _timer = crate::metrics::abci_request_duration("check_tx");
 
         let RequestCheckTx { tx, .. } = request;
@@ -617,23 +618,11 @@ where
                 let first_consensus_error = validation_result.errors.first();
 
                 let (code, info) = if let Some(consensus_error) = first_consensus_error {
-                    let consensus_error_bytes = consensus_error
-                        .serialize_to_bytes_with_platform_version(platform_version)
-                        .map_err(|e| ResponseException::from(Error::Protocol(e)))?;
-
-                    let error_data_buffer = platform_value!({
-                        "data": {
-                            "serializedError": consensus_error_bytes
-                        }
-                    })
-                    .to_cbor_buffer()
-                    .map_err(|e| ResponseException::from(Error::Protocol(e.into())))?;
-
                     (
                         consensus_error.code(),
                         consensus_error
                             .response_info_for_version(platform_version)
-                            .map_err(ResponseException::from)?,
+                            .map_err(proto::ResponseException::from)?,
                     )
                 } else {
                     // If there are no execution errors the code will be 0
@@ -673,12 +662,12 @@ where
         }
     }
 
-    fn query(&self, request: RequestQuery) -> Result<ResponseQuery, ResponseException> {
+    fn query(&self, request: RequestQuery) -> Result<ResponseQuery, proto::ResponseException> {
         let _timer = crate::metrics::abci_request_duration("query");
 
         let RequestQuery { data, path, .. } = &request;
 
-        // TODO: It must be ResponseException
+        // TODO: It must be proto::ResponseException
         let Some(platform_version) = PlatformVersion::get_maybe_current() else {
             let handler_error =
                 HandlerError::Unavailable("platform is not initialized".to_string());

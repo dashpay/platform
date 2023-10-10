@@ -18,6 +18,7 @@ pub mod document_types {
         pub mod properties {
             pub const LABEL: &str = "label";
             pub const NORMALIZED_LABEL: &str = "normalizedLabel";
+            pub const PARENT_DOMAIN_NAME: &str = "parentDomainName";
             pub const NORMALIZED_PARENT_DOMAIN_NAME: &str = "normalizedParentDomainName";
             pub const PREORDER_SALT: &str = "preorderSalt";
             pub const ALLOW_SUBDOMAINS: &str = "subdomainRules.allowSubdomains";

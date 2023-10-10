@@ -30,7 +30,6 @@ function getMainnetConfigFactory(homeDir, getBaseConfig) {
         indexes: false,
         log: {
           file: {
-            categories: [],
             path: homeDir.joinPath('logs', 'mainnet', 'core.log'),
           },
         },

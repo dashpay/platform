@@ -10,7 +10,7 @@ Configuration is implemented using environment variables. Environment variables 
 
 ### Logging
 
-The logging configuration allows you to configure multiple logging destinations. Each destination is defined using a series of environment variables prefixed with ABCI_LOG_*key*, where *key* is an arbitrary name for the destination.
+The logging configuration allows you to configure multiple logging destinations. Each destination is defined using a series of environment variables prefixed with ABCI_LOG_*key*_*option*, where *key* is an arbitrary name for the destination.
 
 The log destination configuration consists of the following parameters:
 
@@ -22,22 +22,31 @@ Specifies the destination of the logs. It can have one of the following values:
 * **stderr**: Logs will be sent to the standard error
 * An absolute path to an existing directory where logs will be stored, for example `/var/log/dash/`
 
-#### VERBOSITY (optional)
+#### LEVEL (optional)
 
-Specifies the verbosity level of the logs. It is an integer value ranging from 0 to 5. Defaults to 0. Higher values indicate more detailed and verbose logs. For more information on verbosity levels, refer to the `-v` option in the `drive-abci --help` command.
+Specifies the logs verbosity level preset:
+
+* **silent**: No logs.
+* **custom**: Uses RUST_LOG env or info level if not set.
+* **error**: Only errors.
+* **warn**: Warnings and errors. Errors for 3rd party dependencies.
+* **info**: Info level and lower. Warnings for 3rd party dependencies. Default.
+* **debug**: Debug level and lower. Info level for 3rd party dependencies.
+* **trace**: Trace level and lower. Debug level for 3rd party dependencies.
+* **paranoid**: Trace level for everything.
 
 #### COLOR (optional)
 
-Specifies whether or not to use colorful output for the logs. It is an optional boolean parameter. If not provided, the output colorization will be autodetected.
+Specifies whether to use colorful output for the logs. It is an optional boolean parameter. If not provided, the output colorization will be autodetected.
 
 #### FORMAT (optional)
 
 Specifies the output format to use for the logs. It can have one of the following values:
 
-* **Full**: Logs will be formatted with full details.
-* **Compact**: Logs will be formatted in a compact manner.
-* **Pretty**: Logs will be formatted in a human-readable and visually appealing manner.
-* **Json**: Logs will be formatted in JSON format.
+* **full**: Logs will be formatted with full details.
+* **compact**: Logs will be formatted in a compact manner.
+* **pretty**: Logs will be formatted in a human-readable and visually appealing manner.
+* **json**: Logs will be formatted in JSON format.
 
 For more detailed description of different formats, refer to the [tracing-subscriber](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/format/index.html#formatters) documentation.
 
@@ -54,7 +63,7 @@ To configure multiple logging destinations, each destination should have its own
 For example, to configure a logging destination with the key "example", you would set the following environment variables:
 
 * ABCI_LOG_EXAMPLE_DESTINATION: Specifies the destination of logs for the "example" destination.
-* ABCI_LOG_EXAMPLE_VERBOSITY: Specifies the verbosity level for the "example" destination.
+* ABCI_LOG_EXAMPLE_LEVEL: Specifies the verbosity level for the "example" destination.
 * ABCI_LOG_EXAMPLE_COLOR: Specifies whether to use colorful output for the "example" destination (optional).
 * ABCI_LOG_EXAMPLE_FORMAT: Specifies the output format for the "example" destination (optional).
 * ABCI_LOG_EXAMPLE_MAX_FILES: Specifies the maximum number of daily log files to store for the "example" destination (optional).
@@ -67,9 +76,9 @@ Here's an example configuration for a logging destination named "EXAMPLE":
 
 ```bash
 export ABCI_LOG_EXAMPLE_DESTINATION="/var/log/example"
-export ABCI_LOG_EXAMPLE_VERBOSITY=3
+export ABCI_LOG_EXAMPLE_LEVEL=debug
 export ABCI_LOG_EXAMPLE_COLOR=false
-export ABCI_LOG_EXAMPLE_FORMAT="Pretty"
+export ABCI_LOG_EXAMPLE_FORMAT="pretty"
 export ABCI_LOG_EXAMPLE_MAX_FILES=10
 ```
 

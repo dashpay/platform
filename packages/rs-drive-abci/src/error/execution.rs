@@ -21,7 +21,7 @@ pub enum ExecutionError {
 
     /// A conversion error occurred.
     #[error("conversion error: {0}")]
-    Conversion(&'static str),
+    Conversion(String),
 
     /// The platform encountered a corrupted code execution error.
     #[error("platform corrupted code execution error: {0}")]

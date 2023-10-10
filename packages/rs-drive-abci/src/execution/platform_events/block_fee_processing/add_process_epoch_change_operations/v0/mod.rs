@@ -36,7 +36,7 @@
 use std::option::Option::None;
 
 use dpp::block::epoch::Epoch;
-use dpp::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_ERAS};
 use dpp::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
 use dpp::version::PlatformVersion;
 use drive::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -61,7 +61,7 @@ use drive::fee_pools::epochs::operations_factory::EpochOperations;
 /// the sum of the execution of all state transitions contained within the block. In order to
 /// avoid altering participating masternode identity balances every block and distribute fees
 /// evenly, the concept of pools is introduced. We will also introduce the concepts of an Epoch
-/// and the Epoch Year that are both covered later in this document. As the block executes state
+/// and the Epoch Era that are both covered later in this document. As the block executes state
 /// transitions, processing and storage fees are accumulated, as well as a list of refunded fees
 /// from various Epochs and fee multipliers. When there are no more state transitions to execute
 /// we can say the block has ended its state transition execution phase. The system will then add
@@ -70,8 +70,8 @@ use drive::fee_pools::epochs::operations_factory::EpochOperations;
 
 impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Adds operations to the GroveDB batch which initialize the current epoch
-    /// as well as the current+1000 epoch, then distributes storage fees accumulated
-    /// during the previous epoch.
+    /// as well as the current+total epochs (40*50 for mainnet) epoch, then distributes storage fees
+    /// accumulated during the previous epoch.
     ///
     /// `DistributionLeftoverCredits` will be returned, except if we are at Genesis Epoch.
     pub(super) fn add_process_epoch_change_operations_v0(
@@ -92,7 +92,9 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             .map_or(GENESIS_EPOCH_INDEX, |i| i + 1);
 
         for epoch_index in last_initiated_epoch_index..=epoch_info.current_epoch_index() {
-            let next_thousandth_epoch = Epoch::new(epoch_index + PERPETUAL_STORAGE_EPOCHS)?;
+            let next_thousandth_epoch = Epoch::new(
+                epoch_index + perpetual_storage_epochs(self.config.drive.epochs_per_era),
+            )?;
             next_thousandth_epoch.add_init_empty_without_storage_operations(&mut inner_batch);
         }
 
@@ -150,7 +152,7 @@ mod tests {
         use super::*;
         use crate::execution::types::block_fees::v0::{BlockFeesV0, BlockFeesV0Methods};
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
-        use crate::platform_types::epoch_info::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
+        use crate::platform_types::epoch_info::v0::EpochInfoV0;
         use dpp::block::block_info::BlockInfo;
         use dpp::fee::epoch::CreditsPerEpoch;
 
@@ -201,7 +203,8 @@ mod tests {
                 1, 1, 1, 1,
             ];
 
-            let block_time_ms = genesis_time_ms + epoch_index as u64 * EPOCH_CHANGE_TIME_MS_V0;
+            let block_time_ms = genesis_time_ms
+                + epoch_index as u64 * platform.config.execution.epoch_time_length_s * 1000;
 
             let block_info = BlockStateInfoV0 {
                 height: block_height,
@@ -214,10 +217,13 @@ mod tests {
                 app_hash: None,
             };
 
-            let epoch_info =
-                EpochInfoV0::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
-                    .expect("should calculate epoch info")
-                    .into();
+            let epoch_info = EpochInfoV0::from_genesis_time_and_block_info(
+                genesis_time_ms,
+                &block_info,
+                platform.config.execution.epoch_time_length_s,
+            )
+            .expect("should calculate epoch info")
+            .into();
 
             let block_fees = BlockFeesV0 {
                 storage_fee: 1000000000,
@@ -251,7 +257,10 @@ mod tests {
                 .expect("should apply batch");
 
             // Next thousandth epoch should be created
-            let next_thousandth_epoch = Epoch::new(epoch_index + PERPETUAL_STORAGE_EPOCHS).unwrap();
+            let next_thousandth_epoch = Epoch::new(
+                epoch_index + perpetual_storage_epochs(platform.config.drive.epochs_per_era),
+            )
+            .unwrap();
 
             let has_epoch_tree_exists = platform
                 .drive

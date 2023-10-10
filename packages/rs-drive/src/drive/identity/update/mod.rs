@@ -31,7 +31,14 @@ mod tests {
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block, true, None, platform_version)
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &block,
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to insert identity");
 
             let new_keys_to_add =
@@ -84,7 +91,14 @@ mod tests {
             let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block, true, None, platform_version)
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &block,
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to insert identity");
 
             let new_keys_to_add =
@@ -196,7 +210,14 @@ mod tests {
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block_info, true, None, platform_version)
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to insert identity");
 
             let new_keys_to_add = IdentityPublicKey::random_keys(5, 2, Some(15), platform_version);
@@ -317,6 +338,7 @@ mod tests {
             drive
                 .add_new_identity(
                     identity.clone(),
+                    false,
                     &BlockInfo::default(),
                     true,
                     None,
@@ -374,7 +396,14 @@ mod tests {
             let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
-                .add_new_identity(identity.clone(), &block_info, true, None, platform_version)
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                )
                 .expect("expected to insert identity");
 
             let revision = 2;
