@@ -206,6 +206,13 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
               options.platform.drive.abci.log.prettyFile.level = 'error';
             }
 
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+              options.platform.drive.tenderdash.genesis
+                .initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+            }
+
             if (options.network !== NETWORK_MAINNET) {
               options.core.docker.image = base.get('core.docker.image');
             }
