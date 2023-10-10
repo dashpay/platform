@@ -61,7 +61,7 @@ use drive::fee_pools::epochs::operations_factory::EpochOperations;
 /// the sum of the execution of all state transitions contained within the block. In order to
 /// avoid altering participating masternode identity balances every block and distribute fees
 /// evenly, the concept of pools is introduced. We will also introduce the concepts of an Epoch
-/// and the Epoch Year that are both covered later in this document. As the block executes state
+/// and the Epoch Era that are both covered later in this document. As the block executes state
 /// transitions, processing and storage fees are accumulated, as well as a list of refunded fees
 /// from various Epochs and fee multipliers. When there are no more state transitions to execute
 /// we can say the block has ended its state transition execution phase. The system will then add
@@ -130,15 +130,18 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 (None, None)
             };
 
-        let payouts = self
-            .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
+        let payouts = if epoch_info.is_epoch_change() {
+            self.add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                 epoch_info.current_epoch_index(),
                 cached_current_epoch_start_block_height,
                 cached_current_epoch_start_block_core_height,
                 transaction,
                 &mut batch,
                 platform_version,
-            )?;
+            )?
+        } else {
+            None
+        };
 
         let fees_in_pools = self.add_distribute_block_fees_into_pools_operations(
             &current_epoch,
@@ -184,7 +187,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 .map(|outcome| outcome.refunded_epochs_count),
         };
 
-        if self.config.verify_sum_trees {
+        if self.config.execution.verify_sum_trees {
             // Verify sum trees
             let credits_verified = self
                 .drive
@@ -217,6 +220,7 @@ mod tests {
     use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
     use rust_decimal::prelude::ToPrimitive;
 
+    use crate::config::ExecutionConfig;
     use crate::{config::PlatformConfig, test::helpers::setup::TestPlatformBuilder};
     use drive::common::identities::create_test_masternode_identities;
 
@@ -224,8 +228,8 @@ mod tests {
         use super::*;
         use crate::execution::types::block_fees::v0::BlockFeesV0;
         use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
-        use crate::platform_types::epoch_info::v0::{EpochInfoV0, EPOCH_CHANGE_TIME_MS_V0};
-        use dpp::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX};
+        use crate::platform_types::epoch_info::v0::EpochInfoV0;
+        use dpp::fee::epoch::{perpetual_storage_epochs, CreditsPerEpoch, GENESIS_EPOCH_INDEX};
 
         /// Process and validate block fees
         pub fn process_and_validate_block_fees<C>(
@@ -240,8 +244,9 @@ mod tests {
             let current_epoch = Epoch::new(epoch_index).unwrap();
             let platform_version = PlatformVersion::latest();
 
-            let block_time_ms =
-                genesis_time_ms + epoch_index as u64 * EPOCH_CHANGE_TIME_MS_V0 + block_height;
+            let block_time_ms = genesis_time_ms
+                + epoch_index as u64 * platform.config.execution.epoch_time_length_s * 1000
+                + block_height;
 
             let block_info = BlockStateInfoV0 {
                 height: block_height,
@@ -254,10 +259,13 @@ mod tests {
                 app_hash: None,
             };
 
-            let epoch_info =
-                EpochInfoV0::from_genesis_time_and_block_info(genesis_time_ms, &block_info)
-                    .expect("should calculate epoch info")
-                    .into();
+            let epoch_info = EpochInfoV0::from_genesis_time_and_block_info(
+                genesis_time_ms,
+                &block_info,
+                platform.config.execution.epoch_time_length_s,
+            )
+            .expect("should calculate epoch info")
+            .into();
 
             let block_fees: BlockFees = BlockFeesV0 {
                 storage_fee: 100000,
@@ -289,9 +297,14 @@ mod tests {
                     assert_eq!(aggregated_storage_fees, block_fees.storage_fee());
                 } else {
                     // Assuming leftovers
+                    // we have perpetual_storage_epochs(platform.drive.config.epochs_per_era) as
+                    // there could be 1 per epoch left over
                     assert!(
                         block_fees.storage_fee() <= aggregated_storage_fees
-                            && aggregated_storage_fees < block_fees.storage_fee() + 1000
+                            && aggregated_storage_fees
+                                < block_fees.storage_fee()
+                                    + perpetual_storage_epochs(platform.drive.config.epochs_per_era)
+                                        as u64
                     );
                 };
             } else {
@@ -344,7 +357,10 @@ mod tests {
         // the sum trees
         let platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig {
-                verify_sum_trees: false,
+                execution: ExecutionConfig {
+                    verify_sum_trees: false,
+                    ..Default::default()
+                },
                 ..Default::default()
             })
             .build_with_mock_rpc()

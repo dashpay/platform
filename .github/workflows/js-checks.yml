@@ -27,13 +27,14 @@ jobs:
   lint:
     name: Linting
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     timeout-minutes: 15
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Login to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -57,7 +58,7 @@ jobs:
     name: Tests
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 120
-    if: ${{ !inputs.skip-tests }}
+    if: ${{ !inputs.skip-tests && ( github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft ) }}
     steps:
       - name: Setup Firefox
         uses: browser-actions/setup-firefox@latest
@@ -66,7 +67,7 @@ jobs:
           firefox-version: "latest"
 
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -74,7 +75,7 @@ jobs:
         uses: chetan/git-restore-mtime-action@v2
 
       - name: Login to DockerHub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -104,7 +105,7 @@ jobs:
         if: ${{ !inputs.start-local-network }}
 
       - name: Set up Docker BuildX
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
         if: ${{ inputs.start-local-network }}
         with:
           install: true
@@ -122,7 +123,7 @@ jobs:
         if: ${{ inputs.start-local-network }}
         uses: dcginfra/buildkit-cache-dance/inject@main
         with:
-          bucket: multi-runner-linux-x64-platform-cache-gy9micic
+          bucket: multi-runner-linux-x64-platform-cache-ui535z23
           mounts: |
             cargo_registry_index
             cargo_registry_cache
@@ -176,7 +177,7 @@ jobs:
         if: ${{ inputs.start-local-network }}
         uses: dcginfra/buildkit-cache-dance/extract@main
         with:
-          bucket: multi-runner-linux-x64-platform-cache-gy9micic
+          bucket: multi-runner-linux-x64-platform-cache-ui535z23
           mounts: |
             cargo_registry_index
             cargo_registry_cache

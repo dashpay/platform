@@ -30,7 +30,8 @@ use crate::version::drive_versions::{
     DriveContractProveMethodVersions, DriveContractUpdateMethodVersions,
     DriveCreditPoolEpochsMethodVersions, DriveCreditPoolMethodVersions,
     DriveCreditPoolPendingEpochRefundsMethodVersions,
-    DriveCreditPoolStorageFeeDistributionPoolMethodVersions, DriveDocumentDeleteMethodVersions,
+    DriveCreditPoolStorageFeeDistributionPoolMethodVersions,
+    DriveDataContractOperationMethodVersions, DriveDocumentDeleteMethodVersions,
     DriveDocumentEstimationCostsMethodVersions, DriveDocumentIndexUniquenessMethodVersions,
     DriveDocumentInsertMethodVersions, DriveDocumentMethodVersions,
     DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
@@ -47,6 +48,7 @@ use crate::version::drive_versions::{
     DriveIdentityProveMethodVersions, DriveIdentityUpdateMethodVersions,
     DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
     DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveProveMethodVersions,
+    DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions,
     DriveStructureVersion, DriveSystemEstimationCostsMethodVersions,
     DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
     DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
@@ -367,6 +369,14 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 convert_drive_operations_to_grove_operations: 0,
                 apply_drive_operations: 0,
             },
+            state_transitions: DriveStateTransitionMethodVersions {
+                operations: DriveStateTransitionOperationMethodVersions {
+                    finalization_tasks: 0,
+                    contracts: DriveDataContractOperationMethodVersions {
+                        finalization_tasks: 0,
+                    },
+                },
+            },
         },
         grove_methods: DriveGroveMethodVersions {
             basic: DriveGroveBasicMethodVersions {
@@ -374,6 +384,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 grove_insert_empty_tree: 0,
                 grove_insert_empty_sum_tree: 0,
                 grove_insert_if_not_exists: 0,
+                grove_clear: 0,
                 grove_delete: 0,
                 grove_get_raw: 0,
                 grove_get_raw_optional: 0,
@@ -486,7 +497,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             identity_credit_withdrawal: DriveAbciIdentityCreditWithdrawalMethodVersions {
                 build_withdrawal_transactions_from_documents: 0,
                 fetch_and_prepare_unsigned_withdrawal_transactions: 0,
-                fetch_core_block_transactions: 0,
+                fetch_transactions_block_inclusion_status: 0,
                 pool_withdrawals_into_transactions_queue: 0,
                 update_broadcasted_withdrawal_transaction_statuses: 0,
             },

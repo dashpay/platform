@@ -38,7 +38,7 @@ impl Drive {
 
         if already_exists {
             return Err(Error::Identity(IdentityError::UniqueKeyAlreadyExists(
-                "the key already exists in the unique set",
+                format!("the key already exists in the unique set {public_key_hash:?}"),
             )));
         }
 
@@ -51,7 +51,7 @@ impl Drive {
 
         if already_exists {
             return Err(Error::Identity(IdentityError::UniqueKeyAlreadyExists(
-                "the key already exists in the non unique set",
+                format!("the key already exists in the non unique set {public_key_hash:?}"),
             )));
         }
 

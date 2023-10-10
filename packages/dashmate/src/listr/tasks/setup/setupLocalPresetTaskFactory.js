@@ -223,26 +223,23 @@ function setupLocalPresetTaskFactory(
                   config.set('platform.drive.tenderdash.p2p.port', config.get('platform.drive.tenderdash.p2p.port') + (i * 100));
                   config.set('platform.drive.tenderdash.rpc.port', config.get('platform.drive.tenderdash.rpc.port') + (i * 100));
                   config.set('platform.drive.tenderdash.pprof.port', config.get('platform.drive.tenderdash.pprof.port') + (i * 100));
+                  config.set('platform.drive.tenderdash.metrics.port', config.get('platform.drive.tenderdash.metrics.port') + (i * 100));
                   config.set('platform.drive.tenderdash.moniker', config.name);
 
                   config.set('platform.drive.tenderdash.mode', 'validator');
 
                   // Setup logs
+                  const drivePrettyFilePath = homeDir.joinPath('logs', config.getName(), 'drive-pretty.log');
+                  config.set('platform.drive.abci.log.prettyFile.path', drivePrettyFilePath);
+
+                  const driveJsonFilePath = homeDir.joinPath('logs', config.getName(), 'drive-json.log');
+                  config.set('platform.drive.abci.log.jsonFile.path', driveJsonFilePath);
+
                   if (ctx.debugLogs) {
                     config.set('platform.drive.abci.log.stdout.level', 'trace');
                     config.set('platform.drive.abci.log.prettyFile.level', 'trace');
 
                     config.set('platform.drive.tenderdash.log.level', 'debug');
-                  }
-
-                  if (!config.get('platform.drive.abci.log.prettyFile.path')) {
-                    const drivePrettyLogFile = homeDir.joinPath('logs', config.getName(), 'drive_pretty.log');
-                    config.set('platform.drive.abci.log.prettyFile.path', drivePrettyLogFile);
-                  }
-
-                  if (!config.get('platform.drive.abci.log.jsonFile.path')) {
-                    const driveJsonLogFile = homeDir.joinPath('logs', config.getName(), 'drive_json.log');
-                    config.set('platform.drive.abci.log.jsonFile.path', driveJsonLogFile);
                   }
 
                   config.set('platform.dpns.masterPublicKey', dpnsDerivedMasterPrivateKey.privateKey.toPublicKey().toString());

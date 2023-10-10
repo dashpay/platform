@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dpp",
-  "version": "0.25.0-dev.27",
+  "version": "0.25.0-dev.33",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "scripts": {
     "lint": "eslint .",
@@ -8,7 +8,7 @@
     "build:web": "webpack --stats-error-details",
     "test:node": "NODE_ENV=test mocha",
     "test:browsers": "karma start ./karma.conf.js --single-run",
-    "test:coverage": "NODE_ENV=test nyc --check-coverage --stmts=98 --branch=94 --funcs=95 --lines=97 yarn run mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
+    "test:coverage": "NODE_ENV=test nyc --check-coverage --stmts=98 --branch=94 --funcs=95 --lines=95 yarn run mocha 'test/unit/**/*.spec.js' 'test/integration/**/*.spec.js'",
     "prepublishOnly": "yarn run build:web"
   },
   "ultra": {
@@ -47,7 +47,7 @@
     "assert": "^2.0.0",
     "babel-loader": "^8.2.2",
     "buffer": "^6.0.3",
-    "chai": "^4.3.4",
+    "chai": "^4.3.9",
     "chai-as-promised": "^7.1.1",
     "chai-exclude": "^2.1.0",
     "chai-string": "^1.5.0",

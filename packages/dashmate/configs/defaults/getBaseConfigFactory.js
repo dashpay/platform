@@ -65,7 +65,7 @@ function getBaseConfigFactory(homeDir) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:20.0.0-alpha.6',
+          image: 'dashpay/dashd:20.0.0-beta.4',
         },
         p2p: {
           port: 9999,
@@ -176,11 +176,12 @@ function getBaseConfigFactory(homeDir) {
             validatorSet: {
               llmqType: 4,
             },
+            epochTime: 788400,
           },
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:0.13.1',
+              image: 'dashpay/tenderdash:0.13.2',
             },
             p2p: {
               port: 26656,
@@ -194,6 +195,10 @@ function getBaseConfigFactory(homeDir) {
               enabled: false,
               port: 6060,
             },
+            metrics: {
+              enabled: false,
+              port: 26660,
+            },
             consensus: {
               createEmptyBlocks: true,
               createEmptyBlocksInterval: '3m',
@@ -201,6 +206,7 @@ function getBaseConfigFactory(homeDir) {
             log: {
               level: 'debug',
               format: 'plain',
+              path: null,
             },
             node: {
               id: null,

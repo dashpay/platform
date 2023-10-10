@@ -13,6 +13,9 @@ use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 
+use crate::drive::batch::drive_op_batch::finalize_task::{
+    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
+};
 use std::collections::HashMap;
 
 impl Drive {
@@ -49,7 +52,14 @@ impl Drive {
         } else {
             Some(HashMap::new())
         };
+
+        let mut finalize_tasks: Vec<DriveOperationFinalizeTask> = Vec::new();
+
         for drive_op in operations {
+            if let Some(tasks) = drive_op.finalization_tasks(platform_version)? {
+                finalize_tasks.extend(tasks);
+            }
+
             low_level_operations.append(&mut drive_op.into_low_level_drive_operations(
                 self,
                 &mut estimated_costs_only_with_layer_info,
@@ -58,7 +68,9 @@ impl Drive {
                 platform_version,
             )?);
         }
+
         let mut cost_operations = vec![];
+
         self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
@@ -66,10 +78,17 @@ impl Drive {
             &mut cost_operations,
             &platform_version.drive,
         )?;
+
+        // Execute drive operation callbacks after updating state
+        for task in finalize_tasks {
+            task.execute(self, platform_version);
+        }
+
         Drive::calculate_fee(
             None,
             Some(cost_operations),
             &block_info.epoch,
+            self.config.epochs_per_era,
             platform_version,
         )
     }

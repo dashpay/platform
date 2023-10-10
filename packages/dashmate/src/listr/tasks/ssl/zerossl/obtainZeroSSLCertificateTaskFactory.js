@@ -189,10 +189,12 @@ function obtainZeroSSLCertificateTaskFactory(
         skip: (ctx) => ctx.certificate && !['pending_validation', 'draft'].includes(ctx.certificate.status),
         task: async (ctx) => {
           const validationResponse = ctx.certificate.validation.other_methods[externalIp];
-          const route = validationResponse.file_validation_url_http.replace(`http://${externalIp}`, '');
-          const body = validationResponse.file_validation_content.join('\\n');
 
-          await verificationServer.setup(config, route, body);
+          await verificationServer.setup(
+            config,
+            validationResponse.file_validation_url_http,
+            validationResponse.file_validation_content,
+          );
         },
       },
       {
@@ -213,7 +215,7 @@ function obtainZeroSSLCertificateTaskFactory(
                 retry = await task.prompt({
                   type: 'toggle',
                   header: chalk`  An error occurred during verification: {red ${e.message}}
-  
+
     Please ensure that port 80 on your public IP address ${externalIp} is open
     for incoming HTTP connections. You may need to configure your firewall to
     ensure this port is accessible from the public internet. If you are using

@@ -12,7 +12,7 @@ use dpp::{bls_signatures, ed25519_dalek, ProtocolError};
 use std::collections::HashMap;
 
 /// This simple signer is only to be used in tests
-#[derive(Default, Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct SimpleSigner {
     /// Private keys is a map from the public key to the Private key bytes
     pub private_keys: HashMap<IdentityPublicKey, Vec<u8>>,

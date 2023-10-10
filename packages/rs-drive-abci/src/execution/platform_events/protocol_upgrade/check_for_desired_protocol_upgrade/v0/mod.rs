@@ -27,6 +27,7 @@ impl<C> Platform<C> {
                 .ok_or(Error::Execution(ExecutionError::Overflow(
                     "overflow for required block count",
                 )))?;
+
         // if we are at an epoch change, check to see if over 75% of blocks of previous epoch
         // were on the future version
         let mut cache = self.drive.cache.write().unwrap();
@@ -46,6 +47,7 @@ impl<C> Platform<C> {
                     .collect::<Vec<ProtocolVersion>>()
             })
             .unwrap_or_default();
+        drop(cache);
 
         if versions_passing_threshold.len() > 1 {
             return Err(Error::Execution(

@@ -77,7 +77,7 @@ module.exports = {
       properties: {
         level: {
           type: 'string',
-          enum: ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'],
+          enum: ['error', 'warn', 'info', 'debug', 'trace', 'silent'],
         },
         path: {
           type: 'string',
@@ -442,9 +442,13 @@ module.exports = {
                   additionalProperties: false,
                   required: ['llmqType'],
                 },
+                epochTime: {
+                  type: 'integer',
+                  minimum: 180,
+                },
               },
               additionalProperties: false,
-              required: ['docker', 'log', 'validatorSet'],
+              required: ['docker', 'log', 'validatorSet', 'epochTime'],
             },
             tenderdash: {
               type: 'object',
@@ -503,6 +507,10 @@ module.exports = {
                       type: 'string',
                       enum: ['plain', 'json'],
                     },
+                    path: {
+                      type: ['string', 'null'],
+                      minLength: 1,
+                    },
                   },
                   required: ['level', 'format'],
                   additionalProperties: false,
@@ -518,6 +526,20 @@ module.exports = {
                   additionalProperties: false,
                 },
                 pprof: {
+                  type: 'object',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                    },
+                    port: {
+                      $ref: '#/definitions/port',
+                    },
+                  },
+                  required: ['enabled', 'port'],
+                  additionalProperties: false,
+                },
+                metrics: {
+                  description: 'Prometheus metrics',
                   type: 'object',
                   properties: {
                     enabled: {
@@ -549,7 +571,7 @@ module.exports = {
                   type: 'object',
                 },
               },
-              required: ['mode', 'docker', 'p2p', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis'],
+              required: ['mode', 'docker', 'p2p', 'consensus', 'log', 'rpc', 'pprof', 'node', 'moniker', 'genesis', 'metrics'],
               additionalProperties: false,
             },
           },

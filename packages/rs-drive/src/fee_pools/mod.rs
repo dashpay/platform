@@ -38,7 +38,7 @@ use crate::fee_pools::epochs_root_tree_key_constants::{
 };
 use dpp::balances::credits::Creditable;
 use dpp::block::epoch::{Epoch, EpochIndex};
-use dpp::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
+use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX};
 use dpp::fee::Credits;
 use grovedb::batch::GroveDbOp;
 use grovedb::Element;
@@ -49,7 +49,10 @@ pub mod epochs;
 pub mod epochs_root_tree_key_constants;
 
 /// Adds the operations to groveDB op batch to create the fee pool trees
-pub fn add_create_fee_pool_trees_operations(batch: &mut GroveDbOpBatch) -> Result<(), Error> {
+pub fn add_create_fee_pool_trees_operations(
+    batch: &mut GroveDbOpBatch,
+    epochs_per_era: u16,
+) -> Result<(), Error> {
     // Init storage credit pool
     batch.push(update_storage_fee_distribution_pool_operation(0)?);
 
@@ -58,9 +61,10 @@ pub fn add_create_fee_pool_trees_operations(batch: &mut GroveDbOpBatch) -> Resul
 
     add_create_pending_epoch_refunds_tree_operations(batch);
 
-    // We need to insert 50 years worth of epochs,
-    // with 20 epochs per year that's 1000 epochs
-    for i in GENESIS_EPOCH_INDEX..PERPETUAL_STORAGE_EPOCHS {
+    // We need to insert 50 era worth of epochs,
+    // with 40 epochs per era that's 2000 epochs
+    // however this is configurable
+    for i in GENESIS_EPOCH_INDEX..perpetual_storage_epochs(epochs_per_era) {
         let epoch = Epoch::new(i)?;
         epoch.add_init_empty_operations(batch)?;
     }
@@ -123,7 +127,9 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let transaction = drive.grove.start_transaction();
 
-            for epoch_index in 0..1000 {
+            let perpetual_storage_epochs = perpetual_storage_epochs(drive.config.epochs_per_era);
+
+            for epoch_index in 0..perpetual_storage_epochs {
                 let epoch = Epoch::new(epoch_index).unwrap();
 
                 let storage_fee = drive
@@ -137,7 +143,7 @@ mod tests {
                 assert_eq!(storage_fee, 0);
             }
 
-            let epoch = Epoch::new(1000).unwrap(); // 1001th epochs pool
+            let epoch = Epoch::new(perpetual_storage_epochs).unwrap(); // 1001th epochs pool
 
             let result = drive.get_epoch_storage_credits_for_distribution(
                 &epoch,

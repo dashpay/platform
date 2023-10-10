@@ -889,14 +889,14 @@ mod tests {
             .get(&0)
             .unwrap();
 
-        assert_eq!(*removed_credits, 41618132);
+        assert_eq!(*removed_credits, 41827688);
         let refund_equivalent_bytes = removed_credits.to_unsigned()
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         assert!(added_bytes > refund_equivalent_bytes);
-        assert_eq!(refund_equivalent_bytes, 1541); // we refunded 1540 instead of 1556
+        assert_eq!(refund_equivalent_bytes, 1549); // we refunded 1549 instead of 1556
     }
 
     #[test]
@@ -984,6 +984,6 @@ mod tests {
 
         assert!(fee_result.fee_refunds.0.is_empty());
         assert_eq!(fee_result.storage_fee, 0);
-        assert_eq!(fee_result.processing_fee, 147230580);
+        assert_eq!(fee_result.processing_fee, 145470580);
     }
 }

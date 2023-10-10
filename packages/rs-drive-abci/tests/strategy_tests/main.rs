@@ -75,12 +75,17 @@ mod tests {
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::document_type::random_document::{
+        DocumentFieldFillSize, DocumentFieldFillType,
+    };
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::serialization::PlatformDeserializable;
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
-    use drive_abci::config::PlatformTestConfig;
+    use drive_abci::config::{ExecutionConfig, PlatformTestConfig};
+    use drive_abci::logging::LogLevelPreset;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
     use itertools::Itertools;
@@ -116,6 +121,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -133,11 +139,15 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..ExecutionConfig::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -164,6 +174,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -181,11 +192,15 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..ExecutionConfig::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default(),
             ..Default::default()
@@ -212,6 +227,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -229,11 +245,15 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..ExecutionConfig::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default(),
             ..Default::default()
@@ -326,6 +346,7 @@ mod tests {
                 quorums,
                 current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
+                start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
             },
             strategy,
@@ -340,6 +361,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -357,11 +379,15 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -393,7 +419,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864938600)
+        assert_eq!(balance, 99868433120)
     }
 
     #[test]
@@ -401,6 +427,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -418,11 +445,15 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -449,6 +480,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -466,12 +498,16 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
             block_spacing_ms: hour_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -500,11 +536,76 @@ mod tests {
     }
 
     #[test]
+    fn run_chain_core_height_randomly_increasing_with_quick_epoch_change() {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            start_identities: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..3,
+                chance_per_block: Some(0.5),
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+            signer: None,
+        };
+        let hour_in_s = 60 * 60;
+        let three_mins_in_ms = 1000 * 60 * 3;
+        let config = PlatformConfig {
+            quorum_size: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                epoch_time_length_s: hour_in_s,
+                ..Default::default()
+            },
+            block_spacing_ms: three_mins_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let all_have_balances = outcome
+            .masternode_identity_balances
+            .iter()
+            .all(|(_, balance)| *balance != 0);
+        assert!(all_have_balances, "all masternodes should have a balance");
+        // 49 makes sense because we have about 20 blocks per epoch, and 1000/20 = 50 (but we didn't go over so we should be at 49)
+        assert_eq!(outcome.end_epoch_index, 49);
+    }
+
+    #[test]
     fn run_chain_core_height_randomly_increasing_with_quorum_updates() {
         let platform_version = PlatformVersion::latest();
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -522,11 +623,15 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 10,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 300,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -584,6 +689,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -607,11 +713,15 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 10,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 300,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -647,6 +757,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -674,11 +785,15 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 10,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 300,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -713,6 +828,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -736,11 +852,15 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 10,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 300,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -806,6 +926,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -828,11 +949,15 @@ mod tests {
                 },
             }),
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default(),
             ..Default::default()
@@ -860,6 +985,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -877,12 +1003,16 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -920,7 +1050,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "7e687e98ee34a9c8af2d3e11dd3cd2c5d7d5dad3ff1be8829c60347ca0344a95".to_string()
+            "222db2ac6b16f578c08c1a03e3af7260ccf12bda2260bde8edc64324454a2dc7".to_string()
         )
     }
 
@@ -937,6 +1067,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![(contract, None)],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -954,11 +1085,15 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1040,6 +1175,7 @@ mod tests {
                 ])),
             )],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1057,11 +1193,15 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1119,7 +1259,10 @@ mod tests {
 
         let document_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1135,6 +1278,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1152,11 +1296,15 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1191,7 +1339,10 @@ mod tests {
 
         let document_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1207,6 +1358,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1224,12 +1376,16 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1273,7 +1429,10 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1307,6 +1466,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1324,12 +1484,16 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1373,7 +1537,10 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1407,6 +1574,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1424,12 +1592,16 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1468,7 +1640,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "bc04d96aafa86ba0dbf769d226d75843828068af0d929419e428b55ab82134f8".to_string()
+            "84a498e90949b1f99b1b70273ccbd7a3575289b0b1aadde4e70f2daf45395dbc".to_string()
         )
     }
 
@@ -1487,7 +1659,10 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1521,6 +1696,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..30,
                 chance_per_block: None,
@@ -1538,14 +1714,19 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                epoch_time_length_s: 1576800,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1575,8 +1756,6 @@ mod tests {
         assert_eq!(balance_count, 19); // 1 epoch worth of proposers
     }
 
-    // TODO: This test fails due to a bug in GroveDB. Enable it back when the bug is fixed
-    #[ignore]
     #[test]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_and_deletions_with_epoch_change(
     ) {
@@ -1592,7 +1771,10 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentAction::DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsertRandom(
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1642,6 +1824,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..6,
                 chance_per_block: None,
@@ -1659,14 +1842,19 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
 
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                epoch_time_length_s: 1576800,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1698,7 +1886,7 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_identities() {
-        drive_abci::logging::init_for_tests(1); // Errors only. Use 5 to print everything
+        drive_abci::logging::init_for_tests(LogLevelPreset::Silent);
 
         let strategy = Strategy {
             contracts_with_updates: vec![],
@@ -1709,6 +1897,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1726,11 +1915,15 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1781,6 +1974,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1800,11 +1994,15 @@ mod tests {
             // because we can add an identity and add keys to it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1862,6 +2060,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1881,11 +2080,15 @@ mod tests {
             // because we can add an identity and remove keys to it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -1950,6 +2153,7 @@ mod tests {
                     },
                 },
             ],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1969,11 +2173,15 @@ mod tests {
             // because we can add an identity and withdraw from it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
+            signer: None,
         };
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -2002,6 +2210,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 //we do this to create some paying transactions
                 times_per_block_range: 1..2,
@@ -2020,12 +2229,16 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 3,
-            validator_set_quorum_rotation_block_count: 1,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 1,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -2151,6 +2364,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 //we do this to create some paying transactions
                 times_per_block_range: 1..2,
@@ -2169,12 +2383,17 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 3,
-            validator_set_quorum_rotation_block_count: 1,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 1,
+                epoch_time_length_s: 1576800,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -2270,6 +2489,7 @@ mod tests {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 //we do this to create some paying transactions
                 times_per_block_range: 1..2,
@@ -2288,12 +2508,16 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 3,
-            validator_set_quorum_rotation_block_count: 1,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 1,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -2386,10 +2610,12 @@ mod tests {
 
     #[test]
     fn run_chain_stop_and_restart_with_rotation() {
-        drive_abci::logging::init_for_tests(1); // Errors only. Use 5 to print everything
+        drive_abci::logging::init_for_tests(LogLevelPreset::Silent);
+
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
@@ -2407,12 +2633,17 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
+            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 3,
-            validator_set_quorum_rotation_block_count: 1,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 1,
+                epoch_time_length_s: 1576800,
+                ..Default::default()
+            },
             block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
@@ -2503,6 +2734,7 @@ mod tests {
                 quorums,
                 current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
+                start_time_ms: 1681094380000,
                 current_time_ms: end_time_ms,
             },
             strategy,
@@ -2522,6 +2754,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }],
+            start_identities: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -2539,12 +2772,16 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
+            signer: None,
         };
 
         let config = PlatformConfig {
-            verify_sum_trees: true,
             quorum_size: 100,
-            validator_set_quorum_rotation_block_count: 25,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..Default::default()
+            },
             block_spacing_ms: 3000,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()

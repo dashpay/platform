@@ -6,6 +6,11 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::DataContract;
 
+use crate::drive::batch::drive_op_batch::finalize_task::{
+    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
+};
+use crate::error::drive::DriveError;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -25,6 +30,7 @@ pub enum DataContractOperationType<'a> {
         /// Storage flags for the contract
         storage_flags: Option<Cow<'a, StorageFlags>>,
     },
+    // TODO: split into create and update
     /// Applies a contract without serialization.
     ApplyContract {
         // this is Cow because we want allow the contract to be owned or not
@@ -76,5 +82,43 @@ impl DriveLowLevelOperationConverter for DataContractOperationType<'_> {
                 platform_version,
             ),
         }
+    }
+}
+
+impl DriveOperationFinalizationTasks for DataContractOperationType<'_> {
+    fn finalization_tasks(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error> {
+        match platform_version
+            .drive
+            .methods
+            .state_transitions
+            .operations
+            .contracts
+            .finalization_tasks
+        {
+            0 => self.finalization_tasks_v0(),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "DataContractOperationType.finalization_tasks".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+}
+
+impl DataContractOperationType<'_> {
+    fn finalization_tasks_v0(&self) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error> {
+        let tasks = match self {
+            Self::ApplyContractWithSerialization { contract, .. }
+            | Self::ApplyContract { contract, .. } => {
+                vec![DriveOperationFinalizeTask::RemoveDataContractFromCache {
+                    contract_id: contract.id(),
+                }]
+            }
+        };
+
+        Ok(Some(tasks))
     }
 }

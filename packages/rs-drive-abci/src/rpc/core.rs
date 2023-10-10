@@ -2,18 +2,19 @@ use dashcore_rpc::dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult, GetChainTipsResult,
-    MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
+    GetTransactionLockedResult, MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType,
+    SoftforkInfo,
 };
 use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dpp::dashcore::{hashes::Hash, InstantLock};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::time::Duration;
 use tenderdash_abci::proto::types::CoreChainLock;
 
 /// Information returned by QuorumListExtended
-pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;
+pub type QuorumListExtendedInfo = BTreeMap<QuorumHash, ExtendedQuorumDetails>;
 
 /// Core height must be of type u32 (Platform heights are u64)
 pub type CoreHeight = u32;
@@ -28,6 +29,12 @@ pub trait CoreRPCLike {
 
     /// Get transaction
     fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
+
+    /// Get transaction finalization status
+    fn get_transactions_are_chain_locked(
+        &self,
+        tx_ids: Vec<Txid>,
+    ) -> Result<Vec<GetTransactionLockedResult>, Error>;
 
     /// Get transaction
     fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error>;
@@ -44,13 +51,13 @@ pub trait CoreRPCLike {
     /// Get chain tips
     fn get_chain_tips(&self) -> Result<GetChainTipsResult, Error>;
 
-    /// Get list of quorums at a given height.
+    /// Get list of quorums by type at a given height.
     ///
     /// See <https://dashcore.readme.io/v19.0.0/docs/core-api-ref-remote-procedure-calls-evo#quorum-listextended>
-    fn get_quorum_listextended(
+    fn get_quorum_listextended_by_type(
         &self,
         height: Option<CoreHeight>,
-    ) -> Result<ExtendedQuorumListResult, Error>;
+    ) -> Result<BTreeMap<QuorumType, QuorumListExtendedInfo>, Error>;
 
     /// Get quorum information.
     ///
@@ -187,6 +194,13 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self.inner.get_raw_transaction(tx_id, None))
     }
 
+    fn get_transactions_are_chain_locked(
+        &self,
+        tx_ids: Vec<Txid>,
+    ) -> Result<Vec<GetTransactionLockedResult>, Error> {
+        retry!(self.inner.get_transaction_are_locked(&tx_ids))
+    }
+
     fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error> {
         retry!(self.inner.get_transaction(tx_id, None))
     }
@@ -210,11 +224,24 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self.inner.get_chain_tips())
     }
 
-    fn get_quorum_listextended(
+    fn get_quorum_listextended_by_type(
         &self,
         height: Option<CoreHeight>,
-    ) -> Result<ExtendedQuorumListResult, Error> {
-        retry!(self.inner.get_quorum_listextended(height))
+    ) -> Result<BTreeMap<QuorumType, QuorumListExtendedInfo>, Error> {
+        let all_quorums_list = get_quorum_listextended(&self.inner, height)?;
+
+        // Sort in deterministic order
+        let sorted_quorums_by_type = all_quorums_list
+            .quorums_by_type
+            .into_iter()
+            .map(|(quorum_type, quorum_list)| {
+                let sorted_quorum_list: BTreeMap<_, _> = quorum_list.into_iter().collect();
+
+                (quorum_type, sorted_quorum_list)
+            })
+            .collect();
+
+        Ok(sorted_quorums_by_type)
     }
 
     fn get_quorum_info(
@@ -295,4 +322,11 @@ impl CoreRPCLike for DefaultCoreRPC {
     fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error> {
         retry!(self.inner.mnsync_status())
     }
+}
+
+fn get_quorum_listextended(
+    inner: &Client,
+    height: Option<CoreHeight>,
+) -> Result<ExtendedQuorumListResult, Error> {
+    retry!(inner.get_quorum_listextended(height))
 }

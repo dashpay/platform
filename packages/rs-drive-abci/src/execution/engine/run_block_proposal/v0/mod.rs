@@ -95,6 +95,11 @@ where
             )).into()));
         }
 
+        // Cleanup block cache before we execute a new proposal
+        let mut drive_cache = self.drive.cache.write().unwrap();
+        drive_cache.cached_contracts.clear_block_cache();
+        drop(drive_cache);
+
         // destructure the block proposal
         let block_proposal::v0::BlockProposal {
             core_chain_locked_height,
@@ -143,16 +148,6 @@ where
             proposer_results: None,
         };
 
-        // If last synced Core block height is not set instead of scanning
-        // number of blocks for asset unlock transactions scan only one
-        // on Core chain locked height by setting last_synced_core_height to the same value
-        // FIXME: re-enable and implement
-        // let last_synced_core_height = if request.last_synced_core_height == 0 {
-        //     block_execution_context.block_info.core_chain_locked_height
-        // } else {
-        //     request.last_synced_core_height
-        // };
-
         // Determine a new protocol version if enough proposers voted
         if block_execution_context
             .epoch_info
@@ -175,6 +170,7 @@ where
                     .current_protocol_version_in_consensus(),
                 transaction,
             )?;
+
             if let Some(new_protocol_version) = maybe_new_protocol_version {
                 block_execution_context
                     .block_platform_state
@@ -190,18 +186,23 @@ where
             }
         }
 
-        let last_synced_core_height = block_execution_context
-            .block_state_info
-            .core_chain_locked_height();
-
         let mut block_execution_context: BlockExecutionContext = block_execution_context.into();
 
-        self.update_broadcasted_withdrawal_transaction_statuses(
-            last_synced_core_height,
-            &block_execution_context,
-            transaction,
-            platform_version,
-        )?;
+        // >>>>>> Withdrawal Status Update <<<<<<<
+        // Only update the broadcasted withdrawal statuses if the core chain lock height has
+        // changed. If it hasn't changed there should be no way a status could update
+
+        if block_execution_context
+            .block_state_info()
+            .core_chain_locked_height()
+            != last_block_core_height
+        {
+            self.update_broadcasted_withdrawal_transaction_statuses(
+                &block_execution_context,
+                transaction,
+                platform_version,
+            )?;
+        }
 
         // This takes withdrawals from the transaction queue
         let unsigned_withdrawal_transaction_bytes = self
@@ -225,7 +226,7 @@ where
                 .collect(),
         );
 
-        let (block_fees, tx_results) = self.process_raw_state_transitions(
+        let (block_fees, state_transition_results) = self.process_raw_state_transitions(
             raw_state_transitions,
             block_execution_context.block_platform_state(),
             &block_info,
@@ -277,8 +278,9 @@ where
         Ok(ValidationResult::new_with_data(
             block_execution_outcome::v0::BlockExecutionOutcome {
                 app_hash: root_hash,
-                tx_results,
+                state_transition_results,
                 validator_set_update,
+                protocol_version: platform_version.protocol_version,
             },
         ))
     }

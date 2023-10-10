@@ -32,7 +32,7 @@ use crate::consensus::state::identity::identity_public_key_already_exists_for_un
 
 use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 
-#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
+#[derive(Error, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize, Clone)]
 pub enum StateError {
     /*
 
