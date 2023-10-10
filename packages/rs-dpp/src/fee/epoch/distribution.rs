@@ -177,9 +177,9 @@ fn original_removed_credits_multiplier_from(
             .filter_map(|(year, epoch_multiplier)| match year.cmp(&current_year) {
                 Ordering::Less => None,
                 Ordering::Equal => {
-                    let amount_epochs_left_in_year = epochs_per_era - paid_epochs % epochs_per_era;
+                    let amount_epochs_left_in_era = epochs_per_era - paid_epochs % epochs_per_era;
                     Some(epoch_multiplier.mul(
-                        Decimal::from(amount_epochs_left_in_year) / Decimal::from(epochs_per_era),
+                        Decimal::from(amount_epochs_left_in_era) / Decimal::from(epochs_per_era),
                     ))
                 }
                 Ordering::Greater => Some(*epoch_multiplier),
@@ -231,14 +231,14 @@ where
 
     let mut distribution_leftover_credits = storage_fee;
 
-    let epochs_per_year = Decimal::from(epochs_per_era);
+    let epochs_per_era_dec = Decimal::from(epochs_per_era);
 
     for era in 0..PERPETUAL_STORAGE_ERAS {
         let distribution_for_that_era_ratio = FEE_DISTRIBUTION_TABLE[era as usize];
 
-        let year_fee_share = storage_fee_dec * distribution_for_that_era_ratio;
+        let era_fee_share = storage_fee_dec * distribution_for_that_era_ratio;
 
-        let epoch_fee_share_dec = year_fee_share / epochs_per_year;
+        let epoch_fee_share_dec = era_fee_share / epochs_per_era_dec;
 
         let epoch_fee_share: Credits = epoch_fee_share_dec
             .floor()
@@ -284,7 +284,7 @@ where
 
     let epochs_per_year = Decimal::from(epochs_per_era);
 
-    let start_year: u16 = (skip_until_epoch_index - start_epoch_index) / epochs_per_era;
+    let start_era: u16 = (skip_until_epoch_index - start_epoch_index) / epochs_per_era;
 
     // Let's imagine that we are refunding something from epoch 5
     // We are at Epoch 12
@@ -297,8 +297,8 @@ where
         epochs_per_era,
     )?;
 
-    for year in start_year..PERPETUAL_STORAGE_ERAS {
-        let distribution_for_that_year_ratio = FEE_DISTRIBUTION_TABLE[year as usize];
+    for era in start_era..PERPETUAL_STORAGE_ERAS {
+        let distribution_for_that_year_ratio = FEE_DISTRIBUTION_TABLE[era as usize];
 
         let estimated_year_fee_share = estimated_storage_fee_dec * distribution_for_that_year_ratio;
 
@@ -309,15 +309,15 @@ where
             .to_u64()
             .ok_or_else(|| ProtocolError::Overflow("storage fees are not fitting in a u64"))?;
 
-        let year_start_epoch_index = if year == start_year {
+        let era_start_epoch_index = if era == start_era {
             skip_until_epoch_index
         } else {
-            start_epoch_index + epochs_per_era * year
+            start_epoch_index + epochs_per_era * era
         };
 
-        let year_end_epoch_index = start_epoch_index + ((year + 1) * epochs_per_era);
+        let era_end_epoch_index = start_epoch_index + ((era + 1) * epochs_per_era);
 
-        for epoch_index in year_start_epoch_index..year_end_epoch_index {
+        for epoch_index in era_start_epoch_index..era_end_epoch_index {
             map_function(epoch_index, estimated_epoch_fee_share)?;
 
             distribution_leftover_credits = distribution_leftover_credits
