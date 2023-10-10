@@ -29,7 +29,7 @@
 
 //! Storage fee distribution into epochs
 //!
-//! Data is stored in Platform "forever" currently, which is 50 years.
+//! Data is stored in Platform "forever" currently, which is 50 eras (50 years by default).
 //! To incentivise masternodes to continue store and serve this data,
 //! payments are distributed for entire period split into epochs.
 //! Every epoch, new aggregated storage fees are distributed among epochs
@@ -48,7 +48,7 @@ use std::ops::Mul;
 
 // TODO: Should be updated from the doc
 
-/// The amount of the perpetual storage fee to be paid out to masternodes per year. Adds up to 1.
+/// The amount of the perpetual storage fee to be paid out to masternodes per era. Adds up to 1.
 #[rustfmt::skip]
 pub const FEE_DISTRIBUTION_TABLE: [Decimal; PERPETUAL_STORAGE_ERAS as usize] = [
     dec!(0.05000), dec!(0.04800), dec!(0.04600), dec!(0.04400), dec!(0.04200),
@@ -168,13 +168,13 @@ fn original_removed_credits_multiplier_from(
 ) -> Decimal {
     let paid_epochs = start_repayment_from_epoch_index - start_epoch_index;
 
-    let current_year = (paid_epochs / epochs_per_era) as usize;
+    let current_era = (paid_epochs / epochs_per_era) as usize;
 
     let ratio_used: Decimal =
         FEE_DISTRIBUTION_TABLE
             .iter()
             .enumerate()
-            .filter_map(|(year, epoch_multiplier)| match year.cmp(&current_year) {
+            .filter_map(|(era, epoch_multiplier)| match era.cmp(&current_era) {
                 Ordering::Less => None,
                 Ordering::Equal => {
                     let amount_epochs_left_in_era = epochs_per_era - paid_epochs % epochs_per_era;
@@ -245,9 +245,9 @@ where
             .to_u64()
             .ok_or_else(|| ProtocolError::Overflow("storage fees are not fitting in a u64"))?;
 
-        let year_start_epoch_index = start_epoch_index + epochs_per_era * era;
+        let era_start_epoch_index = start_epoch_index + epochs_per_era * era;
 
-        for epoch_index in year_start_epoch_index..year_start_epoch_index + epochs_per_era {
+        for epoch_index in era_start_epoch_index..era_start_epoch_index + epochs_per_era {
             map_function(epoch_index, epoch_fee_share)?;
 
             distribution_leftover_credits = distribution_leftover_credits
@@ -282,7 +282,7 @@ where
 
     let mut distribution_leftover_credits = storage_fee;
 
-    let epochs_per_year = Decimal::from(epochs_per_era);
+    let epochs_per_era_dec = Decimal::from(epochs_per_era);
 
     let start_era: u16 = (skip_until_epoch_index - start_epoch_index) / epochs_per_era;
 
@@ -298,11 +298,11 @@ where
     )?;
 
     for era in start_era..PERPETUAL_STORAGE_ERAS {
-        let distribution_for_that_year_ratio = FEE_DISTRIBUTION_TABLE[era as usize];
+        let distribution_for_that_era_ratio = FEE_DISTRIBUTION_TABLE[era as usize];
 
-        let estimated_year_fee_share = estimated_storage_fee_dec * distribution_for_that_year_ratio;
+        let estimated_era_fee_share = estimated_storage_fee_dec * distribution_for_that_era_ratio;
 
-        let estimated_epoch_fee_share_dec = estimated_year_fee_share / epochs_per_year;
+        let estimated_epoch_fee_share_dec = estimated_era_fee_share / epochs_per_era_dec;
 
         let estimated_epoch_fee_share: Credits = estimated_epoch_fee_share_dec
             .floor()
@@ -410,7 +410,7 @@ mod tests {
         }
 
         #[test]
-        fn should_call_function_for_each_epoch_for_50_years_sequentially() {
+        fn should_call_function_for_each_epoch_for_50_eras_sequentially() {
             let mut calls = 0;
 
             let mut previous_epoch_index = -1;

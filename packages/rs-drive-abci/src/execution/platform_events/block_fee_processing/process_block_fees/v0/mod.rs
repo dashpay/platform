@@ -61,7 +61,7 @@ use drive::fee_pools::epochs::operations_factory::EpochOperations;
 /// the sum of the execution of all state transitions contained within the block. In order to
 /// avoid altering participating masternode identity balances every block and distribute fees
 /// evenly, the concept of pools is introduced. We will also introduce the concepts of an Epoch
-/// and the Epoch Year that are both covered later in this document. As the block executes state
+/// and the Epoch Era that are both covered later in this document. As the block executes state
 /// transitions, processing and storage fees are accumulated, as well as a list of refunded fees
 /// from various Epochs and fee multipliers. When there are no more state transitions to execute
 /// we can say the block has ended its state transition execution phase. The system will then add
