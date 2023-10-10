@@ -3,13 +3,13 @@
 
 ### ⚠ BREAKING CHANGES
 
-* incorrect invalidation of data contract cache (#1464)
-* **platform:** configurable epoch time (default down to 9.125 days) (#1467)
-* **drive-abci:** masternode identities unique keys (#1459)
-* **drive:** document type doesn't match array value (#1457)
-* **drive-abci:** double state transition with document same unique index (#1456)
-* mitigate homograph attack in DPNS (#1454)
-* **dashmate:** drive logs configuration (#1406)
+* block results might be different while blockchain replying (#1464)
+* **platform:** the default epoch length is changed (#1467)
+* **drive-abci:** masternode operator keys are no longer added to the unique tree lookup (#1459)
+* **drive:** contracts with arrays won't be valid anymore (#1457)
+* **drive-abci:** small differences in serialization of Null value (#1456)
+* the DPNS system data contract is changed so the previously created state won't be valid (#1454)
+* drive volume is changed so volumes and containers must be recreated. It means platform file must be wiped (#1406)
 
 ### Features
 
