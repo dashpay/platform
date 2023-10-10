@@ -1093,14 +1093,14 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 25908585);
+            assert_eq!(*removed_credits, 25940733);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 959); // we refunded 956 instead of 959
+            assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 962
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1230,14 +1230,14 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 25908585);
+            assert_eq!(*removed_credits, 25940733);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 959); // we refunded 1008 instead of 1011
+            assert_eq!(refund_equivalent_bytes, 960); // we refunded 960 instead of 1011
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1286,7 +1286,7 @@ mod tests {
         let expected_added_bytes = if using_history { 607 } else { 605 };
         assert_eq!(added_bytes, expected_added_bytes);
 
-        let expected_removed_credits = if using_history { 16266750 } else { 16212825 };
+        let expected_removed_credits = if using_history { 16286655 } else { 16232643 };
         assert_eq!(*removed_credits, expected_removed_credits);
         let refund_equivalent_bytes = removed_credits.to_unsigned()
             / Epoch::new(0)
@@ -1294,7 +1294,7 @@ mod tests {
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         assert!(expected_added_bytes > refund_equivalent_bytes);
-        let expected_remove_bytes = if using_history { 602 } else { 600 };
+        let expected_remove_bytes = if using_history { 603 } else { 601 };
         assert_eq!(refund_equivalent_bytes, expected_remove_bytes); // we refunded 1011 instead of 1014
     }
 

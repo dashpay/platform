@@ -132,12 +132,6 @@ pub fn get_data_contract_fixture(
                 "name": {
                     "type": "string"
                 },
-                "array": {
-                    "type": "array",
-                    "items": {
-                        "type": "number"
-                    }
-                }
             },
             "additionalProperties": false
         },

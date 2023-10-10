@@ -1,10 +1,10 @@
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
-use crate::execution::types::execution_result::ExecutionResult;
-use crate::execution::types::execution_result::ExecutionResult::{
+use crate::platform_types::platform::Platform;
+use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult;
+use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::{
     ConsensusExecutionError, SuccessfulFreeExecution, SuccessfulPaidExecution,
 };
-use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -44,7 +44,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) -> Result<ExecutionResult, Error> {
+    ) -> Result<StateTransitionExecutionResult, Error> {
         //todo: we need to split out errors
         //  between failed execution and internal errors
         let validation_result = self.validate_fees_of_event_v0(

@@ -1,3 +1,17 @@
+## [0.25.0-dev.33](https://github.com/dashpay/platform/compare/v0.25.0-dev.32...v0.25.0-dev.33) (2023-10-05)
+
+
+### Features
+
+* **dashmate:** upgrade core to v20.0.0-beta.2 ([#1436](https://github.com/dashpay/platform/issues/1436))
+* **drive:** handlers error codes ([#1394](https://github.com/dashpay/platform/issues/1394))
+* **sdk:** add logger to dapi client ([#1420](https://github.com/dashpay/platform/issues/1420))
+
+
+### Continuous Integration
+
+* **test-suite:** run sdk and wallet functional tests from all packages workflow ([#1438](https://github.com/dashpay/platform/issues/1438))
+
 ## [0.25.0-dev.32](https://github.com/dashpay/platform/compare/v0.25.0-dev.31...v0.25.0-dev.32) (2023-09-29)
 
 
