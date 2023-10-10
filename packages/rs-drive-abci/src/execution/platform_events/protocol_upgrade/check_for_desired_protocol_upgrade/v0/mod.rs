@@ -47,6 +47,7 @@ impl<C> Platform<C> {
                     .collect::<Vec<ProtocolVersion>>()
             })
             .unwrap_or_default();
+        drop(cache);
 
         if versions_passing_threshold.len() > 1 {
             return Err(Error::Execution(
