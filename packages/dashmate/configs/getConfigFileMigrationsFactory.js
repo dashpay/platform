@@ -191,6 +191,13 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
           });
         return configFile;
       },
+      '1.0.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.abci.epochTime = base.get('platform.drive.abci.epochTime');
+          });
+        return configFile;
+      }
     };
   }
 

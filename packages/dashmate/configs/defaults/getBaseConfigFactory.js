@@ -176,6 +176,7 @@ function getBaseConfigFactory(homeDir) {
             validatorSet: {
               llmqType: 4,
             },
+            epochTime: 788400,
           },
           tenderdash: {
             mode: 'full',
