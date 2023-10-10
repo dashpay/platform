@@ -280,6 +280,7 @@ where
                 app_hash: root_hash,
                 state_transition_results,
                 validator_set_update,
+                protocol_version: platform_version.protocol_version,
             },
         ))
     }

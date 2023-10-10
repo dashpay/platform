@@ -46,7 +46,7 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
-use tenderdash_abci::proto::abci::{self as proto};
+use tenderdash_abci::proto::abci::{self as proto, ResponseException};
 use tenderdash_abci::proto::abci::{
     ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
@@ -200,13 +200,6 @@ where
 
         let transaction = transaction_guard.as_ref().unwrap();
 
-        // Get current platform version
-        let state = self.platform.state.read().expect("expected to get state");
-        let current_protocol_version = state.current_protocol_version_in_consensus();
-        drop(state);
-        let platform_version = PlatformVersion::get(current_protocol_version)
-            .map_err(|e| proto::ResponseException::from(Error::from(e)))?;
-
         // Running the proposal executes all the state transitions for the block
         let run_result = self
             .platform
@@ -221,7 +214,11 @@ where
             app_hash,
             state_transition_results,
             validator_set_update,
+            protocol_version,
         } = run_result.into_data().map_err(Error::Protocol)?;
+
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("must be set in run block proposal from existing protocol version");
 
         // We need to let Tenderdash know about the transactions we should remove from execution
         let mut tx_results = Vec::new();
@@ -389,14 +386,11 @@ where
                 app_hash,
                 state_transition_results,
                 validator_set_update,
+                protocol_version,
             } = run_result.into_data().map_err(Error::Protocol)?;
 
-            // Get current platform version
-            let state = self.platform.state.read().expect("expected to get state");
-            let current_protocol_version = state.current_protocol_version_in_consensus();
-            drop(state);
-            let platform_version = PlatformVersion::get(current_protocol_version)
-                .map_err(|e| proto::ResponseException::from(Error::from(e)))?;
+            let platform_version = PlatformVersion::get(protocol_version)
+                .expect("must be set in run block proposer from existing platform version");
 
             let tx_results = state_transition_results
                 .into_iter()
