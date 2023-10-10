@@ -68,11 +68,6 @@ where
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<block_execution_outcome::v0::BlockExecutionOutcome, Error>, Error>
     {
-        // Cleanup block cache before we execute a new proposal
-        let mut drive_cache = self.drive.cache.write().unwrap();
-        drive_cache.cached_contracts.clear_block_cache();
-        drop(drive_cache);
-
         // Start by getting information from the state
         let state = self.state.read().unwrap();
 
@@ -99,6 +94,11 @@ where
                 block_state_info.height, block_state_info.core_chain_locked_height, last_block_height, last_block_core_height
             )).into()));
         }
+
+        // Cleanup block cache before we execute a new proposal
+        let mut drive_cache = self.drive.cache.write().unwrap();
+        drive_cache.cached_contracts.clear_block_cache();
+        drop(drive_cache);
 
         // destructure the block proposal
         let block_proposal::v0::BlockProposal {
