@@ -205,6 +205,10 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
             if (options.platform.drive.abci.log.prettyFile.level === 'fatal') {
               options.platform.drive.abci.log.prettyFile.level = 'error';
             }
+
+            if (options.network !== NETWORK_MAINNET) {
+              options.core.docker.image = base.get('core.docker.image');
+            }
           });
 
         return configFile;
