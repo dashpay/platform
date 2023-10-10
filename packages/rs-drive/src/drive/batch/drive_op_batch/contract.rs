@@ -92,13 +92,15 @@ impl DriveOperationFinalizationTasks for DataContractOperationType<'_> {
     ) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error> {
         match platform_version
             .drive
+            .methods
+            .state_transitions
             .operations
             .contracts
             .finalization_tasks
         {
             0 => self.finalization_tasks_v0(),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "finalization_tasks".to_string(),
+                method: "DataContractOperationType.finalization_tasks".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

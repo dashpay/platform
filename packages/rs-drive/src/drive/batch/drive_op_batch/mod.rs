@@ -145,10 +145,16 @@ impl DriveOperationFinalizationTasks for DriveOperation<'_> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error> {
-        match platform_version.drive.operations.finalization_tasks {
+        match platform_version
+            .drive
+            .methods
+            .state_transitions
+            .operations
+            .finalization_tasks
+        {
             0 => self.finalization_tasks_v0(platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "finalization_tasks".to_string(),
+                method: "DriveOperation.finalization_tasks".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
