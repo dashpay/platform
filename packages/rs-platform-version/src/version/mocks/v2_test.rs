@@ -30,7 +30,8 @@ use crate::version::drive_versions::{
     DriveContractProveMethodVersions, DriveContractUpdateMethodVersions,
     DriveCreditPoolEpochsMethodVersions, DriveCreditPoolMethodVersions,
     DriveCreditPoolPendingEpochRefundsMethodVersions,
-    DriveCreditPoolStorageFeeDistributionPoolMethodVersions, DriveDocumentDeleteMethodVersions,
+    DriveCreditPoolStorageFeeDistributionPoolMethodVersions,
+    DriveDataContractOperationMethodVersions, DriveDocumentDeleteMethodVersions,
     DriveDocumentEstimationCostsMethodVersions, DriveDocumentIndexUniquenessMethodVersions,
     DriveDocumentInsertMethodVersions, DriveDocumentMethodVersions,
     DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
@@ -47,6 +48,7 @@ use crate::version::drive_versions::{
     DriveIdentityProveMethodVersions, DriveIdentityUpdateMethodVersions,
     DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
     DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveProveMethodVersions,
+    DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions,
     DriveStructureVersion, DriveSystemEstimationCostsMethodVersions,
     DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
     DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
@@ -366,6 +368,14 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             batch_operations: DriveBatchOperationsMethodVersion {
                 convert_drive_operations_to_grove_operations: 0,
                 apply_drive_operations: 0,
+            },
+            state_transitions: DriveStateTransitionMethodVersions {
+                operations: DriveStateTransitionOperationMethodVersions {
+                    finalization_tasks: 0,
+                    contracts: DriveDataContractOperationMethodVersions {
+                        finalization_tasks: 0,
+                    },
+                },
             },
         },
         grove_methods: DriveGroveMethodVersions {

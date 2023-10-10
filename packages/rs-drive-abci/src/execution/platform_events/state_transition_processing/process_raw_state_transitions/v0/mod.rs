@@ -11,6 +11,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 
+use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use tenderdash_abci::proto::abci::ExecTxResult;

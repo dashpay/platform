@@ -65,7 +65,7 @@ function getBaseConfigFactory(homeDir) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:20.0.0-beta.2',
+          image: 'dashpay/dashd:20.0.0-beta.4',
         },
         p2p: {
           port: 9999,
@@ -176,6 +176,7 @@ function getBaseConfigFactory(homeDir) {
             validatorSet: {
               llmqType: 4,
             },
+            epochTime: 788400,
           },
           tenderdash: {
             mode: 'full',
