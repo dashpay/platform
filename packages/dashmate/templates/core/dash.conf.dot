@@ -8,7 +8,7 @@ reindex={{?it.reindex}}1{{??}}0{{?}}
 debug=1
 {{??}}
 debug={{=category}}{{?}}{{~}}
-debuglogfile=/var/log/dash/core.log
+debuglogfile=/var/log/dash/{{= it.core.log.file.path.split('/').pop() }}
 logips={{=it.core.logIps }}
 fallbackfee=0.00001
 

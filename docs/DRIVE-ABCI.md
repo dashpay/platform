@@ -48,7 +48,7 @@ Specifies the output format to use for the logs. It can have one of the followin
 * **pretty**: Logs will be formatted in a human-readable and visually appealing manner.
 * **json**: Logs will be formatted in JSON format.
 
-For more detailed description for different formats, refer to the [tracing-subscriber](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/format/index.html#formatters) documentation.
+For more detailed description of different formats, refer to the [tracing-subscriber](https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/format/index.html#formatters) documentation.
 
 #### MAX_FILES (optional)
 
