@@ -2,7 +2,7 @@
 name = "platform-value-convertible"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "Convertion to and from platform values"
-version = "0.1.0"
+version = "0.25.0"
 edition = "2021"
 license = "MIT"
 private = true
