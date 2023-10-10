@@ -30,6 +30,7 @@
 //! Drive Configuration File
 //!
 
+use dpp::fee::epoch::DEFAULT_EPOCHS_PER_ERA;
 use serde::{Deserialize, Serialize};
 
 /// Boolean if GroveDB batching consistency verification is enabled by default
@@ -69,6 +70,13 @@ pub struct DriveConfig {
         deserialize_with = "from_str_or_number"
     )]
     pub default_query_limit: u16,
+
+    /// The default returned count if no limit is set
+    #[serde(
+        default = "default_epochs_per_era",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub epochs_per_era: u16,
 
     /// The limit for user defined queries
     #[serde(
@@ -121,6 +129,10 @@ fn default_default_query_limit() -> u16 {
     DEFAULT_DEFAULT_QUERY_LIMIT
 }
 
+fn default_epochs_per_era() -> u16 {
+    DEFAULT_EPOCHS_PER_ERA
+}
+
 fn default_max_query_limit() -> u16 {
     DEFAULT_MAX_QUERY_LIMIT
 }
@@ -136,6 +148,7 @@ impl Default for DriveConfig {
                 DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED,
             has_raw_enabled: DEFAULT_GROVE_HAS_RAW_ENABLED,
             default_query_limit: DEFAULT_DEFAULT_QUERY_LIMIT,
+            epochs_per_era: DEFAULT_EPOCHS_PER_ERA,
             max_query_limit: DEFAULT_MAX_QUERY_LIMIT,
             default_genesis_time: None,
             data_contracts_global_cache_size: DEFAULT_DATA_CONTRACTS_CACHE_SIZE,

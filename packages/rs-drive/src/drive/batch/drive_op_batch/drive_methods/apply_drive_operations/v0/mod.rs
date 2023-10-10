@@ -70,6 +70,7 @@ impl Drive {
             None,
             Some(cost_operations),
             &block_info.epoch,
+            self.config.epochs_per_era,
             platform_version,
         )
     }

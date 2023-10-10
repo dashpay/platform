@@ -181,7 +181,7 @@ function getBaseConfigFactory(homeDir) {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:0.13.1',
+              image: 'dashpay/tenderdash:0.13.2',
             },
             p2p: {
               port: 26656,
@@ -206,6 +206,7 @@ function getBaseConfigFactory(homeDir) {
             log: {
               level: 'debug',
               format: 'plain',
+              path: null,
             },
             node: {
               id: null,
