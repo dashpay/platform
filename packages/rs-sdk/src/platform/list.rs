@@ -13,7 +13,7 @@
 //!
 //! ## Error Handling
 //! Any errors encountered during the execution are returned as Error instances.
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::DerefMut};
 
 use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse};
 use dpp::document::Document;
@@ -74,7 +74,7 @@ where
         let mut client = api.platform_client().await;
         let response = request
             .clone()
-            .execute(&mut client, RequestSettings::default())
+            .execute(client.deref_mut(), RequestSettings::default())
             .await?;
 
         let object_type = std::any::type_name::<Self>().to_string();
@@ -111,7 +111,7 @@ impl<API: Sdk> List<API> for Document {
 
         let mut client = api.platform_client().await;
         let response: GetDocumentsResponse = request
-            .execute(&mut client, RequestSettings::default())
+            .execute(client.deref_mut(), RequestSettings::default())
             .await?;
 
         tracing::trace!(request=?document_query, response=?response, "list documents");
