@@ -6,9 +6,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::Revision;
 
-use crate::drive::batch::drive_op_batch::finalize_task::{
-    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
-};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};

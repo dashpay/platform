@@ -5,9 +5,6 @@ use dpp::version::PlatformVersion;
 use grovedb::Element;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 
-use crate::drive::batch::drive_op_batch::finalize_task::{
-    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
-};
 use crate::drive::grove_operations::BatchDeleteApplyType;
 use crate::drive::identity::withdrawals::paths::{
     get_withdrawal_root_path_vec, get_withdrawal_transactions_expired_ids_path,

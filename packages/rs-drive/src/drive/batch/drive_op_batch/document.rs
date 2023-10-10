@@ -16,9 +16,6 @@ use dpp::prelude::Identifier;
 
 use dpp::system_data_contracts::withdrawals_contract::document_types::withdrawal;
 
-use crate::drive::batch::drive_op_batch::finalize_task::{
-    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
-};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};

@@ -6,9 +6,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
 
-use crate::drive::batch::drive_op_batch::finalize_task::{
-    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
-};
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
