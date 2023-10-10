@@ -3859,6 +3859,61 @@ dependencies = [
 ]
 
 [[package]]
+name = "strategy-tests"
+version = "0.25.0-dev.30"
+dependencies = [
+ "anyhow",
+ "atty",
+ "base64 0.20.0",
+ "bincode 2.0.0-rc.3",
+ "bs58 0.4.0",
+ "bytes",
+ "chrono",
+ "ciborium",
+ "clap 4.4.5",
+ "dapi-grpc",
+ "dashcore-rpc",
+ "delegate",
+ "derive_more",
+ "dotenvy",
+ "dpp",
+ "drive",
+ "drive-abci",
+ "envy",
+ "file-rotate",
+ "hex",
+ "indexmap 1.9.3",
+ "itertools",
+ "lazy_static",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "mockall",
+ "platform-serialization",
+ "platform-serialization-derive",
+ "platform-version",
+ "prost",
+ "rand",
+ "regex",
+ "reopen",
+ "rocksdb",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "sha2",
+ "tempfile",
+ "tenderdash-abci",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "ureq",
+ "url",
+]
+
+[[package]]
 name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -18,4 +18,5 @@ members = [
     "packages/dpns-contract",
     "packages/data-contracts",
     "packages/wasm-dpp",
+    "packages/strategy-tests",
 ]
