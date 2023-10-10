@@ -115,13 +115,18 @@ impl<C> Platform<C> {
             "/identity" => {
                 let GetIdentityRequest { id, prove } =
                     check_validation_result_with_data!(GetIdentityRequest::decode(query_data));
-                let identity_id: Identifier = check_validation_result_with_data!(id.try_into());
+                let identity_id: Identifier = check_validation_result_with_data!(id
+                    .try_into()
+                    .map_err(|_| QueryError::InvalidArgument(
+                        "id must be a valid identifier (32 bytes long)".to_string()
+                    )));
                 let response_data = if prove {
                     let proof = check_validation_result_with_data!(self.drive.prove_full_identity(
                         identity_id.into_buffer(),
                         None,
                         &platform_version.drive
                     ));
+
                     GetIdentityResponse {
                         result: Some(get_identity_response::Result::Proof(Proof {
                             grovedb_proof: proof,
@@ -135,16 +140,19 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 } else {
-                    let identity = check_validation_result_with_data!(self
+                    let maybe_identity = check_validation_result_with_data!(self
                         .drive
                         .fetch_full_identity(identity_id.into_buffer(), None, platform_version)
-                        .map_err(QueryError::Drive)
+                        .map_err(QueryError::Drive));
+
+                    let identity = check_validation_result_with_data!(maybe_identity
+                        .ok_or_else(|| {
+                            QueryError::NotFound(format!("identity {} not found", identity_id))
+                        })
                         .and_then(|identity| identity
-                            .map(|identity| identity
-                                .serialize_consume_to_bytes()
-                                .map_err(QueryError::Protocol))
-                            .transpose()))
-                    .unwrap_or_default();
+                            .serialize_consume_to_bytes()
+                            .map_err(QueryError::Protocol)));
+
                     GetIdentityResponse {
                         result: Some(get_identity_response::Result::Identity(identity)),
                         metadata: Some(metadata),
@@ -159,9 +167,15 @@ impl<C> Platform<C> {
                 let identity_ids = check_validation_result_with_data!(ids
                     .into_iter()
                     .map(|identity_id_vec| {
-                        Bytes32::from_vec(identity_id_vec).map(|bytes| bytes.0)
+                        Bytes32::from_vec(identity_id_vec)
+                            .map(|bytes| bytes.0)
+                            .map_err(|_| {
+                                QueryError::InvalidArgument(
+                                    "id must be a valid identifier (32 bytes long)".to_string(),
+                                )
+                            })
                     })
-                    .collect::<Result<Vec<[u8; 32]>, dpp::platform_value::Error>>());
+                    .collect::<Result<Vec<[u8; 32]>, QueryError>>());
                 let response_data = if prove {
                     let proof =
                         check_validation_result_with_data!(self.drive.prove_full_identities(
@@ -219,7 +233,11 @@ impl<C> Platform<C> {
             "/identity/balance" => {
                 let GetIdentityRequest { id, prove } =
                     check_validation_result_with_data!(GetIdentityRequest::decode(query_data));
-                let identity_id: Identifier = check_validation_result_with_data!(id.try_into());
+                let identity_id: Identifier = check_validation_result_with_data!(id
+                    .try_into()
+                    .map_err(|_| QueryError::InvalidArgument(
+                        "id must be a valid identifier (32 bytes long)".to_string()
+                    )));
                 let response_data = if prove {
                     let proof =
                         check_validation_result_with_data!(self.drive.prove_identity_balance(
@@ -256,7 +274,11 @@ impl<C> Platform<C> {
             "/identity/balanceAndRevision" => {
                 let GetIdentityRequest { id, prove } =
                     check_validation_result_with_data!(GetIdentityRequest::decode(query_data));
-                let identity_id: Identifier = check_validation_result_with_data!(id.try_into());
+                let identity_id: Identifier = check_validation_result_with_data!(id
+                    .try_into()
+                    .map_err(|_| QueryError::InvalidArgument(
+                        "id must be a valid identifier (32 bytes long)".to_string()
+                    )));
                 let response_data = if prove {
                     let proof = check_validation_result_with_data!(self
                         .drive
@@ -308,8 +330,11 @@ impl<C> Platform<C> {
                     offset,
                     prove,
                 } = check_validation_result_with_data!(GetIdentityKeysRequest::decode(query_data));
-                let identity_id: Identifier =
-                    check_validation_result_with_data!(identity_id.try_into());
+                let identity_id: Identifier = check_validation_result_with_data!(identity_id
+                    .try_into()
+                    .map_err(|_| QueryError::InvalidArgument(
+                        "id must be a valid identifier (32 bytes long)".to_string()
+                    )));
                 if let Some(limit) = limit {
                     if limit > u16::MAX as u32 {
                         return Ok(QueryValidationResult::new_with_error(QueryError::Query(
@@ -389,13 +414,18 @@ impl<C> Platform<C> {
             "/dataContract" => {
                 let GetDataContractRequest { id, prove } =
                     check_validation_result_with_data!(GetDataContractRequest::decode(query_data));
-                let contract_id: Identifier = check_validation_result_with_data!(id.try_into());
+                let contract_id: Identifier = check_validation_result_with_data!(id
+                    .try_into()
+                    .map_err(|_| QueryError::InvalidArgument(
+                        "id must be a valid identifier (32 bytes long)".to_string()
+                    )));
                 let response_data = if prove {
                     let proof = check_validation_result_with_data!(self.drive.prove_contract(
                         contract_id.into_buffer(),
                         None,
                         platform_version
                     ));
+
                     GetDataContractResponse {
                         result: Some(get_data_contract_response::Result::Proof(Proof {
                             grovedb_proof: proof,
@@ -409,7 +439,7 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 } else {
-                    let contract = check_validation_result_with_data!(self
+                    let maybe_data_contract = check_validation_result_with_data!(self
                         .drive
                         .fetch_contract(
                             contract_id.into_buffer(),
@@ -418,16 +448,20 @@ impl<C> Platform<C> {
                             None,
                             platform_version
                         )
-                        .unwrap())
-                    .map(|contract| {
-                        contract
+                        .unwrap());
+
+                    let data_contract = check_validation_result_with_data!(maybe_data_contract
+                        .ok_or_else(|| {
+                            QueryError::NotFound(format!("data contract {} not found", contract_id))
+                        })
+                        .and_then(|data_contract| data_contract
                             .contract
                             .serialize_to_bytes_with_platform_version(platform_version)
-                    })
-                    .transpose()?;
+                            .map_err(QueryError::Protocol)));
+
                     GetDataContractResponse {
                         result: Some(get_data_contract_response::Result::DataContract(
-                            contract.unwrap_or_default(),
+                            data_contract,
                         )),
                         metadata: Some(metadata),
                     }
@@ -441,9 +475,15 @@ impl<C> Platform<C> {
                 let contract_ids = check_validation_result_with_data!(ids
                     .into_iter()
                     .map(|contract_id_vec| {
-                        Bytes32::from_vec(contract_id_vec).map(|bytes| bytes.0)
+                        Bytes32::from_vec(contract_id_vec)
+                            .map(|bytes| bytes.0)
+                            .map_err(|_| {
+                                QueryError::InvalidArgument(
+                                    "id must be a valid identifier (32 bytes long)".to_string(),
+                                )
+                            })
                     })
-                    .collect::<Result<Vec<[u8; 32]>, dpp::platform_value::Error>>());
+                    .collect::<Result<Vec<[u8; 32]>, QueryError>>());
                 let response_data = if prove {
                     let proof = check_validation_result_with_data!(self.drive.prove_contracts(
                         contract_ids.as_slice(),
@@ -518,7 +558,11 @@ impl<C> Platform<C> {
                 } = check_validation_result_with_data!(GetDataContractHistoryRequest::decode(
                     query_data
                 ));
-                let contract_id: Identifier = check_validation_result_with_data!(id.try_into());
+                let contract_id: Identifier = check_validation_result_with_data!(id
+                    .try_into()
+                    .map_err(|_| QueryError::InvalidArgument(
+                        "id must be a valid identifier (32 bytes long)".to_string()
+                    )));
 
                 // TODO: make a cast safe
                 let limit = limit
@@ -614,8 +658,11 @@ impl<C> Platform<C> {
                     prove,
                     start,
                 } = check_validation_result_with_data!(GetDocumentsRequest::decode(query_data));
-                let contract_id: Identifier =
-                    check_validation_result_with_data!(data_contract_id.try_into());
+                let contract_id: Identifier = check_validation_result_with_data!(data_contract_id
+                    .try_into()
+                    .map_err(|_| QueryError::InvalidArgument(
+                        "id must be a valid identifier (32 bytes long)".to_string()
+                    )));
                 let (_, contract) = check_validation_result_with_data!(self
                     .drive
                     .get_contract_with_fetch_info_and_fee(
@@ -748,10 +795,12 @@ impl<C> Platform<C> {
                 } = check_validation_result_with_data!(
                     GetIdentityByPublicKeyHashesRequest::decode(query_data)
                 );
-                let public_key_hash = check_validation_result_with_data!(Bytes20::from_vec(
-                    public_key_hash
-                )
-                .map(|bytes| bytes.0));
+                let public_key_hash =
+                    check_validation_result_with_data!(Bytes20::from_vec(public_key_hash)
+                        .map(|bytes| bytes.0)
+                        .map_err(|_| QueryError::InvalidArgument(
+                            "public key hash must be 20 bytes long".to_string()
+                        )));
                 let response_data = if prove {
                     let proof = check_validation_result_with_data!(self
                         .drive
@@ -760,6 +809,7 @@ impl<C> Platform<C> {
                             None,
                             platform_version
                         ));
+
                     GetIdentityByPublicKeyHashesResponse {
                         metadata: Some(metadata),
                         result: Some(get_identity_by_public_key_hashes_response::Result::Proof(
@@ -783,13 +833,21 @@ impl<C> Platform<C> {
                             platform_version
                         ));
                     let serialized_identity = check_validation_result_with_data!(maybe_identity
-                        .map(|identity| identity.serialize_consume_to_bytes())
-                        .transpose());
+                        .ok_or_else(|| {
+                            QueryError::NotFound(format!(
+                                "identity {} not found",
+                                hex::encode(public_key_hash)
+                            ))
+                        })
+                        .and_then(|identity| identity
+                            .serialize_consume_to_bytes()
+                            .map_err(QueryError::Protocol)));
+
                     GetIdentityByPublicKeyHashesResponse {
                         metadata: Some(metadata),
                         result: Some(
                             get_identity_by_public_key_hashes_response::Result::Identity(
-                                serialized_identity.unwrap_or_default(),
+                                serialized_identity,
                             ),
                         ),
                     }
@@ -807,9 +865,15 @@ impl<C> Platform<C> {
                 let public_key_hashes = check_validation_result_with_data!(public_key_hashes
                     .into_iter()
                     .map(|pub_key_hash_vec| {
-                        Bytes20::from_vec(pub_key_hash_vec).map(|bytes| bytes.0)
+                        Bytes20::from_vec(pub_key_hash_vec)
+                            .map(|bytes| bytes.0)
+                            .map_err(|_| {
+                                QueryError::InvalidArgument(
+                                    "public key hash must be 20 bytes long".to_string(),
+                                )
+                            })
                     })
-                    .collect::<Result<Vec<[u8; 20]>, dpp::platform_value::Error>>());
+                    .collect::<Result<Vec<[u8; 20]>, QueryError>>());
                 let response_data = if prove {
                     let proof = check_validation_result_with_data!(self
                         .drive
@@ -870,18 +934,26 @@ impl<C> Platform<C> {
                 let contract_ids = check_validation_result_with_data!(contracts
                     .into_iter()
                     .map(|contract_request| {
-                        Ok((
-                            Bytes32::from_vec(contract_request.contract_id).map(|bytes| bytes.0)?,
-                            contract_request.is_historical,
-                        ))
+                        Bytes32::from_vec(contract_request.contract_id)
+                            .map(|bytes| (bytes.0, contract_request.is_historical))
+                            .map_err(|_| {
+                                QueryError::InvalidArgument(
+                                    "id must be a valid identifier (32 bytes long)".to_string(),
+                                )
+                            })
                     })
-                    .collect::<Result<Vec<([u8; 32], bool)>, dpp::platform_value::Error>>());
+                    .collect::<Result<Vec<([u8; 32], bool)>, QueryError>>());
                 let identity_requests = check_validation_result_with_data!(identities
                     .into_iter()
                     .map(|identity_request| {
                         Ok(IdentityDriveQuery {
                             identity_id: Bytes32::from_vec(identity_request.identity_id)
-                                .map(|bytes| bytes.0)?,
+                                .map(|bytes| bytes.0)
+                                .map_err(|_| {
+                                    QueryError::InvalidArgument(
+                                        "id must be a valid identifier (32 bytes long)".to_string(),
+                                    )
+                                })?,
                             prove_request_type: IdentityProveRequestType::try_from(
                                 identity_request.request_type as u8,
                             )?,
@@ -892,9 +964,17 @@ impl<C> Platform<C> {
                     .into_iter()
                     .map(|document_proof_request| {
                         let contract_id: Identifier =
-                            document_proof_request.contract_id.try_into()?;
+                            document_proof_request.contract_id.try_into().map_err(|_| {
+                                QueryError::InvalidArgument(
+                                    "id must be a valid identifier (32 bytes long)".to_string(),
+                                )
+                            })?;
                         let document_id: Identifier =
-                            document_proof_request.document_id.try_into()?;
+                            document_proof_request.document_id.try_into().map_err(|_| {
+                                QueryError::InvalidArgument(
+                                    "id must be a valid identifier (32 bytes long)".to_string(),
+                                )
+                            })?;
 
                         Ok(SingleDocumentDriveQuery {
                             contract_id: contract_id.into_buffer(),
@@ -905,7 +985,7 @@ impl<C> Platform<C> {
                             block_time_ms: None, //None because we want latest
                         })
                     })
-                    .collect::<Result<Vec<_>, dpp::platform_value::Error>>());
+                    .collect::<Result<Vec<_>, QueryError>>());
                 let proof = check_validation_result_with_data!(self.drive.prove_multiple(
                     &identity_requests,
                     &contract_ids,
@@ -927,9 +1007,9 @@ impl<C> Platform<C> {
                 .encode_to_vec();
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
-            other => Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                QuerySyntaxError::Unsupported(format!("query path '{}' is not supported", other)),
-            ))),
+            other => Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(format!("query path '{}' is not supported", other)),
+            )),
         }
     }
 }

@@ -2947,17 +2947,15 @@ fn test_family_with_nulls_query() {
             let document =
                 Document::from_bytes(result.as_slice(), person_document_type, platform_version)
                     .expect("we should be able to deserialize the document");
-            let first_name_value = document
+            document
                 .get("firstName")
-                .expect("we should be able to get the first name");
-            if first_name_value.is_null() {
-                String::from("")
-            } else {
-                let first_name = first_name_value
-                    .as_text()
-                    .expect("the first name should be a string");
-                String::from(first_name)
-            }
+                .map(|value| {
+                    let first_name_value = value
+                        .as_text()
+                        .expect("the normalized label should be a string");
+                    String::from(first_name_value)
+                })
+                .unwrap_or_default()
         })
         .collect();
 
@@ -4251,17 +4249,15 @@ fn test_dpns_query_start_at_with_null_id() {
             let document =
                 Document::from_bytes(result.as_slice(), domain_document_type, platform_version)
                     .expect("we should be able to deserialize the document");
-            let normalized_label_value = document
+            document
                 .get("normalizedLabel")
-                .expect("we should be able to get the first name");
-            if normalized_label_value.is_null() {
-                String::from("")
-            } else {
-                let normalized_label = normalized_label_value
-                    .as_text()
-                    .expect("the normalized label should be a string");
-                String::from(normalized_label)
-            }
+                .map(|value| {
+                    let normalized_label = value
+                        .as_text()
+                        .expect("the normalized label should be a string");
+                    String::from(normalized_label)
+                })
+                .unwrap_or_default()
         })
         .collect();
 
@@ -4776,17 +4772,15 @@ fn test_dpns_query_start_after_with_null_id_desc() {
             let document =
                 Document::from_bytes(result.as_slice(), domain_document_type, platform_version)
                     .expect("we should be able to deserialize the document");
-            let normalized_label_value = document
+            document
                 .get("normalizedLabel")
-                .expect("we should be able to get the first name");
-            if normalized_label_value.is_null() {
-                String::from("")
-            } else {
-                let normalized_label = normalized_label_value
-                    .as_text()
-                    .expect("the normalized label should be a string");
-                String::from(normalized_label)
-            }
+                .map(|value| {
+                    let normalized_label = value
+                        .as_text()
+                        .expect("the normalized label should be a string");
+                    String::from(normalized_label)
+                })
+                .unwrap_or_default()
         })
         .collect();
 

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi-client",
-  "version": "0.25.0-dev.32",
+  "version": "0.25.0-dev.33",
   "description": "Client library used to access Dash DAPI endpoints",
   "main": "lib/index.js",
   "contributors": [
@@ -38,12 +38,14 @@
     "lodash": "^4.17.21",
     "node-fetch": "^2.6.7",
     "node-inspect-extracted": "^1.0.8",
-    "wasm-x11-hash": "~0.0.2"
+    "wasm-x11-hash": "~0.0.2",
+    "winston": "^3.2.1"
   },
   "devDependencies": {
     "@babel/core": "^7.15.5",
     "assert-browserify": "^2.0.0",
     "babel-loader": "^8.2.2",
+    "browserify-zlib": "^0.2.0",
     "buffer": "^6.0.3",
     "chai": "^4.3.9",
     "chai-as-promised": "^7.1.1",
@@ -65,8 +67,10 @@
     "karma-webpack": "^5.0.0",
     "mocha": "^9.1.2",
     "nyc": "^15.1.0",
+    "os-browserify": "^0.3.0",
     "path-browserify": "^1.0.1",
     "process": "^0.11.10",
+    "setimmediate": "^1.0.5",
     "sinon": "^11.1.2",
     "sinon-chai": "^3.7.0",
     "stream-browserify": "^3.0.0",

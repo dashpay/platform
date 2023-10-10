@@ -159,7 +159,7 @@ describe('DPNS Contract', () => {
       beforeEach(() => {
         rawDomainDocument = {
           label: 'Wallet',
-          normalizedLabel: 'wallet',
+          normalizedLabel: 'wa11et', // lower case and base58 chars only
           normalizedParentDomainName: 'dash',
           preorderSalt: crypto.randomBytes(32),
           records: {

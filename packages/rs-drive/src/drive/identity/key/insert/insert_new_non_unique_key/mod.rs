@@ -20,7 +20,8 @@ impl Drive {
     ///
     /// * `identity_id` - An array of bytes representing the identity id.
     /// * `identity_key` - The `IdentityPublicKey` to be inserted.
-    /// * `with_references` - A boolean value indicating whether to include references in the operations.
+    /// * `with_reference_to_non_unique_key` - A boolean value indicating whether to add to the non unique key tree lookup. Only should be true for masternodes.
+    /// * `with_searchable_inner_references` - A boolean value indicating whether to build the search tree, allowing to query for the key based on key type and purpose and security level (todo verify this statement).
     /// * `epoch` - The current epoch.
     /// * `estimated_costs_only_with_layer_info` - A mutable reference to an optional `HashMap` that may contain estimated layer information.
     /// * `transaction` - The transaction arguments.
@@ -38,7 +39,8 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         identity_key: IdentityPublicKey,
-        with_references: bool,
+        with_reference_to_non_unique_key: bool,
+        with_searchable_inner_references: bool,
         epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -58,7 +60,8 @@ impl Drive {
             0 => self.insert_new_non_unique_key_operations_v0(
                 identity_id,
                 identity_key,
-                with_references,
+                with_reference_to_non_unique_key,
+                with_searchable_inner_references,
                 epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,

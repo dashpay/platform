@@ -1,5 +1,6 @@
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contracts::dpns_contract::document_types::domain::properties::PARENT_DOMAIN_NAME;
 ///! The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
 use dpp::util::hash::hash;
 use std::collections::BTreeMap;
@@ -19,6 +20,7 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use dpp::system_data_contracts::dpns_contract;
 use dpp::system_data_contracts::dpns_contract::document_types::domain::properties::{ALLOW_SUBDOMAINS, DASH_ALIAS_IDENTITY_ID, DASH_UNIQUE_IDENTITY_ID, LABEL, NORMALIZED_LABEL, NORMALIZED_PARENT_DOMAIN_NAME, PREORDER_SALT, RECORDS};
+use dpp::util::strings::convert_to_homograph_safe_chars;
 use dpp::version::PlatformVersion;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
@@ -68,6 +70,10 @@ pub fn create_domain_data_trigger_v0(
     let normalized_label = data
         .get_str(NORMALIZED_LABEL)
         .map_err(ProtocolError::ValueError)?;
+
+    let parent_domain_name = data
+        .get_string(PARENT_DOMAIN_NAME)
+        .map_err(ProtocolError::ValueError)?;
     let normalized_parent_domain_name = data
         .get_string(NORMALIZED_PARENT_DOMAIN_NAME)
         .map_err(ProtocolError::ValueError)?;
@@ -88,12 +94,13 @@ pub fn create_domain_data_trigger_v0(
         .get_bool_at_path(ALLOW_SUBDOMAINS)
         .map_err(ProtocolError::ValueError)?;
 
-    let mut result = DataTriggerExecutionResult::default();
-    let full_domain_name = if normalized_parent_domain_name.is_empty() {
-        normalized_label.to_string()
+    let full_domain_name = if parent_domain_name.is_empty() {
+        label.to_string()
     } else {
-        format!("{normalized_label}.{normalized_parent_domain_name}")
+        format!("{normalized_label}.{parent_domain_name}")
     };
+
+    let mut result = DataTriggerExecutionResult::default();
 
     if !is_dry_run {
         if full_domain_name.len() > MAX_PRINTABLE_DOMAIN_NAME_LENGTH {
@@ -110,13 +117,28 @@ pub fn create_domain_data_trigger_v0(
             result.add_error(err)
         }
 
-        if normalized_label != label.to_lowercase() {
+        if normalized_label != convert_to_homograph_safe_chars(label.as_str()) {
             let err = DataTriggerConditionError::new(
                 data_contract.id(),
                 document_transition.base().id(),
                 format!(
                     "Normalized label doesn't match label: {} != {}",
                     normalized_label, label
+                ),
+            );
+
+            result.add_error(err);
+        }
+
+        if normalized_parent_domain_name
+            != convert_to_homograph_safe_chars(parent_domain_name.as_str())
+        {
+            let err = DataTriggerConditionError::new(
+                data_contract.id(),
+                document_transition.base().id(),
+                format!(
+                    "Normalized parent domain name doesn't match parent domain name: {} != {}",
+                    normalized_parent_domain_name, parent_domain_name
                 ),
             );
 

@@ -223,7 +223,10 @@ impl<C> Platform<C> {
         operations: &mut Vec<DriveOperation>,
     ) {
         operations.push(DriveOperation::IdentityOperation(
-            IdentityOperationType::AddNewIdentity { identity },
+            IdentityOperationType::AddNewIdentity {
+                identity,
+                is_masternode_identity: false,
+            },
         ))
     }
 
@@ -237,6 +240,7 @@ impl<C> Platform<C> {
         let document_stub_properties_value = platform_value!({
             "label" : domain,
             "normalizedLabel" : domain,
+            "parentDomainName" : "",
             "normalizedParentDomainName" : "",
             "preorderSalt" : BinaryData::new(DPNS_DASH_TLD_PREORDER_SALT.to_vec()),
             "records" : {
@@ -285,11 +289,20 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     mod create_genesis_state {
+        use crate::config::PlatformConfig;
         use crate::test::helpers::setup::TestPlatformBuilder;
+        use drive::drive::config::DriveConfig;
 
         #[test]
         pub fn should_create_genesis_state_deterministically() {
             let platform = TestPlatformBuilder::new()
+                .with_config(PlatformConfig {
+                    drive: DriveConfig {
+                        epochs_per_era: 20,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -303,8 +316,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    139, 38, 114, 176, 67, 184, 113, 97, 33, 58, 51, 77, 92, 18, 20, 59, 134, 39,
-                    104, 71, 1, 22, 62, 201, 111, 142, 102, 58, 75, 81, 230, 222
+                    153, 189, 142, 116, 200, 232, 184, 243, 200, 66, 54, 210, 25, 3, 35, 2, 73, 24,
+                    70, 226, 156, 101, 203, 28, 42, 22, 32, 50, 92, 148, 98, 218
                 ]
             )
         }

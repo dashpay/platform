@@ -22,7 +22,7 @@ jobs:
     if: github.event_name != 'workflow_dispatch'
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Check package version matches tag
         uses: geritol/match-tag-to-package-version@0.2.0
@@ -80,7 +80,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -121,7 +121,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -165,7 +165,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -209,7 +209,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -265,7 +265,7 @@ jobs:
             os: macos-12
     steps:
       - name: Check out repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install macOS build deps
         if: runner.os == 'macOS'

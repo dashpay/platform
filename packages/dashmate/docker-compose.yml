@@ -45,8 +45,9 @@ services:
       org.dashmate.service.title: "Drive ABCI"
     restart: unless-stopped
     volumes:
-      - drive_abci_data:/var/lib/dash/rs-drive-abci
-      - drive_abci_logs:/var/log/dash
+      - drive_abci_data:/var/lib/dash/rs-drive-abci/db
+      - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH:?err}:/var/log/dash/drive/pretty
+      - ${PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH:?err}:/var/log/dash/drive/json
     environment:
       - BLOCK_SPACING_MS=3000 # TODO: sync with tenderdash
       - CHAIN_ID=${PLATFORM_DRIVE_TENDERDASH_GENESIS_CHAIN_ID:-devnet}
@@ -60,6 +61,7 @@ services:
       - DPNS_SECOND_PUBLIC_KEY=${PLATFORM_DPNS_SECOND_PUBLIC_KEY}
       - DASHPAY_MASTER_PUBLIC_KEY=${PLATFORM_DASHPAY_MASTER_PUBLIC_KEY}
       - DASHPAY_SECOND_PUBLIC_KEY=${PLATFORM_DASHPAY_SECOND_PUBLIC_KEY}
+      - EPOCH_TIME_LENGTH_S=${PLATFORM_DRIVE_ABCI_EPOCH_TIME}
       - FEATURE_FLAGS_MASTER_PUBLIC_KEY=${PLATFORM_FEATURE_FLAGS_MASTER_PUBLIC_KEY}
       - FEATURE_FLAGS_SECOND_PUBLIC_KEY=${PLATFORM_FEATURE_FLAGS_SECOND_PUBLIC_KEY}
       - MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY=${PLATFORM_MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY}
@@ -68,8 +70,18 @@ services:
       - WITHDRAWALS_SECOND_PUBLIC_KEY=${PLATFORM_WITHDRAWALS_SECOND_PUBLIC_KEY}
       - QUORUM_SIZE=5 # TODO: sync with Tenderdash
       - QUORUM_TYPE=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_LLMQ_TYPE:?err}
-      - NETWORK=${NETWORK}
-      - TENDERDASH_P2P_PORT=${PLATFORM_DRIVE_TENDERDASH_P2P_PORT}
+      - NETWORK=${NETWORK:?err}
+      - TENDERDASH_P2P_PORT=${PLATFORM_DRIVE_TENDERDASH_P2P_PORT:?err}
+      - ABCI_LOG_STDOUT_DESTINATION=stdout
+      - ABCI_LOG_STDOUT_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_STDOUT_LEVEL:?err}
+      - ABCI_LOG_STDOUT_FORMAT=pretty
+      - ABCI_LOG_STDOUT_COLOR=true
+      - ABCI_LOG_PRETTY_DESTINATION=/var/log/dash/drive/pretty/${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME:?err}
+      - ABCI_LOG_PRETTY_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_LEVEL:?err}
+      - ABCI_LOG_PRETTY_FORMAT=pretty
+      - ABCI_LOG_JSON_DESTINATION=/var/log/dash/drive/json/${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME:?err}
+      - ABCI_LOG_JSON_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_LEVEL:?err}
+      - ABCI_LOG_JSON_FORMAT=json
     stop_grace_period: 30s
     profiles:
       - platform
@@ -89,6 +101,7 @@ services:
     volumes:
       - drive_tenderdash:/tenderdash
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/tenderdash:/tenderdash/config:ro
+      - ${PLATFORM_DRIVE_TENDERDASH_LOG_DIRECTORY_PATH:?err}:/var/log/tenderdash
     stop_grace_period: 10s
     profiles:
       - platform

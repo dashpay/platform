@@ -24,6 +24,9 @@ describe('JsonRpcTransport', () => {
 
     globalOptions = {
       retries: 0,
+      loggerOptions: {
+        identifier: '',
+      },
     };
 
     dapiAddressProviderMock = {
