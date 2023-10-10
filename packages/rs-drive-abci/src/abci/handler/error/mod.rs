@@ -1,3 +1,5 @@
+pub mod consensus;
+
 use crate::error::query::QueryError;
 use crate::error::Error;
 use dpp::platform_value::platform_value;

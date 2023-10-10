@@ -226,7 +226,7 @@ where
                 .collect(),
         );
 
-        let (block_fees, tx_results) = self.process_raw_state_transitions(
+        let (block_fees, state_transition_results) = self.process_raw_state_transitions(
             raw_state_transitions,
             block_execution_context.block_platform_state(),
             &block_info,
@@ -278,8 +278,9 @@ where
         Ok(ValidationResult::new_with_data(
             block_execution_outcome::v0::BlockExecutionOutcome {
                 app_hash: root_hash,
-                tx_results,
+                state_transition_results,
                 validator_set_update,
+                protocol_version: platform_version.protocol_version,
             },
         ))
     }

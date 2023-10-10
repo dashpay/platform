@@ -2,7 +2,7 @@ mod error;
 
 /// The handlers of abci messages
 #[cfg(any(feature = "server", test))]
-pub mod handlers;
+pub mod handler;
 
 // server configuration
 pub mod config;
