@@ -37,6 +37,7 @@ impl FeeRefunds {
     pub fn from_storage_removal<I, C, E>(
         storage_removal: I,
         current_epoch_index: EpochIndex,
+        epochs_per_era: u16,
     ) -> Result<Self, ProtocolError>
     where
         I: IntoIterator<Item = ([u8; 32], C)>,
@@ -62,6 +63,7 @@ impl FeeRefunds {
                             credits,
                             epoch_index,
                             current_epoch_index,
+                            epochs_per_era,
                         )?;
 
                         Ok((epoch_index, amount))
@@ -192,7 +194,7 @@ mod tests {
             let storage_removal =
                 BytesPerEpochByIdentifier::from_iter([(identity_id, bytes_per_epoch)]);
 
-            let fee_refunds = FeeRefunds::from_storage_removal(storage_removal, 3)
+            let fee_refunds = FeeRefunds::from_storage_removal(storage_removal, 3, 20)
                 .expect("should create fee refunds");
 
             let credits_per_epoch = fee_refunds.get(&identity_id).expect("should exists");

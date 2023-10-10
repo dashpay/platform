@@ -202,6 +202,7 @@ impl LowLevelDriveOperation {
     pub fn consume_to_fees(
         drive_operation: Vec<LowLevelDriveOperation>,
         epoch: &Epoch,
+        epochs_per_era: u16,
     ) -> Result<Vec<FeeResult>, Error> {
         drive_operation
             .into_iter()
@@ -231,6 +232,7 @@ impl LowLevelDriveOperation {
                                     FeeRefunds::from_storage_removal(
                                         removal_per_epoch_by_identifier,
                                         epoch.index,
+                                        epochs_per_era,
                                     )?,
                                     system_amount,
                                 )
