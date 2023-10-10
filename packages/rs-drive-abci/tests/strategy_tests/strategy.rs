@@ -955,7 +955,9 @@ pub struct ChainExecutionOutcome<'a> {
 
 impl<'a> ChainExecutionOutcome<'a> {
     pub fn current_quorum(&self) -> &TestQuorumInfo {
-        self.quorums.get::<QuorumHash>(&self.current_quorum_hash).unwrap()
+        self.quorums
+            .get::<QuorumHash>(&self.current_quorum_hash)
+            .unwrap()
     }
 }
 

@@ -150,18 +150,20 @@ impl EpochInfoV0 {
         let is_epoch_change = epoch_index_floored > previous_epoch_index_floored;
 
         let current_epoch_index: u16 = epoch_index_floored.try_into().map_err(|_| {
-            Error::Execution(ExecutionError::Conversion(
-                format!("can't convert epochs index {} from Decimal to u16", epoch_index_floored),
-            ))
+            Error::Execution(ExecutionError::Conversion(format!(
+                "can't convert epochs index {} from Decimal to u16",
+                epoch_index_floored
+            )))
         })?;
 
         let previous_epoch_index: Option<u16> = if epoch_index_floored
             != previous_epoch_index_floored
         {
             let previous_epoch_index = previous_epoch_index_floored.try_into().map_err(|_| {
-                Error::Execution(ExecutionError::Conversion(
-                    format!("can't convert previous epochs index {} from Decimal to u16", previous_epoch_index_floored),
-                ))
+                Error::Execution(ExecutionError::Conversion(format!(
+                    "can't convert previous epochs index {} from Decimal to u16",
+                    previous_epoch_index_floored
+                )))
             })?;
 
             Some(previous_epoch_index)

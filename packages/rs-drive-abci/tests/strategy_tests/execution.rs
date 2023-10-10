@@ -601,7 +601,8 @@ pub(crate) fn continue_chain_for_strategy(
         quorums,
         mut current_quorum_hash,
         current_proposer_versions,
-        start_time_ms, mut current_time_ms,
+        start_time_ms,
+        mut current_time_ms,
     } = chain_execution_parameters;
     let mut rng = match seed {
         StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
@@ -613,7 +614,7 @@ pub(crate) fn continue_chain_for_strategy(
     let mut signer = strategy.signer.clone().unwrap_or_default();
     let mut i = 0;
 
-    let blocks_per_epoch = config.execution.epoch_time_length_s / config.block_spacing_ms;
+    let blocks_per_epoch = config.execution.epoch_time_length_s * 1000 / config.block_spacing_ms;
 
     let proposer_versions = current_proposer_versions.unwrap_or(
         strategy.upgrading_info.as_ref().map(|upgrading_info| {

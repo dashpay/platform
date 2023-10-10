@@ -566,7 +566,7 @@ mod tests {
             execution: ExecutionConfig {
                 verify_sum_trees: true,
                 validator_set_quorum_rotation_block_count: 100,
-                epoch_time_length_s:  hour_in_s,
+                epoch_time_length_s: hour_in_s,
                 ..Default::default()
             },
             block_spacing_ms: three_mins_in_ms,

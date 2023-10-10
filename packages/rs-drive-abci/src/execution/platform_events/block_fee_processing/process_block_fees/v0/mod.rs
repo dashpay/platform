@@ -244,8 +244,9 @@ mod tests {
             let current_epoch = Epoch::new(epoch_index).unwrap();
             let platform_version = PlatformVersion::latest();
 
-            let block_time_ms =
-                genesis_time_ms + epoch_index as u64 * platform.config.execution.epoch_time_length_s * 1000 + block_height;
+            let block_time_ms = genesis_time_ms
+                + epoch_index as u64 * platform.config.execution.epoch_time_length_s * 1000
+                + block_height;
 
             let block_info = BlockStateInfoV0 {
                 height: block_height,
@@ -258,10 +259,13 @@ mod tests {
                 app_hash: None,
             };
 
-            let epoch_info =
-                EpochInfoV0::from_genesis_time_and_block_info(genesis_time_ms, &block_info, platform.config.execution.epoch_time_length_s)
-                    .expect("should calculate epoch info")
-                    .into();
+            let epoch_info = EpochInfoV0::from_genesis_time_and_block_info(
+                genesis_time_ms,
+                &block_info,
+                platform.config.execution.epoch_time_length_s,
+            )
+            .expect("should calculate epoch info")
+            .into();
 
             let block_fees: BlockFees = BlockFeesV0 {
                 storage_fee: 100000,
