@@ -16,7 +16,12 @@
 
 use std::fmt::Debug;
 
-use crate::{error::Error, platform::query::Query, Sdk};
+use crate::{
+    error::Error,
+    mock::{MockRequest, MockResponse},
+    platform::query::Query,
+    Sdk,
+};
 use dapi_grpc::platform::v0::{self as platform_proto};
 use dpp::{document::Document, prelude::Identity};
 use drive_proof_verifier::FromProof;
@@ -61,7 +66,7 @@ pub trait Fetch
 where
     Self: Sized
         + Debug
-        + for<'de> serde::Deserialize<'de>
+        + MockResponse
         + FromProof<
             <Self as Fetch>::Request,
             Request = <Self as Fetch>::Request,
@@ -74,8 +79,7 @@ where
     ///
     /// This type must implement `TransportRequest`.
     type Request: TransportRequest
-        + serde::Serialize
-        + for<'de> serde::Deserialize<'de>
+        + MockRequest
         + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>;
 
     /// Fetch object from the Platfom.

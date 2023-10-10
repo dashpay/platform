@@ -80,7 +80,7 @@ type ExpectationKey = Vec<u8>;
 type ExpectationValue = Vec<u8>;
 #[derive(Default)]
 /// Requests expected by a mock and their responses.
-pub struct Expectations {
+struct Expectations {
     expectations: HashMap<ExpectationKey, ExpectationValue>,
 }
 
@@ -111,12 +111,6 @@ impl Expectations {
         self.expectations
             .get(&key)
             .and_then(Self::deserialize_value)
-    }
-
-    /// Remove the expectation for a given request.
-    pub fn remove<I: serde::Serialize>(&mut self, request: I) {
-        let key = Self::key(&request);
-        self.expectations.remove(&key);
     }
 
     fn key<I: serde::Serialize>(request: &I) -> ExpectationKey {

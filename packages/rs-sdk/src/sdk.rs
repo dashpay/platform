@@ -1,16 +1,24 @@
 //! Dash API implementation
+use std::sync::Arc;
+
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
-use crate::{core::CoreClient, error::Error};
+use crate::{
+    core::CoreClient,
+    error::Error,
+    mock::{MockRequest, MockResponse},
+};
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive_proof_verifier::{FromProof, QuorumInfoProvider};
 use rs_dapi_client::{
+    mock::MockDapiClient,
     transport::{TransportClient, TransportRequest},
     Dapi, DapiClient, DapiClientError, RequestSettings,
 };
 
 pub use http::Uri;
 pub use rs_dapi_client::AddressList;
+use tokio::sync::Mutex;
 
 /// Dash Platform SDK
 ///
@@ -32,6 +40,7 @@ pub enum Sdk {
     #[cfg(feature = "mocks")]
     Mock {
         mock: MockDashPlatformSdk,
+        dapi: Arc<Mutex<MockDapiClient>>,
     },
 }
 
@@ -54,14 +63,13 @@ impl Sdk {
     ///
     /// - `R`: Type of the request that was used to fetch the proof.
     /// - `O`: Type of the object to be retrieved from the proof.
-    pub(crate) fn parse_proof<R, O: FromProof<R>>(
+    pub(crate) fn parse_proof<R, O: FromProof<R> + MockResponse>(
         &self,
         request: O::Request,
         response: O::Response,
     ) -> Result<Option<O>, drive_proof_verifier::Error>
     where
-        O::Request: serde::Serialize,
-        O: for<'de> serde::Deserialize<'de>,
+        O::Request: MockRequest,
     {
         match self {
             Self::Dapi { ref core, .. } => {
@@ -122,7 +130,10 @@ impl Dapi for Sdk {
         match self {
             Self::Dapi { ref mut dapi, .. } => dapi.execute(request, settings).await,
             #[cfg(feature = "mocks")]
-            Self::Mock { ref mut mock, .. } => mock.execute(request, settings).await,
+            Self::Mock { ref mut dapi, .. } => {
+                let mut dapi_guard = dapi.lock().await;
+                dapi_guard.execute(request, settings).await
+            }
         }
     }
 }
@@ -230,9 +241,11 @@ impl SdkBuilder {
                 Ok(Sdk::Dapi { dapi, core })
             }
             #[cfg(feature = "mocks")]
-            None => Ok(Sdk::Mock {
-                mock: MockDashPlatformSdk::new(),
-            }),
+            None =>{ let dapi =Arc::new(Mutex::new(  MockDapiClient::new()));
+                Ok(Sdk::Mock {
+                mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi)),
+                dapi,
+            })},
             #[cfg(not(feature = "mocks"))]
             None => Err(Error::Config(
                 "Mock mode is not available. Please enable `mocks` feature or provide address list.".to_string(),

@@ -13,7 +13,6 @@
 //!
 //! ## Error Handling
 //! Any errors encountered during the execution are returned as Error instances.
-use std::fmt::Debug;
 
 use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse};
 use dpp::document::Document;
@@ -22,6 +21,7 @@ use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 
 use crate::{
     error::Error,
+    mock::MockResponse,
     platform::{document_query::DocumentQuery, query::Query},
     Sdk,
 };
@@ -30,8 +30,9 @@ use crate::{
 #[async_trait::async_trait]
 pub trait List
 where
-    Self: for<'de> serde::Deserialize<'de> + Sized + Debug,
-    Vec<Self>: FromProof<
+    Self: Sized,
+    Vec<Self>: MockResponse
+        + FromProof<
             Self::Request,
             Request = Self::Request,
             Response = <<Self as List>::Request as TransportRequest>::Response,
@@ -42,7 +43,8 @@ where
     /// Most likely, one of the types defined in `dapi_grpc::platform::v0`.
     ///
     /// This type must implement `TransportRequest`.
-    type Request: TransportRequest + Into<<Vec<Self> as FromProof<Self::Request>>::Request>;
+    type Request: TransportRequest
+        + Into<<Vec<Self> as FromProof<<Self as List>::Request>>::Request>;
 
     /// # List or Search for Multiple Objects on the Platform
     ///
