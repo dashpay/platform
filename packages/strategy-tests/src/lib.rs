@@ -3,22 +3,17 @@ use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::operations::{
     DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
 };
-use crate::query::QueryStrategy;
-use dashcore_rpc::dashcore;
-use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
 
-use dpp::document::{DocumentV0Getters, DocumentV0Setters};
-use dpp::fee::Credits;
+use dpp::document::DocumentV0Getters;
 use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::StateTransition;
-use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
@@ -27,16 +22,13 @@ use drive::drive::Drive;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use drive::query::DriveQuery;
-use drive_abci::abci::AbciApplication;
-use drive_abci::mimic::test_quorum::TestQuorumInfo;
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
-use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
+use rand::prelude::{IteratorRandom, StdRng};
 use rand::Rng;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters};
+use std::collections::{BTreeMap, HashSet};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::BinaryData;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
@@ -47,14 +39,11 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use drive_abci::test::helpers::signer::SimpleSigner;
 
 mod frequency;
 mod operations;
-mod query;
 mod transitions;
-mod verify_state_transitions;
 
 
 pub enum StrategyMode {
@@ -81,7 +70,6 @@ pub struct Strategy {
     pub start_identities: Vec<(Identity, StateTransition)>,
     pub identities_inserts: Frequency,
     pub failure_testing: Option<FailureStrategy>,
-    pub query_testing: Option<QueryStrategy>,
     pub verify_state_transition_results: bool,
     pub signer: Option<SimpleSigner>,
 }
