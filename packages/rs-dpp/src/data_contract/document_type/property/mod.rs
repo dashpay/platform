@@ -264,10 +264,54 @@ impl DocumentPropertyType {
             DocumentPropertyType::Object(sub_fields) => {
                 let value_vec = sub_fields
                     .iter()
+                    .filter_map(|(string, field_type)| {
+                        if field_type.required {
+                            Some((
+                                Value::Text(string.clone()),
+                                field_type.property_type.random_value(rng),
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                Value::Map(value_vec)
+            }
+            DocumentPropertyType::Array(_) => Value::Null,
+            DocumentPropertyType::VariableTypeArray(_) => Value::Null,
+            DocumentPropertyType::Identifier => Value::Identifier(rng.gen()),
+        }
+    }
+
+    pub fn random_sub_filled_value(&self, rng: &mut StdRng) -> Value {
+        match self {
+            DocumentPropertyType::Integer => Value::I64(rng.gen::<i64>()),
+            DocumentPropertyType::Number => Value::Float(rng.gen::<f64>()),
+            DocumentPropertyType::String(_, _) => {
+                let size = self.min_size().unwrap();
+                Value::Text(
+                    rng.sample_iter(Alphanumeric)
+                        .take(size as usize)
+                        .map(char::from)
+                        .collect(),
+                )
+            }
+            DocumentPropertyType::ByteArray(_, _) => {
+                let size = self.min_size().unwrap();
+                Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
+            }
+            DocumentPropertyType::Boolean => Value::Bool(rng.gen::<bool>()),
+            DocumentPropertyType::Date => {
+                let f: f64 = rng.gen_range(1548910575000.0..1648910575000.0);
+                Value::Float(f.round() / 1000.0)
+            }
+            DocumentPropertyType::Object(sub_fields) => {
+                let value_vec = sub_fields
+                    .iter()
                     .map(|(string, field_type)| {
                         (
                             Value::Text(string.clone()),
-                            field_type.property_type.random_value(rng),
+                            field_type.property_type.random_sub_filled_value(rng),
                         )
                     })
                     .collect();
@@ -338,7 +382,7 @@ impl DocumentPropertyType {
         }
     }
 
-    pub fn read_optionaly_from(
+    pub fn read_optionally_from(
         &self,
         buf: &mut BufReader<&[u8]>,
         required: bool,
@@ -350,7 +394,7 @@ impl DocumentPropertyType {
                 ))
             })?;
             if marker == 0 {
-                return Ok(Some(Value::Null));
+                return Ok(None);
             }
         }
         match self {
@@ -432,8 +476,9 @@ impl DocumentPropertyType {
                 let values = inner_fields
                     .iter()
                     .filter_map(|(key, field)| {
-                        let read_value =
-                            field.property_type.read_optionaly_from(buf, field.required);
+                        let read_value = field
+                            .property_type
+                            .read_optionally_from(buf, field.required);
                         match read_value {
                             Ok(read_value) => read_value
                                 .map(|read_value| Ok((Value::Text(key.clone()), read_value))),

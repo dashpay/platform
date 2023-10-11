@@ -55,7 +55,7 @@ use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
 
-#[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode)]
+#[derive(Error, Debug, PlatformSerialize, PlatformDeserialize, Encode, Decode, Clone)]
 pub enum BasicError {
     /*
 

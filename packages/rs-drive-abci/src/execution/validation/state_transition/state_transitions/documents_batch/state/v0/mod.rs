@@ -78,13 +78,15 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
             state_transition_execution_context: &state_transition_execution_context,
         };
 
-        let data_triggers_validation_result = execute_data_triggers(
-            state_transition_action.transitions(),
-            &data_trigger_execution_context,
-            platform.state.current_platform_version()?,
-        )?;
+        if platform.config.execution.use_document_triggers {
+            let data_triggers_validation_result = execute_data_triggers(
+                state_transition_action.transitions(),
+                &data_trigger_execution_context,
+                platform.state.current_platform_version()?,
+            )?;
 
-        validation_result.add_errors_into(data_triggers_validation_result.errors);
+            validation_result.add_errors_into(data_triggers_validation_result.errors);
+        }
 
         validation_result.set_data(state_transition_action.into());
 

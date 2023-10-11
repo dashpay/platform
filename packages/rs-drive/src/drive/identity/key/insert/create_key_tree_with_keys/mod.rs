@@ -34,6 +34,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         keys: Vec<IdentityPublicKey>,
+        register_all_keys_as_non_unique: bool,
         epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -52,6 +53,7 @@ impl Drive {
             0 => self.create_key_tree_with_keys_operations_v0(
                 identity_id,
                 keys,
+                register_all_keys_as_non_unique,
                 epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,

@@ -2410,6 +2410,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["assert-browserify", "npm:2.0.0"],\
             ["babel-loader", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:8.2.3"],\
+            ["browserify-zlib", "npm:0.2.0"],\
             ["bs58", "npm:4.0.1"],\
             ["buffer", "npm:6.0.3"],\
             ["cbor", "npm:8.1.0"],\
@@ -2437,8 +2438,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["node-fetch", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:2.6.7"],\
             ["node-inspect-extracted", "npm:1.0.8"],\
             ["nyc", "npm:15.1.0"],\
+            ["os-browserify", "npm:0.3.0"],\
             ["path-browserify", "npm:1.0.1"],\
             ["process", "npm:0.11.10"],\
+            ["setimmediate", "npm:1.0.5"],\
             ["sinon", "npm:11.1.2"],\
             ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"],\
             ["stream-browserify", "npm:3.0.0"],\
@@ -2447,7 +2450,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["util", "npm:0.12.4"],\
             ["wasm-x11-hash", "npm:0.0.2"],\
             ["webpack", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:5.76.1"],\
-            ["webpack-cli", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:4.9.1"]\
+            ["webpack-cli", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:4.9.1"],\
+            ["winston", "npm:3.3.3"]\
           ],\
           "linkType": "SOFT"\
         }]\

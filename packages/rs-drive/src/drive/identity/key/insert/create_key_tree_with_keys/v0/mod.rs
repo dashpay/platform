@@ -44,6 +44,7 @@ impl Drive {
         &self,
         identity_id: [u8; 32],
         keys: Vec<IdentityPublicKey>,
+        register_all_keys_as_non_unique_for_masternode: bool,
         epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -85,9 +86,13 @@ impl Drive {
             drive_version,
         )?;
 
-        let (unique_keys, non_unique_keys): (Vec<IdentityPublicKey>, Vec<IdentityPublicKey>) = keys
-            .into_iter()
-            .partition(|key| key.key_type().is_unique_key_type());
+        let (unique_keys, non_unique_keys): (Vec<IdentityPublicKey>, Vec<IdentityPublicKey>) =
+            if register_all_keys_as_non_unique_for_masternode {
+                (vec![], keys)
+            } else {
+                keys.into_iter()
+                    .partition(|key| key.key_type().is_unique_key_type())
+            };
 
         for key in unique_keys.into_iter() {
             self.insert_new_unique_key_operations(
@@ -106,6 +111,8 @@ impl Drive {
             self.insert_new_non_unique_key_operations(
                 identity_id,
                 key,
+                // if we are a masternode this then we should have false here
+                !register_all_keys_as_non_unique_for_masternode,
                 true,
                 epoch,
                 estimated_costs_only_with_layer_info,

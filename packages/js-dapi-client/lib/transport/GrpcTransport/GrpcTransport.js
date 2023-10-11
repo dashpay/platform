@@ -1,3 +1,5 @@
+const logger = require('../../logger');
+
 const MaxRetriesReachedError = require('../errors/response/MaxRetriesReachedError');
 const NoAvailableAddressesForRetryError = require('../errors/response/NoAvailableAddressesForRetryError');
 const NoAvailableAddressesError = require('../errors/NoAvailableAddressesError');
@@ -27,6 +29,7 @@ class GrpcTransport {
     this.globalOptions = globalOptions;
 
     this.lastUsedAddress = null;
+    this.logger = logger.getForId(globalOptions.loggerOptions.identifier);
   }
 
   /**
@@ -67,6 +70,8 @@ class GrpcTransport {
       );
     }
 
+    this.logger.debug(`GRPC Request ${method} to ${address.toString()}`, { options });
+
     try {
       const result = await client[method](requestMessage, {}, requestOptions);
 
@@ -77,6 +82,8 @@ class GrpcTransport {
       return result;
     } catch (error) {
       this.lastUsedAddress = address;
+
+      this.logger.error(`GRPC Request ${method} to ${address.toString()} failed with error: ${error.message}`);
 
       // for unknown errors
       if (error.code === undefined) {

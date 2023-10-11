@@ -32,7 +32,7 @@ describe('Platform', () => {
           {
             where: [
               ['normalizedParentDomainName', '==', 'dash'],
-              ['normalizedLabel', 'startsWith', 'prefix'],
+              ['normalizedLabel', 'startsWith', 'pref1x'],
             ],
             orderBy: [['normalizedLabel', 'asc']],
           },
@@ -54,7 +54,7 @@ describe('Platform', () => {
           {
             where: [
               ['normalizedParentDomainName', '==', 'dash'],
-              ['normalizedLabel', 'startsWith', 'prefix'],
+              ['normalizedLabel', 'startsWith', 'pref1x'],
             ],
             orderBy: [['normalizedLabel', 'asc']],
           },

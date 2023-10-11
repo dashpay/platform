@@ -1,6 +1,7 @@
 mod contract;
 mod document;
 mod drive_methods;
+mod finalize_task;
 mod identity;
 mod system;
 mod withdrawals;
@@ -28,6 +29,10 @@ use crate::fee::op::LowLevelDriveOperation::GroveOperation;
 use dpp::version::PlatformVersion;
 use grovedb::batch::{GroveDbOp, KeyInfoPath};
 
+use crate::drive::batch::drive_op_batch::finalize_task::{
+    DriveOperationFinalizationTasks, DriveOperationFinalizeTask,
+};
+use crate::error::drive::DriveError;
 use std::collections::{BTreeMap, HashMap};
 
 /// A converter that will get Drive Operations from High Level Operations
@@ -131,6 +136,40 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
                 .into_iter()
                 .map(GroveOperation)
                 .collect()),
+        }
+    }
+}
+
+impl DriveOperationFinalizationTasks for DriveOperation<'_> {
+    fn finalization_tasks(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error> {
+        match platform_version
+            .drive
+            .methods
+            .state_transitions
+            .operations
+            .finalization_tasks
+        {
+            0 => self.finalization_tasks_v0(platform_version),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "DriveOperation.finalization_tasks".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+}
+
+impl DriveOperation<'_> {
+    fn finalization_tasks_v0(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Vec<DriveOperationFinalizeTask>>, Error> {
+        match self {
+            DriveOperation::DataContractOperation(o) => o.finalization_tasks(platform_version),
+            _ => Ok(None),
         }
     }
 }

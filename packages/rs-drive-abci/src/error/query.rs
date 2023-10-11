@@ -32,6 +32,14 @@ pub enum QueryError {
     /// Decoding error Error
     #[error("protobuf decoding error: {0}")]
     ProtobufDecode(#[from] DecodeError),
+
+    /// Invalid argument Error
+    #[error("invalid argument error: {0}")]
+    InvalidArgument(String),
+
+    /// Not found Error
+    #[error("not found error: {0}")]
+    NotFound(String),
 }
 
 impl From<QueryError> for ResponseException {

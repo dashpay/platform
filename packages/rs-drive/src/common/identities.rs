@@ -127,6 +127,7 @@ pub fn create_test_identity_with_rng(
     drive
         .add_new_identity(
             identity.clone(),
+            false,
             &BlockInfo::default(),
             true,
             transaction,

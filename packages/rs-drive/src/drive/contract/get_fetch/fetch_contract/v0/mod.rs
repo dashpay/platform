@@ -90,6 +90,7 @@ impl Drive {
                             None,
                             Some(vec![drive_operation]),
                             epoch,
+                            self.config.epochs_per_era,
                             platform_version
                         )
                     ))
@@ -143,6 +144,7 @@ impl Drive {
                                     None,
                                     Some(vec![drive_operation]),
                                     epoch,
+                                    self.config.epochs_per_era,
                                     platform_version
                                 )
                             ))

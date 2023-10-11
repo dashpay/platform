@@ -53,7 +53,7 @@ pub trait Dapi {
 }
 
 #[async_trait]
-impl<'a, T: Dapi + Send> Dapi for MutexGuard<'a, T> {
+impl<D: Dapi + Send> Dapi for &mut D {
     async fn execute<R>(
         &mut self,
         request: R,
@@ -62,8 +62,7 @@ impl<'a, T: Dapi + Send> Dapi for MutexGuard<'a, T> {
     where
         R: TransportRequest,
     {
-        let dapi: &mut T = self.deref_mut();
-        dapi.execute(request, settings).await
+        (**self).execute(request, settings).await
     }
 }
 

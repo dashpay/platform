@@ -8,6 +8,7 @@
 //!
 //! ## Error Handling
 //! Any errors encountered during the execution are returned as Error instances.
+use std::{fmt::Debug, ops::DerefMut};
 
 use dpp::document::Document;
 use drive_proof_verifier::proof::from_proof::FromProof;
@@ -65,7 +66,7 @@ where
 
         let response = request
             .clone()
-            .execute(api, RequestSettings::default())
+            .execute(client.deref_mut(), RequestSettings::default())
             .await?;
 
         let object_type = std::any::type_name::<Self>().to_string();
@@ -91,8 +92,10 @@ impl List for Document {
     ) -> Result<Option<Vec<Self>>, Error> {
         let document_query: DocumentQuery = query.query()?;
 
-        let request = document_query.clone();
-        let response = request.execute(api, RequestSettings::default()).await?;
+        let mut client = api.platform_client().await;
+        let response: GetDocumentsResponse = request
+            .execute(client.deref_mut(), RequestSettings::default())
+            .await?;
 
         tracing::trace!(request=?document_query, response=?response, "list documents");
 
