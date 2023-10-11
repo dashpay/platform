@@ -47,14 +47,14 @@ function startNodeTaskFactory(
     // Check Drive log files are created
     if (config.get('platform.enable')) {
       const prettyFilePath = config.get('platform.drive.abci.log.prettyFile.path');
-      ensureFileMountExists(prettyFilePath);
+      ensureFileMountExists(prettyFilePath, 0o666);
 
       const jsonFilePath = config.get('platform.drive.abci.log.jsonFile.path');
-      ensureFileMountExists(jsonFilePath);
+      ensureFileMountExists(jsonFilePath, 0o666);
 
       const tenderdashLogFilePath = config.get('platform.drive.tenderdash.log.path');
       if (tenderdashLogFilePath !== null) {
-        ensureFileMountExists(tenderdashLogFilePath);
+        ensureFileMountExists(tenderdashLogFilePath, 0o666);
       }
     }
 
