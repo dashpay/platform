@@ -116,7 +116,7 @@ async fn document_read_no_document() {
     .expect("create SdkDocumentQuery");
 
     let _res: Result<Option<Document>, rs_sdk::error::Error> =
-        test_read(&mut api, query, Ok(1)).await;
+        test_read(&mut api, query, Ok(0)).await;
 }
 
 #[ignore = "needs working platform"]
