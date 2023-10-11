@@ -52,7 +52,7 @@ impl MockDapiClient {
     ///
     /// Panics if the request can't be serialized or response can't be deserialized.
     fn get_expectation<R: TransportRequest>(&self, request: &R) -> Option<R::Response> {
-        self.expectations.get(&request)
+        self.expectations.get(request)
     }
 }
 
@@ -124,8 +124,6 @@ impl Expectations {
 
     fn deserialize_value<O: for<'de> serde::Deserialize<'de>>(value: &ExpectationValue) -> O {
         // We use json because bincode sometimes fail to deserialize
-        let ret = serde_json::from_slice(value).expect("deserialize value");
-
-        ret
+        serde_json::from_slice(value).expect("deserialize value")
     }
 }

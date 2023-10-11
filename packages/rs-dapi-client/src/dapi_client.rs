@@ -1,9 +1,6 @@
 //! [DapiClient] definition.
 
-use std::ops::DerefMut;
-
 use backon::{ExponentialBuilder, Retryable};
-use tokio::sync::MutexGuard;
 use tonic::async_trait;
 use tracing::Instrument;
 
