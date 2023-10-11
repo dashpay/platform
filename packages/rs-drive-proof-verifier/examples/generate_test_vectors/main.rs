@@ -1,5 +1,7 @@
 mod test_vector;
 
+use std::ops::DerefMut;
+
 use base64::Engine;
 use dapi_grpc::platform::v0::{self as platform_proto, get_identity_response, GetIdentityResponse};
 use dashcore_rpc::dashcore::{hashes::Hash, QuorumHash};
@@ -131,7 +133,7 @@ impl Api {
         let mut client = self.dapi.lock().await;
         let response: GetIdentityResponse = request
             .clone()
-            .execute(&mut client, RequestSettings::default())
+            .execute(client.deref_mut(), RequestSettings::default())
             .await
             .expect("unable to perform dapi request");
 
@@ -151,7 +153,7 @@ impl Api {
         let mut client = self.dapi.lock().await;
         let mut response: platform_proto::GetDataContractResponse = request
             .clone()
-            .execute(&mut client, RequestSettings::default())
+            .execute(client.deref_mut(), RequestSettings::default())
             .await
             .expect("unable to perform dapi request");
 
@@ -194,7 +196,7 @@ impl Api {
         let mut client = self.dapi.lock().await;
         let response: platform_proto::GetDocumentsResponse = request
             .clone()
-            .execute(&mut client, RequestSettings::default())
+            .execute(client.deref_mut(), RequestSettings::default())
             .await
             .expect("unable to perform dapi request");
 

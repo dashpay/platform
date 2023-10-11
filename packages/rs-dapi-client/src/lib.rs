@@ -4,9 +4,12 @@
 
 mod address_list;
 mod dapi_client;
+#[cfg(feature = "mocks")]
+pub mod mock;
 mod request_settings;
 pub mod transport;
 
+pub use dapi_client::Dapi;
 use futures::{future::BoxFuture, FutureExt};
 pub use http::Uri;
 
@@ -35,9 +38,9 @@ pub trait DapiRequest {
     type TransportError;
 
     /// Executes the request.
-    fn execute<'c>(
+    fn execute<'c, D: Dapi>(
         self,
-        dapi_client: &'c mut DapiClient,
+        dapi_client: &'c mut D,
         settings: RequestSettings,
     ) -> BoxFuture<'c, Result<Self::Response, DapiClientError<Self::TransportError>>>
     where
@@ -50,9 +53,9 @@ impl<T: transport::TransportRequest + Send> DapiRequest for T {
 
     type TransportError = <T::Client as transport::TransportClient>::Error;
 
-    fn execute<'c>(
+    fn execute<'c, D: Dapi>(
         self,
-        dapi_client: &'c mut DapiClient,
+        dapi_client: &'c mut D,
         settings: RequestSettings,
     ) -> BoxFuture<'c, Result<Self::Response, DapiClientError<Self::TransportError>>>
     where

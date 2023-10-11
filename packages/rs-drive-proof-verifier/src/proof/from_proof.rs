@@ -109,11 +109,7 @@ pub trait QuorumInfoProvider: Send + Sync {
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], Error>; // public key is 48 bytes
 }
-fn a() {
-    let mut m = MockQuorumInfoProvider::new();
-    m.expect_get_quorum_public_key()
-        .returning(move |_, _, _| (Ok([0; 48])));
-}
+
 impl FromProof<platform::GetIdentityRequest> for Identity {
     type Request = platform::GetIdentityRequest;
     type Response = platform::GetIdentityResponse;

@@ -12,12 +12,12 @@ use crate::{CanRetry, RequestSettings};
 
 /// Generic transport layer request.
 /// Requires [Clone] as could be retried and a client in general consumes a request.
-pub trait TransportRequest: Clone + Send + Sync + Debug {
+pub trait TransportRequest: Clone + Send + Sync + Debug + serde::Serialize {
     /// A client specific to this type of transport.
     type Client: TransportClient;
 
     /// Transport layer response.
-    type Response: Clone + Send + Sync + Debug;
+    type Response: TransportResponse;
 
     /// Settings that will override [DapiClient](crate::DapiClient)'s ones each time the request is executed.
     const SETTINGS_OVERRIDES: RequestSettings;
@@ -30,8 +30,14 @@ pub trait TransportRequest: Clone + Send + Sync + Debug {
     ) -> BoxFuture<'c, Result<Self::Response, <Self::Client as TransportClient>::Error>>;
 }
 
+/// Generic transport layer response.
+pub trait TransportResponse:
+    Clone + Send + Sync + Debug + serde::Serialize + for<'de> serde::Deserialize<'de>
+{
+}
+
 /// Generic way to create a transport client from provided [Uri].
-pub trait TransportClient: Send {
+pub trait TransportClient: Send + Sized {
     /// Error type for the specific client.
     type Error: CanRetry + Send + Debug;
 

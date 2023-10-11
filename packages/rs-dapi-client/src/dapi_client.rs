@@ -1,6 +1,10 @@
 //! [DapiClient] definition.
 
+use std::ops::DerefMut;
+
 use backon::{ExponentialBuilder, Retryable};
+use tokio::sync::MutexGuard;
+use tonic::async_trait;
 use tracing::Instrument;
 
 use crate::{
@@ -17,6 +21,10 @@ pub enum DapiClientError<TE> {
     /// There are no valid peer addresses to use.
     #[error("no available addresses to use")]
     NoAvailableAddresses,
+    #[cfg(feature = "mocks")]
+    /// Expectation not found
+    #[error("mock expectation not found for request: {0}")]
+    MockExpectationNotFound(String),
 }
 
 impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
@@ -25,7 +33,36 @@ impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
         match self {
             NoAvailableAddresses => false,
             Transport(transport_error) => transport_error.can_retry(),
+            #[cfg(feature = "mocks")]
+            MockExpectationNotFound(_) => false,
         }
+    }
+}
+
+#[async_trait]
+/// DAPI client trait.
+pub trait Dapi {
+    /// Execute request using this DAPI client.
+    async fn execute<R>(
+        &mut self,
+        request: R,
+        settings: RequestSettings,
+    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
+    where
+        R: TransportRequest;
+}
+
+#[async_trait]
+impl<D: Dapi + Send> Dapi for &mut D {
+    async fn execute<R>(
+        &mut self,
+        request: R,
+        settings: RequestSettings,
+    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
+    where
+        R: TransportRequest,
+    {
+        (**self).execute(request, settings).await
     }
 }
 
@@ -44,9 +81,12 @@ impl DapiClient {
             settings,
         }
     }
+}
 
+#[async_trait]
+impl Dapi for DapiClient {
     /// Execute the [DapiRequest].
-    pub(crate) async fn execute<R>(
+    async fn execute<R>(
         &mut self,
         request: R,
         settings: RequestSettings,

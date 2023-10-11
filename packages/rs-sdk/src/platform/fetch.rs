@@ -14,7 +14,7 @@
 //! - `Fetch<API>` for [`dpp::prelude::DataContract`]
 //! - `Fetch<API>` for [`Document`](dpp::document::Document)
 
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::DerefMut};
 
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto};
@@ -102,7 +102,7 @@ where
         let mut client = api.platform_client().await;
         let response = request
             .clone()
-            .execute(&mut client, RequestSettings::default())
+            .execute(client.deref_mut(), RequestSettings::default())
             .await?;
 
         let object_type = std::any::type_name::<Self>().to_string();

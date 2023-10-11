@@ -3596,11 +3596,16 @@ name = "rs-dapi-client"
 version = "0.1.0"
 dependencies = [
  "backon",
+ "bincode 2.0.0-rc.3",
  "dapi-grpc",
+ "dpp",
+ "drive-proof-verifier",
  "futures",
  "http",
  "mockall",
  "rand",
+ "serde",
+ "serde_json",
  "thiserror",
  "tokio",
  "tonic",
