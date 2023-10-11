@@ -19,7 +19,7 @@ mod tests {
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-                only_once: false,
+
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -28,7 +28,7 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-                only_once: false,
+
             },
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
@@ -37,7 +37,7 @@ mod tests {
                 banned_hpmns: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: Some(0.1),
-                    only_once: false,
+
                 },
                 unbanned_hpmns: Default::default(),
                 changed_ip_hpmns: Default::default(),
@@ -125,7 +125,7 @@ mod tests {
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-                only_once: false,
+
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -134,14 +134,14 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-                only_once: false,
+
             },
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
                 removed_hpmns: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: Some(0.1),
-                    only_once: false,
+
                 },
                 updated_hpmns: Default::default(),
                 banned_hpmns: Default::default(),
@@ -217,7 +217,7 @@ mod tests {
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
-                only_once: false,
+
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -226,7 +226,7 @@ mod tests {
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
-                only_once: false,
+
             },
             proposer_strategy: MasternodeListChangesStrategy {
                 new_hpmns: Default::default(),
@@ -235,12 +235,12 @@ mod tests {
                 banned_hpmns: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: Some(0.1),
-                    only_once: false, //lower chance of banning
+     //lower chance of banning
                 },
                 unbanned_hpmns: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: Some(0.3),
-                    only_once: false, //higher chance of unbanning
+     //higher chance of unbanning
                 },
                 changed_ip_hpmns: Default::default(),
                 changed_p2p_port_hpmns: Default::default(),

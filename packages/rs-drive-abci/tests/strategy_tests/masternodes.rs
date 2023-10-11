@@ -603,52 +603,52 @@ mod tests {
             update_masternode_keys_frequency: &Frequency {
                 times_per_block_range: Range { start: 1, end: 3 },
                 chance_per_block: Some(0.5),
-                only_once: false,
+
             },
             update_hpmn_keys_frequency: &Frequency {
                 times_per_block_range: Range { start: 1, end: 3 },
                 chance_per_block: Some(0.5),
-                only_once: false,
+
             },
             ban_masternode_frequency: &Frequency {
                 times_per_block_range: Range { start: 1, end: 3 },
                 chance_per_block: Some(0.5),
-                only_once: false,
+
             },
             ban_hpmn_frequency: &Frequency {
                 times_per_block_range: Range { start: 1, end: 3 },
                 chance_per_block: Some(0.5),
-                only_once: false,
+
             },
             unban_masternode_frequency: &Frequency {
                 times_per_block_range: Range { start: 1, end: 3 },
                 chance_per_block: Some(0.5),
-                only_once: false,
+
             },
             unban_hpmn_frequency: &Frequency {
                 times_per_block_range: Range { start: 1, end: 3 },
                 chance_per_block: Some(0.5),
-                only_once: false,
+
             },
             change_masternode_ip_frequency: &Frequency {
                 times_per_block_range: Range { start: 1, end: 3 },
                 chance_per_block: Some(0.5),
-                only_once: false,
+
             },
             change_hpmn_ip_frequency: &Frequency {
                 times_per_block_range: Range { start: 1, end: 3 },
                 chance_per_block: Some(0.5),
-                only_once: false,
+
             },
             change_hpmn_p2p_port_frequency: &Frequency {
                 times_per_block_range: Range { start: 1, end: 3 },
                 chance_per_block: Some(0.5),
-                only_once: false,
+
             },
             change_hpmn_http_port_frequency: &Frequency {
                 times_per_block_range: Range { start: 1, end: 3 },
                 chance_per_block: Some(0.5),
-                only_once: false,
+
             },
         });
         let mut rng1 = StdRng::seed_from_u64(12345);
@@ -711,52 +711,52 @@ mod tests {
                 update_masternode_keys_frequency: &Frequency {
                     times_per_block_range: Range { start: 1, end: 3 },
                     chance_per_block: Some(0.5),
-                    only_once: false,
+
                 },
                 update_hpmn_keys_frequency: &Frequency {
                     times_per_block_range: Range { start: 1, end: 3 },
                     chance_per_block: Some(0.5),
-                    only_once: false,
+
                 },
                 ban_masternode_frequency: &Frequency {
                     times_per_block_range: Range { start: 1, end: 3 },
                     chance_per_block: Some(0.5),
-                    only_once: false,
+
                 },
                 ban_hpmn_frequency: &Frequency {
                     times_per_block_range: Range { start: 1, end: 3 },
                     chance_per_block: Some(0.5),
-                    only_once: false,
+
                 },
                 unban_masternode_frequency: &Frequency {
                     times_per_block_range: Range { start: 1, end: 3 },
                     chance_per_block: Some(0.5),
-                    only_once: false,
+
                 },
                 unban_hpmn_frequency: &Frequency {
                     times_per_block_range: Range { start: 1, end: 3 },
                     chance_per_block: Some(0.5),
-                    only_once: false,
+
                 },
                 change_masternode_ip_frequency: &Frequency {
                     times_per_block_range: Range { start: 1, end: 3 },
                     chance_per_block: Some(0.5),
-                    only_once: false,
+
                 },
                 change_hpmn_ip_frequency: &Frequency {
                     times_per_block_range: Range { start: 1, end: 3 },
                     chance_per_block: Some(0.5),
-                    only_once: false,
+
                 },
                 change_hpmn_p2p_port_frequency: &Frequency {
                     times_per_block_range: Range { start: 1, end: 3 },
                     chance_per_block: Some(0.5),
-                    only_once: false,
+
                 },
                 change_hpmn_http_port_frequency: &Frequency {
                     times_per_block_range: Range { start: 1, end: 3 },
                     chance_per_block: Some(0.5),
-                    only_once: false,
+
                 },
             });
 
