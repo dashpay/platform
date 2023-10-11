@@ -2,8 +2,8 @@ use dpp::data_contract::DataContractFactory;
 
 pub const PLATFORM_IP: &str = "10.56.229.104";
 pub const CORE_PORT: u16 = 30002;
-pub const CORE_USER: &str = "PdXjj4HC";
-pub const CORE_PASSWORD: &str = "POv4lqSbzO7m";
+pub const CORE_USER: &str = "546b8x1g";
+pub const CORE_PASSWORD: &str = "ur4mn8Z6ObI3";
 pub const PLATFORM_PORT: u16 = 2443;
 
 /// Existing identity ID, created as part of platform test suite run
@@ -11,6 +11,10 @@ pub const IDENTITY_ID_BYTES: [u8; 32] = [
     65, 63, 57, 243, 204, 9, 106, 71, 187, 2, 94, 221, 190, 127, 141, 114, 137, 209, 243, 50, 60,
     215, 90, 101, 229, 15, 115, 5, 44, 117, 182, 217,
 ];
+
+/// ID of existing data contract, created as part of platform test suite run.
+/// Changes when platform is reset.
+pub const DATA_CONTRACT_ID: &str = "rt863oRafQ4pkBAUJ5r1PAf8lZ9O7C0qBeLwmHXDEro=";
 
 // allow unused because we just include() this file, and the functions are used in other files
 #[allow(unused)]
@@ -29,17 +33,13 @@ fn setup_api() -> rs_sdk::Sdk {
     api
 }
 
-// allow unused because we just include() this file, and the functions are used in other files
-#[allow(unused)]
-fn base64_identifier(base64str: &str) -> dpp::prelude::Identifier {
+pub fn base64_identifier(base64str: &str) -> dpp::prelude::Identifier {
     let b64 = base64::engine::general_purpose::STANDARD;
     let bytes = base64::Engine::decode(&b64, base64str).expect("base64 decode identifier");
     dpp::prelude::Identifier::from_bytes(bytes.as_ref()).expect("invalid identifier format")
 }
 
-// allow unused because we just include() this file, and the functions are used in other files
-#[allow(unused)]
-fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
+pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
     use dpp::{
         data_contract::document_type::DocumentType,
         platform_value::platform_value,
@@ -73,16 +73,14 @@ fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
     .expect("expected to create a document type")
 }
 
-// allow unused because we just include() this file, and the functions are used in other files
-#[allow(unused)]
-fn mock_data_contract(
+pub fn mock_data_contract(
     document_type: Option<&dpp::data_contract::document_type::DocumentType>,
 ) -> dpp::prelude::DataContract {
     use dpp::{
-        data_contract::document_type::{accessors::DocumentTypeV0Getters, DocumentType},
+        data_contract::document_type::accessors::DocumentTypeV0Getters,
         platform_value::{platform_value, Value},
-        prelude::{DataContract, Identifier},
-        version::{PlatformVersion, PlatformVersionCurrentVersion},
+        prelude::Identifier,
+        version::PlatformVersion,
     };
     use std::collections::BTreeMap;
 
@@ -110,4 +108,16 @@ fn mock_data_contract(
         .data_contract_owned();
 
     data_contract
+}
+
+pub fn setup_logs() {
+    tracing_subscriber::fmt::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::new(
+            "info,rs_sdk=trace,h2=info",
+        ))
+        .pretty()
+        .with_ansi(true)
+        .with_writer(std::io::stdout)
+        .try_init()
+        .ok();
 }

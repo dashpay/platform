@@ -13,14 +13,19 @@ async fn test_data_contract_read_not_found() {
 
     let result = DataContract::fetch(&mut api, id).await;
 
-    assert!(
-        matches!(
-            result,
-            Err(rs_sdk::error::Error::Proof(
-                drive_proof_verifier::Error::NotFound
-            ))
-        ),
-        "result: {:?}",
-        result
-    );
+    assert!(matches!(result, Ok(None)), "result: {:?}", result);
+}
+
+#[ignore = "needs working platform"]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_data_contract_read() {
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    let id = base64_identifier(DATA_CONTRACT_ID);
+
+    let mut api = setup_api();
+
+    let result = DataContract::fetch(&mut api, id).await;
+
+    assert!(matches!(result, Ok(Some(_))), "result: {:?}", result);
+    assert_eq!(result.unwrap().unwrap().id(), id);
 }

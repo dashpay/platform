@@ -1391,12 +1391,10 @@ dependencies = [
 name = "drive-proof-verifier"
 version = "0.25.0-dev"
 dependencies = [
- "async-trait",
  "base64 0.21.4",
  "bytes",
  "camino",
  "dapi-grpc",
- "dashcore-rpc",
  "derive_more",
  "dpp",
  "drive",
@@ -1404,7 +1402,7 @@ dependencies = [
  "hex",
  "lazy_static",
  "mockall",
- "rs-dapi-client",
+ "rs-sdk",
  "serde",
  "serde_json",
  "tenderdash-abci",

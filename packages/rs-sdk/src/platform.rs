@@ -16,3 +16,5 @@ pub use dpp::prelude::{
     DataContract, Identifier, Identity, IdentityPublicKey, Revision, TimestampMillis,
 };
 pub use {document_query::DocumentQuery, fetch::Fetch, list::List, query::Query};
+
+pub use rs_dapi_client as dapi;

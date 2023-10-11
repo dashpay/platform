@@ -69,7 +69,7 @@ impl DocumentQuery {
         data_contract.document_type_for_name(document_type_name)?;
 
         let where_clauses = vec![WhereClause {
-            field: "id".to_string(),
+            field: "$id".to_string(),
             operator: WhereOperator::Equal,
             value: platform_value!(document_id),
         }];
@@ -77,7 +77,7 @@ impl DocumentQuery {
         // Order clause
         let order_by_clauses = vec![OrderClause {
             ascending: true,
-            field: "id".to_string(),
+            field: "$id".to_string(),
         }];
 
         Ok(DocumentQuery {
@@ -105,7 +105,6 @@ impl TransportRequest for DocumentQuery {
         let request: GetDocumentsRequest = self
             .try_into()
             .expect("DocumentQuery should always be valid");
-
         request.execute_transport(client, settings)
     }
 }

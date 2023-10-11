@@ -87,7 +87,11 @@ where
     /// - `query`: A query parameter implementing [`crate::platform::query::Query`] to specify the data to be fetched.
     ///
     /// ## Returns
-    /// Returns a `Result` containing either the fetched object or an error.
+    ///
+    /// Returns:
+    /// * Ok(Some(Self)) when object is found
+    /// * Ok(None) when object is not found
+    /// * Err(Error) when an error occurs
     ///
     /// ## Error Handling
     /// Any errors encountered during the execution are returned as [Error] instances.
