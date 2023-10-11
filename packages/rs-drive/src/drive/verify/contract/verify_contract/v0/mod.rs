@@ -121,7 +121,7 @@ impl Drive {
             match contract {
                 Ok(contract) => Ok((root_hash, contract)),
                 Err(e) => {
-                    if contract_known_keeps_history == Some(true) {
+                    if contract_known_keeps_history.is_some() {
                         // just return error
                         Err(e)
                     } else {
