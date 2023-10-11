@@ -45,7 +45,38 @@ mod frequency;
 mod operations;
 mod transitions;
 
-
+/// Represents a comprehensive strategy used for simulations or testing in a blockchain context.
+///
+/// The `Strategy` struct encapsulates various operations, state transitions, and data contracts to provide a structured plan or set of procedures for specific purposes such as simulations, automated tests, or other blockchain-related workflows.
+///
+/// # Fields
+/// - `contracts_with_updates`: A list of tuples containing:
+///   1. `CreatedDataContract`: A data contract that was created.
+///   2. `Option<BTreeMap<u64, CreatedDataContract>>`: An optional mapping where the key is the block height (or other sequential integer identifier) and the value is a data contract that corresponds to an update. If `None`, it signifies that there are no updates.
+///
+/// - `operations`: A list of `Operation`s which define individual tasks or actions that are part of the strategy. Operations could encompass a range of blockchain-related actions like transfers, state changes, contract creations, etc.
+///
+/// - `start_identities`: A list of tuples representing the starting state of identities. Each tuple contains:
+///   1. `Identity`: The initial identity state.
+///   2. `StateTransition`: The state transition that led to the current state of the identity.
+///
+/// - `identities_inserts`: Defines the frequency distribution of identity inserts. `Frequency` might encapsulate statistical data like mean, median, variance, etc., for understanding or predicting the frequency of identity insertions.
+///
+/// - `signer`: An optional instance of `SimpleSigner`. The `SimpleSigner` is responsible for generating and managing cryptographic signatures, and might be used to authenticate or validate various operations or state transitions.
+///
+/// # Usage
+/// ```rust
+/// let strategy = Strategy {
+///     contracts_with_updates: vec![...],
+///     operations: vec![...],
+///     start_identities: vec![...],
+///     identities_inserts: Frequency::new(...),
+///     signer: Some(SimpleSigner::new(...)),
+/// };
+/// ```
+///
+/// # Note
+/// Ensure that when using or updating the `Strategy`, all associated operations, identities, and contracts are coherent with the intended workflow or simulation. Inconsistencies might lead to unexpected behaviors or simulation failures.
 #[derive(Clone, Debug)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(
