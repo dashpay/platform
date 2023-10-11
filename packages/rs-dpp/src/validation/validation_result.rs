@@ -18,7 +18,7 @@ pub type ConsensusValidationResult<TData> = ValidationResult<TData, ConsensusErr
 
 pub type SimpleConsensusValidationResult = ConsensusValidationResult<()>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ValidationResult<TData: Clone, E: Debug> {
     pub errors: Vec<E>,
     pub data: Option<TData>,

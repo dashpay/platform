@@ -1,19 +1,19 @@
 use crate::error::Error;
-use crate::execution::types::execution_result::ExecutionResult::{
-    ConsensusExecutionError, SuccessfulPaidExecution,
-};
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::platform_types::platform::{Platform, PlatformRef};
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::{
+    ConsensusExecutionError, SuccessfulPaidExecution,
+};
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 
+use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use tenderdash_abci::proto::abci::ExecTxResult;
 
 impl<C> Platform<C>
 where
@@ -49,7 +49,7 @@ where
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
-    ) -> Result<(FeeResult, Vec<(Vec<u8>, ExecTxResult)>), Error> {
+    ) -> Result<(FeeResult, Vec<(Vec<u8>, StateTransitionExecutionResult)>), Error> {
         let state_transitions = StateTransition::deserialize_many(raw_state_transitions)?;
         let mut aggregate_fee_result = FeeResult::default();
         let platform_ref = PlatformRef {
@@ -94,9 +94,10 @@ where
                     aggregate_fee_result.checked_add_assign(fee_result.clone())?;
                 }
 
-                Ok((raw_state_transition.clone(), execution_result.into()))
+                Ok((raw_state_transition.clone(), execution_result))
             })
-            .collect::<Result<Vec<(Vec<u8>, ExecTxResult)>, Error>>()?;
+            .collect::<Result<Vec<(Vec<u8>, StateTransitionExecutionResult)>, Error>>()?;
+
         Ok((aggregate_fee_result, exec_tx_results))
     }
 }

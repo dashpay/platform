@@ -191,6 +191,35 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
           });
         return configFile;
       },
+      '0.25.0-dev.33': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.abci.epochTime = base.get('platform.drive.abci.epochTime');
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.log.path = null;
+
+            if (options.platform.drive.abci.log.jsonFile.level === 'fatal') {
+              options.platform.drive.abci.log.jsonFile.level = 'error';
+            }
+
+            if (options.platform.drive.abci.log.prettyFile.level === 'fatal') {
+              options.platform.drive.abci.log.prettyFile.level = 'error';
+            }
+
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+              options.platform.drive.tenderdash.genesis
+                .initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+            }
+
+            if (options.network !== NETWORK_MAINNET) {
+              options.core.docker.image = base.get('core.docker.image');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 

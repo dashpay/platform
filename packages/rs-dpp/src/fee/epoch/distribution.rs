@@ -29,16 +29,14 @@
 
 //! Storage fee distribution into epochs
 //!
-//! Data is stored in Platform "forever" currently, which is 50 years.
+//! Data is stored in Platform "forever" currently, which is 50 eras (50 years by default).
 //! To incentivise masternodes to continue store and serve this data,
 //! payments are distributed for entire period split into epochs.
 //! Every epoch, new aggregated storage fees are distributed among epochs
 //! and masternodes receive payouts for previous epoch.
 //!
 
-use crate::fee::epoch::{
-    EpochIndex, SignedCreditsPerEpoch, EPOCHS_PER_YEAR, PERPETUAL_STORAGE_YEARS,
-};
+use crate::fee::epoch::{EpochIndex, SignedCreditsPerEpoch, PERPETUAL_STORAGE_ERAS};
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -50,9 +48,9 @@ use std::ops::Mul;
 
 // TODO: Should be updated from the doc
 
-/// The amount of the perpetual storage fee to be paid out to masternodes per year. Adds up to 1.
+/// The amount of the perpetual storage fee to be paid out to masternodes per era. Adds up to 1.
 #[rustfmt::skip]
-pub const FEE_DISTRIBUTION_TABLE: [Decimal; PERPETUAL_STORAGE_YEARS as usize] = [
+pub const FEE_DISTRIBUTION_TABLE: [Decimal; PERPETUAL_STORAGE_ERAS as usize] = [
     dec!(0.05000), dec!(0.04800), dec!(0.04600), dec!(0.04400), dec!(0.04200),
     dec!(0.04000), dec!(0.03850), dec!(0.03700), dec!(0.03550), dec!(0.03400),
     dec!(0.03250), dec!(0.03100), dec!(0.02950), dec!(0.02850), dec!(0.02750),
@@ -73,6 +71,7 @@ pub fn distribute_storage_fee_to_epochs_collection(
     credits_per_epochs: &mut SignedCreditsPerEpoch,
     storage_fee: Credits,
     start_epoch_index: EpochIndex,
+    epochs_per_era: u16,
 ) -> Result<DistributionLeftovers, ProtocolError> {
     distribution_storage_fee_to_epochs_map(
         storage_fee,
@@ -90,6 +89,7 @@ pub fn distribute_storage_fee_to_epochs_collection(
 
             Ok(())
         },
+        epochs_per_era,
     )
 }
 
@@ -100,6 +100,7 @@ pub fn subtract_refunds_from_epoch_credits_collection(
     storage_fee: Credits,
     start_epoch_index: EpochIndex,
     current_epoch_index: EpochIndex,
+    epochs_per_era: u16,
 ) -> Result<(), ProtocolError> {
     let leftovers = refund_storage_fee_to_epochs_map(
         storage_fee,
@@ -118,6 +119,7 @@ pub fn subtract_refunds_from_epoch_credits_collection(
 
             Ok(())
         },
+        epochs_per_era,
     )?;
 
     // We need to remove the leftovers from the current epoch
@@ -139,6 +141,7 @@ pub fn calculate_storage_fee_refund_amount_and_leftovers(
     storage_fee: Credits,
     start_epoch_index: EpochIndex,
     current_epoch_index: EpochIndex,
+    epochs_per_era: u16,
 ) -> Result<(DistributionAmount, DistributionLeftovers), ProtocolError> {
     let mut skipped_amount = 0;
 
@@ -152,6 +155,7 @@ pub fn calculate_storage_fee_refund_amount_and_leftovers(
 
             Ok(())
         },
+        epochs_per_era,
     )?;
 
     Ok((storage_fee - skipped_amount - leftovers, leftovers))
@@ -160,25 +164,27 @@ pub fn calculate_storage_fee_refund_amount_and_leftovers(
 fn original_removed_credits_multiplier_from(
     start_epoch_index: EpochIndex,
     start_repayment_from_epoch_index: EpochIndex,
+    epochs_per_era: u16,
 ) -> Decimal {
     let paid_epochs = start_repayment_from_epoch_index - start_epoch_index;
 
-    let current_year = (paid_epochs / EPOCHS_PER_YEAR) as usize;
+    let current_era = (paid_epochs / epochs_per_era) as usize;
 
-    let ratio_used: Decimal = FEE_DISTRIBUTION_TABLE
-        .iter()
-        .enumerate()
-        .filter_map(|(year, epoch_multiplier)| match year.cmp(&current_year) {
-            Ordering::Less => None,
-            Ordering::Equal => {
-                let amount_epochs_left_in_year = EPOCHS_PER_YEAR - paid_epochs % EPOCHS_PER_YEAR;
-                Some(epoch_multiplier.mul(
-                    Decimal::from(amount_epochs_left_in_year) / Decimal::from(EPOCHS_PER_YEAR),
-                ))
-            }
-            Ordering::Greater => Some(*epoch_multiplier),
-        })
-        .sum();
+    let ratio_used: Decimal =
+        FEE_DISTRIBUTION_TABLE
+            .iter()
+            .enumerate()
+            .filter_map(|(era, epoch_multiplier)| match era.cmp(&current_era) {
+                Ordering::Less => None,
+                Ordering::Equal => {
+                    let amount_epochs_left_in_era = epochs_per_era - paid_epochs % epochs_per_era;
+                    Some(epoch_multiplier.mul(
+                        Decimal::from(amount_epochs_left_in_era) / Decimal::from(epochs_per_era),
+                    ))
+                }
+                Ordering::Greater => Some(*epoch_multiplier),
+            })
+            .sum();
 
     dec!(1) / ratio_used
 }
@@ -191,10 +197,12 @@ fn restore_original_removed_credits_amount(
     refund_amount: Decimal,
     start_epoch_index: EpochIndex,
     start_repayment_from_epoch_index: EpochIndex,
+    epochs_per_era: u16,
 ) -> Result<Decimal, ProtocolError> {
     let multiplier = original_removed_credits_multiplier_from(
         start_epoch_index,
         start_repayment_from_epoch_index,
+        epochs_per_era,
     );
 
     refund_amount
@@ -210,6 +218,7 @@ fn distribution_storage_fee_to_epochs_map<F>(
     storage_fee: Credits,
     start_epoch_index: EpochIndex,
     mut map_function: F,
+    epochs_per_era: u16,
 ) -> Result<DistributionLeftovers, ProtocolError>
 where
     F: FnMut(EpochIndex, Credits) -> Result<(), ProtocolError>,
@@ -222,23 +231,23 @@ where
 
     let mut distribution_leftover_credits = storage_fee;
 
-    let epochs_per_year = Decimal::from(EPOCHS_PER_YEAR);
+    let epochs_per_era_dec = Decimal::from(epochs_per_era);
 
-    for year in 0..PERPETUAL_STORAGE_YEARS {
-        let distribution_for_that_year_ratio = FEE_DISTRIBUTION_TABLE[year as usize];
+    for era in 0..PERPETUAL_STORAGE_ERAS {
+        let distribution_for_that_era_ratio = FEE_DISTRIBUTION_TABLE[era as usize];
 
-        let year_fee_share = storage_fee_dec * distribution_for_that_year_ratio;
+        let era_fee_share = storage_fee_dec * distribution_for_that_era_ratio;
 
-        let epoch_fee_share_dec = year_fee_share / epochs_per_year;
+        let epoch_fee_share_dec = era_fee_share / epochs_per_era_dec;
 
         let epoch_fee_share: Credits = epoch_fee_share_dec
             .floor()
             .to_u64()
             .ok_or_else(|| ProtocolError::Overflow("storage fees are not fitting in a u64"))?;
 
-        let year_start_epoch_index = start_epoch_index + EPOCHS_PER_YEAR * year;
+        let era_start_epoch_index = start_epoch_index + epochs_per_era * era;
 
-        for epoch_index in year_start_epoch_index..year_start_epoch_index + EPOCHS_PER_YEAR {
+        for epoch_index in era_start_epoch_index..era_start_epoch_index + epochs_per_era {
             map_function(epoch_index, epoch_fee_share)?;
 
             distribution_leftover_credits = distribution_leftover_credits
@@ -260,6 +269,7 @@ fn refund_storage_fee_to_epochs_map<F>(
     start_epoch_index: EpochIndex,
     skip_until_epoch_index: EpochIndex,
     mut map_function: F,
+    epochs_per_era: u16,
 ) -> Result<DistributionLeftovers, ProtocolError>
 where
     F: FnMut(EpochIndex, Credits) -> Result<(), ProtocolError>,
@@ -272,9 +282,9 @@ where
 
     let mut distribution_leftover_credits = storage_fee;
 
-    let epochs_per_year = Decimal::from(EPOCHS_PER_YEAR);
+    let epochs_per_era_dec = Decimal::from(epochs_per_era);
 
-    let start_year: u16 = (skip_until_epoch_index - start_epoch_index) / EPOCHS_PER_YEAR;
+    let start_era: u16 = (skip_until_epoch_index - start_epoch_index) / epochs_per_era;
 
     // Let's imagine that we are refunding something from epoch 5
     // We are at Epoch 12
@@ -284,29 +294,30 @@ where
         storage_fee_dec,
         start_epoch_index,
         skip_until_epoch_index,
+        epochs_per_era,
     )?;
 
-    for year in start_year..PERPETUAL_STORAGE_YEARS {
-        let distribution_for_that_year_ratio = FEE_DISTRIBUTION_TABLE[year as usize];
+    for era in start_era..PERPETUAL_STORAGE_ERAS {
+        let distribution_for_that_era_ratio = FEE_DISTRIBUTION_TABLE[era as usize];
 
-        let estimated_year_fee_share = estimated_storage_fee_dec * distribution_for_that_year_ratio;
+        let estimated_era_fee_share = estimated_storage_fee_dec * distribution_for_that_era_ratio;
 
-        let estimated_epoch_fee_share_dec = estimated_year_fee_share / epochs_per_year;
+        let estimated_epoch_fee_share_dec = estimated_era_fee_share / epochs_per_era_dec;
 
         let estimated_epoch_fee_share: Credits = estimated_epoch_fee_share_dec
             .floor()
             .to_u64()
             .ok_or_else(|| ProtocolError::Overflow("storage fees are not fitting in a u64"))?;
 
-        let year_start_epoch_index = if year == start_year {
+        let era_start_epoch_index = if era == start_era {
             skip_until_epoch_index
         } else {
-            start_epoch_index + EPOCHS_PER_YEAR * year
+            start_epoch_index + epochs_per_era * era
         };
 
-        let year_end_epoch_index = start_epoch_index + ((year + 1) * EPOCHS_PER_YEAR);
+        let era_end_epoch_index = start_epoch_index + ((era + 1) * epochs_per_era);
 
-        for epoch_index in year_start_epoch_index..year_end_epoch_index {
+        for epoch_index in era_start_epoch_index..era_end_epoch_index {
             map_function(epoch_index, estimated_epoch_fee_share)?;
 
             distribution_leftover_credits = distribution_leftover_credits
@@ -323,7 +334,7 @@ where
 mod tests {
     use super::*;
     use crate::fee::epoch::GENESIS_EPOCH_INDEX;
-    use crate::fee::epoch::PERPETUAL_STORAGE_EPOCHS;
+    use crate::fee::epoch::PERPETUAL_STORAGE_ERAS;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
@@ -336,7 +347,7 @@ mod tests {
             let epoch_0_cost = dec!(0.05000) / dec!(20.0);
             let multiplier_should_be = dec!(1.0) / (dec!(1.0) - epoch_0_cost);
 
-            let multiplier = original_removed_credits_multiplier_from(0, 1);
+            let multiplier = original_removed_credits_multiplier_from(0, 1, 20);
 
             assert_eq!(multiplier_should_be, multiplier);
         }
@@ -348,7 +359,7 @@ mod tests {
 
             let multiplier_should_be = dec!(1.0) / (dec!(1.0) - epoch_0_cost);
 
-            let multiplier = original_removed_credits_multiplier_from(24, 43);
+            let multiplier = original_removed_credits_multiplier_from(24, 43, 20);
 
             assert_eq!(multiplier_should_be, multiplier);
         }
@@ -382,20 +393,24 @@ mod tests {
         fn should_distribute_nothing_if_storage_fees_are_zero() {
             let mut calls = 0;
 
-            let leftovers =
-                distribution_storage_fee_to_epochs_map(0, GENESIS_EPOCH_INDEX, |_, _| {
+            let leftovers = distribution_storage_fee_to_epochs_map(
+                0,
+                GENESIS_EPOCH_INDEX,
+                |_, _| {
                     calls += 1;
 
                     Ok(())
-                })
-                .expect("should distribute storage fee");
+                },
+                20,
+            )
+            .expect("should distribute storage fee");
 
             assert_eq!(calls, 0);
             assert_eq!(leftovers, 0);
         }
 
         #[test]
-        fn should_call_function_for_each_epoch_for_50_years_sequentially() {
+        fn should_call_function_for_each_epoch_for_50_eras_sequentially() {
             let mut calls = 0;
 
             let mut previous_epoch_index = -1;
@@ -411,10 +426,11 @@ mod tests {
 
                     Ok(())
                 },
+                20,
             )
             .expect("should distribute storage fee");
 
-            assert_eq!(calls, PERPETUAL_STORAGE_EPOCHS);
+            assert_eq!(calls, 1000); //20*50
             assert_eq!(leftovers, 360);
         }
     }
@@ -434,6 +450,7 @@ mod tests {
                 &mut credits_per_epochs,
                 storage_fee,
                 GENESIS_EPOCH_INDEX,
+                20,
             )
             .expect("should distribute storage fee");
 
@@ -452,15 +469,16 @@ mod tests {
                 &mut credits_per_epochs,
                 storage_fee,
                 current_epoch_index,
+                20,
             )
             .expect("should distribute storage fee");
 
             // check leftover
             assert_eq!(leftovers, 180);
 
-            // compare them with reference table
+            // compare them with reference table for 20 epochs per era (1000)
             #[rustfmt::skip]
-                let reference_fees: [SignedCredits; PERPETUAL_STORAGE_EPOCHS as usize] = [
+                let reference_fees: [SignedCredits; 1000] = [
                 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500, 2500,
                 2500, 2500, 2500, 2500, 2500, 2500, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400,
                 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2400, 2300, 2300,
@@ -548,6 +566,7 @@ mod tests {
                 &mut credits_per_epochs,
                 storage_fee,
                 current_epoch_index,
+                20,
             )
             .expect("should distribute storage fee");
 
@@ -584,6 +603,7 @@ mod tests {
                 original_storage_fee,
                 start_epoch_index,
                 REFUNDED_EPOCH_INDEX,
+                20,
             )
             .expect("should distribute storage fee");
 
@@ -597,6 +617,7 @@ mod tests {
                 refund_amount,
                 start_epoch_index,
                 REFUNDED_EPOCH_INDEX,
+                20,
             )
             .expect("should distribute storage fee");
 
@@ -605,7 +626,7 @@ mod tests {
             // this is because there was only 1 refund so leftovers wouldn't have any effect
             #[rustfmt::skip]
             let reference_fees: [SignedCredits;
-                (PERPETUAL_STORAGE_EPOCHS - REFUNDED_EPOCH_INDEX - 1) as usize] = [-2760, -2760, -2760,
+                (1000 - REFUNDED_EPOCH_INDEX - 1) as usize] = [-2760, -2760, -2760,
                 -2760, -2760, -2760, -2760, -2760, -2760, -2760, -2760, -2760, -2760, -2760, -2760,
                 -2760, -2760, -2640, -2640, -2640, -2640, -2640, -2640, -2640, -2640, -2640, -2640,
                 -2640, -2640, -2640, -2640, -2640, -2640, -2640, -2640, -2640, -2640, -2520, -2520,
@@ -701,6 +722,7 @@ mod tests {
                     original_storage_fee,
                     start_epoch_index,
                     current_epoch_index_where_refund_occurred,
+                    20,
                 )
                 .expect("should distribute storage fee");
 
@@ -710,6 +732,7 @@ mod tests {
                 let multiplier = original_removed_credits_multiplier_from(
                     start_epoch_index,
                     current_epoch_index_where_refund_occurred + 1,
+                    20,
                 );
 
                 // it's not going to be completely perfect but it's good enough
@@ -735,6 +758,7 @@ mod tests {
                     refund_amount,
                     start_epoch_index,
                     current_epoch_index_where_refund_occurred,
+                    20,
                 )
                 .expect("should distribute storage fee");
                 // compare them with reference table
@@ -862,6 +886,7 @@ mod tests {
                     first_original_storage_fee,
                     first_start_epoch_index,
                     CURRENT_EPOCH_INDEX_WHERE_REFUND_OCCURRED,
+                    20,
                 )
                 .expect("should distribute storage fee");
 
@@ -873,6 +898,7 @@ mod tests {
                 first_refund_amount,
                 first_start_epoch_index,
                 CURRENT_EPOCH_INDEX_WHERE_REFUND_OCCURRED,
+                20,
             )
             .expect("should distribute storage fee");
 
@@ -890,6 +916,7 @@ mod tests {
                     second_original_storage_fee,
                     SECOND_START_EPOCH_INDEX,
                     CURRENT_EPOCH_INDEX_WHERE_REFUND_OCCURRED,
+                    20,
                 )
                 .expect("should distribute storage fee");
 
@@ -899,6 +926,7 @@ mod tests {
             let multiplier = original_removed_credits_multiplier_from(
                 SECOND_START_EPOCH_INDEX,
                 CURRENT_EPOCH_INDEX_WHERE_REFUND_OCCURRED + 1,
+                20,
             );
 
             // it's not going to be completely perfect but it's good enough
@@ -922,6 +950,7 @@ mod tests {
                 second_refund_amount,
                 SECOND_START_EPOCH_INDEX,
                 CURRENT_EPOCH_INDEX_WHERE_REFUND_OCCURRED,
+                20,
             )
             .expect("should distribute storage fee");
             // compare them with reference table
@@ -929,7 +958,7 @@ mod tests {
             // this is because there was only 1 refund so leftovers wouldn't have any effect
             #[rustfmt::skip]
                 let reference_fees: [SignedCredits;
-                (SECOND_START_EPOCH_INDEX + PERPETUAL_STORAGE_EPOCHS - CURRENT_EPOCH_INDEX_WHERE_REFUND_OCCURRED) as usize] =
+                (SECOND_START_EPOCH_INDEX + 1000 - CURRENT_EPOCH_INDEX_WHERE_REFUND_OCCURRED) as usize] =
                 [-525, -11272, -11272, -11272, -11272, -11272, -10931, -10931, -10931, -10931,
                     -10931, -10931, -10931, -10931, -10931, -10931, -10931, -10931, -10811, -10811,
                     -10811, -10811, -10811, -10811, -10811, -10811, -10471, -10471, -10471, -10471,
@@ -1045,6 +1074,7 @@ mod tests {
                 storage_fee,
                 GENESIS_EPOCH_INDEX + 1,
                 2,
+                20,
             )
             .expect("should distribute storage fee");
 

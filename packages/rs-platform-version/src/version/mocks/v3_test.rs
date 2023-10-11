@@ -30,7 +30,8 @@ use crate::version::drive_versions::{
     DriveContractProveMethodVersions, DriveContractUpdateMethodVersions,
     DriveCreditPoolEpochsMethodVersions, DriveCreditPoolMethodVersions,
     DriveCreditPoolPendingEpochRefundsMethodVersions,
-    DriveCreditPoolStorageFeeDistributionPoolMethodVersions, DriveDocumentDeleteMethodVersions,
+    DriveCreditPoolStorageFeeDistributionPoolMethodVersions,
+    DriveDataContractOperationMethodVersions, DriveDocumentDeleteMethodVersions,
     DriveDocumentEstimationCostsMethodVersions, DriveDocumentIndexUniquenessMethodVersions,
     DriveDocumentInsertMethodVersions, DriveDocumentMethodVersions,
     DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
@@ -47,6 +48,7 @@ use crate::version::drive_versions::{
     DriveIdentityProveMethodVersions, DriveIdentityUpdateMethodVersions,
     DriveInitializationMethodVersions, DriveMethodVersions, DriveOperationsMethodVersion,
     DrivePlatformSystemMethodVersions, DriveProtocolUpgradeVersions, DriveProveMethodVersions,
+    DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions,
     DriveStructureVersion, DriveSystemEstimationCostsMethodVersions,
     DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
     DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
@@ -133,6 +135,14 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 remove_from_system_credits: 0,
                 remove_from_system_credits_operations: 0,
                 calculate_total_credits_balance: 0,
+            },
+            state_transitions: DriveStateTransitionMethodVersions {
+                operations: DriveStateTransitionOperationMethodVersions {
+                    finalization_tasks: 0,
+                    contracts: DriveDataContractOperationMethodVersions {
+                        finalization_tasks: 0,
+                    },
+                },
             },
             document: DriveDocumentMethodVersions {
                 query: DriveDocumentQueryMethodVersions { query_documents: 0 },

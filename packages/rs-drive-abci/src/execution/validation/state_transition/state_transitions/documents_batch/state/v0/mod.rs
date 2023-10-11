@@ -78,7 +78,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for DocumentsBatchTransition
             state_transition_execution_context: &state_transition_execution_context,
         };
 
-        if platform.config.use_document_triggers {
+        if platform.config.execution.use_document_triggers {
             let data_triggers_validation_result = execute_data_triggers(
                 state_transition_action.transitions(),
                 &data_trigger_execution_context,
