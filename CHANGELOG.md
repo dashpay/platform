@@ -1,3 +1,10 @@
+### [0.25.1](https://github.com/dashpay/platform/compare/v0.25.0...v0.25.1) (2023-10-11)
+
+
+### Bug Fixes
+
+* **dashmate:** log permissions on linux system ([#1479](https://github.com/dashpay/platform/issues/1479))
+
 ## [0.25.0](https://github.com/dashpay/platform/compare/v0.25.0-dev.33...v0.25.0) (2023-10-10)
 
 
