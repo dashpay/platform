@@ -61,6 +61,26 @@ pub struct Strategy {
 
 impl Strategy {
 
+    /// Adds strategy contracts from the current operations into a specified Drive.
+    ///
+    /// This method iterates over the operations present in the current strategy. For each operation
+    /// of type `Document`, it serializes the associated contract and applies it to the provided drive.
+    ///
+    /// # Parameters
+    /// - `drive`: The Drive where contracts should be added.
+    /// - `platform_version`: The current Platform version used for serializing the contract.
+    ///
+    /// # Panics
+    /// This method may panic in the following situations:
+    /// - If serialization of a contract fails.
+    /// - If applying a contract with serialization to the drive fails.
+    ///
+    /// # Examples
+    /// ```
+    /// // Assuming `strategy` is an instance of `Strategy`
+    /// // and `drive` and `platform_version` are appropriately initialized.
+    /// strategy.add_strategy_contracts_into_drive(&drive, &platform_version);
+    /// ```
     // TODO: This belongs to `DocumentOp`
     pub fn add_strategy_contracts_into_drive(
         &mut self,
@@ -88,6 +108,30 @@ impl Strategy {
         }
     }
 
+    /// Generates state transitions for identities based on the block information provided.
+    ///
+    /// This method creates a list of state transitions associated with identities. If the block height
+    /// is `1` and there are starting identities present in the strategy, these identities are directly
+    /// added to the state transitions list.
+    ///
+    /// Additionally, based on a frequency criterion, this method can generate and append more state transitions
+    /// related to the creation of identities.
+    ///
+    /// # Parameters
+    /// - `block_info`: Information about the current block, used to decide on which state transitions should be generated.
+    /// - `signer`: A mutable reference to a signer instance used during the creation of identities state transitions.
+    /// - `rng`: A mutable reference to a random number generator.
+    /// - `platform_version`: The current platform version.
+    ///
+    /// # Returns
+    /// A vector of tuples containing `Identity` and its associated `StateTransition`.
+    ///
+    /// # Examples
+    /// ```
+    /// // Assuming `strategy` is an instance of `Strategy`,
+    /// // and `block_info`, `signer`, `rng`, and `platform_version` are appropriately initialized.
+    /// let state_transitions = strategy.identity_state_transitions_for_block(&block_info, &mut signer, &mut rng, &platform_version);
+    /// ```
     pub fn identity_state_transitions_for_block(
         &self,
         block_info: &BlockInfo,
@@ -115,6 +159,33 @@ impl Strategy {
         state_transitions
     }
 
+    /// Generates state transitions for data contracts based on the current set of identities.
+    ///
+    /// This method creates state transitions for data contracts by iterating over the contracts with updates 
+    /// present in the strategy. For each contract:
+    /// 1. An identity is randomly selected from the provided list of current identities.
+    /// 2. The owner ID of the contract is set to the selected identity's ID.
+    /// 3. The ID of the contract is updated based on the selected identity's ID and entropy used during its creation.
+    /// 4. Any contract updates associated with the main contract are adjusted to reflect these changes.
+    /// 5. All operations in the strategy that match the old contract ID are updated with the new contract ID.
+    ///
+    /// Finally, a new data contract create state transition is generated using the modified contract.
+    ///
+    /// # Parameters
+    /// - `current_identities`: A reference to a list of current identities.
+    /// - `signer`: A reference to a signer instance used during the creation of state transitions.
+    /// - `rng`: A mutable reference to a random number generator.
+    /// - `platform_version`: The current platform version.
+    ///
+    /// # Returns
+    /// A vector of `StateTransition` for data contracts.
+    ///
+    /// # Examples
+    /// ```
+    /// // Assuming `strategy` is an instance of `Strategy`,
+    /// // and `current_identities`, `signer`, `rng`, and `platform_version` are appropriately initialized.
+    /// let contract_transitions = strategy.contract_state_transitions(&current_identities, &signer, &mut rng, &platform_version);
+    /// ```
     pub fn contract_state_transitions(
         &mut self,
         current_identities: &Vec<Identity>,
@@ -179,6 +250,32 @@ impl Strategy {
             .collect()
     }
 
+    /// Generates state transitions for updating data contracts based on the current set of identities and block height.
+    ///
+    /// This method creates update state transitions for data contracts by iterating over the contracts with updates 
+    /// present in the strategy. For each contract:
+    /// 1. It checks for any contract updates associated with the provided block height.
+    /// 2. For each matching update, it locates the corresponding identity based on the owner ID in the update.
+    /// 3. A new data contract update state transition is then generated using the located identity and the updated contract.
+    ///
+    /// # Parameters
+    /// - `current_identities`: A reference to a list of current identities.
+    /// - `block_height`: The height of the current block.
+    /// - `signer`: A reference to a signer instance used during the creation of state transitions.
+    /// - `platform_version`: The current platform version.
+    ///
+    /// # Returns
+    /// A vector of `StateTransition` for updating data contracts.
+    ///
+    /// # Panics
+    /// The method will panic if it doesn't find an identity matching the owner ID from the data contract update.
+    ///
+    /// # Examples
+    /// ```
+    /// // Assuming `strategy` is an instance of `Strategy`,
+    /// // and `current_identities`, `block_height`, `signer`, and `platform_version` are appropriately initialized.
+    /// let update_transitions = strategy.contract_update_state_transitions(&current_identities, block_height, &signer, &platform_version);
+    /// ```
     pub fn contract_update_state_transitions(
         &mut self,
         current_identities: &Vec<Identity>,
@@ -216,8 +313,48 @@ impl Strategy {
             .collect()
     }
 
-    // TODO: this belongs to `DocumentOp`, also randomization details are common for all operations
-    // and could be moved out of here
+    /// Generates state transitions for a given block.
+    ///
+    /// The `state_transitions_for_block` function processes state transitions based on the provided
+    /// block information, platform, identities, and other input parameters. It facilitates
+    /// the creation of state transitions for both new documents and updated documents in the system.
+    ///
+    /// # Parameters
+    /// - `platform`: A reference to the platform, which provides access to various blockchain 
+    ///   related functionalities and data.
+    /// - `block_info`: Information about the block for which the state transitions are being generated.
+    ///   This contains data such as its height and time.
+    /// - `current_identities`: A mutable reference to the list of current identities in the system. 
+    ///   This list is used to facilitate state transitions related to the involved identities.
+    /// - `signer`: A mutable reference to a signer, which aids in creating cryptographic signatures 
+    ///   for the state transitions.
+    /// - `rng`: A mutable reference to a random number generator, used for generating random values 
+    ///   during state transition creation.
+    /// - `platform_version`: The version of the platform being used. This information is crucial 
+    ///   to ensure compatibility and consistency in state transition generation.
+    ///
+    /// # Returns
+    /// A tuple containing:
+    /// 1. `Vec<StateTransition>`: A vector of state transitions generated for the given block.
+    ///    These transitions encompass both new document state transitions and document update transitions.
+    /// 2. `Vec<FinalizeBlockOperation>`: A vector of finalize block operations which may be necessary 
+    ///    to conclude the block's processing.
+    ///
+    /// # Examples
+    /// ```rust
+    /// let (state_transitions, finalize_ops) = obj.state_transitions_for_block(
+    ///     &platform,
+    ///     &block_info,
+    ///     &mut current_identities,
+    ///     &mut signer,
+    ///     &mut rng,
+    ///     platform_version,
+    /// );
+    /// ```
+    ///
+    /// # Panics
+    /// This function may panic under unexpected conditions, for example, when unable to generate state 
+    /// transitions for the given block.
     pub fn state_transitions_for_block(
         &self,
         platform: &Platform<MockCoreRPCLike>,
@@ -227,14 +364,20 @@ impl Strategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
+        // Lists to store generated operations and block finalization operations
         let mut operations = vec![];
         let mut finalize_block_operations = vec![];
+
+        // Lists to keep track of replaced and deleted documents
         let mut replaced = vec![];
         let mut deleted = vec![];
+
+        // Loop through the operations and generate state transitions based on frequency and type
         for op in &self.operations {
             if op.frequency.check_hit(rng) {
                 let count = rng.gen_range(op.frequency.times_per_block_range.clone());
                 match &op.op_type {
+                    // Generate state transition for document insert operation with random data
                     OperationType::Document(DocumentOp {
                         action: DocumentAction::DocumentActionInsertRandom(fill_type, fill_size),
                         document_type,
@@ -313,6 +456,8 @@ impl Strategy {
                                 operations.push(document_batch_transition);
                             });
                     }
+
+                    // Generate state transition for specific document insert operation
                     OperationType::Document(DocumentOp {
                         action:
                             DocumentAction::DocumentActionInsertSpecific(
@@ -420,6 +565,8 @@ impl Strategy {
                                 operations.push(document_batch_transition);
                             });
                     }
+
+                    // Generate state transition for document delete operation
                     OperationType::Document(DocumentOp {
                         action: DocumentAction::DocumentActionDelete,
                         document_type,
@@ -504,6 +651,8 @@ impl Strategy {
                             operations.push(document_batch_transition);
                         }
                     }
+
+                    // Generate state transition for document replace operation
                     OperationType::Document(DocumentOp {
                         action: DocumentAction::DocumentActionReplace,
                         document_type,
@@ -597,6 +746,8 @@ impl Strategy {
                             operations.push(document_batch_transition);
                         }
                     }
+
+                    // Generate state transition for identity top-up operation
                     OperationType::IdentityTopUp if !current_identities.is_empty() => {
                         let indices: Vec<usize> =
                             (0..current_identities.len()).choose_multiple(rng, count as usize);
@@ -613,6 +764,8 @@ impl Strategy {
                             ));
                         }
                     }
+
+                    // Generate state transition for identity update operation
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
                         let indices: Vec<usize> =
                             (0..current_identities.len()).choose_multiple(rng, count as usize);
@@ -651,6 +804,8 @@ impl Strategy {
                             }
                         }
                     }
+
+                    // Generate state transition for identity withdrawal operation
                     OperationType::IdentityWithdrawal if !current_identities.is_empty() => {
                         let indices: Vec<usize> =
                             (0..current_identities.len()).choose_multiple(rng, count as usize);
@@ -665,6 +820,8 @@ impl Strategy {
                             operations.push(state_transition);
                         }
                     }
+
+                    // Generate state transition for identity transfer operation
                     OperationType::IdentityTransfer if current_identities.len() > 1 => {
                         // chose 2 last identities
                         let indices: Vec<usize> =
@@ -705,6 +862,38 @@ impl Strategy {
         (operations, finalize_block_operations)
     }
 
+    /// Generates state transitions for a block by considering new identities.
+    ///
+    /// This function processes state transitions with respect to identities, contracts,
+    /// and document operations. The state transitions are generated based on the 
+    /// given block's height and other parameters, with special handling for block height `1`.
+    ///
+    /// # Parameters
+    /// - `platform`: A reference to the platform, which is parameterized with a mock core RPC type.
+    /// - `block_info`: Information about the current block, like its height and time.
+    /// - `current_identities`: A mutable reference to the current set of identities. This list 
+    ///   may be appended with new identities during processing.
+    /// - `signer`: A mutable reference to a signer used for creating cryptographic signatures.
+    /// - `rng`: A mutable reference to a random number generator.
+    ///
+    /// # Returns
+    /// A tuple containing two vectors:
+    /// 1. `Vec<StateTransition>`: A vector of state transitions generated during processing.
+    /// 2. `Vec<FinalizeBlockOperation>`: A vector of finalize block operations derived during processing.
+    ///
+    /// # Examples
+    /// ```rust
+    /// let (state_transitions, finalize_ops) = obj.state_transitions_for_block_with_new_identities(
+    ///     &platform,
+    ///     &block_info,
+    ///     &mut current_identities,
+    ///     &mut signer,
+    ///     &mut rng,
+    /// );
+    /// ```
+    ///
+    /// # Panics
+    /// This function may panic if the platform version cannot be fetched.
     pub fn state_transitions_for_block_with_new_identities(
         &mut self,
         platform: &Platform<MockCoreRPCLike>,
