@@ -103,6 +103,7 @@ impl Drive {
                         "we did not get back an element for the correct path for the historical contract".to_string(),
                     )));
             };
+            tracing::trace!(?maybe_element, "verify contract returns proved element");
 
             let contract = maybe_element
                 .map(|element| {
