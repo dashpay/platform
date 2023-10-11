@@ -1,3 +1,10 @@
+### [0.25.2](https://github.com/dashpay/platform/compare/v0.25.1...v0.25.2) (2023-10-11)
+
+
+### Features
+
+* **dashmate:** force start ([#1481](https://github.com/dashpay/platform/issues/1481))
+
 ### [0.25.1](https://github.com/dashpay/platform/compare/v0.25.0...v0.25.1) (2023-10-11)
 
 
