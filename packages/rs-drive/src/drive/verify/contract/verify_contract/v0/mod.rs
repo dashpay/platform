@@ -42,7 +42,7 @@ impl Drive {
         contract_id: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<DataContract>), Error> {
-        let mut path_query = match (
+        let path_query = match (
             in_multiple_contract_proof_form,
             contract_known_keeps_history.unwrap_or_default(),
         ) {
@@ -63,6 +63,7 @@ impl Drive {
             Ok(ok_result) => ok_result,
             Err(e) => {
                 return if contract_known_keeps_history.is_none() {
+                    tracing::debug!(?path_query,error=?e, "retrying contract verification with history enabled");
                     // most likely we are trying to prove a historical contract
                     Self::verify_contract(
                         proof,
@@ -102,6 +103,7 @@ impl Drive {
                         "we did not get back an element for the correct path for the historical contract".to_string(),
                     )));
             };
+            tracing::trace!(?maybe_element, "verify contract returns proved element");
 
             let contract = maybe_element
                 .map(|element| {
@@ -119,10 +121,11 @@ impl Drive {
             match contract {
                 Ok(contract) => Ok((root_hash, contract)),
                 Err(e) => {
-                    if contract_known_keeps_history == Some(true) {
+                    if contract_known_keeps_history.is_some() {
                         // just return error
                         Err(e)
                     } else {
+                        tracing::debug!(?path_query,error=?e, "retry contract verification with history enabled");
                         Self::verify_contract(
                             proof,
                             Some(true),
