@@ -8,8 +8,7 @@
 //!
 //! ## Error Handling
 //! Any errors encountered during the execution are returned as Error instances.
-use std::{fmt::Debug, ops::DerefMut};
-
+use dapi_grpc::platform::v0::GetDocumentsResponse;
 use dpp::document::Document;
 use drive_proof_verifier::proof::from_proof::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
@@ -59,20 +58,20 @@ where
     /// ## Error Handling
     /// Any errors encountered during the execution are returned as [`Error`](crate::error::Error) instances.
     async fn list<Q: Query<<Self as List>::Request>>(
-        api: &mut Sdk,
+        sdk: &mut Sdk,
         query: Q,
     ) -> Result<Option<Vec<Self>>, Error> {
         let request = query.query()?;
 
         let response = request
             .clone()
-            .execute(client.deref_mut(), RequestSettings::default())
+            .execute(sdk, RequestSettings::default())
             .await?;
 
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
 
-        let object: Option<Vec<Self>> = api.parse_proof(request, response)?;
+        let object: Option<Vec<Self>> = sdk.parse_proof(request, response)?;
 
         match object {
             Some(items) => Ok(items.into()),
@@ -87,20 +86,19 @@ impl List for Document {
     // type stores full contract, which is missing in the GetDocumentsRequest type.
     type Request = DocumentQuery;
     async fn list<Q: Query<<Self as List>::Request>>(
-        api: &mut Sdk,
+        sdk: &mut Sdk,
         query: Q,
     ) -> Result<Option<Vec<Self>>, Error> {
         let document_query: DocumentQuery = query.query()?;
 
-        let mut client = api.platform_client().await;
-        let response: GetDocumentsResponse = request
-            .execute(client.deref_mut(), RequestSettings::default())
-            .await?;
+        let request = document_query.clone();
+        let response: GetDocumentsResponse =
+            request.execute(sdk, RequestSettings::default()).await?;
 
         tracing::trace!(request=?document_query, response=?response, "list documents");
 
         let object: Option<Vec<Document>> =
-            api.parse_proof::<DocumentQuery, Vec<Document>>(document_query, response)?;
+            sdk.parse_proof::<DocumentQuery, Vec<Document>>(document_query, response)?;
 
         match object {
             Some(documents) => Ok(Some(documents)),

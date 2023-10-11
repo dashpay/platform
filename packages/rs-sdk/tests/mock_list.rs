@@ -21,7 +21,7 @@ async fn test_mock_document_list() {
     let data_contract = mock_data_contract(Some(&document_type));
 
     let expected = vec![document_type
-        .random_filled_document(None, Sdk::version())
+        .random_document(None, Sdk::version())
         .expect("document should be created")];
 
     let document_id = expected[0].id();

@@ -79,7 +79,7 @@ async fn test_mock_fetch_document() {
     let data_contract = mock_data_contract(Some(&document_type));
 
     let expected = document_type
-        .random_filled_document(None, Sdk::version())
+        .random_document(None, Sdk::version())
         .expect("document should be created");
     let document_id = expected.id();
     let document_type_name = document_type.name();

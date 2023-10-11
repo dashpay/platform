@@ -86,7 +86,7 @@ impl MockDashPlatformSdk {
 
         // This expectation will work for from_proof
         self.from_proof_expectations
-            .insert(key, returned_object.mock_serialize(&self));
+            .insert(key, returned_object.mock_serialize(self));
 
         // This expectation will work for execute
         let mut dapi_guard = self.dapi.lock().await;

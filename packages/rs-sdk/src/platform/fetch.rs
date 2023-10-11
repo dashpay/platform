@@ -14,7 +14,7 @@
 //! - `Fetch<API>` for [`dpp::prelude::DataContract`]
 //! - `Fetch<API>` for [`Document`](dpp::document::Document)
 
-use std::{fmt::Debug, ops::DerefMut};
+use std::fmt::Debug;
 
 use crate::{
     error::Error,
@@ -92,20 +92,20 @@ where
     /// ## Error Handling
     /// Any errors encountered during the execution are returned as [Error] instances.
     async fn fetch<Q: Query<<Self as Fetch>::Request>>(
-        api: &mut Sdk,
+        sdk: &mut Sdk,
         query: Q,
     ) -> Result<Option<Self>, Error> {
         let request = query.query()?;
 
         let response = request
             .clone()
-            .execute(client.deref_mut(), RequestSettings::default())
+            .execute(sdk, RequestSettings::default())
             .await?;
 
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
 
-        let object: Option<Self> = api.parse_proof(request, response)?;
+        let object: Option<Self> = sdk.parse_proof(request, response)?;
 
         match object {
             Some(item) => Ok(item.into()),
