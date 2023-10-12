@@ -75,7 +75,7 @@ services:
     stop_grace_period: 30s
     env_file:
       # Logger settings
-      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/abci/logger.env.dot
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/drive/abci/logger.env
     profiles:
       - platform
 
