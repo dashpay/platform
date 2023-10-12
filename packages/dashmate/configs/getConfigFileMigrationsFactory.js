@@ -226,6 +226,8 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
             if (options.network === NETWORK_TESTNET) {
               options.platform.drive.abci.epochTime = testnet.get('platform.drive.abci.epochTime');
             }
+            options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
+            options.platform.dapi.api.docker.image = base.get('platform.drive.abci.docker.image');
           });
 
         return configFile;
