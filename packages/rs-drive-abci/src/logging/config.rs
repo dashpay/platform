@@ -1,5 +1,5 @@
 use crate::config::FromEnv;
-use crate::logging::level::LogLevelPreset;
+use crate::logging::level::LogLevel;
 use crate::logging::{LogDestination, LogFormat};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -12,7 +12,7 @@ pub struct LogConfig {
     pub destination: LogDestination,
     /// Log level
     #[serde(default)]
-    pub level: LogLevelPreset,
+    pub level: LogLevel,
     /// Whether or not to use colorful output; defaults to autodetect
     #[serde(default)]
     pub color: Option<bool>,

@@ -8,7 +8,7 @@ use tracing_subscriber::EnvFilter;
 /// Log level presets
 #[derive(Serialize, Debug, Clone, Default, Display)]
 #[serde(rename_all = "camelCase")]
-pub enum LogLevelPreset {
+pub enum LogLevel {
     /// No logs
     Silent,
     /// Uses RUST_LOG format to set verbosity level
@@ -29,17 +29,17 @@ pub enum LogLevelPreset {
 }
 
 /// Creates log level preset from string
-impl From<&str> for LogLevelPreset {
+impl From<&str> for LogLevel {
     fn from(value: &str) -> Self {
         match value {
-            "silent" => LogLevelPreset::Silent,
-            "error" => LogLevelPreset::Error,
-            "warn" => LogLevelPreset::Warn,
-            "info" => LogLevelPreset::Info,
-            "debug" => LogLevelPreset::Debug,
-            "trace" => LogLevelPreset::Trace,
-            "paranoid" => LogLevelPreset::Paranoid,
-            configuration => LogLevelPreset::Custom(configuration.to_string()),
+            "silent" => LogLevel::Silent,
+            "error" => LogLevel::Error,
+            "warn" => LogLevel::Warn,
+            "info" => LogLevel::Info,
+            "debug" => LogLevel::Debug,
+            "trace" => LogLevel::Trace,
+            "paranoid" => LogLevel::Paranoid,
+            configuration => LogLevel::Custom(configuration.to_string()),
         }
     }
 }
@@ -47,23 +47,23 @@ impl From<&str> for LogLevelPreset {
 struct LogLevelPresetVisitor;
 
 impl<'de> Visitor<'de> for LogLevelPresetVisitor {
-    type Value = LogLevelPreset;
+    type Value = LogLevel;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter.write_str("silent, error, warn, info, debug, trace, paranoid or custom level using RUST_LOG format")
     }
 
-    fn visit_str<E>(self, value: &str) -> Result<LogLevelPreset, E>
+    fn visit_str<E>(self, value: &str) -> Result<LogLevel, E>
     where
         E: de::Error,
     {
-        let level = LogLevelPreset::from(value);
+        let level = LogLevel::from(value);
 
         Ok(level)
     }
 }
 
-impl<'de> Deserialize<'de> for LogLevelPreset {
+impl<'de> Deserialize<'de> for LogLevel {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -73,15 +73,15 @@ impl<'de> Deserialize<'de> for LogLevelPreset {
 }
 
 /// Creates log level preset from verbosity level
-impl TryFrom<u8> for LogLevelPreset {
+impl TryFrom<u8> for LogLevel {
     type Error = Error;
 
-    fn try_from(value: u8) -> Result<Self, <LogLevelPreset as TryFrom<u8>>::Error> {
+    fn try_from(value: u8) -> Result<Self, <LogLevel as TryFrom<u8>>::Error> {
         let level = match value {
-            0 => LogLevelPreset::Info,
-            1 => LogLevelPreset::Debug,
-            2 => LogLevelPreset::Trace,
-            3 => LogLevelPreset::Paranoid,
+            0 => LogLevel::Info,
+            1 => LogLevel::Debug,
+            2 => LogLevel::Trace,
+            3 => LogLevel::Paranoid,
             verbosity => return Err(Error::InvalidVerbosityLevel(verbosity)),
         };
 
@@ -89,25 +89,25 @@ impl TryFrom<u8> for LogLevelPreset {
     }
 }
 
-impl From<&LogLevelPreset> for EnvFilter {
-    fn from(value: &LogLevelPreset) -> Self {
+impl From<&LogLevel> for EnvFilter {
+    fn from(value: &LogLevel) -> Self {
         match value {
-            LogLevelPreset::Silent => EnvFilter::default(),
-            LogLevelPreset::Custom(configuration) => EnvFilter::new(configuration),
-            LogLevelPreset::Error => EnvFilter::new("error"),
-            LogLevelPreset::Warn => {
+            LogLevel::Silent => EnvFilter::default(),
+            LogLevel::Custom(configuration) => EnvFilter::new(configuration),
+            LogLevel::Error => EnvFilter::new("error"),
+            LogLevel::Warn => {
                 EnvFilter::new("error,tenderdash_abci=warn,drive_abci=warn,drive=warn,dpp=warn")
             }
-            LogLevelPreset::Info => {
+            LogLevel::Info => {
                 EnvFilter::new("error,tenderdash_abci=info,drive_abci=info,drive=info,dpp=info")
             }
-            LogLevelPreset::Debug => {
+            LogLevel::Debug => {
                 EnvFilter::new("info,tenderdash_abci=debug,drive_abci=debug,drive=debug,dpp=debug")
             }
-            LogLevelPreset::Trace => {
+            LogLevel::Trace => {
                 EnvFilter::new("debug,tenderdash_abci=trace,drive_abci=trace,drive=trace,drive::grovedb_operations=debug,dpp=trace")
             }
-            LogLevelPreset::Paranoid => EnvFilter::new("trace"),
+            LogLevel::Paranoid => EnvFilter::new("trace"),
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::logging::config::LogConfig;
 use crate::logging::destination::{LogDestinationWriter, Writer};
 use crate::logging::error::Error;
-use crate::logging::{LogConfigs, LogFormat, LogLevelPreset};
+use crate::logging::{LogConfigs, LogFormat, LogLevel};
 
 use itertools::Itertools;
 use lazy_static::__Deref;
@@ -256,7 +256,7 @@ pub struct Logger {
     pub(super) destination: Arc<Mutex<LogDestinationWriter>>,
 
     /// Log verbosity level preset
-    level: LogLevelPreset,
+    level: LogLevel,
 
     /// Whether to use colored output
     color: Option<bool>,
@@ -283,7 +283,7 @@ impl Default for Logger {
     fn default() -> Self {
         Self {
             destination: Arc::new(Mutex::new(LogDestinationWriter::StdOut)),
-            level: LogLevelPreset::Info,
+            level: LogLevel::Info,
             color: None,
             format: LogFormat::Full,
         }

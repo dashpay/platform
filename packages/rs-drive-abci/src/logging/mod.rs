@@ -10,7 +10,7 @@ pub use config::LogConfigs;
 pub use destination::LogDestination;
 pub use error::Error;
 pub use format::LogFormat;
-pub use level::LogLevelPreset;
+pub use level::LogLevel;
 pub use logger::LogBuilder;
 pub use logger::Loggers;
 
@@ -18,7 +18,7 @@ pub use logger::Loggers;
 ///
 ///
 /// For verbosity, see drive-abci --help or use 0 or 5
-pub fn init_for_tests(level: LogLevelPreset) {
+pub fn init_for_tests(level: LogLevel) {
     let mut logger_builder = LogBuilder::new();
     let config = LogConfig {
         destination: LogDestination::StdOut,
@@ -50,26 +50,26 @@ mod tests {
     fn test_logging() {
         let logger_stdout = LogConfig {
             destination: LogDestination::StdOut,
-            level: LogLevelPreset::Info,
+            level: LogLevel::Info,
             format: LogFormat::Pretty,
             ..Default::default()
         };
 
         let logger_stderr = LogConfig {
             destination: LogDestination::StdErr,
-            level: LogLevelPreset::Debug,
+            level: LogLevel::Debug,
             ..Default::default()
         };
 
         let logger_v0 = LogConfig {
             destination: LogDestination::Bytes,
-            level: LogLevelPreset::Info,
+            level: LogLevel::Info,
             ..Default::default()
         };
 
         let logger_v4 = LogConfig {
             destination: LogDestination::Bytes,
-            level: LogLevelPreset::Debug,
+            level: LogLevel::Debug,
             format: LogFormat::Json,
             ..Default::default()
         };
@@ -79,7 +79,7 @@ mod tests {
         let file_v0_path = dir.path().join("log.v0");
         let logger_file_v0 = LogConfig {
             destination: LogDestination::File(file_v0_path),
-            level: LogLevelPreset::Info,
+            level: LogLevel::Info,
             max_files: 4,
             ..Default::default()
         };
@@ -87,7 +87,7 @@ mod tests {
         let file_v4_path = dir.path().join("log.v4");
         let logger_file_v4 = LogConfig {
             destination: LogDestination::File(file_v4_path.clone()),
-            level: LogLevelPreset::Debug,
+            level: LogLevel::Debug,
             max_files: 0, // no rotation
             ..Default::default()
         };
@@ -171,7 +171,7 @@ mod tests {
         let filepath = temp_dir.path().join("drive-abci.log");
         let config = LogConfig {
             destination: LogDestination::File(filepath),
-            level: LogLevelPreset::Trace,
+            level: LogLevel::Trace,
             format: LogFormat::Pretty,
             max_files: 3,
             ..Default::default()
@@ -221,7 +221,7 @@ mod tests {
         let filepath = temp_dir.path().join("drive-abci.log");
         let config = LogConfig {
             destination: LogDestination::File(filepath.clone()),
-            level: LogLevelPreset::Trace,
+            level: LogLevel::Trace,
             format: LogFormat::Pretty,
             max_files: 0,
             ..Default::default()
