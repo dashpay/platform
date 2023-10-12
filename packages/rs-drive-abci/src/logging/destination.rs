@@ -24,8 +24,7 @@ pub enum LogDestination {
     #[default]
     /// Standard out
     StdOut,
-    /// Log file
-    ///
+    /// File
     File(PathBuf),
     /// Blob of bytes for testing
     #[cfg(test)]
