@@ -1,3 +1,15 @@
+### [0.25.3](https://github.com/dashpay/platform/compare/v0.25.2...v0.25.3) (2023-10-12)
+
+
+### Bug Fixes
+
+* **dashmate:** a testnet node fails to sync ([#1485](https://github.com/dashpay/platform/issues/1485))
+
+
+### Documentation
+
+* cleanup changelog
+
 ### [0.25.2](https://github.com/dashpay/platform/compare/v0.25.1...v0.25.2) (2023-10-11)
 
 
