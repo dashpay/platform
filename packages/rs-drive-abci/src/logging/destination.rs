@@ -447,11 +447,9 @@ mod tests {
     fn test_validate_log_path_not_absolute() {
         let relative_path = Path::new("log.txt");
 
-        if let Err(Error::FilePath(_, message)) = validate_log_path(relative_path) {
-            assert_eq!(message, "log file path must be absolute");
-        } else {
-            panic!("Expected error did not occur");
-        }
+        assert!(
+            matches!(validate_log_path(relative_path), Err(Error::FilePath(_, message)) if message == "log file path must be absolute")
+        );
     }
 
     #[test]
