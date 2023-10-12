@@ -233,6 +233,7 @@ function setupLocalPresetTaskFactory(
                     const stdoutLogger = config.get('platform.drive.abci.logs.stdout');
                     if (stdoutLogger) {
                       config.set('platform.drive.abci.logs.stdout.level', 'trace');
+                      config.set('platform.drive.abci.logs.stdout.format', 'full');
                     }
 
                     config.set('platform.drive.tenderdash.log.level', 'debug');
