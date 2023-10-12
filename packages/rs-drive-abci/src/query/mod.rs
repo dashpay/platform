@@ -698,4 +698,81 @@ mod tests {
             assert_eq!(result.unwrap().errors.len(), 0);
         }
     }
+
+    mod data_contracts {
+        use crate::error::query::QueryError;
+        use dapi_grpc::platform::v0::{
+            get_data_contracts_response, get_identities_response, GetDataContractsRequest,
+            GetDataContractsResponse, GetIdentitiesRequest, GetIdentitiesResponse,
+        };
+        use prost::Message;
+
+        const QUERY_PATH: &str = "/dataContracts";
+
+        #[test]
+        fn test_invalid_data_contract_id() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetDataContractsRequest {
+                ids: vec![vec![0; 8]],
+                prove: false,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+            let validation_error = validation_result.first_error().unwrap();
+
+            assert!(matches!(
+                validation_error,
+                QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
+            ));
+        }
+
+        #[test]
+        fn test_data_contracts_not_found() {
+            let (platform, version) = super::setup_platform();
+
+            let id = vec![0; 32];
+            let request = GetDataContractsRequest {
+                ids: vec![id.clone()],
+                prove: false,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            assert!(result.is_ok());
+
+            let validation_result = result.unwrap();
+            let data = validation_result.data.unwrap();
+            let response = GetDataContractsResponse::decode(data.as_slice()).unwrap();
+
+            let get_data_contracts_response::Result::DataContracts(contracts) =
+                response.result.unwrap()
+            else {
+                panic!("invalid response")
+            };
+
+            assert!(contracts.data_contract_entries[0].value.is_none());
+        }
+
+        // should generate proof: CorruptedCodeExecution("Cannot create proof for empty tree")
+        #[ignore]
+        #[test]
+        fn test_data_contracts_absence_proof() {
+            let (platform, version) = super::setup_platform();
+
+            let id = vec![0; 32];
+            let request = GetDataContractsRequest {
+                ids: vec![id.clone()],
+                prove: true,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap().errors.len(), 0);
+        }
+    }
 }
