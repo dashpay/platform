@@ -229,15 +229,11 @@ function setupLocalPresetTaskFactory(
                   config.set('platform.drive.tenderdash.mode', 'validator');
 
                   // Setup logs
-                  const drivePrettyFilePath = homeDir.joinPath('logs', config.getName(), 'drive-pretty.log');
-                  config.set('platform.drive.abci.log.prettyFile.path', drivePrettyFilePath);
-
-                  const driveJsonFilePath = homeDir.joinPath('logs', config.getName(), 'drive-json.log');
-                  config.set('platform.drive.abci.log.jsonFile.path', driveJsonFilePath);
-
                   if (ctx.debugLogs) {
-                    config.set('platform.drive.abci.log.stdout.level', 'trace');
-                    config.set('platform.drive.abci.log.prettyFile.level', 'trace');
+                    const stdoutLogger = config.get('platform.drive.abci.logs.stdout');
+                    if (stdoutLogger) {
+                      config.set('platform.drive.abci.logs.stdout.level', 'trace');
+                    }
 
                     config.set('platform.drive.tenderdash.log.level', 'debug');
                   }

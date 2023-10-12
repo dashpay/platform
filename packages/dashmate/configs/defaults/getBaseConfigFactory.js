@@ -160,17 +160,12 @@ function getBaseConfigFactory(homeDir) {
                 target: 'drive-abci',
               },
             },
-            log: {
+            logs: {
               stdout: {
+                destination: 'stdout',
                 level: 'info',
-              },
-              prettyFile: {
-                level: 'silent',
-                path: homeDir.joinPath('logs', 'base', 'drive-pretty.log'),
-              },
-              jsonFile: {
-                level: 'silent',
-                path: homeDir.joinPath('logs', 'base', 'drive-json.log'),
+                format: 'pretty',
+                color: true,
               },
             },
             validatorSet: {

@@ -220,6 +220,16 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
+      '0.25.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            delete options.platform.drive.abci.log;
+
+            options.platform.drive.abci.logs = base.get('platform.drive.abci.logs');
+          });
+
+        return configFile;
+      },
     };
   }
 

@@ -72,21 +72,6 @@ module.exports = {
       required: ['id', 'host', 'port'],
       additionalProperties: false,
     },
-    abciLogFile: {
-      type: 'object',
-      properties: {
-        level: {
-          type: 'string',
-          enum: ['error', 'warn', 'info', 'debug', 'trace', 'silent'],
-        },
-        path: {
-          type: 'string',
-          minLength: 1,
-        },
-      },
-      additionalProperties: false,
-      required: ['level', 'path'],
-    },
     tenderdashLogModule: {
       type: 'string',
       enum: ['debug', 'info', 'error'],
@@ -407,28 +392,39 @@ module.exports = {
                 docker: {
                   $ref: '#/definitions/dockerWithBuild',
                 },
-                log: {
+                logs: {
                   type: 'object',
-                  properties: {
-                    stdout: {
-                      type: 'object',
-                      properties: {
-                        level: {
-                          $ref: '#/definitions/abciLogFile/properties/level',
-                        },
-                      },
-                      additionalProperties: false,
-                      required: ['level'],
-                    },
-                    prettyFile: {
-                      $ref: '#/definitions/abciLogFile',
-                    },
-                    jsonFile: {
-                      $ref: '#/definitions/abciLogFile',
-                    },
+                  propertyNames: {
+                    type: 'string',
+                    minLength: 1,
+                    pattern: '[a-z0-9]',
                   },
-                  additionalProperties: false,
-                  required: ['stdout', 'prettyFile', 'jsonFile'],
+                  additionalProperties: {
+                    type: 'object',
+                    properties: {
+                      destination: {
+                        type: 'string',
+                        minLength: 1,
+                        description: 'stdout, stderr or absolute path to log file',
+                      },
+                      level: {
+                        type: 'string',
+                        minLength: 1,
+                        description: 'error, warn, info, debug, trace, silent or custom '
+                          + ' configuration in RUST_LOG format',
+                      },
+                      format: {
+                        type: 'string',
+                        enum: ['full', 'compact', 'pretty', 'json'],
+                      },
+                      color: {
+                        type: ['boolean', 'null'],
+                      },
+
+                    },
+                    required: ['destination', 'level', 'format', 'color'],
+                    additionalProperties: false,
+                  },
                 },
                 validatorSet: {
                   type: 'object',
@@ -448,7 +444,7 @@ module.exports = {
                 },
               },
               additionalProperties: false,
-              required: ['docker', 'log', 'validatorSet', 'epochTime'],
+              required: ['docker', 'logs', 'validatorSet', 'epochTime'],
             },
             tenderdash: {
               type: 'object',

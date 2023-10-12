@@ -20,7 +20,7 @@ chrono = "0.4.20"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_with = { version = "2.3.1", features = ["hex"], default-features = false }
-drive = { path = "../rs-drive" }
+drive = { path = "../rs-drive", features = ["grovedb_operations_logging"] }
 thiserror = "1.0.30"
 rand = "0.8.5"
 tempfile = "3.3.0"
@@ -73,6 +73,7 @@ tokio = { version = "1", features = [
 ] }
 tokio-util = { version = "0.7.8" }
 derive_more = "0.99.17"
+log = "0.4.20"
 
 [dev-dependencies]
 base64 = "0.20.0"
