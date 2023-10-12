@@ -21,7 +21,7 @@ use rs_sdk::{
 include!("common.rs");
 
 #[tokio::test]
-/// Given some identity ID, when I fetch it using mock API, then I get the same identity
+/// Given some identity, when I fetch it using mock API, then I get the same identity
 async fn test_mock_fetch_identity() {
     let mut sdk = Sdk::new_mock();
 
@@ -54,6 +54,7 @@ async fn test_mock_fetch_identity_not_found() {
     assert!(retrieved.is_none());
 }
 
+/// Given some data contract, when I fetch it by ID, I get it.
 #[tokio::test]
 async fn test_mock_fetch_data_contract() {
     let mut sdk = Sdk::new_mock();
@@ -70,6 +71,7 @@ async fn test_mock_fetch_data_contract() {
     assert_eq!(retrieved, expected);
 }
 
+/// Given some data contract, document type name and document, when I fetch expected document using mock Sdk, I get it.
 #[tokio::test]
 async fn test_mock_fetch_document() {
     use dpp::document::DocumentV0Getters;
@@ -84,14 +86,16 @@ async fn test_mock_fetch_document() {
     let document_id = expected.id();
     let document_type_name = document_type.name();
 
-    // [DocumentQuery::new_with_document_id] will fetch the data contract first, so we need to define an expectation for it.
+    // [DocumentQuery::new_with_data_contract_id] will fetch the data contract first, so we need to define an expectation for it.
     sdk.mock()
         .expect_fetch(data_contract.id(), Some(data_contract.clone()))
         .await;
 
-    let query = DocumentQuery::new(data_contract, document_type_name)
-        .expect("create document query")
-        .with_document_id(&document_id);
+    let query =
+        DocumentQuery::new_with_data_contract_id(&mut sdk, data_contract.id(), document_type_name)
+            .await
+            .expect("create document query")
+            .with_document_id(&document_id);
 
     sdk.mock()
         .expect_fetch(query.clone(), Some(expected.clone()))

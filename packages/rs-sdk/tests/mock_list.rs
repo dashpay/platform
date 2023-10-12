@@ -5,7 +5,7 @@ use dpp::{
             accessors::DocumentTypeV0Getters, random_document::CreateRandomDocument, DocumentType,
         },
     },
-    document::{Document, DocumentV0Getters},
+    document::Document,
     platform_value::platform_value,
 };
 use rs_sdk::{
@@ -14,6 +14,8 @@ use rs_sdk::{
 };
 include!("common.rs");
 
+/// Given some data contract, document type and 1 document of this type, when I request list of documents, I get that
+/// document.
 #[tokio::test]
 async fn test_mock_document_list() {
     let mut sdk = Sdk::new_mock();
@@ -24,7 +26,6 @@ async fn test_mock_document_list() {
         .random_document(None, sdk.version())
         .expect("document should be created")];
 
-    let document_id = expected[0].id();
     let document_type_name = document_type.name();
 
     // [DocumentQuery::new_with_document_id] will fetch the data contract first, so we need to define an expectation for it.
@@ -32,10 +33,8 @@ async fn test_mock_document_list() {
         .expect_fetch(data_contract.id(), Some(data_contract.clone()))
         .await;
 
-    let query = DocumentQuery::new(data_contract, document_type_name)
-        .expect("create document query")
-        .with_document_id(&document_id);
-
+    let query =
+        DocumentQuery::new(data_contract, document_type_name).expect("create document query");
     sdk.mock()
         .expect_list(query.clone(), Some(expected.clone()))
         .await;
@@ -43,7 +42,7 @@ async fn test_mock_document_list() {
     let retrieved = Document::list(&mut sdk, query)
         .await
         .unwrap()
-        .expect("identity should exist");
+        .expect("document should exist");
 
     assert_eq!(retrieved, expected);
 }

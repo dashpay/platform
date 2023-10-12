@@ -86,14 +86,7 @@ impl DocumentQuery {
                     format!("data contract {} not found", data_contract_id),
                 ))?;
 
-        Ok(DocumentQuery {
-            data_contract: Arc::new(data_contract),
-            document_type_name: document_type_name.to_string(),
-            where_clauses: vec![],
-            order_by_clauses: vec![],
-            start: None,
-            limit: 1,
-        })
+        Self::new(data_contract, document_type_name)
     }
 
     /// Point to a specific document ID.
