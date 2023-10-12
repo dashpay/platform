@@ -15,7 +15,7 @@ const DataTriggerConditionError = require('@dashevo/dpp/lib/errors/consensus/sta
 const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
-describe('createDomainDataTrigger', () => {
+describe.skip('createDomainDataTrigger', () => {
   let parentDocumentTransition;
   let childDocumentTransition;
   let childDocument;

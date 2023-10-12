@@ -11,6 +11,7 @@ use grovedb::batch::{BatchApplyOptions, GroveDbOp};
 use grovedb::TransactionArg;
 use grovedb_costs::storage_cost::removal::StorageRemovedBytes::BasicStorageRemoval;
 use grovedb_costs::storage_cost::transition::OperationStorageTransitionType;
+use tracing::Level;
 
 impl Drive {
     /// Applies the given groveDB operations batch and gets and passes the costs to `push_drive_operation_result`.
@@ -41,6 +42,15 @@ impl Drive {
                 )));
             }
         }
+
+        // Clone ops only if we log them
+        #[cfg(feature = "grovedb_operations_logging")]
+        let maybe_ops_for_logs = if tracing::event_enabled!(target: "grovedb_operations", Level::TRACE)
+        {
+            Some(ops.clone())
+        } else {
+            None
+        };
 
         let cost_context = self.grove.apply_batch_with_element_flags_update(
             ops.operations,
@@ -140,6 +150,26 @@ impl Drive {
             },
             transaction,
         );
+
+        #[cfg(feature = "grovedb_operations_logging")]
+        if tracing::event_enabled!(target: "grovedb_operations", Level::TRACE)
+            && cost_context.value.is_ok()
+        {
+            let root_hash = self
+                .grove
+                .root_hash(transaction)
+                .unwrap()
+                .map_err(Error::GroveDB)?;
+
+            tracing::trace!(
+                target = "grovedb_operations",
+                ops = ?maybe_ops_for_logs.unwrap(),
+                root_hash = ?root_hash,
+                is_transactional = transaction.is_some(),
+                "grovedb batch applied",
+            );
+        }
+
         push_drive_operation_result(cost_context, drive_operations)
     }
 }

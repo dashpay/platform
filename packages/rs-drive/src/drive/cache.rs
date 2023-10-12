@@ -69,6 +69,12 @@ impl DataContractCache {
         maybe_fetch_info.or_else(|| self.global_cache.get(&contract_id))
     }
 
+    /// Remove contract from both block and global cache
+    pub fn remove(&mut self, contract_id: [u8; 32]) {
+        self.block_cache.remove(&contract_id);
+        self.global_cache.remove(&contract_id);
+    }
+
     /// Merge block cache to global cache
     pub fn merge_block_cache(&mut self) {
         for (contract_id, fetch_info) in self.block_cache.iter() {

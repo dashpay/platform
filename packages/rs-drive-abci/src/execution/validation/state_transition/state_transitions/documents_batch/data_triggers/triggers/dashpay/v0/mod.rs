@@ -284,6 +284,7 @@ mod test {
             .drive
             .add_new_identity(
                 identity_fixture,
+                false,
                 &BlockInfo::default(),
                 true,
                 None,

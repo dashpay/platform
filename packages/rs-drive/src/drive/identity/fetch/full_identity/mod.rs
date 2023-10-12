@@ -31,6 +31,7 @@ mod tests {
                 drive
                     .add_new_identity(
                         identity.as_ref().unwrap().clone(),
+                        false,
                         &BlockInfo::default(),
                         true,
                         None,
@@ -89,6 +90,7 @@ mod tests {
             drive
                 .add_new_identity(
                     identity.clone(),
+                    false,
                     &BlockInfo::default(),
                     true,
                     None,

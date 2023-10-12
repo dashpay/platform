@@ -12,9 +12,6 @@ use tracing::error;
 
 /// Execution errors module
 pub mod execution;
-
-/// ABCI handlers erors module
-pub mod handlers;
 /// Query errors module
 pub mod query;
 /// Serialization errors module

@@ -11,12 +11,13 @@ use std::collections::HashMap;
 
 impl Drive {
     /// The operations for adding new keys to an identity
+    /// This should not be called for adding new keys to a masternode
     pub fn add_new_keys_to_identity_operations_v0(
         &self,
         identity_id: [u8; 32],
         unique_keys_to_add: Vec<IdentityPublicKey>,
         non_unique_keys_to_add: Vec<IdentityPublicKey>,
-        with_references: bool,
+        with_searchable_inner_references: bool,
         epoch: &Epoch,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -37,7 +38,7 @@ impl Drive {
             self.insert_new_unique_key_operations(
                 identity_id,
                 key,
-                with_references,
+                with_searchable_inner_references,
                 epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,
@@ -50,7 +51,8 @@ impl Drive {
             self.insert_new_non_unique_key_operations(
                 identity_id,
                 key,
-                with_references,
+                true,
+                with_searchable_inner_references,
                 epoch,
                 estimated_costs_only_with_layer_info,
                 transaction,

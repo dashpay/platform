@@ -6,10 +6,28 @@ use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
 use rand::prelude::StdRng;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DocumentFieldFillType {
+    /// Do not fill a field if that field is not required
+    DoNotFillIfNotRequired,
+    /// Should fill a field even if that field is not required
+    FillIfNotRequired,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DocumentFieldFillSize {
+    /// Fill to the min size allowed by the contract
+    MinDocumentFillSize,
+    /// Fill to the max size allowed by the contract
+    MaxDocumentFillSize,
+    /// Fill any size that is allowed by the contract
+    AnyDocumentFillSize,
+}
+
 // TODO The factory is used in benchmark and tests. Probably it should be available under the test feature
 /// Functions for creating various types of random documents.
 pub trait CreateRandomDocument {
-    /// Random documents
+    /// Random documents with DoNotFillIfNotRequired and AnyDocumentFillSize
     fn random_documents(
         &self,
         count: u32,
@@ -29,6 +47,8 @@ pub trait CreateRandomDocument {
         count: u32,
         identities: &Vec<Identity>,
         time_ms: u64,
+        document_field_fill_type: DocumentFieldFillType,
+        document_field_fill_size: DocumentFieldFillSize,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<(Document, Identity, Bytes32)>, ProtocolError>;
@@ -44,6 +64,8 @@ pub trait CreateRandomDocument {
         rng: &mut StdRng,
         owner_id: Identifier,
         entropy: Bytes32,
+        document_field_fill_type: DocumentFieldFillType,
+        document_field_fill_size: DocumentFieldFillSize,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError>;
     /// Random document with rng
@@ -58,25 +80,8 @@ pub trait CreateRandomDocument {
         owner_id: Identifier,
         entropy: Bytes32,
         time_ms: u64,
-        rng: &mut StdRng,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError>;
-    /// Random filled documents
-    fn random_filled_documents(
-        &self,
-        count: u32,
-        seed: Option<u64>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<Document>, ProtocolError>;
-    /// Random filled document
-    fn random_filled_document(
-        &self,
-        seed: Option<u64>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError>;
-    /// Random filled document with rng
-    fn random_filled_document_with_rng(
-        &self,
+        document_field_fill_type: DocumentFieldFillType,
+        document_field_fill_size: DocumentFieldFillSize,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError>;
@@ -110,13 +115,21 @@ impl CreateRandomDocument for DocumentType {
         count: u32,
         identities: &Vec<Identity>,
         time_ms: u64,
+        document_field_fill_type: DocumentFieldFillType,
+        document_field_fill_size: DocumentFieldFillSize,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<(Document, Identity, Bytes32)>, ProtocolError> {
         match self {
-            DocumentType::V0(v0) => {
-                v0.random_documents_with_params(count, identities, time_ms, rng, platform_version)
-            } // Add more cases as necessary for other variants
+            DocumentType::V0(v0) => v0.random_documents_with_params(
+                count,
+                identities,
+                time_ms,
+                document_field_fill_type,
+                document_field_fill_size,
+                rng,
+                platform_version,
+            ), // Add more cases as necessary for other variants
         }
     }
 
@@ -145,52 +158,30 @@ impl CreateRandomDocument for DocumentType {
         owner_id: Identifier,
         entropy: Bytes32,
         time_ms: u64,
+        document_field_fill_type: DocumentFieldFillType,
+        document_field_fill_size: DocumentFieldFillSize,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
         match self {
-            DocumentType::V0(v0) => {
-                v0.random_document_with_params(owner_id, entropy, time_ms, rng, platform_version)
-            } // Add more cases as necessary for other variants
+            DocumentType::V0(v0) => v0.random_document_with_params(
+                owner_id,
+                entropy,
+                time_ms,
+                document_field_fill_type,
+                document_field_fill_size,
+                rng,
+                platform_version,
+            ), // Add more cases as necessary for other variants
         }
     }
-
-    fn random_filled_documents(
-        &self,
-        count: u32,
-        seed: Option<u64>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<Document>, ProtocolError> {
-        match self {
-            DocumentType::V0(v0) => v0.random_filled_documents(count, seed, platform_version),
-        }
-    }
-
-    fn random_filled_document(
-        &self,
-        seed: Option<u64>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        match self {
-            DocumentType::V0(v0) => v0.random_filled_document(seed, platform_version),
-        }
-    }
-
-    fn random_filled_document_with_rng(
-        &self,
-        rng: &mut StdRng,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        match self {
-            DocumentType::V0(v0) => v0.random_filled_document_with_rng(rng, platform_version),
-        }
-    }
-
     fn random_document_with_identifier_and_entropy(
         &self,
         rng: &mut StdRng,
         owner_id: Identifier,
         entropy: Bytes32,
+        document_field_fill_type: DocumentFieldFillType,
+        document_field_fill_size: DocumentFieldFillSize,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
         match self {
@@ -198,6 +189,8 @@ impl CreateRandomDocument for DocumentType {
                 rng,
                 owner_id,
                 entropy,
+                document_field_fill_type,
+                document_field_fill_size,
                 platform_version,
             ),
         }
@@ -232,13 +225,21 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
         count: u32,
         identities: &Vec<Identity>,
         time_ms: u64,
+        document_field_fill_type: DocumentFieldFillType,
+        document_field_fill_size: DocumentFieldFillSize,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<(Document, Identity, Bytes32)>, ProtocolError> {
         match self {
-            DocumentTypeRef::V0(v0) => {
-                v0.random_documents_with_params(count, identities, time_ms, rng, platform_version)
-            } // Add more cases as necessary for other variants
+            DocumentTypeRef::V0(v0) => v0.random_documents_with_params(
+                count,
+                identities,
+                time_ms,
+                document_field_fill_type,
+                document_field_fill_size,
+                rng,
+                platform_version,
+            ), // Add more cases as necessary for other variants
         }
     }
 
@@ -267,44 +268,21 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
         owner_id: Identifier,
         entropy: Bytes32,
         time_ms: u64,
+        document_field_fill_type: DocumentFieldFillType,
+        document_field_fill_size: DocumentFieldFillSize,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
         match self {
-            DocumentTypeRef::V0(v0) => {
-                v0.random_document_with_params(owner_id, entropy, time_ms, rng, platform_version)
-            } // Add more cases as necessary for other variants
-        }
-    }
-
-    fn random_filled_documents(
-        &self,
-        count: u32,
-        seed: Option<u64>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<Document>, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.random_filled_documents(count, seed, platform_version),
-        }
-    }
-
-    fn random_filled_document(
-        &self,
-        seed: Option<u64>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.random_filled_document(seed, platform_version),
-        }
-    }
-
-    fn random_filled_document_with_rng(
-        &self,
-        rng: &mut StdRng,
-        platform_version: &PlatformVersion,
-    ) -> Result<Document, ProtocolError> {
-        match self {
-            DocumentTypeRef::V0(v0) => v0.random_filled_document_with_rng(rng, platform_version),
+            DocumentTypeRef::V0(v0) => v0.random_document_with_params(
+                owner_id,
+                entropy,
+                time_ms,
+                document_field_fill_type,
+                document_field_fill_size,
+                rng,
+                platform_version,
+            ), // Add more cases as necessary for other variants
         }
     }
 
@@ -313,6 +291,8 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
         rng: &mut StdRng,
         owner_id: Identifier,
         entropy: Bytes32,
+        document_field_fill_type: DocumentFieldFillType,
+        document_field_fill_size: DocumentFieldFillSize,
         platform_version: &PlatformVersion,
     ) -> Result<Document, ProtocolError> {
         match self {
@@ -320,6 +300,8 @@ impl<'a> CreateRandomDocument for DocumentTypeRef<'a> {
                 rng,
                 owner_id,
                 entropy,
+                document_field_fill_type,
+                document_field_fill_size,
                 platform_version,
             ),
         }

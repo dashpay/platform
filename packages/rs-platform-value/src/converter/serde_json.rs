@@ -374,29 +374,6 @@ impl BTreeValueJsonConverter for BTreeMap<String, Value> {
     }
 }
 
-pub trait BTreeValueRefJsonConverter {
-    fn to_json_value(self) -> Result<JsonValue, Error>;
-    fn to_validating_json_value(&self) -> Result<JsonValue, Error>;
-}
-
-impl BTreeValueRefJsonConverter for BTreeMap<String, &Value> {
-    fn to_json_value(self) -> Result<JsonValue, Error> {
-        Ok(JsonValue::Object(
-            self.into_iter()
-                .map(|(key, value)| Ok((key, value.clone().try_into()?)))
-                .collect::<Result<Map<String, JsonValue>, Error>>()?,
-        ))
-    }
-
-    fn to_validating_json_value(&self) -> Result<JsonValue, Error> {
-        Ok(JsonValue::Object(
-            self.iter()
-                .map(|(key, value)| Ok((key.to_owned(), value.try_to_validating_json()?)))
-                .collect::<Result<Map<String, JsonValue>, Error>>()?,
-        ))
-    }
-}
-
 impl From<BTreeMap<String, JsonValue>> for Value {
     fn from(value: BTreeMap<String, JsonValue>) -> Self {
         let map: ValueMap = value

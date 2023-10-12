@@ -1580,6 +1580,7 @@ impl<'a> DriveQuery<'a> {
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
+                drive.config.epochs_per_era,
                 platform_version,
             )?;
             fee_result.processing_fee
@@ -1635,6 +1636,7 @@ impl<'a> DriveQuery<'a> {
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
+                drive.config.epochs_per_era,
                 platform_version,
             )?;
             fee_result.processing_fee
@@ -1717,6 +1719,7 @@ impl<'a> DriveQuery<'a> {
                 None,
                 Some(drive_operations),
                 &block_info.epoch,
+                drive.config.epochs_per_era,
                 platform_version,
             )?;
             fee_result.processing_fee
