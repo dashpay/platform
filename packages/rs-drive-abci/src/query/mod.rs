@@ -669,7 +669,6 @@ mod tests {
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
-            println!("{:?}", validation_result);
             let validation_error = validation_result.first_error().unwrap();
 
             let error_message = format!("data contract {} not found", encode(id).into_string());
@@ -766,6 +765,137 @@ mod tests {
             let id = vec![0; 32];
             let request = GetDataContractsRequest {
                 ids: vec![id.clone()],
+                prove: true,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap().errors.len(), 0);
+        }
+    }
+
+    mod data_contract_history {
+        use crate::error::query::QueryError;
+        use bs58::encode;
+        use dapi_grpc::platform::v0::{GetDataContractHistoryRequest, GetDataContractRequest};
+        use prost::Message;
+
+        const QUERY_PATH: &str = "/dataContractHistory";
+
+        #[test]
+        fn test_invalid_data_contract_id() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetDataContractHistoryRequest {
+                id: vec![0; 8],
+                limit: None,
+                offset: None,
+                start_at_ms: 0,
+                prove: false,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+            let validation_error = validation_result.first_error().unwrap();
+
+            assert!(matches!(
+                validation_error,
+                QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
+            ));
+        }
+
+        #[test]
+        fn test_invalid_limit_overflow() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetDataContractHistoryRequest {
+                id: vec![0; 32],
+                limit: Some(u32::MAX),
+                offset: None,
+                start_at_ms: 0,
+                prove: false,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+            let validation_error = validation_result.first_error().unwrap();
+
+            assert!(matches!(
+                validation_error,
+                QueryError::InvalidArgument(msg) if msg.contains("can't fit u16 limit from the supplied value")
+            ));
+        }
+
+        #[test]
+        fn test_invalid_offset_overflow() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetDataContractHistoryRequest {
+                id: vec![0; 32],
+                limit: None,
+                offset: Some(u32::MAX),
+                start_at_ms: 0,
+                prove: false,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+            let validation_error = validation_result.first_error().unwrap();
+
+            assert!(matches!(
+                validation_error,
+                QueryError::InvalidArgument(msg) if msg.contains("can't fit u16 offset from the supplied value")
+            ));
+        }
+
+        #[test]
+        fn test_data_contract_not_found() {
+            let (platform, version) = super::setup_platform();
+
+            let id = vec![0; 32];
+            let request = GetDataContractHistoryRequest {
+                id: vec![0; 32],
+                limit: None,
+                offset: None,
+                start_at_ms: 0,
+                prove: false,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+            let validation_error = validation_result.first_error().unwrap();
+
+            let error_message = format!(
+                "data contract {} history not found",
+                encode(id).into_string()
+            );
+
+            assert!(matches!(
+                validation_error,
+                QueryError::NotFound(msg) if msg.contains(&error_message)
+            ));
+        }
+
+        // should generate proof: CorruptedCodeExecution("Cannot create proof for empty tree")
+        #[ignore]
+        #[test]
+        fn test_data_contract_history_absence_proof() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetDataContractHistoryRequest {
+                id: vec![0; 32],
+                limit: None,
+                offset: None,
+                start_at_ms: 0,
                 prove: true,
             }
             .encode_to_vec();
