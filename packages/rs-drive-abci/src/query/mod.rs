@@ -103,13 +103,13 @@ mod tests {
         fn test_invalid_identity_id() {
             let (platform, version) = super::setup_platform();
 
-            let get_identity_request = GetIdentityRequest {
+            let request = GetIdentityRequest {
                 id: vec![0; 8],
                 prove: false,
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+            let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
@@ -124,19 +124,19 @@ mod tests {
         fn test_identity_not_found() {
             let (platform, version) = super::setup_platform();
 
-            let identity_id = vec![0; 32];
-            let get_identity_request = GetIdentityRequest {
-                id: identity_id.clone(),
+            let id = vec![0; 32];
+            let request = GetIdentityRequest {
+                id: id.clone(),
                 prove: false,
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+            let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
 
-            let error_message = format!("identity {} not found", encode(identity_id).into_string());
+            let error_message = format!("identity {} not found", encode(id).into_string());
 
             assert!(matches!(
                 validation_error,
@@ -148,14 +148,14 @@ mod tests {
         fn test_identity_absence_proof() {
             let (platform, version) = super::setup_platform();
 
-            let identity_id = vec![0; 32];
-            let get_identity_request = GetIdentityRequest {
-                id: identity_id.clone(),
+            let id = vec![0; 32];
+            let request = GetIdentityRequest {
+                id: id.clone(),
                 prove: true,
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+            let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
             assert_eq!(result.unwrap().errors.len(), 0);
         }
@@ -174,13 +174,13 @@ mod tests {
         fn test_invalid_identity_id() {
             let (platform, version) = super::setup_platform();
 
-            let get_identity_request = GetIdentitiesRequest {
+            let request = GetIdentitiesRequest {
                 ids: vec![vec![0; 8]],
                 prove: false,
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+            let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
@@ -195,14 +195,14 @@ mod tests {
         fn test_identities_not_found() {
             let (platform, version) = super::setup_platform();
 
-            let identity_id = vec![0; 32];
-            let get_identity_request = GetIdentitiesRequest {
-                ids: vec![identity_id.clone()],
+            let id = vec![0; 32];
+            let request = GetIdentitiesRequest {
+                ids: vec![id.clone()],
                 prove: false,
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+            let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
 
             let validation_result = result.unwrap();
@@ -221,14 +221,14 @@ mod tests {
         fn test_identities_absence_proof() {
             let (platform, version) = super::setup_platform();
 
-            let identity_id = vec![0; 32];
-            let get_identity_request = GetIdentitiesRequest {
-                ids: vec![identity_id.clone()],
+            let id = vec![0; 32];
+            let request = GetIdentitiesRequest {
+                ids: vec![id.clone()],
                 prove: true,
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+            let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
             assert_eq!(result.unwrap().errors.len(), 0);
         }
@@ -246,13 +246,13 @@ mod tests {
         fn test_invalid_identity_id() {
             let (platform, version) = super::setup_platform();
 
-            let get_identity_request = GetIdentityRequest {
+            let request = GetIdentityRequest {
                 id: vec![0; 8],
                 prove: false,
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+            let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
@@ -267,22 +267,19 @@ mod tests {
         fn test_identity_not_found() {
             let (platform, version) = super::setup_platform();
 
-            let identity_id = vec![0; 32];
-            let get_identity_request = GetIdentityRequest {
-                id: identity_id.clone(),
+            let id = vec![0; 32];
+            let request = GetIdentityRequest {
+                id: id.clone(),
                 prove: false,
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+            let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
 
-            let error_message = format!(
-                "identity {} balance not found",
-                encode(identity_id).into_string()
-            );
+            let error_message = format!("identity {} balance not found", encode(id).into_string());
 
             assert!(matches!(
                 validation_error,
@@ -296,14 +293,14 @@ mod tests {
         fn test_identity_balance_absence_proof() {
             let (platform, version) = super::setup_platform();
 
-            let identity_id = vec![0; 32];
-            let get_identity_request = GetIdentityRequest {
-                id: identity_id.clone(),
+            let id = vec![0; 32];
+            let request = GetIdentityRequest {
+                id: id.clone(),
                 prove: true,
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+            let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
             assert_eq!(result.unwrap().errors.len(), 0);
         }
@@ -321,13 +318,13 @@ mod tests {
         fn test_invalid_identity_id() {
             let (platform, version) = super::setup_platform();
 
-            let get_identity_request = GetIdentityRequest {
+            let request = GetIdentityRequest {
                 id: vec![0; 8],
                 prove: false,
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+            let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
@@ -342,21 +339,21 @@ mod tests {
         fn test_identity_not_found() {
             let (platform, version) = super::setup_platform();
 
-            let identity_id = vec![0; 32];
-            let get_identity_request = GetIdentityRequest {
-                id: identity_id.clone(),
+            let id = vec![0; 32];
+            let request = GetIdentityRequest {
+                id: id.clone(),
                 prove: false,
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+            let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
 
             let error_message = format!(
                 "identity {} balance and revision not found",
-                encode(identity_id).into_string()
+                encode(id).into_string()
             );
 
             assert!(matches!(
@@ -369,14 +366,14 @@ mod tests {
         fn test_identity_balance_and_revision_absence_proof() {
             let (platform, version) = super::setup_platform();
 
-            let identity_id = vec![0; 32];
-            let get_identity_request = GetIdentityRequest {
-                id: identity_id.clone(),
+            let id = vec![0; 32];
+            let request = GetIdentityRequest {
+                id: id.clone(),
                 prove: true,
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+            let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
             assert_eq!(result.unwrap().errors.len(), 0);
         }
@@ -619,6 +616,79 @@ mod tests {
                 }),
                 limit: None,
                 offset: None,
+                prove: true,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap().errors.len(), 0);
+        }
+    }
+
+    mod data_contract {
+        use crate::error::query::QueryError;
+        use bs58::encode;
+        use dapi_grpc::platform::v0::GetDataContractRequest;
+        use prost::Message;
+
+        const QUERY_PATH: &str = "/dataContract";
+
+        #[test]
+        fn test_invalid_data_contract_id() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetDataContractRequest {
+                id: vec![0; 8],
+                prove: false,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+            let validation_error = validation_result.first_error().unwrap();
+
+            assert!(matches!(
+                validation_error,
+                QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
+            ));
+        }
+
+        #[test]
+        fn test_data_contract_not_found() {
+            let (platform, version) = super::setup_platform();
+
+            let id = vec![0; 32];
+            let request = GetDataContractRequest {
+                id: id.clone(),
+                prove: false,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+            println!("{:?}", validation_result);
+            let validation_error = validation_result.first_error().unwrap();
+
+            let error_message = format!("data contract {} not found", encode(id).into_string());
+
+            assert!(matches!(
+                validation_error,
+                QueryError::NotFound(msg) if msg.contains(&error_message)
+            ));
+        }
+
+        // should generate proof: CorruptedCodeExecution("Cannot create proof for empty tree")
+        #[ignore]
+        #[test]
+        fn test_data_contract_absence_proof() {
+            let (platform, version) = super::setup_platform();
+
+            let id = vec![0; 32];
+            let request = GetDataContractRequest {
+                id: id.clone(),
                 prove: true,
             }
             .encode_to_vec();
