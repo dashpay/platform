@@ -11,9 +11,13 @@ mod list;
 mod query;
 
 pub use dapi_grpc::platform::v0::{self as proto};
-pub use dpp::document::Document;
-pub use dpp::prelude::{
-    DataContract, Identifier, Identity, IdentityPublicKey, Revision, TimestampMillis,
+pub use drive::{
+    dpp::{
+        self as dpp,
+        document::Document,
+        prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision},
+    },
+    query::DriveQuery,
 };
 pub use {document_query::DocumentQuery, fetch::Fetch, list::List, query::Query};
 
