@@ -220,6 +220,16 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
+      '0.25.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.abci.epochTime = testnet.get('platform.drive.abci.epochTime');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
