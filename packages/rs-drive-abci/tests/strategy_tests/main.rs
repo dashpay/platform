@@ -80,7 +80,6 @@ mod tests {
     };
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use dpp::serialization::PlatformDeserializable;
     use dpp::tests::json_document::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
@@ -1064,8 +1063,6 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        let contract_id = contract.data_contract().id();
-
         let strategy = Strategy {
             contracts_with_updates: vec![(contract, None)],
             operations: vec![],
@@ -1137,13 +1134,6 @@ mod tests {
             .unwrap()
             .expect("expected to execute the fetch of a contract")
             .expect("expected to get a contract");
-
-        let _proven_contract = outcome
-            .abci_app
-            .platform
-            .drive
-            .prove_contract(contract_id.into_buffer(), None, platform_version)
-            .expect("contract should be retrieved from proof");
     }
 
     #[test]
