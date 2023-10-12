@@ -4,10 +4,7 @@
 //!
 //! ## Traits
 //! - `List`: An async trait that lists items of a specific type from the platform.
-//! - `Document`: An implementation of the `List` trait for documents.
-//!
-//! ## Error Handling
-//! Any errors encountered during the execution are returned as Error instances.
+
 use dapi_grpc::platform::v0::GetDocumentsResponse;
 use dpp::document::Document;
 use drive_proof_verifier::proof::from_proof::FromProof;
@@ -32,24 +29,26 @@ where
             Response = <<Self as List>::Request as TransportRequest>::Response,
         > + Sync,
 {
-    /// Type of request used to fetch data from the platform.
+    /// Type of request used to list data from the platform.
     ///
-    /// Most likely, one of the types defined in `dapi_grpc::platform::v0`.
+    /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
-    /// This type must implement `TransportRequest`.
+    /// This type must implement [`TransportRequest`] and [`MockRequest`].
     type Request: TransportRequest
         + Into<<Vec<Self> as FromProof<<Self as List>::Request>>::Request>;
 
-    /// # List or Search for Multiple Objects on the Platform
+    /// # List or search for multiple objects on the Dash Platform
     ///
     /// `list` is an asynchronous method provided by the `List` trait that fetches multiple objects from Dash Platform.
     ///
     /// ## Parameters
-    /// - `api`: An instance of API which should implement the `Sdk` trait. The most common implementation is [`DashPlatformSdk`](crate::sdk::DashPlatformSdk).
-    /// - `query`: A query parameter implementing [`Query`](crate::platform::query::Query) to specify the data to be fetched.
+    /// - `sdk`: An instance of [Sdk].
+    /// - `query`: A query parameter implementing [`Query`](crate::platform::query::Query) to specify the data to be retrieved.
     ///
     /// ## Returns
-    /// Returns a `Result` containing either a `Option<Vec<Self>>` where `Self` is the type of the fetched object (like a [Document]), or an [`Error`](crate::error::Error).
+    /// Returns a `Result` containing either :
+    /// * `Option<Vec<Self>>` where `Self` is the type of the fetched object (like a [Document]), or
+    /// *  [`Error`](crate::error::Error).
     ///
     /// ## Usage
     ///

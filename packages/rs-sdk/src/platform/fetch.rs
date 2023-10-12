@@ -1,17 +1,16 @@
 //! # Fetch Module
 //!
 //! This module provides an abstract way to fetch data from a platform using the `Fetch` trait.
-//! It is designed to be used with any type that implements the `Sdk` trait, and allows for
-//! fetching of various types of data such as `Identity`, `DataContract`, and `Document`.
+//! It allows fetching of various types of data such as `Identity`, `DataContract`, and `Document`.
 //!
 //! ## Traits
-//! - [Fetch]: An asynchronous trait that defines how to fetch data from a platform.
+//! - [Fetch]: An asynchronous trait that defines how to fetch data from the platform.
 //!   It requires the implementing type to also implement [Debug] and [FromProof]
 //!   traits. The associated [Fetch::Request]` type needs to implement [TransportRequest].
 //!
 //! ## Implementations
-//! - `Fetch<API>` for [`dpp::prelude::Identity`]
-//! - `Fetch<API>` for [`dpp::prelude::DataContract`]
+//! - `Fetch<API>` for [`Identity`](dpp::prelude::Identity)
+//! - `Fetch<API>` for [`DataContract`](dpp::prelude::DataContract)
 //! - `Fetch<API>` for [`Document`](dpp::document::Document)
 
 use std::fmt::Debug;
@@ -29,33 +28,7 @@ use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 
 use super::document_query::DocumentQuery;
 
-/// # Fetch Trait
-///
-/// This trait provides an interface for fetching data from a platform.
-///
-/// ## Requirements
-/// Types that implement this trait must also implement `Debug` and `FromProof`.
-/// The associated `Request` type needs to implement `TransportRequest`.
-///
-/// ## Associated Types
-/// - `Request`: The type of request used to fetch data from the platform.
-///
-/// ## Methods
-/// - `fetch`: An asynchronous method that fetches data from a platform. It takes in
-///   an instance of `API` (which should implement `Sdk`) and a query parameter,
-///   and returns a `Result` containing either the fetched object or an error.
-///
-/// ## Implementations
-/// This trait is implemented by the types `dpp::prelude::Identity`, `dpp::prelude::DataContract`,
-/// and `Document`.
-///
-/// ## Error Handling
-/// Any errors encountered during the execution of a fetch operation are returned as `Error` instances.
-///
-/// ## Extensibility
-/// The types for which `Fetch` can be implemented can be easily extended by creating new implementations
-/// of `Fetch` for other types.
-///
+/// Trait implemented by objects that can be fetched from the platform.
 #[async_trait::async_trait]
 pub trait Fetch
 where
@@ -70,30 +43,31 @@ where
 {
     /// Type of request used to fetch data from the platform.
     ///
-    /// Most likely, one of the types defined in `dapi_grpc::platform::v0`.
+    /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
-    /// This type must implement `TransportRequest`.
+    /// This type must implement [`TransportRequest`] and [`MockRequest`].
     type Request: TransportRequest
         + MockRequest
         + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>;
 
-    /// Fetch object from the Platfom.
+    /// Fetch single object from the Platfom.
     ///
     /// An asynchronous method provided by the Fetch trait that fetches data from Dash Platform.
     ///
     /// ## Parameters
-    /// - `api`: An instance of API which should implement the Sdk trait, most likely
-    /// [`DashPlatformSdk`](crate::sdk::DashPlatformSdk).
+    ///
+    /// - `sdk`: An instance of [Sdk].
     /// - `query`: A query parameter implementing [`crate::platform::query::Query`] to specify the data to be fetched.
     ///
     /// ## Returns
     ///
     /// Returns:
-    /// * Ok(Some(Self)) when object is found
-    /// * Ok(None) when object is not found
-    /// * Err(Error) when an error occurs
+    /// * `Ok(Some(Self))` when object is found
+    /// * `Ok(None)` when object is not found
+    /// * [`Err(Error)`](Error) when an error occurs
     ///
     /// ## Error Handling
+    ///
     /// Any errors encountered during the execution are returned as [Error] instances.
     async fn fetch<Q: Query<<Self as Fetch>::Request>>(
         sdk: &mut Sdk,

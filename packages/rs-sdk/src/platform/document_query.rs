@@ -1,6 +1,4 @@
-//! Get documents request
-
-// TODO: Move to rs-sdk
+//! Method to query documents from the Drive.
 
 use std::sync::Arc;
 
@@ -25,8 +23,12 @@ use rs_dapi_client::transport::{
 
 use super::fetch::Fetch;
 
-/// Request documents.
-// TODO: is it needed or we use drivequery?
+/// Request that is used to query documents from the Dash Platform.
+///
+/// This is an abstraction layer built on top of [GetDocumentsRequest] to address issues with missing details
+/// required to correctly verify proofs returned by the Dash Platform.
+///
+/// Conversions are implemented between this type, [GetDocumentsRequest] and [DriveQuery] using [TryFrom] trait.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DocumentQuery {
     /// Data contract ID

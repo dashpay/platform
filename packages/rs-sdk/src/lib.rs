@@ -15,8 +15,8 @@
 //! 2. [`Data Contract`](crate::platform::DataContract)
 //! 3. [`Document`](crate::platform::Document)
 //!
-//! To define document search conditions, [`DriveQuery`](crate::platform::DriveQuery) is implemented and can be easily
-//! converted to [`DocumentQuery`](crate::platform::DocumentQuery) with the [`From`] trait.
+//! To define document search conditions, you can use [`DriveQuery`](crate::platform::DriveQuery) and convert it
+//! to [`DocumentQuery`](crate::platform::DocumentQuery) with the [`From`] trait.
 //!
 //! Basic DPP objects are re-exported in the [`platform`] module.
 //!
@@ -31,9 +31,10 @@
 //! Fetch and List traits return objects based on provided queries. Some example queries include:
 //!
 //! 1. [`Identifier`](crate::platform::Identifier) - fetches an object by its identifier
-//! 2. [`DriveQuery`](crate::platform::DriveQuery) - lists objects based on search conditions; see
+//! 2. [`DocumentQuery`](crate::platform::DocumentQuery) - fetches documents based on search conditions; see
 //! [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
 //! for more details.
+//! 3. [`DriveQuery`](crate::platform::DriveQuery) - can be used to build more complex queries
 //!
 //! ## Testability
 //!
