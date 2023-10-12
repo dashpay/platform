@@ -223,6 +223,18 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
       '0.25.3': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.abci.epochTime = testnet.get('platform.drive.abci.epochTime');
+            }
+            options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
+            options.platform.dapi.api.docker.image = base.get('platform.drive.abci.docker.image');
+          });
+
+        return configFile;
+      },
+      '0.25.4': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
             delete options.platform.drive.abci.log;
 
             options.platform.drive.abci.logs = base.get('platform.drive.abci.logs');

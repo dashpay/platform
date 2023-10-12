@@ -53,6 +53,7 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
         },
         drive: {
           abci: {
+            epochTime: 3600,
             validatorSet: {
               llmqType: 6,
             },
