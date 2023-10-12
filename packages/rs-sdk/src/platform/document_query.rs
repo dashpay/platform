@@ -75,17 +75,14 @@ impl DocumentQuery {
         }];
 
         // Order clause
-        let order_by_clauses = vec![OrderClause {
-            ascending: true,
-            field: "$id".to_string(),
-        }];
+        let order_by_clauses = vec![];
 
         Ok(DocumentQuery {
             data_contract: Arc::new(data_contract),
             document_type_name: document_type_name.to_string(),
             where_clauses,
             order_by_clauses,
-            start: Some(Start::StartAt(document_id.to_vec())),
+            start: None,
             limit: 1,
         })
     }
