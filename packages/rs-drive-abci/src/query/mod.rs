@@ -158,8 +158,81 @@ mod tests {
 
                 let result = platform.query(QUERY_PATH, &get_identity_request, &version);
                 assert!(result.is_ok());
+                assert_eq!(result.unwrap().errors.len(), 0);
+            }
+        }
+
+        mod identities {
+            use crate::error::query::QueryError;
+            use dapi_grpc::platform::v0::{
+                get_identities_response, GetIdentitiesRequest, GetIdentitiesResponse,
+            };
+            use prost::Message;
+
+            const QUERY_PATH: &str = "/identities";
+
+            #[test]
+            fn test_invalid_identity_id() {
+                let (platform, version) = super::setup_platform();
+
+                let get_identity_request = GetIdentitiesRequest {
+                    ids: vec![vec![0; 8]],
+                    prove: false,
+                }
+                .encode_to_vec();
+
+                let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+                assert!(result.is_ok());
                 let validation_result = result.unwrap();
-                assert!(validation_result.data.is_some());
+                let validation_error = validation_result.first_error().unwrap();
+
+                assert!(matches!(
+                    validation_error,
+                    QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
+                ));
+            }
+
+            #[test]
+            fn test_identity_not_found() {
+                let (platform, version) = super::setup_platform();
+
+                let identity_id = vec![0; 32];
+                let get_identity_request = GetIdentitiesRequest {
+                    ids: vec![identity_id.clone()],
+                    prove: false,
+                }
+                .encode_to_vec();
+
+                let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+                assert!(result.is_ok());
+                println!("{:?}", result);
+                let validation_result = result.unwrap();
+                let data = validation_result.data.unwrap();
+                let response = GetIdentitiesResponse::decode(data.as_slice()).unwrap();
+
+                let get_identities_response::Result::Identities(identities) =
+                    response.result.unwrap()
+                else {
+                    panic!("invalid response")
+                };
+
+                assert!(identities.identity_entries[0].value.is_none());
+            }
+
+            #[test]
+            fn test_identities_absence_proof() {
+                let (platform, version) = super::setup_platform();
+
+                let identity_id = vec![0; 32];
+                let get_identity_request = GetIdentitiesRequest {
+                    ids: vec![identity_id.clone()],
+                    prove: true,
+                }
+                .encode_to_vec();
+
+                let result = platform.query(QUERY_PATH, &get_identity_request, &version);
+                assert!(result.is_ok());
+                assert_eq!(result.unwrap().errors.len(), 0);
             }
         }
     }
