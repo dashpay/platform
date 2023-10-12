@@ -55,8 +55,8 @@
 //!
 //! To enable logging, you can use the `tracing_subscriber` crate which allows applications to customize how events are processed and recorded.
 //! An example can be found in `tests/common.rs:setup_logs()`.
+#![warn(missing_docs)]
 
-#[deny(missing_docs)]
 pub mod platform;
 
 pub mod error;

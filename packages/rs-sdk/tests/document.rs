@@ -80,20 +80,23 @@ async fn document_read() {
 async fn document_read_no_contract() {
     setup_logs();
 
-    let mut api = setup_api();
+    let mut sdk = setup_api();
 
     let data_contract_id = Identifier::from_bytes(&[0; 32]).expect("create Identifier");
     let document_id = base64_identifier(DOCUMENT_ID);
 
     let query = DocumentQuery::new_with_document_id(
-        &mut api,
+        &mut sdk,
         data_contract_id,
         DOCUMENT_TYPE_NAME,
         document_id,
     )
     .await;
 
-    assert!(matches!(query, Err(rs_sdk::error::Error::NotFound(_))));
+    assert!(matches!(
+        query,
+        Err(rs_sdk::error::Error::MissingDependency(_, _))
+    ));
 }
 
 #[ignore = "needs working platform"]

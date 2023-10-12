@@ -1,4 +1,4 @@
-//! Core RPC client
+//! Core RPC client used to retrieve quorum keys from core.
 //!
 //! TODO: This is a temporary implementation, effective until we integrate SPV
 //! into rs-sdk.
@@ -9,16 +9,28 @@ use dashcore_rpc::{
 };
 use drive_abci::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive_proof_verifier::QuorumInfoProvider;
-use std::sync::RwLock;
+use std::sync::Mutex;
 
 use crate::error::Error;
 
+/// Core RPC client that can be used to retrieve quorum keys from core.
+///
+/// Implements [`QuorumInfoProvider`] trait.
+///
+/// TODO: This is a temporary implementation, effective until we integrate SPV.
 pub struct CoreClient {
-    // TODO implement async core client
-    core: RwLock<Box<dyn CoreRPCLike + Send + Sync>>,
+    core: Mutex<Box<dyn CoreRPCLike + Send + Sync>>,
 }
 
 impl CoreClient {
+    /// Create new Dash Core client.
+    ///
+    /// # Arguments
+    ///
+    /// * `server_address` - Dash Core server address.
+    /// * `core_port` - Dash Core port.
+    /// * `core_user` - Dash Core user.
+    /// * `core_password` - Dash Core password.
     pub fn new(
         server_address: &str,
         core_port: u16,
@@ -30,7 +42,7 @@ impl CoreClient {
             DefaultCoreRPC::open(&core_addr, core_user.to_string(), core_password.to_string())?;
 
         Ok(Self {
-            core: RwLock::new(Box::new(core)),
+            core: Mutex::new(Box::new(core)),
         })
     }
 }
@@ -48,7 +60,7 @@ impl QuorumInfoProvider for CoreClient {
             }
         })?;
 
-        let core = self.core.write().expect("Core lock poisoned");
+        let core = self.core.lock().expect("Core lock poisoned");
         let quorum_info = core
             .get_quorum_info(QuorumType::from(quorum_type), &quorum_hash, None)
             .map_err(

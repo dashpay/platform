@@ -61,10 +61,13 @@ impl DocumentQuery {
         let data_contract =
             DataContract::fetch(api, data_contract_id)
                 .await?
-                .ok_or(Error::NotFound(format!(
-                    "data contract {} for document {} of type {} not found",
-                    data_contract_id, document_id, document_type_name
-                )))?;
+                .ok_or(Error::MissingDependency(
+                    "DataContract".to_string(),
+                    format!(
+                        "data contract {} for document {} of type {} not found",
+                        data_contract_id, document_id, document_type_name
+                    ),
+                ))?;
 
         data_contract.document_type_for_name(document_type_name)?;
 

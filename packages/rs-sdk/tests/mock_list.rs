@@ -16,24 +16,24 @@ include!("common.rs");
 
 #[tokio::test]
 async fn test_mock_document_list() {
-    let mut api = Sdk::new_mock();
+    let mut sdk = Sdk::new_mock();
     let document_type: DocumentType = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
 
     let expected = vec![document_type
-        .random_document(None, Sdk::version())
+        .random_document(None, sdk.version())
         .expect("document should be created")];
 
     let document_id = expected[0].id();
     let document_type_name = document_type.name();
 
     // [DocumentQuery::new_with_document_id] will fetch the data contract first, so we need to define an expectation for it.
-    api.mock()
+    sdk.mock()
         .expect_fetch(data_contract.id(), Some(data_contract.clone()))
         .await;
 
     let query = DocumentQuery::new_with_document_id(
-        &mut api,
+        &mut sdk,
         data_contract.id(),
         document_type_name,
         document_id,
@@ -41,11 +41,11 @@ async fn test_mock_document_list() {
     .await
     .expect("create document query");
 
-    api.mock()
+    sdk.mock()
         .expect_list(query.clone(), Some(expected.clone()))
         .await;
 
-    let retrieved = Document::list(&mut api, query)
+    let retrieved = Document::list(&mut sdk, query)
         .await
         .unwrap()
         .expect("identity should exist");

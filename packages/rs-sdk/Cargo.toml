@@ -44,6 +44,7 @@ mocks = [
     "rs-dapi-client/mocks",
     "dpp/document-cbor-conversion",
     "dpp/identity-value-conversion",
+    "dpp/random-identities",
     "drive-proof-verifier/mocks",
     "dep:bincode",
 ]

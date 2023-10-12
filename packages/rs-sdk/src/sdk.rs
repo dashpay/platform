@@ -27,34 +27,55 @@ use tokio::sync::Mutex;
 /// - `Normal`: Connects to a remote Dash Platform node.
 /// - `Mock`: Uses a mock implementation of Dash Platform.
 ///
-/// To initialize the SDK, use [`SdkBuilder`](crate::sdk::SdkBuilder).
+/// Recommended method of initialization is to use [`SdkBuilder`](crate::sdk::SdkBuilder). There are also some helper
+/// methods:
+///
+/// * [`SdkBuilder::new_testnet()`] Create a [SdkBuilder] that connects to testnet.
+/// * [`SdkBuilder::new_mainnet()`] Create a [SdkBuilder] that connects to mainnet.
+/// * [`SdkBuilder::new_mock()`] Create a mock [SdkBuilder].
+/// * [`Sdk::new_mock()`] Create a mock [Sdk].
 ///
 /// ## Examples
 ///
 /// See tests/ for examples of using the SDK.
-pub enum Sdk {
+pub struct Sdk(SdkInstance);
+
+/// Internal Sdk instance.
+///
+/// This is used to store the actual Sdk instance, which can be either a real Sdk or a mock Sdk.
+/// We use it to avoid exposing internals defined below to the public.
+enum SdkInstance {
+    /// Real Sdk, using DAPI with gRPC transport
     Dapi {
+        /// DAPI client used to communicate with Dash Platform.
         dapi: DapiClient,
+        /// Core client used to retrieve quorum keys from core.
         core: CoreClient,
+        /// Platform version configured for this Sdk
+        version: &'static PlatformVersion,
     },
     #[cfg(feature = "mocks")]
+    /// Mock SDK
     Mock {
-        mock: MockDashPlatformSdk,
+        /// Mock DAPI client used to communicate with Dash Platform.
         dapi: Arc<Mutex<MockDapiClient>>,
+        /// Mock SDK implementation processing mock expectations and responses.
+        mock: MockDashPlatformSdk,
     },
 }
 
 impl Sdk {
     /// Initialize Dash Platform  SDK in mock mode.
     ///
-    /// This is a helper method that uses [`SdkBuilder`](crate::sdk::SdkBuilder) to initialize the SDK in mock mode.
+    /// This is a helper method that uses [`SdkBuilder`] to initialize the SDK in mock mode.
     ///
     /// See also [`SdkBuilder`](crate::sdk::SdkBuilder).
     pub fn new_mock() -> Self {
-        SdkBuilder::new_mock()
+        SdkBuilder::default()
             .build()
             .expect("mock should be created")
     }
+
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.
     ///
     /// This method is used to retrieve objects from proofs returned by Dash Platform.
@@ -71,13 +92,13 @@ impl Sdk {
     where
         O::Request: MockRequest,
     {
-        match self {
-            Self::Dapi { ref core, .. } => {
+        match self.0 {
+            SdkInstance::Dapi { ref core, .. } => {
                 let provider: &dyn QuorumInfoProvider = core;
                 O::maybe_from_proof(request, response, provider)
             }
             #[cfg(feature = "mocks")]
-            Self::Mock { ref mock, .. } => mock.parse_proof(request, response),
+            SdkInstance::Mock { ref mock, .. } => mock.parse_proof(request, response),
         }
     }
 
@@ -90,16 +111,25 @@ impl Sdk {
     /// Panics if the `self` instance is not a `Mock` variant.
     #[cfg(feature = "mocks")]
     pub fn mock(&mut self) -> &mut MockDashPlatformSdk {
-        if let Self::Mock { ref mut mock, .. } = self {
+        if let Sdk(SdkInstance::Mock { ref mut mock, .. }) = self {
             mock
         } else {
             panic!("not a mock")
         }
     }
 
-    pub fn version<'a>() -> &'a PlatformVersion {
-        PlatformVersion::get_current()
-            .expect("Dash Platform version not initialized properly, this should never happen")
+    /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
+    ///
+    ///
+    ///
+    /// This is the version configured in [`SdkBuilder`](crate::sdk::SdkBuilder).
+    /// Useful whenever you need to provide [PlatformVersion] to other SDK and DPP methods.
+    pub fn version<'a>(&self) -> &'a PlatformVersion {
+        match &self.0 {
+            SdkInstance::Dapi { version, .. } => version,
+            #[cfg(feature = "mocks")]
+            SdkInstance::Mock { mock, .. } => mock.version(),
+        }
     }
 }
 
@@ -110,10 +140,10 @@ impl QuorumInfoProvider for Sdk {
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], drive_proof_verifier::Error> {
-        let provider: &dyn QuorumInfoProvider = match self {
-            Self::Dapi { ref core, .. } => core,
+        let provider: &dyn QuorumInfoProvider = match self.0 {
+            SdkInstance::Dapi { ref core, .. } => core,
             #[cfg(feature = "mocks")]
-            Self::Mock { ref mock, .. } => mock,
+            SdkInstance::Mock { ref mock, .. } => mock,
         };
 
         provider.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
@@ -127,10 +157,10 @@ impl Dapi for Sdk {
         request: R,
         settings: RequestSettings,
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
-        match self {
-            Self::Dapi { ref mut dapi, .. } => dapi.execute(request, settings).await,
+        match self.0 {
+            SdkInstance::Dapi { ref mut dapi, .. } => dapi.execute(request, settings).await,
             #[cfg(feature = "mocks")]
-            Self::Mock { ref mut dapi, .. } => {
+            SdkInstance::Mock { ref mut dapi, .. } => {
                 let mut dapi_guard = dapi.lock().await;
                 dapi_guard.execute(request, settings).await
             }
@@ -138,6 +168,18 @@ impl Dapi for Sdk {
     }
 }
 
+/// Dash Platform SDK Builder, used to configure and [`build()`] the [Sdk].
+///
+/// [SdkBuilder] implemenents a "builder" design pattern to allow configuration of the Sdk before it is instantiated.
+/// It allows creation of Sdk in two modes:
+/// - `Normal`: Connects to a remote Dash Platform node.
+/// - `Mock`: Uses a mock implementation of Dash Platform.
+///
+/// Mandatory steps of initialization in normal mode are:
+///
+/// 1. Create an instance of [SdkBuilder] with [`SdkBuilder::new()`]
+/// 2. Configure the builder with [`SdkBuilder::with_core()`]
+/// 3. Call [`SdkBuilder::build()`] to create the [Sdk] instance.
 pub struct SdkBuilder {
     /// List of addressses to connect to.
     ///
@@ -178,31 +220,49 @@ impl SdkBuilder {
         }
     }
 
-    /// Create a new SdkBuilder that will connect to testnet.
+    /// Create a new SdkBuilder that will generate mock client.
+    pub fn new_mock() -> Self {
+        Self::default()
+    }
+
+    /// Create a new SdkBuilder instance preconfigured for testnet. NOT IMPLEMENTED YET.
     ///
-    /// Use for testing only.
+    /// This is a helper method that preconfigures [SdkBuilder] for testnet use.
+    /// Use this method if you want to connect to Dash Platform testnet during development and testing
+    /// of your solution.
     pub fn new_testnet() -> Self {
         unimplemented!(
             "Testnet address list not implemented yet. Use new() and provide address list."
         )
     }
 
-    /// Create a new SdkBuilder that will connect to mainnet (production network).
+    /// Create a new SdkBuilder instance preconfigured mainnet (production network). NOT IMPLEMENTED YET.
+    ///
+    /// This is a helper method that preconfigures [SdkBuilder] for production use.
+    /// Use this method if you want to connect to Dash Platform mainnet with production-ready product.
     pub fn new_mainnet() -> Self {
         unimplemented!(
             "Mainnet address list not implemented yet. Use new() and provide address list."
         )
     }
 
-    pub fn new_mock() -> Self {
-        Self::default()
-    }
-
+    /// Configure request settings.
+    ///
+    /// Tune request settings used to connect to the Dash Platform.
+    ///
+    /// Defaults to [RequestSettings::default()].
+    ///
+    /// See [`RequestSettings`] for more information.
     pub fn with_settings(mut self, settings: RequestSettings) -> Self {
         self.settings = settings;
         self
     }
 
+    /// Configure platform version.
+    ///
+    /// Select specific version of Dash Platform to use.
+    ///
+    /// Defaults to [PlatformVersion::latest()].
     pub fn with_version(mut self, version: &'static PlatformVersion) -> Self {
         self.version = version;
         self
@@ -220,6 +280,13 @@ impl SdkBuilder {
         self
     }
 
+    /// Build the Sdk instance.
+    ///
+    /// This method will create the Sdk instance based on the configuration provided to the builder.
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if the Sdk cannot be created.
     pub fn build(self) -> Result<Sdk, Error> {
         PlatformVersion::set_current(self.version);
 
@@ -238,14 +305,14 @@ impl SdkBuilder {
                     &self.core_password,
                 )?;
 
-                Ok(Sdk::Dapi { dapi, core })
+                Ok(Sdk(SdkInstance::Dapi { dapi, core, version:self.version }))
             }
             #[cfg(feature = "mocks")]
             None =>{ let dapi =Arc::new(Mutex::new(  MockDapiClient::new()));
-                Ok(Sdk::Mock {
+                Ok(Sdk(SdkInstance::Mock {
                 mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi)),
                 dapi,
-            })},
+            }))},
             #[cfg(not(feature = "mocks"))]
             None => Err(Error::Config(
                 "Mock mode is not available. Please enable `mocks` feature or provide address list.".to_string(),
