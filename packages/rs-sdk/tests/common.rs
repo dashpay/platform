@@ -16,11 +16,16 @@ pub const IDENTITY_ID_BYTES: [u8; 32] = [
 /// Changes when platform is reset.
 pub const DATA_CONTRACT_ID: &str = "rt863oRafQ4pkBAUJ5r1PAf8lZ9O7C0qBeLwmHXDEro=";
 
-// allow unused because we just include() this file, and the functions are used in other files
-#[allow(unused)]
-fn setup_api() -> rs_sdk::Sdk {
+/// Document type defined within data contract DATA_CONTRACT_ID
+pub const DOCUMENT_TYPE_NAME: &str = "indexedDocument";
+
+/// ID of existing document (within data contract DATA_CONTRACT_ID), created as part of platform test suite run.
+/// Changes when platform is reset.
+pub const DOCUMENT_ID: &str = "uHfJHpk77MGiqsvvJc8mqgT3O6RK8Ue/u5zIjowu7Uk=";
+
+/// Create new SDK instance connecting to local network, based on constants defined in this module
+pub fn setup_api() -> rs_sdk::Sdk {
     use rs_dapi_client::AddressList;
-    use rs_sdk::core::CoreClient;
 
     let uri = http::Uri::from_maybe_shared(format!("http://{}:{}", PLATFORM_IP, PLATFORM_PORT))
         .expect("platform address");
@@ -33,12 +38,14 @@ fn setup_api() -> rs_sdk::Sdk {
     api
 }
 
+/// Decode base64-encoded Identifier
 pub fn base64_identifier(base64str: &str) -> dpp::prelude::Identifier {
     let b64 = base64::engine::general_purpose::STANDARD;
     let bytes = base64::Engine::decode(&b64, base64str).expect("base64 decode identifier");
     dpp::prelude::Identifier::from_bytes(bytes.as_ref()).expect("invalid identifier format")
 }
 
+/// Create a mock document type for testing of mock API
 pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
     use dpp::{
         data_contract::document_type::DocumentType,
@@ -73,6 +80,7 @@ pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
     .expect("expected to create a document type")
 }
 
+/// Create a mock data contract for testing of mock API
 pub fn mock_data_contract(
     document_type: Option<&dpp::data_contract::document_type::DocumentType>,
 ) -> dpp::prelude::DataContract {
@@ -89,11 +97,6 @@ pub fn mock_data_contract(
 
     let owner_id = Identifier::from_bytes(&IDENTITY_ID_BYTES).unwrap();
 
-    // let factory = DataContractFactory::new(protocol_version, None)
-    //     .expect("expected to create a factory for get_dpns_data_contract_fixture");
-    // let data_contract =factory
-    //     .create_with_value_config(owner_id, document_schemas.into(), None, Some(defs))
-    //     .expect("data in fixture should be correct");
     let mut document_types: BTreeMap<String, Value> = BTreeMap::new();
 
     if let Some(doc) = document_type {
@@ -110,6 +113,7 @@ pub fn mock_data_contract(
     data_contract
 }
 
+/// Enable logging for tests
 pub fn setup_logs() {
     tracing_subscriber::fmt::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(

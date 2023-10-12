@@ -89,14 +89,9 @@ async fn test_mock_fetch_document() {
         .expect_fetch(data_contract.id(), Some(data_contract.clone()))
         .await;
 
-    let query = DocumentQuery::new_with_document_id(
-        &mut sdk,
-        data_contract.id(),
-        document_type_name,
-        document_id,
-    )
-    .await
-    .expect("create document query");
+    let query = DocumentQuery::new(data_contract, document_type_name)
+        .expect("create document query")
+        .with_document_id(&document_id);
 
     sdk.mock()
         .expect_fetch(query.clone(), Some(expected.clone()))

@@ -3,7 +3,14 @@ use rs_sdk::platform::Fetch;
 
 include!("common.rs");
 
-#[ignore = "needs working platform"]
+/// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
+///
+/// This test is ignored because it requires a running Platform. To run it, set constants in `common.rs` and run:
+///
+/// ```bash
+/// cargo test -p rs-sdk -- --ignored
+/// ```
+#[ignore = "needs access to running Dash Platform network"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_data_contract_read_not_found() {
     pub const DATA_CONTRACT_ID_BYTES: [u8; 32] = [1; 32];
@@ -16,7 +23,14 @@ async fn test_data_contract_read_not_found() {
     assert!(matches!(result, Ok(None)), "result: {:?}", result);
 }
 
-#[ignore = "needs working platform"]
+/// Given some existing data contract ID, when I fetch data contract, I get the data contract.
+///
+/// This test is ignored because it requires a running Platform. To run it, set constants in `common.rs` and run:
+///
+/// ```bash
+/// cargo test -p rs-sdk -- --ignored
+/// ```
+#[ignore = "needs access to running Dash Platform network"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_data_contract_read() {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;

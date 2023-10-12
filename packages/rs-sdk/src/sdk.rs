@@ -1,4 +1,5 @@
-//! Dash API implementation
+//! [Sdk] entrypoint to Dash Platform.
+
 use std::sync::Arc;
 
 #[cfg(feature = "mocks")]

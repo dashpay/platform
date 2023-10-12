@@ -46,50 +46,83 @@ pub struct DocumentQuery {
 }
 
 impl DocumentQuery {
+    /// Create new DocumentQuery for provided contract and document type name.
+    pub fn new<C: Into<Arc<DataContract>>>(
+        contract: C,
+        document_type_name: &str,
+    ) -> Result<Self, Error> {
+        let contract = contract.into();
+        // ensure document type name is correct
+        contract.document_type_for_name(document_type_name)?;
+
+        Ok(Self {
+            data_contract: Arc::clone(&contract),
+            document_type_name: document_type_name.to_string(),
+            where_clauses: vec![],
+            order_by_clauses: vec![],
+            limit: 0,
+            start: None,
+        })
+    }
+
     /// Create new document query based on a [DriveQuery].
     pub fn new_with_drive_query(d: &DriveQuery) -> Self {
         Self::from(d)
     }
 
-    /// Fetch one document with provided document ID
+    /// Create new document query for provided document type name and data contract ID.
     ///
     /// Note that this method will fetch data contract first.
-    pub async fn new_with_document_id(
+    pub async fn new_with_data_contract_id(
         api: &mut Sdk,
         data_contract_id: Identifier,
         document_type_name: &str,
-        document_id: Identifier,
     ) -> Result<Self, Error> {
         let data_contract =
             DataContract::fetch(api, data_contract_id)
                 .await?
                 .ok_or(Error::MissingDependency(
                     "DataContract".to_string(),
-                    format!(
-                        "data contract {} for document {} of type {} not found",
-                        data_contract_id, document_id, document_type_name
-                    ),
+                    format!("data contract {} not found", data_contract_id),
                 ))?;
-
-        data_contract.document_type_for_name(document_type_name)?;
-
-        let where_clauses = vec![WhereClause {
-            field: "$id".to_string(),
-            operator: WhereOperator::Equal,
-            value: platform_value!(document_id),
-        }];
-
-        // Order clause
-        let order_by_clauses = vec![];
 
         Ok(DocumentQuery {
             data_contract: Arc::new(data_contract),
             document_type_name: document_type_name.to_string(),
-            where_clauses,
-            order_by_clauses,
+            where_clauses: vec![],
+            order_by_clauses: vec![],
             start: None,
             limit: 1,
         })
+    }
+
+    /// Point to a specific document ID.
+    pub fn with_document_id(self, document_id: &Identifier) -> Self {
+        let clause = WhereClause {
+            field: "$id".to_string(),
+            operator: WhereOperator::Equal,
+            value: platform_value!(document_id),
+        };
+
+        self.with_where(clause)
+    }
+
+    /// Add new where clause to the query.
+    ///
+    /// Existing where clauses will be preserved.
+    pub fn with_where(mut self, clause: WhereClause) -> Self {
+        self.where_clauses.push(clause);
+
+        self
+    }
+
+    /// Add order by clause to the query.
+    ///
+    /// Existing order by clauses will be preserved.
+    pub fn with_order_by(mut self, clause: OrderClause) -> Self {
+        self.order_by_clauses.push(clause);
+
+        self
     }
 }
 
