@@ -42,7 +42,6 @@ mod tests {
     use itertools::Itertools;
     use std::{cmp::Ordering, fs};
     use tempfile::TempDir;
-    use tokio::io::AsyncWriteExt;
 
     /// Test that multiple loggers can work independently, with different log levels.
     ///
@@ -168,8 +167,8 @@ mod tests {
     /// - 3 files with the original name and timestamp suffix
     #[test]
     fn test_rotation_writer_rotate() {
-        let tempdir = TempDir::new().unwrap();
-        let filepath = tempdir.path().join("drive-abci.log");
+        let temp_dir = TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("drive-abci.log");
         let config = LogConfig {
             destination: LogDestination::File(filepath),
             level: LogLevelPreset::Trace,
@@ -198,7 +197,7 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(1100));
         }
         let mut counter = 0;
-        tempdir.path().read_dir().unwrap().for_each(|entry| {
+        temp_dir.path().read_dir().unwrap().for_each(|entry| {
             let entry = entry.unwrap();
             let path = entry.path();
             let path = path.to_string_lossy();
@@ -218,8 +217,8 @@ mod tests {
     fn test_file_rotate() {
         const ITERATIONS: usize = 4;
 
-        let tempdir = TempDir::new().unwrap();
-        let filepath = tempdir.path().join("drive-abci.log");
+        let temp_dir = TempDir::new().unwrap();
+        let filepath = temp_dir.path().join("drive-abci.log");
         let config = LogConfig {
             destination: LogDestination::File(filepath.clone()),
             level: LogLevelPreset::Trace,
@@ -235,7 +234,7 @@ mod tests {
         let logger = loggers.get("rotate").expect("get logger");
 
         for i in 0..ITERATIONS {
-            let mut guard = logger.destination.lock().unwrap();
+            let guard = logger.destination.lock().unwrap();
             guard
                 .to_write()
                 .write_all(format!("file {}, before rotate\n", i).as_bytes())
@@ -243,14 +242,14 @@ mod tests {
 
             fs::rename(
                 &filepath,
-                tempdir.path().join(format!("drive-abci.log.{}", i)),
+                temp_dir.path().join(format!("drive-abci.log.{}", i)),
             )
             .unwrap();
             // rotate() locks, so we need to drop guard here
             drop(guard);
 
             loggers.rotate().expect("rotate logs");
-            let mut guard = logger.destination.lock().unwrap();
+            let guard = logger.destination.lock().unwrap();
             guard
                 .to_write()
                 .write_all(format!("file {}, after rotate\n", i + 1).as_bytes())
@@ -264,7 +263,7 @@ mod tests {
         drop(loggers);
 
         let mut counter = 0;
-        tempdir
+        temp_dir
             .path()
             .read_dir()
             .unwrap()
@@ -308,7 +307,7 @@ mod tests {
                     )
                 }
 
-                counter = counter + 1;
+                counter += 1;
             });
         assert_eq!(counter, ITERATIONS + 1);
     }

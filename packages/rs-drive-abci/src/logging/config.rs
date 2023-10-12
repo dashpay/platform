@@ -27,7 +27,7 @@ pub struct LogConfig {
 /// Configuration of log destinations.
 ///
 /// Logs can be sent to multiple destinations. Configuration of each of them is prefixed with `ABCI_LOG_<key>_`,
-/// where `<key>` is some arbitrary alphanumeric name of log configuaration.
+/// where `<key>` is some arbitrary alphanumeric name of log configuration.
 ///
 /// Key must match pattern `[A-Za-z0-9]+`.
 ///

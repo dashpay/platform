@@ -6,8 +6,6 @@ use reopen::Reopen;
 use std::fmt::{Debug, Display};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-#[cfg(test)]
-use std::ops::Deref;
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
 #[cfg(test)]
@@ -35,7 +33,7 @@ pub enum LogDestination {
 }
 
 impl Display for LogDestination {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LogDestination::StdErr => write!(f, "stderr"),
             LogDestination::StdOut => write!(f, "stdout"),
@@ -146,9 +144,9 @@ pub(super) enum LogDestinationWriter {
     StdErr,
     /// Standard out
     StdOut,
-    /// Standard file
+    /// File
     File(Writer<Reopen<File>>),
-    /// File that is logrotated
+    /// Rotated file
     RotationWriter(Writer<FileRotate<AppendTimestamp>>),
     #[cfg(test)]
     // Just some bytes, for testing
@@ -281,10 +279,9 @@ impl TryFrom<&LogConfig> for LogDestinationWriter {
             #[cfg(test)]
             LogDestination::Bytes => LogDestinationWriter::Bytes(Vec::<u8>::new().into()),
             LogDestination::File(path_string) => {
-                // we refer directly to config.destination, as dest was converted to lowercase
                 let path = PathBuf::from(path_string);
 
-                validate_log_path(&path)?;
+                validate_log_path(path)?;
 
                 if value.max_files > 0 {
                     let file: FileRotate<AppendTimestamp> = FileRotate::try_from(value)?;
@@ -301,7 +298,7 @@ impl TryFrom<&LogConfig> for LogDestinationWriter {
 }
 
 impl Debug for LogDestinationWriter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.name())
     }
 }
@@ -434,7 +431,7 @@ mod tests {
         fs::set_permissions(dir.path(), perms).unwrap();
 
         assert!(
-            matches!(validate_log_path(&file_path), Err(Error::FilePath(_, message)) if message == "parent directory is readonly")
+            matches!(validate_log_path(file_path), Err(Error::FilePath(_, message)) if message == "parent directory is readonly")
         );
     }
 
