@@ -68,7 +68,7 @@ impl FromEnv for LogConfigs {
                 .from_env()
                 .map_err(crate::error::Error::from)?;
 
-            configs.insert(key.as_str().to_string(), config);
+            configs.insert(key, config);
         }
 
         Ok(configs)
