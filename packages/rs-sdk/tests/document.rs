@@ -28,20 +28,34 @@ async fn document_read() {
     let mut sdk = setup_api();
 
     let data_contract_id = base64_identifier(DATA_CONTRACT_ID);
-    let document_id = base64_identifier(DOCUMENT_ID);
 
-    let query =
-        DocumentQuery::new_with_data_contract_id(&mut sdk, data_contract_id, DOCUMENT_TYPE_NAME)
+    let contract = Arc::new(
+        DataContract::fetch(&mut sdk, data_contract_id)
             .await
-            .expect("create SdkDocumentQuery")
-            .with_document_id(&document_id);
+            .expect("fetch data contract")
+            .expect("data contract not found"),
+    );
+
+    // List documents so that we get document ID
+    let all_docs_query = DocumentQuery::new(Arc::clone(&contract), DOCUMENT_TYPE_NAME)
+        .expect("create SdkDocumentQuery");
+    let docs = Document::list(&mut sdk, all_docs_query)
+        .await
+        .expect("list documents")
+        .expect("no documents found");
+    let first_doc = docs.first().expect("document must exist");
+
+    // Now query for individual document
+    let query = DocumentQuery::new(contract, DOCUMENT_TYPE_NAME)
+        .expect("create SdkDocumentQuery")
+        .with_document_id(&first_doc.id());
 
     let doc = Document::fetch(&mut sdk, query)
         .await
         .expect("fetch document")
         .expect("document must be found");
 
-    assert_eq!(document_id, doc.id());
+    assert_eq!(first_doc, &doc);
 }
 
 /// Given some non-existing data contract ID, when I create [DocumentQuery], I get an error.
