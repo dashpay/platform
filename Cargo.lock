@@ -1026,10 +1026,7 @@ dependencies = [
 name = "dapi-grpc"
 version = "0.25.0-dev.6"
 dependencies = [
- "base64 0.21.4",
- "hex",
  "prost 0.11.9",
- "prost-types 0.11.9",
  "serde",
  "tenderdash-proto",
  "tonic",
@@ -3596,11 +3593,8 @@ dependencies = [
  "backon",
  "bincode 2.0.0-rc.3",
  "dapi-grpc",
- "dpp",
- "drive-proof-verifier",
  "futures",
  "http",
- "mockall",
  "rand",
  "serde",
  "serde_json",
@@ -3625,7 +3619,6 @@ dependencies = [
  "drive-abci",
  "drive-proof-verifier",
  "http",
- "mockall",
  "rs-dapi-client",
  "serde",
  "serde_json",

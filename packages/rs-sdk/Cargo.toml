@@ -27,8 +27,6 @@ tracing = { version = "0.1.37" }
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.1" }
 
-mockall = { version = "0.11", optional = true }
-
 [dev-dependencies]
 base64 = { version = "0.21.0" }
 tracing-subscriber = { version = "0.3.16" }
@@ -42,11 +40,8 @@ dpp = { path = "../rs-dpp", features = [
 [features]
 default = ["mocks"]
 mocks = [
-    "dep:mockall",
     "dep:serde_json",
     "rs-dapi-client/mocks",
-    # "drive/fixtures-and-mocks",
-    # "dpp/fixtures-and-mocks",
     "dpp/document-cbor-conversion",
     "dpp/identity-value-conversion",
     "drive-proof-verifier/mocks",
