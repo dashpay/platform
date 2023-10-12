@@ -61,6 +61,7 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
                 path: homeDir.joinPath('logs', 'testnet', 'drive-json.log'),
               },
             },
+            epochTime: 3600,
             validatorSet: {
               llmqType: 6,
             },
