@@ -220,6 +220,16 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
+      '0.25.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if (options.network === NETWORK_TESTNET) {
+              options.core.docker.image = base.get('core.docker.image');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
