@@ -11,12 +11,6 @@ pub enum Error {
     #[error("create file {0}: {1}")]
     FileCreate(PathBuf, std::io::Error),
 
-    /// Invalid destination
-    #[error(
-        "invalid destination {0}: must be one of: stderr, stdout, or absolute path to a directory"
-    )]
-    InvalidDestination(String),
-
     /// Log file path is invalid
     #[error("log file path {0}: {1}")]
     FilePath(PathBuf, String),
