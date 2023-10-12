@@ -20,7 +20,7 @@ chrono = "0.4.20"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_with = { version = "2.3.1", features = ["hex"], default-features = false }
-drive = { path = "../rs-drive", features = ["grovedb_operations_logging"] }
+drive = { path = "../rs-drive", features = ["full", "grovedb_operations_logging"] }π
 thiserror = "1.0.30"
 rand = "0.8.5"
 tempfile = "3.3.0"
