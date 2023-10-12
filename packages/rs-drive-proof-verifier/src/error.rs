@@ -17,10 +17,6 @@ pub enum Error {
     #[error("dash protocol: {error}")]
     ProtocolError { error: String },
 
-    /// Empty response
-    #[error("missing result field in response")]
-    NoResultInResponse,
-
     /// Empty response metadata
     #[error("empty response metadata")]
     EmptyResponseMetadata,

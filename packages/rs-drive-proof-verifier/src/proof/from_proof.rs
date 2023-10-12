@@ -110,6 +110,27 @@ pub trait QuorumInfoProvider: Send + Sync {
     ) -> Result<[u8; 48], Error>; // public key is 48 bytes
 }
 
+/// Retrieve proof from provided response.
+///
+/// This is a helper macro to retrieve proof from a response.
+///
+/// ## Example
+///
+/// `get_proof(response, platform::get_data_contract_response::Result)`
+#[macro_export]
+macro_rules! get_proof {
+    ($response:expr, $result_type:ty) => {{
+        use $result_type as Result;
+        let proof = if let Some(Result::Proof(proof)) = &($response.result) {
+            Some(proof)
+        } else {
+            None
+        };
+
+        proof
+    }};
+}
+
 impl FromProof<platform::GetIdentityRequest> for Identity {
     type Request = platform::GetIdentityRequest;
     type Response = platform::GetIdentityResponse;
@@ -125,12 +146,8 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
         let request: platform::GetIdentityRequest = request.into();
         let response: Self::Response = response.into();
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
-            platform::get_identity_response::Result::Proof(p) => p,
-            platform::get_identity_response::Result::Identity(_) => {
-                return Err(Error::NoProofInResult)
-            }
-        };
+        let proof = get_proof!(response, platform::get_identity_response::Result)
+            .ok_or(Error::NoProofInResult)?;
 
         let mtd = response
             .metadata
@@ -175,12 +192,11 @@ impl FromProof<platform::GetIdentityByPublicKeyHashesRequest> for Identity {
         let request = request.into();
         let response = response.into();
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
-            platform::get_identity_by_public_key_hashes_response::Result::Proof(p) => p,
-            platform::get_identity_by_public_key_hashes_response::Result::Identity(_) => {
-                return Err(Error::NoProofInResult)
-            }
-        };
+        let proof = get_proof!(
+            response,
+            platform::get_identity_by_public_key_hashes_response::Result
+        )
+        .ok_or(Error::NoProofInResult)?;
 
         let mtd = response
             .metadata
@@ -229,12 +245,8 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
         let response: Self::Response = response.into();
 
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
-            platform::get_identity_keys_response::Result::Proof(p) => p,
-            platform::get_identity_keys_response::Result::Keys(_) => {
-                return Err(Error::NoProofInResult)
-            }
-        };
+        let proof = get_proof!(response, platform::get_identity_keys_response::Result)
+            .ok_or(Error::NoProofInResult)?;
 
         let mtd = response
             .metadata
@@ -390,12 +402,8 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalance {
         let response: Self::Response = response.into();
 
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
-            platform::get_identity_balance_response::Result::Proof(p) => p,
-            platform::get_identity_balance_response::Result::Balance(_) => {
-                return Err(Error::NoProofInResult)
-            }
-        };
+        let proof = get_proof!(response, platform::get_identity_balance_response::Result)
+            .ok_or(Error::NoProofInResult)?;
 
         let mtd = response
             .metadata
@@ -440,12 +448,11 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalanceAndRevision {
         let response: Self::Response = response.into();
 
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
-            platform::get_identity_balance_and_revision_response::Result::Proof(p) => p,
-            platform::get_identity_balance_and_revision_response::Result::BalanceAndRevision(_) => {
-                return Err(Error::NoProofInResult)
-            }
-        };
+        let proof = get_proof!(
+            response,
+            platform::get_identity_balance_and_revision_response::Result
+        )
+        .ok_or(Error::NoProofInResult)?;
 
         let mtd = response
             .metadata
@@ -490,12 +497,8 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
         let response: Self::Response = response.into();
 
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
-            platform::get_data_contract_response::Result::Proof(p) => p,
-            platform::get_data_contract_response::Result::DataContract(_) => {
-                return Err(Error::NoProofInResult)
-            }
-        };
+        let proof = get_proof!(response, platform::get_data_contract_response::Result)
+            .ok_or(Error::NoProofInResult)?;
 
         let mtd = response
             .metadata
@@ -542,12 +545,8 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
         let response: Self::Response = response.into();
 
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
-            platform::get_data_contracts_response::Result::Proof(p) => p,
-            platform::get_data_contracts_response::Result::DataContracts(_) => {
-                return Err(Error::NoProofInResult)
-            }
-        };
+        let proof = get_proof!(response, platform::get_data_contracts_response::Result)
+            .ok_or(Error::NoProofInResult)?;
 
         let mtd = response
             .metadata
@@ -606,12 +605,11 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
         let response: Self::Response = response.into();
 
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
-            platform::get_data_contract_history_response::Result::Proof(p) => p,
-            platform::get_data_contract_history_response::Result::DataContractHistory(_) => {
-                return Err(Error::NoProofInResult)
-            }
-        };
+        let proof = get_proof!(
+            response,
+            platform::get_data_contract_history_response::Result
+        )
+        .ok_or(Error::NoProofInResult)?;
 
         let mtd = response
             .metadata
@@ -674,12 +672,8 @@ where
                 })?;
 
         // Parse response to read proof and metadata
-        let proof = match response.result.as_ref().ok_or(Error::NoResultInResponse)? {
-            platform::get_documents_response::Result::Proof(p) => p,
-            platform::get_documents_response::Result::Documents(_) => {
-                return Err(Error::NoProofInResult)
-            }
-        };
+        let proof = get_proof!(response, platform::get_documents_response::Result)
+            .ok_or(Error::NoProofInResult)?;
 
         let mtd = response
             .metadata
@@ -781,19 +775,6 @@ define_length!(IdentityBalance);
 define_length!(IdentityBalanceAndRevision);
 // define_length!(IdentityPublicKeys, |d: &IdentityPublicKeys| d.count_some());
 
-#[macro_export]
-macro_rules! get_proof {
-    ($response:expr, $result_type:ty) => {{
-        use $result_type as Result;
-        let proof = if let Some(Result::Proof(proof)) = &($response.result) {
-            Some(proof)
-        } else {
-            None
-        };
-
-        proof
-    }};
-}
 #[cfg(test)]
 pub mod test {
     use dapi_grpc::platform::v0::{self as platform_proto};
