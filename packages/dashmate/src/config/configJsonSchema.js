@@ -420,7 +420,6 @@ module.exports = {
                       color: {
                         type: ['boolean', 'null'],
                       },
-
                     },
                     required: ['destination', 'level', 'format', 'color'],
                     additionalProperties: false,
