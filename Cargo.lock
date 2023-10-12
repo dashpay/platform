@@ -1288,7 +1288,6 @@ dependencies = [
  "indexmap 1.9.3",
  "itertools",
  "lazy_static",
- "log",
  "metrics",
  "metrics-exporter-prometheus",
  "mockall",
