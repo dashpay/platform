@@ -58,6 +58,39 @@ mod tests {
             ));
         }
 
+        #[test]
+        fn test_invalid_query_data() {
+            let (platform, version) = setup_platform();
+
+            let paths = vec![
+                "/identity",
+                "/identities",
+                "/identity/balance",
+                "/identity/balanceAndRevision",
+                "/identity/keys",
+                "/dataContract",
+                "/dataContracts",
+                "/dataContractHistory",
+                "/documents",
+                "/dataContract/documents",
+                "/identity/by-public-key-hash",
+                "/identities/by-public-key-hash",
+                "/proofs",
+            ];
+
+            paths.iter().for_each(|path| {
+                let result = platform.query(path, &vec![0; 8], &version);
+                assert!(result.is_ok());
+
+                let validation_result = result.unwrap();
+                let validation_error = validation_result.first_error().unwrap();
+
+                assert!(
+                    matches!(validation_error, QueryError::InvalidArgument(msg) if msg.contains("invalid query proto message"))
+                );
+            })
+        }
+
         mod identity {
             use crate::error::query::QueryError;
             use bs58::encode;
@@ -65,21 +98,6 @@ mod tests {
             use prost::Message;
 
             const QUERY_PATH: &str = "/identity";
-
-            #[test]
-            fn test_invalid_query_data() {
-                let (platform, version) = super::setup_platform();
-
-                let query_data = vec![0; 8];
-                let result = platform.query(QUERY_PATH, &query_data, &version);
-                assert!(result.is_ok());
-                let validation_result = result.unwrap();
-                let validation_error = validation_result.first_error().unwrap();
-
-                assert!(
-                    matches!(validation_error, QueryError::InvalidArgument(msg) if msg.contains("invalid query proto message"))
-                );
-            }
 
             #[test]
             fn test_invalid_identity_id() {
