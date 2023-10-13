@@ -1305,6 +1305,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2",
+ "simple-signer",
  "strategy-tests",
  "tempfile",
  "tenderdash-abci",
