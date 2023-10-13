@@ -29,13 +29,16 @@ mod tests {
         let handler = builder
             .spawn(|| {
                 let platform_version = PlatformVersion::first();
-                let strategy = Strategy {
-                    contracts_with_updates: vec![],
-                    operations: vec![],
-                    start_identities: vec![],
-                    identities_inserts: Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
+                let strategy = NetworkStrategy {
+                    Strategy {
+                        contracts_with_updates: vec![],
+                        operations: vec![],
+                        start_identities: vec![],
+                        identities_inserts: Frequency {
+                            times_per_block_range: Default::default(),
+                            chance_per_block: None,
+                        },
+                        signer: None,
                     },
                     total_hpmns: 460,
                     extra_normal_mns: 0,
@@ -54,7 +57,6 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
-                    signer: None,
                 };
                 let twenty_minutes_in_ms = 1000 * 60 * 20;
                 let mut config = PlatformConfig {
@@ -304,13 +306,16 @@ mod tests {
         let handler = builder
             .spawn(|| {
                 let platform_version = PlatformVersion::first();
-                let strategy = Strategy {
-                    contracts_with_updates: vec![],
-                    operations: vec![],
-                    start_identities: vec![],
-                    identities_inserts: Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
+                let strategy = NetworkStrategy {
+                    Strategy {
+                        contracts_with_updates: vec![],
+                        operations: vec![],
+                        start_identities: vec![],
+                        identities_inserts: Frequency {
+                            times_per_block_range: Default::default(),
+                            chance_per_block: None,
+                        },
+                        signer: None,
                     },
                     total_hpmns: 50,
                     extra_normal_mns: 0,
@@ -329,7 +334,6 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
-                    signer: None,
                 };
                 let one_hour_in_s = 60 * 60;
                 let thirty_seconds_in_ms = 1000 * 30;
@@ -572,13 +576,16 @@ mod tests {
 
         let handler = builder
             .spawn(|| {
-                let strategy = Strategy {
-                    contracts_with_updates: vec![],
-                    operations: vec![],
-                    start_identities: vec![],
-                    identities_inserts: Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
+                let strategy = NetworkStrategy {
+                    Strategy {
+                        contracts_with_updates: vec![],
+                        operations: vec![],
+                        start_identities: vec![],
+                        identities_inserts: Frequency {
+                            times_per_block_range: Default::default(),
+                            chance_per_block: None,
+                        },
+                        signer: None,
                     },
                     total_hpmns: 120,
                     extra_normal_mns: 0,
@@ -597,7 +604,6 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
-                    signer: None,
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
@@ -839,13 +845,16 @@ mod tests {
 
         let handler = builder
             .spawn(|| {
-                let strategy = Strategy {
-                    contracts_with_updates: vec![],
-                    operations: vec![],
-                    start_identities: vec![],
-                    identities_inserts: Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
+                let strategy = NetworkStrategy {
+                    Strategy {
+                        contracts_with_updates: vec![],
+                        operations: vec![],
+                        start_identities: vec![],
+                        identities_inserts: Frequency {
+                            times_per_block_range: Default::default(),
+                            chance_per_block: None,
+                        },
+                        signer: None,
                     },
                     total_hpmns: 200,
                     extra_normal_mns: 0,
@@ -864,7 +873,6 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
-                    signer: None,
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let mut config = PlatformConfig {
@@ -1020,13 +1028,16 @@ mod tests {
                 // we are now locked in, the current protocol version will change on next epoch
                 // however most nodes now revert
 
-                let strategy = Strategy {
-                    contracts_with_updates: vec![],
-                    operations: vec![],
-                    start_identities: vec![],
-                    identities_inserts: Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
+                let strategy = NetworkStrategy {
+                    Strategy {
+                        contracts_with_updates: vec![],
+                        operations: vec![],
+                        start_identities: vec![],
+                        identities_inserts: Frequency {
+                            times_per_block_range: Default::default(),
+                            chance_per_block: None,
+                        },
+                        signer: None,
                     },
                     total_hpmns: 200,
                     extra_normal_mns: 0,
@@ -1048,7 +1059,6 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
-                    signer: None,
                 };
 
                 let block_start = platform
@@ -1207,13 +1217,16 @@ mod tests {
 
         let handler = builder
             .spawn(|| {
-                let strategy = Strategy {
-                    contracts_with_updates: vec![],
-                    operations: vec![],
-                    start_identities: vec![],
-                    identities_inserts: Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
+                let strategy = NetworkStrategy {
+                    Strategy {
+                        contracts_with_updates: vec![],
+                        operations: vec![],
+                        start_identities: vec![],
+                        identities_inserts: Frequency {
+                            times_per_block_range: Default::default(),
+                            chance_per_block: None,
+                        },
+                        signer: None,
                     },
                     total_hpmns: 200,
                     extra_normal_mns: 0,
@@ -1236,7 +1249,6 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
-                    signer: None,
                 };
                 let hour_in_ms = 1000 * 60 * 60;
                 let config = PlatformConfig {
@@ -1320,13 +1332,16 @@ mod tests {
                     ); //some nodes reverted to previous version
                 }
 
-                let strategy = Strategy {
-                    contracts_with_updates: vec![],
-                    operations: vec![],
-                    start_identities: vec![],
-                    identities_inserts: Frequency {
-                        times_per_block_range: Default::default(),
-                        chance_per_block: None,
+                let strategy = NetworkStrategy {
+                    Strategy {
+                        contracts_with_updates: vec![],
+                        operations: vec![],
+                        start_identities: vec![],
+                        identities_inserts: Frequency {
+                            times_per_block_range: Default::default(),
+                            chance_per_block: None,
+                        },
+                        signer: None,
                     },
                     total_hpmns: 200,
                     extra_normal_mns: 0,
@@ -1348,7 +1363,6 @@ mod tests {
                     failure_testing: None,
                     query_testing: None,
                     verify_state_transition_results: false,
-                    signer: None,
                 };
 
                 // we hit the required threshold to upgrade

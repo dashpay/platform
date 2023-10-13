@@ -12,13 +12,16 @@ mod tests {
 
     #[test]
     fn run_chain_random_bans() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -51,7 +54,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
         };
 
         let quorum_size = 100;
@@ -115,13 +117,16 @@ mod tests {
 
     #[test]
     fn run_chain_random_removals() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -154,7 +159,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
         };
 
         let quorum_size = 100;
@@ -204,13 +208,16 @@ mod tests {
 
     #[test]
     fn run_chain_random_bans_and_unbans() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -246,7 +253,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
         };
 
         let quorum_size = 100;

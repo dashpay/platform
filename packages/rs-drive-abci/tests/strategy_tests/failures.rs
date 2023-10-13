@@ -25,13 +25,16 @@ mod tests {
 
     #[test]
     fn run_chain_block_failure_on_genesis_block_correctly_fixes_itself() {
-        let mut strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let mut strategy = NetworkStrategy {
+            Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -41,7 +44,6 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: Some(FailureStrategy {
@@ -51,7 +53,6 @@ mod tests {
             }),
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -206,28 +207,31 @@ mod tests {
                 .to_owned_document_type(),
         };
 
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![
-                Operation {
-                    op_type: OperationType::Document(document_op_1),
-                    frequency: Frequency {
-                        times_per_block_range: 1..2,
-                        chance_per_block: None,
+        let strategy = NetworkStrategy {
+            Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_op_1),
+                        frequency: Frequency {
+                            times_per_block_range: 1..2,
+                            chance_per_block: None,
+                        },
                     },
-                },
-                Operation {
-                    op_type: OperationType::Document(document_op_2),
-                    frequency: Frequency {
-                        times_per_block_range: 1..2,
-                        chance_per_block: None,
+                    Operation {
+                        op_type: OperationType::Document(document_op_2),
+                        frequency: Frequency {
+                            times_per_block_range: 1..2,
+                            chance_per_block: None,
+                        },
                     },
+                ],
+                start_identities,
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
                 },
-            ],
-            start_identities,
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+                signer: Some(simple_signer),
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -247,7 +251,6 @@ mod tests {
             }),
             query_testing: None,
             verify_state_transition_results: true,
-            signer: Some(simple_signer),
         };
 
         let mut core_block_heights = vec![10, 11];

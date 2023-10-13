@@ -35,6 +35,7 @@ use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
+use strategy_tests::Strategy;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
@@ -151,14 +152,8 @@ pub struct MasternodeChanges {
 }
 
 #[derive(Clone, Debug)]
-pub struct Strategy {
-    pub contracts_with_updates: Vec<(
-        CreatedDataContract,
-        Option<BTreeMap<u64, CreatedDataContract>>,
-    )>,
-    pub operations: Vec<Operation>,
-    pub start_identities: Vec<(Identity, StateTransition)>,
-    pub identities_inserts: Frequency,
+pub struct NetworkStrategy {
+    pub strategy: Strategy,
     pub total_hpmns: u16,
     pub extra_normal_mns: u16,
     pub quorum_count: u16,
@@ -169,7 +164,6 @@ pub struct Strategy {
     pub failure_testing: Option<FailureStrategy>,
     pub query_testing: Option<QueryStrategy>,
     pub verify_state_transition_results: bool,
-    pub signer: Option<SimpleSigner>,
 }
 
 #[derive(Clone, Debug)]
@@ -218,7 +212,7 @@ impl UpgradingInfo {
     }
 }
 
-impl Strategy {
+impl NetworkStrategy {
     pub fn dont_finalize_block(&self) -> bool {
         self.failure_testing
             .as_ref()
