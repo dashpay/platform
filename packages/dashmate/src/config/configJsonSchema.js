@@ -410,8 +410,7 @@ module.exports = {
                       level: {
                         type: 'string',
                         minLength: 1,
-                        description: 'error, warn, info, debug, trace, silent or custom '
-                          + ' configuration in RUST_LOG format',
+                        description: 'error, warn, info, debug, trace, silent or logging specification string in RUST_LOG format',
                       },
                       format: {
                         type: 'string',
