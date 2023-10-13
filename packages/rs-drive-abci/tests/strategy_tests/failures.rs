@@ -19,14 +19,14 @@ mod tests {
     use dpp::platform_value::Value;
     use dpp::prelude::{Identifier, Identity};
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
-    use simple_signer::signer::SimpleSigner;
     use platform_version::version::PlatformVersion;
+    use simple_signer::signer::SimpleSigner;
     use tenderdash_abci::proto::types::CoreChainLock;
 
     #[test]
     fn run_chain_block_failure_on_genesis_block_correctly_fixes_itself() {
         let mut strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -208,7 +208,7 @@ mod tests {
         };
 
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![
                     Operation {

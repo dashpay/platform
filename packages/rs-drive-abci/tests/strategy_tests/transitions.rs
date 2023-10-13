@@ -33,8 +33,8 @@ use dpp::util::vec::hex_to_array;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
 use dpp::NativeBlsModule;
-use simple_signer::signer::SimpleSigner;
 use rand::prelude::{IteratorRandom, StdRng};
+use simple_signer::signer::SimpleSigner;
 
 use std::collections::HashSet;
 use std::str::FromStr;

@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn run_chain_nothing_happening() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn run_chain_block_signing() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn run_chain_stop_and_restart() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -365,7 +365,7 @@ mod tests {
     fn run_chain_one_identity_in_solitude() {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -433,7 +433,7 @@ mod tests {
     #[test]
     fn run_chain_core_height_randomly_increasing() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -488,7 +488,7 @@ mod tests {
     #[test]
     fn run_chain_core_height_randomly_increasing_with_epoch_change() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -550,7 +550,7 @@ mod tests {
     #[test]
     fn run_chain_core_height_randomly_increasing_with_quick_epoch_change() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -617,7 +617,7 @@ mod tests {
     fn run_chain_core_height_randomly_increasing_with_quorum_updates() {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -703,7 +703,7 @@ mod tests {
     #[test]
     fn run_chain_core_height_randomly_increasing_with_quorum_updates_new_proposers() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -773,7 +773,7 @@ mod tests {
     #[test]
     fn run_chain_core_height_randomly_increasing_with_quorum_updates_changing_proposers() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -846,7 +846,7 @@ mod tests {
     #[test]
     fn run_chain_core_height_randomly_increasing_with_quorum_updates_updating_proposers() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -946,7 +946,7 @@ mod tests {
     fn run_chain_insert_one_new_identity_per_block_with_block_signing() {
         // drive_abci::logging::Loggers::default().try_install().ok();
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -1007,7 +1007,7 @@ mod tests {
     #[test]
     fn run_chain_insert_one_new_identity_per_block_with_epoch_change() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -1091,7 +1091,7 @@ mod tests {
         .expect("expected to get contract from a json document");
 
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![(contract, None)],
                 operations: vec![],
                 start_identities: vec![],
@@ -1195,7 +1195,7 @@ mod tests {
         contract_update_2.data_contract_mut().set_version(3);
 
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![(
                     contract,
                     Some(BTreeMap::from([
@@ -1300,7 +1300,7 @@ mod tests {
         };
 
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![(created_contract, None)],
                 operations: vec![Operation {
                     op_type: OperationType::Document(document_op),
@@ -1382,7 +1382,7 @@ mod tests {
         };
 
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![(created_contract, None)],
                 operations: vec![Operation {
                     op_type: OperationType::Document(document_op),
@@ -1483,7 +1483,7 @@ mod tests {
         };
 
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
@@ -1593,7 +1593,7 @@ mod tests {
         };
 
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
@@ -1717,7 +1717,7 @@ mod tests {
         };
 
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
@@ -1840,7 +1840,7 @@ mod tests {
         };
 
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![(created_contract, None)],
                 operations: vec![
                     Operation {
@@ -1931,7 +1931,7 @@ mod tests {
         drive_abci::logging::init_for_tests(LogLevelPreset::Silent);
 
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![Operation {
                     op_type: OperationType::IdentityTopUp,
@@ -2010,10 +2010,12 @@ mod tests {
     #[test]
     fn run_chain_update_identities_add_keys() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![Operation {
-                    op_type: OperationType::IdentityUpdate(IdentityUpdateOp::IdentityUpdateAddKeys(3)),
+                    op_type: OperationType::IdentityUpdate(
+                        IdentityUpdateOp::IdentityUpdateAddKeys(3),
+                    ),
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -2096,12 +2098,12 @@ mod tests {
     fn run_chain_update_identities_remove_keys() {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![Operation {
-                    op_type: OperationType::IdentityUpdate(IdentityUpdateOp::IdentityUpdateDisableKey(
-                        3,
-                    )),
+                    op_type: OperationType::IdentityUpdate(
+                        IdentityUpdateOp::IdentityUpdateDisableKey(3),
+                    ),
                     frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
@@ -2184,7 +2186,7 @@ mod tests {
     #[test]
     fn run_chain_top_up_and_withdraw_from_identities() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![
                     Operation {
@@ -2258,7 +2260,7 @@ mod tests {
     #[test]
     fn run_chain_rotation_is_deterministic_1_block() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -2414,7 +2416,7 @@ mod tests {
     #[test]
     fn run_chain_heavy_rotation_deterministic_before_payout() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -2541,7 +2543,7 @@ mod tests {
     fn run_chain_proposer_proposes_a_chainlock_that_would_remove_themselves_from_the_list_deterministic(
     ) {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -2669,7 +2671,7 @@ mod tests {
         drive_abci::logging::init_for_tests(LogLevelPreset::Silent);
 
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -2804,7 +2806,7 @@ mod tests {
     #[test]
     fn run_chain_transfer_between_identities() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![Operation {
                     op_type: OperationType::IdentityTransfer,

@@ -13,7 +13,7 @@ mod tests {
     #[test]
     fn run_chain_random_bans() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -118,7 +118,7 @@ mod tests {
     #[test]
     fn run_chain_random_removals() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],
@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn run_chain_random_bans_and_unbans() {
         let strategy = NetworkStrategy {
-            Strategy {
+            strategy: Strategy {
                 contracts_with_updates: vec![],
                 operations: vec![],
                 start_identities: vec![],

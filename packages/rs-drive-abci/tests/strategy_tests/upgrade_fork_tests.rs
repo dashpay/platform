@@ -30,7 +30,7 @@ mod tests {
             .spawn(|| {
                 let platform_version = PlatformVersion::first();
                 let strategy = NetworkStrategy {
-                    Strategy {
+                    strategy: Strategy {
                         contracts_with_updates: vec![],
                         operations: vec![],
                         start_identities: vec![],
@@ -307,7 +307,7 @@ mod tests {
             .spawn(|| {
                 let platform_version = PlatformVersion::first();
                 let strategy = NetworkStrategy {
-                    Strategy {
+                    strategy: Strategy {
                         contracts_with_updates: vec![],
                         operations: vec![],
                         start_identities: vec![],
@@ -577,7 +577,7 @@ mod tests {
         let handler = builder
             .spawn(|| {
                 let strategy = NetworkStrategy {
-                    Strategy {
+                    strategy: Strategy {
                         contracts_with_updates: vec![],
                         operations: vec![],
                         start_identities: vec![],
@@ -846,7 +846,7 @@ mod tests {
         let handler = builder
             .spawn(|| {
                 let strategy = NetworkStrategy {
-                    Strategy {
+                    strategy: Strategy {
                         contracts_with_updates: vec![],
                         operations: vec![],
                         start_identities: vec![],
@@ -1029,7 +1029,7 @@ mod tests {
                 // however most nodes now revert
 
                 let strategy = NetworkStrategy {
-                    Strategy {
+                    strategy: Strategy {
                         contracts_with_updates: vec![],
                         operations: vec![],
                         start_identities: vec![],
@@ -1218,7 +1218,7 @@ mod tests {
         let handler = builder
             .spawn(|| {
                 let strategy = NetworkStrategy {
-                    Strategy {
+                    strategy: Strategy {
                         contracts_with_updates: vec![],
                         operations: vec![],
                         start_identities: vec![],
@@ -1333,7 +1333,7 @@ mod tests {
                 }
 
                 let strategy = NetworkStrategy {
-                    Strategy {
+                    strategy: Strategy {
                         contracts_with_updates: vec![],
                         operations: vec![],
                         start_identities: vec![],
