@@ -6,17 +6,17 @@ mod tests {
     use tenderdash_abci::proto::types::CoreChainLock;
 
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
-    use strategy_tests::frequency::Frequency;
     use crate::strategy::{
         ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
         UpgradingInfo,
     };
-    use strategy_tests::Strategy;
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
     use platform_version::version::mocks::v3_test::TEST_PROTOCOL_VERSION_3;
+    use strategy_tests::frequency::Frequency;
+    use strategy_tests::Strategy;
 
     #[test]
     fn run_chain_version_upgrade() {

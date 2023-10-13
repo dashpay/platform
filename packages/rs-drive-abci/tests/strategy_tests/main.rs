@@ -42,7 +42,9 @@ use strategy_tests::frequency::Frequency;
 
 use std::collections::BTreeMap;
 
-use strategy::{ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness};
+use strategy::{
+    ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
+};
 use strategy_tests::Strategy;
 
 mod core_update_tests;
@@ -61,16 +63,16 @@ pub type BlockHeight = u64;
 mod tests {
     use super::*;
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
-    use strategy_tests::operations::DocumentAction::DocumentActionReplace;
-    use strategy_tests::operations::{
-        DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
-    };
     use crate::query::QueryStrategy;
     use crate::strategy::MasternodeListChangesStrategy;
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use strategy_tests::operations::DocumentAction::DocumentActionReplace;
+    use strategy_tests::operations::{
+        DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
+    };
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{

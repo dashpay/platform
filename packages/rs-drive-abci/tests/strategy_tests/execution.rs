@@ -1,13 +1,11 @@
 use crate::masternodes;
 use crate::masternodes::{GenerateTestMasternodeUpdates, MasternodeListItemWithUpdates};
-use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::query::ProofVerification;
 use crate::strategy::{
     ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
     ValidatorVersionMigration,
 };
 use crate::verify_state_transitions::verify_state_transitions_were_or_were_not_executed;
-use strategy_tests::Strategy;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{BlockHash, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
@@ -19,6 +17,8 @@ use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
+use strategy_tests::Strategy;
 
 use dashcore_rpc::json::SoftforkInfo;
 use drive_abci::abci::AbciApplication;

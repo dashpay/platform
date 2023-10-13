@@ -1,9 +1,4 @@
-use strategy_tests::frequency::Frequency;
 use crate::masternodes::MasternodeListItemWithUpdates;
-use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
-use strategy_tests::operations::{
-    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
-};
 use crate::query::QueryStrategy;
 use crate::BlockHeight;
 use dashcore_rpc::dashcore;
@@ -12,6 +7,11 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
+use strategy_tests::frequency::Frequency;
+use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
+use strategy_tests::operations::{
+    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
+};
 
 use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
@@ -281,7 +281,8 @@ impl NetworkStrategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
-        self.strategy.contracts_with_updates
+        self.strategy
+            .contracts_with_updates
             .iter_mut()
             .map(|(created_contract, contract_updates)| {
                 let identity_num = rng.gen_range(0..current_identities.len());
@@ -345,7 +346,8 @@ impl NetworkStrategy {
         signer: &SimpleSigner,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
-        self.strategy.contracts_with_updates
+        self.strategy
+            .contracts_with_updates
             .iter_mut()
             .filter_map(|(_, contract_updates)| {
                 let Some(contract_updates) = contract_updates else {
@@ -765,11 +767,13 @@ impl NetworkStrategy {
                             .collect();
 
                         for random_identity in random_identities {
-                            operations.push(strategy_tests::transitions::create_identity_top_up_transition(
-                                rng,
-                                random_identity,
-                                platform_version,
-                            ));
+                            operations.push(
+                                strategy_tests::transitions::create_identity_top_up_transition(
+                                    rng,
+                                    random_identity,
+                                    platform_version,
+                                ),
+                            );
                         }
                     }
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {

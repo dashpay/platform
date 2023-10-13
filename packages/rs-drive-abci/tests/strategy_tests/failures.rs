@@ -1,17 +1,16 @@
 #[cfg(test)]
 mod tests {
     use crate::execution::run_chain_for_strategy;
-    use strategy_tests::frequency::Frequency;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::{BTreeMap, BTreeSet};
+    use strategy_tests::frequency::Frequency;
 
     use crate::strategy::{FailureStrategy, NetworkStrategy};
     use strategy_tests::Strategy;
 
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
 
-    use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
@@ -22,6 +21,7 @@ mod tests {
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::PlatformVersion;
     use simple_signer::signer::SimpleSigner;
+    use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use tenderdash_abci::proto::types::CoreChainLock;
 
     #[test]
