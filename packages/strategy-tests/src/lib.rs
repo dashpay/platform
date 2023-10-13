@@ -39,9 +39,9 @@ use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 use simple_signer::signer::SimpleSigner;
 
-mod frequency;
-mod operations;
-mod transitions;
+pub mod frequency;
+pub mod operations;
+pub mod transitions;
 
 /// Represents a comprehensive strategy used for simulations or testing in a blockchain context.
 ///

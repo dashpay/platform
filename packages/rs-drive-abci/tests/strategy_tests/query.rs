@@ -1,4 +1,4 @@
-use crate::frequency::Frequency;
+use strategy_tests::frequency::Frequency;
 use crate::strategy::StrategyRandomness;
 use dapi_grpc::platform::v0::{
     get_identities_by_public_key_hashes_response, GetIdentitiesByPublicKeyHashesRequest,

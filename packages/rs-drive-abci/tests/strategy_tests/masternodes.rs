@@ -1,4 +1,4 @@
-use crate::frequency::Frequency;
+use strategy_tests::frequency::Frequency;
 use crate::masternode_list_item_helpers::UpdateMasternodeListItem;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash, Txid};

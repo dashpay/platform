@@ -38,22 +38,20 @@ use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
 
 use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
-use frequency::Frequency;
+use strategy_tests::frequency::Frequency;
 
 use std::collections::BTreeMap;
 
 use strategy::{ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness};
+use strategy_tests::Strategy;
 
 mod core_update_tests;
 mod execution;
 mod failures;
-mod frequency;
 mod masternode_list_item_helpers;
 mod masternodes;
-mod operations;
 mod query;
 mod strategy;
-mod transitions;
 mod upgrade_fork_tests;
 mod verify_state_transitions;
 
@@ -63,8 +61,8 @@ pub type BlockHeight = u64;
 mod tests {
     use super::*;
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
-    use crate::operations::DocumentAction::DocumentActionReplace;
-    use crate::operations::{
+    use strategy_tests::operations::DocumentAction::DocumentActionReplace;
+    use strategy_tests::operations::{
         DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
     };
     use crate::query::QueryStrategy;
@@ -1148,6 +1146,7 @@ mod tests {
             .fetch_contract(
                 outcome
                     .strategy
+                    .strategy
                     .contracts_with_updates
                     .first()
                     .unwrap()
@@ -1257,6 +1256,7 @@ mod tests {
             .drive
             .fetch_contract(
                 outcome
+                    .strategy
                     .strategy
                     .contracts_with_updates
                     .first()

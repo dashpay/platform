@@ -1,16 +1,17 @@
 #[cfg(test)]
 mod tests {
     use crate::execution::run_chain_for_strategy;
-    use crate::frequency::Frequency;
+    use strategy_tests::frequency::Frequency;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::{BTreeMap, BTreeSet};
 
     use crate::strategy::{FailureStrategy, NetworkStrategy};
+    use strategy_tests::Strategy;
 
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
 
-    use crate::operations::{DocumentAction, DocumentOp, Operation, OperationType};
+    use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
@@ -142,7 +143,7 @@ mod tests {
 
         simple_signer.add_keys(keys);
 
-        let start_identities = crate::transitions::create_state_transitions_for_identities(
+        let start_identities = strategy_tests::transitions::create_state_transitions_for_identities(
             vec![identity1, identity2],
             &mut simple_signer,
             &mut rng,

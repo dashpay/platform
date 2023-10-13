@@ -1,7 +1,7 @@
-use crate::frequency::Frequency;
+use strategy_tests::frequency::Frequency;
 use crate::masternodes::MasternodeListItemWithUpdates;
-use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
-use crate::operations::{
+use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
+use strategy_tests::operations::{
     DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
 };
 use crate::query::QueryStrategy;
@@ -226,7 +226,7 @@ impl NetworkStrategy {
         drive: &Drive,
         platform_version: &PlatformVersion,
     ) {
-        for op in &self.operations {
+        for op in &self.strategy.operations {
             if let OperationType::Document(doc_op) = &op.op_type {
                 let serialize = doc_op
                     .contract
@@ -255,14 +255,14 @@ impl NetworkStrategy {
         platform_version: &PlatformVersion,
     ) -> Vec<(Identity, StateTransition)> {
         let mut state_transitions = vec![];
-        if block_info.height == 1 && !self.start_identities.is_empty() {
-            state_transitions.append(&mut self.start_identities.clone());
+        if block_info.height == 1 && !self.strategy.start_identities.is_empty() {
+            state_transitions.append(&mut self.strategy.start_identities.clone());
         }
-        let frequency = &self.identities_inserts;
+        let frequency = &self.strategy.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
             state_transitions.append(
-                &mut crate::transitions::create_identities_state_transitions(
+                &mut strategy_tests::transitions::create_identities_state_transitions(
                     count,
                     5,
                     signer,
@@ -281,7 +281,7 @@ impl NetworkStrategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
-        self.contracts_with_updates
+        self.strategy.contracts_with_updates
             .iter_mut()
             .map(|(created_contract, contract_updates)| {
                 let identity_num = rng.gen_range(0..current_identities.len());
@@ -310,7 +310,7 @@ impl NetworkStrategy {
                 }
 
                 // since we are changing the id, we need to update all the strategy
-                self.operations.iter_mut().for_each(|operation| {
+                self.strategy.operations.iter_mut().for_each(|operation| {
                     if let OperationType::Document(document_op) = &mut operation.op_type {
                         if document_op.contract.id() == old_id {
                             document_op.contract.set_id(contract.id());
@@ -345,7 +345,7 @@ impl NetworkStrategy {
         signer: &SimpleSigner,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
-        self.contracts_with_updates
+        self.strategy.contracts_with_updates
             .iter_mut()
             .filter_map(|(_, contract_updates)| {
                 let Some(contract_updates) = contract_updates else {
@@ -390,7 +390,7 @@ impl NetworkStrategy {
         let mut finalize_block_operations = vec![];
         let mut replaced = vec![];
         let mut deleted = vec![];
-        for op in &self.operations {
+        for op in &self.strategy.operations {
             if op.frequency.check_hit(rng) {
                 let count = rng.gen_range(op.frequency.times_per_block_range.clone());
                 match &op.op_type {
@@ -765,7 +765,7 @@ impl NetworkStrategy {
                             .collect();
 
                         for random_identity in random_identities {
-                            operations.push(crate::transitions::create_identity_top_up_transition(
+                            operations.push(strategy_tests::transitions::create_identity_top_up_transition(
                                 rng,
                                 random_identity,
                                 platform_version,
@@ -780,7 +780,7 @@ impl NetworkStrategy {
                             match update_op {
                                 IdentityUpdateOp::IdentityUpdateAddKeys(count) => {
                                     let (state_transition, keys_to_add_at_end_block) =
-                                        crate::transitions::create_identity_update_transition_add_keys(
+                                        strategy_tests::transitions::create_identity_update_transition_add_keys(
                                             random_identity,
                                             *count,
                                             signer,
@@ -795,7 +795,7 @@ impl NetworkStrategy {
                                 }
                                 IdentityUpdateOp::IdentityUpdateDisableKey(count) => {
                                     let state_transition =
-                                        crate::transitions::create_identity_update_transition_disable_keys(
+                                        strategy_tests::transitions::create_identity_update_transition_disable_keys(
                                             random_identity,
                                             *count,
                                             block_info.time_ms,
@@ -816,7 +816,7 @@ impl NetworkStrategy {
                         for index in indices {
                             let random_identity = current_identities.get_mut(index).unwrap();
                             let state_transition =
-                                crate::transitions::create_identity_withdrawal_transition(
+                                strategy_tests::transitions::create_identity_withdrawal_transition(
                                     random_identity,
                                     signer,
                                     rng,
@@ -839,7 +839,7 @@ impl NetworkStrategy {
                             .expect("expected to get an identity");
 
                         let state_transition =
-                            crate::transitions::create_identity_credit_transfer_transition(
+                            strategy_tests::transitions::create_identity_credit_transfer_transition(
                                 owner,
                                 recipient,
                                 signer,
@@ -940,7 +940,7 @@ pub struct ChainExecutionOutcome<'a> {
     pub current_proposer_versions: Option<HashMap<ProTxHash, ValidatorVersionMigration>>,
     pub end_epoch_index: u16,
     pub end_time_ms: u64,
-    pub strategy: Strategy,
+    pub strategy: NetworkStrategy,
     pub withdrawals: Vec<dashcore::Transaction>,
     /// height to the validator set update at that height
     pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
