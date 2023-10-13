@@ -19,7 +19,7 @@ mod tests {
     use dpp::platform_value::Value;
     use dpp::prelude::{Identifier, Identity};
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
-    use drive_abci::test::helpers::signer::SimpleSigner;
+    use simple_signer::signer::SimpleSigner;
     use platform_version::version::PlatformVersion;
     use tenderdash_abci::proto::types::CoreChainLock;
 

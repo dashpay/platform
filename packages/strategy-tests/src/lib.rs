@@ -22,8 +22,6 @@ use drive::drive::Drive;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use drive::query::DriveQuery;
-use drive_abci::platform_types::platform::Platform;
-use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::{IteratorRandom, StdRng};
 use rand::Rng;
 use std::borrow::Cow;
@@ -39,7 +37,7 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
-use drive_abci::test::helpers::signer::SimpleSigner;
+use simple_signer::signer::SimpleSigner;
 
 mod frequency;
 mod operations;
@@ -388,7 +386,7 @@ impl Strategy {
     /// transitions for the given block.
     pub fn state_transitions_for_block(
         &self,
-        platform: &Platform<MockCoreRPCLike>,
+        drive: &Drive,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
@@ -605,8 +603,7 @@ impl Strategy {
                     }) => {
                         let any_item_query =
                             DriveQuery::any_item_query(contract, document_type.as_ref());
-                        let mut items = platform
-                            .drive
+                        let mut items = drive
                             .query_documents(
                                 any_item_query,
                                 Some(&block_info.epoch),
@@ -635,8 +632,7 @@ impl Strategy {
                                 limit: Some(1),
                                 offset: None,
                             };
-                            let identity = platform
-                                .drive
+                            let identity = drive
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
@@ -691,8 +687,7 @@ impl Strategy {
                     }) => {
                         let any_item_query =
                             DriveQuery::any_item_query(contract, document_type.as_ref());
-                        let mut items = platform
-                            .drive
+                        let mut items = drive
                             .query_documents(
                                 any_item_query,
                                 Some(&block_info.epoch),
@@ -724,8 +719,7 @@ impl Strategy {
                                 limit: Some(1),
                                 offset: None,
                             };
-                            let identity = platform
-                                .drive
+                            let identity = drive
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
@@ -861,8 +855,7 @@ impl Strategy {
                         let owner = current_identities.get(indices[0]).unwrap();
                         let recipient = current_identities.get(indices[1]).unwrap();
 
-                        let fetched_owner_balance = platform
-                            .drive
+                        let fetched_owner_balance = drive
                             .fetch_identity_balance(owner.id().to_buffer(), None, platform_version)
                             .expect("expected to be able to get identity")
                             .expect("expected to get an identity");
@@ -920,24 +913,19 @@ impl Strategy {
     ///     &mut current_identities,
     ///     &mut signer,
     ///     &mut rng,
+    ///     platform_version
     /// );
     /// ```
-    ///
-    /// # Panics
-    /// This function may panic if the platform version cannot be fetched.
     pub fn state_transitions_for_block_with_new_identities(
         &mut self,
-        platform: &Platform<MockCoreRPCLike>,
+        drive: &Drive,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
+        platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut finalize_block_operations = vec![];
-        let platform_state = platform.state.read().unwrap();
-        let platform_version = platform_state
-            .current_platform_version()
-            .expect("expected platform version");
         let identity_state_transitions =
             self.identity_state_transitions_for_block(block_info, signer, rng, platform_version);
         let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
@@ -953,7 +941,7 @@ impl Strategy {
             // Don't do any state transitions on block 1
             let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
                 .state_transitions_for_block(
-                    platform,
+                    drive,
                     block_info,
                     current_identities,
                     signer,

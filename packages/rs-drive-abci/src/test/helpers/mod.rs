@@ -1,7 +1,5 @@
 pub mod fee_pools;
 pub mod setup;
-/// The signer module
-pub mod signer;
 
 // TODO: Move tests to appropriate place
 

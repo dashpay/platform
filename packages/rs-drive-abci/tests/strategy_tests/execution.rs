@@ -29,7 +29,7 @@ use drive_abci::platform_types::platform::Platform;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
-use drive_abci::test::helpers::signer::SimpleSigner;
+use simple_signer::signer::SimpleSigner;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
 use std::collections::{BTreeMap, HashMap};

@@ -50,7 +50,7 @@ use dpp::state_transition::documents_batch_transition::document_transition::{Doc
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
-use drive_abci::test::helpers::signer::SimpleSigner;
+use simple_signer::signer::SimpleSigner;
 
 #[derive(Clone, Debug, Default)]
 pub struct MasternodeListChangesStrategy {

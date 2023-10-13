@@ -1305,6 +1305,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2",
+ "strategy-tests",
  "tempfile",
  "tenderdash-abci",
  "thiserror",
@@ -3832,6 +3833,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 
 [[package]]
+name = "simple-signer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dashcore-rpc",
+ "dpp",
+]
+
+[[package]]
 name = "skeptic"
 version = "0.13.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3932,7 +3942,6 @@ dependencies = [
  "dotenvy",
  "dpp",
  "drive",
- "drive-abci",
  "envy",
  "file-rotate",
  "hex",
@@ -3945,7 +3954,7 @@ dependencies = [
  "platform-serialization",
  "platform-serialization-derive",
  "platform-version",
- "prost",
+ "prost 0.11.9",
  "rand",
  "regex",
  "reopen",
@@ -3956,6 +3965,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2",
+ "simple-signer",
  "tempfile",
  "tenderdash-abci",
  "thiserror",

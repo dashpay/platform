@@ -31,7 +31,7 @@ use dpp::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTran
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
 use dpp::NativeBlsModule;
-use drive_abci::test::helpers::signer::SimpleSigner;
+use simple_signer::signer::SimpleSigner;
 use rand::prelude::{IteratorRandom, StdRng};
 
 use std::collections::HashSet;
