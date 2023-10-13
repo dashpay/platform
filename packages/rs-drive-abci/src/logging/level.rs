@@ -105,7 +105,7 @@ impl From<&LogLevel> for EnvFilter {
                 EnvFilter::new("info,tenderdash_abci=debug,drive_abci=debug,drive=debug,dpp=debug")
             }
             LogLevel::Trace => {
-                EnvFilter::new("debug,tenderdash_abci=trace,drive_abci=trace,drive=trace,drive::grovedb_operations=debug,dpp=trace")
+                EnvFilter::new("debug,tenderdash_abci=trace,drive_abci=trace,drive=trace,dpp=trace,drive::drive::grove_operations=debug")
             }
             LogLevel::Paranoid => EnvFilter::new("trace"),
         }

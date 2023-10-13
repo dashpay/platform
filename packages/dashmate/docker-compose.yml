@@ -46,8 +46,6 @@ services:
     restart: unless-stopped
     volumes:
       - drive_abci_data:/var/lib/dash/rs-drive-abci/db
-      - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH:?err}:/var/log/dash/drive/pretty
-      - ${PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH:?err}:/var/log/dash/drive/json
     environment:
       - BLOCK_SPACING_MS=3000 # TODO: sync with tenderdash
       - CHAIN_ID=devnet # TODO: sync with tenderdash chain id
