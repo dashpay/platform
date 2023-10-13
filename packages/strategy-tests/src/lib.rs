@@ -1,26 +1,19 @@
-use crate::masternodes::MasternodeListItemWithUpdates;
-use crate::query::QueryStrategy;
-use crate::BlockHeight;
-use dashcore_rpc::dashcore;
-use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
+use crate::frequency::Frequency;
+use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
+use crate::operations::{
+    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
+};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
-use strategy_tests::frequency::Frequency;
-use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
-use strategy_tests::operations::{
-    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
-};
 
 use dpp::document::DocumentV0Getters;
-use dpp::fee::Credits;
 use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::StateTransition;
-use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
@@ -29,17 +22,11 @@ use drive::drive::Drive;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use drive::query::DriveQuery;
-use drive_abci::abci::AbciApplication;
-use drive_abci::mimic::test_quorum::TestQuorumInfo;
-use drive_abci::platform_types::platform::Platform;
-use drive_abci::rpc::core::MockCoreRPCLike;
-use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
+use rand::prelude::{IteratorRandom, StdRng};
 use rand::Rng;
-use strategy_tests::Strategy;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters};
+use std::collections::{BTreeMap, HashSet};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::BinaryData;
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
@@ -50,183 +37,86 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
-use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use simple_signer::signer::SimpleSigner;
 
-#[derive(Clone, Debug, Default)]
-pub struct MasternodeListChangesStrategy {
-    /// How many new hpmns on average per core chain lock increase
-    pub new_hpmns: Frequency,
-    /// How many hpmns leave the system
-    pub removed_hpmns: Frequency,
-    /// How many hpmns update a key
-    pub updated_hpmns: Frequency,
-    /// How many hpmns are banned
-    pub banned_hpmns: Frequency,
-    /// How many hpmns are unbanned
-    pub unbanned_hpmns: Frequency,
-    /// How many hpmns changed ips
-    pub changed_ip_hpmns: Frequency,
-    /// How many hpmns changed their p2p port
-    pub changed_p2p_port_hpmns: Frequency,
-    /// How many hpmns changed their http port
-    pub changed_http_port_hpmns: Frequency,
-    /// How many new masternodes on average per core chain lock increase
-    pub new_masternodes: Frequency,
-    /// How many masternodes leave the system
-    pub removed_masternodes: Frequency,
-    /// How many masternodes update a key
-    pub updated_masternodes: Frequency,
-    /// How many masternodes are banned
-    pub banned_masternodes: Frequency,
-    /// How many masternodes are unbanned
-    pub unbanned_masternodes: Frequency,
-    /// How many masternodes are banned
-    pub changed_ip_masternodes: Frequency,
-}
+pub mod frequency;
+pub mod operations;
+pub mod transitions;
 
-impl MasternodeListChangesStrategy {
-    pub fn any_is_set(&self) -> bool {
-        self.new_hpmns.is_set()
-            || self.removed_hpmns.is_set()
-            || self.updated_hpmns.is_set()
-            || self.banned_hpmns.is_set()
-            || self.unbanned_hpmns.is_set()
-            || self.new_masternodes.is_set()
-            || self.removed_masternodes.is_set()
-            || self.updated_masternodes.is_set()
-            || self.banned_masternodes.is_set()
-            || self.unbanned_masternodes.is_set()
-            || self.changed_ip_hpmns.is_set()
-            || self.changed_http_port_hpmns.is_set()
-            || self.changed_p2p_port_hpmns.is_set()
-            || self.changed_ip_masternodes.is_set()
-    }
-
-    pub fn removed_any_masternode_types(&self) -> bool {
-        self.removed_masternodes.is_set() || self.removed_hpmns.is_set()
-    }
-
-    pub fn updated_any_masternode_types(&self) -> bool {
-        self.updated_masternodes.is_set() || self.updated_hpmns.is_set()
-    }
-
-    pub fn added_any_masternode_types(&self) -> bool {
-        self.new_masternodes.is_set() || self.new_hpmns.is_set()
-    }
-
-    pub fn any_kind_of_update_is_set(&self) -> bool {
-        self.updated_hpmns.is_set()
-            || self.banned_hpmns.is_set()
-            || self.unbanned_hpmns.is_set()
-            || self.changed_ip_hpmns.is_set()
-            || self.changed_http_port_hpmns.is_set()
-            || self.changed_p2p_port_hpmns.is_set()
-            || self.updated_masternodes.is_set()
-            || self.banned_masternodes.is_set()
-            || self.unbanned_masternodes.is_set()
-            || self.changed_ip_masternodes.is_set()
-    }
-}
-
-pub enum StrategyMode {
-    ProposerOnly,
-    ProposerAndValidatorHashValidationOnly,
-    //ProposerAndValidatorSigning, todo
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct FailureStrategy {
-    pub deterministic_start_seed: Option<u64>,
-    pub dont_finalize_block: bool,
-    pub expect_errors_with_codes: Vec<u32>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct MasternodeChanges {
-    /// The masternode ban chance should be always quite low
-    pub masternode_ban_chance: Frequency,
-    pub masternode_unban_chance: Frequency,
-    pub masternode_change_ip_chance: Frequency,
-    pub masternode_change_port_chance: Frequency,
-}
-
+/// Represents a comprehensive strategy used for simulations or testing in a blockchain context.
+///
+/// The `Strategy` struct encapsulates various operations, state transitions, and data contracts to provide a structured plan or set of procedures for specific purposes such as simulations, automated tests, or other blockchain-related workflows.
+///
+/// # Fields
+/// - `contracts_with_updates`: A list of tuples containing:
+///   1. `CreatedDataContract`: A data contract that was created.
+///   2. `Option<BTreeMap<u64, CreatedDataContract>>`: An optional mapping where the key is the block height (or other sequential integer identifier) and the value is a data contract that corresponds to an update. If `None`, it signifies that there are no updates.
+///
+/// - `operations`: A list of `Operation`s which define individual tasks or actions that are part of the strategy. Operations could encompass a range of blockchain-related actions like transfers, state changes, contract creations, etc.
+///
+/// - `start_identities`: A list of tuples representing the starting state of identities. Each tuple contains:
+///   1. `Identity`: The initial identity state.
+///   2. `StateTransition`: The state transition that led to the current state of the identity.
+///
+/// - `identities_inserts`: Defines the frequency distribution of identity inserts. `Frequency` might encapsulate statistical data like mean, median, variance, etc., for understanding or predicting the frequency of identity insertions.
+///
+/// - `signer`: An optional instance of `SimpleSigner`. The `SimpleSigner` is responsible for generating and managing cryptographic signatures, and might be used to authenticate or validate various operations or state transitions.
+///
+/// # Usage
+/// ```rust
+/// let strategy = Strategy {
+///     contracts_with_updates: vec![...],
+///     operations: vec![...],
+///     start_identities: vec![...],
+///     identities_inserts: Frequency::new(...),
+///     signer: Some(SimpleSigner::new(...)),
+/// };
+/// ```
+///
+/// # Note
+/// Ensure that when using or updating the `Strategy`, all associated operations, identities, and contracts are coherent with the intended workflow or simulation. Inconsistencies might lead to unexpected behaviors or simulation failures.
 #[derive(Clone, Debug)]
-pub struct NetworkStrategy {
-    pub strategy: Strategy,
-    pub total_hpmns: u16,
-    pub extra_normal_mns: u16,
-    pub quorum_count: u16,
-    pub upgrading_info: Option<UpgradingInfo>,
-    pub core_height_increase: Frequency,
-    pub proposer_strategy: MasternodeListChangesStrategy,
-    pub rotate_quorums: bool,
-    pub failure_testing: Option<FailureStrategy>,
-    pub query_testing: Option<QueryStrategy>,
-    pub verify_state_transition_results: bool,
+pub struct Strategy {
+    pub contracts_with_updates: Vec<(
+        CreatedDataContract,
+        Option<BTreeMap<u64, CreatedDataContract>>,
+    )>,
+    pub operations: Vec<Operation>,
+    pub start_identities: Vec<(Identity, StateTransition)>,
+    pub identities_inserts: Frequency,
+    pub signer: Option<SimpleSigner>,
 }
 
-#[derive(Clone, Debug)]
-pub struct UpgradingInfo {
-    pub current_protocol_version: ProtocolVersion,
-    pub proposed_protocol_versions_with_weight: Vec<(ProtocolVersion, u16)>,
-    /// The upgrade three quarters life is the expected amount of blocks in the window
-    /// for three quarters of the network to upgrade
-    /// if it is 1, there is a 50/50% chance that the network will upgrade in the first window
-    /// if it lower than 1 there is a high chance it will upgrade in the first window
-    /// the higher it is the lower the chance it will upgrade in the first window
-    pub upgrade_three_quarters_life: f64,
-}
 
-impl UpgradingInfo {
-    pub fn apply_to_proposers(
-        &self,
-        proposers: Vec<ProTxHash>,
-        blocks_per_epoch: u64,
-        rng: &mut StdRng,
-    ) -> HashMap<ProTxHash, ValidatorVersionMigration> {
-        let expected_blocks = blocks_per_epoch as f64 * self.upgrade_three_quarters_life;
-        proposers
-            .into_iter()
-            .map(|pro_tx_hash| {
-                let next_version = self
-                    .proposed_protocol_versions_with_weight
-                    .choose_weighted(rng, |item| item.1)
-                    .unwrap()
-                    .0;
-                // we generate a random number between 0 and 1
-                let u: f64 = rng.gen();
-                // we want to alter the randomness so that 75% of time we get
-                let change_block_height =
-                    (expected_blocks * 0.75 * f64::ln(1.0 - u) / f64::ln(0.5)) as u64;
-                (
-                    pro_tx_hash,
-                    ValidatorVersionMigration {
-                        current_protocol_version: self.current_protocol_version,
-                        next_protocol_version: next_version,
-                        change_block_height,
-                    },
-                )
-            })
-            .collect()
-    }
-}
+impl Strategy {
 
-impl NetworkStrategy {
-    pub fn dont_finalize_block(&self) -> bool {
-        self.failure_testing
-            .as_ref()
-            .map(|failure_strategy| failure_strategy.dont_finalize_block)
-            .unwrap_or(false)
-    }
-
+    /// Adds strategy contracts from the current operations into a specified Drive.
+    ///
+    /// This method iterates over the operations present in the current strategy. For each operation
+    /// of type `Document`, it serializes the associated contract and applies it to the provided drive.
+    ///
+    /// # Parameters
+    /// - `drive`: The Drive where contracts should be added.
+    /// - `platform_version`: The current Platform version used for serializing the contract.
+    ///
+    /// # Panics
+    /// This method may panic in the following situations:
+    /// - If serialization of a contract fails.
+    /// - If applying a contract with serialization to the drive fails.
+    ///
+    /// # Examples
+    /// ```
+    /// // Assuming `strategy` is an instance of `Strategy`
+    /// // and `drive` and `platform_version` are appropriately initialized.
+    /// strategy.add_strategy_contracts_into_drive(&drive, &platform_version);
+    /// ```
     // TODO: This belongs to `DocumentOp`
     pub fn add_strategy_contracts_into_drive(
         &mut self,
         drive: &Drive,
         platform_version: &PlatformVersion,
     ) {
-        for op in &self.strategy.operations {
+        for op in &self.operations {
             if let OperationType::Document(doc_op) = &op.op_type {
                 let serialize = doc_op
                     .contract
@@ -247,6 +137,30 @@ impl NetworkStrategy {
         }
     }
 
+    /// Generates state transitions for identities based on the block information provided.
+    ///
+    /// This method creates a list of state transitions associated with identities. If the block height
+    /// is `1` and there are starting identities present in the strategy, these identities are directly
+    /// added to the state transitions list.
+    ///
+    /// Additionally, based on a frequency criterion, this method can generate and append more state transitions
+    /// related to the creation of identities.
+    ///
+    /// # Parameters
+    /// - `block_info`: Information about the current block, used to decide on which state transitions should be generated.
+    /// - `signer`: A mutable reference to a signer instance used during the creation of identities state transitions.
+    /// - `rng`: A mutable reference to a random number generator.
+    /// - `platform_version`: The current platform version.
+    ///
+    /// # Returns
+    /// A vector of tuples containing `Identity` and its associated `StateTransition`.
+    ///
+    /// # Examples
+    /// ```
+    /// // Assuming `strategy` is an instance of `Strategy`,
+    /// // and `block_info`, `signer`, `rng`, and `platform_version` are appropriately initialized.
+    /// let state_transitions = strategy.identity_state_transitions_for_block(&block_info, &mut signer, &mut rng, &platform_version);
+    /// ```
     pub fn identity_state_transitions_for_block(
         &self,
         block_info: &BlockInfo,
@@ -255,14 +169,14 @@ impl NetworkStrategy {
         platform_version: &PlatformVersion,
     ) -> Vec<(Identity, StateTransition)> {
         let mut state_transitions = vec![];
-        if block_info.height == 1 && !self.strategy.start_identities.is_empty() {
-            state_transitions.append(&mut self.strategy.start_identities.clone());
+        if block_info.height == 1 && !self.start_identities.is_empty() {
+            state_transitions.append(&mut self.start_identities.clone());
         }
-        let frequency = &self.strategy.identities_inserts;
+        let frequency = &self.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
             state_transitions.append(
-                &mut strategy_tests::transitions::create_identities_state_transitions(
+                &mut crate::transitions::create_identities_state_transitions(
                     count,
                     5,
                     signer,
@@ -274,6 +188,33 @@ impl NetworkStrategy {
         state_transitions
     }
 
+    /// Generates state transitions for data contracts based on the current set of identities.
+    ///
+    /// This method creates state transitions for data contracts by iterating over the contracts with updates 
+    /// present in the strategy. For each contract:
+    /// 1. An identity is randomly selected from the provided list of current identities.
+    /// 2. The owner ID of the contract is set to the selected identity's ID.
+    /// 3. The ID of the contract is updated based on the selected identity's ID and entropy used during its creation.
+    /// 4. Any contract updates associated with the main contract are adjusted to reflect these changes.
+    /// 5. All operations in the strategy that match the old contract ID are updated with the new contract ID.
+    ///
+    /// Finally, a new data contract create state transition is generated using the modified contract.
+    ///
+    /// # Parameters
+    /// - `current_identities`: A reference to a list of current identities.
+    /// - `signer`: A reference to a signer instance used during the creation of state transitions.
+    /// - `rng`: A mutable reference to a random number generator.
+    /// - `platform_version`: The current platform version.
+    ///
+    /// # Returns
+    /// A vector of `StateTransition` for data contracts.
+    ///
+    /// # Examples
+    /// ```
+    /// // Assuming `strategy` is an instance of `Strategy`,
+    /// // and `current_identities`, `signer`, `rng`, and `platform_version` are appropriately initialized.
+    /// let contract_transitions = strategy.contract_state_transitions(&current_identities, &signer, &mut rng, &platform_version);
+    /// ```
     pub fn contract_state_transitions(
         &mut self,
         current_identities: &Vec<Identity>,
@@ -281,8 +222,7 @@ impl NetworkStrategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
-        self.strategy
-            .contracts_with_updates
+        self.contracts_with_updates
             .iter_mut()
             .map(|(created_contract, contract_updates)| {
                 let identity_num = rng.gen_range(0..current_identities.len());
@@ -311,7 +251,7 @@ impl NetworkStrategy {
                 }
 
                 // since we are changing the id, we need to update all the strategy
-                self.strategy.operations.iter_mut().for_each(|operation| {
+                self.operations.iter_mut().for_each(|operation| {
                     if let OperationType::Document(document_op) = &mut operation.op_type {
                         if document_op.contract.id() == old_id {
                             document_op.contract.set_id(contract.id());
@@ -339,6 +279,32 @@ impl NetworkStrategy {
             .collect()
     }
 
+    /// Generates state transitions for updating data contracts based on the current set of identities and block height.
+    ///
+    /// This method creates update state transitions for data contracts by iterating over the contracts with updates 
+    /// present in the strategy. For each contract:
+    /// 1. It checks for any contract updates associated with the provided block height.
+    /// 2. For each matching update, it locates the corresponding identity based on the owner ID in the update.
+    /// 3. A new data contract update state transition is then generated using the located identity and the updated contract.
+    ///
+    /// # Parameters
+    /// - `current_identities`: A reference to a list of current identities.
+    /// - `block_height`: The height of the current block.
+    /// - `signer`: A reference to a signer instance used during the creation of state transitions.
+    /// - `platform_version`: The current platform version.
+    ///
+    /// # Returns
+    /// A vector of `StateTransition` for updating data contracts.
+    ///
+    /// # Panics
+    /// The method will panic if it doesn't find an identity matching the owner ID from the data contract update.
+    ///
+    /// # Examples
+    /// ```
+    /// // Assuming `strategy` is an instance of `Strategy`,
+    /// // and `current_identities`, `block_height`, `signer`, and `platform_version` are appropriately initialized.
+    /// let update_transitions = strategy.contract_update_state_transitions(&current_identities, block_height, &signer, &platform_version);
+    /// ```
     pub fn contract_update_state_transitions(
         &mut self,
         current_identities: &Vec<Identity>,
@@ -346,8 +312,7 @@ impl NetworkStrategy {
         signer: &SimpleSigner,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
-        self.strategy
-            .contracts_with_updates
+        self.contracts_with_updates
             .iter_mut()
             .filter_map(|(_, contract_updates)| {
                 let Some(contract_updates) = contract_updates else {
@@ -377,25 +342,71 @@ impl NetworkStrategy {
             .collect()
     }
 
-    // TODO: this belongs to `DocumentOp`, also randomization details are common for all operations
-    // and could be moved out of here
+    /// Generates state transitions for a given block.
+    ///
+    /// The `state_transitions_for_block` function processes state transitions based on the provided
+    /// block information, platform, identities, and other input parameters. It facilitates
+    /// the creation of state transitions for both new documents and updated documents in the system.
+    ///
+    /// # Parameters
+    /// - `platform`: A reference to the platform, which provides access to various blockchain 
+    ///   related functionalities and data.
+    /// - `block_info`: Information about the block for which the state transitions are being generated.
+    ///   This contains data such as its height and time.
+    /// - `current_identities`: A mutable reference to the list of current identities in the system. 
+    ///   This list is used to facilitate state transitions related to the involved identities.
+    /// - `signer`: A mutable reference to a signer, which aids in creating cryptographic signatures 
+    ///   for the state transitions.
+    /// - `rng`: A mutable reference to a random number generator, used for generating random values 
+    ///   during state transition creation.
+    /// - `platform_version`: The version of the platform being used. This information is crucial 
+    ///   to ensure compatibility and consistency in state transition generation.
+    ///
+    /// # Returns
+    /// A tuple containing:
+    /// 1. `Vec<StateTransition>`: A vector of state transitions generated for the given block.
+    ///    These transitions encompass both new document state transitions and document update transitions.
+    /// 2. `Vec<FinalizeBlockOperation>`: A vector of finalize block operations which may be necessary 
+    ///    to conclude the block's processing.
+    ///
+    /// # Examples
+    /// ```rust
+    /// let (state_transitions, finalize_ops) = obj.state_transitions_for_block(
+    ///     &platform,
+    ///     &block_info,
+    ///     &mut current_identities,
+    ///     &mut signer,
+    ///     &mut rng,
+    ///     platform_version,
+    /// );
+    /// ```
+    ///
+    /// # Panics
+    /// This function may panic under unexpected conditions, for example, when unable to generate state 
+    /// transitions for the given block.
     pub fn state_transitions_for_block(
         &self,
-        platform: &Platform<MockCoreRPCLike>,
+        drive: &Drive,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
+        // Lists to store generated operations and block finalization operations
         let mut operations = vec![];
         let mut finalize_block_operations = vec![];
+
+        // Lists to keep track of replaced and deleted documents
         let mut replaced = vec![];
         let mut deleted = vec![];
-        for op in &self.strategy.operations {
+
+        // Loop through the operations and generate state transitions based on frequency and type
+        for op in &self.operations {
             if op.frequency.check_hit(rng) {
                 let count = rng.gen_range(op.frequency.times_per_block_range.clone());
                 match &op.op_type {
+                    // Generate state transition for document insert operation with random data
                     OperationType::Document(DocumentOp {
                         action: DocumentAction::DocumentActionInsertRandom(fill_type, fill_size),
                         document_type,
@@ -474,6 +485,8 @@ impl NetworkStrategy {
                                 operations.push(document_batch_transition);
                             });
                     }
+
+                    // Generate state transition for specific document insert operation
                     OperationType::Document(DocumentOp {
                         action:
                             DocumentAction::DocumentActionInsertSpecific(
@@ -581,6 +594,8 @@ impl NetworkStrategy {
                                 operations.push(document_batch_transition);
                             });
                     }
+
+                    // Generate state transition for document delete operation
                     OperationType::Document(DocumentOp {
                         action: DocumentAction::DocumentActionDelete,
                         document_type,
@@ -588,8 +603,7 @@ impl NetworkStrategy {
                     }) => {
                         let any_item_query =
                             DriveQuery::any_item_query(contract, document_type.as_ref());
-                        let mut items = platform
-                            .drive
+                        let mut items = drive
                             .query_documents(
                                 any_item_query,
                                 Some(&block_info.epoch),
@@ -618,8 +632,7 @@ impl NetworkStrategy {
                                 limit: Some(1),
                                 offset: None,
                             };
-                            let identity = platform
-                                .drive
+                            let identity = drive
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
@@ -665,6 +678,8 @@ impl NetworkStrategy {
                             operations.push(document_batch_transition);
                         }
                     }
+
+                    // Generate state transition for document replace operation
                     OperationType::Document(DocumentOp {
                         action: DocumentAction::DocumentActionReplace,
                         document_type,
@@ -672,8 +687,7 @@ impl NetworkStrategy {
                     }) => {
                         let any_item_query =
                             DriveQuery::any_item_query(contract, document_type.as_ref());
-                        let mut items = platform
-                            .drive
+                        let mut items = drive
                             .query_documents(
                                 any_item_query,
                                 Some(&block_info.epoch),
@@ -705,8 +719,7 @@ impl NetworkStrategy {
                                 limit: Some(1),
                                 offset: None,
                             };
-                            let identity = platform
-                                .drive
+                            let identity = drive
                                 .fetch_identity_balance_with_keys(request, None, platform_version)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
@@ -758,6 +771,8 @@ impl NetworkStrategy {
                             operations.push(document_batch_transition);
                         }
                     }
+
+                    // Generate state transition for identity top-up operation
                     OperationType::IdentityTopUp if !current_identities.is_empty() => {
                         let indices: Vec<usize> =
                             (0..current_identities.len()).choose_multiple(rng, count as usize);
@@ -767,15 +782,15 @@ impl NetworkStrategy {
                             .collect();
 
                         for random_identity in random_identities {
-                            operations.push(
-                                strategy_tests::transitions::create_identity_top_up_transition(
-                                    rng,
-                                    random_identity,
-                                    platform_version,
-                                ),
-                            );
+                            operations.push(crate::transitions::create_identity_top_up_transition(
+                                rng,
+                                random_identity,
+                                platform_version,
+                            ));
                         }
                     }
+
+                    // Generate state transition for identity update operation
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
                         let indices: Vec<usize> =
                             (0..current_identities.len()).choose_multiple(rng, count as usize);
@@ -784,7 +799,7 @@ impl NetworkStrategy {
                             match update_op {
                                 IdentityUpdateOp::IdentityUpdateAddKeys(count) => {
                                     let (state_transition, keys_to_add_at_end_block) =
-                                        strategy_tests::transitions::create_identity_update_transition_add_keys(
+                                        crate::transitions::create_identity_update_transition_add_keys(
                                             random_identity,
                                             *count,
                                             signer,
@@ -799,7 +814,7 @@ impl NetworkStrategy {
                                 }
                                 IdentityUpdateOp::IdentityUpdateDisableKey(count) => {
                                     let state_transition =
-                                        strategy_tests::transitions::create_identity_update_transition_disable_keys(
+                                        crate::transitions::create_identity_update_transition_disable_keys(
                                             random_identity,
                                             *count,
                                             block_info.time_ms,
@@ -814,13 +829,15 @@ impl NetworkStrategy {
                             }
                         }
                     }
+
+                    // Generate state transition for identity withdrawal operation
                     OperationType::IdentityWithdrawal if !current_identities.is_empty() => {
                         let indices: Vec<usize> =
                             (0..current_identities.len()).choose_multiple(rng, count as usize);
                         for index in indices {
                             let random_identity = current_identities.get_mut(index).unwrap();
                             let state_transition =
-                                strategy_tests::transitions::create_identity_withdrawal_transition(
+                                crate::transitions::create_identity_withdrawal_transition(
                                     random_identity,
                                     signer,
                                     rng,
@@ -828,6 +845,8 @@ impl NetworkStrategy {
                             operations.push(state_transition);
                         }
                     }
+
+                    // Generate state transition for identity transfer operation
                     OperationType::IdentityTransfer if current_identities.len() > 1 => {
                         // chose 2 last identities
                         let indices: Vec<usize> =
@@ -836,14 +855,13 @@ impl NetworkStrategy {
                         let owner = current_identities.get(indices[0]).unwrap();
                         let recipient = current_identities.get(indices[1]).unwrap();
 
-                        let fetched_owner_balance = platform
-                            .drive
+                        let fetched_owner_balance = drive
                             .fetch_identity_balance(owner.id().to_buffer(), None, platform_version)
                             .expect("expected to be able to get identity")
                             .expect("expected to get an identity");
 
                         let state_transition =
-                            strategy_tests::transitions::create_identity_credit_transfer_transition(
+                            crate::transitions::create_identity_credit_transfer_transition(
                                 owner,
                                 recipient,
                                 signer,
@@ -868,19 +886,46 @@ impl NetworkStrategy {
         (operations, finalize_block_operations)
     }
 
+    /// Generates state transitions for a block by considering new identities.
+    ///
+    /// This function processes state transitions with respect to identities, contracts,
+    /// and document operations. The state transitions are generated based on the 
+    /// given block's height and other parameters, with special handling for block height `1`.
+    ///
+    /// # Parameters
+    /// - `platform`: A reference to the platform, which is parameterized with a mock core RPC type.
+    /// - `block_info`: Information about the current block, like its height and time.
+    /// - `current_identities`: A mutable reference to the current set of identities. This list 
+    ///   may be appended with new identities during processing.
+    /// - `signer`: A mutable reference to a signer used for creating cryptographic signatures.
+    /// - `rng`: A mutable reference to a random number generator.
+    ///
+    /// # Returns
+    /// A tuple containing two vectors:
+    /// 1. `Vec<StateTransition>`: A vector of state transitions generated during processing.
+    /// 2. `Vec<FinalizeBlockOperation>`: A vector of finalize block operations derived during processing.
+    ///
+    /// # Examples
+    /// ```rust
+    /// let (state_transitions, finalize_ops) = obj.state_transitions_for_block_with_new_identities(
+    ///     &platform,
+    ///     &block_info,
+    ///     &mut current_identities,
+    ///     &mut signer,
+    ///     &mut rng,
+    ///     platform_version
+    /// );
+    /// ```
     pub fn state_transitions_for_block_with_new_identities(
         &mut self,
-        platform: &Platform<MockCoreRPCLike>,
+        drive: &Drive,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
+        platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut finalize_block_operations = vec![];
-        let platform_state = platform.state.read().unwrap();
-        let platform_version = platform_state
-            .current_platform_version()
-            .expect("expected platform version");
         let identity_state_transitions =
             self.identity_state_transitions_for_block(block_info, signer, rng, platform_version);
         let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
@@ -896,7 +941,7 @@ impl NetworkStrategy {
             // Don't do any state transitions on block 1
             let (mut document_state_transitions, mut add_to_finalize_block_operations) = self
                 .state_transitions_for_block(
-                    platform,
+                    drive,
                     block_info,
                     current_identities,
                     signer,
@@ -919,56 +964,4 @@ impl NetworkStrategy {
 
         (state_transitions, finalize_block_operations)
     }
-}
-
-pub enum StrategyRandomness {
-    SeedEntropy(u64),
-    RNGEntropy(StdRng),
-}
-
-#[derive(Clone, Debug)]
-pub struct ValidatorVersionMigration {
-    pub current_protocol_version: ProtocolVersion,
-    pub next_protocol_version: ProtocolVersion,
-    pub change_block_height: BlockHeight,
-}
-
-#[derive(Debug)]
-pub struct ChainExecutionOutcome<'a> {
-    pub abci_app: AbciApplication<'a, MockCoreRPCLike>,
-    pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
-    pub identities: Vec<Identity>,
-    pub proposers: Vec<MasternodeListItemWithUpdates>,
-    pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
-    pub current_quorum_hash: QuorumHash,
-    pub current_proposer_versions: Option<HashMap<ProTxHash, ValidatorVersionMigration>>,
-    pub end_epoch_index: u16,
-    pub end_time_ms: u64,
-    pub strategy: NetworkStrategy,
-    pub withdrawals: Vec<dashcore::Transaction>,
-    /// height to the validator set update at that height
-    pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
-    pub state_transition_results_per_block: BTreeMap<u64, Vec<(StateTransition, ExecTxResult)>>,
-}
-
-impl<'a> ChainExecutionOutcome<'a> {
-    pub fn current_quorum(&self) -> &TestQuorumInfo {
-        self.quorums
-            .get::<QuorumHash>(&self.current_quorum_hash)
-            .unwrap()
-    }
-}
-
-pub struct ChainExecutionParameters {
-    pub block_start: u64,
-    pub core_height_start: u32,
-    pub block_count: u64,
-    pub proposers: Vec<MasternodeListItemWithUpdates>,
-    pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
-    pub current_quorum_hash: QuorumHash,
-    // the first option is if it is set
-    // the second option is if we are even upgrading
-    pub current_proposer_versions: Option<Option<HashMap<ProTxHash, ValidatorVersionMigration>>>,
-    pub start_time_ms: u64,
-    pub current_time_ms: u64,
 }

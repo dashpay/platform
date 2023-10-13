@@ -1,9 +1,8 @@
 use crate::masternodes;
 use crate::masternodes::{GenerateTestMasternodeUpdates, MasternodeListItemWithUpdates};
-use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::query::ProofVerification;
 use crate::strategy::{
-    ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness,
+    ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
     ValidatorVersionMigration,
 };
 use crate::verify_state_transitions::verify_state_transitions_were_or_were_not_executed;
@@ -18,6 +17,8 @@ use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
+use strategy_tests::Strategy;
 
 use dashcore_rpc::json::SoftforkInfo;
 use drive_abci::abci::AbciApplication;
@@ -29,9 +30,9 @@ use drive_abci::platform_types::platform::Platform;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
-use drive_abci::test::helpers::signer::SimpleSigner;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
+use simple_signer::signer::SimpleSigner;
 use std::collections::{BTreeMap, HashMap};
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
@@ -42,7 +43,7 @@ use tenderdash_abci::Application;
 pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
     block_count: u64,
-    strategy: Strategy,
+    strategy: NetworkStrategy,
     config: PlatformConfig,
     seed: u64,
 ) -> ChainExecutionOutcome {
@@ -478,7 +479,7 @@ pub(crate) fn create_chain_for_strategy(
     block_count: u64,
     proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
-    strategy: Strategy,
+    strategy: NetworkStrategy,
     config: PlatformConfig,
     rng: StdRng,
 ) -> ChainExecutionOutcome {
@@ -505,7 +506,7 @@ pub(crate) fn start_chain_for_strategy(
     block_count: u64,
     proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
-    strategy: Strategy,
+    strategy: NetworkStrategy,
     config: PlatformConfig,
     seed: StrategyRandomness,
 ) -> ChainExecutionOutcome {
@@ -588,7 +589,7 @@ pub(crate) fn start_chain_for_strategy(
 pub(crate) fn continue_chain_for_strategy(
     abci_app: AbciApplication<MockCoreRPCLike>,
     chain_execution_parameters: ChainExecutionParameters,
-    mut strategy: Strategy,
+    mut strategy: NetworkStrategy,
     config: PlatformConfig,
     seed: StrategyRandomness,
 ) -> ChainExecutionOutcome {
@@ -611,7 +612,7 @@ pub(crate) fn continue_chain_for_strategy(
     let quorum_size = config.quorum_size;
     let first_block_time = start_time_ms;
     let mut current_identities = vec![];
-    let mut signer = strategy.signer.clone().unwrap_or_default();
+    let mut signer = strategy.strategy.signer.clone().unwrap_or_default();
     let mut i = 0;
 
     let blocks_per_epoch = config.execution.epoch_time_length_s * 1000 / config.block_spacing_ms;

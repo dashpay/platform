@@ -8,7 +8,7 @@ use dpp::data_contract::DataContract as Contract;
 use dpp::identifier::Identifier;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::ops::Range;
 
 #[derive(Clone, Debug)]
