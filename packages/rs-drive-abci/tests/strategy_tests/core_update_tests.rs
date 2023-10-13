@@ -4,7 +4,7 @@ mod tests {
 
     use crate::execution::run_chain_for_strategy;
     use crate::frequency::Frequency;
-    use crate::strategy::{MasternodeListChangesStrategy, Strategy};
+    use crate::strategy::{MasternodeListChangesStrategy, NetworkStrategy};
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::platform_types::validator_set::v0::ValidatorSetV0Getters;

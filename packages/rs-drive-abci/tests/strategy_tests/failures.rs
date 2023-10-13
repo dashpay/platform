@@ -6,7 +6,7 @@ mod tests {
     use rand::SeedableRng;
     use std::collections::{BTreeMap, BTreeSet};
 
-    use crate::strategy::{FailureStrategy, Strategy};
+    use crate::strategy::{FailureStrategy, NetworkStrategy};
 
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
 

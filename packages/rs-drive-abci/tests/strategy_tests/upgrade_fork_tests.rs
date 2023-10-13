@@ -8,7 +8,7 @@ mod tests {
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::frequency::Frequency;
     use crate::strategy::{
-        ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness,
+        ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
         UpgradingInfo,
     };
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};

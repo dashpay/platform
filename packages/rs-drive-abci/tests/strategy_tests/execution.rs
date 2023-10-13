@@ -3,7 +3,7 @@ use crate::masternodes::{GenerateTestMasternodeUpdates, MasternodeListItemWithUp
 use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::query::ProofVerification;
 use crate::strategy::{
-    ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness,
+    ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
     ValidatorVersionMigration,
 };
 use crate::verify_state_transitions::verify_state_transitions_were_or_were_not_executed;

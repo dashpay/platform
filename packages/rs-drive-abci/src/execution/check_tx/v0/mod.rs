@@ -21,7 +21,6 @@ use dpp::validation::ValidationResult;
 #[cfg(test)]
 use drive::grovedb::Transaction;
 
-
 impl<C> Platform<C>
 where
     C: CoreRPCLike,

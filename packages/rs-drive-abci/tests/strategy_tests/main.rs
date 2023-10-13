@@ -42,7 +42,7 @@ use frequency::Frequency;
 
 use std::collections::BTreeMap;
 
-use strategy::{ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness};
+use strategy::{ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness};
 
 mod core_update_tests;
 mod execution;
