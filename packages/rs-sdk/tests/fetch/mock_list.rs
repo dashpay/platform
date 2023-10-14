@@ -6,7 +6,6 @@ use dpp::{
         },
     },
     document::Document,
-    platform_value::platform_value,
 };
 use rs_sdk::{
     platform::{DocumentQuery, List},

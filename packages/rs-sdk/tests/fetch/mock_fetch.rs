@@ -10,15 +10,13 @@ use dpp::{
     },
     document::Document,
     identity::{accessors::IdentityGettersV0, IdentityV0},
-    platform_value::platform_value,
     prelude::{DataContract, Identifier, Identity},
 };
 use rs_sdk::{
     platform::{DocumentQuery, Fetch},
     Sdk,
 };
-
-include!("common.rs");
+use crate::common::{mock_data_contract, mock_document_type};
 
 #[tokio::test]
 /// Given some identity, when I fetch it using mock API, then I get the same identity
@@ -30,7 +28,7 @@ async fn test_mock_fetch_identity() {
 
     sdk.mock().expect_fetch(query, Some(expected.clone())).await;
 
-    let retrieved = dpp::prelude::Identity::fetch(&mut sdk, query)
+    let retrieved = Identity::fetch(&mut sdk, query)
         .await
         .unwrap()
         .expect("object should exist");
@@ -47,7 +45,7 @@ async fn test_mock_fetch_identity_not_found() {
 
     sdk.mock().expect_fetch(id, None as Option<Identity>).await;
 
-    let retrieved = dpp::prelude::Identity::fetch(&mut sdk, id)
+    let retrieved = Identity::fetch(&mut sdk, id)
         .await
         .expect("fetch should succeed");
 
