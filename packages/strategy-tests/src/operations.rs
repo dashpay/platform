@@ -23,7 +23,7 @@ use platform_version::TryIntoPlatformVersioned;
 use std::collections::BTreeMap;
 use std::ops::Range;
 
-#[derive(Clone, Debug, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub enum DocumentAction {
     DocumentActionInsertRandom(DocumentFieldFillType, DocumentFieldFillSize),
     /// Insert a document with specific values
@@ -40,7 +40,7 @@ pub enum DocumentAction {
     DocumentActionReplace,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DocumentOp {
     pub contract: Contract,
     pub document_type: DocumentType,
@@ -125,7 +125,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Doc
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Operation {
     pub op_type: OperationType,
     pub frequency: Frequency,
@@ -195,7 +195,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Ope
     }
 }
 
-#[derive(Clone, Debug, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub enum IdentityUpdateOp {
     IdentityUpdateAddKeys(u16),
     IdentityUpdateDisableKey(u16),
@@ -204,13 +204,13 @@ pub enum IdentityUpdateOp {
 pub type DocumentTypeNewFieldsOptionalCountRange = Range<u16>;
 pub type DocumentTypeCount = Range<u16>;
 
-#[derive(Clone, Debug, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub enum DataContractUpdateOp {
     DataContractNewDocumentTypes(RandomDocumentTypeParameters), // How many fields should it have
     DataContractNewOptionalFields(DocumentTypeNewFieldsOptionalCountRange, DocumentTypeCount), // How many new fields on how many document types
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum OperationType {
     Document(DocumentOp),
     IdentityTopUp,

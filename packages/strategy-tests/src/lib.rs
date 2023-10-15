@@ -88,7 +88,7 @@ pub mod transitions;
 ///
 /// # Note
 /// Ensure that when using or updating the `Strategy`, all associated operations, identities, and contracts are coherent with the intended workflow or simulation. Inconsistencies might lead to unexpected behaviors or simulation failures.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(
         CreatedDataContract,
@@ -1129,5 +1129,157 @@ impl Strategy {
         }
 
         (state_transitions, finalize_block_operations)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::frequency::Frequency;
+    use crate::operations::{DocumentAction, DocumentOp, Operation, OperationType};
+    use crate::transitions::create_state_transitions_for_identities;
+    use crate::Strategy;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::random_document::{
+        DocumentFieldFillSize, DocumentFieldFillType,
+    };
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
+    use dpp::platform_value::Value;
+    use dpp::serialization::{
+        PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+        PlatformSerializableWithPlatformVersion,
+    };
+    use dpp::system_data_contracts::load_system_data_contract;
+    use platform_version::version::PlatformVersion;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
+    use simple_signer::signer::SimpleSigner;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn serialize_deserialize_strategy() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let mut simple_signer = SimpleSigner::default();
+
+        let (identity1, keys) =
+            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
+                2,
+                &mut rng,
+                platform_version,
+            )
+            .unwrap();
+
+        simple_signer.add_keys(keys);
+
+        let (identity2, keys) =
+            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
+                2,
+                &mut rng,
+                platform_version,
+            )
+            .unwrap();
+
+        simple_signer.add_keys(keys);
+
+        let start_identities = create_state_transitions_for_identities(
+            vec![identity1, identity2],
+            &mut simple_signer,
+            &mut rng,
+            platform_version,
+        );
+
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)
+                .expect("data contract");
+
+        let document_op_1 = DocumentOp {
+            contract: dpns_contract.clone(),
+            action: DocumentAction::DocumentActionInsertSpecific(
+                BTreeMap::from([
+                    ("label".into(), "simon1".into()),
+                    ("normalizedLabel".into(), "s1m0n1".into()),
+                    ("normalizedParentDomainName".into(), "dash".into()),
+                    (
+                        "records".into(),
+                        BTreeMap::from([(
+                            "dashUniqueIdentityId",
+                            Value::from(start_identities.first().unwrap().0.id()),
+                        )])
+                        .into(),
+                    ),
+                ]),
+                Some(start_identities.first().unwrap().0.id()),
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: dpns_contract
+                .document_type_cloned_for_name("domain")
+                .expect("expected a domain document type"),
+        };
+
+        let document_op_2 = DocumentOp {
+            contract: dpns_contract.clone(),
+            action: DocumentAction::DocumentActionInsertSpecific(
+                BTreeMap::from([
+                    ("label".into(), "simon1".into()),
+                    ("normalizedLabel".into(), "s1m0n1".into()),
+                    ("normalizedParentDomainName".into(), "dash".into()),
+                    (
+                        "records".into(),
+                        BTreeMap::from([(
+                            "dashUniqueIdentityId",
+                            Value::from(start_identities.last().unwrap().0.id()),
+                        )])
+                        .into(),
+                    ),
+                ]),
+                Some(start_identities.last().unwrap().0.id()),
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: dpns_contract
+                .document_type_cloned_for_name("domain")
+                .expect("expected a profile document type"),
+        };
+
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![
+                Operation {
+                    op_type: OperationType::Document(document_op_1),
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                },
+                Operation {
+                    op_type: OperationType::Document(document_op_2),
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                },
+            ],
+            start_identities,
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            signer: Some(simple_signer),
+        };
+
+        let serialized = strategy
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("expected to serialize");
+
+        let deserialized =
+            Strategy::versioned_deserialize(serialized.as_slice(), true, platform_version)
+                .expect("expected to deserialize");
+
+        assert_eq!(strategy, deserialized);
     }
 }

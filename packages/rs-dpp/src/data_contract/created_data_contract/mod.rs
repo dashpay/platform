@@ -24,7 +24,7 @@ use platform_version::TryIntoPlatformVersioned;
 ///
 ///
 
-#[derive(Clone, Debug, From)]
+#[derive(Clone, Debug, PartialEq, From)]
 pub enum CreatedDataContract {
     V0(CreatedDataContractV0),
 }

@@ -11,7 +11,7 @@ use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Bytes32, Error, Value};
 
 // TODO: Decide on what we need ExtendedDataContract with metadata or CreatedDataContract or both.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CreatedDataContractV0 {
     pub data_contract: DataContract,
     pub entropy_used: Bytes32,

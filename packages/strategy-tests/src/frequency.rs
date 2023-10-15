@@ -5,7 +5,7 @@ use rand::Rng;
 use std::collections::BTreeSet;
 use std::ops::Range;
 
-#[derive(Clone, Debug, Default, Encode, Decode)]
+#[derive(Clone, Debug, Default, PartialEq, Encode, Decode)]
 pub struct Frequency {
     pub times_per_block_range: Range<u16>, //insertion count when block is chosen
     pub chance_per_block: Option<f64>,     //chance of insertion if set
