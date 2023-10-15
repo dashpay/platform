@@ -1,8 +1,10 @@
 use crate::data_contract::DataContract;
+use bincode::{Decode, Encode};
 
 #[cfg(feature = "data-contract-value-conversion")]
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::fields::property_names::{DATA_CONTRACT, ENTROPY};
+use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
@@ -12,6 +14,12 @@ use platform_value::{Bytes32, Error, Value};
 #[derive(Clone, Debug)]
 pub struct CreatedDataContractV0 {
     pub data_contract: DataContract,
+    pub entropy_used: Bytes32,
+}
+
+#[derive(Clone, Debug, Encode, Decode)]
+pub struct CreatedDataContractInSerializationFormatV0 {
+    pub data_contract: DataContractInSerializationFormat,
     pub entropy_used: Bytes32,
 }
 

@@ -7,5 +7,6 @@ edition = "2021"
 
 [dependencies]
 anyhow = { version = "1.0.70" }
+bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.1" }
 dpp = { path = "../rs-dpp", features = ["abci"] }
