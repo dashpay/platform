@@ -1,6 +1,7 @@
 /* eslint-disable no-param-reassign */
+const fs = require('fs');
 
-const { NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_MAINNET } = require('../src/constants');
+const {NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_MAINNET} = require('../src/constants');
 
 /**
  * @param {HomeDir} homeDir
@@ -228,6 +229,30 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
             }
             options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
             options.platform.dapi.api.docker.image = base.get('platform.drive.abci.docker.image');
+          });
+
+        return configFile;
+      },
+      '0.25.4': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (options.network !== NETWORK_MAINNET) {
+              const oldPrivateKeyPath = homeDir.joinPath('ssl', name, 'private.key');
+              const oldCertificatePath = homeDir.joinPath('ssl', name, 'bundle.crt');
+
+              const newPrivateKeyPath = homeDir.joinPath(name,
+                'platform', 'dapi', 'envoy', 'ssl', 'private.key');
+              const newCertificatePath = homeDir.joinPath(name,
+                'platform', 'dapi', 'envoy', 'ssl', 'bundle.crt');
+
+              if (fs.existsSync(oldPrivateKeyPath)) {
+                fs.copyFileSync(oldPrivateKeyPath, newPrivateKeyPath);
+              }
+
+              if (fs.existsSync(oldCertificatePath)) {
+                fs.copyFileSync(oldCertificatePath, newCertificatePath);
+              }
+            }
           });
 
         return configFile;

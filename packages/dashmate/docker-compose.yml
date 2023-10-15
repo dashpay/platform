@@ -173,8 +173,8 @@ services:
       - ENVOY_GID=${LOCAL_GID:?err}
     volumes:
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
-      - ${DASHMATE_HOME_DIR:?err}/ssl/${CONFIG_NAME:?err}/bundle.crt:/etc/ssl/bundle.crt:ro
-      - ${DASHMATE_HOME_DIR:?err}/ssl/${CONFIG_NAME:?err}/private.key:/etc/ssl/private.key:ro
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/ssl/bundle.crt:/etc/ssl/bundle.crt:ro
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/ssl/private.key:/etc/ssl/private.key:ro
     stop_grace_period: 10s
     profiles:
       - platform
