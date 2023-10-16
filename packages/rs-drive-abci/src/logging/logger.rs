@@ -179,11 +179,18 @@ impl Loggers {
     /// ```
     /// drive_abci::logging::Loggers::default().try_install().ok();
     /// ```
-    pub fn try_install(&self) -> Result<(), TryInitError> {
+    pub fn try_install(&self) -> Result<(), Error> {
         // Based on examples from https://docs.rs/tracing-subscriber/0.3.17/tracing_subscriber/layer/index.html
-        let loggers = self.0.values().map(|l| Box::new(l.layer())).collect_vec();
+        let loggers = self
+            .0
+            .values()
+            .map(|l| Ok(Box::new(l.layer()?)))
+            .collect::<Result<Vec<_>, _>>()?;
 
-        registry().with(loggers).try_init()
+        registry()
+            .with(loggers)
+            .try_init()
+            .map_err(Error::TryInitError)
     }
 
     /// Flushes all loggers.
@@ -293,7 +300,7 @@ impl Default for Logger {
 impl Logger {
     /// Register the logger in a registry
     // : Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>
-    fn layer(&self) -> impl Layer<Registry> {
+    fn layer(&self) -> Result<impl Layer<Registry>, Error> {
         let ansi = self
             .color
             .unwrap_or(match self.destination.lock().unwrap().deref() {
@@ -305,18 +312,20 @@ impl Logger {
         let cloned = self.destination.clone();
         let make_writer = { move || Writer::new(Arc::clone(&cloned)) };
 
-        let filter = EnvFilter::from(&self.level);
+        let filter = EnvFilter::try_from(&self.level)?;
 
         let formatter = fmt::layer::<Registry>()
             .with_writer(make_writer)
             .with_ansi(ansi);
 
-        match self.format {
+        let formatter = match self.format {
             LogFormat::Full => formatter.with_filter(filter).boxed(),
             LogFormat::Compact => formatter.compact().with_filter(filter).boxed(),
             LogFormat::Pretty => formatter.pretty().with_filter(filter).boxed(),
             LogFormat::Json => formatter.json().with_filter(filter).boxed(),
-        }
+        };
+
+        Ok(formatter)
     }
 
     /// Rotate log files

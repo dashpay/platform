@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use tracing_subscriber::filter::ParseError;
+use tracing_subscriber::util::TryInitError;
 
 /// Errors returned by logging subsystem
 #[derive(thiserror::Error, Debug)]
@@ -22,4 +24,12 @@ pub enum Error {
     /// Undefined verbosity level
     #[error("undefined log verbosity level {0}")]
     InvalidVerbosityLevel(u8),
+
+    /// Failed to parse log specification string
+    #[error("invalid log specification {0}")]
+    InvalidLogSpecification(ParseError),
+
+    /// Failed to initialize logging
+    #[error("failed to initialize logging {0}")]
+    TryInitError(TryInitError),
 }

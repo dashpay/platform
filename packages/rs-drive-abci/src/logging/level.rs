@@ -89,25 +89,29 @@ impl TryFrom<u8> for LogLevel {
     }
 }
 
-impl From<&LogLevel> for EnvFilter {
-    fn from(value: &LogLevel) -> Self {
-        match value {
+impl TryFrom<&LogLevel> for EnvFilter {
+    type Error = Error;
+
+    fn try_from(value: &LogLevel) -> Result<Self, Error> {
+        let env_filter = match value {
             LogLevel::Silent => EnvFilter::default(),
-            LogLevel::Custom(configuration) => EnvFilter::new(configuration),
-            LogLevel::Error => EnvFilter::new("error"),
+            LogLevel::Custom(configuration) => EnvFilter::try_new(configuration).map_err(Error::InvalidLogSpecification)?,
+            LogLevel::Error => EnvFilter::try_new("error").expect("should be a valid log specification"),
             LogLevel::Warn => {
-                EnvFilter::new("error,tenderdash_abci=warn,drive_abci=warn,drive=warn,dpp=warn")
+                EnvFilter::try_new("error,tenderdash_abci=warn,drive_abci=warn,drive=warn,dpp=warn").expect("should be a valid log specification")
             }
             LogLevel::Info => {
-                EnvFilter::new("error,tenderdash_abci=info,drive_abci=info,drive=info,dpp=info")
+                EnvFilter::try_new("error,tenderdash_abci=info,drive_abci=info,drive=info,dpp=info").expect("should be a valid log specification")
             }
             LogLevel::Debug => {
-                EnvFilter::new("info,tenderdash_abci=debug,drive_abci=debug,drive=debug,dpp=debug")
+                EnvFilter::try_new("info,tenderdash_abci=debug,drive_abci=debug,drive=debug,dpp=debug").expect("should be a valid log specification")
             }
             LogLevel::Trace => {
-                EnvFilter::new("debug,tenderdash_abci=trace,drive_abci=trace,drive=trace,dpp=trace,drive::drive::grove_operations=debug")
+                EnvFilter::try_new("debug,tenderdash_abci=trace,drive_abci=trace,drive=trace,dpp=trace,drive::drive::grove_operations=debug").expect("should be a valid log specification")
             }
-            LogLevel::Paranoid => EnvFilter::new("trace"),
-        }
+            LogLevel::Paranoid => EnvFilter::try_new("trace").expect("should be a valid log specification"),
+        };
+
+        Ok(env_filter)
     }
 }

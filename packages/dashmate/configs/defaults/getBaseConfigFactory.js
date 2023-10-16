@@ -164,7 +164,7 @@ function getBaseConfigFactory(homeDir) {
               stdout: {
                 destination: 'stdout',
                 level: 'info',
-                format: 'pretty',
+                format: 'compact',
                 color: true,
               },
             },
