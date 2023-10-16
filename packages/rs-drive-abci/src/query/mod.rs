@@ -25,23 +25,79 @@ impl<C> Platform<C> {
 
 #[cfg(test)]
 mod tests {
-
     use crate::config::PlatformConfig;
     use crate::error::query::QueryError;
+    use crate::platform_types::platform::Platform;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use dpp::block::block_info::BlockInfo;
+    use dpp::block::epoch::Epoch;
+    use dpp::identity::Identity;
+    use dpp::prelude::DataContract;
+    use drive::drive::batch::DataContractOperationType;
+    use drive::drive::batch::DriveOperation::DataContractOperation;
     use platform_version::version::PlatformVersion;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
+    use std::borrow::Cow;
 
     fn setup_platform<'a>() -> (TempPlatform<MockCoreRPCLike>, &'a PlatformVersion) {
-        (
-            TestPlatformBuilder::new()
-                .with_config(PlatformConfig {
-                    ..Default::default()
-                })
-                .build_with_mock_rpc(),
-            PlatformVersion::latest(),
-        )
+        let platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig {
+                ..Default::default()
+            })
+            .build_with_mock_rpc();
+        let platform_version = PlatformVersion::latest();
+        let platform = platform.set_initial_state_structure();
+
+        // platform_version.ini
+        // platform
+        //     .platform
+        //     .drive
+        //     .create_initial_state_structure(None, platform_version)
+        //     .expect("to create initial drive state structure");
+
+        (platform, platform_version)
     }
+
+    // TODO: move to TempPlatform impl?
+    fn create_identity(platform_version: &PlatformVersion) -> Identity {
+        let mut rng = StdRng::seed_from_u64(42);
+        let (mut identities, _) = Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
+            1,
+            3,
+            &mut rng,
+            platform_version,
+        )
+        .expect("expected to create identities");
+
+        identities.remove(0)
+    }
+
+    // TODO: move to TempPlatform impl?
+    fn store_data_contract(
+        platform: &Platform<MockCoreRPCLike>,
+        data_contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) {
+        let operation = DataContractOperation(DataContractOperationType::ApplyContract {
+            contract: Cow::Owned(data_contract.to_owned()),
+            storage_flags: None,
+        });
+
+        let block_info = BlockInfo {
+            time_ms: 0,
+            height: 0,
+            core_height: 0,
+            epoch: Epoch::default(),
+        };
+
+        platform
+            .drive
+            .apply_drive_operations(vec![operation], true, &block_info, None, platform_version)
+            .expect("expected to apply drive operations");
+    }
+
     #[test]
     /// Tests for query handler
     fn test_invalid_path() {
@@ -242,6 +298,7 @@ mod tests {
 
         const QUERY_PATH: &str = "/identity/balance";
 
+        // TODO: move to a standalone function to avoid code duplication complaints?
         #[test]
         fn test_invalid_identity_id() {
             let (platform, version) = super::setup_platform();
@@ -701,8 +758,7 @@ mod tests {
     mod data_contracts {
         use crate::error::query::QueryError;
         use dapi_grpc::platform::v0::{
-            get_data_contracts_response, get_identities_response, GetDataContractsRequest,
-            GetDataContractsResponse, GetIdentitiesRequest, GetIdentitiesResponse,
+            get_data_contracts_response, GetDataContractsRequest, GetDataContractsResponse,
         };
         use prost::Message;
 
@@ -778,7 +834,7 @@ mod tests {
     mod data_contract_history {
         use crate::error::query::QueryError;
         use bs58::encode;
-        use dapi_grpc::platform::v0::{GetDataContractHistoryRequest, GetDataContractRequest};
+        use dapi_grpc::platform::v0::GetDataContractHistoryRequest;
         use prost::Message;
 
         const QUERY_PATH: &str = "/dataContractHistory";
@@ -903,6 +959,111 @@ mod tests {
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
             assert_eq!(result.unwrap().errors.len(), 0);
+        }
+    }
+
+    mod documents {
+        use crate::error::query::QueryError;
+        use crate::query::tests::{create_identity, store_data_contract};
+        use dapi_grpc::platform::v0::GetDocumentsRequest;
+
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::platform_value::string_encoding::Encoding;
+        use dpp::tests::fixtures::get_data_contract_fixture;
+        use prost::Message;
+
+        const QUERY_PATH: &str = "/documents";
+
+        #[test]
+        fn test_invalid_document_id() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetDocumentsRequest {
+                data_contract_id: vec![0; 8],
+                document_type: "niceDocument".to_string(),
+                r#where: vec![],
+                limit: 0,
+                order_by: vec![],
+                prove: false,
+                start: None,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+            let validation_error = validation_result.first_error().unwrap();
+
+            assert!(matches!(
+                validation_error,
+                QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
+            ));
+        }
+
+        #[test]
+        fn test_data_contract_not_found() {
+            let (platform, version) = super::setup_platform();
+
+            let data_contract_id = vec![0; 32];
+            let request = GetDocumentsRequest {
+                data_contract_id: data_contract_id.clone(),
+                document_type: "niceDocument".to_string(),
+                r#where: vec![],
+                limit: 0,
+                order_by: vec![],
+                prove: false,
+                start: None,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            let validation_result = result.unwrap();
+
+            let message = format!(
+                "data contract {} not found",
+                bs58::encode(data_contract_id).into_string()
+            );
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::NotFound(msg) if msg.contains(message.as_str())
+            ))
+        }
+
+        #[test]
+        fn test_absent_document_type() {
+            let (platform, version) = super::setup_platform();
+
+            let identity = create_identity(&version);
+            let created_data_contract =
+                get_data_contract_fixture(Some(identity.id()), version.protocol_version);
+            store_data_contract(&platform, created_data_contract.data_contract(), version);
+
+            let data_contract_id = created_data_contract.data_contract().id();
+            let document_type = "fakeDocument";
+            let request = GetDocumentsRequest {
+                data_contract_id: data_contract_id.to_vec(),
+                document_type: document_type.to_string(),
+                r#where: vec![],
+                limit: 0,
+                order_by: vec![],
+                prove: false,
+                start: None,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            let validation_result = result.unwrap();
+
+            let message = format!(
+                "document type {} not found for contract {}",
+                document_type,
+                data_contract_id.to_string(Encoding::Base58)
+            );
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::InvalidArgument(msg) if msg.contains(message.as_str())
+            ))
         }
     }
 }
