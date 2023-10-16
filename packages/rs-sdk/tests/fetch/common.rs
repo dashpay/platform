@@ -22,7 +22,6 @@ pub const DOCUMENT_TYPE_NAME: &str = "indexedDocument";
 /// Create new SDK instance connecting to local network, based on constants defined in this module
 pub fn setup_api() -> rs_sdk::Sdk {
     use rs_dapi_client::AddressList;
-
     let uri = http::Uri::from_maybe_shared(format!("http://{}:{}", PLATFORM_IP, PLATFORM_PORT))
         .expect("platform address");
     let addresses = AddressList::from(vec![uri]);

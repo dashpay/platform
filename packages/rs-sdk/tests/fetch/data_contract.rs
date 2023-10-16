@@ -1,7 +1,7 @@
 use dpp::prelude::{DataContract, Identifier};
 use rs_sdk::platform::Fetch;
-
-include!("common.rs");
+use crate::common;
+use crate::common::{base64_identifier, setup_api};
 
 /// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
 ///
@@ -34,7 +34,7 @@ async fn test_data_contract_read_not_found() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_data_contract_read() {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    let id = base64_identifier(DATA_CONTRACT_ID);
+    let id = base64_identifier(common::DATA_CONTRACT_ID);
 
     let mut api = setup_api();
 

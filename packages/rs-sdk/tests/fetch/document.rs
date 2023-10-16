@@ -10,8 +10,7 @@ use drive::query::DriveQuery;
 
 use rs_sdk::platform::DocumentQuery;
 use rs_sdk::platform::{Fetch, List};
-
-include!("common.rs");
+use crate::common::{setup_logs, setup_api, base64_identifier, DATA_CONTRACT_ID, DOCUMENT_TYPE_NAME};
 
 /// Given some data contract ID, document type and document ID, when I fetch it, then I get it.
 ///
