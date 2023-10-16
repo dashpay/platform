@@ -31,8 +31,8 @@ use dpp::state_transition::{GetDataContractSecurityLevelRequirementFn, StateTran
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
 use dpp::NativeBlsModule;
-use simple_signer::signer::SimpleSigner;
 use rand::prelude::{IteratorRandom, StdRng};
+use simple_signer::signer::SimpleSigner;
 
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -54,7 +54,7 @@ use std::str::FromStr;
 ///      - The index (`0` in this case) indicating which output in the transaction corresponds to the locked asset.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let one_time_private_key = PrivateKey::from_str("some_valid_private_key").unwrap();
 /// let asset_lock_proof = instant_asset_lock_proof_fixture(one_time_private_key);
 /// ```
@@ -81,7 +81,7 @@ pub fn instant_asset_lock_proof_fixture(one_time_private_key: PrivateKey) -> Ass
 /// - `one_time_private_key`: A unique private key (`PrivateKey`) to be used for generating the locking transaction. This key typically corresponds to a one-time address where assets will be locked.
 ///
 /// # Returns
-/// - `Transaction`: A constructed transaction with a specific structure: 
+/// - `Transaction`: A constructed transaction with a specific structure:
 ///   - An input that spends from a predetermined `Txid` and address.
 ///   - Three outputs:
 ///     1. A burn output, which is an `OP_RETURN` output containing the hash of the one-time public key, effectively "locking" the assets.
@@ -89,7 +89,7 @@ pub fn instant_asset_lock_proof_fixture(one_time_private_key: PrivateKey) -> Ass
 ///     3. An unrelated burn output with arbitrary data.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let one_time_private_key = PrivateKey::from_str("some_valid_private_key").unwrap();
 /// let transaction = instant_asset_lock_proof_transaction_fixture(one_time_private_key);
 /// ```
@@ -152,7 +152,7 @@ pub fn instant_asset_lock_proof_transaction_fixture(
 /// - `InstantLock`: A constructed `InstantLock` with predefined values for version, inputs, cyclehash, and signature, but with the `tx_id` as provided in the function argument.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let tx_id = Txid::from_str("some_valid_tx_id").unwrap();
 /// let instant_lock = instant_asset_lock_is_lock_fixture(tx_id);
 /// ```
@@ -187,7 +187,7 @@ pub fn instant_asset_lock_is_lock_fixture(tx_id: Txid) -> InstantLock {
 /// - `StateTransition`: A constructed and signed state transition that represents the identity top-up action.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let top_up_transition = create_identity_top_up_transition(
 ///     &mut rng,
 ///     &identity,
@@ -246,7 +246,7 @@ pub fn create_identity_top_up_transition(
 ///   * A vector of the newly added public authentication keys.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let (update_transition, (id, added_keys)) = create_identity_update_transition_add_keys(
 ///     &mut identity,
 ///     2,
@@ -304,7 +304,7 @@ pub fn create_identity_update_transition_add_keys(
 ///
 /// This function performs the following key steps:
 /// 1. Increments the revision of the identity to represent a new version.
-/// 2. Filters the identity's public keys to identify those which are not disabled, except for the 
+/// 2. Filters the identity's public keys to identify those which are not disabled, except for the
 ///    master key or critical authentication keys using ECDSA_SECP256K1.
 /// 3. Randomly selects a set of keys based on the provided count to disable.
 /// 4. Marks these keys as disabled using the given block time.
@@ -314,17 +314,17 @@ pub fn create_identity_update_transition_add_keys(
 /// - `identity`: A mutable reference to the identity being updated.
 /// - `count`: The number of keys that should be disabled.
 /// - `block_time`: The block timestamp to set as the disabled timestamp for keys.
-/// - `signer`: A mutable reference to the signer utilized to create the cryptographic signature for 
+/// - `signer`: A mutable reference to the signer utilized to create the cryptographic signature for
 ///   the state transition.
 /// - `rng`: A mutable reference to a random number generator, used for selecting which keys to disable.
 /// - `platform_version`: A reference to the platform version for compatibility purposes.
 ///
 /// # Returns
-/// - `Option<StateTransition>`: The constructed and signed state transition representing the identity update. 
+/// - `Option<StateTransition>`: The constructed and signed state transition representing the identity update.
 ///   Returns `None` if there are no keys that can be disabled.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let update_transition = create_identity_update_transition_disable_keys(
 ///     &mut identity,
 ///     2,
@@ -406,13 +406,13 @@ pub fn create_identity_update_transition_disable_keys(
 /// Creates a state transition for an identity's credit withdrawal.
 ///
 /// This function generates a state transition representing the withdrawal of credits from an identity.
-/// The withdrawal amount is set to 0.001 Dash. The function first bumps the revision 
-/// of the identity and then constructs the withdrawal transition. Subsequently, it's signed using the 
+/// The withdrawal amount is set to 0.001 Dash. The function first bumps the revision
+/// of the identity and then constructs the withdrawal transition. Subsequently, it's signed using the
 /// identity's authentication key for validity and authenticity.
 ///
 /// # Parameters
 /// - `identity`: A mutable reference to the identity making the withdrawal.
-/// - `signer`: A mutable reference to the signer used to create the cryptographic signature for 
+/// - `signer`: A mutable reference to the signer used to create the cryptographic signature for
 ///   the state transition.
 /// - `rng`: A mutable reference to a random number generator, used for generating the random Pay-To-Script-Hash (P2SH).
 ///
@@ -420,7 +420,7 @@ pub fn create_identity_update_transition_disable_keys(
 /// - `StateTransition`: The constructed and signed state transition representing the identity's credit withdrawal.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let withdrawal_transition = create_identity_withdrawal_transition(
 ///     &mut identity,
 ///     &mut signer,
@@ -471,24 +471,24 @@ pub fn create_identity_withdrawal_transition(
 
 /// Creates a state transition for transferring credits between two identities.
 ///
-/// This function generates a state transition that represents the transfer of a specified 
-/// amount of credits from one identity (`identity`) to another (`recipient`). 
-/// After constructing the transition, it's then signed using the sender's (identity's) 
+/// This function generates a state transition that represents the transfer of a specified
+/// amount of credits from one identity (`identity`) to another (`recipient`).
+/// After constructing the transition, it's then signed using the sender's (identity's)
 /// authentication key to ensure its validity and authenticity.
 ///
 /// # Parameters
 /// - `identity`: A reference to the identity that is the sender of the credit transfer.
 /// - `recipient`: A reference to the identity that is the recipient of the credit transfer.
-/// - `signer`: A mutable reference to a signer, used for creating the cryptographic signature 
+/// - `signer`: A mutable reference to a signer, used for creating the cryptographic signature
 ///   for the state transition.
 /// - `amount`: The number of credits to be transferred from the sender to the recipient.
 ///
 /// # Returns
-/// - `StateTransition`: The constructed and signed state transition representing the credit transfer 
+/// - `StateTransition`: The constructed and signed state transition representing the credit transfer
 ///   between the two specified identities.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let transfer_transition = create_identity_credit_transfer_transition(
 ///     &sender_identity,
 ///     &recipient_identity,
@@ -537,19 +537,19 @@ pub fn create_identity_credit_transfer_transition(
 
 /// Generates a specified number of new identities and their corresponding state transitions.
 ///
-/// This function first creates a specified number of random identities along with their 
-/// associated cryptographic keys. After generating these identities and their keys, it adds 
-/// the keys to the signer and then creates the state transitions representing the creation 
+/// This function first creates a specified number of random identities along with their
+/// associated cryptographic keys. After generating these identities and their keys, it adds
+/// the keys to the signer and then creates the state transitions representing the creation
 /// of these identities on the blockchain.
 ///
 /// # Parameters
 /// - `count`: The number of identities to generate and for which state transitions will be created.
 /// - `key_count`: The number of cryptographic keys to generate for each identity.
-/// - `signer`: A mutable reference to a signer, used for creating cryptographic signatures for 
+/// - `signer`: A mutable reference to a signer, used for creating cryptographic signatures for
 ///   the state transitions.
-/// - `rng`: A mutable reference to a random number generator, used to generate random values during 
+/// - `rng`: A mutable reference to a random number generator, used to generate random values during
 ///   the cryptographic key creation process and while generating the random identities.
-/// - `platform_version`: A reference to the version of the platform being used. Ensuring the correct 
+/// - `platform_version`: A reference to the version of the platform being used. Ensuring the correct
 ///   platform version is used is crucial for compatibility and consistency in state transition creation.
 ///
 /// # Returns
@@ -558,7 +558,7 @@ pub fn create_identity_credit_transfer_transition(
 /// 2. `StateTransition`: The generated state transition representing the creation of the identity.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let transitions = create_identities_state_transitions(
 ///     10,
 ///     KeyID::default(),
@@ -593,17 +593,17 @@ pub fn create_identities_state_transitions(
 /// Generates state transitions for the creation of new identities.
 ///
 /// This function is responsible for converting identities into their respective state transitions,
-/// which represent their creation on the blockchain. The process involves generating cryptographic 
-/// keys, creating an asset lock proof, and then constructing the identity creation state transition 
+/// which represent their creation on the blockchain. The process involves generating cryptographic
+/// keys, creating an asset lock proof, and then constructing the identity creation state transition
 /// using the provided data.
 ///
 /// # Parameters
 /// - `identities`: A vector containing the identities for which state transitions are to be created.
-/// - `signer`: A mutable reference to a signer, used for creating cryptographic signatures for 
+/// - `signer`: A mutable reference to a signer, used for creating cryptographic signatures for
 ///   the state transitions.
-/// - `rng`: A mutable reference to a random number generator, used to generate random values during 
+/// - `rng`: A mutable reference to a random number generator, used to generate random values during
 ///   the cryptographic key creation process.
-/// - `platform_version`: A reference to the version of the platform being used. Ensuring the correct 
+/// - `platform_version`: A reference to the version of the platform being used. Ensuring the correct
 ///   platform version is used is crucial for compatibility and consistency in state transition creation.
 ///
 /// # Returns
@@ -612,7 +612,7 @@ pub fn create_identities_state_transitions(
 /// 2. `StateTransition`: The generated state transition representing the creation of the identity.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let transitions = create_state_transitions_for_identities(
 ///     identities,
 ///     &mut signer,

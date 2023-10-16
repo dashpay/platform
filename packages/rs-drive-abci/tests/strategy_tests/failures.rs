@@ -51,6 +51,7 @@ mod tests {
                 deterministic_start_seed: Some(99),
                 dont_finalize_block: true,
                 expect_errors_with_codes: vec![],
+                rounds_before_successful_block: None,
             }),
             query_testing: None,
             verify_state_transition_results: true,
@@ -249,6 +250,7 @@ mod tests {
                 deterministic_start_seed: None,
                 dont_finalize_block: false,
                 expect_errors_with_codes: vec![4009], //duplicate unique index
+                rounds_before_successful_block: None,
             }),
             query_testing: None,
             verify_state_transition_results: true,

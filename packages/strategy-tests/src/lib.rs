@@ -87,9 +87,7 @@ pub struct Strategy {
     pub signer: Option<SimpleSigner>,
 }
 
-
 impl Strategy {
-
     /// Adds strategy contracts from the current operations into a specified Drive.
     ///
     /// This method iterates over the operations present in the current strategy. For each operation
@@ -156,7 +154,7 @@ impl Strategy {
     /// A vector of tuples containing `Identity` and its associated `StateTransition`.
     ///
     /// # Examples
-    /// ```
+    /// ```ignore
     /// // Assuming `strategy` is an instance of `Strategy`,
     /// // and `block_info`, `signer`, `rng`, and `platform_version` are appropriately initialized.
     /// let state_transitions = strategy.identity_state_transitions_for_block(&block_info, &mut signer, &mut rng, &platform_version);
@@ -190,7 +188,7 @@ impl Strategy {
 
     /// Generates state transitions for data contracts based on the current set of identities.
     ///
-    /// This method creates state transitions for data contracts by iterating over the contracts with updates 
+    /// This method creates state transitions for data contracts by iterating over the contracts with updates
     /// present in the strategy. For each contract:
     /// 1. An identity is randomly selected from the provided list of current identities.
     /// 2. The owner ID of the contract is set to the selected identity's ID.
@@ -281,7 +279,7 @@ impl Strategy {
 
     /// Generates state transitions for updating data contracts based on the current set of identities and block height.
     ///
-    /// This method creates update state transitions for data contracts by iterating over the contracts with updates 
+    /// This method creates update state transitions for data contracts by iterating over the contracts with updates
     /// present in the strategy. For each contract:
     /// 1. It checks for any contract updates associated with the provided block height.
     /// 2. For each matching update, it locates the corresponding identity based on the owner ID in the update.
@@ -349,24 +347,24 @@ impl Strategy {
     /// the creation of state transitions for both new documents and updated documents in the system.
     ///
     /// # Parameters
-    /// - `platform`: A reference to the platform, which provides access to various blockchain 
+    /// - `platform`: A reference to the platform, which provides access to various blockchain
     ///   related functionalities and data.
     /// - `block_info`: Information about the block for which the state transitions are being generated.
     ///   This contains data such as its height and time.
-    /// - `current_identities`: A mutable reference to the list of current identities in the system. 
+    /// - `current_identities`: A mutable reference to the list of current identities in the system.
     ///   This list is used to facilitate state transitions related to the involved identities.
-    /// - `signer`: A mutable reference to a signer, which aids in creating cryptographic signatures 
+    /// - `signer`: A mutable reference to a signer, which aids in creating cryptographic signatures
     ///   for the state transitions.
-    /// - `rng`: A mutable reference to a random number generator, used for generating random values 
+    /// - `rng`: A mutable reference to a random number generator, used for generating random values
     ///   during state transition creation.
-    /// - `platform_version`: The version of the platform being used. This information is crucial 
+    /// - `platform_version`: The version of the platform being used. This information is crucial
     ///   to ensure compatibility and consistency in state transition generation.
     ///
     /// # Returns
     /// A tuple containing:
     /// 1. `Vec<StateTransition>`: A vector of state transitions generated for the given block.
     ///    These transitions encompass both new document state transitions and document update transitions.
-    /// 2. `Vec<FinalizeBlockOperation>`: A vector of finalize block operations which may be necessary 
+    /// 2. `Vec<FinalizeBlockOperation>`: A vector of finalize block operations which may be necessary
     ///    to conclude the block's processing.
     ///
     /// # Examples
@@ -382,7 +380,7 @@ impl Strategy {
     /// ```
     ///
     /// # Panics
-    /// This function may panic under unexpected conditions, for example, when unable to generate state 
+    /// This function may panic under unexpected conditions, for example, when unable to generate state
     /// transitions for the given block.
     pub fn state_transitions_for_block(
         &self,
@@ -889,13 +887,13 @@ impl Strategy {
     /// Generates state transitions for a block by considering new identities.
     ///
     /// This function processes state transitions with respect to identities, contracts,
-    /// and document operations. The state transitions are generated based on the 
+    /// and document operations. The state transitions are generated based on the
     /// given block's height and other parameters, with special handling for block height `1`.
     ///
     /// # Parameters
     /// - `platform`: A reference to the platform, which is parameterized with a mock core RPC type.
     /// - `block_info`: Information about the current block, like its height and time.
-    /// - `current_identities`: A mutable reference to the current set of identities. This list 
+    /// - `current_identities`: A mutable reference to the current set of identities. This list
     ///   may be appended with new identities during processing.
     /// - `signer`: A mutable reference to a signer used for creating cryptographic signatures.
     /// - `rng`: A mutable reference to a random number generator.
