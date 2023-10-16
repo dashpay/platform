@@ -3,22 +3,26 @@ mod tests {
     use tenderdash_abci::proto::types::CoreChainLock;
 
     use crate::execution::run_chain_for_strategy;
-    use crate::frequency::Frequency;
-    use crate::strategy::{MasternodeListChangesStrategy, Strategy};
+    use crate::strategy::{MasternodeListChangesStrategy, NetworkStrategy};
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::platform_types::validator_set::v0::ValidatorSetV0Getters;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
+    use strategy_tests::frequency::Frequency;
+    use strategy_tests::Strategy;
 
     #[test]
     fn run_chain_random_bans() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -51,7 +55,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
         };
 
         let quorum_size = 100;
@@ -115,13 +118,16 @@ mod tests {
 
     #[test]
     fn run_chain_random_removals() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -154,7 +160,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
         };
 
         let quorum_size = 100;
@@ -204,13 +209,16 @@ mod tests {
 
     #[test]
     fn run_chain_random_bans_and_unbans() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -246,7 +254,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
         };
 
         let quorum_size = 100;

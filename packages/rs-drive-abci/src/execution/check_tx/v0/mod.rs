@@ -130,10 +130,10 @@ mod tests {
     use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::SuccessfulPaidExecution;
     use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use crate::test::helpers::signer::SimpleSigner;
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::signature::SignatureError;
+    use simple_signer::signer::SimpleSigner;
 
     use dpp::consensus::ConsensusError;
     use dpp::dashcore::secp256k1::Secp256k1;
