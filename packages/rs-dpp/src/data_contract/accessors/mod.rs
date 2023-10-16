@@ -37,6 +37,12 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
+    fn document_type_cloned_for_name(&self, name: &str) -> Result<DocumentType, ProtocolError> {
+        match self {
+            DataContract::V0(v0) => v0.document_type_cloned_for_name(name),
+        }
+    }
+
     fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError> {
         match self {
             DataContract::V0(v0) => v0.document_type_for_name(name),
@@ -46,6 +52,12 @@ impl DataContractV0Getters for DataContract {
     fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef> {
         match self {
             DataContract::V0(v0) => v0.document_type_optional_for_name(name),
+        }
+    }
+
+    fn document_type_cloned_optional_for_name(&self, name: &str) -> Option<DocumentType> {
+        match self {
+            DataContract::V0(v0) => v0.document_type_cloned_optional_for_name(name),
         }
     }
 

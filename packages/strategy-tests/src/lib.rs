@@ -1,16 +1,22 @@
 use crate::frequency::Frequency;
 use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::operations::{
-    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
+    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation,
+    OperationInSerializationFormat, OperationType,
 };
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::created_data_contract::CreatedDataContract;
+use dpp::data_contract::created_data_contract::{
+    CreatedDataContract, CreatedDataContractInSerializationFormat,
+};
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
 
 use dpp::document::DocumentV0Getters;
 use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
-use dpp::serialization::PlatformSerializableWithPlatformVersion;
+use dpp::serialization::{
+    PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+    PlatformSerializableWithPlatformVersion,
+};
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::state_transition::StateTransition;
@@ -26,9 +32,12 @@ use rand::prelude::{IteratorRandom, StdRng};
 use rand::Rng;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
+use bincode::{Decode, Encode};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::platform_value::BinaryData;
+use dpp::ProtocolError;
+use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use dpp::state_transition::documents_batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 use dpp::state_transition::documents_batch_transition::document_create_transition::{DocumentCreateTransition, DocumentCreateTransitionV0};
 use dpp::state_transition::documents_batch_transition::document_transition::document_delete_transition::DocumentDeleteTransitionV0;
@@ -37,6 +46,7 @@ use dpp::state_transition::documents_batch_transition::{DocumentsBatchTransition
 use dpp::state_transition::documents_batch_transition::document_transition::{DocumentDeleteTransition, DocumentReplaceTransition};
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use simple_signer::signer::SimpleSigner;
 
 pub mod frequency;
@@ -64,6 +74,9 @@ pub mod transitions;
 ///
 /// # Usage
 /// ```rust
+/// use simple_signer::signer::SimpleSigner;
+/// use strategy_tests::frequency::Frequency;
+/// use strategy_tests::Strategy;
 /// let strategy = Strategy {
 ///     contracts_with_updates: vec![...],
 ///     operations: vec![...],
@@ -75,7 +88,7 @@ pub mod transitions;
 ///
 /// # Note
 /// Ensure that when using or updating the `Strategy`, all associated operations, identities, and contracts are coherent with the intended workflow or simulation. Inconsistencies might lead to unexpected behaviors or simulation failures.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(
         CreatedDataContract,
@@ -87,9 +100,162 @@ pub struct Strategy {
     pub signer: Option<SimpleSigner>,
 }
 
+#[derive(Clone, Debug, Encode, Decode)]
+struct StrategyInSerializationFormat {
+    pub contracts_with_updates: Vec<(Vec<u8>, Option<BTreeMap<u64, Vec<u8>>>)>,
+    pub operations: Vec<Vec<u8>>,
+    pub start_identities: Vec<(Identity, StateTransition)>,
+    pub identities_inserts: Frequency,
+    pub signer: Option<SimpleSigner>,
+}
+
+impl PlatformSerializableWithPlatformVersion for Strategy {
+    type Error = ProtocolError;
+
+    fn serialize_to_bytes_with_platform_version(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        self.clone()
+            .serialize_consume_to_bytes_with_platform_version(platform_version)
+    }
+
+    fn serialize_consume_to_bytes_with_platform_version(
+        self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let Strategy {
+            contracts_with_updates,
+            operations,
+            start_identities,
+            identities_inserts,
+            signer,
+        } = self;
+
+        let contract_with_updates_in_serialization_format = contracts_with_updates
+            .into_iter()
+            .map(|(created_data_contract, maybe_updates)| {
+                let serialized_created_data_contract = created_data_contract
+                    .serialize_consume_to_bytes_with_platform_version(platform_version)?;
+                let maybe_updates = maybe_updates
+                    .map(|updates| {
+                        updates
+                            .into_iter()
+                            .map(|(key, value)| {
+                                let serialized_created_data_contract_update = value
+                                    .serialize_consume_to_bytes_with_platform_version(
+                                        platform_version,
+                                    )?;
+                                Ok((key, serialized_created_data_contract_update))
+                            })
+                            .collect::<Result<BTreeMap<u64, Vec<u8>>, ProtocolError>>()
+                    })
+                    .transpose()?;
+                Ok((serialized_created_data_contract, maybe_updates))
+            })
+            .collect::<Result<Vec<(Vec<u8>, Option<BTreeMap<u64, Vec<u8>>>)>, ProtocolError>>()?;
+
+        let operations_in_serialization_format = operations
+            .into_iter()
+            .map(|operation| {
+                operation.serialize_consume_to_bytes_with_platform_version(platform_version)
+            })
+            .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()?;
+
+        let strategy_in_serialization_format = StrategyInSerializationFormat {
+            contracts_with_updates: contract_with_updates_in_serialization_format,
+            operations: operations_in_serialization_format,
+            start_identities,
+            identities_inserts,
+            signer,
+        };
+
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        bincode::encode_to_vec(strategy_in_serialization_format, config)
+            .map_err(|e| PlatformSerializationError(format!("unable to serialize Strategy: {}", e)))
+    }
+}
+
+impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Strategy {
+    fn versioned_deserialize(
+        data: &[u8],
+        validate: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        let strategy: StrategyInSerializationFormat =
+            bincode::borrow_decode_from_slice(data, config)
+                .map_err(|e| {
+                    PlatformDeserializationError(format!("unable to deserialize Strategy: {}", e))
+                })?
+                .0;
+
+        let StrategyInSerializationFormat {
+            contracts_with_updates,
+            operations,
+            start_identities,
+            identities_inserts,
+            signer,
+        } = strategy;
+
+        let contracts_with_updates = contracts_with_updates
+            .into_iter()
+            .map(|(serialized_contract, maybe_updates)| {
+                let contract = CreatedDataContract::versioned_deserialize(
+                    serialized_contract.as_slice(),
+                    validate,
+                    platform_version,
+                )?;
+                let maybe_updates = maybe_updates
+                    .map(|updates| {
+                        updates
+                            .into_iter()
+                            .map(|(key, serialized_contract_update)| {
+                                let update = CreatedDataContract::versioned_deserialize(
+                                    serialized_contract_update.as_slice(),
+                                    validate,
+                                    platform_version,
+                                )?;
+                                Ok((key, update))
+                            })
+                            .collect::<Result<BTreeMap<u64, CreatedDataContract>, ProtocolError>>()
+                    })
+                    .transpose()?;
+                Ok((contract, maybe_updates))
+            })
+            .collect::<Result<
+                Vec<(
+                    CreatedDataContract,
+                    Option<BTreeMap<u64, CreatedDataContract>>,
+                )>,
+                ProtocolError,
+            >>()?;
+
+        let operations = operations
+            .into_iter()
+            .map(|operation| {
+                Operation::versioned_deserialize(operation.as_slice(), validate, platform_version)
+            })
+            .collect::<Result<Vec<Operation>, ProtocolError>>()?;
+
+        Ok(Strategy {
+            contracts_with_updates,
+            operations,
+            start_identities,
+            identities_inserts,
+            signer,
+        })
+    }
+}
 
 impl Strategy {
-
     /// Adds strategy contracts from the current operations into a specified Drive.
     ///
     /// This method iterates over the operations present in the current strategy. For each operation
@@ -190,7 +356,7 @@ impl Strategy {
 
     /// Generates state transitions for data contracts based on the current set of identities.
     ///
-    /// This method creates state transitions for data contracts by iterating over the contracts with updates 
+    /// This method creates state transitions for data contracts by iterating over the contracts with updates
     /// present in the strategy. For each contract:
     /// 1. An identity is randomly selected from the provided list of current identities.
     /// 2. The owner ID of the contract is set to the selected identity's ID.
@@ -281,7 +447,7 @@ impl Strategy {
 
     /// Generates state transitions for updating data contracts based on the current set of identities and block height.
     ///
-    /// This method creates update state transitions for data contracts by iterating over the contracts with updates 
+    /// This method creates update state transitions for data contracts by iterating over the contracts with updates
     /// present in the strategy. For each contract:
     /// 1. It checks for any contract updates associated with the provided block height.
     /// 2. For each matching update, it locates the corresponding identity based on the owner ID in the update.
@@ -349,24 +515,24 @@ impl Strategy {
     /// the creation of state transitions for both new documents and updated documents in the system.
     ///
     /// # Parameters
-    /// - `platform`: A reference to the platform, which provides access to various blockchain 
+    /// - `platform`: A reference to the platform, which provides access to various blockchain
     ///   related functionalities and data.
     /// - `block_info`: Information about the block for which the state transitions are being generated.
     ///   This contains data such as its height and time.
-    /// - `current_identities`: A mutable reference to the list of current identities in the system. 
+    /// - `current_identities`: A mutable reference to the list of current identities in the system.
     ///   This list is used to facilitate state transitions related to the involved identities.
-    /// - `signer`: A mutable reference to a signer, which aids in creating cryptographic signatures 
+    /// - `signer`: A mutable reference to a signer, which aids in creating cryptographic signatures
     ///   for the state transitions.
-    /// - `rng`: A mutable reference to a random number generator, used for generating random values 
+    /// - `rng`: A mutable reference to a random number generator, used for generating random values
     ///   during state transition creation.
-    /// - `platform_version`: The version of the platform being used. This information is crucial 
+    /// - `platform_version`: The version of the platform being used. This information is crucial
     ///   to ensure compatibility and consistency in state transition generation.
     ///
     /// # Returns
     /// A tuple containing:
     /// 1. `Vec<StateTransition>`: A vector of state transitions generated for the given block.
     ///    These transitions encompass both new document state transitions and document update transitions.
-    /// 2. `Vec<FinalizeBlockOperation>`: A vector of finalize block operations which may be necessary 
+    /// 2. `Vec<FinalizeBlockOperation>`: A vector of finalize block operations which may be necessary
     ///    to conclude the block's processing.
     ///
     /// # Examples
@@ -382,7 +548,7 @@ impl Strategy {
     /// ```
     ///
     /// # Panics
-    /// This function may panic under unexpected conditions, for example, when unable to generate state 
+    /// This function may panic under unexpected conditions, for example, when unable to generate state
     /// transitions for the given block.
     pub fn state_transitions_for_block(
         &self,
@@ -889,13 +1055,13 @@ impl Strategy {
     /// Generates state transitions for a block by considering new identities.
     ///
     /// This function processes state transitions with respect to identities, contracts,
-    /// and document operations. The state transitions are generated based on the 
+    /// and document operations. The state transitions are generated based on the
     /// given block's height and other parameters, with special handling for block height `1`.
     ///
     /// # Parameters
     /// - `platform`: A reference to the platform, which is parameterized with a mock core RPC type.
     /// - `block_info`: Information about the current block, like its height and time.
-    /// - `current_identities`: A mutable reference to the current set of identities. This list 
+    /// - `current_identities`: A mutable reference to the current set of identities. This list
     ///   may be appended with new identities during processing.
     /// - `signer`: A mutable reference to a signer used for creating cryptographic signatures.
     /// - `rng`: A mutable reference to a random number generator.
@@ -963,5 +1129,157 @@ impl Strategy {
         }
 
         (state_transitions, finalize_block_operations)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::frequency::Frequency;
+    use crate::operations::{DocumentAction, DocumentOp, Operation, OperationType};
+    use crate::transitions::create_state_transitions_for_identities;
+    use crate::Strategy;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::random_document::{
+        DocumentFieldFillSize, DocumentFieldFillType,
+    };
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
+    use dpp::platform_value::Value;
+    use dpp::serialization::{
+        PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+        PlatformSerializableWithPlatformVersion,
+    };
+    use dpp::system_data_contracts::load_system_data_contract;
+    use platform_version::version::PlatformVersion;
+    use rand::prelude::StdRng;
+    use rand::SeedableRng;
+    use simple_signer::signer::SimpleSigner;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn serialize_deserialize_strategy() {
+        let platform_version = PlatformVersion::latest();
+
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let mut simple_signer = SimpleSigner::default();
+
+        let (identity1, keys) =
+            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
+                2,
+                &mut rng,
+                platform_version,
+            )
+            .unwrap();
+
+        simple_signer.add_keys(keys);
+
+        let (identity2, keys) =
+            Identity::random_identity_with_main_keys_with_private_key::<Vec<_>>(
+                2,
+                &mut rng,
+                platform_version,
+            )
+            .unwrap();
+
+        simple_signer.add_keys(keys);
+
+        let start_identities = create_state_transitions_for_identities(
+            vec![identity1, identity2],
+            &mut simple_signer,
+            &mut rng,
+            platform_version,
+        );
+
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, platform_version.protocol_version)
+                .expect("data contract");
+
+        let document_op_1 = DocumentOp {
+            contract: dpns_contract.clone(),
+            action: DocumentAction::DocumentActionInsertSpecific(
+                BTreeMap::from([
+                    ("label".into(), "simon1".into()),
+                    ("normalizedLabel".into(), "s1m0n1".into()),
+                    ("normalizedParentDomainName".into(), "dash".into()),
+                    (
+                        "records".into(),
+                        BTreeMap::from([(
+                            "dashUniqueIdentityId",
+                            Value::from(start_identities.first().unwrap().0.id()),
+                        )])
+                        .into(),
+                    ),
+                ]),
+                Some(start_identities.first().unwrap().0.id()),
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: dpns_contract
+                .document_type_cloned_for_name("domain")
+                .expect("expected a domain document type"),
+        };
+
+        let document_op_2 = DocumentOp {
+            contract: dpns_contract.clone(),
+            action: DocumentAction::DocumentActionInsertSpecific(
+                BTreeMap::from([
+                    ("label".into(), "simon1".into()),
+                    ("normalizedLabel".into(), "s1m0n1".into()),
+                    ("normalizedParentDomainName".into(), "dash".into()),
+                    (
+                        "records".into(),
+                        BTreeMap::from([(
+                            "dashUniqueIdentityId",
+                            Value::from(start_identities.last().unwrap().0.id()),
+                        )])
+                        .into(),
+                    ),
+                ]),
+                Some(start_identities.last().unwrap().0.id()),
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+            ),
+            document_type: dpns_contract
+                .document_type_cloned_for_name("domain")
+                .expect("expected a profile document type"),
+        };
+
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![
+                Operation {
+                    op_type: OperationType::Document(document_op_1),
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                },
+                Operation {
+                    op_type: OperationType::Document(document_op_2),
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                },
+            ],
+            start_identities,
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            signer: Some(simple_signer),
+        };
+
+        let serialized = strategy
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("expected to serialize");
+
+        let deserialized =
+            Strategy::versioned_deserialize(serialized.as_slice(), true, platform_version)
+                .expect("expected to deserialize");
+
+        assert_eq!(strategy, deserialized);
     }
 }
