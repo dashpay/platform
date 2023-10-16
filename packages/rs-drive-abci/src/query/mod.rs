@@ -1373,4 +1373,93 @@ mod tests {
             ));
         }
     }
+
+    mod identities_by_public_key_hash {
+        use crate::query::QueryError;
+        use chrono::expect;
+        use dapi_grpc::platform::v0::{
+            get_identities_by_public_key_hashes_response,
+            get_identity_by_public_key_hashes_response, GetIdentitiesByPublicKeyHashesRequest,
+            GetIdentitiesByPublicKeyHashesResponse, GetIdentityByPublicKeyHashesRequest,
+            GetIdentityByPublicKeyHashesResponse,
+        };
+        use dpp::platform_value::string_encoding::{encode, Encoding};
+        use prost::Message;
+
+        const PATH: &str = "/identities/by-public-key-hash";
+
+        #[test]
+        fn test_invalid_public_key_hash() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetIdentitiesByPublicKeyHashesRequest {
+                public_key_hashes: vec![vec![0; 8]],
+                prove: false,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(PATH, &request, &version);
+            assert!(result.is_ok());
+
+            let validation_result = result.unwrap();
+
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::InvalidArgument(msg) if msg == &"public key hash must be 20 bytes long".to_string()
+            ));
+        }
+
+        #[test]
+        fn test_identities_not_found() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetIdentitiesByPublicKeyHashesRequest {
+                public_key_hashes: vec![vec![0; 20]],
+                prove: false,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(PATH, &request, &version);
+            assert!(result.is_ok());
+
+            let validation_result = result.unwrap();
+            let response = GetIdentitiesByPublicKeyHashesResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .expect("response decoded");
+
+            let get_identities_by_public_key_hashes_response::Result::Identities(identities) =
+                response.result.unwrap()
+            else {
+                panic!("invalid response")
+            };
+
+            assert_eq!(identities.identities.len(), 0);
+        }
+
+        #[test]
+        fn test_identities_absence_proof() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetIdentitiesByPublicKeyHashesRequest {
+                public_key_hashes: vec![vec![0; 20]],
+                prove: true,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(PATH, &request, &version);
+            assert!(result.is_ok());
+
+            let validation_result = result.unwrap();
+            let response = GetIdentitiesByPublicKeyHashesResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .expect("response decoded");
+
+            assert!(matches!(
+                response.result.unwrap(),
+                get_identities_by_public_key_hashes_response::Result::Proof(_)
+            ));
+        }
+    }
 }
