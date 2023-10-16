@@ -28,17 +28,15 @@ mod tests {
     use crate::config::PlatformConfig;
     use crate::error::query::QueryError;
     use crate::platform_types::platform::Platform;
+    use crate::query::QueryValidationResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
-    use dpp::identity::Identity;
     use dpp::prelude::DataContract;
     use drive::drive::batch::DataContractOperationType;
     use drive::drive::batch::DriveOperation::DataContractOperation;
     use platform_version::version::PlatformVersion;
-    use rand::prelude::StdRng;
-    use rand::SeedableRng;
     use std::borrow::Cow;
 
     fn setup_platform<'a>() -> (TempPlatform<MockCoreRPCLike>, &'a PlatformVersion) {
@@ -47,34 +45,19 @@ mod tests {
                 ..Default::default()
             })
             .build_with_mock_rpc();
-        let platform_version = PlatformVersion::latest();
         let platform = platform.set_initial_state_structure();
 
-        // platform_version.ini
-        // platform
-        //     .platform
-        //     .drive
-        //     .create_initial_state_structure(None, platform_version)
-        //     .expect("to create initial drive state structure");
+        let platform_version = platform
+            .platform
+            .state
+            .read()
+            .unwrap()
+            .current_platform_version()
+            .unwrap();
 
         (platform, platform_version)
     }
 
-    // TODO: move to TempPlatform impl?
-    fn create_identity(platform_version: &PlatformVersion) -> Identity {
-        let mut rng = StdRng::seed_from_u64(42);
-        let (mut identities, _) = Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
-            1,
-            3,
-            &mut rng,
-            platform_version,
-        )
-        .expect("expected to create identities");
-
-        identities.remove(0)
-    }
-
-    // TODO: move to TempPlatform impl?
     fn store_data_contract(
         platform: &Platform<MockCoreRPCLike>,
         data_contract: &DataContract,
@@ -98,19 +81,28 @@ mod tests {
             .expect("expected to apply drive operations");
     }
 
+    fn assert_invalid_identifier(validation_result: QueryValidationResult<Vec<u8>>) {
+        let validation_error = validation_result.first_error().unwrap();
+
+        assert!(matches!(
+            validation_error,
+            QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
+        ));
+    }
+
     #[test]
-    /// Tests for query handler
     fn test_invalid_path() {
         let (platform, platform_version) = setup_platform();
 
         let data = vec![0; 32];
-        let result = platform.query("/invalid_path", &data, &platform_version);
+        let path = "/invalid_path";
+        let result = platform.query(path, &data, &platform_version);
         assert!(result.is_ok());
 
         let validation_result = result.unwrap();
         assert!(matches!(
             validation_result.first_error().unwrap(),
-            QueryError::InvalidArgument(msg) if msg == "query path '/invalid_path' is not supported"
+            QueryError::InvalidArgument(msg) if msg == &format!("query path '{}' is not supported", path).to_string()
         ));
     }
 
@@ -149,8 +141,11 @@ mod tests {
 
     mod identity {
         use crate::error::query::QueryError;
+        use crate::query::tests::assert_invalid_identifier;
         use bs58::encode;
-        use dapi_grpc::platform::v0::GetIdentityRequest;
+        use dapi_grpc::platform::v0::{
+            get_identity_response, GetIdentityRequest, GetIdentityResponse,
+        };
         use prost::Message;
 
         const QUERY_PATH: &str = "/identity";
@@ -167,13 +162,7 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            let validation_result = result.unwrap();
-            let validation_error = validation_result.first_error().unwrap();
-
-            assert!(matches!(
-                validation_error,
-                QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
-            ));
+            assert_invalid_identifier(result.unwrap());
         }
 
         #[test]
@@ -213,12 +202,18 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            assert_eq!(result.unwrap().errors.len(), 0);
+            let validation_result = result.unwrap();
+            let response =
+                GetIdentityResponse::decode(validation_result.data.unwrap().as_slice()).unwrap();
+
+            assert!(matches!(
+                response.result.unwrap(),
+                get_identity_response::Result::Proof(_)
+            ));
         }
     }
 
     mod identities {
-        use crate::error::query::QueryError;
         use dapi_grpc::platform::v0::{
             get_identities_response, GetIdentitiesRequest, GetIdentitiesResponse,
         };
@@ -238,13 +233,7 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            let validation_result = result.unwrap();
-            let validation_error = validation_result.first_error().unwrap();
-
-            assert!(matches!(
-                validation_error,
-                QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
-            ));
+            super::assert_invalid_identifier(result.unwrap());
         }
 
         #[test]
@@ -286,19 +275,27 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            assert_eq!(result.unwrap().errors.len(), 0);
+            let validation_result = result.unwrap();
+            let response =
+                GetIdentitiesResponse::decode(validation_result.data.unwrap().as_slice()).unwrap();
+
+            assert!(matches!(
+                response.result.unwrap(),
+                get_identities_response::Result::Proof(_)
+            ));
         }
     }
 
     mod identity_balance {
         use crate::error::query::QueryError;
         use bs58::encode;
-        use dapi_grpc::platform::v0::GetIdentityRequest;
+        use dapi_grpc::platform::v0::{
+            get_identity_balance_response, GetIdentityBalanceResponse, GetIdentityRequest,
+        };
         use prost::Message;
 
         const QUERY_PATH: &str = "/identity/balance";
 
-        // TODO: move to a standalone function to avoid code duplication complaints?
         #[test]
         fn test_invalid_identity_id() {
             let (platform, version) = super::setup_platform();
@@ -311,13 +308,7 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            let validation_result = result.unwrap();
-            let validation_error = validation_result.first_error().unwrap();
-
-            assert!(matches!(
-                validation_error,
-                QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
-            ));
+            super::assert_invalid_identifier(result.unwrap());
         }
 
         #[test]
@@ -358,15 +349,25 @@ mod tests {
             .encode_to_vec();
 
             let result = platform.query(QUERY_PATH, &request, &version);
-            assert!(result.is_ok());
-            assert_eq!(result.unwrap().errors.len(), 0);
+            let validation_result = result.unwrap();
+            let response =
+                GetIdentityBalanceResponse::decode(validation_result.data.unwrap().as_slice())
+                    .unwrap();
+
+            assert!(matches!(
+                response.result.unwrap(),
+                get_identity_balance_response::Result::Proof(_)
+            ));
         }
     }
 
     mod identity_balance_and_revision {
         use crate::error::query::QueryError;
         use bs58::encode;
-        use dapi_grpc::platform::v0::GetIdentityRequest;
+        use dapi_grpc::platform::v0::{
+            get_identity_balance_and_revision_response, GetIdentityBalanceAndRevisionResponse,
+            GetIdentityRequest,
+        };
         use prost::Message;
 
         const QUERY_PATH: &str = "/identity/balanceAndRevision";
@@ -383,13 +384,7 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            let validation_result = result.unwrap();
-            let validation_error = validation_result.first_error().unwrap();
-
-            assert!(matches!(
-                validation_error,
-                QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
-            ));
+            super::assert_invalid_identifier(result.unwrap());
         }
 
         #[test]
@@ -432,7 +427,16 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            assert_eq!(result.unwrap().errors.len(), 0);
+            let validation_result = result.unwrap();
+            let response = GetIdentityBalanceAndRevisionResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .unwrap();
+
+            assert!(matches!(
+                response.result.unwrap(),
+                get_identity_balance_and_revision_response::Result::Proof(_)
+            ));
         }
     }
 
@@ -462,13 +466,7 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            let validation_result = result.unwrap();
-            let validation_error = validation_result.first_error().unwrap();
-
-            assert!(matches!(
-                validation_error,
-                QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
-            ));
+            super::assert_invalid_identifier(result.unwrap());
         }
 
         #[test]
@@ -679,14 +677,24 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            assert_eq!(result.unwrap().errors.len(), 0);
+            let validation_result = result.unwrap();
+            let response =
+                GetIdentityKeysResponse::decode(validation_result.data.unwrap().as_slice())
+                    .unwrap();
+
+            assert!(matches!(
+                response.result.unwrap(),
+                get_identity_keys_response::Result::Proof(_)
+            ));
         }
     }
 
     mod data_contract {
         use crate::error::query::QueryError;
         use bs58::encode;
-        use dapi_grpc::platform::v0::GetDataContractRequest;
+        use dapi_grpc::platform::v0::{
+            get_data_contract_response, GetDataContractRequest, GetDataContractResponse,
+        };
         use prost::Message;
 
         const QUERY_PATH: &str = "/dataContract";
@@ -703,13 +711,7 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            let validation_result = result.unwrap();
-            let validation_error = validation_result.first_error().unwrap();
-
-            assert!(matches!(
-                validation_error,
-                QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
-            ));
+            super::assert_invalid_identifier(result.unwrap());
         }
 
         #[test]
@@ -751,12 +753,19 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            assert_eq!(result.unwrap().errors.len(), 0);
+            let validation_result = result.unwrap();
+            let response =
+                GetDataContractResponse::decode(validation_result.data.unwrap().as_slice())
+                    .unwrap();
+
+            assert!(matches!(
+                response.result.unwrap(),
+                get_data_contract_response::Result::Proof(_)
+            ));
         }
     }
 
     mod data_contracts {
-        use crate::error::query::QueryError;
         use dapi_grpc::platform::v0::{
             get_data_contracts_response, GetDataContractsRequest, GetDataContractsResponse,
         };
@@ -776,13 +785,7 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            let validation_result = result.unwrap();
-            let validation_error = validation_result.first_error().unwrap();
-
-            assert!(matches!(
-                validation_error,
-                QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
-            ));
+            super::assert_invalid_identifier(result.unwrap());
         }
 
         #[test]
@@ -827,14 +830,25 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            assert_eq!(result.unwrap().errors.len(), 0);
+            let validation_result = result.unwrap();
+            let response =
+                GetDataContractsResponse::decode(validation_result.data.unwrap().as_slice())
+                    .unwrap();
+
+            assert!(matches!(
+                response.result.unwrap(),
+                get_data_contracts_response::Result::Proof(_)
+            ));
         }
     }
 
     mod data_contract_history {
         use crate::error::query::QueryError;
         use bs58::encode;
-        use dapi_grpc::platform::v0::GetDataContractHistoryRequest;
+        use dapi_grpc::platform::v0::{
+            get_data_contract_history_response, GetDataContractHistoryRequest,
+            GetDataContractHistoryResponse,
+        };
         use prost::Message;
 
         const QUERY_PATH: &str = "/dataContractHistory";
@@ -854,13 +868,7 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            let validation_result = result.unwrap();
-            let validation_error = validation_result.first_error().unwrap();
-
-            assert!(matches!(
-                validation_error,
-                QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
-            ));
+            super::assert_invalid_identifier(result.unwrap());
         }
 
         #[test]
@@ -958,7 +966,15 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            assert_eq!(result.unwrap().errors.len(), 0);
+            let validation_result = result.unwrap();
+            let response =
+                GetDataContractHistoryResponse::decode(validation_result.data.unwrap().as_slice())
+                    .unwrap();
+
+            assert!(matches!(
+                response.result.unwrap(),
+                get_data_contract_history_response::Result::Proof(_)
+            ));
         }
     }
 
@@ -995,13 +1011,7 @@ mod tests {
 
             let result = platform.query(QUERY_PATH, &request, &version);
             assert!(result.is_ok());
-            let validation_result = result.unwrap();
-            let validation_error = validation_result.first_error().unwrap();
-
-            assert!(matches!(
-                validation_error,
-                QueryError::InvalidArgument(msg) if msg.contains("id must be a valid identifier (32 bytes long)")
-            ));
+            super::assert_invalid_identifier(result.unwrap());
         }
 
         #[test]
@@ -1250,7 +1260,6 @@ mod tests {
                 panic!("invalid response")
             };
 
-            // TODO: make this assertion on other multiple items
             assert_eq!(documents.documents.len(), 0);
         }
 
@@ -1283,7 +1292,10 @@ mod tests {
             )
             .expect("response decoded");
 
-            assert!(response.result.is_some());
+            assert!(matches!(
+                response.result.unwrap(),
+                get_documents_response::Result::Proof(_)
+            ));
         }
     }
 
@@ -1376,14 +1388,10 @@ mod tests {
 
     mod identities_by_public_key_hash {
         use crate::query::QueryError;
-        use chrono::expect;
         use dapi_grpc::platform::v0::{
-            get_identities_by_public_key_hashes_response,
-            get_identity_by_public_key_hashes_response, GetIdentitiesByPublicKeyHashesRequest,
-            GetIdentitiesByPublicKeyHashesResponse, GetIdentityByPublicKeyHashesRequest,
-            GetIdentityByPublicKeyHashesResponse,
+            get_identities_by_public_key_hashes_response, GetIdentitiesByPublicKeyHashesRequest,
+            GetIdentitiesByPublicKeyHashesResponse,
         };
-        use dpp::platform_value::string_encoding::{encode, Encoding};
         use prost::Message;
 
         const PATH: &str = "/identities/by-public-key-hash";
@@ -1468,7 +1476,7 @@ mod tests {
         use dapi_grpc::platform::v0::get_proofs_request::{
             ContractRequest, DocumentRequest, IdentityRequest,
         };
-        use dapi_grpc::platform::v0::GetProofsRequest;
+        use dapi_grpc::platform::v0::{GetProofsRequest, GetProofsResponse};
         use prost::Message;
 
         const PATH: &str = "/proofs";
@@ -1489,12 +1497,7 @@ mod tests {
 
             let result = platform.query(PATH, &request, &version);
             assert!(result.is_ok());
-            let validation_result = result.unwrap();
-
-            assert!(matches!(
-                validation_result.first_error().unwrap(),
-                QueryError::InvalidArgument(msg) if msg == &"id must be a valid identifier (32 bytes long)".to_string()
-            ))
+            super::assert_invalid_identifier(result.unwrap());
         }
 
         #[test]
@@ -1540,12 +1543,7 @@ mod tests {
 
             let result = platform.query(PATH, &request, &version);
             assert!(result.is_ok());
-            let validation_result = result.unwrap();
-
-            assert!(matches!(
-                validation_result.first_error().unwrap(),
-                QueryError::InvalidArgument(msg) if msg == &"id must be a valid identifier (32 bytes long)".to_string()
-            ))
+            super::assert_invalid_identifier(result.unwrap());
         }
 
         #[test]
@@ -1566,12 +1564,7 @@ mod tests {
 
             let result = platform.query(PATH, &request, &version);
             assert!(result.is_ok());
-            let validation_result = result.unwrap();
-
-            assert!(matches!(
-                validation_result.first_error().unwrap(),
-                QueryError::InvalidArgument(msg) if msg == &"id must be a valid identifier (32 bytes long)".to_string()
-            ))
+            super::assert_invalid_identifier(result.unwrap());
         }
 
         #[test]
@@ -1592,12 +1585,7 @@ mod tests {
 
             let result = platform.query(PATH, &request, &version);
             assert!(result.is_ok());
-            let validation_result = result.unwrap();
-
-            assert!(matches!(
-                validation_result.first_error().unwrap(),
-                QueryError::InvalidArgument(msg) if msg == &"id must be a valid identifier (32 bytes long)".to_string()
-            ))
+            super::assert_invalid_identifier(result.unwrap());
         }
 
         // TODO: fix - should generate proof: CorruptedCodeExecution("Cannot create proof for empty tree")
@@ -1621,11 +1609,10 @@ mod tests {
             let result = platform.query(PATH, &request, &version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
+            let response =
+                GetProofsResponse::decode(validation_result.data.unwrap().as_slice()).unwrap();
 
-            assert!(matches!(
-                validation_result.first_error().unwrap(),
-                QueryError::InvalidArgument(msg) if msg == &"id must be a valid identifier (32 bytes long)".to_string()
-            ))
+            assert!(response.proof.is_some())
         }
     }
 }
