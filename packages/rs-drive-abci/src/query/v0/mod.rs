@@ -929,16 +929,27 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 } else {
-                    let maybe_identity = self.drive.fetch_full_identity_by_unique_public_key_hash(
+                    let fetch_result = self.drive.fetch_full_identity_by_unique_public_key_hash(
                         public_key_hash,
                         None,
                         platform_version,
-                    )?;
+                    );
+
+                    let maybe_identity = if let Err(err) = fetch_result {
+                        match err {
+                            drive::error::Error::GroveDB(
+                                drive::grovedb::error::Error::PathKeyNotFound(_),
+                            ) => None,
+                            _ => return Err(Error::Drive(err)),
+                        }
+                    } else {
+                        fetch_result.unwrap()
+                    };
 
                     let identity =
                         check_validation_result_with_data!(maybe_identity.ok_or_else(|| {
                             QueryError::NotFound(format!(
-                                "identity {} not found",
+                                "identity for public key hash {} not found",
                                 hex::encode(public_key_hash)
                             ))
                         }));

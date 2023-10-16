@@ -335,8 +335,6 @@ mod tests {
             ));
         }
 
-        // panics with "should generate proof: CorruptedCodeExecution("Cannot create proof for empty tree")"
-        #[ignore]
         #[test]
         fn test_identity_balance_absence_proof() {
             let (platform, version) = super::setup_platform();
@@ -658,7 +656,7 @@ mod tests {
             assert_eq!(keys.keys_bytes.len(), 0);
         }
 
-        // should generate proof: CorruptedCodeExecution("Cannot create proof for empty tree")
+        // TODO: fix - fails with "should generate proof: CorruptedCodeExecution("Cannot create proof for empty tree")"
         #[ignore]
         #[test]
         fn test_absent_keys_proof() {
@@ -738,7 +736,7 @@ mod tests {
             ));
         }
 
-        // should generate proof: CorruptedCodeExecution("Cannot create proof for empty tree")
+        // TODO: fix - fails with "should generate proof: CorruptedCodeExecution("Cannot create proof for empty tree")"
         #[ignore]
         #[test]
         fn test_data_contract_absence_proof() {
@@ -1331,8 +1329,6 @@ mod tests {
             ));
         }
 
-        // TODO: Fails - key not found in Merk for get: 000...
-        #[ignore]
         #[test]
         fn test_identity_not_found() {
             let (platform, version) = super::setup_platform();
@@ -1351,11 +1347,12 @@ mod tests {
 
             assert!(matches!(
                 validation_result.first_error().unwrap(),
-                QueryError::NotFound(msg) if msg == &format!("identity {} not found", encode(public_key_hash.as_slice(), Encoding::Base58)).to_string()
+                QueryError::NotFound(msg) if msg == &format!("identity for public key hash {} not found", hex::encode(public_key_hash.as_slice())).to_string()
             ))
         }
 
         // TODO: Fails - key not found in Merk for get: 000...
+        //    should return proof of absence instead?
         #[ignore]
         #[test]
         fn test_identity_absence_proof() {
