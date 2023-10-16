@@ -1,10 +1,11 @@
+use bincode::{Decode, Encode};
 use rand::distributions::{Distribution, Uniform};
 use rand::prelude::StdRng;
 use rand::Rng;
 use std::collections::BTreeSet;
 use std::ops::Range;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Encode, Decode)]
 pub struct Frequency {
     pub times_per_block_range: Range<u16>, //insertion count when block is chosen
     pub chance_per_block: Option<f64>,     //chance of insertion if set

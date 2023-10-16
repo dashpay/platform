@@ -4,9 +4,6 @@ version = "0.25.0-dev.30"
 authors = [
     "Samuel Westrich <sam@dash.org>",
     "Ivan Shumkov <ivan@shumkov.ru>",
-    "Djavid Gabibiyan <djavid@dash.org>",
-    "Lukasz Klimek <lukasz.klimek@dash.org>",
-    "Igor Markin <igor.markin@dash.org>",
     "Paul DeLucia <paul.delucia@dash.org>",
 ]
 edition = "2021"
