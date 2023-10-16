@@ -54,7 +54,7 @@ use std::str::FromStr;
 ///      - The index (`0` in this case) indicating which output in the transaction corresponds to the locked asset.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let one_time_private_key = PrivateKey::from_str("some_valid_private_key").unwrap();
 /// let asset_lock_proof = instant_asset_lock_proof_fixture(one_time_private_key);
 /// ```
@@ -89,7 +89,7 @@ pub fn instant_asset_lock_proof_fixture(one_time_private_key: PrivateKey) -> Ass
 ///     3. An unrelated burn output with arbitrary data.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let one_time_private_key = PrivateKey::from_str("some_valid_private_key").unwrap();
 /// let transaction = instant_asset_lock_proof_transaction_fixture(one_time_private_key);
 /// ```
@@ -152,7 +152,7 @@ pub fn instant_asset_lock_proof_transaction_fixture(
 /// - `InstantLock`: A constructed `InstantLock` with predefined values for version, inputs, cyclehash, and signature, but with the `tx_id` as provided in the function argument.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let tx_id = Txid::from_str("some_valid_tx_id").unwrap();
 /// let instant_lock = instant_asset_lock_is_lock_fixture(tx_id);
 /// ```
@@ -187,7 +187,7 @@ pub fn instant_asset_lock_is_lock_fixture(tx_id: Txid) -> InstantLock {
 /// - `StateTransition`: A constructed and signed state transition that represents the identity top-up action.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let top_up_transition = create_identity_top_up_transition(
 ///     &mut rng,
 ///     &identity,
@@ -246,7 +246,7 @@ pub fn create_identity_top_up_transition(
 ///   * A vector of the newly added public authentication keys.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let (update_transition, (id, added_keys)) = create_identity_update_transition_add_keys(
 ///     &mut identity,
 ///     2,
@@ -324,7 +324,7 @@ pub fn create_identity_update_transition_add_keys(
 ///   Returns `None` if there are no keys that can be disabled.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let update_transition = create_identity_update_transition_disable_keys(
 ///     &mut identity,
 ///     2,
@@ -420,7 +420,7 @@ pub fn create_identity_update_transition_disable_keys(
 /// - `StateTransition`: The constructed and signed state transition representing the identity's credit withdrawal.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let withdrawal_transition = create_identity_withdrawal_transition(
 ///     &mut identity,
 ///     &mut signer,
@@ -488,7 +488,7 @@ pub fn create_identity_withdrawal_transition(
 ///   between the two specified identities.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let transfer_transition = create_identity_credit_transfer_transition(
 ///     &sender_identity,
 ///     &recipient_identity,
@@ -558,7 +558,7 @@ pub fn create_identity_credit_transfer_transition(
 /// 2. `StateTransition`: The generated state transition representing the creation of the identity.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let transitions = create_identities_state_transitions(
 ///     10,
 ///     KeyID::default(),
@@ -612,7 +612,7 @@ pub fn create_identities_state_transitions(
 /// 2. `StateTransition`: The generated state transition representing the creation of the identity.
 ///
 /// # Examples
-/// ```rust
+/// ```ignore
 /// let transitions = create_state_transitions_for_identities(
 ///     identities,
 ///     &mut signer,

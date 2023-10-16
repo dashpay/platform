@@ -64,7 +64,7 @@ mod tests {
     use super::*;
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::query::QueryStrategy;
-    use crate::strategy::MasternodeListChangesStrategy;
+    use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy};
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
@@ -250,6 +250,146 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+        };
+        let config = PlatformConfig {
+            quorum_size: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..ExecutionConfig::default()
+            },
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default(),
+            ..Default::default()
+        };
+        let TempPlatform {
+            mut platform,
+            tempdir: _,
+        } = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            ..
+        } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
+
+        let known_root_hash = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None)
+            .unwrap()
+            .expect("expected root hash");
+
+        let state = abci_app.platform.state.read().unwrap();
+
+        let protocol_version = state.current_protocol_version_in_consensus();
+        drop(state);
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
+        abci_app
+            .platform
+            .recreate_state(platform_version)
+            .expect("expected to recreate state");
+
+        let ResponseInfo {
+            data: _,
+            version: _,
+            app_version: _,
+            last_block_height,
+            last_block_app_hash,
+        } = abci_app
+            .info(RequestInfo {
+                version: tenderdash_abci::proto::meta::TENDERDASH_VERSION.to_string(),
+                block_version: 0,
+                p2p_version: 0,
+                abci_version: tenderdash_abci::proto::meta::ABCI_VERSION.to_string(),
+            })
+            .expect("expected to call info");
+
+        assert_eq!(last_block_height, 15);
+        assert_eq!(last_block_app_hash, known_root_hash);
+
+        let block_start = abci_app
+            .platform
+            .state
+            .read()
+            .unwrap()
+            .last_committed_block_info()
+            .as_ref()
+            .unwrap()
+            .basic_info()
+            .height
+            + 1;
+
+        continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 1,
+                block_count: 30,
+                proposers,
+                quorums,
+                current_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                start_time_ms: 1681094380000,
+                current_time_ms: end_time_ms,
+            },
+            strategy,
+            config,
+            StrategyRandomness::SeedEntropy(7),
+        );
+    }
+
+    #[test]
+    fn run_chain_stop_and_restart_multiround() {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: Some(FailureStrategy {
+                deterministic_start_seed: None,
+                dont_finalize_block: false,
+                expect_errors_with_codes: vec![],
+                rounds_before_successful_block: Some(5),
+            }),
             query_testing: None,
             verify_state_transition_results: false,
         };

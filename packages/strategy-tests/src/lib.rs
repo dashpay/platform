@@ -73,10 +73,7 @@ pub mod transitions;
 /// - `signer`: An optional instance of `SimpleSigner`. The `SimpleSigner` is responsible for generating and managing cryptographic signatures, and might be used to authenticate or validate various operations or state transitions.
 ///
 /// # Usage
-/// ```rust
-/// use simple_signer::signer::SimpleSigner;
-/// use strategy_tests::frequency::Frequency;
-/// use strategy_tests::Strategy;
+/// ```ignore
 /// let strategy = Strategy {
 ///     contracts_with_updates: vec![...],
 ///     operations: vec![...],
@@ -271,7 +268,7 @@ impl Strategy {
     /// - If applying a contract with serialization to the drive fails.
     ///
     /// # Examples
-    /// ```
+    /// ```ignore
     /// // Assuming `strategy` is an instance of `Strategy`
     /// // and `drive` and `platform_version` are appropriately initialized.
     /// strategy.add_strategy_contracts_into_drive(&drive, &platform_version);
@@ -322,7 +319,7 @@ impl Strategy {
     /// A vector of tuples containing `Identity` and its associated `StateTransition`.
     ///
     /// # Examples
-    /// ```
+    /// ```ignore
     /// // Assuming `strategy` is an instance of `Strategy`,
     /// // and `block_info`, `signer`, `rng`, and `platform_version` are appropriately initialized.
     /// let state_transitions = strategy.identity_state_transitions_for_block(&block_info, &mut signer, &mut rng, &platform_version);
@@ -376,7 +373,7 @@ impl Strategy {
     /// A vector of `StateTransition` for data contracts.
     ///
     /// # Examples
-    /// ```
+    /// ```ignore
     /// // Assuming `strategy` is an instance of `Strategy`,
     /// // and `current_identities`, `signer`, `rng`, and `platform_version` are appropriately initialized.
     /// let contract_transitions = strategy.contract_state_transitions(&current_identities, &signer, &mut rng, &platform_version);
@@ -466,7 +463,7 @@ impl Strategy {
     /// The method will panic if it doesn't find an identity matching the owner ID from the data contract update.
     ///
     /// # Examples
-    /// ```
+    /// ```ignore
     /// // Assuming `strategy` is an instance of `Strategy`,
     /// // and `current_identities`, `block_height`, `signer`, and `platform_version` are appropriately initialized.
     /// let update_transitions = strategy.contract_update_state_transitions(&current_identities, block_height, &signer, &platform_version);
@@ -536,7 +533,7 @@ impl Strategy {
     ///    to conclude the block's processing.
     ///
     /// # Examples
-    /// ```rust
+    /// ```ignore
     /// let (state_transitions, finalize_ops) = obj.state_transitions_for_block(
     ///     &platform,
     ///     &block_info,
@@ -1072,7 +1069,7 @@ impl Strategy {
     /// 2. `Vec<FinalizeBlockOperation>`: A vector of finalize block operations derived during processing.
     ///
     /// # Examples
-    /// ```rust
+    /// ```ignore
     /// let (state_transitions, finalize_ops) = obj.state_transitions_for_block_with_new_identities(
     ///     &platform,
     ///     &block_info,

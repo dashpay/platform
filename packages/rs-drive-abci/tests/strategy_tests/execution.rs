@@ -703,6 +703,44 @@ pub(crate) fn continue_chain_for_strategy(
             })
             .unwrap_or(1);
 
+        let rounds = strategy
+            .failure_testing
+            .as_ref()
+            .map(|failure_testing| {
+                failure_testing
+                    .rounds_before_successful_block
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+
+        let mut block_execution_outcome = None;
+        for round in 0..=rounds {
+            block_execution_outcome = Some(
+                abci_app
+                    .mimic_execute_block(
+                        proposer.pro_tx_hash.into(),
+                        current_quorum_with_test_info,
+                        proposed_version,
+                        block_info.clone(),
+                        round,
+                        strategy
+                            .failure_testing
+                            .as_ref()
+                            .map(|a| a.expect_errors_with_codes.clone())
+                            .unwrap_or_default(),
+                        false,
+                        state_transitions.clone(),
+                        MimicExecuteBlockOptions {
+                            dont_finalize_block: strategy.dont_finalize_block(),
+                            rounds_before_finalization: strategy.failure_testing.as_ref().and_then(
+                                |failure_testing| failure_testing.rounds_before_successful_block,
+                            ),
+                        },
+                    )
+                    .expect("expected to execute a block"),
+            );
+        }
+
         let MimicExecuteBlockOutcome {
             state_transaction_results,
             withdrawal_transactions: mut withdrawals_this_block,
@@ -713,24 +751,7 @@ pub(crate) fn continue_chain_for_strategy(
             block_id_hash: block_hash,
             signature,
             app_version,
-        } = abci_app
-            .mimic_execute_block(
-                proposer.pro_tx_hash.into(),
-                current_quorum_with_test_info,
-                proposed_version,
-                block_info,
-                strategy
-                    .failure_testing
-                    .as_ref()
-                    .map(|a| a.expect_errors_with_codes.clone())
-                    .unwrap_or_default(),
-                false,
-                state_transitions,
-                MimicExecuteBlockOptions {
-                    dont_finalize_block: strategy.dont_finalize_block(),
-                },
-            )
-            .expect("expected to execute a block");
+        } = block_execution_outcome.unwrap();
 
         if let Some(validator_set_update) = validator_set_update {
             validator_set_updates.insert(block_height, validator_set_update);
