@@ -5,7 +5,8 @@
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
 use drive_abci::core::wait_for_core_to_sync::v0::wait_for_core_to_sync_v0;
-use drive_abci::logging::{LogBuilder, LogConfig, Loggers};
+use drive_abci::logging;
+use drive_abci::logging::{LogBuilder, LogConfig, LogDestination, Loggers};
 use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
 use drive_abci::rpc::core::DefaultCoreRPC;
 use itertools::Itertools;
@@ -65,7 +66,7 @@ struct Cli {
     ///
     /// Repeat `v` multiple times to increase log verbosity:
     ///
-    /// * none   - use RUST_LOG variable, default to `info`{n}
+    /// * none   -  default to `info`{n}
     /// * `-v`   - `debug` from Drive, `info` from libraries{n}
     /// * `-vv`  - `trace` from Drive, `debug` from libraries{n}
     /// * `-vvv` - `trace` from all components{n}
@@ -318,14 +319,11 @@ fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
     config.expect("cannot parse configuration file")
 }
 
-fn configure_logging(
-    cli: &Cli,
-    config: &PlatformConfig,
-) -> Result<Loggers, drive_abci::logging::Error> {
+fn configure_logging(cli: &Cli, config: &PlatformConfig) -> Result<Loggers, logging::Error> {
     let mut configs = config.abci.log.clone();
     if configs.is_empty() || cli.verbose > 0 {
         let cli_config = LogConfig {
-            destination: "stderr".to_string(),
+            destination: LogDestination::StdOut,
             level: cli.verbose.try_into().unwrap(),
             color: cli.color,
             ..Default::default()
@@ -363,7 +361,7 @@ mod test {
     use dpp::block::epoch::Epoch;
     use drive::fee_pools::epochs::epoch_key_constants;
 
-    use drive_abci::logging::LogLevelPreset;
+    use drive_abci::logging::LogLevel;
     use platform_version::version::PlatformVersion;
     use rocksdb::{IteratorMode, Options};
 
@@ -439,7 +437,7 @@ mod test {
 
     #[test]
     fn test_verify_grovedb_corrupt_0th_root() {
-        drive_abci::logging::init_for_tests(LogLevelPreset::Silent);
+        drive_abci::logging::init_for_tests(LogLevel::Silent);
         let tempdir = tempfile::tempdir().unwrap();
         let db_path = setup_db(tempdir.path());
 
