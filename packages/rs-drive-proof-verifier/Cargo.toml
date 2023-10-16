@@ -38,6 +38,8 @@ hex = { version = "0.4.3" }
 [dev-dependencies]
 tracing-subscriber = { version = "0.3.16" }
 serde_json = { version = "1.0.103" }
+# serde-bytes-repr = { version = "0.1.5", optional = true }
+serde-bytes-repr = { git = "https://github.com/lklimek/rfi-serde-byte-repr", rev = "64653d2" }
 derive_more = { version = "0.99.16" }
 base64 = { version = "0.21.0" }
 hex = { version = "0.4.3" }

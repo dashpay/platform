@@ -4,18 +4,18 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Proof {
     #[prost(bytes = "vec", tag = "1")]
-    #[serde(with = "crate::deserialization::base64string")]
+    #[serde(with = "serde_bytes")]
     pub grovedb_proof: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "2")]
-    #[serde(with = "crate::deserialization::base64string")]
+    #[serde(with = "serde_bytes")]
     pub quorum_hash: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "3")]
-    #[serde(with = "crate::deserialization::base64string")]
+    #[serde(with = "serde_bytes")]
     pub signature: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint32, tag = "4")]
     pub round: u32,
     #[prost(bytes = "vec", tag = "5")]
-    #[serde(with = "crate::deserialization::base64string")]
+    #[serde(with = "serde_bytes")]
     pub block_id_hash: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint32, tag = "6")]
     pub quorum_type: u32,
@@ -69,7 +69,7 @@ pub struct BroadcastStateTransitionResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityRequest {
     #[prost(bytes = "vec", tag = "1")]
-    #[serde(with = "crate::deserialization::base64string")]
+    #[serde(with = "serde_bytes")]
     pub id: ::prost::alloc::vec::Vec<u8>,
     #[prost(bool, tag = "2")]
     pub prove: bool,
@@ -319,7 +319,7 @@ pub mod security_level_map {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityKeysRequest {
     #[prost(bytes = "vec", tag = "1")]
-    #[serde(with = "crate::deserialization::base64string")]
+    #[serde(with = "serde_bytes")]
     pub identity_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, optional, tag = "2")]
     pub request_type: ::core::option::Option<KeyRequestType>,
@@ -514,7 +514,7 @@ pub mod get_proofs_request {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct IdentityRequest {
         #[prost(bytes = "vec", tag = "1")]
-        #[serde(with = "crate::deserialization::base64string")]
+        #[serde(with = "serde_bytes")]
         pub identity_id: ::prost::alloc::vec::Vec<u8>,
         #[prost(enumeration = "identity_request::Type", tag = "2")]
         pub request_type: i32,
@@ -590,7 +590,7 @@ pub struct GetProofsResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractRequest {
     #[prost(bytes = "vec", tag = "1")]
-    #[serde(with = "crate::deserialization::base64string")]
+    #[serde(with = "serde_bytes")]
     pub id: ::prost::alloc::vec::Vec<u8>,
     #[prost(bool, tag = "2")]
     pub prove: bool,
@@ -684,7 +684,7 @@ pub mod get_data_contracts_response {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractHistoryRequest {
     #[prost(bytes = "vec", tag = "1")]
-    #[serde(with = "crate::deserialization::base64string")]
+    #[serde(with = "serde_bytes")]
     pub id: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, optional, tag = "2")]
     pub limit: ::core::option::Option<u32>,
@@ -743,15 +743,15 @@ pub mod get_data_contract_history_response {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDocumentsRequest {
     #[prost(bytes = "vec", tag = "1")]
-    #[serde(with = "crate::deserialization::base64string")]
+    #[serde(with = "serde_bytes")]
     pub data_contract_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(string, tag = "2")]
     pub document_type: ::prost::alloc::string::String,
     #[prost(bytes = "vec", tag = "3")]
-    #[serde(with = "crate::deserialization::base64string")]
+    #[serde(with = "serde_bytes")]
     pub r#where: ::prost::alloc::vec::Vec<u8>,
     #[prost(bytes = "vec", tag = "4")]
-    #[serde(with = "crate::deserialization::base64string")]
+    #[serde(with = "serde_bytes")]
     pub order_by: ::prost::alloc::vec::Vec<u8>,
     #[prost(uint32, tag = "5")]
     pub limit: u32,
@@ -857,7 +857,7 @@ pub mod get_identities_by_public_key_hashes_response {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityByPublicKeyHashesRequest {
     #[prost(bytes = "vec", tag = "1")]
-    #[serde(with = "crate::deserialization::base64string")]
+    #[serde(with = "serde_bytes")]
     pub public_key_hash: ::prost::alloc::vec::Vec<u8>,
     #[prost(bool, tag = "2")]
     pub prove: bool,

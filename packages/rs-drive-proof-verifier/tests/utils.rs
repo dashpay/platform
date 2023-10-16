@@ -1,5 +1,7 @@
 use std::{fs::File, path::PathBuf};
 
+use base64::engine::GeneralPurposeConfig;
+
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct TestMetadata {
     #[serde(with = "dapi_grpc::deserialization::hexstring")]
@@ -25,7 +27,16 @@ where
         .join(file);
 
     let f = File::open(path).unwrap();
-    let (req, resp, metadata): (Req, Resp, TestMetadata) = serde_json::from_reader(f).unwrap();
+    // Use serde_bytes_repr to deserialize base64-encoded bytes
+    let mut json_de = serde_json::Deserializer::new(serde_json::de::IoRead::new(&f));
+    let base64_config = GeneralPurposeConfig::new();
+    let b64_de = serde_bytes_repr::ByteFmtDeserializer::new_base64(
+        &mut json_de,
+        base64::alphabet::STANDARD,
+        base64_config,
+    );
+    let (req, resp, metadata): (Req, Resp, TestMetadata) =
+        serde::Deserialize::deserialize(b64_de).expect("deserialize test vector json");
 
     // println!("req: {:?}\nresp: {:?}\nquorum: {:?}\n", req, resp, quorum);
 
