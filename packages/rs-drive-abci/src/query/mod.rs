@@ -1303,7 +1303,6 @@ mod tests {
             get_identity_by_public_key_hashes_response, GetIdentityByPublicKeyHashesRequest,
             GetIdentityByPublicKeyHashesResponse,
         };
-        use dpp::platform_value::string_encoding::{encode, Encoding};
         use prost::Message;
 
         const PATH: &str = "/identity/by-public-key-hash";
