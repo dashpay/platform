@@ -964,13 +964,16 @@ mod tests {
 
     mod documents {
         use crate::error::query::QueryError;
-        use crate::query::tests::{create_identity, store_data_contract};
-        use dapi_grpc::platform::v0::GetDocumentsRequest;
+        use crate::query::tests::store_data_contract;
+        use dapi_grpc::platform::v0::{
+            get_documents_response, GetDocumentsRequest, GetDocumentsResponse,
+        };
 
+        use dapi_grpc::platform::v0::get_documents_request::Start;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
-        use dpp::identity::accessors::IdentityGettersV0;
         use dpp::platform_value::string_encoding::Encoding;
         use dpp::tests::fixtures::get_data_contract_fixture;
+        use drive::error::query::QuerySyntaxError;
         use prost::Message;
 
         const QUERY_PATH: &str = "/documents";
@@ -1034,9 +1037,7 @@ mod tests {
         fn test_absent_document_type() {
             let (platform, version) = super::setup_platform();
 
-            let identity = create_identity(&version);
-            let created_data_contract =
-                get_data_contract_fixture(Some(identity.id()), version.protocol_version);
+            let created_data_contract = get_data_contract_fixture(None, version.protocol_version);
             store_data_contract(&platform, created_data_contract.data_contract(), version);
 
             let data_contract_id = created_data_contract.data_contract().id();
@@ -1064,6 +1065,225 @@ mod tests {
                 validation_result.first_error().unwrap(),
                 QueryError::InvalidArgument(msg) if msg.contains(message.as_str())
             ))
+        }
+
+        #[test]
+        fn test_invalid_where_clause() {
+            let (platform, version) = super::setup_platform();
+
+            let created_data_contract = get_data_contract_fixture(None, version.protocol_version);
+            store_data_contract(&platform, created_data_contract.data_contract(), version);
+
+            let data_contract_id = created_data_contract.data_contract().id();
+            let document_type = "niceDocument";
+            let request = GetDocumentsRequest {
+                data_contract_id: data_contract_id.to_vec(),
+                document_type: document_type.to_string(),
+                r#where: vec![0x9F], // Incomplete CBOR array
+                limit: 0,
+                order_by: vec![],
+                prove: false,
+                start: None,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            let validation_result = result.unwrap();
+
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::Query(QuerySyntaxError::DeserializationError(msg)) if msg == &"unable to decode 'where' query from cbor".to_string()
+            ))
+        }
+
+        #[test]
+        fn test_invalid_order_by_clause() {
+            let (platform, version) = super::setup_platform();
+
+            let created_data_contract = get_data_contract_fixture(None, version.protocol_version);
+            store_data_contract(&platform, created_data_contract.data_contract(), version);
+
+            let data_contract_id = created_data_contract.data_contract().id();
+            let document_type = "niceDocument";
+            let request = GetDocumentsRequest {
+                data_contract_id: data_contract_id.to_vec(),
+                document_type: document_type.to_string(),
+                r#where: vec![],
+                limit: 0,
+                order_by: vec![0x9F], // Incomplete CBOR array
+                prove: false,
+                start: None,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            let validation_result = result.unwrap();
+
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::Query(QuerySyntaxError::DeserializationError(msg)) if msg == &"unable to decode 'order_by' query from cbor".to_string()
+            ))
+        }
+
+        #[test]
+        fn test_invalid_start_at_clause() {
+            let (platform, version) = super::setup_platform();
+
+            let created_data_contract = get_data_contract_fixture(None, version.protocol_version);
+            store_data_contract(&platform, created_data_contract.data_contract(), version);
+
+            let data_contract_id = created_data_contract.data_contract().id();
+            let document_type = "niceDocument";
+            let request = GetDocumentsRequest {
+                data_contract_id: data_contract_id.to_vec(),
+                document_type: document_type.to_string(),
+                r#where: vec![],
+                limit: 0,
+                order_by: vec![],
+                prove: false,
+                start: Some(Start::StartAt(vec![0; 8])),
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            let validation_result = result.unwrap();
+
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::Query(QuerySyntaxError::InvalidStartsWithClause(msg)) if msg == &"start at should be a 32 byte identifier".to_string()
+            ))
+        }
+
+        #[test]
+        fn test_invalid_start_after_clause() {
+            let (platform, version) = super::setup_platform();
+
+            let created_data_contract = get_data_contract_fixture(None, version.protocol_version);
+            store_data_contract(&platform, created_data_contract.data_contract(), version);
+
+            let data_contract_id = created_data_contract.data_contract().id();
+            let document_type = "niceDocument";
+            let request = GetDocumentsRequest {
+                data_contract_id: data_contract_id.to_vec(),
+                document_type: document_type.to_string(),
+                r#where: vec![],
+                limit: 0,
+                order_by: vec![],
+                prove: false,
+                start: Some(Start::StartAfter(vec![0; 8])),
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            let validation_result = result.unwrap();
+
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::Query(QuerySyntaxError::InvalidStartsWithClause(msg)) if msg == &"start after should be a 32 byte identifier".to_string()
+            ))
+        }
+
+        #[test]
+        fn test_invalid_limit() {
+            let (platform, version) = super::setup_platform();
+
+            let created_data_contract = get_data_contract_fixture(None, version.protocol_version);
+            store_data_contract(&platform, created_data_contract.data_contract(), version);
+
+            let data_contract_id = created_data_contract.data_contract().id();
+            let document_type = "niceDocument";
+            let limit = u32::MAX;
+            let request = GetDocumentsRequest {
+                data_contract_id: data_contract_id.to_vec(),
+                document_type: document_type.to_string(),
+                r#where: vec![],
+                limit,
+                order_by: vec![],
+                prove: false,
+                start: None,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            let validation_result = result.unwrap();
+
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::Query(QuerySyntaxError::InvalidLimit(msg)) if msg == &format!("limit {} out of bounds", limit).to_string()
+            ))
+        }
+
+        #[test]
+        fn test_documents_not_found() {
+            let (platform, version) = super::setup_platform();
+
+            let created_data_contract = get_data_contract_fixture(None, version.protocol_version);
+            store_data_contract(&platform, created_data_contract.data_contract(), version);
+
+            let data_contract_id = created_data_contract.data_contract().id();
+            let document_type = "niceDocument";
+            let request = GetDocumentsRequest {
+                data_contract_id: data_contract_id.to_vec(),
+                document_type: document_type.to_string(),
+                r#where: vec![],
+                limit: 0,
+                order_by: vec![],
+                prove: false,
+                start: None,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+            assert!(validation_result.is_valid());
+            let response = GetDocumentsResponse::decode(
+                validation_result.data.expect("data must exist").as_slice(),
+            )
+            .expect("response decoded");
+
+            let Some(result) = response.result else {
+                panic!("invalid response")
+            };
+
+            let get_documents_response::Result::Documents(documents) = result else {
+                panic!("invalid response")
+            };
+
+            // TODO: make this assertion on other multiple items
+            assert_eq!(documents.documents.len(), 0);
+        }
+
+        #[test]
+        fn test_documents_absence_proof() {
+            let (platform, version) = super::setup_platform();
+
+            let created_data_contract = get_data_contract_fixture(None, version.protocol_version);
+            store_data_contract(&platform, created_data_contract.data_contract(), version);
+
+            let data_contract_id = created_data_contract.data_contract().id();
+            let document_type = "niceDocument";
+            let request = GetDocumentsRequest {
+                data_contract_id: data_contract_id.to_vec(),
+                document_type: document_type.to_string(),
+                r#where: vec![],
+                limit: 0,
+                order_by: vec![],
+                prove: true,
+                start: None,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(QUERY_PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+            assert!(validation_result.is_valid());
+            let response = GetDocumentsResponse::decode(
+                validation_result.data.expect("data must exist").as_slice(),
+            )
+            .expect("response decoded");
+
+            assert!(response.result.is_some());
         }
     }
 }
