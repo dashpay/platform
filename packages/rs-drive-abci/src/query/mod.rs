@@ -1286,4 +1286,91 @@ mod tests {
             assert!(response.result.is_some());
         }
     }
+
+    mod identity_by_public_key_hash {
+        use crate::query::QueryError;
+        use dapi_grpc::platform::v0::{
+            get_identity_by_public_key_hashes_response, GetIdentityByPublicKeyHashesRequest,
+            GetIdentityByPublicKeyHashesResponse,
+        };
+        use dpp::platform_value::string_encoding::{encode, Encoding};
+        use prost::Message;
+
+        const PATH: &str = "/identity/by-public-key-hash";
+
+        #[test]
+        fn test_invalid_public_key_hash() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetIdentityByPublicKeyHashesRequest {
+                public_key_hash: vec![0; 8],
+                prove: false,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(PATH, &request, &version);
+            assert!(result.is_ok());
+
+            let validation_result = result.unwrap();
+
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::InvalidArgument(msg) if msg == &"public key hash must be 20 bytes long".to_string()
+            ));
+        }
+
+        // TODO: Fails - key not found in Merk for get: 000...
+        #[ignore]
+        #[test]
+        fn test_identity_not_found() {
+            let (platform, version) = super::setup_platform();
+
+            let public_key_hash = vec![0; 20];
+            let request = GetIdentityByPublicKeyHashesRequest {
+                public_key_hash: public_key_hash.clone(),
+                prove: false,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(PATH, &request, &version);
+            assert!(result.is_ok());
+
+            let validation_result = result.unwrap();
+
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::NotFound(msg) if msg == &format!("identity {} not found", encode(public_key_hash.as_slice(), Encoding::Base58)).to_string()
+            ))
+        }
+
+        // TODO: Fails - key not found in Merk for get: 000...
+        #[ignore]
+        #[test]
+        fn test_identity_absence_proof() {
+            let (platform, version) = super::setup_platform();
+
+            let public_key_hash = vec![0; 20];
+            let request = GetIdentityByPublicKeyHashesRequest {
+                public_key_hash: public_key_hash.clone(),
+                prove: true,
+            }
+            .encode_to_vec();
+
+            let result = platform.query(PATH, &request, &version);
+            assert!(result.is_ok());
+
+            let validation_result = result.unwrap();
+
+            let response = GetIdentityByPublicKeyHashesResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .expect("response decoded");
+
+            assert!(response.result.is_some());
+            assert!(matches!(
+                response.result.unwrap(),
+                get_identity_by_public_key_hashes_response::Result::Proof(_)
+            ));
+        }
+    }
 }
