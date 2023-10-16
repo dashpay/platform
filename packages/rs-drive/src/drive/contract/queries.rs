@@ -15,6 +15,8 @@ impl Drive {
     ///
     /// This function takes a contract ID and creates a path query for fetching the contract data.
     ///
+    /// Note it can only be used for simple queries that are not merged with other queries.
+    ///
     /// # Arguments
     ///
     /// * `contract_id` - A contract ID as a 32-byte array. The contract ID is used to
@@ -27,6 +29,7 @@ impl Drive {
         let contract_path = contract_root_path_vec(contract_id.as_slice());
         let mut query = PathQuery::new_single_key(contract_path, vec![0]);
 
+        // TODO: remove this limit once `verify_query_with_absence_proof` supports queries without limits
         query.query.limit = Some(1);
         query
     }
@@ -34,6 +37,8 @@ impl Drive {
     /// Creates a path query for a specified contract.
     ///
     /// This function takes a contract ID and creates a path query for fetching the contract data.
+    ///
+    /// Note it can only be used for simple queries that are not merged with other queries.
     ///
     /// # Arguments
     ///
@@ -46,6 +51,8 @@ impl Drive {
     pub fn fetch_contract_with_history_latest_query(contract_id: [u8; 32]) -> PathQuery {
         let contract_path = contract_keeping_history_storage_path_vec(contract_id.as_slice());
         let mut query = PathQuery::new_single_key(contract_path, vec![0]);
+
+        // TODO: remove this limit once `verify_query_with_absence_proof` supports queries without limits
         query.query.limit = Some(1);
 
         query
