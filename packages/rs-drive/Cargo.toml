@@ -43,10 +43,10 @@ rust_decimal = { version = "1.2.5", optional = true }
 rust_decimal_macros = { version = "1.25.0", optional = true }
 lazy_static = { version = "1.4.0", optional = true }
 mockall = { version = "0.11", optional = true }
-grovedb = { git = "https://github.com/dashpay/grovedb", rev = "852e85c19488c60fb6152aebf131642cab80498f", optional = true }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "852e85c19488c60fb6152aebf131642cab80498f", optional = true }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "852e85c19488c60fb6152aebf131642cab80498f" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "852e85c19488c60fb6152aebf131642cab80498f", optional = true }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "6e946239c514dedcfa97eb1a42792790d38cb3eb", optional = true }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "6e946239c514dedcfa97eb1a42792790d38cb3eb", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "6e946239c514dedcfa97eb1a42792790d38cb3eb" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "6e946239c514dedcfa97eb1a42792790d38cb3eb", optional = true }
 
 [dev-dependencies]
 criterion = "0.3.5"

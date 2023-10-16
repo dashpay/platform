@@ -1885,7 +1885,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=852e85c19488c60fb6152aebf131642cab80498f#852e85c19488c60fb6152aebf131642cab80498f"
+source = "git+https://github.com/dashpay/grovedb?rev=6e946239c514dedcfa97eb1a42792790d38cb3eb#6e946239c514dedcfa97eb1a42792790d38cb3eb"
 dependencies = [
  "bincode 1.3.3",
  "grovedb-costs",
@@ -1907,7 +1907,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=852e85c19488c60fb6152aebf131642cab80498f#852e85c19488c60fb6152aebf131642cab80498f"
+source = "git+https://github.com/dashpay/grovedb?rev=6e946239c514dedcfa97eb1a42792790d38cb3eb#6e946239c514dedcfa97eb1a42792790d38cb3eb"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1917,7 +1917,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=852e85c19488c60fb6152aebf131642cab80498f#852e85c19488c60fb6152aebf131642cab80498f"
+source = "git+https://github.com/dashpay/grovedb?rev=6e946239c514dedcfa97eb1a42792790d38cb3eb#6e946239c514dedcfa97eb1a42792790d38cb3eb"
 dependencies = [
  "blake3",
  "byteorder",
@@ -1941,12 +1941,12 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=852e85c19488c60fb6152aebf131642cab80498f#852e85c19488c60fb6152aebf131642cab80498f"
+source = "git+https://github.com/dashpay/grovedb?rev=6e946239c514dedcfa97eb1a42792790d38cb3eb#6e946239c514dedcfa97eb1a42792790d38cb3eb"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=852e85c19488c60fb6152aebf131642cab80498f#852e85c19488c60fb6152aebf131642cab80498f"
+source = "git+https://github.com/dashpay/grovedb?rev=6e946239c514dedcfa97eb1a42792790d38cb3eb#6e946239c514dedcfa97eb1a42792790d38cb3eb"
 dependencies = [
  "blake3",
  "grovedb-costs",
@@ -1965,7 +1965,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=852e85c19488c60fb6152aebf131642cab80498f#852e85c19488c60fb6152aebf131642cab80498f"
+source = "git+https://github.com/dashpay/grovedb?rev=6e946239c514dedcfa97eb1a42792790d38cb3eb#6e946239c514dedcfa97eb1a42792790d38cb3eb"
 dependencies = [
  "hex",
  "itertools",
