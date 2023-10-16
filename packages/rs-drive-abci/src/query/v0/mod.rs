@@ -1073,7 +1073,16 @@ impl<C> Platform<C> {
                                 })?,
                             prove_request_type: IdentityProveRequestType::try_from(
                                 identity_request.request_type as u8,
-                            )?,
+                            )
+                            .map_err(|_| {
+                                QueryError::InvalidArgument(
+                                    format!(
+                                        "invalid prove request type '{}'",
+                                        identity_request.request_type
+                                    )
+                                    .to_string(),
+                                )
+                            })?,
                         })
                     })
                     .collect::<Result<Vec<IdentityDriveQuery>, QueryError>>());

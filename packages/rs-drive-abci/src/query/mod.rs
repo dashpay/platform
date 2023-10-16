@@ -1462,4 +1462,170 @@ mod tests {
             ));
         }
     }
+
+    mod proofs {
+        use crate::query::QueryError;
+        use dapi_grpc::platform::v0::get_proofs_request::{
+            ContractRequest, DocumentRequest, IdentityRequest,
+        };
+        use dapi_grpc::platform::v0::GetProofsRequest;
+        use prost::Message;
+
+        const PATH: &str = "/proofs";
+
+        #[test]
+        fn test_invalid_identity_ids() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetProofsRequest {
+                identities: vec![IdentityRequest {
+                    identity_id: vec![0; 8],
+                    request_type: 0,
+                }],
+                contracts: vec![],
+                documents: vec![],
+            }
+            .encode_to_vec();
+
+            let result = platform.query(PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::InvalidArgument(msg) if msg == &"id must be a valid identifier (32 bytes long)".to_string()
+            ))
+        }
+
+        #[test]
+        fn test_invalid_identity_prove_request_type() {
+            let (platform, version) = super::setup_platform();
+
+            let request_type = 10;
+            let request = GetProofsRequest {
+                identities: vec![IdentityRequest {
+                    identity_id: vec![0; 32],
+                    request_type,
+                }],
+                contracts: vec![],
+                documents: vec![],
+            }
+            .encode_to_vec();
+
+            let result = platform.query(PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::InvalidArgument(msg) if msg == &format!(
+                    "invalid prove request type '{}'",
+                    request_type
+                ).to_string()
+            ))
+        }
+
+        #[test]
+        fn test_invalid_contract_ids() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetProofsRequest {
+                identities: vec![],
+                contracts: vec![ContractRequest {
+                    contract_id: vec![0; 8],
+                }],
+                documents: vec![],
+            }
+            .encode_to_vec();
+
+            let result = platform.query(PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::InvalidArgument(msg) if msg == &"id must be a valid identifier (32 bytes long)".to_string()
+            ))
+        }
+
+        #[test]
+        fn test_invalid_contract_id_for_documents_proof() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetProofsRequest {
+                identities: vec![],
+                contracts: vec![],
+                documents: vec![DocumentRequest {
+                    contract_id: vec![0; 8],
+                    document_type: "niceDocument".to_string(),
+                    document_type_keeps_history: false,
+                    document_id: vec![0; 32],
+                }],
+            }
+            .encode_to_vec();
+
+            let result = platform.query(PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::InvalidArgument(msg) if msg == &"id must be a valid identifier (32 bytes long)".to_string()
+            ))
+        }
+
+        #[test]
+        fn test_invalid_document_id() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetProofsRequest {
+                identities: vec![],
+                contracts: vec![],
+                documents: vec![DocumentRequest {
+                    contract_id: vec![0; 32],
+                    document_type: "niceDocument".to_string(),
+                    document_type_keeps_history: false,
+                    document_id: vec![0; 8],
+                }],
+            }
+            .encode_to_vec();
+
+            let result = platform.query(PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::InvalidArgument(msg) if msg == &"id must be a valid identifier (32 bytes long)".to_string()
+            ))
+        }
+
+        // TODO: fix - should generate proof: CorruptedCodeExecution("Cannot create proof for empty tree")
+        #[ignore]
+        #[test]
+        fn test_proof_of_absence() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetProofsRequest {
+                identities: vec![],
+                contracts: vec![],
+                documents: vec![DocumentRequest {
+                    contract_id: vec![0; 32],
+                    document_type: "niceDocument".to_string(),
+                    document_type_keeps_history: false,
+                    document_id: vec![0; 32],
+                }],
+            }
+            .encode_to_vec();
+
+            let result = platform.query(PATH, &request, &version);
+            assert!(result.is_ok());
+            let validation_result = result.unwrap();
+
+            assert!(matches!(
+                validation_result.first_error().unwrap(),
+                QueryError::InvalidArgument(msg) if msg == &"id must be a valid identifier (32 bytes long)".to_string()
+            ))
+        }
+    }
 }
