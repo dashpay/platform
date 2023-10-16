@@ -40,6 +40,8 @@ jobs:
             dashmate
             contract
             sdk
+            strategy-tests
+            simple-signer
             wallet-lib
             test-suite
             bench-suite

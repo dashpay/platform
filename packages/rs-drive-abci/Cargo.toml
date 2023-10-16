@@ -1,6 +1,6 @@
 [package]
 name = "drive-abci"
-version = "0.25.0-dev.30"
+version = "0.25.0"
 authors = [
     "Samuel Westrich <sam@dash.org>",
     "Ivan Shumkov <ivan@shumkov.ru>",
@@ -20,7 +20,7 @@ chrono = "0.4.20"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_with = { version = "2.3.1", features = ["hex"], default-features = false }
-drive = { path = "../rs-drive" }
+drive = { path = "../rs-drive", features = ["full", "grovedb_operations_logging"] }
 thiserror = "1.0.30"
 rand = "0.8.5"
 tempfile = "3.3.0"
@@ -30,6 +30,8 @@ indexmap = { version = "1.9.3", features = ["serde"] }
 sha2 = "0.10.6"
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.1" }
 dpp = { path = "../rs-dpp", features = ["abci"] }
+strategy-tests = { path = "../strategy-tests" }
+simple-signer = { path = "../simple-signer" }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
 mockall = { version = "0.11", optional = true }

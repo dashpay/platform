@@ -13,8 +13,6 @@ function getConfigMock(sinon) {
   configMock.get.withArgs('platform.drive.tenderdash.rpc.port').returns('8103');
   configMock.get.withArgs('platform.enable').returns(true);
   configMock.get.withArgs('core.log.file.path').returns('/Users/user/.dashmate/logs/base/core.log');
-  configMock.get.withArgs('platform.drive.abci.log.prettyFile.path').returns('/Users/user/.dashmate/logs/base/prettyFile.log');
-  configMock.get.withArgs('platform.drive.abci.log.jsonFile.path').returns('/Users/user/.dashmate/logs/base/jsonFile.log');
 
   return configMock;
 }

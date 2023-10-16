@@ -1,5 +1,6 @@
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::DocumentName;
 use crate::metadata::Metadata;
@@ -18,11 +19,13 @@ pub trait DataContractV0Getters {
 
     /// Returns the identifier of the contract owner.
     fn owner_id(&self) -> Identifier;
+    fn document_type_cloned_for_name(&self, name: &str) -> Result<DocumentType, ProtocolError>;
 
     /// Returns the document type for the given document name.
     fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, ProtocolError>;
 
     fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef>;
+    fn document_type_cloned_optional_for_name(&self, name: &str) -> Option<DocumentType>;
 
     fn has_document_type_for_name(&self, name: &str) -> bool;
 

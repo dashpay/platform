@@ -1,9 +1,4 @@
-use crate::frequency::Frequency;
 use crate::masternodes::MasternodeListItemWithUpdates;
-use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
-use crate::operations::{
-    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
-};
 use crate::query::QueryStrategy;
 use crate::BlockHeight;
 use dashcore_rpc::dashcore;
@@ -12,6 +7,11 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContract;
+use strategy_tests::frequency::Frequency;
+use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
+use strategy_tests::operations::{
+    DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
+};
 
 use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
@@ -35,6 +35,7 @@ use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
+use strategy_tests::Strategy;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
@@ -50,7 +51,7 @@ use dpp::state_transition::documents_batch_transition::document_transition::{Doc
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use dpp::state_transition::data_contract_create_transition::methods::v0::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
-use drive_abci::test::helpers::signer::SimpleSigner;
+use simple_signer::signer::SimpleSigner;
 
 #[derive(Clone, Debug, Default)]
 pub struct MasternodeListChangesStrategy {
@@ -139,6 +140,8 @@ pub struct FailureStrategy {
     pub deterministic_start_seed: Option<u64>,
     pub dont_finalize_block: bool,
     pub expect_errors_with_codes: Vec<u32>,
+    // 1 here would be round 1 is successful
+    pub rounds_before_successful_block: Option<u32>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -151,14 +154,8 @@ pub struct MasternodeChanges {
 }
 
 #[derive(Clone, Debug)]
-pub struct Strategy {
-    pub contracts_with_updates: Vec<(
-        CreatedDataContract,
-        Option<BTreeMap<u64, CreatedDataContract>>,
-    )>,
-    pub operations: Vec<Operation>,
-    pub start_identities: Vec<(Identity, StateTransition)>,
-    pub identities_inserts: Frequency,
+pub struct NetworkStrategy {
+    pub strategy: Strategy,
     pub total_hpmns: u16,
     pub extra_normal_mns: u16,
     pub quorum_count: u16,
@@ -169,7 +166,6 @@ pub struct Strategy {
     pub failure_testing: Option<FailureStrategy>,
     pub query_testing: Option<QueryStrategy>,
     pub verify_state_transition_results: bool,
-    pub signer: Option<SimpleSigner>,
 }
 
 #[derive(Clone, Debug)]
@@ -218,7 +214,7 @@ impl UpgradingInfo {
     }
 }
 
-impl Strategy {
+impl NetworkStrategy {
     pub fn dont_finalize_block(&self) -> bool {
         self.failure_testing
             .as_ref()
@@ -232,7 +228,7 @@ impl Strategy {
         drive: &Drive,
         platform_version: &PlatformVersion,
     ) {
-        for op in &self.operations {
+        for op in &self.strategy.operations {
             if let OperationType::Document(doc_op) = &op.op_type {
                 let serialize = doc_op
                     .contract
@@ -261,14 +257,14 @@ impl Strategy {
         platform_version: &PlatformVersion,
     ) -> Vec<(Identity, StateTransition)> {
         let mut state_transitions = vec![];
-        if block_info.height == 1 && !self.start_identities.is_empty() {
-            state_transitions.append(&mut self.start_identities.clone());
+        if block_info.height == 1 && !self.strategy.start_identities.is_empty() {
+            state_transitions.append(&mut self.strategy.start_identities.clone());
         }
-        let frequency = &self.identities_inserts;
+        let frequency = &self.strategy.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
             state_transitions.append(
-                &mut crate::transitions::create_identities_state_transitions(
+                &mut strategy_tests::transitions::create_identities_state_transitions(
                     count,
                     5,
                     signer,
@@ -287,7 +283,8 @@ impl Strategy {
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
-        self.contracts_with_updates
+        self.strategy
+            .contracts_with_updates
             .iter_mut()
             .map(|(created_contract, contract_updates)| {
                 let identity_num = rng.gen_range(0..current_identities.len());
@@ -316,7 +313,7 @@ impl Strategy {
                 }
 
                 // since we are changing the id, we need to update all the strategy
-                self.operations.iter_mut().for_each(|operation| {
+                self.strategy.operations.iter_mut().for_each(|operation| {
                     if let OperationType::Document(document_op) = &mut operation.op_type {
                         if document_op.contract.id() == old_id {
                             document_op.contract.set_id(contract.id());
@@ -351,7 +348,8 @@ impl Strategy {
         signer: &SimpleSigner,
         platform_version: &PlatformVersion,
     ) -> Vec<StateTransition> {
-        self.contracts_with_updates
+        self.strategy
+            .contracts_with_updates
             .iter_mut()
             .filter_map(|(_, contract_updates)| {
                 let Some(contract_updates) = contract_updates else {
@@ -396,7 +394,7 @@ impl Strategy {
         let mut finalize_block_operations = vec![];
         let mut replaced = vec![];
         let mut deleted = vec![];
-        for op in &self.operations {
+        for op in &self.strategy.operations {
             if op.frequency.check_hit(rng) {
                 let count = rng.gen_range(op.frequency.times_per_block_range.clone());
                 match &op.op_type {
@@ -771,11 +769,13 @@ impl Strategy {
                             .collect();
 
                         for random_identity in random_identities {
-                            operations.push(crate::transitions::create_identity_top_up_transition(
-                                rng,
-                                random_identity,
-                                platform_version,
-                            ));
+                            operations.push(
+                                strategy_tests::transitions::create_identity_top_up_transition(
+                                    rng,
+                                    random_identity,
+                                    platform_version,
+                                ),
+                            );
                         }
                     }
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
@@ -786,7 +786,7 @@ impl Strategy {
                             match update_op {
                                 IdentityUpdateOp::IdentityUpdateAddKeys(count) => {
                                     let (state_transition, keys_to_add_at_end_block) =
-                                        crate::transitions::create_identity_update_transition_add_keys(
+                                        strategy_tests::transitions::create_identity_update_transition_add_keys(
                                             random_identity,
                                             *count,
                                             signer,
@@ -801,7 +801,7 @@ impl Strategy {
                                 }
                                 IdentityUpdateOp::IdentityUpdateDisableKey(count) => {
                                     let state_transition =
-                                        crate::transitions::create_identity_update_transition_disable_keys(
+                                        strategy_tests::transitions::create_identity_update_transition_disable_keys(
                                             random_identity,
                                             *count,
                                             block_info.time_ms,
@@ -822,7 +822,7 @@ impl Strategy {
                         for index in indices {
                             let random_identity = current_identities.get_mut(index).unwrap();
                             let state_transition =
-                                crate::transitions::create_identity_withdrawal_transition(
+                                strategy_tests::transitions::create_identity_withdrawal_transition(
                                     random_identity,
                                     signer,
                                     rng,
@@ -845,7 +845,7 @@ impl Strategy {
                             .expect("expected to get an identity");
 
                         let state_transition =
-                            crate::transitions::create_identity_credit_transfer_transition(
+                            strategy_tests::transitions::create_identity_credit_transfer_transition(
                                 owner,
                                 recipient,
                                 signer,
@@ -946,7 +946,7 @@ pub struct ChainExecutionOutcome<'a> {
     pub current_proposer_versions: Option<HashMap<ProTxHash, ValidatorVersionMigration>>,
     pub end_epoch_index: u16,
     pub end_time_ms: u64,
-    pub strategy: Strategy,
+    pub strategy: NetworkStrategy,
     pub withdrawals: Vec<dashcore::Transaction>,
     /// height to the validator set update at that height
     pub validator_set_updates: BTreeMap<u64, ValidatorSetUpdate>,
