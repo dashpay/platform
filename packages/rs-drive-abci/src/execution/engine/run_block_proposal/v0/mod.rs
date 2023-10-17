@@ -71,6 +71,14 @@ where
         // Start by getting information from the state
         let state = self.state.read().unwrap();
 
+        tracing::debug!(
+            method = "run_block_proposal_v0",
+            "running block proposal: {:?} | epoch info: {:?} | state fingerprint {:?}",
+            block_proposal,
+            epoch_info,
+            state.fingerprint(),
+        );
+
         let last_block_time_ms = state.last_block_time_ms();
         let last_block_height =
             state.known_height_or(self.config.abci.genesis_height.saturating_sub(1));
@@ -153,6 +161,16 @@ where
             .epoch_info
             .is_epoch_change_but_not_genesis()
         {
+            tracing::debug!(
+                method = "run_block_proposal_v0",
+                "epoch change occurring from version {} to version {}",
+                block_execution_context
+                    .block_platform_state
+                    .current_protocol_version_in_consensus(),
+                block_execution_context
+                    .block_platform_state
+                    .next_epoch_protocol_version(),
+            );
             // Set current protocol version to the version from upcoming epoch
             block_execution_context
                 .block_platform_state

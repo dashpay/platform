@@ -6,6 +6,7 @@ use tenderdash_abci::proto::version::Consensus;
 
 /// The block proposal is the combination of information that a proposer will propose,
 /// Or that a validator or full node will process
+#[derive(Debug)]
 pub struct BlockProposal<'a> {
     /// Consensus Versions
     pub consensus_versions: Consensus,

@@ -87,6 +87,12 @@ where
                     &platform_version.drive,
                 )?;
             }
+
+            tracing::debug!(
+                method = "update_masternode_list_v0",
+                "state fingerprint after update {:?}",
+                block_platform_state.fingerprint(),
+            );
         }
 
         Ok(())

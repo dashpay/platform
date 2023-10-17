@@ -300,9 +300,10 @@ where
                     // We were not the proposer, just drop the execution context
                     tracing::debug!(
                         method = "process_proposal",
-                        "block execution context already existed, but we are running it again for same height {}/round {}",
+                        "block execution context already existed, but we are running it again for same height {}/round {} full request: {:?}",
                         request.height,
                         request.round,
+                        request
                     );
                     drop_block_execution_context = true;
                 } else {
@@ -322,8 +323,9 @@ where
 
                     tracing::debug!(
                         method = "process_proposal",
-                        "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}",
-                        proposal_info
+                        "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}, full request {:?}",
+                        proposal_info,
+                        request
                     );
 
                     // Cloning all required properties from proposal_info and then dropping it
