@@ -24,6 +24,13 @@ pub fn generate() -> Result<(), std::io::Error> {
         PathBuf::from("protos/core/v0/core.proto"),
         PathBuf::from("src/core/proto"),
     );
+
+    #[cfg(feature = "serde")]
+    let core = core.type_attribute(
+        ".",
+        r#"#[derive(::serde::Serialize, ::serde::Deserialize)]"#,
+    );
+
     core.generate().unwrap();
 
     let mut platform = MappingConfig::new(
