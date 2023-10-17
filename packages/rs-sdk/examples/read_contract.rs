@@ -3,7 +3,7 @@ use rs_dapi_client::AddressList;
 use rs_sdk::platform::Fetch;
 
 // Some constants we need to connect to the platform
-include!("../tests/common.rs");
+include!("../tests/fetch/common.rs");
 
 /// Read data contract.
 ///
