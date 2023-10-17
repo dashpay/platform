@@ -72,6 +72,7 @@ where
         let state = self.state.read().unwrap();
 
         tracing::trace!(
+            method = "run_block_proposal_v0",
             ?block_proposal,
             ?epoch_info,
             platform_state_fingerprint = ?state.fingerprint(),

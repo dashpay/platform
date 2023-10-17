@@ -155,6 +155,7 @@ where
         block_platform_state.set_quorums_extended_info(all_quorums_by_type);
 
         tracing::debug!(
+            method = "update_quorum_info_v0",
             "state fingerprint after update {:?}",
             block_platform_state.fingerprint(),
         );

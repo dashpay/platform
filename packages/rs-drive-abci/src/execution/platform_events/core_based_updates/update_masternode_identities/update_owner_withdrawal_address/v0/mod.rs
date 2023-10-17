@@ -78,6 +78,7 @@ where
                 identity_id = ?owner_identifier,
                 keys_ids = ?key_ids_to_disable,
                 disable_at = ?block_info.time_ms,
+                method = "update_owner_withdrawal_address_v0",
                 "disable old withdrawal keys in owner identity"
             );
 
@@ -98,6 +99,7 @@ where
         tracing::trace!(
             identity_id = ?owner_identifier,
             withdrawal_key = ?new_owner_key,
+            method = "update_owner_withdrawal_address_v0",
             "add new withdrawal key to owner identity"
         );
 

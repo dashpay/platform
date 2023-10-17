@@ -45,11 +45,16 @@ where
             block_platform_state.last_committed_block_info().as_ref()
         {
             if core_block_height == last_commited_block_info.basic_info().core_height {
-                tracing::debug!("no update mnl at height {}", core_block_height);
+                tracing::debug!(
+                    method = "update_masternode_list_v0",
+                    "no update mnl at height {}",
+                    core_block_height,
+                );
                 return Ok(()); // no need to do anything
             }
         }
         tracing::debug!(
+            method = "update_masternode_list_v0",
             "update mnl to height {} at block {}",
             core_block_height,
             block_platform_state.core_height()
@@ -84,6 +89,7 @@ where
             }
 
             tracing::debug!(
+                method = "update_masternode_list_v0",
                 "state fingerprint after update {:?}",
                 block_platform_state.fingerprint(),
             );

@@ -78,6 +78,7 @@ where
             identity_id = ?old_voter_identifier,
             keys_ids = ?old_voter_identity_key_ids,
             disable_at = ?block_info.time_ms,
+            method = "update_voter_identity_v0",
             "disable all voter identity keys"
         );
 
@@ -121,6 +122,7 @@ where
             tracing::trace!(
                 identity_id = ?old_voter_identifier,
                 keys_ids = ?new_voter_identity_key_ids,
+                method = "update_voter_identity_v0",
                 "re-enable voter identity keys if they already exists and disabled"
             );
 
@@ -131,6 +133,7 @@ where
         } else {
             tracing::trace!(
                 identity = ?new_voter_identity,
+                method = "update_voter_identity_v0",
                 "create a new voter identity"
             );
 
