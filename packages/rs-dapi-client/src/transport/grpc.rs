@@ -7,6 +7,7 @@ use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformC
 use dapi_grpc::core::v0::{self as core_proto};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
 use http::Uri;
+use tonic::Streaming;
 use tonic::{transport::Channel, IntoRequest};
 
 use super::{CanRetry, TransportClient, TransportRequest, TransportResponse};
@@ -206,4 +207,12 @@ impl_transport_request_grpc!(
     CoreGrpcClient,
     RequestSettings::default(),
     broadcast_transaction
+);
+
+impl_transport_request_grpc!(
+    core_proto::TransactionsWithProofsRequest,
+    Streaming<core_proto::TransactionsWithProofsResponse>,
+    CoreGrpcClient,
+    RequestSettings::default(),
+    subscribe_to_transactions_with_proofs
 );

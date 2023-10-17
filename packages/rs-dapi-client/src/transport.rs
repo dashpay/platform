@@ -31,7 +31,7 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + serde::Serialize {
 
 /// Generic transport layer response.
 pub trait TransportResponse:
-    Clone + Send + Sync + Debug + serde::Serialize + for<'de> serde::Deserialize<'de>
+    Send + Debug
 {
 }
 
