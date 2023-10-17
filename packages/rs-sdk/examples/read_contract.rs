@@ -17,7 +17,7 @@ async fn main() {
     // Note that in future versions of the SDK, core user and password will not be needed.
     let uri = http::Uri::from_maybe_shared(format!("http://{}:{}", PLATFORM_IP, PLATFORM_PORT))
         .expect("platform address uri");
-    let mut sdk = rs_sdk::SdkBuilder::new(AddressList::from(vec![uri]))
+    let mut sdk = rs_sdk::SdkBuilder::new(AddressList::from_iter(vec![uri]))
         .with_core(PLATFORM_IP, CORE_PORT, CORE_USER, CORE_PASSWORD)
         .build()
         .expect("cannot initialize api");

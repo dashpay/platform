@@ -24,7 +24,7 @@ pub fn setup_api() -> rs_sdk::Sdk {
     use rs_dapi_client::AddressList;
     let uri = http::Uri::from_maybe_shared(format!("http://{}:{}", PLATFORM_IP, PLATFORM_PORT))
         .expect("platform address");
-    let addresses = AddressList::from(vec![uri]);
+    let addresses = AddressList::from_iter(vec![uri]);
     let api = rs_sdk::SdkBuilder::new(addresses)
         .with_core(PLATFORM_IP, CORE_PORT, CORE_USER, CORE_PASSWORD)
         .build()

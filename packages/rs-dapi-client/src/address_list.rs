@@ -95,11 +95,11 @@ impl AddressList {
     }
 }
 
-impl<U: Into<http::Uri>> From<Vec<U>> for AddressList {
-    fn from(value: Vec<U>) -> Self {
+impl FromIterator<Uri> for AddressList {
+    fn from_iter<T: IntoIterator<Item = Uri>>(iter: T) -> Self {
         let mut address_list = Self::new();
-        for uri in value {
-            address_list.add_uri(uri.into());
+        for uri in iter {
+            address_list.add_uri(uri);
         }
 
         address_list
