@@ -179,7 +179,7 @@ where
                     .block_platform_state
                     .next_epoch_protocol_version()
             {
-                tracing::debug!(
+                tracing::trace!(
                     epoch_index = block_execution_context.epoch_info.current_epoch_index(),
                     "protocol version remains the same {}",
                     block_execution_context
