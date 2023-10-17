@@ -38,14 +38,8 @@ pub fn generate() -> Result<(), std::io::Error> {
             r#"#[derive(::serde::Serialize, ::serde::Deserialize)]"#,
         )
         .type_attribute(".", r#"#[serde(rename_all = "snake_case")]"#)
-        .field_attribute(
-            "id",
-            r#"#[serde(with = "crate::deserialization::base64string")]"#,
-        )
-        .field_attribute(
-            "identity_id",
-            r#"#[serde(with = "crate::deserialization::base64string")]"#,
-        )
+        .field_attribute("id", r#"#[serde(with = "serde_bytes")]"#)
+        .field_attribute("identity_id", r#"#[serde(with = "serde_bytes")]"#)
         .field_attribute(
             "ids",
             r#"#[serde(with = "crate::deserialization::vec_base64string")]"#,
@@ -62,44 +56,20 @@ pub fn generate() -> Result<(), std::io::Error> {
             "start_at_ms",
             r#"#[serde(with = "crate::deserialization::from_to_string")]"#,
         )
-        .field_attribute(
-            "public_key_hash",
-            r#"#[serde(with = "crate::deserialization::base64string")]"#,
-        )
+        .field_attribute("public_key_hash", r#"#[serde(with = "serde_bytes")]"#)
         .field_attribute(
             "public_key_hashes",
             r#"#[serde(with = "crate::deserialization::vec_base64string")]"#,
         )
         // Get documents fields
-        .field_attribute(
-            "data_contract_id",
-            r#"#[serde(with = "crate::deserialization::base64string")]"#,
-        )
-        .field_attribute(
-            "where",
-            r#"#[serde(with = "crate::deserialization::base64string")]"#,
-        )
-        .field_attribute(
-            "order_by",
-            r#"#[serde(with = "crate::deserialization::base64string")]"#,
-        )
+        .field_attribute("data_contract_id", r#"#[serde(with = "serde_bytes")]"#)
+        .field_attribute("where", r#"#[serde(with = "serde_bytes")]"#)
+        .field_attribute("order_by", r#"#[serde(with = "serde_bytes")]"#)
         // Proof fields
-        .field_attribute(
-            "Proof.grovedb_proof",
-            r#"#[serde(with = "crate::deserialization::base64string")]"#,
-        )
-        .field_attribute(
-            "Proof.quorum_hash",
-            r#"#[serde(with = "crate::deserialization::base64string")]"#,
-        )
-        .field_attribute(
-            "Proof.signature",
-            r#"#[serde(with = "crate::deserialization::base64string")]"#,
-        )
-        .field_attribute(
-            "Proof.block_id_hash",
-            r#"#[serde(with = "crate::deserialization::base64string")]"#,
-        );
+        .field_attribute("Proof.grovedb_proof", r#"#[serde(with = "serde_bytes")]"#)
+        .field_attribute("Proof.quorum_hash", r#"#[serde(with = "serde_bytes")]"#)
+        .field_attribute("Proof.signature", r#"#[serde(with = "serde_bytes")]"#)
+        .field_attribute("Proof.block_id_hash", r#"#[serde(with = "serde_bytes")]"#);
 
     platform.generate().unwrap();
 
