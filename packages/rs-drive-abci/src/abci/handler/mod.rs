@@ -282,7 +282,7 @@ where
                 // Now tenderdash is sending it again
                 if let Some(proposal_info) = block_execution_context.proposer_results() {
                     tracing::debug!(
-                        ?proposal_info // TODO: It might be too big for debug
+                        ?proposal_info, // TODO: It might be too big for debug
                         "we knew block hash, block execution context already had a proposer result",
                     );
                     // We were the proposer as well, so we have the result in cache
