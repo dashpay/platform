@@ -28,7 +28,6 @@ where
     ) -> Result<(), Error> {
         tracing::trace!(
             pro_tx_hash = old_masternode.pro_tx_hash.to_hex(),
-            method = "disable_identity_keys_v0",
             "masternode is removed. operator and voter keys should be disabled"
         );
 
@@ -90,7 +89,6 @@ where
             identity_id = ?operator_identifier,
             keys_ids = ?operator_identity_keys,
             disable_at = ?block_info.time_ms,
-            method = "disable_identity_keys_v0",
             "disable all operator identity keys for removed masternode"
         );
 
@@ -104,7 +102,6 @@ where
             identity_id = ?voter_identifier,
             keys_ids = ?voter_identity_keys,
             disable_at = ?block_info.time_ms,
-            method = "disable_identity_keys_v0",
             "disable all voter identity key for removed masternode"
         );
 

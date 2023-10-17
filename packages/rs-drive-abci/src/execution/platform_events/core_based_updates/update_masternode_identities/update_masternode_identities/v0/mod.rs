@@ -55,7 +55,6 @@ where
 
             tracing::trace!(
                 identity = ?owner_identity,
-                method = "update_masternode_identities_v0",
                 "create owner identity"
             );
 
@@ -66,7 +65,6 @@ where
 
             tracing::trace!(
                 identity = ?voter_identity,
-                method = "update_masternode_identities_v0",
                 "create voter identity"
             );
 
@@ -74,7 +72,6 @@ where
 
             tracing::trace!(
                 identity = ?operator_identity,
-                method = "update_masternode_identities_v0",
                 "create operator identity"
             );
 

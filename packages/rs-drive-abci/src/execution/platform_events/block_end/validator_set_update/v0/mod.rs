@@ -33,10 +33,7 @@ where
                 .validator_set_quorum_rotation_block_count as u64
             == 0
         {
-            tracing::debug!(
-                method = "validator_set_update_v0",
-                "rotation: previous quorum finished members"
-            );
+            tracing::debug!("rotation: previous quorum finished members");
             perform_rotation = true;
         }
         // we also need to perform a rotation if the validator set is being removed
@@ -47,7 +44,6 @@ where
             .is_none()
         {
             tracing::debug!(
-                method = "validator_set_update_v0",
                 "rotation: new quorums not containing current quorum current {:?}, {}",
                 block_execution_context
                     .block_platform_state()
@@ -93,7 +89,6 @@ where
                             .get(quorum_hash)
                         {
                             tracing::debug!(
-                                method = "validator_set_update_v0",
                                 "rotation: to new quorum: {} with {} members",
                                 &quorum_hash,
                                 new_validator_set.members().len()
@@ -113,7 +108,6 @@ where
                         .first()
                     {
                         tracing::debug!(
-                            method = "validator_set_update_v0",
                             "rotation: all quorums changed, rotation to new quorum: {}",
                             &quorum_hash
                         );
@@ -135,16 +129,10 @@ where
             if current_validator_set != platform_state.current_validator_set()? {
                 // Something changed, for example the IP of a validator changed, or someone's ban status
 
-                tracing::debug!(
-                    method = "validator_set_update_v0",
-                    "validator set update without rotation"
-                );
+                tracing::debug!("validator set update without rotation");
                 Ok(Some(current_validator_set.into()))
             } else {
-                tracing::debug!(
-                    method = "validator_set_update_v0",
-                    "no validator set update"
-                );
+                tracing::debug!("no validator set update");
                 Ok(None)
             }
         }
