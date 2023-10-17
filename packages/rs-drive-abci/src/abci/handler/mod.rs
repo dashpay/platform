@@ -282,8 +282,8 @@ where
                 // Now tenderdash is sending it again
                 if let Some(proposal_info) = block_execution_context.proposer_results() {
                     tracing::debug!(
-                        "we knew block hash, block execution context already had a proposer result {:?}",
-                        proposal_info
+                        ?proposal_info // TODO: It might be too big for debug
+                        "we knew block hash, block execution context already had a proposer result",
                     );
                     // We were the proposer as well, so we have the result in cache
                     return Ok(ResponseProcessProposal {
@@ -298,6 +298,7 @@ where
                 if current_block_hash.as_slice() == request.hash {
                     // We were not the proposer, just drop the execution context
                     tracing::debug!(
+                        ?request, // TODO: It might be too big for debug + we already logged it with rs-tenderdash-abci
                         "block execution context already existed, but we are running it again for same height {}/round {}",
                         request.height,
                         request.round,
