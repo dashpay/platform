@@ -24,6 +24,7 @@ use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationErro
 use indexmap::IndexMap;
 
 use crate::error::execution::ExecutionError;
+use dpp::util::hash::hash;
 use std::collections::{BTreeMap, HashMap};
 
 /// Platform state
@@ -108,6 +109,13 @@ impl PlatformDeserializableFromVersionedStructure for PlatformState {
 }
 
 impl PlatformState {
+    /// Get the state fingerprint
+    pub fn fingerprint(&self) -> [u8; 32] {
+        hash(
+            self.serialize_to_bytes()
+                .expect("expected to serialize state"),
+        )
+    }
     /// Get the current platform version
     pub fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
         Ok(PlatformVersion::get(
