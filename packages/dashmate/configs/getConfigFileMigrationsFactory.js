@@ -242,6 +242,16 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
+      '0.25.6': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if (options.network === NETWORK_TESTNET) {
+              options.core.docker.image = 'dashpay/dashd:20.0.0-beta.4';
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
