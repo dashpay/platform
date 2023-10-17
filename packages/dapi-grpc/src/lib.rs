@@ -12,7 +12,7 @@ pub mod platform {
     pub mod v0 {
         include!("platform/proto/org.dash.platform.dapi.v0.rs");
     }
-    #[cfg(feature = "proto")]
+    #[cfg(feature = "tenderdash-proto")]
     pub use tenderdash_proto as proto;
 }
 

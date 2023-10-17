@@ -16,7 +16,8 @@ license = "MIT"
 default = ["core", "platform", "client", "serde"]
 core = ["core_v0"]
 platform = ["platform_v0"]
-proto = []
+# Re-export Dash Platform protobuf types as `dapi_grpc::platform::proto`
+tenderdash-proto = []
 client = ["tonic/channel", "tonic/tls", "tonic/tls-roots", "platform"]
 serde = ["dep:serde"]
 
