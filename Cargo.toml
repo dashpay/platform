@@ -20,5 +20,5 @@ members = [
     "packages/rs-drive-proof-verifier",
     "packages/wasm-dpp",
     "packages/rs-dapi-client",
-    #    "packages/rs-sdk",
+    "packages/rs-sdk",
 ]

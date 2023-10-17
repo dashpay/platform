@@ -3609,6 +3609,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rs-sdk"
+version = "0.1.0"
+dependencies = [
+ "dapi-grpc",
+]
+
+[[package]]
 name = "rs-x11-hash"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
