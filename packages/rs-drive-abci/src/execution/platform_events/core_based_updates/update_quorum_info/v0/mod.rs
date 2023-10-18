@@ -157,7 +157,7 @@ where
         tracing::debug!(
             method = "update_quorum_info_v0",
             "state fingerprint after update {:?}",
-            block_platform_state.fingerprint(),
+            hex::encode(block_platform_state.fingerprint()),
         );
 
         Ok(())

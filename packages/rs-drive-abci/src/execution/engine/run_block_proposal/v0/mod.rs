@@ -76,7 +76,7 @@ where
             "running block proposal: {:?} | epoch info: {:?} | state fingerprint {:?}",
             block_proposal,
             epoch_info,
-            state.fingerprint(),
+            hex::encode(state.fingerprint()),
         );
 
         let last_block_time_ms = state.last_block_time_ms();

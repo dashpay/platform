@@ -2,13 +2,14 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash};
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem};
+use std::fmt::{Debug, Formatter};
 
 use crate::platform_types::platform_state::PlatformState;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use serde::{Deserialize, Serialize};
 
 /// A validator in the context of a quorum
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct ValidatorV0 {
     /// The proTxHash
     pub pro_tx_hash: ProTxHash,
@@ -26,6 +27,21 @@ pub struct ValidatorV0 {
     pub platform_p2p_port: u16,
     /// Is the validator banned
     pub is_banned: bool,
+}
+
+impl Debug for ValidatorV0 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ValidatorV0")
+            .field("pro_tx_hash", &self.pro_tx_hash.to_string())
+            .field("public_key", &self.public_key)
+            .field("node_ip", &self.node_ip)
+            .field("node_id", &self.node_id)
+            .field("core_port", &self.core_port)
+            .field("platform_http_port", &self.platform_http_port)
+            .field("platform_p2p_port", &self.platform_p2p_port)
+            .field("is_banned", &self.is_banned)
+            .finish()
+    }
 }
 
 impl ValidatorV0 {

@@ -1,6 +1,6 @@
-use std::fmt;
 use crate::abci::AbciError;
 use crate::error::Error;
+use std::fmt;
 use tenderdash_abci::proto::abci::{RequestPrepareProposal, RequestProcessProposal};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::version::Consensus;
@@ -34,15 +34,38 @@ impl<'a> fmt::Debug for BlockProposal<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "BlockProposal {{")?;
         writeln!(f, "  consensus_versions: {:?},", self.consensus_versions)?;
-        writeln!(f, "  block_hash: {:?},", self.block_hash.as_ref().map(hex::encode))?;
+        writeln!(
+            f,
+            "  block_hash: {:?},",
+            self.block_hash.as_ref().map(hex::encode)
+        )?;
         writeln!(f, "  height: {},", self.height)?;
         writeln!(f, "  round: {},", self.round)?;
         writeln!(f, "  block_time_ms: {},", self.block_time_ms)?;
-        writeln!(f, "  core_chain_locked_height: {},", self.core_chain_locked_height)?;
+        writeln!(
+            f,
+            "  core_chain_locked_height: {},",
+            self.core_chain_locked_height
+        )?;
         writeln!(f, "  proposed_app_version: {},", self.proposed_app_version)?;
-        writeln!(f, "  proposer_pro_tx_hash: \"{}\",", hex::encode(self.proposer_pro_tx_hash))?;
-        writeln!(f, "  validator_set_quorum_hash: \"{}\",", hex::encode(self.validator_set_quorum_hash))?;
-        writeln!(f, "  raw_state_transitions: [{:?}],", self.raw_state_transitions.iter().map(hex::encode).collect::<Vec<_>>())?;
+        writeln!(
+            f,
+            "  proposer_pro_tx_hash: \"{}\",",
+            hex::encode(self.proposer_pro_tx_hash)
+        )?;
+        writeln!(
+            f,
+            "  validator_set_quorum_hash: \"{}\",",
+            hex::encode(self.validator_set_quorum_hash)
+        )?;
+        writeln!(
+            f,
+            "  raw_state_transitions: [{:?}],",
+            self.raw_state_transitions
+                .iter()
+                .map(hex::encode)
+                .collect::<Vec<_>>()
+        )?;
         write!(f, "}}")
     }
 }
