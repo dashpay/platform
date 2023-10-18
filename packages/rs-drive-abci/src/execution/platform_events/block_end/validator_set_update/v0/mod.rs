@@ -48,7 +48,7 @@ where
         {
             tracing::debug!(
                 method = "validator_set_update_v0",
-                "rotation: new quorums not containing current quorum current {:?}, {}",
+                "rotation: new quorums not containing current quorum current {:?}, {}. quorum rotation expected˚",
                 block_execution_context
                     .block_platform_state()
                     .validator_sets()
