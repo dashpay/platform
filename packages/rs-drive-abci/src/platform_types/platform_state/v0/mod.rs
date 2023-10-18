@@ -61,7 +61,6 @@ impl Debug for PlatformStateV0 {
                 "next_epoch_protocol_version",
                 &self.next_epoch_protocol_version,
             )
-            .field("quorums_extended_info", &self.quorums_extended_info)
             .field(
                 "current_validator_set_quorum_hash",
                 &self.current_validator_set_quorum_hash.to_string(),
