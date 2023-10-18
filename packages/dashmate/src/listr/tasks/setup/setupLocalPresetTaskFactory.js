@@ -18,6 +18,8 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {configFileRepository} configFileRepository
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
  * @param {HomeDir} homeDir
+ * @param {writeServiceConfigs} writeServiceConfigs
+ * @param {renderServiceTemplates} renderServiceTemplates
  */
 function setupLocalPresetTaskFactory(
   configFile,
@@ -28,6 +30,8 @@ function setupLocalPresetTaskFactory(
   configFileRepository,
   generateHDPrivateKeys,
   homeDir,
+  writeServiceConfigs,
+  renderServiceTemplates,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -273,7 +277,11 @@ function setupLocalPresetTaskFactory(
             task: async () => {
               configFile.setDefaultGroupName(PRESET_LOCAL);
 
-              // Persist configs
+              for (const config of ctx.configGroup) {
+                const serviceConfigFiles = renderServiceTemplates(config);
+                writeServiceConfigs(config.getName(), serviceConfigFiles);
+              }
+
               configFileRepository.write(configFile);
             },
           });
@@ -299,6 +307,8 @@ function setupLocalPresetTaskFactory(
 
           const subTasks = platformConfigs.map((config) => {
             config.set('platform.dapi.envoy.ssl.provider', SSL_PROVIDERS.SELF_SIGNED);
+
+            configFileRepository.write(configFile);
 
             return {
               title: `Generate certificate for ${config.getName()}`,
