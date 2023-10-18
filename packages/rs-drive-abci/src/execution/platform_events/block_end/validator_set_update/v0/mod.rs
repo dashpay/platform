@@ -35,7 +35,7 @@ where
         {
             tracing::debug!(
                 method = "validator_set_update_v0",
-                "rotation: previous quorum finished members"
+                "rotation: previous quorum finished members. quorum rotation expected"
             );
             perform_rotation = true;
         }
