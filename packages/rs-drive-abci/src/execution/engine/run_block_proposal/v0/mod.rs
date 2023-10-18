@@ -72,11 +72,20 @@ where
         let state = self.state.read().unwrap();
 
         if tracing::enabled!(tracing::Level::TRACE) {
+            let root_hash = self
+                .drive
+                .grove
+                .root_hash(Some(transaction))
+                .unwrap()
+                .map_err(|e| Error::Drive(GroveDB(e)))?;
+
             tracing::trace!(
                 method = "run_block_proposal_v0",
                 ?block_proposal,
                 ?epoch_info,
+                platform_state = ?state,
                 platform_state_fingerprint = hex::encode(state.fingerprint()),
+                app_hash = hex::encode(root_hash),
                 "running a block proposal on epoch {}",
                 epoch_info.current_epoch_index()
             );
@@ -295,13 +304,15 @@ where
         let block_fees_v0: BlockFeesV0 = block_fees.into();
 
         // Process fees
-        let _processed_block_fees = self.process_block_fees(
+        let processed_block_fees = self.process_block_fees(
             block_execution_context.block_state_info(),
             &epoch_info,
             block_fees_v0.into(),
             transaction,
             platform_version,
         )?;
+
+        tracing::debug!(block_fees = ?processed_block_fees, "block fees are processed");
 
         let root_hash = self
             .drive
@@ -317,6 +328,16 @@ where
         let state = self.state.read().unwrap();
         let validator_set_update =
             self.validator_set_update(&state, &mut block_execution_context, platform_version)?;
+
+        if tracing::enabled!(tracing::Level::TRACE) {
+            tracing::trace!(
+                method = "run_block_proposal_v0",
+                app_hash = hex::encode(root_hash),
+                block_platform_state = ?block_execution_context.block_platform_state(),
+                block_platform_state_fingerprint = hex::encode(block_execution_context.block_platform_state().fingerprint()),
+                "block proposal executed successfully",
+            );
+        }
 
         self.block_execution_context
             .write()
