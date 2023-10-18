@@ -1,5 +1,6 @@
 /* eslint-disable no-param-reassign */
 const fs = require('fs');
+const path = require('path');
 
 const { NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_MAINNET } = require('../src/constants');
 
@@ -256,14 +257,22 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
                 'platform', 'dapi', 'envoy', 'ssl', 'bundle.crt');
 
               if (fs.existsSync(oldPrivateKeyPath)) {
+                fs.mkdirSync(path.dirname(newPrivateKeyPath), { recursive: true });
                 fs.copyFileSync(oldPrivateKeyPath, newPrivateKeyPath);
+                fs.rmSync(oldPrivateKeyPath, { recursive: true });
               }
 
               if (fs.existsSync(oldCertificatePath)) {
+                fs.mkdirSync(path.dirname(newCertificatePath), { recursive: true });
                 fs.copyFileSync(oldCertificatePath, newCertificatePath);
+                fs.rmSync(oldCertificatePath, { recursive: true });
               }
             }
           });
+
+        if (fs.existsSync(homeDir.joinPath('ssl'))) {
+          fs.rmSync(homeDir.joinPath('ssl'), { recursive: true });
+        }
 
         return configFile;
       },
