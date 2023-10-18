@@ -76,7 +76,7 @@ jobs:
 
   release-drive-docker-image:
     name: Release Drive to Docker Hub
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform-8x" ]
+    runs-on: [ "self-hosted", "linux", "x64", "8x-ubuntu-platform" ]
     timeout-minutes: 120
     steps:
       - name: Check out repo
