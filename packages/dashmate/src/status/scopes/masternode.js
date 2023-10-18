@@ -36,6 +36,10 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       proTxHash: null,
       state: null,
       status: null,
+      masternodeTotal: null,
+      masternodeEnabled: null,
+      evonodeTotal: null,
+      evonodeEnabled: null,
       nodeState: {
         dmnState: null,
         poSePenalty: null,
@@ -43,7 +47,6 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
         lastPaidTime: null,
         paymentQueuePosition: null,
         nextPaymentTime: null,
-        enabledCount: null,
       },
     };
 
@@ -52,10 +55,16 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       rpcClient.masternode('count'),
       rpcClient.masternode('status'),
     ]);
-    const { blocks: coreBlocks } = blockchainInfo.result;
+    const {blocks: coreBlocks} = blockchainInfo.result;
 
     const countInfo = masternodeCount.result;
-    const { enabled } = countInfo;
+    const {detailed} = countInfo;
+    const {regular, evo} = detailed;
+
+    info.masternodeTotal = regular.total;
+    info.masternodeEnabled = regular.enabled;
+    info.evonodeTotal = evo.total;
+    info.evonodeEnabled = evo.enabled;
 
     const { state, status, proTxHash } = masternodeStatus.result;
 
@@ -68,7 +77,8 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
 
       const { PoSePenalty: poSePenalty, lastPaidHeight } = dmnState;
 
-      const paymentQueuePosition = calculatePaymentQueuePosition(dmnState, enabled, coreBlocks);
+      const paymentQueuePosition = calculatePaymentQueuePosition(dmnState,
+        info.masternodeEnabled, info.evonodeEnabled, coreBlocks);
       const lastPaidTime = lastPaidHeight ? blocksToTime(coreBlocks - lastPaidHeight) : null;
       const nextPaymentTime = `${blocksToTime(paymentQueuePosition)}`;
 
@@ -76,7 +86,6 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       info.nodeState.poSePenalty = poSePenalty;
       info.nodeState.lastPaidHeight = lastPaidHeight;
       info.nodeState.lastPaidTime = lastPaidTime;
-      info.nodeState.enabledCount = enabled;
       info.nodeState.paymentQueuePosition = paymentQueuePosition;
       info.nodeState.nextPaymentTime = nextPaymentTime;
     }
@@ -97,6 +106,10 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       proTxHash: null,
       state: MasternodeStateEnum.UNKNOWN,
       status: null,
+      masternodeTotal: null,
+      masternodeEnabled: null,
+      evonodeTotal: null,
+      evonodeEnabled: null,
       nodeState: {
         dmnState: null,
         poSePenalty: null,
@@ -121,6 +134,10 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
         const masternodeInfo = await getMasternodeInfo(config);
 
         scope.proTxHash = masternodeInfo.proTxHash;
+        scope.masternodeTotal = masternodeInfo.masternodeTotal
+        scope.masternodeEnabled = masternodeInfo.masternodeEnabled
+        scope.evonodeEnabled = masternodeInfo.evonodeEnabled
+        scope.evonodeTotal = masternodeInfo.evonodeTotal
         scope.state = masternodeInfo.state;
         scope.status = masternodeInfo.status;
         scope.nodeState = masternodeInfo.nodeState;
