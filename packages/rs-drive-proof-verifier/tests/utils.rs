@@ -38,17 +38,7 @@ where
     let (req, resp, metadata): (Req, Resp, TestMetadata) =
         serde::Deserialize::deserialize(b64_de).expect("deserialize test vector json");
 
-    // println!("req: {:?}\nresp: {:?}\nquorum: {:?}\n", req, resp, quorum);
-
-    let pubkey = metadata
-        .quorum_public_key
-        .clone()
-        .try_into()
-        .expect("pubkey size");
     let mut provider = drive_proof_verifier::proof::from_proof::MockQuorumInfoProvider::new();
-    provider
-        .expect_get_quorum_public_key()
-        .return_once(move |_, _, _| Ok(pubkey));
 
     (req, resp, metadata, provider)
 }

@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use dpp::prelude::{DataContract, Identifier};
 use rs_dapi_client::AddressList;
 use rs_sdk::platform::Fetch;
@@ -13,11 +15,11 @@ async fn main() {
     // Replace const below with data contract identifier of data contract, 32 bytes
     const DATA_CONTRACT_ID_BYTES: [u8; 32] = [1; 32];
 
-    // Create an instance of the SDK; we use constants defined in `common.rs` for convenience.
+    // Configure the SDK to connect to the Platform.
     // Note that in future versions of the SDK, core user and password will not be needed.
-    let uri = http::Uri::from_maybe_shared(format!("http://{}:{}", PLATFORM_IP, PLATFORM_PORT))
+    let uri = http::Uri::from_str(&format!("http://{}:{}", PLATFORM_IP, PLATFORM_PORT))
         .expect("platform address uri");
-    let mut sdk = rs_sdk::SdkBuilder::new(AddressList::from_iter(vec![uri]))
+    let mut sdk = rs_sdk::SdkBuilder::new(AddressList::from_iter([uri]))
         .with_core(PLATFORM_IP, CORE_PORT, CORE_USER, CORE_PASSWORD)
         .build()
         .expect("cannot initialize api");
@@ -25,10 +27,12 @@ async fn main() {
     // Convert bytes to identifier object that can be used as a Query
     let id = Identifier::from_bytes(&DATA_CONTRACT_ID_BYTES).expect("parse data contract id");
 
-    // Execute the fetch operation
-    let result = DataContract::fetch(&mut sdk, id).await;
+    // Fetch identity from the Platform
+    let contract: Option<DataContract> = DataContract::fetch(&mut sdk, id)
+        .await
+        .expect("fetch identity");
 
     // Check the result; note that in our case, we expect to not find the data contract, as the
     // identifier is not valid.
-    assert!(matches!(result, Ok(None)), "result: {:?}", result);
+    assert!(matches!(contract, None), "result: {:?}", contract);
 }

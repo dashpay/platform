@@ -3625,6 +3625,7 @@ dependencies = [
  "drive",
  "drive-abci",
  "drive-proof-verifier",
+ "hex",
  "http",
  "rs-dapi-client",
  "serde",

@@ -10,13 +10,13 @@ use dpp::document::Document;
 use drive_proof_verifier::proof::from_proof::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 
+#[cfg(feature = "mocks")]
+use crate::mock::MockResponse;
 use crate::{
     error::Error,
-    mock::MockResponse,
     platform::{document_query::DocumentQuery, query::Query},
     Sdk,
 };
-
 /// Trait implemented by objects that can be listed or searched.
 #[async_trait::async_trait]
 pub trait List

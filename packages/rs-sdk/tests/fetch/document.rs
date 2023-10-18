@@ -8,9 +8,11 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::{DataContract, Identifier};
 use drive::query::DriveQuery;
 
+use crate::common::{
+    base64_identifier, setup_api, setup_logs, DATA_CONTRACT_ID, DOCUMENT_TYPE_NAME,
+};
 use rs_sdk::platform::DocumentQuery;
 use rs_sdk::platform::{Fetch, List};
-use crate::common::{setup_logs, setup_api, base64_identifier, DATA_CONTRACT_ID, DOCUMENT_TYPE_NAME};
 
 /// Given some data contract ID, document type and document ID, when I fetch it, then I get it.
 ///

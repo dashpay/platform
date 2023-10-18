@@ -1,24 +1,25 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use std::sync::Arc;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 #[cfg(feature = "mocks")]
-use crate::mock::MockDashPlatformSdk;
-use crate::{
-    core::CoreClient,
-    error::Error,
-    mock::{MockRequest, MockResponse},
-};
+use crate::mock::{MockDashPlatformSdk, MockRequest, MockResponse};
+use crate::{core::CoreClient, error::Error};
+
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
-use drive_proof_verifier::{FromProof, QuorumInfoProvider};
+use drive_proof_verifier::{FromProof, MockQuorumInfoProvider, QuorumInfoProvider};
+#[cfg(feature = "mocks")]
+use hex::ToHex;
+pub use http::Uri;
+pub use rs_dapi_client::AddressList;
 use rs_dapi_client::{
     mock::MockDapiClient,
     transport::{TransportClient, TransportRequest},
     Dapi, DapiClient, DapiClientError, RequestSettings,
 };
-
-pub use http::Uri;
-pub use rs_dapi_client::AddressList;
 use tokio::sync::Mutex;
 
 /// Dash Platform SDK
@@ -39,7 +40,10 @@ use tokio::sync::Mutex;
 /// ## Examples
 ///
 /// See tests/ for examples of using the SDK.
-pub struct Sdk(SdkInstance);
+pub struct Sdk {
+    inner: SdkInstance,
+    dump_dir: Option<PathBuf>,
+}
 
 /// Internal Sdk instance.
 ///
@@ -61,7 +65,10 @@ enum SdkInstance {
         /// Mock DAPI client used to communicate with Dash Platform.
         dapi: Arc<Mutex<MockDapiClient>>,
         /// Mock SDK implementation processing mock expectations and responses.
+        #[cfg(feature = "mocks")]
         mock: MockDashPlatformSdk,
+        #[cfg(feature = "mocks")]
+        quorum_provider: MockQuorumInfoProvider,
     },
 }
 
@@ -93,11 +100,8 @@ impl Sdk {
     where
         O::Request: MockRequest,
     {
-        match self.0 {
-            SdkInstance::Dapi { ref core, .. } => {
-                let provider: &dyn QuorumInfoProvider = core;
-                O::maybe_from_proof(request, response, provider)
-            }
+        match self.inner {
+            SdkInstance::Dapi { .. } => O::maybe_from_proof(request, response, self),
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => mock.parse_proof(request, response),
         }
@@ -112,7 +116,11 @@ impl Sdk {
     /// Panics if the `self` instance is not a `Mock` variant.
     #[cfg(feature = "mocks")]
     pub fn mock(&mut self) -> &mut MockDashPlatformSdk {
-        if let Sdk(SdkInstance::Mock { ref mut mock, .. }) = self {
+        if let Sdk {
+            inner: SdkInstance::Mock { ref mut mock, .. },
+            ..
+        } = self
+        {
             mock
         } else {
             panic!("not a mock")
@@ -126,7 +134,7 @@ impl Sdk {
     /// This is the version configured in [`SdkBuilder`](crate::sdk::SdkBuilder).
     /// Useful whenever you need to provide [PlatformVersion] to other SDK and DPP methods.
     pub fn version<'a>(&self) -> &'a PlatformVersion {
-        match &self.0 {
+        match &self.inner {
             SdkInstance::Dapi { version, .. } => version,
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { mock, .. } => mock.version(),
@@ -137,6 +145,40 @@ impl Sdk {
     pub fn prove(&self) -> bool {
         return true;
     }
+
+    /// Save quorum public key to disk.
+    ///
+    /// Files are named: `quorum_pubkey-<int_quorum_type>-<hex_quorum_hash>.json`
+    ///
+    /// Note that this will overwrite files with the same quorum type and quorum hash.
+    ///
+    /// Any errors are logged on `warn` level and ignored.
+    #[cfg(feature = "mocks")]
+    fn dump_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        _core_chain_locked_height: u32,
+        public_key: &[u8],
+    ) {
+        let path = match &self.dump_dir {
+            Some(p) => p,
+            None => return,
+        };
+
+        let encoded = serde_json::to_vec_pretty(public_key).expect("encode quorum hash to json");
+
+        let file = path.join(format!(
+            "quorum_pubkey-{}-{}.json",
+            quorum_type,
+            quorum_hash.encode_hex::<String>()
+        ));
+
+        if let Err(e) = std::fs::write(&file, encoded) {
+            tracing::warn!("Unable to write dump file {:?}: {}", path, e);
+            return;
+        }
+    }
 }
 
 impl QuorumInfoProvider for Sdk {
@@ -146,13 +188,22 @@ impl QuorumInfoProvider for Sdk {
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], drive_proof_verifier::Error> {
-        let provider: &dyn QuorumInfoProvider = match self.0 {
+        let provider: &dyn QuorumInfoProvider = match self.inner {
             SdkInstance::Dapi { ref core, .. } => core,
             #[cfg(feature = "mocks")]
-            SdkInstance::Mock { ref mock, .. } => mock,
+            SdkInstance::Mock {
+                ref quorum_provider,
+                ..
+            } => quorum_provider,
         };
 
-        provider.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+        let key =
+            provider.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)?;
+
+        #[cfg(feature = "mocks")]
+        self.dump_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height, &key);
+
+        Ok(key)
     }
 }
 
@@ -163,7 +214,7 @@ impl Dapi for Sdk {
         request: R,
         settings: RequestSettings,
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
-        match self.0 {
+        match self.inner {
             SdkInstance::Dapi { ref mut dapi, .. } => dapi.execute(request, settings).await,
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mut dapi, .. } => {
@@ -202,6 +253,10 @@ pub struct SdkBuilder {
     proofs: bool,
 
     version: &'static PlatformVersion,
+
+    /// directory where dump files will be stored
+    #[cfg(feature = "mocks")]
+    dump_dir: Option<PathBuf>,
 }
 
 impl Default for SdkBuilder {
@@ -218,6 +273,8 @@ impl Default for SdkBuilder {
             proofs: true,
 
             version: PlatformVersion::latest(),
+            #[cfg(feature = "mocks")]
+            dump_dir: None,
         }
     }
 }
@@ -291,6 +348,25 @@ impl SdkBuilder {
         self
     }
 
+    /// Configure directory where dumps of all requests and responses will be saved.
+    /// Useful for debugging.
+    ///
+    /// This function will create the directory if it does not exist and save dumps of
+    /// * all requests and responses - in files named `msg-<timestamp>-<hash>.json`
+    /// * retrieved quorum public keys - in files named `quorum_pubkey-<integer_quorum_type>-<hex_quorum_hash>.json`
+    ///
+    /// Data is saved in JSON format.
+    ///
+    /// These files can be used together with [MockDashPlatformSdk] to replay the requests and responses.
+    /// See [MockDashPlatformSdk::load] for more information.
+    ///
+    /// Available only when `mocks` feature is enabled.
+    #[cfg(feature = "mocks")]
+    pub fn with_dump_dir(mut self, dump_dir: &Path) -> Self {
+        self.dump_dir = Some(dump_dir.to_path_buf());
+        self
+    }
+
     /// Build the Sdk instance.
     ///
     /// This method will create the Sdk instance based on the configuration provided to the builder.
@@ -309,6 +385,9 @@ impl SdkBuilder {
                     ));
                 }
                 let dapi = DapiClient::new(addresses, self.settings);
+                #[cfg(feature = "mocks")]
+                let dapi = dapi.dump_dir(self.dump_dir.clone());
+
                 let core = CoreClient::new(
                     &self.core_ip,
                     self.core_port,
@@ -316,14 +395,21 @@ impl SdkBuilder {
                     &self.core_password,
                 )?;
 
-                Ok(Sdk(SdkInstance::Dapi { dapi, core, version:self.version }))
-            }
+                Ok(Sdk{
+                    inner:SdkInstance::Dapi { dapi, core, version:self.version },
+                    dump_dir: self.dump_dir,
+                })
+            },
             #[cfg(feature = "mocks")]
             None =>{ let dapi =Arc::new(Mutex::new(  MockDapiClient::new()));
-                Ok(Sdk(SdkInstance::Mock {
-                mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs),
-                dapi,
-            }))},
+                Ok(Sdk{
+                    inner:SdkInstance::Mock {
+                        mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs),
+                        dapi,
+                        quorum_provider: MockQuorumInfoProvider::new(),
+                    },
+                    dump_dir: self.dump_dir,
+            })},
             #[cfg(not(feature = "mocks"))]
             None => Err(Error::Config(
                 "Mock mode is not available. Please enable `mocks` feature or provide address list.".to_string(),

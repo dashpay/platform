@@ -31,7 +31,7 @@ use dpp::{
     },
     version::PlatformVersion,
 };
-use drive_proof_verifier::{FromProof, QuorumInfoProvider};
+use drive_proof_verifier::{FromProof, MockQuorumInfoProvider};
 use rs_dapi_client::{mock::MockDapiClient, transport::TransportRequest};
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::Mutex;
@@ -52,6 +52,7 @@ pub struct MockDashPlatformSdk {
     platform_version: &'static PlatformVersion,
     dapi: Arc<Mutex<MockDapiClient>>,
     prove: bool,
+    quorum_provider: Option<MockQuorumInfoProvider>,
 }
 
 impl MockDashPlatformSdk {
@@ -65,11 +66,21 @@ impl MockDashPlatformSdk {
             platform_version: version,
             dapi,
             prove,
+            quorum_provider: None,
         }
     }
 
     pub(crate) fn version<'v>(&self) -> &'v PlatformVersion {
         self.platform_version
+    }
+    /// Define a directory where files containing quorum information, like quorum public keys, are stored.
+    ///
+    /// This directory will be used to load quorum information from files.
+    /// You can use [SdkBuilder::with_dump_dir()](crate::SdkBuilder::with_dump_dir()) to generate these files.
+    pub fn quorum_info_dir<P: AsRef<std::path::Path>>(&mut self, dir: P) {
+        let mut provider = MockQuorumInfoProvider::new();
+        provider.quorum_keys_dir(Some(dir.as_ref().to_path_buf()));
+        self.quorum_provider = Some(provider);
     }
 
     /// Expect a [Fetch] request and return provided object.
@@ -224,17 +235,6 @@ impl MockDashPlatformSdk {
         };
 
         Ok(Option::<O>::mock_deserialize(self, data))
-    }
-}
-
-impl QuorumInfoProvider for MockDashPlatformSdk {
-    fn get_quorum_public_key(
-        &self,
-        _quorum_type: u32,
-        _quorum_hash: [u8; 32],
-        _core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], drive_proof_verifier::Error> {
-        unimplemented!("get_quorum_public_key is not implemented in mock SDK")
     }
 }
 

@@ -1,7 +1,7 @@
-use dpp::prelude::{DataContract, Identifier};
-use rs_sdk::platform::Fetch;
 use crate::common;
 use crate::common::{base64_identifier, setup_api};
+use dpp::prelude::{DataContract, Identifier};
+use rs_sdk::platform::Fetch;
 
 /// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
 ///

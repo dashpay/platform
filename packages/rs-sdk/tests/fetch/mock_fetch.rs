@@ -1,6 +1,7 @@
 //!
 //!
 
+use crate::common::{mock_data_contract, mock_document_type};
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters,
@@ -16,7 +17,6 @@ use rs_sdk::{
     platform::{DocumentQuery, Fetch},
     Sdk,
 };
-use crate::common::{mock_data_contract, mock_document_type};
 
 #[tokio::test]
 /// Given some identity, when I fetch it using mock API, then I get the same identity

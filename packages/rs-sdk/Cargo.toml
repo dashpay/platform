@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-dpp = { path = "../rs-dpp", features = ["client", "validation"] }
+dpp = { path = "../rs-dpp", features = [
+    "client",
+    "validation",
+    "identity-value-conversion",
+] }
 dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
 rs-dapi-client = { path = "../rs-dapi-client" }
 drive = { path = "../rs-drive", default-features = false, features = [
@@ -23,11 +27,13 @@ ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-nul
 serde = { version = "1.0.152", default-features = false, features = ["rc"] }
 serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
 tracing = { version = "0.1.37" }
+hex = { version = "0.4.3", optional = true }
 
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.1" }
 
 [dev-dependencies]
+rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks", "dump"] }
 base64 = { version = "0.21.0" }
 tracing-subscriber = { version = "0.3.16" }
 dpp = { path = "../rs-dpp", features = [
@@ -42,9 +48,11 @@ default = ["mocks"]
 mocks = [
     "dep:serde_json",
     "rs-dapi-client/mocks",
+    "rs-dapi-client/dump",
     "dpp/document-cbor-conversion",
     "dpp/identity-value-conversion",
     "dpp/random-identities",
     "drive-proof-verifier/mocks",
     "dep:bincode",
+    "dep:hex",
 ]

@@ -13,18 +13,14 @@
 //! - `Fetch<API>` for [`DataContract`](dpp::prelude::DataContract)
 //! - `Fetch<API>` for [`Document`](dpp::document::Document)
 
-use std::fmt::Debug;
-
-use crate::{
-    error::Error,
-    mock::{MockRequest, MockResponse},
-    platform::query::Query,
-    Sdk,
-};
+#[cfg(feature = "mocks")]
+use crate::mock::{MockRequest, MockResponse};
+use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto};
 use dpp::{document::Document, prelude::Identity};
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
+use std::fmt::Debug;
 
 use super::document_query::DocumentQuery;
 
