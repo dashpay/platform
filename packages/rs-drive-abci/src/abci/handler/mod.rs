@@ -298,9 +298,9 @@ where
 
                 if current_block_hash.as_slice() == request.hash {
                     // We were not the proposer, just drop the execution context
-                    tracing::debug!(
+                    tracing::warn!(
                         method = "process_proposal",
-                        ?request, // TODO: It might be too big for debug + we already logged it with rs-tenderdash-abci
+                        ?request, // Shumkov, lklimek: this structure might be very big and we already logged it such as all other ABCI requests and responses
                         "block execution context already existed, but we are running it again for same height {}/round {}",
                         request.height,
                         request.round,
