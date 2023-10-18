@@ -82,7 +82,8 @@ where
                         tracing::trace!(
                             method = "process_raw_state_transitions_v0",
                             ?state_transition,
-                            block_platform_state_fingerprint = ?block_platform_state.fingerprint(),
+                            block_platform_state_fingerprint =
+                                hex::encode(block_platform_state.fingerprint()),
                             "State transition successfully processed",
                         );
                     }
@@ -99,7 +100,8 @@ where
                         tracing::trace!(
                             method = "process_raw_state_transitions_v0",
                             ?state_transition,
-                            block_platform_state_fingerprint = ?block_platform_state.fingerprint(),
+                            block_platform_state_fingerprint =
+                                hex::encode(block_platform_state.fingerprint()),
                             "Invalid state transition: {:?}",
                             state_transition_execution_event.errors.first().clone(),
                         );
