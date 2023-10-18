@@ -1,7 +1,7 @@
 use std::convert::{TryFrom, TryInto};
 
 use dashcore::consensus::{deserialize, Encodable};
-use dashcore::{InstantLock, Transaction, TxIn, TxOut};
+use dashcore::{InstantLock, OutPoint, Transaction, TxIn, TxOut};
 use platform_value::{BinaryData, Value};
 
 use serde::de::Error as DeError;
@@ -13,7 +13,7 @@ use crate::prelude::Identifier;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::hash::hash_to_vec;
 use crate::util::vec::vec_to_array;
-use crate::{NonConsensusError, ProtocolError};
+use crate::ProtocolError;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstantAssetLockProof {
@@ -28,7 +28,8 @@ impl Serialize for InstantAssetLockProof {
     where
         S: Serializer,
     {
-        let raw = RawInstantLock::try_from(self).map_err(|e| S::Error::custom(e.to_string()))?;
+        let raw =
+            RawInstantLockProof::try_from(self).map_err(|e| S::Error::custom(e.to_string()))?;
 
         raw.serialize(serializer)
     }
@@ -39,7 +40,7 @@ impl<'de> Deserialize<'de> for InstantAssetLockProof {
     where
         D: Deserializer<'de>,
     {
-        let raw = RawInstantLock::deserialize(deserializer)?;
+        let raw = RawInstantLockProof::deserialize(deserializer)?;
         raw.try_into()
             .map_err(|e: ProtocolError| D::Error::custom(e.to_string()))
     }
@@ -104,13 +105,14 @@ impl InstantAssetLockProof {
         self.output_index as usize
     }
 
-    pub fn out_point(&self) -> Option<[u8; 36]> {
+    pub fn out_point(&self) -> Option<OutPoint> {
         let out_point_buffer = self.transaction.out_point_buffer(self.output_index());
 
-        out_point_buffer.map(|mut buffer| {
-            let (tx_id, _) = buffer.split_at_mut(32);
-            tx_id.reverse();
-            buffer
+        out_point_buffer.map(|buffer| {
+            OutPoint::from(buffer)
+            // let (tx_id, _) = buffer.split_at_mut(32);
+            // tx_id.reverse();
+            // buffer
         })
     }
 
@@ -118,13 +120,22 @@ impl InstantAssetLockProof {
         self.transaction.output.get(self.output_index())
     }
 
-    pub fn create_identifier(&self) -> Result<Identifier, NonConsensusError> {
-        let out_point = self.out_point().ok_or_else(|| {
-            NonConsensusError::IdentifierCreateError(String::from("No output at a given index"))
+    pub fn create_identifier(&self) -> Result<Identifier, ProtocolError> {
+        let outpoint = self.out_point().ok_or_else(|| {
+            ProtocolError::IdentifierError(String::from("No output at a given index"))
         })?;
 
-        let buffer = hash_to_vec(out_point);
-        Ok(Identifier::new(vec_to_array(&buffer)?))
+        let mut outpoint_bytes = Vec::new();
+
+        outpoint
+            .consensus_encode(&mut outpoint_bytes)
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+
+        let hash = hash_to_vec(outpoint_bytes);
+
+        let hash_array = vec_to_array(&hash)?;
+
+        Ok(Identifier::new(hash_array))
     }
 
     #[cfg(feature = "cbor")]
@@ -152,7 +163,7 @@ impl InstantAssetLockProof {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 /// "Raw" instant lock for serialization
-pub struct RawInstantLock {
+pub struct RawInstantLockProof {
     #[serde(rename = "type")]
     lock_type: u8,
     instant_lock: BinaryData,
@@ -160,10 +171,10 @@ pub struct RawInstantLock {
     output_index: u32,
 }
 
-impl TryFrom<RawInstantLock> for InstantAssetLockProof {
+impl TryFrom<RawInstantLockProof> for InstantAssetLockProof {
     type Error = ProtocolError;
 
-    fn try_from(raw_instant_lock: RawInstantLock) -> Result<Self, Self::Error> {
+    fn try_from(raw_instant_lock: RawInstantLockProof) -> Result<Self, Self::Error> {
         let transaction = deserialize(raw_instant_lock.transaction.as_slice())
             .map_err(|e| ProtocolError::DecodingError(e.to_string()))?;
         let instant_lock = deserialize(raw_instant_lock.instant_lock.as_slice())
@@ -178,7 +189,7 @@ impl TryFrom<RawInstantLock> for InstantAssetLockProof {
     }
 }
 
-impl TryFrom<&InstantAssetLockProof> for RawInstantLock {
+impl TryFrom<&InstantAssetLockProof> for RawInstantLockProof {
     type Error = ProtocolError;
 
     fn try_from(instant_asset_lock_proof: &InstantAssetLockProof) -> Result<Self, Self::Error> {

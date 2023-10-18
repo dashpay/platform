@@ -4,6 +4,7 @@ pub mod transformer;
 use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, IdentityV0, PartialIdentity};
 
+use dpp::dashcore::OutPoint;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
 use dpp::platform_value::Bytes36;
@@ -22,7 +23,7 @@ pub struct IdentityCreateTransitionActionV0 {
     /// identity id
     pub identity_id: Identifier,
     /// asset lock outpoint
-    pub asset_lock_outpoint: Bytes36,
+    pub asset_lock_outpoint: OutPoint,
 }
 
 impl From<IdentityCreateTransitionActionV0> for PartialIdentity {

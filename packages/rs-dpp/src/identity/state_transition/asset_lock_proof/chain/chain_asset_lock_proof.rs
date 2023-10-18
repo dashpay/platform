@@ -1,20 +1,22 @@
-use platform_value::{Bytes36, Value};
-use serde::{Deserialize, Serialize};
+use ::serde::{Deserialize, Serialize};
+use platform_value::Value;
 use std::convert::TryFrom;
 
 use crate::{
-    errors::NonConsensusError, identifier::Identifier, util::hash::hash_to_vec,
-    util::vec::vec_to_array, ProtocolError,
+    identifier::Identifier, util::hash::hash_to_vec, util::vec::vec_to_array, ProtocolError,
 };
 pub use bincode::{Decode, Encode};
+use dashcore::consensus::Encodable;
+use dashcore::OutPoint;
 
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Encode, Decode)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChainAssetLockProof {
     #[serde(rename = "type")]
     asset_lock_type: u8,
     pub core_chain_locked_height: u32,
-    pub out_point: Bytes36,
+    #[serde(with = "super::outpoint::serde")]
+    pub out_point: OutPoint,
 }
 
 impl TryFrom<Value> for ChainAssetLockProof {
@@ -37,7 +39,7 @@ impl ChainAssetLockProof {
             // TODO: change to const
             asset_lock_type: 1,
             core_chain_locked_height,
-            out_point: Bytes36::new(out_point),
+            out_point: OutPoint::from(out_point),
         }
     }
 
@@ -47,8 +49,17 @@ impl ChainAssetLockProof {
     }
 
     /// Create identifier
-    pub fn create_identifier(&self) -> Result<Identifier, NonConsensusError> {
-        let array = vec_to_array(hash_to_vec(self.out_point.as_slice()).as_ref())?;
-        Ok(Identifier::new(array))
+    pub fn create_identifier(&self) -> Result<Identifier, ProtocolError> {
+        let mut outpoint_bytes = Vec::new();
+
+        self.out_point
+            .consensus_encode(&mut outpoint_bytes)
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+
+        let hash = hash_to_vec(&outpoint_bytes);
+
+        let hash_array = vec_to_array(&hash)?;
+
+        Ok(Identifier::new(hash_array))
     }
 }

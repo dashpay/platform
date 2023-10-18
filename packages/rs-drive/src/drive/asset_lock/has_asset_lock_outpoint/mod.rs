@@ -9,6 +9,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use dpp::platform_value::Bytes36;
 use dpp::version::drive_versions::DriveVersion;
 
+use dpp::dashcore::OutPoint;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -24,7 +25,7 @@ impl Drive {
     /// Returns a `Result` which is `Ok` if the outpoint exists in the transaction or an `Error` otherwise.
     pub fn has_asset_lock_outpoint(
         &self,
-        outpoint: &Bytes36,
+        outpoint: &OutPoint,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
@@ -54,7 +55,7 @@ impl Drive {
         &self,
         apply: bool,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        outpoint: &Bytes36,
+        outpoint: &OutPoint,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {

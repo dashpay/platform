@@ -17,16 +17,16 @@ impl IdentityCreateTransitionActionV0 {
             asset_lock_proof,
             ..
         } = value;
-        let asset_lock_outpoint = asset_lock_proof
-            .out_point()
-            .ok_or(ConsensusError::BasicError(
-                BasicError::IdentityAssetLockTransactionOutputNotFoundError(
-                    IdentityAssetLockTransactionOutputNotFoundError::new(
-                        asset_lock_proof.instant_lock_output_index().unwrap(),
+        let asset_lock_outpoint =
+            asset_lock_proof
+                .out_point()
+                .ok_or(ConsensusError::BasicError(
+                    BasicError::IdentityAssetLockTransactionOutputNotFoundError(
+                        IdentityAssetLockTransactionOutputNotFoundError::new(
+                            asset_lock_proof.instant_lock_output_index().unwrap(),
+                        ),
                     ),
-                ),
-            ))?
-            .into();
+                ))?;
         Ok(IdentityCreateTransitionActionV0 {
             public_keys: public_keys.into_iter().map(|a| a.into()).collect(),
             initial_balance_amount,

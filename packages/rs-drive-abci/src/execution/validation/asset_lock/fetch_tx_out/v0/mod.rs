@@ -9,7 +9,7 @@ use dpp::consensus::basic::identity::{
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::{OutPoint, TxOut};
+use dpp::dashcore::TxOut;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::validation::ValidationResult;
 
@@ -60,7 +60,7 @@ impl FetchAssetLockProofTxOutV0 for AssetLockProof {
                 }
             }
             AssetLockProof::Chain(asset_lock_proof) => {
-                let out_point = OutPoint::from(asset_lock_proof.out_point.to_buffer());
+                let out_point = asset_lock_proof.out_point;
 
                 let output_index = out_point.vout as usize;
                 let transaction_hash = out_point.txid;

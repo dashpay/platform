@@ -127,7 +127,9 @@ impl Drive {
             .map(|key_element| {
                 if let SumItem(balance, _) = &key_element.1 {
                     let identifier: [u8; 32] = key_element.0.try_into().map_err(|_| {
-                        Error::Drive(DriveError::CorruptedSerialization("expected 32 bytes"))
+                        Error::Drive(DriveError::CorruptedSerialization(String::from(
+                            "expected 32 bytes",
+                        )))
                     })?;
                     Ok((identifier, *balance as u64))
                 } else {

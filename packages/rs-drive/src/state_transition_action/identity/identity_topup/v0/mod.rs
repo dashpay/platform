@@ -2,7 +2,7 @@ mod transformer;
 
 use dpp::identifier::Identifier;
 
-use dpp::platform_value::Bytes36;
+use dpp::dashcore::OutPoint;
 use serde::{Deserialize, Serialize};
 
 /// action v0
@@ -14,5 +14,5 @@ pub struct IdentityTopUpTransitionActionV0 {
     /// identity id
     pub identity_id: Identifier,
     /// asset lock outpoint
-    pub asset_lock_outpoint: Bytes36,
+    pub asset_lock_outpoint: OutPoint,
 }

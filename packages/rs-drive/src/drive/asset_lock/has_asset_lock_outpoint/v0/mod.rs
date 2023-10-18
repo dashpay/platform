@@ -7,9 +7,11 @@ use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::platform_value::Bytes36;
 use dpp::version::drive_versions::DriveVersion;
 
+use crate::error::drive::DriveError;
+use dpp::dashcore::consensus::Encodable;
+use dpp::dashcore::OutPoint;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -26,7 +28,7 @@ impl Drive {
     /// Returns a `Result` which is `Ok` if the outpoint exists in the transaction or an `Error` otherwise.
     pub(super) fn has_asset_lock_outpoint_v0(
         &self,
-        outpoint: &Bytes36,
+        outpoint: &OutPoint,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
@@ -56,7 +58,7 @@ impl Drive {
         &self,
         apply: bool,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        outpoint: &Bytes36,
+        outpoint: &OutPoint,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
@@ -69,9 +71,16 @@ impl Drive {
                 query_target: QueryTargetValue(36),
             }
         };
+
+        let mut outpoint_buffer = Vec::new();
+
+        outpoint
+            .consensus_encode(&mut outpoint_buffer)
+            .map_err(|e| Error::Drive(DriveError::CorruptedSerialization(e.to_string())))?;
+
         self.grove_has_raw(
             (&asset_lock_storage_path).into(),
-            outpoint.as_slice(),
+            &outpoint_buffer,
             query_type,
             transaction,
             drive_operations,

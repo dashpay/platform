@@ -1,6 +1,6 @@
 use std::convert::{TryFrom, TryInto};
 
-use dashcore::{Transaction, TxOut};
+use dashcore::{OutPoint, Transaction, TxOut};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -21,13 +21,13 @@ pub mod instant;
 #[serde(untagged)]
 pub enum AssetLockProof {
     Instant(#[bincode(with_serde)] InstantAssetLockProof),
-    Chain(ChainAssetLockProof),
+    Chain(#[bincode(with_serde)] ChainAssetLockProof),
 }
 
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum RawAssetLockProof {
-    Instant(RawInstantLock),
+    Instant(RawInstantLockProof),
     Chain(ChainAssetLockProof),
 }
 
@@ -223,7 +223,7 @@ impl AssetLockProof {
         }
     }
 
-    pub fn create_identifier(&self) -> Result<Identifier, NonConsensusError> {
+    pub fn create_identifier(&self) -> Result<Identifier, ProtocolError> {
         match self {
             AssetLockProof::Instant(instant_proof) => instant_proof.create_identifier(),
             AssetLockProof::Chain(chain_proof) => chain_proof.create_identifier(),
@@ -244,10 +244,10 @@ impl AssetLockProof {
         }
     }
 
-    pub fn out_point(&self) -> Option<[u8; 36]> {
+    pub fn out_point(&self) -> Option<OutPoint> {
         match self {
             AssetLockProof::Instant(proof) => proof.out_point(),
-            AssetLockProof::Chain(proof) => Some(proof.out_point.to_buffer()),
+            AssetLockProof::Chain(proof) => Some(proof.out_point),
         }
     }
 

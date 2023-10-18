@@ -15,7 +15,7 @@ use crate::{
     with_js_error,
 };
 use dpp::identity::state_transition::asset_lock_proof::instant::{
-    InstantAssetLockProof, RawInstantLock,
+    InstantAssetLockProof, RawInstantLockProof,
 };
 use dpp::platform_value::string_encoding;
 use dpp::platform_value::string_encoding::Encoding;
@@ -52,7 +52,7 @@ impl From<InstantAssetLockProofWasm> for InstantAssetLockProof {
 impl InstantAssetLockProofWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(raw_parameters: JsValue) -> Result<InstantAssetLockProofWasm, JsValue> {
-        let raw_instant_lock: RawInstantLock =
+        let raw_instant_lock: RawInstantLockProof =
             with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
 
         let instant_asset_lock_proof: InstantAssetLockProof =

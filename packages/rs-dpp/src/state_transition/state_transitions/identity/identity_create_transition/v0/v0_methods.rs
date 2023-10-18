@@ -77,7 +77,9 @@ impl IdentityCreateTransitionAccessorsV0 for IdentityCreateTransitionV0 {
         &mut self,
         asset_lock_proof: AssetLockProof,
     ) -> Result<(), NonConsensusError> {
-        self.identity_id = asset_lock_proof.create_identifier()?;
+        self.identity_id = asset_lock_proof
+            .create_identifier()
+            .map_err(|e| NonConsensusError::IdentifierCreateError(e.to_string()))?;
 
         self.asset_lock_proof = asset_lock_proof;
 

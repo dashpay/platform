@@ -11,9 +11,6 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 
 use dpp::consensus::ConsensusError;
-use dpp::dashcore::OutPoint;
-
-use dpp::platform_value::Bytes36;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -83,10 +80,9 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
 
         // Now we should check that we aren't using an asset lock again
         let asset_lock_already_found =
-            drive.has_asset_lock_outpoint(&Bytes36(outpoint), tx, &platform_version.drive)?;
+            drive.has_asset_lock_outpoint(&outpoint, tx, &platform_version.drive)?;
 
         if asset_lock_already_found {
-            let outpoint = OutPoint::from(outpoint);
             return Ok(ConsensusValidationResult::new_with_error(
                 ConsensusError::BasicError(
                     BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(
