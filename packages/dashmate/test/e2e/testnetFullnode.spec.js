@@ -173,17 +173,17 @@ describe('Testnet Fullnode', function main() {
 
       await task.run({
         isVerbose: true,
-        platformOnly: true
+        platformOnly: true,
       });
 
       await assertServiceRunning(config, 'core', false);
       await assertServiceRunning(config, 'drive_abci', true);
 
-      task = startNodeTask(config)
+      task = startNodeTask(config);
 
       await task.run({
         isVerbose: true,
-        platformOnly: true
+        platformOnly: true,
       });
 
       await assertServiceRunning(config, 'core', true);
