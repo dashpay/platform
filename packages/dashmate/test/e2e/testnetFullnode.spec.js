@@ -176,8 +176,8 @@ describe('Testnet Fullnode', function main() {
         platformOnly: true,
       });
 
-      await assertServiceRunning(config, 'core', false);
-      await assertServiceRunning(config, 'drive_abci', true);
+      await assertServiceRunning(config, 'core', true);
+      await assertServiceRunning(config, 'drive_abci', false);
 
       task = startNodeTask(config);
 
