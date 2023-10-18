@@ -44,6 +44,38 @@ impl MockDapiClient {
         self
     }
 
+    /// Load expectation from file.
+    ///
+    /// The file must contain JSON structure.
+    /// See [DumpData](crate::DumpData) and [DapiClient::dump_dir()](crate::DapiClient::dump_dir()) more for details.
+    #[cfg(feature = "mocks")]
+    pub fn load<T: TransportRequest, P: AsRef<std::path::Path>>(
+        &mut self,
+        file: P,
+    ) -> Result<(T, T::Response), std::io::Error>
+    where
+        T: for<'de> serde::Deserialize<'de>,
+        T::Response: for<'de> serde::Deserialize<'de>,
+    {
+        let f = std::fs::File::open(file)?;
+
+        #[derive(serde::Deserialize)]
+        struct Data<R: TransportRequest> {
+            request: R,
+            response: R::Response,
+        }
+
+        let data: Data<T> = serde_json::from_reader(f).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unable to parse json: {}", e),
+            )
+        })?;
+
+        self.expect(&data.request, &data.response);
+        Ok((data.request, data.response))
+    }
+
     /// Read and deserialize expected response for provided request.
     ///
     /// Returns None if the request is not expected.

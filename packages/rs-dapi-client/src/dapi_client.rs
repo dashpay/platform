@@ -1,6 +1,12 @@
 //! [DapiClient] definition.
+#[cfg(feature = "dump")]
+use std::path::PathBuf;
 
 use backon::{ExponentialBuilder, Retryable};
+#[cfg(feature = "dump")]
+use hex::ToHex;
+#[cfg(feature = "dump")]
+use sha2::Digest;
 use tonic::async_trait;
 use tracing::Instrument;
 
@@ -68,6 +74,8 @@ impl<D: Dapi + Send> Dapi for &mut D {
 pub struct DapiClient {
     address_list: AddressList,
     settings: RequestSettings,
+    #[cfg(feature = "dump")]
+    dump_dir: Option<PathBuf>,
 }
 
 impl DapiClient {
@@ -76,6 +84,63 @@ impl DapiClient {
         Self {
             address_list,
             settings,
+            #[cfg(feature = "dump")]
+            dump_dir: None,
+        }
+    }
+
+    /// Prefix of dump files.
+    #[cfg(feature = "dump")]
+    const DUMP_FILE_PREFIX: &str = "msg";
+
+    /// Define director where dumps of all traffic will be saved.
+    ///
+    /// Each request and response pair will be saved to a JSON file in `dump_dir`.
+    /// Data is saved as [DumpData] structure.
+    /// Any errors are logged on `warn` level and ignored.
+    ///
+    /// Name of dump file follows convention: `<DUMP_FILE_PREFIX>-<timestamp>-<hash>.json`
+    ///
+    /// Useful for debugging and mocking.
+    /// See also [MockDapiClient::load()](crate::mock::MockDapiClient::load()).
+    #[cfg(feature = "dump")]
+    pub fn dump_dir(mut self, dump_dir: Option<PathBuf>) -> Self {
+        self.dump_dir = dump_dir;
+
+        self
+    }
+
+    /// Save dump of request and response to disk.
+    ///
+    /// Any errors are logged on `warn` level and ignored.
+    #[cfg(feature = "dump")]
+    fn dump_request_response<R: TransportRequest>(
+        request: R,
+        response: R::Response,
+        dump_dir: Option<PathBuf>,
+    ) where
+        R: serde::Serialize,
+        R::Response: serde::Serialize,
+    {
+        let path = match dump_dir {
+            Some(p) => p,
+            None => return,
+        };
+
+        let data = DumpData { request, response };
+
+        // Construct file name
+        // Path consists of current timestamp + hash of message
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+        let id = match data.id() {
+            Ok(h) => h,
+            Err(e) => return tracing::warn!("unable to generate dump file name: {}", e),
+        };
+        let file = path.join(format!("{}-{}-{}.json", Self::DUMP_FILE_PREFIX, now, id));
+
+        if let Err(e) = data.save(&file) {
+            tracing::warn!("unable to write dump file {:?}: {}", path, e);
+            return;
         }
     }
 }
@@ -100,6 +165,12 @@ impl Dapi for DapiClient {
 
         // Setup retry policy:
         let retry_settings = ExponentialBuilder::default().with_max_times(applied_settings.retries);
+
+        // Save dump dir for later use, as self is moved into routine
+        #[cfg(feature = "dump")]
+        let dump_dir = self.dump_dir.clone();
+        #[cfg(feature = "dump")]
+        let dump_request = request.clone();
 
         // Setup DAPI request execution routine future. It's a closure that will be called
         // more once to build new future on each retry.
@@ -129,10 +200,83 @@ impl Dapi for DapiClient {
         };
 
         // Start the routine with retry policy applied:
-        routine
+        let result = routine
             .retry(&retry_settings)
             .when(|e| e.can_retry())
             .instrument(tracing::info_span!("request routine"))
-            .await
+            .await;
+
+        // Dump request and response to disk if dump_dir is set:
+        #[cfg(feature = "dump")]
+        if let Ok(ref result) = &result {
+            Self::dump_request_response(dump_request, result.clone(), dump_dir);
+        }
+
+        result
+    }
+}
+
+#[cfg(feature = "dump")]
+#[derive(serde::Serialize, serde::Deserialize)]
+/// Data format of dumps created with [DapiClient::dump_dir].
+pub struct DumpData<T: TransportRequest> {
+    /// Request that was sent to DAPI.
+    pub request: T,
+    /// Response that was received from DAPI.
+    pub response: T::Response,
+}
+#[cfg(feature = "dump")]
+impl<T: TransportRequest> DumpData<T> {
+    /// Return unique identifier (hex-encoded sha256) of the request.
+    /// Can be used to construct dump file name.
+    pub fn id(&self) -> Result<String, std::io::Error> {
+        let encoded = match serde_json::to_vec(&self.request) {
+            Ok(b) => b,
+            Err(e) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("unable to serialize json: {}", e),
+                ))
+            }
+        };
+        let mut e = sha2::Sha256::new();
+        e.update(&encoded);
+        let hash = e.finalize();
+
+        return Ok(hash.encode_hex::<String>());
+    }
+
+    /// Load dump data from file.
+    pub fn load<P: AsRef<std::path::Path>>(file: P) -> Result<Self, std::io::Error>
+    where
+        T: for<'de> serde::Deserialize<'de>,
+        T::Response: for<'de> serde::Deserialize<'de>,
+    {
+        let f = std::fs::File::open(file)?;
+
+        let data: Self = serde_json::from_reader(f).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unable to parse json: {}", e),
+            )
+        })?;
+
+        Ok(data)
+    }
+
+    /// Save dump data to file.
+    pub fn save(&self, file: &std::path::Path) -> Result<(), std::io::Error>
+    where
+        T: serde::Serialize,
+        T::Response: serde::Serialize,
+    {
+        let encoded = serde_json::to_vec_pretty(self).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unable to serialize json: {}", e),
+            )
+        })?;
+
+        std::fs::write(file, encoded)
     }
 }

@@ -14,6 +14,8 @@ use futures::{future::BoxFuture, FutureExt};
 pub use http::Uri;
 
 pub use address_list::AddressList;
+#[cfg(feature = "dump")]
+pub use dapi_client::DumpData;
 pub use dapi_client::{DapiClient, DapiClientError};
 pub use request_settings::RequestSettings;
 
