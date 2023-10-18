@@ -76,7 +76,7 @@ where
                 method = "run_block_proposal_v0",
                 ?block_proposal,
                 ?epoch_info,
-                platform_state_fingerprint = ?state.fingerprint(),
+                platform_state_fingerprint = hex::encode(state.fingerprint()),
                 "running a block proposal on epoch {}",
                 epoch_info.current_epoch_index()
             );

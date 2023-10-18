@@ -18,10 +18,11 @@ use crate::platform_types::masternode::Masternode;
 use crate::platform_types::validator_set::ValidatorSet;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+use std::fmt::{Debug, Formatter};
 
 /// Platform state
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct PlatformStateV0 {
     /// Information about the last block
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
@@ -46,6 +47,52 @@ pub struct PlatformStateV0 {
 
     /// if we initialized the chain this block
     pub initialization_information: Option<PlatformInitializationState>,
+}
+
+impl Debug for PlatformStateV0 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PlatformStateV0")
+            .field("last_committed_block_info", &self.last_committed_block_info)
+            .field(
+                "current_protocol_version_in_consensus",
+                &self.current_protocol_version_in_consensus,
+            )
+            .field(
+                "next_epoch_protocol_version",
+                &self.next_epoch_protocol_version,
+            )
+            .field("quorums_extended_info", &self.quorums_extended_info)
+            .field(
+                "current_validator_set_quorum_hash",
+                &self.current_validator_set_quorum_hash.to_string(),
+            )
+            .field(
+                "next_validator_set_quorum_hash",
+                &self
+                    .next_validator_set_quorum_hash
+                    .as_ref()
+                    .map_or(String::from("None"), |h| format!("Some({})", h)),
+            )
+            .field(
+                "validator_sets",
+                &hex_encoded_validator_sets(&self.validator_sets),
+            )
+            .field("full_masternode_list", &self.full_masternode_list)
+            .field("hpmn_masternode_list", &self.hpmn_masternode_list)
+            .field(
+                "initialization_information",
+                &self.initialization_information,
+            )
+            .finish()
+    }
+}
+
+fn hex_encoded_validator_sets(validator_sets: &IndexMap<QuorumHash, ValidatorSet>) -> String {
+    let entries = validator_sets
+        .iter()
+        .map(|(k, v)| format!("{:?}: {:?}", k.to_string(), v))
+        .collect::<Vec<_>>();
+    format!("{:?}", entries)
 }
 
 /// Platform state

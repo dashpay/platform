@@ -157,7 +157,7 @@ where
         if tracing::enabled!(tracing::Level::TRACE) {
             tracing::trace!(
                 method = "update_quorum_info_v0",
-                block_platform_state_fingerprint = ?block_platform_state.fingerprint(),
+                block_platform_state_fingerprint = hex::encode(block_platform_state.fingerprint()),
                 "quorum info updated",
             );
         }
