@@ -35,7 +35,7 @@ where
         {
             tracing::debug!(
                 method = "validator_set_update_v0",
-                "rotation: previous quorum finished members"
+                "rotation: previous quorum finished members. quorum rotation expected"
             );
             perform_rotation = true;
         }
@@ -48,7 +48,7 @@ where
         {
             tracing::debug!(
                 method = "validator_set_update_v0",
-                "rotation: new quorums not containing current quorum current {:?}, {}",
+                "rotation: new quorums not containing current quorum current {:?}, {}. quorum rotation expected˚",
                 block_execution_context
                     .block_platform_state()
                     .validator_sets()
@@ -143,7 +143,7 @@ where
             } else {
                 tracing::debug!(
                     method = "validator_set_update_v0",
-                    "no validator set update"
+                    "no validator set update",
                 );
                 Ok(None)
             }
