@@ -17,14 +17,16 @@ class DashCliCommand extends ConfigBaseCommand {
       verbose: isVerbose,
     },
     config,
-    dockerCompose
+    dockerCompose,
   ) {
-    const {command} = args
-    const {exitCode, out} = await dockerCompose.execCommand(config, 'core', `dash-cli ${command}`);
+    const { command } = args;
 
-    console.log(out.trim())
+    const { out } = await dockerCompose.execCommand(config, 'core', `dash-cli ${command}`);
 
-    return out
+    // eslint-disable-next-line no-console
+    console.log(out.trim());
+
+    return out;
   }
 }
 
@@ -35,7 +37,6 @@ DashCliCommand.args = [{
   required: true,
   description: 'Execute a dash-cli command on the core container of the given node config',
 }];
-
 
 DashCliCommand.flags = {
   ...ConfigBaseCommand.flags,
