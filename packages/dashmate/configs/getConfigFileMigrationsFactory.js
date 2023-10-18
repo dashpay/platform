@@ -240,10 +240,10 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
             options.platform.drive.abci.logs = base.get('platform.drive.abci.logs');
           });
-        
-          return configFile;
+
+        return configFile;
       },
-      '0.25.4': (configFile) => {
+      '0.25.7': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network !== NETWORK_MAINNET) {
