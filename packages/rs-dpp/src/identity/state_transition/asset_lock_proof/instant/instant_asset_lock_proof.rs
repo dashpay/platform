@@ -1,6 +1,7 @@
 use std::convert::{TryFrom, TryInto};
 
 use dashcore::consensus::{deserialize, Encodable};
+use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::{InstantLock, OutPoint, Transaction, TxIn, TxOut};
 use platform_value::{BinaryData, Value};
 
@@ -106,18 +107,18 @@ impl InstantAssetLockProof {
     }
 
     pub fn out_point(&self) -> Option<OutPoint> {
-        let out_point_buffer = self.transaction.out_point_buffer(self.output_index());
-
-        out_point_buffer.map(|buffer| {
-            OutPoint::from(buffer)
-            // let (tx_id, _) = buffer.split_at_mut(32);
-            // tx_id.reverse();
-            // buffer
-        })
+        self.output()
+            .map(|_| OutPoint::new(self.transaction.txid(), self.output_index))
     }
 
     pub fn output(&self) -> Option<&TxOut> {
-        self.transaction.output.get(self.output_index())
+        if let Some(TransactionPayload::AssetLockPayloadType(ref payload)) =
+            self.transaction.special_transaction_payload
+        {
+            payload.credit_outputs.get(self.output_index())
+        } else {
+            None
+        }
     }
 
     pub fn create_identifier(&self) -> Result<Identifier, ProtocolError> {

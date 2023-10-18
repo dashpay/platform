@@ -1,3 +1,4 @@
+mod asset_lock_proof;
 mod common;
 pub(crate) mod processor;
 mod state_transitions;

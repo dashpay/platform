@@ -1003,7 +1003,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.30.0"
-source = "git+https://github.com/dashpay/rust-dashcore?branch=master#db8794eef7b0b03ee718cf07bb5a07e9b2b0e7c7"
+source = "git+https://github.com/dashpay/rust-dashcore?branch=master#ca0afce927042e9efbc20b22f7cc422b1aae942e"
 dependencies = [
  "anyhow",
  "bech32",
@@ -1019,7 +1019,7 @@ dependencies = [
 [[package]]
 name = "dashcore-private"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/rust-dashcore?branch=master#db8794eef7b0b03ee718cf07bb5a07e9b2b0e7c7"
+source = "git+https://github.com/dashpay/rust-dashcore?branch=master#ca0afce927042e9efbc20b22f7cc422b1aae942e"
 
 [[package]]
 name = "dashcore-rpc"
@@ -1052,7 +1052,7 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.12.0"
-source = "git+https://github.com/dashpay/rust-dashcore?branch=master#db8794eef7b0b03ee718cf07bb5a07e9b2b0e7c7"
+source = "git+https://github.com/dashpay/rust-dashcore?branch=master#ca0afce927042e9efbc20b22f7cc422b1aae942e"
 dependencies = [
  "dashcore-private",
  "rs-x11-hash",

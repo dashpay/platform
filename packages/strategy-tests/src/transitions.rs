@@ -1,10 +1,10 @@
-use dashcore_rpc::dashcore::secp256k1::SecretKey;
-use dashcore_rpc::dashcore::{Network, PrivateKey};
 use dpp::dashcore::secp256k1::Secp256k1;
+use dpp::dashcore::secp256k1::SecretKey;
 use dpp::dashcore::{
     bls_sig_utils::BLSSignature, hash_types::CycleHash, InstantLock, OutPoint, ScriptBuf,
     Transaction, TxIn, TxOut, Txid,
 };
+use dpp::dashcore::{Network, PrivateKey};
 use dpp::identifier::Identifier;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::core_script::CoreScript;
