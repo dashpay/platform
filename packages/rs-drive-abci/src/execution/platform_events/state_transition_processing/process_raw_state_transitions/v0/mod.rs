@@ -78,12 +78,15 @@ where
                         platform_version,
                     )?;
 
-                    tracing::trace!(
-                        method = "process_raw_state_transitions_v0",
-                        ?state_transition,
-                        block_platform_state_fingerprint = ?block_platform_state.fingerprint(),
-                        "State transition successfully processed",
-                    );
+                    if tracing::enabled!(tracing::Level::TRACE) {
+                        tracing::trace!(
+                            method = "process_raw_state_transitions_v0",
+                            ?state_transition,
+                            block_platform_state_fingerprint =
+                                hex::encode(block_platform_state.fingerprint()),
+                            "State transition successfully processed",
+                        );
+                    }
 
                     result
                 } else {
@@ -93,13 +96,16 @@ where
                     //     state_transition_execution_event.errors.first().clone()
                     // );
 
-                    tracing::trace!(
-                        method = "process_raw_state_transitions_v0",
-                        ?state_transition,
-                        block_platform_state_fingerprint = ?block_platform_state.fingerprint(),
-                        "Invalid state transition: {:?}",
-                        state_transition_execution_event.errors.first().clone(),
-                    );
+                    if tracing::enabled!(tracing::Level::TRACE) {
+                        tracing::trace!(
+                            method = "process_raw_state_transitions_v0",
+                            ?state_transition,
+                            block_platform_state_fingerprint =
+                                hex::encode(block_platform_state.fingerprint()),
+                            "Invalid state transition: {:?}",
+                            state_transition_execution_event.errors.first().clone(),
+                        );
+                    }
 
                     ConsensusExecutionError(SimpleConsensusValidationResult::new_with_errors(
                         state_transition_execution_event.errors,

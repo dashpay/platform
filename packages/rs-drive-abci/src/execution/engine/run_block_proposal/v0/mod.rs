@@ -71,14 +71,16 @@ where
         // Start by getting information from the state
         let state = self.state.read().unwrap();
 
-        tracing::trace!(
-            method = "run_block_proposal_v0",
-            ?block_proposal,
-            ?epoch_info,
-            platform_state_fingerprint = hex::encode(state.fingerprint()),
-            "running a block proposal on epoch {}",
-            epoch_info.current_epoch_index()
-        );
+        if tracing::enabled!(tracing::Level::TRACE) {
+            tracing::trace!(
+                method = "run_block_proposal_v0",
+                ?block_proposal,
+                ?epoch_info,
+                platform_state_fingerprint = hex::encode(state.fingerprint()),
+                "running a block proposal on epoch {}",
+                epoch_info.current_epoch_index()
+            );
+        }
 
         let last_block_time_ms = state.last_block_time_ms();
         let last_block_height =
