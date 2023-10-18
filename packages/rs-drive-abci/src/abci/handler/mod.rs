@@ -143,6 +143,7 @@ where
             chain_id,
             "platform chain initialized, initial state is created"
         );
+
         Ok(response)
     }
 
