@@ -1,3 +1,10 @@
+### [0.25.7](https://github.com/dashpay/platform/compare/v0.25.6...v0.25.7) (2023-10-18)
+
+
+### Miscellaneous Chores
+
+* **drive:** add more logs ([#1506](https://github.com/dashpay/platform/issues/1506))
+
 ### [0.25.6](https://github.com/dashpay/platform/compare/v0.25.5...v0.25.6) (2023-10-18)
 
 
