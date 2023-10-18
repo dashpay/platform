@@ -13,9 +13,7 @@ class DashCliCommand extends ConfigBaseCommand {
    */
   async runWithDependencies(
     args,
-    {
-      verbose: isVerbose,
-    },
+    flags,
     config,
     dockerCompose,
   ) {
@@ -40,7 +38,6 @@ DashCliCommand.args = [{
 
 DashCliCommand.flags = {
   ...ConfigBaseCommand.flags,
-  verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
 };
 
 module.exports = DashCliCommand;
