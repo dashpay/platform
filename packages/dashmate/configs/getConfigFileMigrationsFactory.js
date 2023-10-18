@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const {NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_MAINNET} = require('../src/constants');
+const { NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_MAINNET } = require('../src/constants');
 
 /**
  * @param {HomeDir} homeDir
@@ -248,7 +248,7 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network !== NETWORK_MAINNET) {
-              const filenames = ['private.key', 'bundle.crt', 'bundle.csr', 'csr.pem']
+              const filenames = ['private.key', 'bundle.crt', 'bundle.csr', 'csr.pem'];
 
               for (const filename of filenames) {
                 const oldFilePath = homeDir.joinPath('ssl', name, filename);
@@ -256,16 +256,16 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
                   'platform', 'dapi', 'envoy', 'ssl', filename);
 
                 if (fs.existsSync(oldFilePath)) {
-                  fs.mkdirSync(path.dirname(newFilePath), {recursive: true});
+                  fs.mkdirSync(path.dirname(newFilePath), { recursive: true });
                   fs.copyFileSync(oldFilePath, newFilePath);
-                  fs.rmSync(oldFilePath, {recursive: true});
+                  fs.rmSync(oldFilePath, { recursive: true });
                 }
               }
             }
           });
 
         if (fs.existsSync(homeDir.joinPath('ssl'))) {
-          fs.rmSync(homeDir.joinPath('ssl'), {recursive: true});
+          fs.rmSync(homeDir.joinPath('ssl'), { recursive: true });
         }
 
         return configFile;
