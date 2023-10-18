@@ -1,7 +1,7 @@
 /* eslint-disable no-param-reassign */
 const fs = require('fs');
 
-const {NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_MAINNET} = require('../src/constants');
+const { NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_MAINNET } = require('../src/constants');
 
 /**
  * @param {HomeDir} homeDir
