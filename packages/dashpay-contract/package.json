@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dashpay-contract",
-  "version": "0.25.3",
+  "version": "0.25.6",
   "description": "Reference contract of the DashPay DPA on Dash Evolution",
   "scripts": {
     "lint": "eslint .",

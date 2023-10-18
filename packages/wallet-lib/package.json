@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wallet-lib",
-  "version": "7.25.3",
+  "version": "7.25.6",
   "description": "Light wallet library for Dash",
   "main": "src/index.js",
   "unpkg": "dist/wallet-lib.min.js",

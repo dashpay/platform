@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wasm-dpp",
-  "version": "0.25.3",
+  "version": "0.25.6",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

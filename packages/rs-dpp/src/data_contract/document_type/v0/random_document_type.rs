@@ -31,7 +31,7 @@
 //!
 //!
 //!
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Encode, Decode)]
 pub struct FieldTypeWeights {
     pub string_weight: u16,
     pub float_weight: u16,
@@ -41,7 +41,7 @@ pub struct FieldTypeWeights {
     pub byte_array_weight: u16,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub struct FieldMinMaxBounds {
     pub string_min_len: Range<u16>,
     pub string_has_min_len_chance: f64,
@@ -63,7 +63,7 @@ pub struct FieldMinMaxBounds {
     pub byte_array_has_max_len_chance: f64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub struct RandomDocumentTypeParameters {
     pub new_fields_optional_count_range: Range<u16>,
     pub new_fields_required_count_range: Range<u16>,
@@ -105,6 +105,7 @@ use crate::data_contract::document_type::{
 use crate::identity::SecurityLevel;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
+use bincode::{Decode, Encode};
 use platform_value::{Identifier, Value};
 use rand::rngs::StdRng;
 use rand::Rng;

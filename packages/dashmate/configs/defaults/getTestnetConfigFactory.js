@@ -53,14 +53,6 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
         },
         drive: {
           abci: {
-            log: {
-              prettyFile: {
-                path: homeDir.joinPath('logs', 'testnet', 'drive-pretty.log'),
-              },
-              jsonFile: {
-                path: homeDir.joinPath('logs', 'testnet', 'drive-json.log'),
-              },
-            },
             epochTime: 3600,
             validatorSet: {
               llmqType: 6,

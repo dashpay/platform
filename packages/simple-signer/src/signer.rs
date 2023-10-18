@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use dashcore_rpc::dashcore::signer;
+use dpp::bincode::{Decode, Encode};
 use dpp::ed25519_dalek::Signer as BlsSigner;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -12,7 +13,7 @@ use dpp::{bls_signatures, ed25519_dalek, ProtocolError};
 use std::collections::HashMap;
 
 /// This simple signer is only to be used in tests
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, PartialEq, Encode, Decode)]
 pub struct SimpleSigner {
     /// Private keys is a map from the public key to the Private key bytes
     pub private_keys: HashMap<IdentityPublicKey, Vec<u8>>,

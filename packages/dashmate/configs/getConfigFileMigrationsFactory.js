@@ -235,6 +235,16 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
       },
       '0.25.4': (configFile) => {
         Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            delete options.platform.drive.abci.log;
+
+            options.platform.drive.abci.logs = base.get('platform.drive.abci.logs');
+          });
+        
+          return configFile;
+      },
+      '0.25.4': (configFile) => {
+        Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network !== NETWORK_MAINNET) {
               const oldPrivateKeyPath = homeDir.joinPath('ssl', name, 'private.key');

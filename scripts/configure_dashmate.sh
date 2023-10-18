@@ -17,5 +17,4 @@ yarn dashmate config set --config=${CONFIG_NAME} dashmate.helper.docker.build.en
 yarn dashmate config set --config=${CONFIG_NAME} platform.drive.tenderdash.consensus.createEmptyBlocksInterval "10s"
 
 # collect drive logs for bench suite
-yarn dashmate config set --config=${CONFIG_NAME} platform.drive.abci.log.jsonFile.level "trace"
-yarn dashmate config set --config=${CONFIG_NAME} platform.drive.abci.log.jsonFile.path "${ROOT_PATH}/logs/drive.json"
+yarn dashmate config set --config=${CONFIG_NAME} platform.drive.abci.logs.stdout.level "trace"

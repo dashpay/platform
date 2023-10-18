@@ -1305,6 +1305,8 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2",
+ "simple-signer",
+ "strategy-tests",
  "tempfile",
  "tenderdash-abci",
  "thiserror",
@@ -3832,6 +3834,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 
 [[package]]
+name = "simple-signer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode 2.0.0-rc.3",
+ "dashcore-rpc",
+ "dpp",
+]
+
+[[package]]
 name = "skeptic"
 version = "0.13.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3910,6 +3922,61 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9907f54bd0f7b6ce72c2be1e570a614819ee08e3deb66d90480df341d8a12a8"
 dependencies = [
  "log",
+]
+
+[[package]]
+name = "strategy-tests"
+version = "0.25.0-dev.30"
+dependencies = [
+ "anyhow",
+ "atty",
+ "base64 0.20.0",
+ "bincode 2.0.0-rc.3",
+ "bs58 0.4.0",
+ "bytes",
+ "chrono",
+ "ciborium",
+ "clap 4.4.5",
+ "dapi-grpc",
+ "dashcore-rpc",
+ "delegate",
+ "derive_more",
+ "dotenvy",
+ "dpp",
+ "drive",
+ "envy",
+ "file-rotate",
+ "hex",
+ "indexmap 1.9.3",
+ "itertools",
+ "lazy_static",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "mockall",
+ "platform-serialization",
+ "platform-serialization-derive",
+ "platform-version",
+ "prost 0.11.9",
+ "rand",
+ "regex",
+ "reopen",
+ "rocksdb",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "sha2",
+ "simple-signer",
+ "tempfile",
+ "tenderdash-abci",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "ureq",
+ "url",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/withdrawals-contract",
-  "version": "0.25.3",
+  "version": "0.25.6",
   "description": "Data Contract to manipulate and track withdrawals",
   "scripts": {
     "build": "",

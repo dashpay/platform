@@ -1,9 +1,8 @@
 use crate::masternodes;
 use crate::masternodes::{GenerateTestMasternodeUpdates, MasternodeListItemWithUpdates};
-use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::query::ProofVerification;
 use crate::strategy::{
-    ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness,
+    ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
     ValidatorVersionMigration,
 };
 use crate::verify_state_transitions::verify_state_transitions_were_or_were_not_executed;
@@ -18,8 +17,10 @@ use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
+use strategy_tests::Strategy;
 
-use dashcore_rpc::json::SoftforkInfo;
+use dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
@@ -29,7 +30,6 @@ use drive_abci::platform_types::platform::Platform;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
-use drive_abci::test::helpers::signer::SimpleSigner;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
 use std::collections::{BTreeMap, HashMap};
@@ -42,7 +42,7 @@ use tenderdash_abci::Application;
 pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
     block_count: u64,
-    strategy: Strategy,
+    strategy: NetworkStrategy,
     config: PlatformConfig,
     seed: u64,
 ) -> ChainExecutionOutcome {
@@ -260,13 +260,10 @@ pub(crate) fn run_chain_for_strategy(
 
     platform
         .core_rpc
-        .expect_get_quorum_listextended_by_type()
+        .expect_get_quorum_listextended()
         .returning(move |core_height: Option<u32>| {
-            if !strategy.rotate_quorums {
-                Ok(BTreeMap::from([(
-                    QuorumType::Llmq100_67,
-                    quorums_details.clone().into_iter().collect(),
-                )]))
+            let extended_info = if !strategy.rotate_quorums {
+                quorums_details.clone().into_iter().collect()
             } else {
                 let core_height = core_height.expect("expected a core height");
                 // if we rotate quorums we shouldn't give back the same ones every time
@@ -275,7 +272,7 @@ pub(crate) fn run_chain_for_strategy(
                 let start_range = start_range % total_quorums as u32;
                 let end_range = end_range % total_quorums as u32;
 
-                let quorums = if end_range > start_range {
+                if end_range > start_range {
                     quorums_details
                         .iter()
                         .skip(start_range as usize)
@@ -292,10 +289,14 @@ pub(crate) fn run_chain_for_strategy(
                         .chain(second_range)
                         .map(|(quorum_hash, quorum)| (*quorum_hash, quorum.clone()))
                         .collect()
-                };
+                }
+            };
 
-                Ok(BTreeMap::from([(QuorumType::Llmq100_67, quorums)]))
-            }
+            let result = ExtendedQuorumListResult {
+                quorums_by_type: HashMap::from([(QuorumType::Llmq100_67, extended_info)]),
+            };
+
+            Ok(result)
         });
 
     let quorums_info: HashMap<QuorumHash, QuorumInfoResult> = quorums
@@ -478,7 +479,7 @@ pub(crate) fn create_chain_for_strategy(
     block_count: u64,
     proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
-    strategy: Strategy,
+    strategy: NetworkStrategy,
     config: PlatformConfig,
     rng: StdRng,
 ) -> ChainExecutionOutcome {
@@ -505,7 +506,7 @@ pub(crate) fn start_chain_for_strategy(
     block_count: u64,
     proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
-    strategy: Strategy,
+    strategy: NetworkStrategy,
     config: PlatformConfig,
     seed: StrategyRandomness,
 ) -> ChainExecutionOutcome {
@@ -588,7 +589,7 @@ pub(crate) fn start_chain_for_strategy(
 pub(crate) fn continue_chain_for_strategy(
     abci_app: AbciApplication<MockCoreRPCLike>,
     chain_execution_parameters: ChainExecutionParameters,
-    mut strategy: Strategy,
+    mut strategy: NetworkStrategy,
     config: PlatformConfig,
     seed: StrategyRandomness,
 ) -> ChainExecutionOutcome {
@@ -611,7 +612,7 @@ pub(crate) fn continue_chain_for_strategy(
     let quorum_size = config.quorum_size;
     let first_block_time = start_time_ms;
     let mut current_identities = vec![];
-    let mut signer = strategy.signer.clone().unwrap_or_default();
+    let mut signer = strategy.strategy.signer.clone().unwrap_or_default();
     let mut i = 0;
 
     let blocks_per_epoch = config.execution.epoch_time_length_s * 1000 / config.block_spacing_ms;
@@ -702,6 +703,44 @@ pub(crate) fn continue_chain_for_strategy(
             })
             .unwrap_or(1);
 
+        let rounds = strategy
+            .failure_testing
+            .as_ref()
+            .map(|failure_testing| {
+                failure_testing
+                    .rounds_before_successful_block
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default();
+
+        let mut block_execution_outcome = None;
+        for round in 0..=rounds {
+            block_execution_outcome = Some(
+                abci_app
+                    .mimic_execute_block(
+                        proposer.pro_tx_hash.into(),
+                        current_quorum_with_test_info,
+                        proposed_version,
+                        block_info.clone(),
+                        round,
+                        strategy
+                            .failure_testing
+                            .as_ref()
+                            .map(|a| a.expect_errors_with_codes.clone())
+                            .unwrap_or_default(),
+                        false,
+                        state_transitions.clone(),
+                        MimicExecuteBlockOptions {
+                            dont_finalize_block: strategy.dont_finalize_block(),
+                            rounds_before_finalization: strategy.failure_testing.as_ref().and_then(
+                                |failure_testing| failure_testing.rounds_before_successful_block,
+                            ),
+                        },
+                    )
+                    .expect("expected to execute a block"),
+            );
+        }
+
         let MimicExecuteBlockOutcome {
             state_transaction_results,
             withdrawal_transactions: mut withdrawals_this_block,
@@ -712,24 +751,7 @@ pub(crate) fn continue_chain_for_strategy(
             block_id_hash: block_hash,
             signature,
             app_version,
-        } = abci_app
-            .mimic_execute_block(
-                proposer.pro_tx_hash.into(),
-                current_quorum_with_test_info,
-                proposed_version,
-                block_info,
-                strategy
-                    .failure_testing
-                    .as_ref()
-                    .map(|a| a.expect_errors_with_codes.clone())
-                    .unwrap_or_default(),
-                false,
-                state_transitions,
-                MimicExecuteBlockOptions {
-                    dont_finalize_block: strategy.dont_finalize_block(),
-                },
-            )
-            .expect("expected to execute a block");
+        } = block_execution_outcome.unwrap();
 
         if let Some(validator_set_update) = validator_set_update {
             validator_set_updates.insert(block_height, validator_set_update);

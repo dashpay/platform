@@ -1,3 +1,16 @@
+### [0.25.6](https://github.com/dashpay/platform/compare/v0.25.5...v0.25.6) (2023-10-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** remove extended quorum info from platform state (#1496)
+
+### Miscellaneous Chores
+
+* **drive:** fix logging levels ([#1495](https://github.com/dashpay/platform/issues/1495))
+* **drive:** remove extended quorum info from platform state ([#1496](https://github.com/dashpay/platform/issues/1496))
+* logging hex strings ([#1497](https://github.com/dashpay/platform/issues/1497))
+
 ### [0.25.3](https://github.com/dashpay/platform/compare/v0.25.2...v0.25.3) (2023-10-12)
 
 
