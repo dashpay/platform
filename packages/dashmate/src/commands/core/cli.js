@@ -1,5 +1,3 @@
-const { Flags } = require('@oclif/core');
-
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 
 class DashCliCommand extends ConfigBaseCommand {
