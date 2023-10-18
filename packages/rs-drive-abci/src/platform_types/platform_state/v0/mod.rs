@@ -18,10 +18,11 @@ use crate::platform_types::masternode::Masternode;
 use crate::platform_types::validator_set::ValidatorSet;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+use std::fmt::{Debug, Formatter};
 
 /// Platform state
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct PlatformStateV0 {
     /// Information about the last block
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
@@ -29,8 +30,6 @@ pub struct PlatformStateV0 {
     pub current_protocol_version_in_consensus: ProtocolVersion,
     /// upcoming protocol version
     pub next_epoch_protocol_version: ProtocolVersion,
-    /// current quorums
-    pub quorums_extended_info: BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>>,
     /// current quorum
     pub current_validator_set_quorum_hash: QuorumHash,
     /// next quorum
@@ -50,6 +49,51 @@ pub struct PlatformStateV0 {
     pub initialization_information: Option<PlatformInitializationState>,
 }
 
+impl Debug for PlatformStateV0 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PlatformStateV0")
+            .field("last_committed_block_info", &self.last_committed_block_info)
+            .field(
+                "current_protocol_version_in_consensus",
+                &self.current_protocol_version_in_consensus,
+            )
+            .field(
+                "next_epoch_protocol_version",
+                &self.next_epoch_protocol_version,
+            )
+            .field(
+                "current_validator_set_quorum_hash",
+                &self.current_validator_set_quorum_hash.to_string(),
+            )
+            .field(
+                "next_validator_set_quorum_hash",
+                &self
+                    .next_validator_set_quorum_hash
+                    .as_ref()
+                    .map_or(String::from("None"), |h| format!("Some({})", h)),
+            )
+            .field(
+                "validator_sets",
+                &hex_encoded_validator_sets(&self.validator_sets),
+            )
+            .field("full_masternode_list", &self.full_masternode_list)
+            .field("hpmn_masternode_list", &self.hpmn_masternode_list)
+            .field(
+                "initialization_information",
+                &self.initialization_information,
+            )
+            .finish()
+    }
+}
+
+fn hex_encoded_validator_sets(validator_sets: &IndexMap<QuorumHash, ValidatorSet>) -> String {
+    let entries = validator_sets
+        .iter()
+        .map(|(k, v)| format!("{:?}: {:?}", k.to_string(), v))
+        .collect::<Vec<_>>();
+    format!("{:?}", entries)
+}
+
 /// Platform state
 #[derive(Clone, Debug, Encode, Decode)]
 pub(super) struct PlatformStateForSavingV0 {
@@ -59,8 +103,6 @@ pub(super) struct PlatformStateForSavingV0 {
     pub current_protocol_version_in_consensus: ProtocolVersion,
     /// upcoming protocol version
     pub next_epoch_protocol_version: ProtocolVersion,
-    /// current quorums
-    pub quorums_extended_info: Vec<(QuorumType, Vec<(Bytes32, ExtendedQuorumDetails)>)>,
     /// current quorum
     pub current_validator_set_quorum_hash: Bytes32,
     /// next quorum
@@ -90,19 +132,6 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
             last_committed_block_info: value.last_committed_block_info,
             current_protocol_version_in_consensus: value.current_protocol_version_in_consensus,
             next_epoch_protocol_version: value.next_epoch_protocol_version,
-            quorums_extended_info: value
-                .quorums_extended_info
-                .into_iter()
-                .map(|(quorum_type, quorum_extended_info)| {
-                    (
-                        quorum_type,
-                        quorum_extended_info
-                            .into_iter()
-                            .map(|(k, v)| (k.to_byte_array().into(), v))
-                            .collect(),
-                    )
-                })
-                .collect(),
             current_validator_set_quorum_hash: value
                 .current_validator_set_quorum_hash
                 .to_byte_array()
@@ -146,19 +175,6 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
             last_committed_block_info: value.last_committed_block_info,
             current_protocol_version_in_consensus: value.current_protocol_version_in_consensus,
             next_epoch_protocol_version: value.next_epoch_protocol_version,
-            quorums_extended_info: value
-                .quorums_extended_info
-                .into_iter()
-                .map(|(quorum_type, quorum_extended_info)| {
-                    (
-                        quorum_type,
-                        quorum_extended_info
-                            .into_iter()
-                            .map(|(k, v)| (QuorumHash::from_byte_array(k.to_buffer()), v))
-                            .collect(),
-                    )
-                })
-                .collect(),
             current_validator_set_quorum_hash: QuorumHash::from_byte_array(
                 value.current_validator_set_quorum_hash.to_buffer(),
             ),
@@ -202,7 +218,6 @@ impl PlatformStateV0 {
             last_committed_block_info: None,
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
-            quorums_extended_info: Default::default(),
             current_validator_set_quorum_hash: QuorumHash::all_zeros(),
             next_validator_set_quorum_hash: None,
             validator_sets: Default::default(),
@@ -249,11 +264,6 @@ pub trait PlatformStateV0Methods {
     /// Returns the upcoming protocol version for the next epoch.
     fn next_epoch_protocol_version(&self) -> ProtocolVersion;
 
-    /// Returns extended information about the current quorums.
-    fn quorums_extended_info(
-        &self,
-    ) -> &BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>>;
-
     /// Returns the quorum hash of the current validator set.
     fn current_validator_set_quorum_hash(&self) -> QuorumHash;
 
@@ -284,12 +294,6 @@ pub trait PlatformStateV0Methods {
     /// Sets the next epoch protocol version.
     fn set_next_epoch_protocol_version(&mut self, version: ProtocolVersion);
 
-    /// Sets the extended info for the current quorums.
-    fn set_quorums_extended_info(
-        &mut self,
-        info: BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>>,
-    );
-
     /// Sets the current validator set quorum hash.
     fn set_current_validator_set_quorum_hash(&mut self, hash: QuorumHash);
 
@@ -315,11 +319,6 @@ pub trait PlatformStateV0Methods {
 
     /// Returns a mutable reference to the next epoch protocol version.
     fn next_epoch_protocol_version_mut(&mut self) -> &mut ProtocolVersion;
-
-    /// Returns a mutable reference to the extended info for the current quorums.
-    fn quorums_extended_info_mut(
-        &mut self,
-    ) -> &mut BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>>;
 
     /// Returns a mutable reference to the current validator set quorum hash.
     fn current_validator_set_quorum_hash_mut(&mut self) -> &mut QuorumHash;
@@ -489,13 +488,6 @@ impl PlatformStateV0Methods for PlatformStateV0 {
         self.next_epoch_protocol_version
     }
 
-    /// Returns extended information about the current quorums.
-    fn quorums_extended_info(
-        &self,
-    ) -> &BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>> {
-        &self.quorums_extended_info
-    }
-
     /// Returns the quorum hash of the next validator set, if it exists.
     fn next_validator_set_quorum_hash(&self) -> &Option<QuorumHash> {
         &self.next_validator_set_quorum_hash
@@ -546,14 +538,6 @@ impl PlatformStateV0Methods for PlatformStateV0 {
         self.next_epoch_protocol_version = version;
     }
 
-    /// Sets the extended info for the current quorums.
-    fn set_quorums_extended_info(
-        &mut self,
-        info: BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>>,
-    ) {
-        self.quorums_extended_info = info;
-    }
-
     /// Sets the current validator set quorum hash.
     fn set_current_validator_set_quorum_hash(&mut self, hash: QuorumHash) {
         self.current_validator_set_quorum_hash = hash;
@@ -594,12 +578,6 @@ impl PlatformStateV0Methods for PlatformStateV0 {
 
     fn next_epoch_protocol_version_mut(&mut self) -> &mut ProtocolVersion {
         &mut self.next_epoch_protocol_version
-    }
-
-    fn quorums_extended_info_mut(
-        &mut self,
-    ) -> &mut BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>> {
-        &mut self.quorums_extended_info
     }
 
     fn current_validator_set_quorum_hash_mut(&mut self) -> &mut QuorumHash {

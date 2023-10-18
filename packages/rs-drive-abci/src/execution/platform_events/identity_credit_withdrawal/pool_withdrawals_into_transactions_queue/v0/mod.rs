@@ -206,7 +206,6 @@ mod tests {
                     last_committed_block_info: None,
                     current_protocol_version_in_consensus: 0,
                     next_epoch_protocol_version: 0,
-                    quorums_extended_info: Default::default(),
                     current_validator_set_quorum_hash: QuorumHash::all_zeros(),
                     next_validator_set_quorum_hash: None,
                     validator_sets: Default::default(),
