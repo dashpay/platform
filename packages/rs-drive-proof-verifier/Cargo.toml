@@ -46,9 +46,16 @@ hex = { version = "0.4.3" }
 
 drive-abci = { path = "../rs-drive-abci", default-features = false }
 # Dependencies for examples
-rs-sdk = { path = "../rs-sdk" }
+rs-sdk = { path = "../rs-sdk", features = ["mocks"] }
 tokio = { version = "1.32.0", features = ["macros"] }
-
+dotenvy = { version = "0.15.7" }
+envy = { version = "0.4.2" }
+serde_bytes = { version = "0.11.12" }
+serde_with = { version = "3.1.0", features = [
+    "macros",
+], default-features = false }
+sha2 = { version = "0.10" }
+tempfile = { version = "3" }
 
 [build-dependencies]
 

@@ -1,6 +1,4 @@
-use std::{fs::File, path::PathBuf};
-
-use base64::engine::GeneralPurposeConfig;
+use rs_sdk::platform::dapi::transport::TransportRequest;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct TestMetadata {
@@ -10,37 +8,14 @@ pub struct TestMetadata {
 }
 
 #[allow(unused)]
-pub fn load<Req, Resp>(
-    file: &str,
-) -> (
-    Req,
-    Resp,
-    TestMetadata,
-    drive_proof_verifier::proof::from_proof::MockQuorumInfoProvider,
-)
+pub fn load<R: TransportRequest, P: AsRef<std::path::Path>>(file: P) -> (R, R::Response)
 where
-    Req: serde::de::DeserializeOwned, // dapi_grpc::Message
-    Resp: serde::de::DeserializeOwned,
+    R: for<'de> serde::Deserialize<'de>,
+    R::Response: for<'de> serde::Deserialize<'de>,
 {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join(file);
+    let data = rs_sdk::platform::dapi::DumpData::load(file).expect("load test vector");
 
-    let f = File::open(path).unwrap();
-    // Use serde_bytes_repr to deserialize base64-encoded bytes
-    let mut json_de = serde_json::Deserializer::new(serde_json::de::IoRead::new(&f));
-    let base64_config = GeneralPurposeConfig::new();
-    let b64_de = serde_bytes_repr::ByteFmtDeserializer::new_base64(
-        &mut json_de,
-        base64::alphabet::STANDARD,
-        base64_config,
-    );
-    let (req, resp, metadata): (Req, Resp, TestMetadata) =
-        serde::Deserialize::deserialize(b64_de).expect("deserialize test vector json");
-
-    let mut provider = drive_proof_verifier::proof::from_proof::MockQuorumInfoProvider::new();
-
-    (req, resp, metadata, provider)
+    (data.request, data.response)
 }
 
 #[allow(unused)]
