@@ -45,7 +45,7 @@ impl Drive {
 
         // Clone ops only if we log them
         #[cfg(feature = "grovedb_operations_logging")]
-        let maybe_ops_for_logs = if tracing::event_enabled!(target: "grovedb_operations", Level::TRACE)
+        let maybe_ops_for_logs = if tracing::event_enabled!(target: "drive_grovedb_operations", Level::TRACE)
         {
             Some(ops.clone())
         } else {
@@ -152,7 +152,7 @@ impl Drive {
         );
 
         #[cfg(feature = "grovedb_operations_logging")]
-        if tracing::event_enabled!(target: "grovedb_operations", Level::TRACE)
+        if tracing::event_enabled!(target: "drive_grovedb_operations", Level::TRACE)
             && cost_context.value.is_ok()
         {
             let root_hash = self
@@ -162,7 +162,7 @@ impl Drive {
                 .map_err(Error::GroveDB)?;
 
             tracing::trace!(
-                target = "grovedb_operations",
+                target = "drive_grovedb_operations",
                 ops = ?maybe_ops_for_logs.unwrap(),
                 root_hash = ?root_hash,
                 is_transactional = transaction.is_some(),

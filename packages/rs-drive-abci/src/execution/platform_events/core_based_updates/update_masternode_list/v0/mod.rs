@@ -48,7 +48,7 @@ where
                 tracing::debug!(
                     method = "update_masternode_list_v0",
                     "no update mnl at height {}",
-                    core_block_height
+                    core_block_height,
                 );
                 return Ok(()); // no need to do anything
             }
