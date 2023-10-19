@@ -1,5 +1,7 @@
 const { Command, Flags, settings } = require('@oclif/core');
 
+const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+
 const { asValue } = require('awilix');
 
 const graceful = require('node-graceful');
@@ -17,6 +19,9 @@ const ConfigFileNotFoundError = require('../../config/errors/ConfigFileNotFoundE
  */
 class BaseCommand extends Command {
   async init() {
+    // Load wasm-dpp for further usage
+    await loadWasmDpp();
+
     // Read environment variables from .env file
     dotenv.config();
 

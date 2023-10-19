@@ -6173,11 +6173,11 @@ __metadata:
     "@dashevo/dashpay-contract": "workspace:*"
     "@dashevo/docker-compose": ^0.24.4
     "@dashevo/dpns-contract": "workspace:*"
-    "@dashevo/dpp": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/oclif": ^1.0.4
     "@dashevo/wallet-lib": "workspace:*"
+    "@dashevo/wasm-dpp": "workspace:*"
     "@dashevo/withdrawals-contract": "workspace:*"
     "@oclif/core": ^1.25.0
     "@oclif/plugin-help": ^5.1.20
