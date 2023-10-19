@@ -42,6 +42,10 @@ impl IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 for Identity
             }
         }
 
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
         // We should validate that the identity id is created from the asset lock proof
 
         let identifier_from_outpoint = match self.asset_lock_proof().create_identifier() {
