@@ -30,6 +30,7 @@ pub struct DriveAbciMethodVersions {
     pub state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions,
     pub withdrawals: DriveAbciWithdrawalsMethodVersions,
     pub epoch: DriveAbciEpochMethodVersions,
+    pub block_start: DriveAbciBlockStartMethodVersions,
     pub block_end: DriveAbciBlockEndMethodVersions,
 }
 
@@ -170,6 +171,12 @@ pub struct DriveAbciEpochMethodVersions {
     pub gather_epoch_info: FeatureVersion,
     pub get_genesis_time: FeatureVersion,
 }
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciBlockStartMethodVersions {
+    pub clear_drive_block_cache: FeatureVersion,
+}
+
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciBlockEndMethodVersions {

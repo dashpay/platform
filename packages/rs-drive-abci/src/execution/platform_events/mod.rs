@@ -22,3 +22,6 @@ pub(in crate::execution) mod protocol_upgrade;
 pub(in crate::execution) mod state_transition_processing;
 /// Platform withdrawals
 pub(in crate::execution) mod withdrawals;
+
+/// Events happening what starting to process a block
+pub(in crate::execution) mod block_start;
