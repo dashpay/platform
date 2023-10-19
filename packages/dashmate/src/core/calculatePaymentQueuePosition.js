@@ -5,12 +5,12 @@ function calculatePaymentQueuePosition(dmnState, masternodeEnabledCount, coreBlo
     paymentQueuePosition = dmnState.PoSeRevivedHeight
       + masternodeEnabledCount
       - coreBlocks;
-    // Masternode has never been paid
+  // Masternode has never been paid
   } else if (dmnState.lastPaidHeight === 0) {
     paymentQueuePosition = dmnState.registeredHeight
       + masternodeEnabledCount
       - coreBlocks;
-    // Masternode was previously paid and is in normal queue
+  // Masternode was previously paid and is in normal queue
   } else {
     paymentQueuePosition = dmnState.lastPaidHeight
       + masternodeEnabledCount
