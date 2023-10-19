@@ -1,7 +1,7 @@
 //!
 //!
 
-use crate::common::{mock_data_contract, mock_document_type};
+use super::common::{mock_data_contract, mock_document_type};
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters,

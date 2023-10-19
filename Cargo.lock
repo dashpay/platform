@@ -3601,7 +3601,6 @@ name = "rs-dapi-client"
 version = "0.1.0"
 dependencies = [
  "backon",
- "bincode 2.0.0-rc.3",
  "chrono",
  "dapi-grpc",
  "futures",
@@ -3627,10 +3626,12 @@ dependencies = [
  "ciborium",
  "dapi-grpc",
  "dashcore-rpc",
+ "dotenvy",
  "dpp",
  "drive",
  "drive-abci",
  "drive-proof-verifier",
+ "envy",
  "hex",
  "http",
  "rs-dapi-client",

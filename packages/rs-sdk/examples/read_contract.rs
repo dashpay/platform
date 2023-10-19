@@ -4,8 +4,11 @@ use dpp::prelude::{DataContract, Identifier};
 use rs_dapi_client::AddressList;
 use rs_sdk::platform::Fetch;
 
-// Some constants we need to connect to the platform
-include!("../tests/fetch/common.rs");
+pub const PLATFORM_IP: &str = "10.56.229.104";
+pub const CORE_PORT: u16 = 30002;
+pub const CORE_USER: &str = "546b8x1g";
+pub const CORE_PASSWORD: &str = "ur4mn8Z6ObI3";
+pub const PLATFORM_PORT: u16 = 2443;
 
 /// Read data contract.
 ///

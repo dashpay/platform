@@ -174,9 +174,8 @@ impl Sdk {
             quorum_hash.encode_hex::<String>()
         ));
 
-        if let Err(e) = std::fs::write(&file, encoded) {
+        if let Err(e) = std::fs::write(file, encoded) {
             tracing::warn!("Unable to write dump file {:?}: {}", path, e);
-            return;
         }
     }
 }

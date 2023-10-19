@@ -41,7 +41,8 @@ dpp = { path = "../rs-dpp", features = [
     "validation",
     "random-documents",
 ] }
-
+dotenvy = { version = "0.15.7" }
+envy = { version = "0.4.2" }
 
 [features]
 default = ["mocks"]
@@ -56,3 +57,10 @@ mocks = [
     "dep:bincode",
     "dep:hex",
 ]
+# Enable this feature to run integration tests against a local Dash Platform
+# and dump all traffic to generate test vectors.
+#
+# This feature is disabled by default because it requires a local Dash Platform
+# node to be running. Configuration of the node is done via environment variables
+# and/or `${CARGO_MAINFEST_DIR}/.env` file; see also `.env.example`.
+online-testing = []

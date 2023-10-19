@@ -138,6 +138,13 @@ impl MockQuorumInfoProvider {
         self.quorum_keys_dir = quorum_keys_dir;
     }
 }
+
+impl Default for MockQuorumInfoProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(feature = "mocks")]
 impl QuorumInfoProvider for MockQuorumInfoProvider {
     /// Mock implementation of [QuorumInfoProvider] that returns keys from files saved on disk.
@@ -296,7 +303,7 @@ impl FromProof<platform::GetIdentityByPublicKeyHashesRequest> for Identity {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(&proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_identity)
     }
@@ -499,7 +506,7 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalance {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(&proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_identity)
     }
@@ -596,7 +603,7 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(&proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_contract)
     }
@@ -650,7 +657,7 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(&proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         let maybe_contracts = if contracts.count_some() > 0 {
             Some(contracts)
@@ -710,7 +717,7 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
             error: e.to_string(),
         })?;
 
-        verify_tenderdash_proof(&proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(maybe_history)
     }
@@ -759,7 +766,7 @@ where
                 error: e.to_string(),
             })?;
 
-        verify_tenderdash_proof(&proof, mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         if documents.is_empty() {
             Ok(None)
