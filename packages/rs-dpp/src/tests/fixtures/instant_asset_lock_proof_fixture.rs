@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use dashcore::bls_sig_utils::BLSSignature;
 use dashcore::hash_types::CycleHash;
+use dashcore::hashes::Hash;
 use dashcore::secp256k1::rand::thread_rng;
 use dashcore::secp256k1::Secp256k1;
 use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
@@ -70,8 +71,6 @@ pub fn instant_asset_lock_proof_transaction_fixture(
         sequence: 0,
         witness: Default::default(),
     };
-
-    dbg!(one_time_public_key);
 
     let one_time_key_hash = one_time_public_key.pubkey_hash();
 
