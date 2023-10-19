@@ -194,9 +194,14 @@ mod tests {
     #[test]
     #[ignore]
     fn verify_check_tx_on_data_contract_create() {
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let state = platform.state.read().unwrap();
         let protocol_version = state.current_protocol_version_in_consensus();
@@ -267,9 +272,15 @@ mod tests {
 
     #[test]
     fn data_contract_create_check_tx() {
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         let state = platform.state.read().unwrap();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
@@ -327,11 +338,16 @@ mod tests {
 
     #[test]
     fn document_update_check_tx() {
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
 
-        let platform_state = platform.state.read().unwrap();
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
+        let mut platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -509,9 +525,14 @@ mod tests {
 
     #[test]
     fn identity_top_up_check_tx() {
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -637,9 +658,14 @@ mod tests {
 
     #[test]
     fn identity_cant_double_top_up() {
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -776,9 +802,14 @@ mod tests {
 
     #[test]
     fn identity_top_up_with_unknown_identity_doesnt_panic() {
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -858,9 +889,14 @@ mod tests {
 
     #[test]
     fn identity_cant_create_with_used_outpoint() {
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -1059,9 +1095,14 @@ mod tests {
 
         config.abci.keys.dpns_second_public_key = high_public_key.serialize().to_vec();
 
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config)
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -1162,9 +1203,14 @@ mod tests {
 
         config.abci.keys.dashpay_second_public_key = high_public_key.serialize().to_vec();
 
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config)
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
