@@ -22,7 +22,7 @@ use drive::state_transition_action::StateTransitionAction;
 use drive::grovedb::TransactionArg;
 use dpp::version::DefaultForPlatformVersion;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::asset_lock::fetch_tx_out::v0::FetchAssetLockProofTxOutV0;
+use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_in_state;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create) trait IdentityCreateStateTransitionStateValidationV0
@@ -117,13 +117,16 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
-        let tx_out_validation = self
-            .asset_lock_proof()
-            .fetch_asset_lock_transaction_output_sync_v0(platform.core_rpc)?;
+        let tx_out_validation = fetch_asset_lock_transaction_output_sync(
+            platform.core_rpc,
+            self.asset_lock_proof(),
+            platform_version,
+        )?;
+
         if !tx_out_validation.is_valid() {
             return Ok(ConsensusValidationResult::new_with_errors(
                 tx_out_validation.errors,
@@ -131,6 +134,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
         }
 
         let tx_out = tx_out_validation.into_data()?;
+
         match IdentityCreateTransitionAction::try_from_borrowed(self, tx_out.value * 1000) {
             Ok(action) => {
                 validation_result.set_data(action.into());

@@ -10,10 +10,11 @@ use crate::version::dpp_versions::{
     StateTransitionSerializationVersions, StateTransitionVersions,
 };
 use crate::version::drive_abci_versions::{
-    DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
-    DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreSubsidyMethodVersions,
-    DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciEngineMethodVersions,
-    DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions,
+    DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions,
+    DriveAbciBlockFeeProcessingMethodVersions, DriveAbciCoreBasedUpdatesMethodVersions,
+    DriveAbciCoreSubsidyMethodVersions, DriveAbciDocumentsStateTransitionValidationVersions,
+    DriveAbciEngineMethodVersions, DriveAbciEpochMethodVersions,
+    DriveAbciFeePoolInwardsDistributionMethodVersions,
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
@@ -522,6 +523,10 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         validation_and_processing: DriveAbciValidationVersions {
             state_transitions: DriveAbciStateTransitionValidationVersions {
                 common_validation_methods: DriveAbciStateTransitionCommonValidationVersions {
+                    asset_locks: DriveAbciAssetLockValidationVersions {
+                        fetch_asset_lock_transaction_output_sync: 0,
+                        validate_asset_lock_transaction_structure: 0,
+                    },
                     validate_identity_public_key_contract_bounds: 0,
                     validate_identity_public_key_ids_dont_exist_in_state: 0,
                     validate_identity_public_key_ids_exist_in_state: 0,

@@ -40,7 +40,7 @@ impl StateTransitionActionTransformerV0 for IdentityTopUpTransition {
             .identity_top_up_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform),
+            0 => self.transform_into_action_v0(platform, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity top up transition: transform_into_action".to_string(),
                 known_versions: vec![0],

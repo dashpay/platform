@@ -93,11 +93,18 @@ pub struct DriveAbciStateTransitionValidationVersions {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciStateTransitionCommonValidationVersions {
+    pub asset_locks: DriveAbciAssetLockValidationVersions,
     pub validate_identity_public_key_contract_bounds: FeatureVersion,
     pub validate_identity_public_key_ids_dont_exist_in_state: FeatureVersion,
     pub validate_identity_public_key_ids_exist_in_state: FeatureVersion,
     pub validate_state_transition_identity_signed: FeatureVersion,
     pub validate_unique_identity_public_key_hashes_in_state: FeatureVersion,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DriveAbciAssetLockValidationVersions {
+    pub fetch_asset_lock_transaction_output_sync: FeatureVersion,
+    pub validate_asset_lock_transaction_structure: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

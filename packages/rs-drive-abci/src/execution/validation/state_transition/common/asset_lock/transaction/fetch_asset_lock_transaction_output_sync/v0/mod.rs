@@ -1,0 +1,127 @@
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use crate::rpc::core::{CoreRPCLike, CORE_RPC_INVALID_ADDRESS_OR_KEY};
+use dashcore_rpc::dashcore_rpc_json::GetTransactionResult;
+use dpp::consensus::basic::identity::{
+    IdentityAssetLockTransactionIsNotFoundError, IdentityAssetLockTransactionOutputNotFoundError,
+    InvalidAssetLockProofTransactionHeightError,
+};
+use dpp::dashcore::secp256k1::ThirtyTwoByteHash;
+use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+use dpp::dashcore::{TxOut, Txid};
+use dpp::prelude::{AssetLockProof, ConsensusValidationResult};
+use dpp::validation::ValidationResult;
+use dpp::version::PlatformVersion;
+use crate::execution::validation::state_transition::common::asset_lock::transaction::validate_asset_lock_transaction_structure::validate_asset_lock_transaction_structure;
+
+/// This fetches the asset lock transaction output from core
+pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
+    core_rpc: &C,
+    asset_lock_proof: &AssetLockProof,
+    platform_version: &PlatformVersion,
+) -> Result<ConsensusValidationResult<TxOut>, Error> {
+    match asset_lock_proof {
+        AssetLockProof::Instant(proof) => {
+            if let Some(output) = proof.output() {
+                Ok(ValidationResult::new_with_data(output.clone()))
+            } else {
+                Ok(ValidationResult::new_with_error(
+                    IdentityAssetLockTransactionOutputNotFoundError::new(proof.output_index())
+                        .into(),
+                ))
+            }
+        }
+        AssetLockProof::Chain(proof) => {
+            let output_index = proof.out_point.vout as usize;
+            let transaction_hash = proof.out_point.txid;
+
+            // Fetch transaction
+
+            let Some(transaction_info) = fetch_transaction_info(core_rpc, &transaction_hash)?
+            else {
+                // Transaction hash bytes needs to be reversed to match actual transaction hash
+                let mut hash = transaction_hash.as_raw_hash().into_32();
+                hash.reverse();
+
+                return Ok(ValidationResult::new_with_error(
+                    IdentityAssetLockTransactionIsNotFoundError::new(hash).into(),
+                ));
+            };
+
+            // Make sure transaction is mined on the chain locked block or before
+
+            let Some(transaction_height) = transaction_info.blockindex else {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    InvalidAssetLockProofTransactionHeightError::new(
+                        proof.core_chain_locked_height,
+                        None,
+                    )
+                    .into(),
+                ));
+            };
+
+            if transaction_height > proof.core_chain_locked_height {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    InvalidAssetLockProofTransactionHeightError::new(
+                        proof.core_chain_locked_height,
+                        Some(transaction_height),
+                    )
+                    .into(),
+                ));
+            }
+
+            let transaction = transaction_info
+                .transaction()
+                .map_err(|e| Error::Execution(ExecutionError::DashCoreConsensusEncodeError(e)))?;
+
+            // Validate asset lock transaction
+
+            let validate_asset_lock_transaction_result = validate_asset_lock_transaction_structure(
+                &transaction,
+                output_index,
+                platform_version,
+            )?;
+
+            if !validate_asset_lock_transaction_result.is_valid() {
+                return Ok(ConsensusValidationResult::new_with_errors(
+                    validate_asset_lock_transaction_result.errors,
+                ));
+            }
+
+            // Extract outpoint from the payload
+            if let Some(TransactionPayload::AssetLockPayloadType(mut payload)) =
+                transaction.special_transaction_payload
+            {
+                // We are dealing with old Rust edition so we can't use optional remove
+                if payload.credit_outputs.get(output_index).is_some() {
+                    let output = payload.credit_outputs.remove(output_index);
+
+                    return Ok(ValidationResult::new_with_data(output));
+                }
+            }
+
+            Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "transaction should have outpoint",
+            )))
+        }
+    }
+}
+
+fn fetch_transaction_info<C: CoreRPCLike>(
+    core_rpc: &C,
+    transaction_id: &Txid,
+) -> Result<Option<GetTransactionResult>, Error> {
+    match core_rpc.get_transaction_extended_info(transaction_id) {
+        Ok(transaction) => Ok(Some(transaction)),
+        // Return None if transaction with specified tx id is not present
+        Err(dashcore_rpc::Error::JsonRpc(dashcore_rpc::jsonrpc::error::Error::Rpc(
+            dashcore_rpc::jsonrpc::error::RpcError {
+                code: CORE_RPC_INVALID_ADDRESS_OR_KEY,
+                ..
+            },
+        ))) => Ok(None),
+        Err(e) => Err(Error::Execution(ExecutionError::DashCoreBadResponseError(
+            format!("can't fetch asset lock transaction for chain asset lock proof: {e}",),
+        ))),
+    }
+}

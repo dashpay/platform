@@ -107,18 +107,25 @@ pub struct DefaultCoreRPC {
     inner: Client,
 }
 
+/// Client still warming up
+pub const CORE_RPC_ERROR_IN_WARMUP: i32 = -28;
+/// Dash is not connected
+pub const CORE_RPC_CLIENT_NOT_CONNECTED: i32 = -9;
+/// Still downloading initial blocks
+pub const CORE_RPC_CLIENT_IN_INITIAL_DOWNLOAD: i32 = -10;
+/// Parse error
+pub const CORE_RPC_PARSE_ERROR: i32 = -32700;
+/// Invalid address or key
+pub const CORE_RPC_INVALID_ADDRESS_OR_KEY: i32 = -5;
+/// Invalid, missing or duplicate parameter
+pub const CORE_RPC_INVALID_PARAMETER: i32 = -8;
+
 macro_rules! retry {
     ($action:expr) => {{
         /// Maximum number of retry attempts
         const MAX_RETRIES: u32 = 4;
         /// // Multiplier for Fibonacci sequence
         const FIB_MULTIPLIER: u64 = 1;
-        /// Client still warming up
-        const CORE_RPC_ERROR_IN_WARMUP: i32 = -28;
-        /// Dash is not connected
-        const CORE_RPC_CLIENT_NOT_CONNECTED: i32 = -9;
-        /// Still downloading initial blocks
-        const CORE_RPC_CLIENT_IN_INITIAL_DOWNLOAD: i32 = -10;
 
         fn fibonacci(n: u32) -> u64 {
             match n {

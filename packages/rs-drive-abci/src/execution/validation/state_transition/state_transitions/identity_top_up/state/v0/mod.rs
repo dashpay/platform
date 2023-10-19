@@ -18,8 +18,8 @@ use dpp::version::PlatformVersion;
 use drive::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 
-use crate::execution::validation::asset_lock::fetch_tx_out::v0::FetchAssetLockProofTxOutV0;
 use drive::grovedb::TransactionArg;
+use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_top_up) trait IdentityTopUpStateTransitionStateValidationV0
 {
@@ -33,6 +33,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::identi
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
@@ -77,18 +78,22 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
             ));
         }
 
-        self.transform_into_action_v0(platform)
+        self.transform_into_action_v0(platform, platform_version)
     }
 
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
-        let tx_out_validation = self
-            .asset_lock_proof()
-            .fetch_asset_lock_transaction_output_sync_v0(platform.core_rpc)?;
+        let tx_out_validation = fetch_asset_lock_transaction_output_sync(
+            platform.core_rpc,
+            self.asset_lock_proof(),
+            platform_version,
+        )?;
+
         if !tx_out_validation.is_valid() {
             return Ok(ConsensusValidationResult::new_with_errors(
                 tx_out_validation.errors,
