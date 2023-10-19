@@ -9,6 +9,7 @@ use dpp::consensus::basic::identity::{
 use dpp::consensus::basic::BasicError;
 
 use dpp::consensus::ConsensusError;
+use dpp::identity::state_transition::AssetLockProved;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
@@ -101,7 +102,7 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
         }
 
         let tx_out = tx_out_validation.into_data()?;
-        match IdentityTopUpTransitionAction::try_from_borrowed(self, tx_out.value * 1000) {
+        match IdentityTopUpTransitionAction::try_from_borrowed(self, &tx_out) {
             Ok(action) => {
                 validation_result.set_data(action.into());
             }

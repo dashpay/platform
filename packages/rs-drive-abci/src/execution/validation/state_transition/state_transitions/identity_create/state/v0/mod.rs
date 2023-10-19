@@ -11,6 +11,7 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 
 use dpp::consensus::ConsensusError;
+use dpp::identity::state_transition::AssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -135,7 +136,7 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
 
         let tx_out = tx_out_validation.into_data()?;
 
-        match IdentityCreateTransitionAction::try_from_borrowed(self, tx_out.value * 1000) {
+        match IdentityCreateTransitionAction::try_from_borrowed(self, &tx_out) {
             Ok(action) => {
                 validation_result.set_data(action.into());
             }

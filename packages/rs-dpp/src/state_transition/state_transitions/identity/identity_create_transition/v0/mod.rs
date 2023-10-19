@@ -1,5 +1,6 @@
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
+mod proved;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
@@ -20,6 +21,7 @@ use crate::identity::Identity;
 use crate::prelude::Identifier;
 
 use crate::identity::accessors::IdentityGettersV0;
+use crate::identity::state_transition::AssetLockProved;
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;

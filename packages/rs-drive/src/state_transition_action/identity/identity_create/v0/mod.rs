@@ -5,9 +5,9 @@ use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, IdentityV0, PartialIdentity};
 
 use dpp::dashcore::OutPoint;
+use dpp::dashcore::TxOut;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
-use dpp::platform_value::Bytes36;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,8 @@ pub struct IdentityCreateTransitionActionV0 {
     pub identity_id: Identifier,
     /// asset lock outpoint
     pub asset_lock_outpoint: OutPoint,
+    /// asset lock output
+    pub asset_lock_output: TxOut,
 }
 
 impl From<IdentityCreateTransitionActionV0> for PartialIdentity {

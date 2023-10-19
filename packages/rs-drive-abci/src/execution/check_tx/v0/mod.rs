@@ -456,7 +456,12 @@ mod tests {
                 &transaction,
             )
             .expect("expected to execute identity_create tx");
-        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        assert!(
+            matches!(validation_result, SuccessfulPaidExecution(..)),
+            "{:?}",
+            validation_result
+        );
 
         let validation_result = platform
             .execute_tx(

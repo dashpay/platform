@@ -71,6 +71,8 @@ pub fn instant_asset_lock_proof_transaction_fixture(
         witness: Default::default(),
     };
 
+    dbg!(one_time_public_key);
+
     let one_time_key_hash = one_time_public_key.pubkey_hash();
 
     let funding_output = TxOut {

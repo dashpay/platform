@@ -2,6 +2,7 @@ pub(crate) mod identity_retrieval;
 mod state;
 mod structure;
 
+use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -11,6 +12,7 @@ use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::validation::state_transition::common::asset_lock::one_time_signed::v0::OneTimeSignedStateTransitionV0;
 
 use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::rpc::core::CoreRPCLike;
@@ -100,3 +102,5 @@ impl StateTransitionStateValidationV0 for IdentityTopUpTransition {
         }
     }
 }
+
+impl OneTimeSignedStateTransitionV0 for IdentityTopUpTransition {}

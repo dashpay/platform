@@ -2,13 +2,14 @@ use crate::state_transition_action::identity::identity_topup::v0::IdentityTopUpT
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
+use dpp::dashcore::TxOut;
 use dpp::state_transition::state_transitions::identity::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 
 impl IdentityTopUpTransitionActionV0 {
     /// try from
     pub fn try_from(
         value: IdentityTopUpTransitionV0,
-        top_up_balance_amount: u64,
+        output: TxOut,
     ) -> Result<Self, ConsensusError> {
         let IdentityTopUpTransitionV0 {
             identity_id,
@@ -25,17 +26,21 @@ impl IdentityTopUpTransitionActionV0 {
                 ),
             ))?
             .into();
+
+        let top_up_balance_amount = output.value * 1000;
+
         Ok(IdentityTopUpTransitionActionV0 {
             top_up_balance_amount,
             identity_id,
             asset_lock_outpoint,
+            asset_lock_output: output,
         })
     }
 
     /// try from borrowed
     pub fn try_from_borrowed(
         value: &IdentityTopUpTransitionV0,
-        top_up_balance_amount: u64,
+        output: &TxOut,
     ) -> Result<Self, ConsensusError> {
         let IdentityTopUpTransitionV0 {
             identity_id,
@@ -53,10 +58,13 @@ impl IdentityTopUpTransitionActionV0 {
             ))?
             .into();
 
+        let top_up_balance_amount = output.value * 1000;
+
         Ok(IdentityTopUpTransitionActionV0 {
             top_up_balance_amount,
             identity_id: *identity_id,
             asset_lock_outpoint,
+            asset_lock_output: output.clone(),
         })
     }
 }

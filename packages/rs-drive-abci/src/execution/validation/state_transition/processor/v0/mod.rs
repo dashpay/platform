@@ -16,6 +16,7 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::common::asset_lock::one_time_signed::v0::OneTimeSignedStateTransitionV0;
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::{ValidateStateTransitionIdentitySignature};
 use crate::execution::validation::state_transition::state_transitions::identity_update::identity_and_signatures::v0::IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0;
 use crate::execution::validation::state_transition::state_transitions::identity_create::identity_and_signatures::v0::IdentityCreateStateTransitionIdentityAndSignaturesValidationV0;
@@ -293,14 +294,25 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                     .identity_signatures
                 {
                     Some(0) => {
+                        let action = action.ok_or(Error::Execution(
+                            ExecutionError::CorruptedCodeExecution(
+                                "one time signature validation requires action",
+                            ),
+                        ))?;
+
                         let mut validation_result =
                             ConsensusValidationResult::<Option<PartialIdentity>>::default();
+
                         let signable_bytes: Vec<u8> = self.signable_bytes()?;
+
                         let result = st.validate_identity_create_state_transition_signatures_v0(
                             signable_bytes,
+                            action,
                         )?;
+
                         validation_result.merge(result);
                         validation_result.set_data(None);
+
                         Ok(validation_result)
                     }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
@@ -327,9 +339,28 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                     .identity_signatures
                 {
                     // The validation of the signature happens on the state level
-                    Some(0) => Ok(st
-                        .retrieve_topped_up_identity(drive, tx, platform_version)?
-                        .map(Some)),
+                    Some(0) => {
+                        let mut validation_result =
+                            st.retrieve_topped_up_identity(drive, tx, platform_version)?;
+
+                        if !validation_result.is_valid() {
+                            return Ok(validation_result.map(Some));
+                        }
+
+                        // TODO: Validate signature first?
+                        let action = action.ok_or(Error::Execution(
+                            ExecutionError::CorruptedCodeExecution(
+                                "one time signature validation requires action",
+                            ),
+                        ))?;
+
+                        let signable_bytes: Vec<u8> = self.signable_bytes()?;
+
+                        validation_result
+                            .merge(st.verify_one_time_signature_v0(action, signable_bytes)?);
+
+                        Ok(validation_result.map(Some))
+                    }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {
                         method: "identity top up transition: validate_identity_and_signatures"
                             .to_string(),
