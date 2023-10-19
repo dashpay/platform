@@ -351,8 +351,8 @@ impl SdkBuilder {
     /// Useful for debugging.
     ///
     /// This function will create the directory if it does not exist and save dumps of
-    /// * all requests and responses - in files named `msg-<timestamp>-<hash>.json`
-    /// * retrieved quorum public keys - in files named `quorum_pubkey-<integer_quorum_type>-<hex_quorum_hash>.json`
+    /// * all requests and responses - in files named `msg-*.json`
+    /// * retrieved quorum public keys - in files named `quorum_pubkey-*.json`
     ///
     /// Data is saved in JSON format.
     ///

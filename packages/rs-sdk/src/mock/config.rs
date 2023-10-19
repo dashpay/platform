@@ -9,7 +9,8 @@ use std::{path::PathBuf, str::FromStr};
 #[derive(Debug, Deserialize)]
 /// Configuration for rs-sdk.
 ///
-/// Content of this configuration will be read from environment variables or `.env` file.
+/// Content of this configuration is loaded from environment variables or `${CARGO_MANIFEST_DIR}/.env` file
+/// when the [Config::new()] is called.
 /// Variable names in the enviroment and `.env` file must be prefixed with [RS_SDK_](Config::CONFIG_PREFIX)
 /// and written as SCREAMING_SNAKE_CASE (e.g. `RS_SDK_PLATFORM_HOST`).
 pub struct Config<D> {
@@ -26,7 +27,7 @@ pub struct Config<D> {
 
     /// Directory where all generated test vectors will be saved.
     ///
-    /// See [SdkBuilder::with_dump_dir()](rs_dapi_client::DapiClient::with_dump_dir()) for more details.
+    /// See [SdkBuilder::with_dump_dir()](rs_sdk::SdkBuilder::with_dump_dir()) for more details.
     #[serde(default = "default_dump_dir")]
     pub dump_dir: PathBuf,
 
@@ -37,14 +38,17 @@ pub struct Config<D> {
 
 impl<D: for<'de1> Deserialize<'de1>> Config<D> {
     const CONFIG_PREFIX: &str = "RS_SDK_";
-    /// Load config from enviroment variables
+    /// Load configuration from operating system enviroment variables and `.env` file.
+    ///
+    /// Create new [Config] with data from enviroment variables and `${CARGO_MANIFEST_DIR}/.env` file.
+    /// Variable names in the enviroment and `.env` file must be converted to SCREAMING_SNAKE_CASE and
+    /// prefixed with [RS_SDK_](Config::CONFIG_PREFIX).
     pub fn new() -> Self {
         // load config from .env file, ignore errors
         let path = env!("CARGO_MANIFEST_DIR").to_owned() + "/.env";
 
         dotenvy::from_path(path).expect("failed to load config file");
 
-        // println!("Load .env file: {:?}", dotenvy::dotenv());
         envy::prefixed(Self::CONFIG_PREFIX)
             .from_env()
             .expect("configuration error")
@@ -59,7 +63,7 @@ impl<D: for<'de1> Deserialize<'de1>> Config<D> {
 
     /// Create new SDK instance
     ///
-    /// Depending on the feature flags, it will connect to the platform or mock API
+    /// Depending on the feature flags, it will connect to the configured platform node or mock API.
     ///
     /// ## Feature flags
     ///

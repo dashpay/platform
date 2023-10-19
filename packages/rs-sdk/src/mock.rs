@@ -313,7 +313,10 @@ impl MockDashPlatformSdk {
         let data = match self.from_proof_expectations.get(&request.mock_key()) {
             Some(d) => Option::<O>::mock_deserialize(self, d),
             None => {
-                let provider = self.quorum_provider.as_ref().ok_or(drive_proof_verifier::Error::InvalidQuorum{error:"expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()})?;
+                let provider = self.quorum_provider.as_ref()
+                    .ok_or(drive_proof_verifier::Error::InvalidQuorum{
+                        error:"expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
+                    })?;
                 O::maybe_from_proof(request, response, provider)?
             }
         };
