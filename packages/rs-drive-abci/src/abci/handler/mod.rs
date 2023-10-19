@@ -143,6 +143,7 @@ where
             chain_id,
             "platform chain initialized, initial state is created"
         );
+
         Ok(response)
     }
 
@@ -283,8 +284,8 @@ where
                 if let Some(proposal_info) = block_execution_context.proposer_results() {
                     tracing::debug!(
                         method = "process_proposal",
-                        "we knew block hash, block execution context already had a proposer result {:?}",
-                        proposal_info
+                        ?proposal_info, // TODO: It might be too big for debug
+                        "we knew block hash, block execution context already had a proposer result",
                     );
                     // We were the proposer as well, so we have the result in cache
                     return Ok(ResponseProcessProposal {
@@ -298,12 +299,12 @@ where
 
                 if current_block_hash.as_slice() == request.hash {
                     // We were not the proposer, just drop the execution context
-                    tracing::debug!(
+                    tracing::warn!(
                         method = "process_proposal",
-                        "block execution context already existed, but we are running it again for same height {}/round {} full request: {:?}",
+                        ?request, // Shumkov, lklimek: this structure might be very big and we already logged it such as all other ABCI requests and responses
+                        "block execution context already existed, but we are running it again for same height {}/round {}",
                         request.height,
                         request.round,
-                        request
                     );
                     drop_block_execution_context = true;
                 } else {
@@ -321,11 +322,10 @@ where
                         )))?;
                     };
 
-                    tracing::debug!(
+                    tracing::trace!(
                         method = "process_proposal",
-                        "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}, full request {:?}",
+                        "we didn't know block hash (we were most likely proposer), block execution context already had a proposer result {:?}",
                         proposal_info,
-                        request
                     );
 
                     // Cloning all required properties from proposal_info and then dropping it

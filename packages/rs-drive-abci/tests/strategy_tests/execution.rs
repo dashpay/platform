@@ -20,7 +20,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use strategy_tests::operations::FinalizeBlockOperation::IdentityAddKeys;
 use strategy_tests::Strategy;
 
-use dashcore_rpc::json::SoftforkInfo;
+use dashcore_rpc::json::{ExtendedQuorumListResult, SoftforkInfo};
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::mimic::test_quorum::TestQuorumInfo;
@@ -32,7 +32,6 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
-use simple_signer::signer::SimpleSigner;
 use std::collections::{BTreeMap, HashMap};
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
@@ -261,13 +260,10 @@ pub(crate) fn run_chain_for_strategy(
 
     platform
         .core_rpc
-        .expect_get_quorum_listextended_by_type()
+        .expect_get_quorum_listextended()
         .returning(move |core_height: Option<u32>| {
-            if !strategy.rotate_quorums {
-                Ok(BTreeMap::from([(
-                    QuorumType::Llmq100_67,
-                    quorums_details.clone().into_iter().collect(),
-                )]))
+            let extended_info = if !strategy.rotate_quorums {
+                quorums_details.clone().into_iter().collect()
             } else {
                 let core_height = core_height.expect("expected a core height");
                 // if we rotate quorums we shouldn't give back the same ones every time
@@ -276,7 +272,7 @@ pub(crate) fn run_chain_for_strategy(
                 let start_range = start_range % total_quorums as u32;
                 let end_range = end_range % total_quorums as u32;
 
-                let quorums = if end_range > start_range {
+                if end_range > start_range {
                     quorums_details
                         .iter()
                         .skip(start_range as usize)
@@ -293,10 +289,14 @@ pub(crate) fn run_chain_for_strategy(
                         .chain(second_range)
                         .map(|(quorum_hash, quorum)| (*quorum_hash, quorum.clone()))
                         .collect()
-                };
+                }
+            };
 
-                Ok(BTreeMap::from([(QuorumType::Llmq100_67, quorums)]))
-            }
+            let result = ExtendedQuorumListResult {
+                quorums_by_type: HashMap::from([(QuorumType::Llmq100_67, extended_info)]),
+            };
+
+            Ok(result)
         });
 
     let quorums_info: HashMap<QuorumHash, QuorumInfoResult> = quorums

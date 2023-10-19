@@ -19,9 +19,15 @@ impl Drive {
         };
 
         #[cfg(feature = "grovedb_operations_logging")]
-        let maybe_path_for_logs = if tracing::event_enabled!(target: "grovedb_operations", Level::TRACE)
+        let maybe_params_for_logs = if tracing::event_enabled!(target: "drive_grovedb_operations", Level::TRACE)
         {
-            Some(path.clone())
+            let root_hash = self
+                .grove
+                .root_hash(transaction)
+                .unwrap()
+                .map_err(Error::GroveDB)?;
+
+            Some((path.clone(), root_hash))
         } else {
             None
         };
@@ -34,17 +40,23 @@ impl Drive {
             .map(|_| ());
 
         #[cfg(feature = "grovedb_operations_logging")]
-        if tracing::event_enabled!(target: "grovedb_operations", Level::TRACE) && result.is_ok() {
+        if tracing::event_enabled!(target: "drive_grovedb_operations", Level::TRACE)
+            && result.is_ok()
+        {
             let root_hash = self
                 .grove
                 .root_hash(transaction)
                 .unwrap()
                 .map_err(Error::GroveDB)?;
 
+            let (path, previous_root_hash) =
+                maybe_params_for_logs.expect("log params should be set above");
+
             tracing::trace!(
-                target = "grovedb_operations",
-                path = ?maybe_path_for_logs.unwrap().to_vec(),
-                root_hash = ?root_hash,
+                target = "drive_grovedb_operations",
+                path = ?path.to_vec(),
+                ?root_hash,
+                ?previous_root_hash,
                 is_transactional = transaction.is_some(),
                 "grovedb clear",
             );
