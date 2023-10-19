@@ -3,7 +3,7 @@
 //! This module contains [Config] struct that can be used to configure rs-sdk.
 //! It's mainly used for testing.
 use rs_dapi_client::AddressList;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::{path::PathBuf, str::FromStr};
 
 #[derive(Debug, Deserialize)]
@@ -35,7 +35,7 @@ pub struct Config<D> {
     pub settings: D,
 }
 
-impl<D: Serialize + for<'de1> Deserialize<'de1>> Config<D> {
+impl<D: for<'de1> Deserialize<'de1>> Config<D> {
     const CONFIG_PREFIX: &str = "RS_SDK_";
     /// Load config from enviroment variables
     pub fn new() -> Self {
