@@ -23,7 +23,7 @@ async fn main() {
         .expect("cannot initialize api");
 
     // Convert bytes to identifier object that can be used as a Query
-    let id = Identifier::from_bytes(&DATA_CONTRACT_ID_BYTES).expect("parse identity id");
+    let id = Identifier::from_bytes(&DATA_CONTRACT_ID_BYTES).expect("parse data contract id");
 
     // Execute the fetch operation
     let result = DataContract::fetch(&mut sdk, id).await;
