@@ -108,7 +108,6 @@ impl Dapi for MockDapiClient {
         if let Some(response) = response {
             return Ok(response);
         } else {
-            let key: String = Key::new(&request).encode_hex();
             return Err(DapiClientError::MockExpectationNotFound(format!(
                 "unexpected mock request with key {}, use MockDapiClient::expect(): {:?}",
                 key, request
@@ -171,11 +170,24 @@ impl Display for Key {
     }
 }
 
-type ExpectationValue = Vec<u8>;
+struct ExpectedResponse(Vec<u8>);
+
+impl ExpectedResponse {
+    fn serialize<I: serde::Serialize>(request: &I) -> Self {
+        // We use json because bincode sometimes fail to deserialize
+        Self(serde_json::to_vec(request).expect("encode value"))
+    }
+
+    fn deserialize<O: for<'de> serde::Deserialize<'de>>(&self) -> O {
+        // We use json because bincode sometimes fail to deserialize
+        serde_json::from_slice(&self.0).expect("deserialize value")
+    }
+}
+
 #[derive(Default)]
 /// Requests expected by a mock and their responses.
 struct Expectations {
-    expectations: HashMap<Key, ExpectationValue>,
+    expectations: HashMap<Key, ExpectedResponse>,
 }
 
 impl Expectations {
@@ -187,8 +199,8 @@ impl Expectations {
         request: &I,
         response: &O,
     ) -> Key {
-        let key = Self::key(&request);
-        let value = Self::value(response);
+        let key = Key::new(&request);
+        let value = ExpectedResponse::serialize(response);
 
         self.expectations.insert(key.clone(), value);
 
@@ -202,27 +214,10 @@ impl Expectations {
         &self,
         request: I,
     ) -> (Key, Option<O>) {
-        let key = Self::key(&request);
+        let key = Key::new(&request);
 
-        let response = self
-            .expectations
-            .get(&key)
-            .and_then(Self::deserialize_value);
+        let response = self.expectations.get(&key).and_then(|v| v.deserialize());
 
         (key, response)
-    }
-
-    fn key<I: serde::Serialize>(request: &I) -> Key {
-        Key::new(request)
-    }
-
-    fn value<I: serde::Serialize>(request: &I) -> ExpectationValue {
-        // We use json because bincode sometimes fail to deserialize
-        serde_json::to_vec(request).expect("encode value")
-    }
-
-    fn deserialize_value<O: for<'de> serde::Deserialize<'de>>(value: &ExpectationValue) -> O {
-        // We use json because bincode sometimes fail to deserialize
-        serde_json::from_slice(value).expect("deserialize value")
     }
 }
