@@ -11,8 +11,8 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Clears the drive block cache at the start of processing a block. This does a few things like clearing
     /// the block data contract cache and the block platform versions cache.

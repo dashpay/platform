@@ -2,8 +2,8 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     /// Clears the drive cache at the start of block processing. This does a few things like clearing
     /// the block data contract cache and the block platform versions cache.

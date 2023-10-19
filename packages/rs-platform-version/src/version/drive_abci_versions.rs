@@ -177,7 +177,6 @@ pub struct DriveAbciBlockStartMethodVersions {
     pub clear_drive_block_cache: FeatureVersion,
 }
 
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciBlockEndMethodVersions {
     pub store_ephemeral_state: FeatureVersion,
