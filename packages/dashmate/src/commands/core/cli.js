@@ -1,6 +1,7 @@
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
+const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunningError');
 
-class DashCliCommand extends ConfigBaseCommand {
+class CliCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -17,6 +18,10 @@ class DashCliCommand extends ConfigBaseCommand {
   ) {
     const { command } = args;
 
+    if (!(await dockerCompose.isServiceRunning(config, 'core'))) {
+      throw new ServiceIsNotRunningError(config.name, 'core');
+    }
+
     const { out } = await dockerCompose.execCommand(config, 'core', `dash-cli ${command}`);
 
     // eslint-disable-next-line no-console
@@ -26,16 +31,16 @@ class DashCliCommand extends ConfigBaseCommand {
   }
 }
 
-DashCliCommand.description = 'Dash Core CLI';
+CliCommand.description = 'Dash Core CLI';
 
-DashCliCommand.args = [{
+CliCommand.args = [{
   name: 'command',
   required: true,
   description: 'dash core command written in the double quotes',
 }];
 
-DashCliCommand.flags = {
+CliCommand.flags = {
   ...ConfigBaseCommand.flags,
 };
 
-module.exports = DashCliCommand;
+module.exports = CliCommand;
