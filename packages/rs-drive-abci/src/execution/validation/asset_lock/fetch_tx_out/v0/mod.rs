@@ -9,6 +9,7 @@ use dpp::consensus::basic::identity::{
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::dashcore::TxOut;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::validation::ValidationResult;
@@ -137,19 +138,27 @@ impl FetchAssetLockProofTxOutV0 for AssetLockProof {
                 let transaction = transaction_data.transaction().map_err(|e| {
                     Error::Execution(ExecutionError::DashCoreConsensusEncodeError(e))
                 })?;
-                if let Some(tx_out) = transaction.output.get(output_index) {
-                    Ok(ValidationResult::new_with_data(tx_out.clone()))
-                } else {
-                    // Also seems to be a malformed asset lock
-                    // todo: log this event
-                    // todo: ban the ip sending this request
-                    Ok(ValidationResult::new_with_error(
-                        BasicError::IdentityAssetLockTransactionOutputNotFoundError(
-                            IdentityAssetLockTransactionOutputNotFoundError::new(output_index),
-                        )
-                        .into(),
-                    ))
+
+                if let Some(TransactionPayload::AssetLockPayloadType(mut payload)) =
+                    transaction.special_transaction_payload
+                {
+                    // We are dealing with old Rust edition so we can't use optional remove
+                    if payload.credit_outputs.get(output_index).is_some() {
+                        let output = payload.credit_outputs.remove(output_index);
+
+                        return Ok(ValidationResult::new_with_data(output));
+                    }
                 }
+
+                // Also seems to be a malformed asset lock
+                // todo: log this event
+                // todo: ban the ip sending this request
+                Ok(ValidationResult::new_with_error(
+                    BasicError::IdentityAssetLockTransactionOutputNotFoundError(
+                        IdentityAssetLockTransactionOutputNotFoundError::new(output_index),
+                    )
+                    .into(),
+                ))
             }
         }
     }
