@@ -43,13 +43,10 @@ impl MockDapiClient {
     where
         R: TransportRequest,
     {
-        let key = self
-            .expectations
-            .add(request, response)
-            .encode_hex::<String>();
+        let key = self.expectations.add(request, response);
 
         tracing::trace!(
-            key,
+            %key,
             request_type = std::any::type_name::<R>(),
             response_typr = std::any::type_name::<R::Response>(),
             "mock added expectation"
@@ -62,7 +59,7 @@ impl MockDapiClient {
     ///
     /// The file must contain JSON structure.
     /// See [DumpData](crate::DumpData) and [DapiClient::dump_dir()](crate::DapiClient::dump_dir()) more for details.
-    #[cfg(feature = "mocks")]
+    #[cfg(feature = "dump")]
     pub fn load<T: TransportRequest, P: AsRef<std::path::Path>>(
         &mut self,
         file: P,
@@ -89,17 +86,6 @@ impl MockDapiClient {
         self.expect(&data.request, &data.response);
         Ok((data.request, data.response))
     }
-
-    /// Read and deserialize expected response for provided request.
-    ///
-    /// Returns None if the request is not expected.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the request can't be serialized or response can't be deserialized.
-    fn get_expectation<R: TransportRequest>(&self, request: &R) -> Option<R::Response> {
-        self.expectations.get(request)
-    }
 }
 
 #[async_trait]
@@ -109,11 +95,10 @@ impl Dapi for MockDapiClient {
         request: R,
         _settings: RequestSettings,
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
-        let response = self.get_expectation(&request);
-        let key: String = Key::new(&request).encode_hex();
+        let (key, response) = self.expectations.get(&request);
 
         tracing::trace!(
-            key,
+            %key,
             request_type = std::any::type_name::<R>(),
             response_type = std::any::type_name::<R::Response>(),
             response = ?response,
@@ -216,7 +201,7 @@ impl Expectations {
     pub fn get<I: serde::Serialize, O: for<'de> serde::Deserialize<'de> + Debug>(
         &self,
         request: I,
-    ) -> Option<O> {
+    ) -> (Key, Option<O>) {
         let key = Self::key(&request);
 
         let response = self
@@ -224,7 +209,7 @@ impl Expectations {
             .get(&key)
             .and_then(Self::deserialize_value);
 
-        response
+        (key, response)
     }
 
     fn key<I: serde::Serialize>(request: &I) -> Key {

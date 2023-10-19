@@ -1,14 +1,11 @@
 //! Dumping of requests and responses to disk
 
 use crate::{mock::Key, transport::TransportRequest, DapiClient};
-use hex::ToHex;
 use std::path::PathBuf;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 /// Data format of dumps created with [DapiClient::dump_dir].
 pub struct DumpData<T: TransportRequest> {
-    /// Fully qualified name of the type of request that was sent to DAPI.
-    pub request_type: String,
     /// Request that was sent to DAPI.
     pub request: T,
     /// Response that was received from DAPI.
@@ -17,22 +14,15 @@ pub struct DumpData<T: TransportRequest> {
 
 impl<T: TransportRequest> DumpData<T> {
     /// Create new dump data.
-    ///
     pub fn new(request: T, response: T::Response) -> Self {
-        let request_type = std::any::type_name::<T>().to_string();
-
-        Self {
-            request_type,
-            request,
-            response,
-        }
-    }
-    /// Return unique identifier (hex-encoded sha256) of the request.
-    /// Can be used to construct dump file name.
-    fn hash_hex(&self) -> Result<String, std::io::Error> {
-        Key::try_new(&self.request).map(|v| v.encode_hex())
+        Self { request, response }
     }
 
+    // Return request type (T) name without module prefix
+    fn request_type() -> String {
+        let req_type = std::any::type_name::<T>();
+        req_type.split(':').last().unwrap_or(&req_type).to_string()
+    }
     /// Generate unique filename for this dump.
     ///
     /// Filename consists of:
@@ -43,21 +33,16 @@ impl<T: TransportRequest> DumpData<T> {
     /// * unique identifier (hash) of the request
     pub fn filename(&self) -> Result<String, std::io::Error> {
         let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
-        let hash = self.hash_hex()?;
-
-        let request_type = self
-            .request_type
-            .split(':')
-            .last()
-            .unwrap_or(&self.request_type)
-            .replace('_', "-"); // remove underscore (separator used in file name)
+        let key = Key::try_new(&self.request)?;
+        // get request type without underscores (which we use as a file name separator)
+        let request_type = Self::request_type().replace('_', "-");
 
         let file = format!(
             "{}_{}_{}_{}.json",
             DapiClient::DUMP_FILE_PREFIX,
             now,
             request_type,
-            hash
+            key
         );
 
         Ok(file)
@@ -137,7 +122,6 @@ impl DapiClient {
         let data = DumpData::new(request, response);
 
         // Construct file name
-        // Path consists of current timestamp + hash of message
         let filename = match data.filename() {
             Ok(f) => f,
             Err(e) => return tracing::warn!("unable to create dump file name: {}", e),

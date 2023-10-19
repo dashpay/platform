@@ -70,7 +70,7 @@ impl<D: for<'de1> Deserialize<'de1>> Config<D> {
     pub async fn setup_api(&self) -> crate::Sdk {
         #[cfg(feature = "online-testing")]
         // Dump all traffic to disk
-        crate::SdkBuilder::new(self.address_list())
+        let sdk = crate::SdkBuilder::new(self.address_list())
             .with_core(
                 &self.platform_host,
                 self.core_port,
@@ -82,19 +82,22 @@ impl<D: for<'de1> Deserialize<'de1>> Config<D> {
             .expect("cannot initialize api");
 
         #[cfg(not(feature = "online-testing"))]
-        {
-            let mut sdk = crate::SdkBuilder::new_mock()
+        let sdk = {
+            let mut mock_sdk = crate::SdkBuilder::new_mock()
                 .build()
                 .expect("initialize api");
 
-            sdk.mock()
+            mock_sdk
+                .mock()
                 .quorum_info_dir(&self.dump_dir)
                 .load_expectations(&self.dump_dir)
                 .await
                 .expect("load expectations");
 
-            sdk
-        }
+            mock_sdk
+        };
+
+        sdk
     }
 }
 

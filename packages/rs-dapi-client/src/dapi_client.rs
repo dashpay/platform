@@ -1,6 +1,4 @@
 //! [DapiClient] definition.
-#[cfg(feature = "dump")]
-use std::path::PathBuf;
 
 use backon::{ExponentialBuilder, Retryable};
 use tonic::async_trait;
@@ -71,7 +69,7 @@ pub struct DapiClient {
     address_list: AddressList,
     settings: RequestSettings,
     #[cfg(feature = "dump")]
-    pub(crate) dump_dir: Option<PathBuf>,
+    pub(crate) dump_dir: Option<std::path::PathBuf>,
 }
 
 impl DapiClient {
