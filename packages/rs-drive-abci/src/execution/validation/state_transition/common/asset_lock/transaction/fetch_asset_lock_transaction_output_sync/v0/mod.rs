@@ -9,10 +9,10 @@ use dpp::consensus::basic::identity::{
 use dpp::dashcore::secp256k1::ThirtyTwoByteHash;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::dashcore::{TxOut, Txid};
+use dpp::identity::state_transition::asset_lock_proof::validate_asset_lock_transaction_structure::validate_asset_lock_transaction_structure;
 use dpp::prelude::{AssetLockProof, ConsensusValidationResult};
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use crate::execution::validation::state_transition::common::asset_lock::transaction::validate_asset_lock_transaction_structure::validate_asset_lock_transaction_structure;
 
 /// This fetches the asset lock transaction output from core
 pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(

@@ -5,15 +5,19 @@ use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::{InstantLock, OutPoint, Transaction, TxIn, TxOut};
 use platform_value::{BinaryData, Value};
 
+use crate::consensus::basic::identity::IdentityAssetLockProofLockedTransactionMismatchError;
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use platform_version::version::PlatformVersion;
+use crate::identity::state_transition::asset_lock_proof::validate_asset_lock_transaction_structure::validate_asset_lock_transaction_structure;
 
 use crate::prelude::Identifier;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::hash::hash_to_vec;
 use crate::util::vec::vec_to_array;
+use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -158,6 +162,38 @@ impl InstantAssetLockProof {
 
         map.to_bytes()
             .map_err(|e| ProtocolError::EncodingError(e.to_string()))
+    }
+
+    // TODO: Versioning
+    /// Validate Instant Asset Lock Proof structure
+    #[cfg(feature = "validation")]
+    pub fn validate_structure(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let mut result = SimpleConsensusValidationResult::default();
+
+        let transaction_id = self.transaction().txid();
+        if self.instant_lock().txid != transaction_id {
+            result.add_error(IdentityAssetLockProofLockedTransactionMismatchError::new(
+                self.instant_lock().txid,
+                transaction_id,
+            ));
+
+            return Ok(result);
+        }
+
+        let validate_transaction_result = validate_asset_lock_transaction_structure(
+            self.transaction(),
+            self.output_index(),
+            platform_version,
+        )?;
+
+        if !validate_transaction_result.is_valid() {
+            result.merge(validate_transaction_result);
+        }
+
+        Ok(result)
     }
 }
 

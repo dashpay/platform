@@ -1,17 +1,17 @@
-use crate::error::Error;
-use dpp::consensus::basic::identity::{
+use crate::consensus::basic::identity::{
     IdentityAssetLockTransactionOutputNotFoundError, InvalidIdentityAssetLockTransactionError,
     InvalidIdentityAssetLockTransactionOutputError,
 };
-use dpp::dashcore::transaction::special_transaction::TransactionPayload;
-use dpp::dashcore::Transaction;
-use dpp::validation::SimpleConsensusValidationResult;
+use crate::validation::SimpleConsensusValidationResult;
+use crate::ProtocolError;
+use dashcore::transaction::special_transaction::TransactionPayload;
+use dashcore::Transaction;
 
 /// Validates asset lock transaction structure
 pub fn validate_asset_lock_transaction_structure_v0(
     transaction: &Transaction,
     output_index: usize,
-) -> Result<SimpleConsensusValidationResult, Error> {
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
     let mut result = SimpleConsensusValidationResult::default();
 
     // It must be an Asset Lock Special Transaction

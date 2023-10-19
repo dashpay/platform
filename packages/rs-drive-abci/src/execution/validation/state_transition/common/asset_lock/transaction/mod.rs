@@ -1,2 +1,1 @@
 pub mod fetch_asset_lock_transaction_output_sync;
-pub mod validate_asset_lock_transaction_structure;

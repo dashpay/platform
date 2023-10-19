@@ -4,10 +4,10 @@ use crate::version::dpp_versions::{
     DocumentTransitionVersions, DocumentTypeClassMethodVersions, DocumentTypeIndexVersions,
     DocumentTypeMethodVersions, DocumentTypeSchemaVersions, DocumentTypeVersions, DocumentVersions,
     DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
-    IdentityKeyTypeMethodVersions, IdentityVersions, JsonSchemaValidatorVersions,
-    PublicKeyInCreationMethodVersions, RecursiveSchemaValidatorVersions,
-    StateTransitionConversionVersions, StateTransitionMethodVersions,
-    StateTransitionSerializationVersions, StateTransitionVersions,
+    IdentityKeyTypeMethodVersions, IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
+    IdentityVersions, JsonSchemaValidatorVersions, PublicKeyInCreationMethodVersions,
+    RecursiveSchemaValidatorVersions, StateTransitionConversionVersions,
+    StateTransitionMethodVersions, StateTransitionSerializationVersions, StateTransitionVersions,
 };
 use crate::version::drive_abci_versions::{
     DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions,
@@ -525,7 +525,6 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 common_validation_methods: DriveAbciStateTransitionCommonValidationVersions {
                     asset_locks: DriveAbciAssetLockValidationVersions {
                         fetch_asset_lock_transaction_output_sync: 0,
-                        validate_asset_lock_transaction_structure: 0,
                     },
                     validate_identity_public_key_contract_bounds: 0,
                     validate_identity_public_key_ids_dont_exist_in_state: 0,
@@ -719,6 +718,11 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                         find_duplicates_by_id: 0,
                         validate_base_structure: 0,
                     },
+                },
+            },
+            identities: IdentityTransitionVersions {
+                asset_locks: IdentityTransitionAssetLockVersions {
+                    validate_asset_lock_transaction_structure: 0,
                 },
             },
         },

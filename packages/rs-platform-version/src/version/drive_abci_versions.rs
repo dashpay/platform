@@ -104,7 +104,6 @@ pub struct DriveAbciStateTransitionCommonValidationVersions {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveAbciAssetLockValidationVersions {
     pub fetch_asset_lock_transaction_output_sync: FeatureVersion,
-    pub validate_asset_lock_transaction_structure: FeatureVersion,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
