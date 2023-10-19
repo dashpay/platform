@@ -22,7 +22,6 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::validation::ValidationResult;
 #[cfg(test)]
 use drive::grovedb::Transaction;
-use std::os::macos::raw::stat;
 
 impl<C> Platform<C>
 where
