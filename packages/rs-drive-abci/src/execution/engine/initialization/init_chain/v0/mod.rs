@@ -74,6 +74,7 @@ where
 
         state_cache.set_initialization_information(Some(PlatformInitializationState {
             core_initialization_height: core_height,
+            time_ms: genesis_time,
         }));
 
         let app_hash = self

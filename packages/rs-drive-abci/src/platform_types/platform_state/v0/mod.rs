@@ -17,6 +17,7 @@ use indexmap::IndexMap;
 use crate::platform_types::masternode::Masternode;
 use crate::platform_types::validator_set::ValidatorSet;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+use dpp::identity::TimestampMillis;
 use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
@@ -206,6 +207,8 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
 pub struct PlatformInitializationState {
     /// Core initialization height
     pub core_initialization_height: u32,
+    /// Genesis time
+    pub time_ms: TimestampMillis,
 }
 
 impl PlatformStateV0 {

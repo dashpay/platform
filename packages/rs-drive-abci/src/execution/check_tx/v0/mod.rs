@@ -8,10 +8,12 @@ use crate::platform_types::state_transition_execution_result::StateTransitionExe
 use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::ConsensusExecutionError;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
+use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
@@ -20,6 +22,7 @@ use dpp::validation::SimpleConsensusValidationResult;
 use dpp::validation::ValidationResult;
 #[cfg(test)]
 use drive::grovedb::Transaction;
+use std::os::macos::raw::stat;
 
 impl<C> Platform<C>
 where
@@ -89,8 +92,18 @@ where
         };
         let state_read_guard = self.state.read().unwrap();
 
-        // TODO: Fill with genesis data
-        let genesis_block_info = BlockInfo::default();
+        let genesis_block_info = if let Some(initialization_information) =
+            state_read_guard.initialization_information()
+        {
+            BlockInfo {
+                time_ms: initialization_information.time_ms,
+                height: 1,
+                core_height: initialization_information.core_initialization_height,
+                epoch: Epoch::new(GENESIS_EPOCH_INDEX)?,
+            }
+        } else {
+            BlockInfo::default()
+        };
 
         let block_info = state_read_guard
             .last_committed_block_info()
