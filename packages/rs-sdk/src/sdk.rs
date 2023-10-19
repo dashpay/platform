@@ -143,7 +143,7 @@ impl Sdk {
 
     /// Indicate if the sdk should request and verify proofs.
     pub fn prove(&self) -> bool {
-        return true;
+        true
     }
 
     /// Save quorum public key to disk.

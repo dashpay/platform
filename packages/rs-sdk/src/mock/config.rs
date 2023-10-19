@@ -42,7 +42,7 @@ impl<D: for<'de1> Deserialize<'de1>> Config<D> {
         // load config from .env file, ignore errors
         let path = env!("CARGO_MANIFEST_DIR").to_owned() + "/.env";
 
-        dotenvy::from_path(&path).expect("failed to load config file");
+        dotenvy::from_path(path).expect("failed to load config file");
 
         // println!("Load .env file: {:?}", dotenvy::dotenv());
         envy::prefixed(Self::CONFIG_PREFIX)
@@ -95,6 +95,12 @@ impl<D: for<'de1> Deserialize<'de1>> Config<D> {
 
             sdk
         }
+    }
+}
+
+impl<D: for<'de1> Deserialize<'de1>> Default for Config<D> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

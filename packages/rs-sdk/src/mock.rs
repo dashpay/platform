@@ -334,7 +334,7 @@ pub trait MockRequest {
 
 impl<T: serde::Serialize> MockRequest for T {
     fn mock_key(&self) -> Key {
-        Key::new(&self)
+        Key::new(self)
     }
 }
 
