@@ -332,7 +332,8 @@ where
             tracing::trace!(
                 method = "run_block_proposal_v0",
                 app_hash = hex::encode(root_hash),
-                block_platform_state_fingerprint = hex::encode(block_execution_context.block_platform_state().fingerprint()),
+                block_platform_state_fingerprint =
+                    hex::encode(block_execution_context.block_platform_state().fingerprint()),
                 "block proposal executed successfully",
             );
         }
