@@ -26,12 +26,12 @@ class DashCliCommand extends ConfigBaseCommand {
   }
 }
 
-DashCliCommand.description = 'Dash Core CLI`';
+DashCliCommand.description = 'Dash Core CLI';
 
 DashCliCommand.args = [{
   name: 'command',
   required: true,
-  description: 'Execute a dash-cli command on the core container of the given node config',
+  description: 'dash core command written in the double quotes',
 }];
 
 DashCliCommand.flags = {
