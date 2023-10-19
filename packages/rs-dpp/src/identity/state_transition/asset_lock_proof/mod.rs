@@ -8,14 +8,17 @@ pub use bincode::{Decode, Encode};
 pub use chain::*;
 pub use instant::*;
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 use serde::de::Error;
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::Identifier;
-use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
+use crate::validation::SimpleConsensusValidationResult;
+use crate::{ProtocolError, SerdeParsingError};
 
 pub mod chain;
 pub mod instant;
+pub mod validate_asset_lock_transaction_structure;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
 #[serde(untagged)]
@@ -71,64 +74,6 @@ impl<'de> Deserialize<'de> for AssetLockProof {
             .map_err(|e: ProtocolError| D::Error::custom(e.to_string()))
     }
 }
-//
-// impl AssetLockProof {
-//     /// This fetches the asset lock transaction output from core
-//     pub async fn fetch_asset_lock_transaction_output(
-//         &self,
-//         state_repository: &impl StateRepositoryLike,
-//         execution_context: &StateTransitionExecutionContext,
-//     ) -> Result<TxOut, DPPError> {
-//         match self {
-//             AssetLockProof::Instant(asset_lock_proof) => asset_lock_proof
-//                 .output()
-//                 .ok_or_else(|| DPPError::from(AssetLockOutputNotFoundError::new()))
-//                 .cloned(),
-//             AssetLockProof::Chain(asset_lock_proof) => {
-//                 let out_point = OutPoint::from(asset_lock_proof.out_point.to_buffer());
-//
-//                 let output_index = out_point.vout as usize;
-//                 let transaction_hash = out_point.txid;
-//
-//                 let transaction_data = state_repository
-//                     .fetch_transaction(&transaction_hash.to_hex(), Some(execution_context))
-//                     .await
-//                     .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
-//
-//                 if execution_context.is_dry_run() {
-//                     return Ok(TxOut {
-//                         value: 1000,
-//                         ..Default::default()
-//                     });
-//                 }
-//
-//                 let transaction_data = transaction_data
-//                     .try_into()
-//                     .map_err(|e| DPPError::CoreMessageCorruption(format!("{:?}", e.into())))?;
-//
-//                 if let Some(raw_transaction) = transaction_data.data {
-//                     let transaction = Transaction::consensus_decode(raw_transaction.as_slice())
-//                         .map_err(|e| {
-//                             DPPError::CoreMessageCorruption(format!(
-//                                 "could not decode transaction {:?}",
-//                                 e
-//                             ))
-//                         })?;
-//
-//                     transaction
-//                         .output
-//                         .get(output_index)
-//                         .cloned()
-//                         .ok_or_else(|| AssetLockOutputNotFoundError::new().into())
-//                 } else {
-//                     Err(DPPError::from(AssetLockTransactionIsNotFoundError::new(
-//                         transaction_hash,
-//                     )))
-//                 }
-//             }
-//         }
-//     }
-// }
 
 impl Default for AssetLockProof {
     fn default() -> Self {
@@ -266,6 +211,18 @@ impl AssetLockProof {
             AssetLockProof::Chain(cl) => {
                 platform_value::to_value(cl).map_err(ProtocolError::ValueError)
             }
+        }
+    }
+
+    /// Validate the structure of the asset lock proof
+    #[cfg(feature = "validation")]
+    pub fn validate_structure(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        match self {
+            AssetLockProof::Instant(proof) => proof.validate_structure(platform_version),
+            AssetLockProof::Chain(_) => Ok(SimpleConsensusValidationResult::default()),
         }
     }
 }
