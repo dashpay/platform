@@ -60,7 +60,7 @@ where
         sdk: &mut Sdk,
         query: Q,
     ) -> Result<Option<Vec<Self>>, Error> {
-        let request = query.query()?;
+        let request = query.query(sdk.prove())?;
 
         let response = request
             .clone()
@@ -88,7 +88,7 @@ impl List for Document {
         sdk: &mut Sdk,
         query: Q,
     ) -> Result<Option<Vec<Self>>, Error> {
-        let document_query: DocumentQuery = query.query()?;
+        let document_query: DocumentQuery = query.query(sdk.prove())?;
 
         let request = document_query.clone();
         let response: GetDocumentsResponse =

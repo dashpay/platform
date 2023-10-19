@@ -51,14 +51,20 @@ pub struct MockDashPlatformSdk {
     from_proof_expectations: BTreeMap<Vec<u8>, Vec<u8>>,
     platform_version: &'static PlatformVersion,
     dapi: Arc<Mutex<MockDapiClient>>,
+    prove: bool,
 }
 
 impl MockDashPlatformSdk {
-    pub(crate) fn new(version: &'static PlatformVersion, dapi: Arc<Mutex<MockDapiClient>>) -> Self {
+    pub(crate) fn new(
+        version: &'static PlatformVersion,
+        dapi: Arc<Mutex<MockDapiClient>>,
+        prove: bool,
+    ) -> Self {
         Self {
             from_proof_expectations: Default::default(),
             platform_version: version,
             dapi,
+            prove,
         }
     }
 
@@ -128,7 +134,7 @@ impl MockDashPlatformSdk {
         <O as Fetch>::Request: MockRequest,
         <<O as Fetch>::Request as TransportRequest>::Response: Default,
     {
-        let grpc_request = query.query().expect("query must be correct");
+        let grpc_request = query.query(self.prove).expect("query must be correct");
         self.expect(grpc_request, object).await;
 
         self
@@ -176,7 +182,7 @@ impl MockDashPlatformSdk {
                 Response = <<O as List>::Request as TransportRequest>::Response,
             > + Sync,
     {
-        let grpc_request = query.query().expect("query must be correct");
+        let grpc_request = query.query(self.prove).expect("query must be correct");
         self.expect(grpc_request, objects).await;
 
         self

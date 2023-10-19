@@ -43,13 +43,17 @@ pub trait Query<T: TransportRequest>: Send + Debug + Clone {
     ///
     /// This method takes ownership of the instance upon which it's called (hence `self`), and attempts to perform the conversion.
     ///
+    /// # Arguments
+    ///
+    /// * `prove` - Whether to include proofs in the response. Only `true` is supported at the moment.
+    ///
     /// # Returns
     /// On success, this method yields an instance of the `TransportRequest` type (`T`).
     /// On failure, it yields an [`Error`](crate::error::Error).
     ///
     /// # Error Handling
     /// This method propagates any errors encountered during the conversion process. These are returned as [`Error`](crate::error::Error) instances.
-    fn query(self) -> Result<T, Error>;
+    fn query(self, prove: bool) -> Result<T, Error>;
 }
 
 impl<T> Query<T> for T
@@ -57,27 +61,39 @@ where
     T: TransportRequest + Sized + Send + Sync + Clone + Debug,
     T::Response: Send + Sync + Debug,
 {
-    fn query(self) -> Result<T, Error> {
+    fn query(self, prove: bool) -> Result<T, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
         Ok(self)
     }
 }
 
 impl Query<GetDataContractRequest> for dpp::prelude::Identifier {
-    fn query(self) -> Result<GetDataContractRequest, Error> {
+    fn query(self, prove: bool) -> Result<GetDataContractRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
         let id = self.to_vec();
         Ok(GetDataContractRequest { id, prove: true })
     }
 }
 
 impl Query<GetIdentityRequest> for dpp::prelude::Identifier {
-    fn query(self) -> Result<GetIdentityRequest, Error> {
+    fn query(self, prove: bool) -> Result<GetIdentityRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
         let id = self.to_vec();
         Ok(GetIdentityRequest { id, prove: true })
     }
 }
 
 impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
-    fn query(self) -> Result<DocumentQuery, Error> {
+    fn query(self, prove: bool) -> Result<DocumentQuery, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
         let q: DocumentQuery = (&self).into();
         Ok(q)
     }

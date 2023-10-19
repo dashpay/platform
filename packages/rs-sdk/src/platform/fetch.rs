@@ -73,7 +73,7 @@ where
         sdk: &mut Sdk,
         query: Q,
     ) -> Result<Option<Self>, Error> {
-        let request = query.query()?;
+        let request = query.query(sdk.prove())?;
 
         let response = request
             .clone()

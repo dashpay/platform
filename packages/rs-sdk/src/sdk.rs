@@ -132,6 +132,11 @@ impl Sdk {
             SdkInstance::Mock { mock, .. } => mock.version(),
         }
     }
+
+    /// Indicate if the sdk should request and verify proofs.
+    pub fn prove(&self) -> bool {
+        return true;
+    }
 }
 
 impl QuorumInfoProvider for Sdk {
@@ -193,6 +198,9 @@ pub struct SdkBuilder {
     core_user: String,
     core_password: String,
 
+    /// If true, request and verify proofs of the responses.
+    proofs: bool,
+
     version: &'static PlatformVersion,
 }
 
@@ -206,6 +214,8 @@ impl Default for SdkBuilder {
             core_port: 0,
             core_password: "".to_string(),
             core_user: "".to_string(),
+
+            proofs: true,
 
             version: PlatformVersion::latest(),
         }
@@ -311,7 +321,7 @@ impl SdkBuilder {
             #[cfg(feature = "mocks")]
             None =>{ let dapi =Arc::new(Mutex::new(  MockDapiClient::new()));
                 Ok(Sdk(SdkInstance::Mock {
-                mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi)),
+                mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs),
                 dapi,
             }))},
             #[cfg(not(feature = "mocks"))]
