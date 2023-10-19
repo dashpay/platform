@@ -175,6 +175,7 @@ pub struct DriveAbciEpochMethodVersions {
 pub struct DriveAbciBlockEndMethodVersions {
     pub store_ephemeral_state: FeatureVersion,
     pub update_state_cache: FeatureVersion,
+    pub update_drive_cache: FeatureVersion,
     pub validator_set_update: FeatureVersion,
 }
 

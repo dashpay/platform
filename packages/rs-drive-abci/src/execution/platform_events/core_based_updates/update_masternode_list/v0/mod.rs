@@ -58,6 +58,8 @@ where
             core_block_height,
             block_platform_state.core_height()
         );
+        //todo: there's a weird condition that can happen if we are not on init chain, but we are
+        // in the genesis and we are not on round 0, and the core height changed
         if block_platform_state.last_committed_block_info().is_some() || is_init_chain {
             let update_state_masternode_list_outcome::v0::UpdateStateMasternodeListOutcome {
                 masternode_list_diff,
