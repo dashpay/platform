@@ -1,29 +1,19 @@
-/**
- *
- * @param dmnState {dmnState}
- * @param enabledMasternodes {number}
- * @param enabledEvonodes {number}
- * @param coreBlocks {number} current block height
- * @return {number}
- */
-function calculatePaymentQueuePosition(dmnState, enabledMasternodes, enabledEvonodes, coreBlocks) {
-  const enabledCount = enabledMasternodes + enabledEvonodes * 4
-
+function calculatePaymentQueuePosition(dmnState, masternodeEnabledCount, coreBlocks) {
   let paymentQueuePosition;
   // Masternode has been unbanned recently
   if (dmnState.PoSeRevivedHeight > dmnState.lastPaidHeight) {
     paymentQueuePosition = dmnState.PoSeRevivedHeight
-      + enabledCount
+      + masternodeEnabledCount
       - coreBlocks;
-  // Masternode has never been paid
+    // Masternode has never been paid
   } else if (dmnState.lastPaidHeight === 0) {
     paymentQueuePosition = dmnState.registeredHeight
-      + enabledCount
+      + masternodeEnabledCount
       - coreBlocks;
-  // Masternode was previously paid and is in normal queue
+    // Masternode was previously paid and is in normal queue
   } else {
     paymentQueuePosition = dmnState.lastPaidHeight
-      + enabledCount
+      + masternodeEnabledCount
       - coreBlocks;
   }
   return paymentQueuePosition;

@@ -16,13 +16,14 @@ function writeServiceConfigsFactory(homeDir) {
    * @return {void}
    */
   function writeServiceConfigs(configName, configFiles) {
+    // Drop all files from configs directory
     const configDir = homeDir.joinPath(configName);
 
     for (const filePath of Object.keys(configFiles)) {
       const absoluteFilePath = path.join(configDir, filePath);
       const absoluteFileDir = path.dirname(absoluteFilePath);
 
-      // Ensure dir
+      // Recreate it
       fs.mkdirSync(absoluteFileDir, { recursive: true });
 
       // Write specified config files

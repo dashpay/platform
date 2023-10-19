@@ -56,25 +56,20 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
         plain['Masternode Sync Status'] = scope.syncAsset ? chalk.yellow(scope.syncAsset) : 'n/a';
       }
 
-      plain['Total Masternodes'] = scope.masternodeTotal ?? 'n/a';
-      plain['Enabled Masternodes'] = scope.masternodeEnabled ?? 'n/a';
-      plain['Total Evonodes'] = scope.evonodeTotal ?? 'n/a';
-      plain['Enabled Evonodes'] = scope.evonodeEnabled ?? 'n/a';
-
       if (scope.state === MasternodeStateEnum.READY) {
         const {
           lastPaidHeight, lastPaidTime,
           paymentQueuePosition, nextPaymentTime,
-          poSePenalty,
+          poSePenalty, enabledCount,
         } = scope.nodeState;
 
         plain['ProTx Hash'] = scope.proTxHash || 'n/a';
-        plain['PoSe Penalty'] = colors.poSePenalty(poSePenalty,
-          scope.masternodeEnabled, scope.evonodeEnabled)(`${poSePenalty}`) || 'n/a';
-        plain['Last paid block'] = lastPaidHeight ?? 'n/a';
+        plain['PoSe Penalty'] = colors.poSePenalty(poSePenalty, enabledCount)(`${poSePenalty}`) || 'n/a';
+        plain['Last paid block'] = lastPaidHeight || 'n/a';
         plain['Last paid time'] = lastPaidHeight === 0 ? 'Never' : (lastPaidTime || 'n/a');
-        plain['Payment queue position'] = paymentQueuePosition ?? 'n/a';
+        plain['Payment queue position'] = paymentQueuePosition || 'n/a';
         plain['Next payment time'] = `in ${nextPaymentTime}` || 'n/a';
+        plain['Enabled count'] = enabledCount || 'n/a';
       }
 
       return printObject(plain, flags.format);

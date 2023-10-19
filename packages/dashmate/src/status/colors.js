@@ -66,11 +66,11 @@ module.exports = {
     }
     return chalk.red;
   },
-  poSePenalty: (poSePenalty, masternodeEnabled, evonodeEnabled) => {
+  poSePenalty: (poSePenalty, enabledCount) => {
     if (poSePenalty === 0) {
       return chalk.green;
     }
-    if (poSePenalty < masternodeEnabled + evonodeEnabled * 4) {
+    if (poSePenalty < enabledCount) {
       return chalk.yellow;
     }
     return chalk.red;

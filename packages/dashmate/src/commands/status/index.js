@@ -75,17 +75,16 @@ class StatusCommand extends ConfigBaseCommand {
 
         if (masternode.state === MasternodeStateEnum.READY) {
           const {
+            enabledCount,
             poSePenalty,
             lastPaidHeight,
             lastPaidTime,
             paymentQueuePosition,
             nextPaymentTime,
           } = masternode.nodeState;
-          const {evonodeEnabled, masternodeEnabled} = masternode
 
           plain['Masternode ProTX'] = masternode.proTxHash || 'n/a';
-          plain['PoSe Penalty'] = colors.poSePenalty(poSePenalty,
-            masternodeEnabled, evonodeEnabled)(`${poSePenalty}`) || 'n/a';
+          plain['PoSe Penalty'] = colors.poSePenalty(poSePenalty, enabledCount)(`${poSePenalty}`) || 'n/a';
           plain['Last paid block'] = lastPaidHeight || 'n/a';
           plain['Last paid time'] = lastPaidHeight === 0 ? 'Never' : (lastPaidTime || 'n/a');
           plain['Payment queue position'] = paymentQueuePosition || 'n/a';
