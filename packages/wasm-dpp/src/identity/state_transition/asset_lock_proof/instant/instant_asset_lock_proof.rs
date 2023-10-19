@@ -3,6 +3,7 @@ use dpp::dashcore::{
     consensus::encode::serialize,
 };
 
+use dpp::dashcore::consensus::Encodable;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
@@ -75,10 +76,19 @@ impl InstantAssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name=getOutPoint)]
-    pub fn get_out_point(&self) -> Option<Buffer> {
+    pub fn get_out_point(&self) -> Result<Option<Buffer>, JsValue> {
         self.0
             .out_point()
-            .map(|out_point| Buffer::from_bytes(&out_point))
+            .map(|out_point| {
+                let mut outpoint_bytes = Vec::new();
+
+                out_point
+                    .consensus_encode(&mut outpoint_bytes)
+                    .map_err(|e| e.to_string())?;
+
+                Ok(Buffer::from_bytes_owned(outpoint_bytes))
+            })‘
+            .transpose()
     }
 
     #[wasm_bindgen(js_name=getOutput)]
