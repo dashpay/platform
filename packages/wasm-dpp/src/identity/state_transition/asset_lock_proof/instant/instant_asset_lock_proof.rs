@@ -87,7 +87,7 @@ impl InstantAssetLockProofWasm {
                     .map_err(|e| e.to_string())?;
 
                 Ok(Buffer::from_bytes_owned(outpoint_bytes))
-            })‘
+            })
             .transpose()
     }
 
