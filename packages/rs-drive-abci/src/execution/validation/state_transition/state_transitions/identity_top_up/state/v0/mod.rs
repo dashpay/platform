@@ -12,7 +12,6 @@ use dpp::consensus::ConsensusError;
 use dpp::identity::state_transition::AssetLockProved;
 
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 
 use dpp::version::PlatformVersion;
@@ -20,6 +19,7 @@ use drive::state_transition_action::identity::identity_topup::IdentityTopUpTrans
 use drive::state_transition_action::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
+use crate::execution::validation::state_transition::common::asset_lock::proof::AssetLockProofStateValidation;
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_top_up) trait IdentityTopUpStateTransitionStateValidationV0
@@ -45,38 +45,16 @@ impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
         tx: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let outpoint = match self.asset_lock_proof().out_point() {
-            None => {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    ConsensusError::BasicError(
-                        BasicError::IdentityAssetLockTransactionOutputNotFoundError(
-                            IdentityAssetLockTransactionOutputNotFoundError::new(
-                                self.asset_lock_proof().instant_lock_output_index().unwrap(),
-                            ),
-                        ),
-                    ),
-                ));
-            }
-            Some(outpoint) => outpoint,
-        };
+        let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
-        // Now we should check that we aren't using an asset lock again
-        let asset_lock_already_found =
-            platform
-                .drive
-                .has_asset_lock_outpoint(&outpoint, tx, &platform_version.drive)?;
+        validation_result.merge(self.asset_lock_proof().validate_state(
+            platform,
+            tx,
+            platform_version,
+        )?);
 
-        if asset_lock_already_found {
-            return Ok(ConsensusValidationResult::new_with_error(
-                ConsensusError::BasicError(
-                    BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(
-                        IdentityAssetLockTransactionOutPointAlreadyExistsError::new(
-                            outpoint.txid,
-                            outpoint.vout as usize,
-                        ),
-                    ),
-                ),
-            ));
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
         }
 
         self.transform_into_action_v0(platform, platform_version)

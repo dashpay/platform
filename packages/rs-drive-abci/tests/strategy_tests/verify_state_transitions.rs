@@ -9,6 +9,7 @@ use drive_abci::abci::AbciApplication;
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
@@ -33,6 +34,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     abci_app: &AbciApplication<MockCoreRPCLike>,
     expected_root_hash: &[u8; 32],
     state_transitions: &Vec<(StateTransition, ExecTxResult)>,
+    block_info: &BlockInfo,
     platform_version: &PlatformVersion,
 ) -> bool {
     let state = abci_app.platform.state.read().unwrap();
@@ -41,6 +43,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
         state: &state,
         config: &abci_app.platform.config,
         core_rpc: &abci_app.platform.core_rpc,
+        block_info,
     };
 
     //actions are easier to transform to queries

@@ -40,6 +40,7 @@ where
             state: &state_read_guard,
             config: &self.config,
             core_rpc: &self.core_rpc,
+            block_info,
         };
 
         let state_transition_execution_event =
@@ -87,12 +88,24 @@ where
             }
         };
         let state_read_guard = self.state.read().unwrap();
+
+        // TODO: Fill with genesis data
+        let genesis_block_info = BlockInfo::default();
+
+        let block_info = state_read_guard
+            .last_committed_block_info()
+            .as_ref()
+            .map(|extended_block_info| extended_block_info.basic_info())
+            .unwrap_or(&genesis_block_info);
+
         let platform_ref = PlatformRef {
             drive: &self.drive,
             state: &state_read_guard,
             config: &self.config,
             core_rpc: &self.core_rpc,
+            block_info,
         };
+
         let execution_event = process_state_transition(&platform_ref, state_transition, None)?;
 
         let platform_version = platform_ref.state.current_platform_version()?;

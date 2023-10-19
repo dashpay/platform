@@ -2,15 +2,8 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
-use dpp::consensus::basic::identity::{
-    IdentityAssetLockTransactionOutPointAlreadyExistsError,
-    IdentityAssetLockTransactionOutputNotFoundError,
-};
-use dpp::consensus::basic::BasicError;
-
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 
-use dpp::consensus::ConsensusError;
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
@@ -23,6 +16,7 @@ use drive::state_transition_action::StateTransitionAction;
 use drive::grovedb::TransactionArg;
 use dpp::version::DefaultForPlatformVersion;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::common::asset_lock::proof::AssetLockProofStateValidation;
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_in_state;
 
@@ -64,36 +58,16 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
                 IdentityAlreadyExistsError::new(identity_id.to_owned()).into(),
             ));
         }
-        let outpoint = match self.asset_lock_proof().out_point() {
-            None => {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    ConsensusError::BasicError(
-                        BasicError::IdentityAssetLockTransactionOutputNotFoundError(
-                            IdentityAssetLockTransactionOutputNotFoundError::new(
-                                self.asset_lock_proof().instant_lock_output_index().unwrap(),
-                            ),
-                        ),
-                    ),
-                ));
-            }
-            Some(outpoint) => outpoint,
-        };
 
-        // Now we should check that we aren't using an asset lock again
-        let asset_lock_already_found =
-            drive.has_asset_lock_outpoint(&outpoint, tx, &platform_version.drive)?;
+        // Validate asset lock proof state
+        validation_result.merge(self.asset_lock_proof().validate_state(
+            platform,
+            tx,
+            platform_version,
+        )?);
 
-        if asset_lock_already_found {
-            return Ok(ConsensusValidationResult::new_with_error(
-                ConsensusError::BasicError(
-                    BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(
-                        IdentityAssetLockTransactionOutPointAlreadyExistsError::new(
-                            outpoint.txid,
-                            outpoint.vout as usize,
-                        ),
-                    ),
-                ),
-            ));
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
         }
 
         // Now we should check the state of added keys to make sure there aren't any that already exist

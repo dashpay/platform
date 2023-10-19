@@ -8,7 +8,7 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransitionLike;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::StateTransitionAction;
-
+//  TODO: Move to DPP
 pub trait OneTimeSignedStateTransitionV0: StateTransitionLike + AssetLockProved {
     /// Validate the signature of the state transition with it's asset lock proof
     fn verify_one_time_signature_v0(

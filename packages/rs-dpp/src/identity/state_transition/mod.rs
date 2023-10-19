@@ -1,3 +1,5 @@
+// TODO: Move to state_transitions module
+
 use crate::ProtocolError;
 use asset_lock_proof::AssetLockProof;
 

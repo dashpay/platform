@@ -12,6 +12,7 @@ use dashcore::OutPoint;
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChainAssetLockProof {
+    // TODO: Remove type
     #[serde(rename = "type")]
     asset_lock_type: u8,
     pub core_chain_locked_height: u32,

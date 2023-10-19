@@ -20,6 +20,7 @@ pub mod chain;
 pub mod instant;
 pub mod validate_asset_lock_transaction_structure;
 
+// TODO: Serialization with bincode
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
 #[serde(untagged)]
 pub enum AssetLockProof {
@@ -152,6 +153,7 @@ impl TryFrom<u64> for AssetLockProofType {
     }
 }
 
+// TODO: Versioning
 impl AssetLockProof {
     pub fn type_from_raw_value(value: &Value) -> Option<AssetLockProofType> {
         let proof_type_res = value.get_integer::<u8>("type");

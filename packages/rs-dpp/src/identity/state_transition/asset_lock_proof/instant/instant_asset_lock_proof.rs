@@ -22,6 +22,7 @@ use crate::ProtocolError;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstantAssetLockProof {
+    // TODO: Remove type
     asset_lock_type: u8,
     instant_lock: InstantLock,
     transaction: Transaction,

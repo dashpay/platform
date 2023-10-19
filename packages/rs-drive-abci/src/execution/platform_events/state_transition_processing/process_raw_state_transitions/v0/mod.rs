@@ -57,6 +57,7 @@ where
             state: block_platform_state,
             config: &self.config,
             core_rpc: &self.core_rpc,
+            block_info,
         };
         let exec_tx_results = state_transitions
             .into_iter()
