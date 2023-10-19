@@ -2326,8 +2326,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/bench-suite", "workspace:packages/bench-suite"],\
             ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
-            ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
+            ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["babel-eslint", "virtual:27dae49067a60fa65fec6e1c3adad1497d0dda3f71eda711624109131ff3b7d1061a20f55e89b5a0a219da1f7a0a1a0a76bc414d36870315bd60acf5bdcb7f55#npm:10.1.0"],\
             ["console-table-printer", "npm:2.11.0"],\
             ["dash", "workspace:packages/js-dash-sdk"],\

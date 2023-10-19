@@ -10,8 +10,8 @@
   "dependencies": {
     "@dashevo/dashcore-lib": "~0.20.9",
     "@dashevo/dpns-contract": "workspace:*",
-    "@dashevo/dpp": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
+    "@dashevo/wasm-dpp": "workspace:*",
     "console-table-printer": "^2.11.0",
     "dash": "workspace:*",
     "dotenv-safe": "^8.2.0",
