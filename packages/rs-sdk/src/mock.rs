@@ -16,6 +16,7 @@
 //! ```
 //!
 //! See tests/mock_*.rs for more detailed examples.
+pub mod config;
 
 use dapi_grpc::platform::v0::{self as proto};
 use dpp::{

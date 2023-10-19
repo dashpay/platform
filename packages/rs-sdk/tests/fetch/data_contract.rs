@@ -1,4 +1,4 @@
-use crate::common::{setup_api, Config};
+use crate::common::Config;
 use dpp::prelude::{DataContract, Identifier};
 use rs_sdk::platform::Fetch;
 
@@ -8,7 +8,8 @@ async fn test_data_contract_read_not_found() {
     pub const DATA_CONTRACT_ID_BYTES: [u8; 32] = [1; 32];
     let id = Identifier::from_bytes(&DATA_CONTRACT_ID_BYTES).expect("parse identity id");
 
-    let mut api = setup_api().await;
+    let cfg = Config::new();
+    let mut api = cfg.setup_api().await;
 
     let result = DataContract::fetch(&mut api, id).await;
 
@@ -20,9 +21,9 @@ async fn test_data_contract_read_not_found() {
 async fn test_data_contract_read() {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     let cfg = Config::new();
-    let id = cfg.existing_data_contract_id;
+    let id = cfg.settings.existing_data_contract_id;
 
-    let mut api = setup_api().await;
+    let mut api = cfg.setup_api().await;
 
     let result = DataContract::fetch(&mut api, id).await;
 
