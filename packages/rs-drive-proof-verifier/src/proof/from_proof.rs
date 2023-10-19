@@ -783,7 +783,7 @@ fn u32_to_u16_opt(i: u32) -> Result<Option<u16>, Error> {
         let i: u16 =
             i.try_into()
                 .map_err(|e: std::num::TryFromIntError| Error::RequestDecodeError {
-                    error: format!("value {} out of range: {}", i, e.to_string()),
+                    error: format!("value {} out of range: {}", i, e),
                 })?;
         Some(i)
     } else {
@@ -810,19 +810,19 @@ impl<T: Length> Length for Option<T> {
 
 impl<T> Length for Vec<Option<T>> {
     fn count_some(&self) -> usize {
-        self.into_iter().filter(|v| v.is_some()).count()
+        self.iter().filter(|v| v.is_some()).count()
     }
 }
 
 impl<K, T> Length for Vec<(K, Option<T>)> {
     fn count_some(&self) -> usize {
-        self.into_iter().filter(|(_, v)| v.is_some()).count()
+        self.iter().filter(|(_, v)| v.is_some()).count()
     }
 }
 
 impl<K, T> Length for BTreeMap<K, Option<T>> {
     fn count_some(&self) -> usize {
-        self.into_iter().filter(|(_, v)| v.is_some()).count()
+        self.iter().filter(|(_, v)| v.is_some()).count()
     }
 }
 
@@ -836,6 +836,7 @@ macro_rules! define_length {
     ($object:ty,$len:expr) => {
         impl Length for $object {
             fn count_some(&self) -> usize {
+                #[allow(clippy::redundant_closure_call)]
                 $len(self)
             }
         }
