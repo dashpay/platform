@@ -11,9 +11,10 @@ use crate::version::dpp_versions::{
 };
 use crate::version::drive_abci_versions::{
     DriveAbciBlockEndMethodVersions, DriveAbciBlockFeeProcessingMethodVersions,
-    DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreSubsidyMethodVersions,
-    DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciEngineMethodVersions,
-    DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions,
+    DriveAbciBlockStartMethodVersions, DriveAbciCoreBasedUpdatesMethodVersions,
+    DriveAbciCoreSubsidyMethodVersions, DriveAbciDocumentsStateTransitionValidationVersions,
+    DriveAbciEngineMethodVersions, DriveAbciEpochMethodVersions,
+    DriveAbciFeePoolInwardsDistributionMethodVersions,
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
@@ -510,9 +511,13 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 gather_epoch_info: 0,
                 get_genesis_time: 0,
             },
+            block_start: DriveAbciBlockStartMethodVersions {
+                clear_drive_block_cache: 0,
+            },
             block_end: DriveAbciBlockEndMethodVersions {
                 store_ephemeral_state: 0,
                 update_state_cache: 0,
+                update_drive_cache: 0,
                 validator_set_update: 0,
             },
         },

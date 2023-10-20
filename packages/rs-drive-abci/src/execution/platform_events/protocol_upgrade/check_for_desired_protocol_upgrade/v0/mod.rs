@@ -33,20 +33,7 @@ impl<C> Platform<C> {
         let mut cache = self.drive.cache.write().unwrap();
         let mut versions_passing_threshold = cache
             .protocol_versions_counter
-            .take()
-            .map(|version_counter| {
-                version_counter
-                    .into_iter()
-                    .filter_map(|(protocol_version, count)| {
-                        if count >= required_upgraded_hpns {
-                            Some(protocol_version)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<ProtocolVersion>>()
-            })
-            .unwrap_or_default();
+            .versions_passing_threshold(required_upgraded_hpns);
         drop(cache);
 
         if versions_passing_threshold.len() > 1 {
