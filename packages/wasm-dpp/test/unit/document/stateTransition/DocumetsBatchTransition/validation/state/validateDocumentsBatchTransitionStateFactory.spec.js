@@ -5,8 +5,8 @@ const ValidationResultJs = require('@dashevo/dpp/lib/validation/ValidationResult
 const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
 
 const generateRandomIdentifier = require('../../../../../../../lib/test/utils/generateRandomIdentifierAsync');
-const getDataContractFixture = require('../../../../../../../lib/test/fixtures/js/getDataContractFixture');
-const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/js/getDocumentsFixture');
+const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
 const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
 
