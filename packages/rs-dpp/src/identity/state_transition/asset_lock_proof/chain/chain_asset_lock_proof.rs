@@ -9,10 +9,16 @@ pub use bincode::{Decode, Encode};
 use dashcore::consensus::Encodable;
 use dashcore::OutPoint;
 
+/// Instant Asset Lock Proof is a part of Identity Create and Identity Topup
+/// transitions. It is a proof that specific output of dash is locked in credits
+/// pull and the transitions can mint credits and populate identity's balance.
+/// To prove that the output is locked, a height where transaction was chain locked is provided.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChainAssetLockProof {
+    /// Core height on which the asset lock transaction was chain locked or higher
     pub core_chain_locked_height: u32,
+    /// A reference to Asset Lock Special Transaction ID and output index in the payload
     pub out_point: OutPoint,
 }
 

@@ -20,10 +20,17 @@ use crate::util::vec::vec_to_array;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 
+/// Instant Asset Lock Proof is a part of Identity Create and Identity Topup
+/// transitions. It is a proof that specific output of dash is locked in credits
+/// pull and the transitions can mint credits and populate identity's balance.
+/// To prove that the output is locked, an Instant Lock is provided.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstantAssetLockProof {
+    /// The transaction's Instant Lock
     instant_lock: InstantLock,
+    /// Asset Lock Special Transaction
     transaction: Transaction,
+    /// Index of the output in the transaction payload
     output_index: u32,
 }
 
