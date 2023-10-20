@@ -1,12 +1,11 @@
 use ::serde::{Deserialize, Serialize};
 use platform_value::Value;
 use std::convert::TryFrom;
+use std::io;
 
-use crate::{
-    identifier::Identifier, util::hash::hash_to_vec, util::vec::vec_to_array, ProtocolError,
-};
+use crate::util::hash::hash;
+use crate::{identifier::Identifier, ProtocolError};
 pub use bincode::{Decode, Encode};
-use dashcore::consensus::Encodable;
 use dashcore::OutPoint;
 
 /// Instant Asset Lock Proof is a part of Identity Create and Identity Topup
@@ -46,16 +45,13 @@ impl ChainAssetLockProof {
 
     /// Create identifier
     pub fn create_identifier(&self) -> Result<Identifier, ProtocolError> {
-        let mut outpoint_bytes = Vec::new();
+        let output_vec: Vec<u8> = self
+            .out_point
+            .try_into()
+            .map_err(|e: io::Error| ProtocolError::EncodingError(e.to_string()))?;
 
-        self.out_point
-            .consensus_encode(&mut outpoint_bytes)
-            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+        let hash = hash(output_vec);
 
-        let hash = hash_to_vec(&outpoint_bytes);
-
-        let hash_array = vec_to_array(&hash)?;
-
-        Ok(Identifier::new(hash_array))
+        Ok(Identifier::new(hash))
     }
 }

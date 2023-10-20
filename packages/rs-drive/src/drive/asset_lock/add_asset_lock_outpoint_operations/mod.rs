@@ -11,7 +11,6 @@ use dpp::platform_value::Bytes36;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 
-use dpp::dashcore::OutPoint;
 use grovedb::EstimatedLayerInformation;
 use std::collections::HashMap;
 
@@ -28,7 +27,7 @@ impl Drive {
     /// Returns a `Result` containing a vector of `LowLevelDriveOperation` if successful, or an `Error` otherwise.
     pub fn add_asset_lock_outpoint_operations(
         &self,
-        outpoint: &OutPoint,
+        outpoint: &Bytes36,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,

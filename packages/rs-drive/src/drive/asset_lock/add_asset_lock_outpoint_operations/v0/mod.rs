@@ -7,9 +7,7 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 
-use crate::error::drive::DriveError;
-use dpp::dashcore::consensus::Encodable;
-use dpp::dashcore::OutPoint;
+use dpp::platform_value::Bytes36;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::Element::Item;
@@ -30,7 +28,7 @@ impl Drive {
     /// Returns a `Result` containing a vector of `LowLevelDriveOperation` if successful, or an `Error` otherwise.
     pub(super) fn add_asset_lock_outpoint_operations_v0(
         &self,
-        outpoint: &OutPoint,
+        outpoint: &Bytes36,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
@@ -44,16 +42,10 @@ impl Drive {
             )?;
         }
 
-        let mut outpoint_buffer = Vec::new();
-
-        outpoint
-            .consensus_encode(&mut outpoint_buffer)
-            .map_err(|e| Error::Drive(DriveError::CorruptedSerialization(e.to_string())))?;
-
         self.batch_insert(
             PathFixedSizeKeyRefElement((
                 asset_lock_storage_path(),
-                &outpoint_buffer,
+                outpoint.as_slice(),
                 Item(vec![], None),
             )),
             &mut drive_operations,

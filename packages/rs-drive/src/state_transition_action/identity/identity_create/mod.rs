@@ -7,9 +7,8 @@ use crate::state_transition_action::identity::identity_create::v0::{
     IdentityCreateTransitionActionV0, IdentityFromIdentityCreateTransitionActionV0,
 };
 use derive_more::From;
-use dpp::dashcore::OutPoint;
 use dpp::identity::{Identity, IdentityPublicKey, PartialIdentity};
-use dpp::platform_value::Identifier;
+use dpp::platform_value::{Bytes36, Identifier};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
@@ -44,9 +43,9 @@ impl IdentityCreateTransitionAction {
     }
 
     /// Asset Lock Outpoint
-    pub fn asset_lock_outpoint(&self) -> OutPoint {
+    pub fn asset_lock_outpoint(&self) -> Bytes36 {
         match self {
-            IdentityCreateTransitionAction::V0(transition) => transition.asset_lock_outpoint,
+            IdentityCreateTransitionAction::V0(action) => action.asset_lock_outpoint,
         }
     }
 }

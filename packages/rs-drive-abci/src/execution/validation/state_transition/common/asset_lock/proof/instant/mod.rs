@@ -9,6 +9,7 @@ use dpp::consensus::basic::identity::{
     InvalidInstantAssetLockProofSignatureError,
 };
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+use dpp::platform_value::Bytes36;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
@@ -31,8 +32,14 @@ impl AssetLockProofStateValidation for InstantAssetLockProof {
             )));
         };
 
+        let outpoint_bytes = asset_lock_outpoint.try_into().map_err(|e| {
+            Error::Execution(ExecutionError::Conversion(format!(
+                "can't convert output to bytes: {e}",
+            )))
+        })?;
+
         let is_already_spent = platform_ref.drive.has_asset_lock_outpoint(
-            &asset_lock_outpoint,
+            &Bytes36::new(outpoint_bytes),
             transaction,
             &platform_version.drive,
         )?;

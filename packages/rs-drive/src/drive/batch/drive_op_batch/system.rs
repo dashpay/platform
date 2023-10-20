@@ -6,7 +6,6 @@ use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::platform_value::Bytes36;
 
-use dpp::dashcore::OutPoint;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -28,7 +27,7 @@ pub enum SystemOperationType {
     /// Adding a used asset lock
     AddUsedAssetLock {
         /// The asset lock outpoint that should be added
-        asset_lock_outpoint: OutPoint,
+        asset_lock_outpoint: Bytes36,
     },
 }
 

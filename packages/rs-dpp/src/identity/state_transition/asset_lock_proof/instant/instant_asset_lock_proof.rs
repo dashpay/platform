@@ -1,4 +1,5 @@
 use std::convert::{TryFrom, TryInto};
+use std::io;
 
 use dashcore::consensus::{deserialize, Encodable};
 use dashcore::transaction::special_transaction::TransactionPayload;
@@ -15,8 +16,7 @@ use crate::identity::state_transition::asset_lock_proof::validate_asset_lock_tra
 use crate::prelude::Identifier;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
-use crate::util::hash::hash_to_vec;
-use crate::util::vec::vec_to_array;
+use crate::util::hash::hash;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 
@@ -130,17 +130,13 @@ impl InstantAssetLockProof {
             ProtocolError::IdentifierError(String::from("No output at a given index"))
         })?;
 
-        let mut outpoint_bytes = Vec::new();
+        let output_vec: Vec<u8> = outpoint
+            .try_into()
+            .map_err(|e: io::Error| ProtocolError::EncodingError(e.to_string()))?;
 
-        outpoint
-            .consensus_encode(&mut outpoint_bytes)
-            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+        let hash = hash(output_vec);
 
-        let hash = hash_to_vec(outpoint_bytes);
-
-        let hash_array = vec_to_array(&hash)?;
-
-        Ok(Identifier::new(hash_array))
+        Ok(Identifier::new(hash))
     }
 
     #[cfg(feature = "cbor")]
