@@ -250,12 +250,7 @@ impl StateTransition {
     }
     /// This means we should transform into the action before validation of the identity and signatures
     pub fn requires_state_to_validate_identity_and_signatures(&self) -> bool {
-        matches!(
-            self,
-            StateTransition::DocumentsBatch(_)
-                | StateTransition::IdentityCreate(_)
-                | StateTransition::IdentityTopUp(_)
-        )
+        matches!(self, StateTransition::DocumentsBatch(_))
     }
 
     pub fn is_identity_signed(&self) -> bool {
