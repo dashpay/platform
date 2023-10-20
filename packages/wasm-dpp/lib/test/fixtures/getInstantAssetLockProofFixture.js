@@ -29,7 +29,7 @@ async function getInstantAssetLockProofFixture(oneTimePrivateKey = new PrivateKe
   const realOutput = {
     satoshis: output.satoshis,
     script: Script
-      .buildPublicKeyHashOut(fromAddress).toString(),
+      .buildPublicKeyHashOut(oneTimePrivateKey.toAddress()).toString(),
   };
 
   const payload = Transaction.Payload.AssetLockPayload.fromJSON({
