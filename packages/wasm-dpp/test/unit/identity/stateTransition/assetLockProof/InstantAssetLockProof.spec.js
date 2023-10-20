@@ -28,7 +28,7 @@ describe('InstantAssetLockProof', () => {
       const tx = new Transaction(rawTx);
 
       const expectedOutPoint = Buffer.from([
-        ...Buffer.from(tx.hash, 'hex'),
+        ...Buffer.from(tx.hash, 'hex').reverse(),
         ...Buffer.alloc(4, outputIndex),
       ]);
 
@@ -42,9 +42,7 @@ describe('InstantAssetLockProof', () => {
       const { transaction: rawTx, outputIndex } = rawInstantAssetLockProof;
       const tx = new Transaction(rawTx);
 
-      const expectedOutput = {
-        ...tx.outputs[outputIndex].toObject(),
-      };
+      const expectedOutput = tx.extraPayload.creditOutputs[outputIndex].toObject();
 
       expect(instantAssetLockProof.getOutput())
         .to.deep.equal(expectedOutput);
@@ -88,7 +86,6 @@ describe('InstantAssetLockProof', () => {
           instantLock: instantAssetLockProof.getInstantLock(),
           outputIndex: instantAssetLockProof.getOutputIndex(),
           transaction: instantAssetLockProof.getTransaction(),
-          type: instantAssetLockProof.getType(),
         });
     });
   });
@@ -100,7 +97,6 @@ describe('InstantAssetLockProof', () => {
           instantLock: instantAssetLockProof.getInstantLock().toString('base64'),
           outputIndex: instantAssetLockProof.getOutputIndex(),
           transaction: instantAssetLockProof.getTransaction().toString('hex'),
-          type: instantAssetLockProof.getType(),
         });
     });
   });

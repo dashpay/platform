@@ -1,5 +1,6 @@
 use dpp::dashcore::consensus::Encodable;
 use dpp::dashcore::OutPoint;
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProofType;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
@@ -56,6 +57,11 @@ impl ChainAssetLockProofWasm {
             ChainAssetLockProof::new(parameters.core_chain_locked_height, out_point);
 
         Ok(ChainAssetLockProofWasm(chain_asset_lock_proof))
+    }
+
+    #[wasm_bindgen(js_name=getType)]
+    pub fn get_type(&self) -> u8 {
+        AssetLockProofType::Chain as u8
     }
 
     #[wasm_bindgen(js_name=getCoreChainLockedHeight)]

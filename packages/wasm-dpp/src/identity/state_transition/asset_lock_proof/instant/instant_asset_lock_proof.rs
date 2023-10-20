@@ -4,6 +4,7 @@ use dpp::dashcore::{
 };
 
 use dpp::dashcore::consensus::Encodable;
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProofType;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
@@ -63,6 +64,11 @@ impl InstantAssetLockProofWasm {
             })?;
 
         Ok(instant_asset_lock_proof.into())
+    }
+
+    #[wasm_bindgen(js_name=getType)]
+    pub fn get_type(&self) -> u8 {
+        AssetLockProofType::Instant as u8
     }
 
     #[wasm_bindgen(js_name=getOutputIndex)]

@@ -35,7 +35,6 @@ describe('ChainAssetLockProof', () => {
         .to.deep.equal({
           coreChainLockedHeight: rawChainAssetLockProof.coreChainLockedHeight,
           outPoint: rawChainAssetLockProof.outPoint.toString('base64'),
-          type: rawChainAssetLockProof.type,
         });
     });
   });
@@ -43,7 +42,10 @@ describe('ChainAssetLockProof', () => {
   describe('#toObject', () => {
     it('should return correct object', () => {
       expect(chainAssetLockProof.toObject())
-        .to.deep.equal(rawChainAssetLockProof);
+        .to.deep.equal({
+          coreChainLockedHeight: rawChainAssetLockProof.coreChainLockedHeight,
+          outPoint: rawChainAssetLockProof.outPoint,
+        });
     });
   });
 
