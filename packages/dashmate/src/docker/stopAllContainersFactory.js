@@ -23,7 +23,7 @@ function stopAllContainersFactory(docker) {
         }
       } catch (e) {
         // Skip if container is not found or already stopped
-        if (e.statusCode !== 404 && e.statusCode !== 404) {
+        if (e.statusCode !== 404 && e.statusCode !== 409) {
           throw e;
         }
       }
