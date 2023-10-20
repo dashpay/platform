@@ -17,14 +17,12 @@ const createPlatformNodeKeyInput = require('../../../../prompts/createPlatformNo
 const getBLSPublicKeyFromPrivateKeyHex = require('../../../../../core/getBLSPublicKeyFromPrivateKeyHex');
 const deriveTenderdashNodeId = require('../../../../../tenderdash/deriveTenderdashNodeId');
 const validateBLSPrivateKeyFactory = require('../../../../prompts/validators/validateBLSPrivateKeyFactory');
-const providers = require('../../../../../status/providers');
-const PortStatusEnum = require('../../../../../status/enums/portState');
 
 /**
  * @param {createIpAndPortsForm} createIpAndPortsForm
  * @return {registerMasternodeWithCoreWallet}
  */
-function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm, resolvePublicIpV4) {
+function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
   /**
    * Print prompts to collect masternode registration data with Core
    *
@@ -210,27 +208,6 @@ function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm, resolvePu
       }));
 
       state = await task.prompt(prompts);
-
-      const portStatus = await providers.mnowatch.checkPortStatus(state.ipAndPorts.coreP2PPort);
-
-      if (portStatus !== PortStatusEnum.OPEN) {
-        const externalIp = await resolvePublicIpV4() ?? 'unresolved';
-
-        const confirmed = await task.prompt({
-          type: 'toggle',
-          name: 'confirm',
-          header: `You have chosen Core P2P port ${state.ipAndPorts.coreP2PPort}, `
-+ 'however it looks not reachable on your host '
-+ `${chalk.red(`(TCP ${externalIp}:${state.ipAndPorts.coreP2PPort} ${portStatus})`)}`,
-          message: 'Are you sure that you want to continue?',
-          enabled: 'Yes',
-          disabled: 'No',
-        });
-
-        if (!confirmed) {
-          throw new Error('Operation is cancelled');
-        }
-      }
 
       const operatorPublicKeyHex = await getBLSPublicKeyFromPrivateKeyHex(
         state.operator.privateKey,
