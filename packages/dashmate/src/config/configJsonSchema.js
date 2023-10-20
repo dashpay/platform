@@ -119,7 +119,18 @@ module.exports = {
       type: 'object',
       properties: {
         docker: {
-          $ref: '#/definitions/docker',
+          type: 'object',
+          properties: {
+            image: {
+              type: 'string',
+              minLength: 1,
+            },
+            commandArgs: {
+              type: 'string',
+            },
+          },
+          required: ['image', 'commandArgs'],
+          additionalProperties: false,
         },
         p2p: {
           type: 'object',

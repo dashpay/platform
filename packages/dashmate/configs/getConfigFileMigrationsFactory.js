@@ -242,6 +242,14 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
+      '0.25.9': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.docker.commandArgs = '';
+          });
+
+        return configFile;
+      },
     };
   }
 
