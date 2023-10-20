@@ -52,7 +52,6 @@ function getInstantAssetLockProofFixture(oneTimePrivateKey = new PrivateKey()) {
   });
 
   return new InstantAssetLockProof({
-    type: 0,
     instantLock: instantLock.toBuffer(),
     transaction: transaction.toBuffer(),
     outputIndex: 0,

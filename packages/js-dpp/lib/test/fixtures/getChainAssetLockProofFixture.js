@@ -12,7 +12,6 @@ function getChainAssetLockProofFixture() {
   indexBuffer.writeUInt32LE(outPoint.outpointIndex, 0);
 
   return new ChainAssetLockProof({
-    type: 1,
     coreChainLockedHeight: 42,
     outPoint: Buffer.concat([binaryTransactionHash, indexBuffer]),
   });
