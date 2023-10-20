@@ -2,10 +2,10 @@ const calculatePaymentQueuePosition = require('../../../src/core/calculatePaymen
 
 describe('calculatePaymentQueuePosition', () => {
   it('should just work', async () => {
-    const mockDmnState = {lastPaidHeight: 1, PoSeRevivedHeight: 0, registeredHeight: 1}
+    const mockDmnState = { lastPaidHeight: 1, PoSeRevivedHeight: 0, registeredHeight: 1 };
 
-    const position = calculatePaymentQueuePosition(mockDmnState, 0, 3, 10)
+    const position = calculatePaymentQueuePosition(mockDmnState, 0, 3, 10);
 
-    expect(position).to.equal(3)
+    expect(position).to.equal(3);
   });
 });
