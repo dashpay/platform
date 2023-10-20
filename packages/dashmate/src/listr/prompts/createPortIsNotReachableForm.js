@@ -1,6 +1,6 @@
 const chalk = require('chalk');
 
-function createPortIsNotReachableFormFactory(defaultConfigs, resolvePublicIpV4) {
+function createPortIsNotReachableFormFactory(resolvePublicIpV4) {
   /**
    * @typedef {function} createIpAndPortsForm
    * @param {string | number} coreP2PPort
