@@ -1,13 +1,4 @@
 const crypto = require('crypto');
-const JsDataContractFactory = require('@dashevo/dpp/lib/dataContract/DataContractFactory');
-const JsIdentifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const JsDocument = require('@dashevo/dpp/lib/document/Document');
-const DocumentCreateTransition = require(
-  '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition',
-);
-
-const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 const { default: loadWasmDpp } = require('../../..');
@@ -24,8 +15,6 @@ describe('Document', () => {
   let document;
   let dataContract;
   let documentJs;
-  let dataContractJs;
-  let rawDocumentJs;
   let rawDocumentWithBuffers;
 
   // eslint-disable-next-line prefer-arrow-callback
@@ -36,11 +25,8 @@ describe('Document', () => {
 
     const now = new Date().getTime();
     const id = await generateRandomIdentifierAsync();
-    const jsId = new JsIdentifier(id.toBuffer());
 
     const ownerId = await generateRandomIdentifierAsync();
-    const jsOwnerId = new JsIdentifier(Buffer.from(ownerId.toBuffer()));
-    const jsDataContractFactory = new JsDataContractFactory(createDPPMock(), () => { });
     const dataContractFactory = new DataContractFactory(
       1,
       { generate: () => crypto.randomBytes(32) },
@@ -62,7 +48,7 @@ describe('Document', () => {
                   identifier: {
                     type: 'array',
                     byteArray: true,
-                    contentMediaType: JsIdentifier.MEDIA_TYPE,
+                    contentMediaType: Identifier.MEDIA_TYPE,
                     minItems: 32,
                     maxItems: 32,
                   },
@@ -84,7 +70,6 @@ describe('Document', () => {
     };
 
     dataContract = dataContractFactory.create(ownerId, rawDataContract);
-    dataContractJs = jsDataContractFactory.create(jsOwnerId, rawDataContract);
 
     rawDocument = {
       $protocolVersion: getLatestProtocolVersion(),
@@ -92,7 +77,7 @@ describe('Document', () => {
       $type: 'test',
       $dataContractId: dataContract.getId(),
       $ownerId: ownerId,
-      $revision: DocumentCreateTransition.INITIAL_REVISION,
+      $revision: 1,
       $createdAt: now,
       $updatedAt: now,
     };
@@ -103,19 +88,12 @@ describe('Document', () => {
       $type: 'test',
       $dataContractId: dataContract.getId().toBuffer(),
       $ownerId: ownerId.toBuffer(),
-      $revision: DocumentCreateTransition.INITIAL_REVISION,
+      $revision: 1,
       $createdAt: now,
       $updatedAt: now,
     };
 
     document = new ExtendedDocument(rawDocument, dataContract);
-    rawDocumentJs = { ...rawDocument };
-    rawDocumentJs.$id = jsId;
-    rawDocumentJs.$ownerId = jsOwnerId;
-
-    rawDocumentJs.$dataContractId = dataContractJs.id;
-    documentJs = new JsDocument(rawDocumentJs, dataContractJs);
-    documentJs.dataContractId = JsIdentifier.from(Buffer.from(dataContract.getId().toBuffer()));
   });
 
   describe('constructor', () => {
@@ -136,18 +114,18 @@ describe('Document', () => {
     });
 
     it.skip('should create DocumentCreateTransition with $type and data if present', () => {
-      const data = {
-        test: 1,
-      };
-
-      rawDocument = {
-        $type: 'test',
-        ...data,
-      };
-
-      document = new DocumentCreateTransition(rawDocument, dataContract);
-
-      expect(document.getType()).to.equal(rawDocument.$type);
+      // const data = {
+      //   test: 1,
+      // };
+      //
+      // rawDocument = {
+      //   $type: 'test',
+      //   ...data,
+      // };
+      //
+      // document = new DocumentCreateTransition(rawDocument, dataContract);
+      //
+      // expect(document.getType()).to.equal(rawDocument.$type);
     });
 
     it('should not create ExtendedDocument if $ownerId is missing', async () => {
@@ -429,22 +407,22 @@ describe('Document', () => {
     // TODO: remove or replace?
     //  can not be compared to JS buffers anymore because uses bin code
     it.skip('should return the same bytes as JS version when dynamic identifier is in Document', () => {
-      const jsId = generateRandomIdentifier();
-      const id = new Identifier(jsId.toBuffer());
-      const path = 'dataObject.binaryObject.identifier';
-
-      documentJs.set(path, jsId);
-      document.set(path, id);
-
-      const documentJsIdBuffer = documentJs.get(path).toBuffer();
-      const documentIdBuffer = document.get(path).toBuffer();
-
-      expect(documentJsIdBuffer).to.deep.equal(jsId);
-      expect(documentIdBuffer).to.deep.equal(jsId);
-
-      const jsBuffer = documentJs.toBuffer();
-      const buffer = document.toBuffer();
-      expect(jsBuffer).to.deep.equal(buffer);
+      // const jsId = generateRandomIdentifier();
+      // const id = new Identifier(jsId.toBuffer());
+      // const path = 'dataObject.binaryObject.identifier';
+      //
+      // documentJs.set(path, jsId);
+      // document.set(path, id);
+      //
+      // const documentJsIdBuffer = documentJs.get(path).toBuffer();
+      // const documentIdBuffer = document.get(path).toBuffer();
+      //
+      // expect(documentJsIdBuffer).to.deep.equal(jsId);
+      // expect(documentIdBuffer).to.deep.equal(jsId);
+      //
+      // const jsBuffer = documentJs.toBuffer();
+      // const buffer = document.toBuffer();
+      // expect(jsBuffer).to.deep.equal(buffer);
     });
 
     // TODO: remove or replace?
