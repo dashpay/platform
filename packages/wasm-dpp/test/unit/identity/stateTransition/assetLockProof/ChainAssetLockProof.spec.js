@@ -1,56 +1,60 @@
-const getChainAssetLockFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
+const { hash } = require('../../../../../lib/utils/hash');
+const getChainAssetLockFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
 
-const { default: loadWasmDpp } = require('../../../../../dist');
+const { ChainAssetLockProof } = require('../../../../../dist');
 
 describe('ChainAssetLockProof', () => {
-  let ChainAssetLockProof;
+  let rawChainAssetLockProof;
   let chainAssetLockProof;
-  let chainAssetLockProofJS;
 
   before(async () => {
-    ({ ChainAssetLockProof } = await loadWasmDpp());
-
-    chainAssetLockProofJS = getChainAssetLockFixture();
+    rawChainAssetLockProof = getChainAssetLockFixture()
+      .toObject();
     chainAssetLockProof = new ChainAssetLockProof(
-      chainAssetLockProofJS.toObject(),
+      rawChainAssetLockProof,
     );
   });
 
   describe('#getCoreChainLockedHeight', () => {
     it('should return correct coreChainLockedHeight', () => {
       expect(chainAssetLockProof.getCoreChainLockedHeight())
-        .to.equal(chainAssetLockProofJS.getCoreChainLockedHeight());
+        .to.equal(rawChainAssetLockProof.coreChainLockedHeight);
     });
   });
 
   describe('#getOutPoint', () => {
     it('should return correct outPoint', () => {
       expect(chainAssetLockProof.getOutPoint())
-        .to.deep.equal(chainAssetLockProofJS.getOutPoint());
+        .to.deep.equal(rawChainAssetLockProof.outPoint);
     });
   });
 
   describe('#toJSON', () => {
     it('should return correct JSON', () => {
       expect(chainAssetLockProof.toJSON())
-        .to.deep.equal(chainAssetLockProofJS.toJSON());
+        .to.deep.equal({
+          coreChainLockedHeight: rawChainAssetLockProof.coreChainLockedHeight,
+          outPoint: rawChainAssetLockProof.outPoint.toString('base64'),
+          type: rawChainAssetLockProof.type,
+        });
     });
   });
 
   describe('#toObject', () => {
     it('should return correct object', () => {
       expect(chainAssetLockProof.toObject())
-        .to.deep.equal(chainAssetLockProofJS.toObject());
+        .to.deep.equal(rawChainAssetLockProof);
     });
   });
 
   describe('#createIdentifier', () => {
     it('should return correct identifier', () => {
       const identifier = chainAssetLockProof.createIdentifier();
-      const identifierJS = chainAssetLockProofJS.createIdentifier();
 
       expect(identifier.toBuffer())
-        .to.deep.equal(identifierJS.toBuffer());
+        .to.deep.equal(hash(
+          chainAssetLockProof.getOutPoint(),
+        ));
     });
   });
 });

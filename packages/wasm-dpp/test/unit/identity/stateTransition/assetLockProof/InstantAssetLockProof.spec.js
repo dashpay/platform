@@ -1,39 +1,53 @@
-const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
-
-const { default: loadWasmDpp } = require('../../../../../dist');
+const { Transaction } = require('@dashevo/dashcore-lib');
+const { hash } = require('../../../../../lib/utils/hash');
+const { InstantAssetLockProof, Identifier } = require('../../../../../dist');
+const getInstantAssetLockProofFixture = require('../../../../../lib/test/fixtures/getInstantAssetLockProofFixture');
 
 describe('InstantAssetLockProof', () => {
-  let InstantAssetLockProof;
   let instantAssetLockProof;
-  let Identifier;
+  let rawInstantAssetLockProof;
 
   before(async () => {
-    ({ InstantAssetLockProof, Identifier } = await loadWasmDpp());
-
-    const instantAssetLockProofJS = getInstantAssetLockProofFixture();
+    rawInstantAssetLockProof = (await getInstantAssetLockProofFixture())
+      .toObject();
     instantAssetLockProof = new InstantAssetLockProof(
-      instantAssetLockProofJS.toObject(),
+      rawInstantAssetLockProof,
     );
   });
 
   describe('#getOutputIndex', () => {
     it('should return correct type', () => {
       expect(instantAssetLockProof.getOutputIndex())
-        .to.equal(0);
+        .to.equal(rawInstantAssetLockProof.outputIndex);
     });
   });
 
   describe('#getOutPoint', () => {
     it('should return correct outPoint', () => {
-      expect(Buffer.isBuffer(instantAssetLockProof.getOutPoint()))
-        .to.be.true();
+      const { transaction: rawTx, outputIndex } = rawInstantAssetLockProof;
+      const tx = new Transaction(rawTx);
+
+      const expectedOutPoint = Buffer.from([
+        ...Buffer.from(tx.hash, 'hex'),
+        ...Buffer.alloc(4, outputIndex),
+      ]);
+
+      expect(instantAssetLockProof.getOutPoint())
+        .to.deep.equal(expectedOutPoint);
     });
   });
 
   describe('#getOutput', () => {
     it('should return correct output', () => {
-      expect(Buffer.isBuffer(instantAssetLockProof.getOutput()))
-        .to.be.true();
+      const { transaction: rawTx, outputIndex } = rawInstantAssetLockProof;
+      const tx = new Transaction(rawTx);
+
+      const expectedOutput = {
+        ...tx.outputs[outputIndex].toObject(),
+      };
+
+      expect(instantAssetLockProof.getOutput())
+        .to.deep.equal(expectedOutput);
     });
   });
 
@@ -41,8 +55,11 @@ describe('InstantAssetLockProof', () => {
     it('should return correct identifier', () => {
       const identifier = instantAssetLockProof.createIdentifier();
 
+      const expectedIdentifier = Identifier.from(hash(
+        instantAssetLockProof.getOutPoint(),
+      ));
       expect(identifier)
-        .to.be.an.instanceOf(Identifier);
+        .to.deep.equal(expectedIdentifier);
     });
   });
 
@@ -50,8 +67,8 @@ describe('InstantAssetLockProof', () => {
     it('should return correct instant lock', () => {
       const instantLock = instantAssetLockProof.getInstantLock();
 
-      expect(Buffer.isBuffer(instantLock))
-        .to.be.true();
+      expect(instantLock)
+        .to.deep.equal(rawInstantAssetLockProof.instantLock);
     });
   });
 
@@ -59,8 +76,8 @@ describe('InstantAssetLockProof', () => {
     it('should return correct transaction', () => {
       const transaction = instantAssetLockProof.getTransaction();
 
-      expect(Buffer.isBuffer(transaction))
-        .to.be.true();
+      expect(transaction)
+        .to.deep.equal(rawInstantAssetLockProof.transaction);
     });
   });
 
@@ -71,6 +88,7 @@ describe('InstantAssetLockProof', () => {
           instantLock: instantAssetLockProof.getInstantLock(),
           outputIndex: instantAssetLockProof.getOutputIndex(),
           transaction: instantAssetLockProof.getTransaction(),
+          type: instantAssetLockProof.getType(),
         });
     });
   });
@@ -81,7 +99,8 @@ describe('InstantAssetLockProof', () => {
         .to.deep.equal({
           instantLock: instantAssetLockProof.getInstantLock().toString('base64'),
           outputIndex: instantAssetLockProof.getOutputIndex(),
-          transaction: instantAssetLockProof.getTransaction().toString('base64'),
+          transaction: instantAssetLockProof.getTransaction().toString('hex'),
+          type: instantAssetLockProof.getType(),
         });
     });
   });
