@@ -21,8 +21,6 @@ describe('DocumentBatchTransition', () => {
 
   beforeEach(async function beforeEach() {
     ({
-      ExtendedDocument,
-      DataContract,
       ProtocolVersionValidator,
       DocumentFactory,
       DocumentValidator,
