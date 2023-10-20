@@ -2960,8 +2960,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
-            ["@dashevo/dpp", "workspace:packages/js-dpp"],\
-            ["@dashevo/wasm-re2", "npm:2.0.4"],\
             ["@types/bs58", "npm:4.0.1"],\
             ["@types/node", "npm:14.17.34"],\
             ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
