@@ -1,5 +1,3 @@
-const JsDataContractUpdateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/DataContractUpdateTransition');
-
 const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
 const { default: loadWasmDpp } = require('../../../../..');
 const { StateTransitionTypes } = require('../../../../..');
@@ -81,12 +79,12 @@ describe('DataContractUpdateTransition', () => {
 
   describe.skip('#hash', () => {
     it('should return State Transition hash as hex', () => {
-      const jsStateTransition = new JsDataContractUpdateTransition(stateTransition.toJSON());
-
-      const result = stateTransition.hash();
-      const resultJs = jsStateTransition.hash();
-
-      expect(result).to.equal(resultJs);
+      // const jsStateTransition = new JsDataContractUpdateTransition(stateTransition.toJSON());
+      //
+      // const result = stateTransition.hash();
+      // const resultJs = jsStateTransition.hash();
+      //
+      // expect(result).to.equal(resultJs);
     });
   });
 
