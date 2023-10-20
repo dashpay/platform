@@ -1,4 +1,5 @@
 const { expect } = require('chai');
+const { hash: hashFunction } = require('../../../lib/utils/hash');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 const {
   Identity, Metadata, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
@@ -126,6 +127,14 @@ describe('Identity', () => {
       const recoveredIdentity = Identity.fromBuffer(buffer);
       expect(recoveredIdentity.toObject())
         .to.be.deep.equal(identity.toObject());
+    });
+  });
+
+  describe('#hash', () => {
+    it('should has identity', () => {
+      const expectedHash = hashFunction(identity.toBuffer());
+      const result = identity.hash();
+      expect(result).to.deep.equal(expectedHash);
     });
   });
 
