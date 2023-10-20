@@ -5,22 +5,17 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::state_transition::AssetLockProved;
 
-use crate::execution::validation::state_transition::common::asset_lock::one_time_signed::v0::OneTimeSignedStateTransitionV0;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::PlatformMessageSignable;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::validation::SimpleConsensusValidationResult;
-use drive::state_transition_action::StateTransitionAction;
 
-pub(crate) trait IdentityCreateStateTransitionIdentityAndSignaturesValidationV0:
-    OneTimeSignedStateTransitionV0
-{
+pub(crate) trait IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 {
     fn validate_identity_create_state_transition_signatures_v0(
         &self,
         signable_bytes: Vec<u8>,
-        action: &StateTransitionAction,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 }
 
@@ -28,7 +23,6 @@ impl IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 for Identity
     fn validate_identity_create_state_transition_signatures_v0(
         &self,
         signable_bytes: Vec<u8>,
-        action: &StateTransitionAction,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let mut validation_result = SimpleConsensusValidationResult::default();
         for key in self.public_keys().iter() {
@@ -74,7 +68,6 @@ impl IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 for Identity
             ));
         }
 
-        // TODO: Validate signature first?
-        self.verify_one_time_signature_v0(action, signable_bytes)
+        Ok(validation_result)
     }
 }

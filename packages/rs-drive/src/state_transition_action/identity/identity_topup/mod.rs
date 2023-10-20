@@ -5,9 +5,9 @@ pub mod v0;
 
 use crate::state_transition_action::identity::identity_topup::v0::IdentityTopUpTransitionActionV0;
 use derive_more::From;
-use dpp::dashcore::{OutPoint, TxOut};
+use dpp::dashcore::OutPoint;
 
-use dpp::platform_value::{Bytes36, Identifier};
+use dpp::platform_value::Identifier;
 
 /// action
 #[derive(Debug, Clone, From)]
@@ -35,13 +35,6 @@ impl IdentityTopUpTransitionAction {
     pub fn asset_lock_outpoint(&self) -> OutPoint {
         match self {
             IdentityTopUpTransitionAction::V0(transition) => transition.asset_lock_outpoint,
-        }
-    }
-
-    /// Asset Lock Output
-    pub fn asset_lock_output(&self) -> &TxOut {
-        match self {
-            IdentityTopUpTransitionAction::V0(action) => &action.asset_lock_output,
         }
     }
 }

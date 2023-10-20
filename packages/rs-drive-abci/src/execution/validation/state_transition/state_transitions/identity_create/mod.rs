@@ -22,7 +22,6 @@ use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
-use crate::execution::validation::state_transition::common::asset_lock::one_time_signed::v0::OneTimeSignedStateTransitionV0;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 
@@ -100,5 +99,3 @@ impl StateTransitionStateValidationV0 for IdentityCreateTransition {
         }
     }
 }
-
-impl OneTimeSignedStateTransitionV0 for IdentityCreateTransition {}

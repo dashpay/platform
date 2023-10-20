@@ -1,13 +1,18 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
+use dpp::dashcore::signer;
+use dpp::dashcore::signer::double_sha;
 
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::serialization::Signable;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::{StateTransition, StateTransitionLike};
 
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
@@ -15,6 +20,7 @@ use drive::state_transition_action::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
 use dpp::version::DefaultForPlatformVersion;
+use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::AssetLockProofStateValidation;
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
@@ -110,7 +116,30 @@ impl IdentityCreateStateTransitionStateValidationV0 for IdentityCreateTransition
 
         let tx_out = tx_out_validation.into_data()?;
 
-        match IdentityCreateTransitionAction::try_from_borrowed(self, &tx_out) {
+        // Verify one time signature
+
+        let singable_bytes = StateTransition::IdentityCreate(self.clone()).signable_bytes()?;
+
+        let public_key_hash = tx_out
+            .script_pubkey
+            .p2pkh_public_key_hash_bytes()
+            .ok_or_else(|| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "output must be a valid p2pkh already",
+                ))
+            })?;
+
+        if let Err(e) = signer::verify_hash_signature(
+            &double_sha(singable_bytes),
+            self.signature().as_slice(),
+            public_key_hash,
+        ) {
+            return Ok(ConsensusValidationResult::new_with_error(
+                SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
+            ));
+        }
+
+        match IdentityCreateTransitionAction::try_from_borrowed(self, tx_out.value * 1000) {
             Ok(action) => {
                 validation_result.set_data(action.into());
             }
