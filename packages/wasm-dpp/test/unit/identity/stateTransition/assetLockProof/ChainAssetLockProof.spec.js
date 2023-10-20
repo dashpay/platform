@@ -16,13 +16,6 @@ describe('ChainAssetLockProof', () => {
     );
   });
 
-  describe('#getType', () => {
-    it('should return correct type', () => {
-      expect(chainAssetLockProof.getType())
-        .to.equal(chainAssetLockProofJS.getType());
-    });
-  });
-
   describe('#getCoreChainLockedHeight', () => {
     it('should return correct coreChainLockedHeight', () => {
       expect(chainAssetLockProof.getCoreChainLockedHeight())

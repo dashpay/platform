@@ -65,11 +65,6 @@ impl InstantAssetLockProofWasm {
         Ok(instant_asset_lock_proof.into())
     }
 
-    #[wasm_bindgen(js_name=getType)]
-    pub fn get_type(&self) -> u8 {
-        self.0.asset_lock_type()
-    }
-
     #[wasm_bindgen(js_name=getOutputIndex)]
     pub fn get_output_index(&self) -> usize {
         self.0.output_index()

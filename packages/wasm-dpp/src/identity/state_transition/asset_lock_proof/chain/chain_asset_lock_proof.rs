@@ -58,11 +58,6 @@ impl ChainAssetLockProofWasm {
         Ok(ChainAssetLockProofWasm(chain_asset_lock_proof))
     }
 
-    #[wasm_bindgen(js_name=getType)]
-    pub fn get_type(&self) -> u8 {
-        ChainAssetLockProof::asset_lock_type()
-    }
-
     #[wasm_bindgen(js_name=getCoreChainLockedHeight)]
     pub fn get_core_chain_locked_height(&self) -> u32 {
         self.0.core_chain_locked_height
