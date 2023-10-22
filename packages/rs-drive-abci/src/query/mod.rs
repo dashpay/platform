@@ -3,6 +3,7 @@ mod document_query;
 mod identity_based_queries;
 mod proofs;
 mod response_metadata;
+mod system;
 mod v0;
 
 use crate::error::query::QueryError;

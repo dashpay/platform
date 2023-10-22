@@ -21,11 +21,13 @@ pub struct ResponseMetadata {
     pub height: u64,
     #[prost(uint32, tag = "2")]
     pub core_chain_locked_height: u32,
-    #[prost(uint64, tag = "3")]
+    #[prost(uint32, tag = "3")]
+    pub epoch: u32,
+    #[prost(uint64, tag = "4")]
     pub time_ms: u64,
-    #[prost(uint32, tag = "4")]
+    #[prost(uint32, tag = "5")]
     pub protocol_version: u32,
-    #[prost(string, tag = "5")]
+    #[prost(string, tag = "6")]
     pub chain_id: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -791,6 +793,88 @@ pub struct GetConsensusParamsResponse {
     #[prost(message, optional, tag = "2")]
     pub evidence: ::core::option::Option<ConsensusParamsEvidence>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetVersionUpgradeStateRequest {
+    #[prost(bool, tag = "1")]
+    pub prove: bool,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetVersionUpgradeStateResponse {
+    #[prost(message, optional, tag = "3")]
+    pub metadata: ::core::option::Option<ResponseMetadata>,
+    #[prost(oneof = "get_version_upgrade_state_response::Result", tags = "1, 2")]
+    pub result: ::core::option::Option<get_version_upgrade_state_response::Result>,
+}
+/// Nested message and enum types in `GetVersionUpgradeStateResponse`.
+pub mod get_version_upgrade_state_response {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct VersionEntry {
+        #[prost(uint32, tag = "1")]
+        pub version_number: u32,
+        #[prost(uint32, tag = "2")]
+        pub vote_count: u32,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Versions {
+        #[prost(message, repeated, tag = "1")]
+        pub versions: ::prost::alloc::vec::Vec<VersionEntry>,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Result {
+        #[prost(message, tag = "1")]
+        Versions(Versions),
+        #[prost(message, tag = "2")]
+        Proof(super::Proof),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetVersionUpgradeVoteStatusRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub start_pro_tx_hash: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, tag = "2")]
+    pub count: u32,
+    #[prost(bool, tag = "3")]
+    pub prove: bool,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetVersionUpgradeVoteStatusResponse {
+    #[prost(message, optional, tag = "3")]
+    pub metadata: ::core::option::Option<ResponseMetadata>,
+    #[prost(oneof = "get_version_upgrade_vote_status_response::Result", tags = "1, 2")]
+    pub result: ::core::option::Option<get_version_upgrade_vote_status_response::Result>,
+}
+/// Nested message and enum types in `GetVersionUpgradeVoteStatusResponse`.
+pub mod get_version_upgrade_vote_status_response {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct VersionSignal {
+        #[prost(bytes = "vec", tag = "1")]
+        pub pro_tx_hash: ::prost::alloc::vec::Vec<u8>,
+        #[prost(uint32, tag = "2")]
+        pub version: u32,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct VersionSignals {
+        #[prost(message, repeated, tag = "1")]
+        pub version_signals: ::prost::alloc::vec::Vec<VersionSignal>,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Result {
+        #[prost(message, tag = "1")]
+        Versions(VersionSignals),
+        #[prost(message, tag = "2")]
+        Proof(super::Proof),
+    }
+}
 /// Generated client implementations.
 pub mod platform_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -1316,6 +1400,66 @@ pub mod platform_client {
                     GrpcMethod::new(
                         "org.dash.platform.dapi.v0.Platform",
                         "getConsensusParams",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_version_upgrade_state(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetVersionUpgradeStateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetVersionUpgradeStateResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getVersionUpgradeState",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getVersionUpgradeState",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_version_upgrade_vote_status(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetVersionUpgradeVoteStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetVersionUpgradeVoteStatusResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getVersionUpgradeVoteStatus",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getVersionUpgradeVoteStatus",
                     ),
                 );
             self.inner.unary(req, path, codec).await

@@ -24,6 +24,9 @@ service Platform {
   rpc getIdentityByPublicKeyHashes (GetIdentityByPublicKeyHashesRequest) returns (GetIdentityByPublicKeyHashesResponse);
   rpc waitForStateTransitionResult (WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse);
   rpc getConsensusParams (GetConsensusParamsRequest) returns (GetConsensusParamsResponse);
+  rpc getVersionUpgradeState(GetVersionUpgradeStateRequest) returns (GetVersionUpgradeStateResponse);
+  rpc getVersionUpgradeVoteStatus(GetVersionUpgradeVoteStatusRequest) returns (GetVersionUpgradeVoteStatusResponse);
+//  rpc getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse);
 }
 
 message Proof {
@@ -38,9 +41,10 @@ message Proof {
 message ResponseMetadata {
   uint64 height = 1;
   uint32 core_chain_locked_height = 2;
-  uint64 time_ms = 3;
-  uint32 protocol_version = 4;
-  string chain_id = 5;
+  uint32 epoch = 3;
+  uint64 time_ms = 4;
+  uint32 protocol_version = 5;
+  string chain_id = 6;
 }
 
 message StateTransitionBroadcastError {
@@ -389,4 +393,48 @@ message GetConsensusParamsRequest {
 message GetConsensusParamsResponse {
   ConsensusParamsBlock block = 1;
   ConsensusParamsEvidence evidence = 2;
+}
+
+message GetVersionUpgradeStateRequest {
+  bool prove = 1;
+}
+
+message GetVersionUpgradeStateResponse {
+  message VersionEntry {
+    uint32 version_number = 1;
+    uint32 vote_count = 2;
+  }
+
+  message Versions {
+    repeated VersionEntry versions = 1;
+  }
+
+  oneof result {
+    Versions versions = 1;
+    Proof proof = 2;
+  }
+  ResponseMetadata metadata = 3;
+}
+
+message GetVersionUpgradeVoteStatusRequest {
+  bytes start_pro_tx_hash = 1;
+  uint32 count = 2;
+  bool prove = 3;
+}
+
+message GetVersionUpgradeVoteStatusResponse {
+  message VersionSignal {
+    bytes pro_tx_hash = 1;
+    uint32 version = 2;
+  }
+
+  message VersionSignals {
+    repeated VersionSignal version_signals = 1;
+  }
+
+  oneof result {
+    VersionSignals versions = 1;
+    Proof proof = 2;
+  }
+  ResponseMetadata metadata = 3;
 }

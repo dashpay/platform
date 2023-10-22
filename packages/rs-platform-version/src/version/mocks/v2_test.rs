@@ -19,7 +19,7 @@ use crate::version::drive_abci_versions::{
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
     DriveAbciProtocolUpgradeMethodVersions, DriveAbciQueryDataContractVersions,
-    DriveAbciQueryIdentityVersions, DriveAbciQueryVersions,
+    DriveAbciQueryIdentityVersions, DriveAbciQuerySystemVersions, DriveAbciQueryVersions,
     DriveAbciStateTransitionCommonValidationVersions,
     DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion,
     DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
@@ -128,6 +128,7 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 clear_version_information: 0,
                 change_to_new_version_and_clear_version_information: 0,
                 fetch_versions_with_counter: 0,
+                fetch_proved_versions_with_counter: 0,
                 remove_validators_proposed_app_versions: 0,
                 update_validator_proposed_app_version: 0,
             },
@@ -668,6 +669,13 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 data_contracts: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
+            system: DriveAbciQuerySystemVersions {
+                version_upgrade_state: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,
