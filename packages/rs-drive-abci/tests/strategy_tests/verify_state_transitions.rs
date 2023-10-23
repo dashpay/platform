@@ -97,7 +97,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 };
                 let result = abci_app
                     .platform
-                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
+                    .query(
+                        "/proofs",
+                        &versioned_request.encode_to_vec(),
+                        platform_version,
+                    )
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -149,7 +153,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 };
                 let result = abci_app
                     .platform
-                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
+                    .query(
+                        "/proofs",
+                        &versioned_request.encode_to_vec(),
+                        platform_version,
+                    )
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -219,7 +227,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 };
                 let result = abci_app
                     .platform
-                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
+                    .query(
+                        "/proofs",
+                        &versioned_request.encode_to_vec(),
+                        platform_version,
+                    )
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -363,7 +375,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 };
                 let result = abci_app
                     .platform
-                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
+                    .query(
+                        "/proofs",
+                        &versioned_request.encode_to_vec(),
+                        platform_version,
+                    )
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -426,7 +442,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 };
                 let result = abci_app
                     .platform
-                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
+                    .query(
+                        "/proofs",
+                        &versioned_request.encode_to_vec(),
+                        platform_version,
+                    )
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -485,7 +505,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 };
                 let result = abci_app
                     .platform
-                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
+                    .query(
+                        "/proofs",
+                        &versioned_request.encode_to_vec(),
+                        platform_version,
+                    )
                     .expect("expected to query proofs");
 
                 let serialized_get_proofs_response =
@@ -532,7 +556,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 };
                 let result = abci_app
                     .platform
-                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
+                    .query(
+                        "/proofs",
+                        &versioned_request.encode_to_vec(),
+                        platform_version,
+                    )
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -596,7 +624,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
 
                 let result = abci_app
                     .platform
-                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
+                    .query(
+                        "/proofs",
+                        &versioned_request.encode_to_vec(),
+                        platform_version,
+                    )
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
