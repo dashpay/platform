@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.25.7",
+  "version": "0.25.8",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
@@ -37,10 +37,15 @@
       "name": "Konstantin Shuplenkov",
       "email": "konstantin.shuplenkov@dash.org",
       "url": "https://github.com/shuplenkov"
+    },
+    {
+      "name": "Mikhail Pshenichnikov",
+      "email": "pshenmic@gmail.com",
+      "url": "https://github.com/pshenmic"
     }
   ],
   "engines": {
-    "node": ">=12"
+    "node": ">=18"
   },
   "license": "MIT",
   "bugs": {

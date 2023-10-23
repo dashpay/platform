@@ -142,12 +142,6 @@ function resetNodeTaskFactory(
             recursive: true,
             force: true,
           });
-
-          // Remove SSL files
-          fs.rmSync(homeDir.joinPath('ssl', baseConfigName), {
-            recursive: true,
-            force: true,
-          });
         },
       },
     ]);
