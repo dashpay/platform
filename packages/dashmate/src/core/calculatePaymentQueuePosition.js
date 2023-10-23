@@ -7,7 +7,7 @@
  * @return {number}
  */
 function calculatePaymentQueuePosition(dmnState, enabledMasternodes, enabledEvonodes, coreBlocks) {
-  const enabledCount = enabledMasternodes + enabledEvonodes * 4
+  const enabledCount = enabledMasternodes + enabledEvonodes * 4;
 
   let paymentQueuePosition;
   // Masternode has been unbanned recently

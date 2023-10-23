@@ -55,11 +55,11 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       rpcClient.masternode('count'),
       rpcClient.masternode('status'),
     ]);
-    const {blocks: coreBlocks} = blockchainInfo.result;
+    const { blocks: coreBlocks } = blockchainInfo.result;
 
     const countInfo = masternodeCount.result;
-    const {detailed} = countInfo;
-    const {regular, evo} = detailed;
+    const { detailed } = countInfo;
+    const { regular, evo } = detailed;
 
     info.masternodeTotal = regular.total;
     info.masternodeEnabled = regular.enabled;
@@ -134,10 +134,10 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
         const masternodeInfo = await getMasternodeInfo(config);
 
         scope.proTxHash = masternodeInfo.proTxHash;
-        scope.masternodeTotal = masternodeInfo.masternodeTotal
-        scope.masternodeEnabled = masternodeInfo.masternodeEnabled
-        scope.evonodeEnabled = masternodeInfo.evonodeEnabled
-        scope.evonodeTotal = masternodeInfo.evonodeTotal
+        scope.masternodeTotal = masternodeInfo.masternodeTotal;
+        scope.masternodeEnabled = masternodeInfo.masternodeEnabled;
+        scope.evonodeEnabled = masternodeInfo.evonodeEnabled;
+        scope.evonodeTotal = masternodeInfo.evonodeTotal;
         scope.state = masternodeInfo.state;
         scope.status = masternodeInfo.status;
         scope.nodeState = masternodeInfo.nodeState;

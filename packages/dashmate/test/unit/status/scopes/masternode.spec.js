@@ -46,11 +46,11 @@ describe('getMasternodeScopeFactory', () => {
         registeredHeight: 400,
       };
 
-      mockRpcClient.getBlockchainInfo.returns({result: {blocks: 1337}});
+      mockRpcClient.getBlockchainInfo.returns({ result: { blocks: 1337 } });
       mockRpcClient.masternode.withArgs('count').returns({
         result: {
-          detailed: {regular: {total: 1337, enabled: 777}, evo: {total: 1337, enabled: 777}}
-        }
+          detailed: { regular: { total: 1337, enabled: 777 }, evo: { total: 1337, enabled: 777 } },
+        },
       });
       mockRpcClient.masternode.withArgs('status').returns({
         result: {

@@ -81,7 +81,7 @@ class StatusCommand extends ConfigBaseCommand {
             paymentQueuePosition,
             nextPaymentTime,
           } = masternode.nodeState;
-          const {evonodeEnabled, masternodeEnabled} = masternode
+          const { evonodeEnabled, masternodeEnabled } = masternode;
 
           plain['Masternode ProTX'] = masternode.proTxHash || 'n/a';
           plain['PoSe Penalty'] = colors.poSePenalty(poSePenalty,
