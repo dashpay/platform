@@ -3,7 +3,7 @@ const Ajv = require('ajv');
 const addFormats = require('ajv-formats');
 
 const createDIContainer = require('../../../../../src/createDIContainer');
-const mockConfig = require('./mock_config.json');
+const mockConfig = require('./mock_config_v0.25.0.json');
 const configJsonSchema = require('../../../../../src/config/configJsonSchema');
 const packageJson = require('../../../../../package.json');
 
