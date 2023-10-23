@@ -43,6 +43,10 @@ pub enum QueryError {
     #[error("not found error: {0}")]
     NotFound(String),
 
+    /// Decoding Error
+    #[error("decoding error: {0}")]
+    DecodingError(String),
+
     /// Not found Error
     #[error("unsupported version for query: {0}, currently supporting versions {1} to {2} on platform protocol {3}, given {4}")]
     UnsupportedQueryVersion(

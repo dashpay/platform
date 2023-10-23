@@ -1,12 +1,12 @@
-use crate::error::execution::ExecutionError;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dpp::version::FeatureVersion;
+use dpp::check_validation_result_with_data;
+use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use dpp::ProtocolError;
+use prost::Message;
 
 mod v0;
 
@@ -16,7 +16,6 @@ impl<C> Platform<C> {
         &self,
         state: &PlatformState,
         query_data: &[u8],
-        version: Option<FeatureVersion>,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let feature_version_bounds = &platform_version

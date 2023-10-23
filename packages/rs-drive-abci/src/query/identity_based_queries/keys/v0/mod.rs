@@ -4,9 +4,9 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::{
-    get_identity_keys_response, GetIdentityKeysRequest, GetIdentityKeysResponse, Proof,
-};
+use dapi_grpc::platform::v0::get_identities_keys_request::GetIdentitiesKeysRequestV0;
+use dapi_grpc::platform::v0::get_identity_keys_response::GetIdentityKeysResponseV0;
+use dapi_grpc::platform::v0::{get_identity_keys_response, GetIdentityKeysResponse, Proof};
 use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use drive::error::query::QuerySyntaxError;
@@ -75,18 +75,18 @@ impl<C> Platform<C> {
     pub(super) fn query_keys_v0(
         &self,
         state: &PlatformState,
-        query_data: &[u8],
+        request: GetIdentitiesKeysRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
         let quorum_type = self.config.quorum_type() as u32;
-        let GetIdentityKeysRequest {
+        let GetIdentitiesKeysRequestV0 {
             identity_id,
             request_type,
             limit,
             offset,
             prove,
-        } = check_validation_result_with_data!(GetIdentityKeysRequest::decode(query_data));
+        } = request;
         let identity_id: Identifier = check_validation_result_with_data!(identity_id
             .try_into()
             .map_err(|_| QueryError::InvalidArgument(
@@ -139,27 +139,39 @@ impl<C> Platform<C> {
                 None,
                 platform_version
             ));
+
             GetIdentityKeysResponse {
-                result: Some(get_identity_keys_response::Result::Proof(Proof {
-                    grovedb_proof: proof,
-                    quorum_hash: state.last_quorum_hash().to_vec(),
-                    signature: state.last_block_signature().to_vec(),
-                    round: state.last_block_round(),
-                    block_id_hash: state.last_block_id_hash().to_vec(),
-                    quorum_type,
+                version: Some(get_identity_keys_response::Version::V0(GetIdentityKeysResponseV0 {
+                    result: Some(get_identity_keys_response::get_identity_keys_response_v0::Result::Proof(Proof {
+                        grovedb_proof: proof,
+                        quorum_hash: state.last_quorum_hash().to_vec(),
+                        quorum_type,
+                        block_id_hash: state.last_block_id_hash().to_vec(),
+                        signature: state.last_block_signature().to_vec(),
+                        round: state.last_block_round(),
+                    })),
+                    metadata: Some(metadata),
                 })),
-                metadata: Some(metadata),
             }
-            .encode_to_vec()
+                .encode_to_vec()
         } else {
             let keys: SerializedKeyVec = check_validation_result_with_data!(self
                 .drive
                 .fetch_identity_keys(key_request, None, platform_version));
+
             GetIdentityKeysResponse {
-                result: Some(get_identity_keys_response::Result::Keys(
-                    get_identity_keys_response::Keys { keys_bytes: keys },
+                version: Some(get_identity_keys_response::Version::V0(
+                    GetIdentityKeysResponseV0 {
+                        result: Some(
+                            get_identity_keys_response::get_identity_keys_response_v0::Result::Keys(
+                                get_identity_keys_response::get_identity_keys_response_v0::Keys {
+                                    keys_bytes: keys,
+                                },
+                            ),
+                        ),
+                        metadata: Some(metadata),
+                    },
                 )),
-                metadata: Some(metadata),
             }
             .encode_to_vec()
         };

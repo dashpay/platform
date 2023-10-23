@@ -4,9 +4,10 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
+use dapi_grpc::platform::v0::get_data_contract_history_request::GetDataContractHistoryRequestV0;
+use dapi_grpc::platform::v0::get_data_contract_history_response::GetDataContractHistoryResponseV0;
 use dapi_grpc::platform::v0::{
-    get_data_contract_history_response, GetDataContractHistoryRequest,
-    GetDataContractHistoryResponse, GetIdentityBalanceResponse, GetIdentityRequest, Proof,
+    get_data_contract_history_response, GetDataContractHistoryResponse, Proof,
 };
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
@@ -19,18 +20,18 @@ impl<C> Platform<C> {
     pub(super) fn query_data_contract_history_v0(
         &self,
         state: &PlatformState,
-        query_data: &[u8],
+        request: GetDataContractHistoryRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
         let quorum_type = self.config.quorum_type() as u32;
-        let GetDataContractHistoryRequest {
+        let GetDataContractHistoryRequestV0 {
             id,
             limit,
             offset,
             start_at_ms,
             prove,
-        } = check_validation_result_with_data!(GetDataContractHistoryRequest::decode(query_data));
+        } = request;
         let contract_id: Identifier =
             check_validation_result_with_data!(id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
@@ -61,17 +62,19 @@ impl<C> Platform<C> {
                 platform_version,
             ));
             GetDataContractHistoryResponse {
-                metadata: Some(metadata),
-                result: Some(get_data_contract_history_response::Result::Proof(Proof {
-                    grovedb_proof: proof,
-                    quorum_hash: state.last_quorum_hash().to_vec(),
-                    quorum_type,
-                    block_id_hash: state.last_block_id_hash().to_vec(),
-                    signature: state.last_block_signature().to_vec(),
-                    round: state.last_block_round(),
+                version: Some(get_data_contract_history_response::Version::V0(GetDataContractHistoryResponseV0 {
+                    result: Some(get_data_contract_history_response::get_data_contract_history_response_v0::Result::Proof(Proof {
+                        grovedb_proof: proof,
+                        quorum_hash: state.last_quorum_hash().to_vec(),
+                        quorum_type,
+                        block_id_hash: state.last_block_id_hash().to_vec(),
+                        signature: state.last_block_signature().to_vec(),
+                        round: state.last_block_round(),
+                    })),
+                    metadata: Some(metadata),
                 })),
             }
-            .encode_to_vec()
+                .encode_to_vec()
         } else {
             let contracts =
                 check_validation_result_with_data!(self.drive.fetch_contract_with_history(
@@ -86,10 +89,10 @@ impl<C> Platform<C> {
             let contract_historical_entries = check_validation_result_with_data!(contracts
                 .into_iter()
                 .map(|(date_in_seconds, data_contract)| Ok::<
-                    get_data_contract_history_response::DataContractHistoryEntry,
+                    get_data_contract_history_response::get_data_contract_history_response_v0::DataContractHistoryEntry,
                     ProtocolError,
                 >(
-                    get_data_contract_history_response::DataContractHistoryEntry {
+                    get_data_contract_history_response::get_data_contract_history_response_v0::DataContractHistoryEntry {
                         date: date_in_seconds,
                         value: data_contract
                             .serialize_to_bytes_with_platform_version(platform_version)?
@@ -97,16 +100,16 @@ impl<C> Platform<C> {
                 ))
                 .collect());
             GetDataContractHistoryResponse {
-                result: Some(
-                    get_data_contract_history_response::Result::DataContractHistory(
-                        get_data_contract_history_response::DataContractHistory {
+                version: Some(get_data_contract_history_response::Version::V0(GetDataContractHistoryResponseV0 {
+                    result: Some(get_data_contract_history_response::get_data_contract_history_response_v0::Result::DataContractHistory(
+                        get_data_contract_history_response::get_data_contract_history_response_v0::DataContractHistory {
                             data_contract_entries: contract_historical_entries,
-                        },
-                    ),
-                ),
-                metadata: Some(metadata),
+                        }
+                    )),
+                    metadata: Some(metadata),
+                })),
             }
-            .encode_to_vec()
+                .encode_to_vec()
         };
         Ok(QueryValidationResult::new_with_data(response_data))
     }

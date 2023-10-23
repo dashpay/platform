@@ -16,45 +16,32 @@ impl<C> Platform<C> {
         &self,
         query_path: &str,
         query_data: &[u8],
-        version: Option<FeatureVersion>,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let state = self.state.read().unwrap();
         match query_path {
-            "/identity" => self.query_identity(&state, query_data, version, platform_version),
-            "/identities" => self.query_identities(&state, query_data, version, platform_version),
-            "/identity/balance" => {
-                self.query_balance(&state, query_data, version, platform_version)
-            }
+            "/identity" => self.query_identity(&state, query_data, platform_version),
+            "/identities" => self.query_identities(&state, query_data, platform_version),
+            "/identity/balance" => self.query_balance(&state, query_data, platform_version),
             "/identity/balanceAndRevision" => {
-                self.query_balance_and_revision(&state, query_data, version, platform_version)
+                self.query_balance_and_revision(&state, query_data, platform_version)
             }
-            "/identity/keys" => self.query_keys(&state, query_data, version, platform_version),
-            "/identity/by-public-key-hash" => self.query_identity_by_public_key_hash(
-                &state,
-                query_data,
-                version,
-                platform_version,
-            ),
-            "/identities/by-public-key-hash" => self.query_identities_by_public_key_hashes(
-                &state,
-                query_data,
-                version,
-                platform_version,
-            ),
-            "/dataContract" => {
-                self.query_data_contract(&state, query_data, version, platform_version)
+            "/identity/keys" => self.query_keys(&state, query_data, platform_version),
+            "/identity/by-public-key-hash" => {
+                self.query_identity_by_public_key_hash(&state, query_data, platform_version)
             }
-            "/dataContracts" => {
-                self.query_data_contracts(&state, query_data, version, platform_version)
+            "/identities/by-public-key-hash" => {
+                self.query_identities_by_public_key_hashes(&state, query_data, platform_version)
             }
+            "/dataContract" => self.query_data_contract(&state, query_data, platform_version),
+            "/dataContracts" => self.query_data_contracts(&state, query_data, platform_version),
             "/dataContractHistory" => {
-                self.query_data_contract_history(&state, query_data, version, platform_version)
+                self.query_data_contract_history(&state, query_data, platform_version)
             }
             "/documents" | "/dataContract/documents" => {
-                self.query_documents(&state, query_data, version, platform_version)
+                self.query_documents(&state, query_data, platform_version)
             }
-            "/proofs" => self.query_proofs(&state, query_data, version, platform_version),
+            "/proofs" => self.query_proofs(&state, query_data, platform_version),
             other => Ok(QueryValidationResult::new_with_error(
                 QueryError::InvalidArgument(format!("query path '{}' is not supported", other)),
             )),
@@ -69,8 +56,8 @@ mod test {
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
         use dapi_grpc::platform::v0::{
-            get_data_contract_history_response, GetDataContractHistoryRequest,
-            GetDataContractHistoryResponse,
+            get_data_contract_history_request, get_data_contract_history_response,
+            GetDataContractHistoryRequest, GetDataContractHistoryResponse,
         };
         use dpp::block::block_info::BlockInfo;
 
@@ -78,6 +65,7 @@ mod test {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
 
+        use dapi_grpc::platform::v0::get_data_contract_history_request::GetDataContractHistoryRequestV0;
         use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
         use dpp::data_contract::DataContract;
@@ -92,11 +80,15 @@ mod test {
 
         fn default_request() -> GetDataContractHistoryRequest {
             GetDataContractHistoryRequest {
-                id: vec![1; 32],
-                limit: Some(10),
-                offset: Some(0),
-                start_at_ms: 0,
-                prove: false,
+                version: Some(get_data_contract_history_request::Version::V0(
+                    GetDataContractHistoryRequestV0 {
+                        id: vec![1; 32],
+                        limit: Some(10),
+                        offset: Some(0),
+                        start_at_ms: 0,
+                        prove: false,
+                    },
+                )),
             }
         }
 

@@ -666,12 +666,7 @@ where
     fn query(&self, request: RequestQuery) -> Result<ResponseQuery, proto::ResponseException> {
         let _timer = crate::metrics::abci_request_duration("query");
 
-        let RequestQuery {
-            data,
-            path,
-            version,
-            ..
-        } = &request;
+        let RequestQuery { data, path, .. } = &request;
 
         // TODO: It must be proto::ResponseException
         let Some(platform_version) = PlatformVersion::get_maybe_current() else {
@@ -695,12 +690,9 @@ where
             return Ok(response);
         };
 
-        let result = self.platform.query(
-            path.as_str(),
-            data.as_slice(),
-            Some(version),
-            platform_version,
-        )?;
+        let result = self
+            .platform
+            .query(path.as_str(), data.as_slice(), platform_version)?;
 
         let (code, data, info) = if result.is_valid() {
             (0, result.data.unwrap_or_default(), "success".to_string())

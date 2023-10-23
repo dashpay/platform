@@ -4,10 +4,10 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
+use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
+use dapi_grpc::platform::v0::get_identity_by_public_key_hash_response::GetIdentityByPublicKeyHashResponseV0;
 use dapi_grpc::platform::v0::{
-    get_identity_by_public_key_hashes_response, GetIdentityByPublicKeyHashesRequest,
-    GetIdentityByPublicKeyHashesResponse, GetIdentityRequest, GetIdentityResponse, Proof,
-    ResponseMetadata,
+    get_identity_by_public_key_hash_response, GetIdentityByPublicKeyHashResponse, Proof,
 };
 use dpp::check_validation_result_with_data;
 use dpp::platform_value::Bytes20;
@@ -20,17 +20,15 @@ impl<C> Platform<C> {
     pub(super) fn query_identity_by_public_key_hash_v0(
         &self,
         state: &PlatformState,
-        query_data: &[u8],
+        request: GetIdentityByPublicKeyHashRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
         let quorum_type = self.config.quorum_type() as u32;
-        let GetIdentityByPublicKeyHashesRequest {
+        let GetIdentityByPublicKeyHashRequestV0 {
             public_key_hash,
             prove,
-        } = check_validation_result_with_data!(GetIdentityByPublicKeyHashesRequest::decode(
-            query_data
-        ));
+        } = request;
         let public_key_hash =
             check_validation_result_with_data!(Bytes20::from_vec(public_key_hash)
                 .map(|bytes| bytes.0)
@@ -46,20 +44,20 @@ impl<C> Platform<C> {
                     platform_version
                 ));
 
-            GetIdentityByPublicKeyHashesResponse {
-                metadata: Some(metadata),
-                result: Some(get_identity_by_public_key_hashes_response::Result::Proof(
-                    Proof {
+            GetIdentityByPublicKeyHashResponse {
+                version: Some(get_identity_by_public_key_hash_response::Version::V0(GetIdentityByPublicKeyHashResponseV0 {
+                    result: Some(get_identity_by_public_key_hash_response::get_identity_by_public_key_hash_response_v0::Result::Proof(Proof {
                         grovedb_proof: proof,
                         quorum_hash: state.last_quorum_hash().to_vec(),
                         quorum_type,
                         block_id_hash: state.last_block_id_hash().to_vec(),
                         signature: state.last_block_signature().to_vec(),
                         round: state.last_block_round(),
-                    },
-                )),
+                    })),
+                    metadata: Some(metadata),
+                })),
             }
-            .encode_to_vec()
+                .encode_to_vec()
         } else {
             let maybe_identity = check_validation_result_with_data!(self
                 .drive
@@ -79,15 +77,13 @@ impl<C> Platform<C> {
                     .serialize_consume_to_bytes()
                     .map_err(QueryError::Protocol)));
 
-            GetIdentityByPublicKeyHashesResponse {
-                metadata: Some(metadata),
-                result: Some(
-                    get_identity_by_public_key_hashes_response::Result::Identity(
-                        serialized_identity,
-                    ),
-                ),
+            GetIdentityByPublicKeyHashResponse {
+                version: Some(get_identity_by_public_key_hash_response::Version::V0(GetIdentityByPublicKeyHashResponseV0 {
+                    metadata: Some(metadata),
+                    result: Some(get_identity_by_public_key_hash_response::get_identity_by_public_key_hash_response_v0::Result::Identity(serialized_identity)),
+                })),
             }
-            .encode_to_vec()
+                .encode_to_vec()
         };
         Ok(QueryValidationResult::new_with_data(response_data))
     }

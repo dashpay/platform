@@ -4,7 +4,9 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::{GetProofsRequest, GetProofsResponse, Proof};
+use dapi_grpc::platform::v0::get_proofs_request::GetProofsRequestV0;
+use dapi_grpc::platform::v0::get_proofs_response::GetProofsResponseV0;
+use dapi_grpc::platform::v0::{get_proofs_response, GetProofsResponse, Proof};
 use dpp::check_validation_result_with_data;
 use dpp::platform_value::Bytes32;
 use dpp::prelude::Identifier;
@@ -18,16 +20,16 @@ impl<C> Platform<C> {
     pub(super) fn query_proofs_v0(
         &self,
         state: &PlatformState,
-        query_data: &[u8],
+        request: GetProofsRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
         let quorum_type = self.config.quorum_type() as u32;
-        let GetProofsRequest {
+        let GetProofsRequestV0 {
             identities,
             contracts,
             documents,
-        } = check_validation_result_with_data!(GetProofsRequest::decode(query_data));
+        } = request;
         let contract_ids = check_validation_result_with_data!(contracts
             .into_iter()
             .map(|contract_request| {
@@ -90,18 +92,22 @@ impl<C> Platform<C> {
             None,
             platform_version,
         ));
+
         let response_data = GetProofsResponse {
-            proof: Some(Proof {
-                grovedb_proof: proof,
-                quorum_hash: state.last_quorum_hash().to_vec(),
-                quorum_type,
-                block_id_hash: state.last_block_id_hash().to_vec(),
-                signature: state.last_block_signature().to_vec(),
-                round: state.last_block_round(),
-            }),
-            metadata: Some(metadata),
+            version: Some(get_proofs_response::Version::V0(GetProofsResponseV0 {
+                proof: Some(Proof {
+                    grovedb_proof: proof,
+                    quorum_hash: state.last_quorum_hash().to_vec(),
+                    quorum_type,
+                    block_id_hash: state.last_block_id_hash().to_vec(),
+                    signature: state.last_block_signature().to_vec(),
+                    round: state.last_block_round(),
+                }),
+                metadata: Some(metadata),
+            })),
         }
         .encode_to_vec();
+
         Ok(QueryValidationResult::new_with_data(response_data))
     }
 }
