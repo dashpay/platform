@@ -1,5 +1,5 @@
 const cbor = require('cbor');
-const Identifier = require('@dashevo/dpp/lib/Identifier');
+const { Identifier } = require('@dashevo/wasm-dpp');
 
 const {
   v0: {
@@ -11,9 +11,9 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const getDocumentsFactory = require('../../../../../lib/methods/platform/getDocuments/getDocumentsFactory');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
@@ -33,7 +33,7 @@ describe('getDocumentsFactory', () => {
   let proofResponse;
   let response;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     type = 'niceDocument';
     contractIdBuffer = Buffer.from('11c70af56a763b05943888fa3719ef56b3e826615fdda2d463c63f4034cb861c', 'hex');
     contractIdIdentifier = Identifier.from(contractIdBuffer);
@@ -46,12 +46,12 @@ describe('getDocumentsFactory', () => {
       orderBy: [
         ['order', 'asc'],
       ],
-      startAt: generateRandomIdentifier(),
+      startAt: await generateRandomIdentifier(),
       where: [['lastName', '==', 'unknown']],
-      startAfter: generateRandomIdentifier(),
+      startAfter: await generateRandomIdentifier(),
     };
 
-    documentsFixture = getDocumentsFixture();
+    documentsFixture = await getDocumentsFixture();
     serializedDocuments = documentsFixture
       .map((document) => Buffer.from(JSON.stringify(document)));
 

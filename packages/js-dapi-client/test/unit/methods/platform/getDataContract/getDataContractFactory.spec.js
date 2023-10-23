@@ -8,7 +8,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 
 const getDataContractFactory = require('../../../../../lib/methods/platform/getDataContract/getDataContractFactory');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
@@ -25,8 +25,8 @@ describe('getDataContractFactory', () => {
   let proofFixture;
   let proof;
 
-  beforeEach(function beforeEach() {
-    dataContractFixture = getDataContractFixture();
+  beforeEach(async function beforeEach() {
+    dataContractFixture = await getDataContractFixture();
 
     response = new GetDataContractResponse();
     response.setDataContract(dataContractFixture.toBuffer());

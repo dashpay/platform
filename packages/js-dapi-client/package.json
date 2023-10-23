@@ -29,7 +29,6 @@
     "@dashevo/dapi-grpc": "workspace:*",
     "@dashevo/dash-spv": "workspace:*",
     "@dashevo/dashcore-lib": "~0.20.9",
-    "@dashevo/dpp": "workspace:*",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
     "bs58": "^4.0.1",

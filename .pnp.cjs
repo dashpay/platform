@@ -2405,7 +2405,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
             ["@dashevo/dashcore-lib", "npm:0.20.9"],\
-            ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["assert-browserify", "npm:2.0.0"],\
@@ -8165,7 +8164,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dashcore-lib", "npm:0.20.9"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
-            ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
