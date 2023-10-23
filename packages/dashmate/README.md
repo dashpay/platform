@@ -18,6 +18,7 @@ Distribution package for Dash node installation
   - [Stop node](#stop-node)
   - [Restart node](#restart-node)
   - [Show node status](#show-node-status)
+  - [Execute Core CLI command](#execute-core-cli-command)
   - [Reset node data](#reset-node-data)
   - [Full node](#full-node)
   - [Node groups](#node-groups)
@@ -242,6 +243,30 @@ COMMANDS
 To show the host status:
 ```bash
 $ dashmate status host
+```
+
+### Execute Core CLI command
+
+The `core cli` command executes an `dash-cli` command to the core container on the current config.
+
+```
+USAGE
+  $ dashmate core cli [COMMAND] [--config <value>]
+
+ARGUMENTS
+  COMMAND dash-cli command written in the double quotes 
+
+FLAGS
+  --config=<value>  configuration name to use
+
+DESCRIPTION
+  Dash Core CLI
+```
+
+Example:
+```bash
+$ dashmate core cli "getblockcount"
+1337
 ```
 
 ### Reset node data
