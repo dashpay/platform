@@ -26,7 +26,7 @@ service Platform {
   rpc getConsensusParams (GetConsensusParamsRequest) returns (GetConsensusParamsResponse);
   rpc getVersionUpgradeState(GetVersionUpgradeStateRequest) returns (GetVersionUpgradeStateResponse);
   rpc getVersionUpgradeVoteStatus(GetVersionUpgradeVoteStatusRequest) returns (GetVersionUpgradeVoteStatusResponse);
-//  rpc getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse);
+  rpc getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse);
 }
 
 message Proof {
@@ -434,6 +434,30 @@ message GetVersionUpgradeVoteStatusResponse {
 
   oneof result {
     VersionSignals versions = 1;
+    Proof proof = 2;
+  }
+  ResponseMetadata metadata = 3;
+}
+
+message GetEpochsInfoRequest {
+  uint32 start_epoch = 1;
+  uint32 count = 2;
+  bool prove = 3;
+}
+
+message GetEpochsInfoResponse {
+  message EpochInfo {
+    uint32 number = 1;
+    uint32 first_block = 2;
+    uint32 start_time = 3;
+  }
+
+  message EpochInfos {
+    repeated EpochInfo epoch_infos = 1;
+  }
+
+  oneof result {
+    EpochInfos epochs = 1;
     Proof proof = 2;
   }
   ResponseMetadata metadata = 3;

@@ -875,6 +875,51 @@ pub mod get_version_upgrade_vote_status_response {
         Proof(super::Proof),
     }
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetEpochsInfoRequest {
+    #[prost(uint32, tag = "1")]
+    pub start_epoch: u32,
+    #[prost(uint32, tag = "2")]
+    pub count: u32,
+    #[prost(bool, tag = "3")]
+    pub prove: bool,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetEpochsInfoResponse {
+    #[prost(message, optional, tag = "3")]
+    pub metadata: ::core::option::Option<ResponseMetadata>,
+    #[prost(oneof = "get_epochs_info_response::Result", tags = "1, 2")]
+    pub result: ::core::option::Option<get_epochs_info_response::Result>,
+}
+/// Nested message and enum types in `GetEpochsInfoResponse`.
+pub mod get_epochs_info_response {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct EpochInfo {
+        #[prost(uint32, tag = "1")]
+        pub number: u32,
+        #[prost(uint32, tag = "2")]
+        pub first_block: u32,
+        #[prost(uint32, tag = "3")]
+        pub start_time: u32,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct EpochInfos {
+        #[prost(message, repeated, tag = "1")]
+        pub epoch_infos: ::prost::alloc::vec::Vec<EpochInfo>,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Result {
+        #[prost(message, tag = "1")]
+        Epochs(EpochInfos),
+        #[prost(message, tag = "2")]
+        Proof(super::Proof),
+    }
+}
 /// Generated client implementations.
 pub mod platform_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -1460,6 +1505,36 @@ pub mod platform_client {
                     GrpcMethod::new(
                         "org.dash.platform.dapi.v0.Platform",
                         "getVersionUpgradeVoteStatus",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_epochs_info(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetEpochsInfoRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetEpochsInfoResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getEpochsInfo",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getEpochsInfo",
                     ),
                 );
             self.inner.unary(req, path, codec).await

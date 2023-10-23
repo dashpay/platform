@@ -55,6 +55,16 @@ impl<C> Platform<C> {
                 self.query_documents(&state, query_data, version, platform_version)
             }
             "/proofs" => self.query_proofs(&state, query_data, version, platform_version),
+            "/versionUpgrade/state" => {
+                self.query_version_upgrade_state(&state, query_data, version, platform_version)
+            }
+            "/versionUpgrade/voteStatus" => self.query_version_upgrade_vote_status(
+                &state,
+                query_data,
+                version,
+                platform_version,
+            ),
+            "/epochInfos" => self.query_epoch_infos(&state, query_data, version, platform_version),
             other => Ok(QueryValidationResult::new_with_error(
                 QueryError::InvalidArgument(format!("query path '{}' is not supported", other)),
             )),
@@ -212,7 +222,7 @@ mod test {
             let request_data = request.encode_to_vec();
 
             let result = platform
-                .query_v0("/dataContractHistory", 0, &request_data, platform_version)
+                .query_v0("/dataContractHistory", &request_data, 0, platform_version)
                 .expect("To return result");
 
             let ValidationResult { errors, data } = result;
@@ -296,7 +306,7 @@ mod test {
             let request_data = request.encode_to_vec();
 
             let result = platform
-                .query_v0("/dataContractHistory", 0, &request_data, platform_version)
+                .query_v0("/dataContractHistory", &request_data, 0, platform_version)
                 .expect("To return result");
 
             let ValidationResult { errors, data } = result;
@@ -375,7 +385,7 @@ mod test {
             let request_data = request.encode_to_vec();
 
             let error = platform
-                .query_v0("/dataContractHistory", 0, &request_data, platform_version)
+                .query_v0("/dataContractHistory", &request_data, 0, platform_version)
                 .unwrap_err();
 
             match error {
@@ -412,7 +422,7 @@ mod test {
             let request_data = request.encode_to_vec();
 
             let error = platform
-                .query_v0("/dataContractHistory", 0, &request_data, platform_version)
+                .query_v0("/dataContractHistory", &request_data, 0, platform_version)
                 .unwrap_err();
 
             match error {

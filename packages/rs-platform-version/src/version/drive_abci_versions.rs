@@ -41,6 +41,7 @@ pub struct DriveAbciQueryDataContractVersions {
 pub struct DriveAbciQuerySystemVersions {
     pub version_upgrade_state: FeatureVersionBounds,
     pub version_upgrade_vote_status: FeatureVersionBounds,
+    pub epoch_infos: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

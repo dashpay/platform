@@ -345,6 +345,8 @@ pub struct DriveCreditPoolMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveCreditPoolEpochsMethodVersions {
+    pub get_epochs_infos: FeatureVersion,
+    pub prove_epochs_infos: FeatureVersion,
     pub get_epoch_fee_multiplier: FeatureVersion,
     pub get_epoch_processing_credits_for_distribution: FeatureVersion,
     pub get_epoch_storage_credits_for_distribution: FeatureVersion,
