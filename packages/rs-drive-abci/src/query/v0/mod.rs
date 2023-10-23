@@ -55,6 +55,7 @@ mod test {
         use crate::error::Error;
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+        use chrono::expect;
         use dapi_grpc::platform::v0::{
             get_data_contract_history_request, get_data_contract_history_response,
             GetDataContractHistoryRequest, GetDataContractHistoryResponse,
@@ -65,7 +66,12 @@ mod test {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
 
+        use crate::error::query::QueryError;
+        use crate::query::QueryValidationResult;
         use dapi_grpc::platform::v0::get_data_contract_history_request::GetDataContractHistoryRequestV0;
+        use dapi_grpc::platform::v0::get_data_contract_history_response::{
+            get_data_contract_history_response_v0, GetDataContractHistoryResponseV0,
+        };
         use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
         use dpp::data_contract::DataContract;
@@ -78,17 +84,13 @@ mod test {
         use drive::error::contract::DataContractError;
         use prost::Message;
 
-        fn default_request() -> GetDataContractHistoryRequest {
-            GetDataContractHistoryRequest {
-                version: Some(get_data_contract_history_request::Version::V0(
-                    GetDataContractHistoryRequestV0 {
-                        id: vec![1; 32],
-                        limit: Some(10),
-                        offset: Some(0),
-                        start_at_ms: 0,
-                        prove: false,
-                    },
-                )),
+        fn default_request_v0() -> GetDataContractHistoryRequestV0 {
+            GetDataContractHistoryRequestV0 {
+                id: vec![1; 32],
+                limit: Some(10),
+                offset: Some(0),
+                start_at_ms: 0,
+                prove: false,
             }
         }
 
@@ -197,14 +199,18 @@ mod test {
             } = set_up_test();
 
             let request = GetDataContractHistoryRequest {
-                id: original_data_contract.id().to_vec(),
-                ..default_request()
+                version: Some(get_data_contract_history_request::Version::V0(
+                    GetDataContractHistoryRequestV0 {
+                        id: original_data_contract.id().to_vec(),
+                        ..default_request_v0()
+                    },
+                )),
             };
 
             let request_data = request.encode_to_vec();
 
             let result = platform
-                .query_v0("/dataContractHistory", 0, &request_data, platform_version)
+                .query_v0("/dataContractHistory", &request_data, platform_version)
                 .expect("To return result");
 
             let ValidationResult { errors, data } = result;
@@ -220,17 +226,20 @@ mod test {
             let response = GetDataContractHistoryResponse::decode(data.as_slice())
                 .expect("To decode response");
 
-            let GetDataContractHistoryResponse {
-                metadata: _,
+            let GetDataContractHistoryResponse { version } = response;
+
+            let get_data_contract_history_response::Version::V0(GetDataContractHistoryResponseV0 {
                 result,
-            } = response;
+                metadata: _,
+            }) = version.expect("expected a versioned response");
+
             let res = result.expect("expect result to be returned from the query");
 
             let contract_history = match res {
-                get_data_contract_history_response::Result::DataContractHistory(
+                get_data_contract_history_response_v0::Result::DataContractHistory(
                     data_contract_history,
                 ) => data_contract_history,
-                get_data_contract_history_response::Result::Proof(_) => {
+                get_data_contract_history_response_v0::Result::Proof(_) => {
                     panic!("expect result to be DataContractHistory");
                 }
             };
@@ -280,15 +289,22 @@ mod test {
                 original_data_contract,
             } = set_up_test();
 
-            let request = GetDataContractHistoryRequest {
+            let request_v0 = GetDataContractHistoryRequestV0 {
                 id: original_data_contract.id().to_vec(),
                 prove: true,
-                ..default_request()
+                ..default_request_v0()
             };
+
+            let start_at_ms = request_v0.start_at_ms;
+
+            let request = GetDataContractHistoryRequest {
+                version: Some(get_data_contract_history_request::Version::V0(request_v0)),
+            };
+
             let request_data = request.encode_to_vec();
 
             let result = platform
-                .query_v0("/dataContractHistory", 0, &request_data, platform_version)
+                .query_v0("/dataContractHistory", &request_data, platform_version)
                 .expect("To return result");
 
             let ValidationResult { errors, data } = result;
@@ -304,24 +320,27 @@ mod test {
             let response = GetDataContractHistoryResponse::decode(data.as_slice())
                 .expect("To decode response");
 
-            let GetDataContractHistoryResponse {
-                metadata: _,
+            let GetDataContractHistoryResponse { version } = response;
+
+            let get_data_contract_history_response::Version::V0(GetDataContractHistoryResponseV0 {
                 result,
-            } = response;
+                metadata: _,
+            }) = version.expect("expected a versioned response");
+
             let res = result.expect("expect result to be returned from the query");
 
             let contract_proof = match res {
-                get_data_contract_history_response::Result::DataContractHistory(_) => {
+                get_data_contract_history_response_v0::Result::DataContractHistory(_) => {
                     panic!("expect result to be Proof");
                 }
-                get_data_contract_history_response::Result::Proof(proof) => proof,
+                get_data_contract_history_response_v0::Result::Proof(proof) => proof,
             };
 
             // Check that the proof has correct values inside
             let (_root_hash, contract_history) = Drive::verify_contract_history(
                 &contract_proof.grovedb_proof,
                 original_data_contract.id().to_buffer(),
-                request.start_at_ms,
+                start_at_ms,
                 Some(10),
                 Some(0),
                 platform_version,
@@ -360,31 +379,31 @@ mod test {
             } = set_up_test();
 
             let request = GetDataContractHistoryRequest {
-                id: original_data_contract.id().to_vec(),
-                limit: Some(100000),
-                ..default_request()
+                version: Some(get_data_contract_history_request::Version::V0(
+                    GetDataContractHistoryRequestV0 {
+                        id: original_data_contract.id().to_vec(),
+                        limit: Some(100000),
+                        ..default_request_v0()
+                    },
+                )),
             };
+
             let request_data = request.encode_to_vec();
 
-            let error = platform
-                .query_v0("/dataContractHistory", 0, &request_data, platform_version)
-                .unwrap_err();
+            let validation_result = platform
+                .query_v0("/dataContractHistory", &request_data, platform_version)
+                .unwrap();
 
-            match error {
-                Error::Drive(drive_error) => match drive_error {
-                    drive::error::Error::DataContract(contract_error) => match contract_error {
-                        DataContractError::Overflow(error_message) => {
-                            assert_eq!(
-                                error_message,
-                                "can't fit u16 limit from the supplied value"
-                            );
-                        }
-                        _ => panic!("expect contract overflow error"),
-                    },
-                    _ => panic!("expect contract error"),
-                },
-                _ => panic!("expect drive error"),
-            }
+            assert!(!validation_result.is_valid());
+
+            let error = validation_result.errors.first().unwrap();
+
+            assert!(matches!(error, QueryError::InvalidArgument(_)));
+
+            assert_eq!(
+                error.to_string(),
+                "invalid argument error: limit out of bounds"
+            );
         }
 
         #[test]
@@ -397,31 +416,31 @@ mod test {
             } = set_up_test();
 
             let request = GetDataContractHistoryRequest {
-                id: original_data_contract.id().to_vec(),
-                offset: Some(100000),
-                ..default_request()
+                version: Some(get_data_contract_history_request::Version::V0(
+                    GetDataContractHistoryRequestV0 {
+                        id: original_data_contract.id().to_vec(),
+                        offset: Some(100000),
+                        ..default_request_v0()
+                    },
+                )),
             };
+
             let request_data = request.encode_to_vec();
 
-            let error = platform
-                .query_v0("/dataContractHistory", 0, &request_data, platform_version)
-                .unwrap_err();
+            let validation_result = platform
+                .query_v0("/dataContractHistory", &request_data, platform_version)
+                .unwrap();
 
-            match error {
-                Error::Drive(drive_error) => match drive_error {
-                    drive::error::Error::DataContract(contract_error) => match contract_error {
-                        DataContractError::Overflow(error_message) => {
-                            assert_eq!(
-                                error_message,
-                                "can't fit u16 offset from the supplied value"
-                            );
-                        }
-                        _ => panic!("expect contract overflow error"),
-                    },
-                    _ => panic!("expect contract error"),
-                },
-                _ => panic!("expect drive error"),
-            }
+            assert!(!validation_result.is_valid());
+
+            let error = validation_result.errors.first().unwrap();
+
+            assert!(matches!(error, QueryError::InvalidArgument(_)));
+
+            assert_eq!(
+                error.to_string(),
+                "invalid argument error: offset out of bounds"
+            );
         }
     }
 }
