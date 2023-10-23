@@ -108,9 +108,15 @@ impl Drive {
         I: IntoIterator<Item = [u8; 32]>,
     {
         let mut cache = self.cache.write().unwrap();
-        let version_counter = &mut cache.protocol_versions_counter;
+        let maybe_version_counter = &mut cache.protocol_versions_counter;
 
-        version_counter.load_if_needed(self, transaction, drive_version)?;
+        let version_counter = if let Some(version_counter) = maybe_version_counter {
+            version_counter
+        } else {
+            *maybe_version_counter =
+                Some(self.fetch_versions_with_counter(transaction, drive_version)?);
+            maybe_version_counter.as_mut().unwrap()
+        };
 
         let path = desired_version_for_validators_path();
 
@@ -147,25 +153,23 @@ impl Drive {
         }
 
         for (previous_version, change) in previous_versions_removals {
-            let previous_count = *version_counter.get(&previous_version).ok_or(Error::Drive(
-                DriveError::CorruptedCacheState(
+            let previous_count = version_counter
+                .get_mut(&previous_version)
+                .ok_or(Error::Drive(DriveError::CorruptedCacheState(
                     "trying to lower the count of a version from cache that is not found"
                         .to_string(),
-                ),
-            ))?;
-            let removed_count = previous_count.checked_sub(change).ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                )))?;
+            *previous_count = previous_count.checked_sub(change).ok_or(Error::Drive(DriveError::CorruptedDriveState(
                 "trying to lower the count of a version from cache that would result in a negative value"
                     .to_string(),
             )))?;
-
-            version_counter.set_block_cache_version_count(previous_version, removed_count);
 
             let previous_version_bytes = previous_version.encode_var_vec();
             self.batch_insert(
                 PathKeyElementInfo::PathFixedSizeKeyRefElement((
                     versions_counter_path(),
                     &previous_version_bytes,
-                    Element::new_item(removed_count.encode_var_vec()),
+                    Element::new_item((*previous_count + change).encode_var_vec()),
                 )),
                 drive_operations,
                 drive_version,

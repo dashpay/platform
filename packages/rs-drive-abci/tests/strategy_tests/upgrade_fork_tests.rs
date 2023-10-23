@@ -108,7 +108,10 @@ mod tests {
                 {
                     let platform = abci_app.platform;
                     let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
                     platform
                         .drive
                         .fetch_versions_with_counter(None, &platform_version.drive)
@@ -188,7 +191,10 @@ mod tests {
                 );
                 {
                     let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
                     assert_eq!(
                         platform
                             .state
@@ -250,7 +256,10 @@ mod tests {
                 );
                 {
                     let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
                     assert_eq!(
                         platform
                             .state
@@ -329,7 +338,7 @@ mod tests {
                 };
                 let one_hour_in_s = 60 * 60;
                 let thirty_seconds_in_ms = 1000 * 30;
-                let config = PlatformConfig {
+                let mut config = PlatformConfig {
                     quorum_size: 30,
                     execution: ExecutionConfig {
                         verify_sum_trees: true,
@@ -373,7 +382,10 @@ mod tests {
                 {
                     let platform = abci_app.platform;
                     let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
                     platform
                         .drive
                         .fetch_versions_with_counter(None, &platform_version.drive)
@@ -450,7 +462,10 @@ mod tests {
                 );
                 {
                     let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
                     assert_eq!(
                         platform
                             .state
@@ -512,7 +527,10 @@ mod tests {
                 );
                 {
                     let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
                     assert_eq!(
                         platform
                             .state
@@ -638,7 +656,10 @@ mod tests {
                 {
                     let platform = abci_app.platform;
                     let drive_cache = platform.drive.cache.read().unwrap();
-                    let _counter = &drive_cache.protocol_versions_counter;
+                    let _counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
                     assert_eq!(
                         platform
                             .state
@@ -664,7 +685,10 @@ mod tests {
                         platform.state.read().unwrap().next_epoch_protocol_version(),
                         1
                     );
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
                         (Some(&35), Some(&64))
@@ -711,7 +735,10 @@ mod tests {
                 );
                 {
                     let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
                     assert_eq!(
                         platform
                             .state
@@ -897,7 +924,10 @@ mod tests {
                 {
                     let platform = abci_app.platform;
                     let drive_cache = platform.drive.cache.read().unwrap();
-                    let _counter = &drive_cache.protocol_versions_counter;
+                    let _counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
                     assert_eq!(
                         platform
                             .state
@@ -960,7 +990,10 @@ mod tests {
                 );
                 {
                     let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
                     assert_eq!(
                         platform
                             .state
@@ -1067,7 +1100,10 @@ mod tests {
                 );
                 {
                     let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
                         (Some(&170), Some(&24))
@@ -1130,7 +1166,10 @@ mod tests {
                 );
                 {
                     let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
                     assert_eq!(
                         (counter.get(&1), counter.get(&TEST_PROTOCOL_VERSION_2)),
                         (Some(&22), Some(&3))
@@ -1254,7 +1293,10 @@ mod tests {
                 {
                     let platform = abci_app.platform;
                     let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
 
                     assert_eq!(
                         platform
@@ -1356,7 +1398,10 @@ mod tests {
                 );
                 {
                     let drive_cache = platform.drive.cache.read().unwrap();
-                    let counter = &drive_cache.protocol_versions_counter;
+                    let counter = drive_cache
+                        .protocol_versions_counter
+                        .as_ref()
+                        .expect("expected a version counter");
                     assert_eq!(
                         platform
                             .state

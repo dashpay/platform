@@ -221,7 +221,13 @@ where
 
         self.update_state_cache(extended_block_info, transaction, platform_version)?;
 
-        self.update_drive_cache(platform_version)?;
+        let mut drive_cache = self.drive.cache.write().unwrap();
+
+        // Update global cache with updated contracts
+        drive_cache.cached_contracts.merge_block_cache();
+        // This is unnecessary since we clear block cache before every proposal execution
+        drive_cache.cached_contracts.clear_block_cache();
+        drop(drive_cache);
 
         // Gather some metrics
         crate::metrics::abci_last_block_time(block_header.time.seconds as u64);

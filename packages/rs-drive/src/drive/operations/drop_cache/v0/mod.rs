@@ -1,4 +1,4 @@
-use crate::drive::cache::{DataContractCache, ProtocolVersionsCache};
+use crate::drive::cache::DataContractCache;
 use crate::drive::Drive;
 
 impl Drive {
@@ -13,6 +13,6 @@ impl Drive {
             data_contracts_block_cache_size,
         );
         cache.genesis_time_ms = genesis_time_ms;
-        cache.protocol_versions_counter = ProtocolVersionsCache::new();
+        cache.protocol_versions_counter = None;
     }
 }

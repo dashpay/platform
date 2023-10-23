@@ -815,7 +815,10 @@ mod tests {
 
         let platform = abci_app.platform;
         let drive_cache = platform.drive.cache.read().unwrap();
-        let counter = &drive_cache.protocol_versions_counter;
+        let counter = drive_cache
+            .protocol_versions_counter
+            .as_ref()
+            .expect("expected a version counter");
         platform
             .drive
             .fetch_versions_with_counter(None, &platform_version.drive)
