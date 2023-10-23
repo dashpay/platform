@@ -1,16 +1,16 @@
-use prost::Message;
-use dapi_grpc::platform::v0::get_data_contract_history_request::Version;
-use dapi_grpc::platform::v0::{GetDataContractHistoryRequest, GetDataContractRequest};
-use dpp::check_validation_result_with_data;
-use dpp::validation::ValidationResult;
 use crate::error::execution::ExecutionError;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
+use dapi_grpc::platform::v0::get_data_contract_history_request::Version;
+use dapi_grpc::platform::v0::{GetDataContractHistoryRequest, GetDataContractRequest};
+use dpp::check_validation_result_with_data;
+use dpp::validation::ValidationResult;
 use dpp::version::FeatureVersion;
 use dpp::version::PlatformVersion;
+use prost::Message;
 
 mod v0;
 
@@ -52,9 +52,11 @@ impl<C> Platform<C> {
             ));
         }
         match version {
-            Version::V0(get_data_contract_history_request) => {
-                self.query_data_contract_history_v0(state, get_data_contract_history_request, platform_version)
-            }
+            Version::V0(get_data_contract_history_request) => self.query_data_contract_history_v0(
+                state,
+                get_data_contract_history_request,
+                platform_version,
+            ),
         }
     }
 }

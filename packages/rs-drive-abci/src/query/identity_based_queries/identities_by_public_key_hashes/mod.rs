@@ -3,12 +3,12 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
+use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_request::Version;
+use dapi_grpc::platform::v0::GetIdentitiesByPublicKeyHashesRequest;
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use prost::Message;
-use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_request::Version;
-use dapi_grpc::platform::v0::GetIdentitiesByPublicKeyHashesRequest;
 
 mod v0;
 
@@ -20,12 +20,15 @@ impl<C> Platform<C> {
         query_data: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let GetIdentitiesByPublicKeyHashesRequest { version } =
-            check_validation_result_with_data!(GetIdentitiesByPublicKeyHashesRequest::decode(query_data));
+        let GetIdentitiesByPublicKeyHashesRequest { version } = check_validation_result_with_data!(
+            GetIdentitiesByPublicKeyHashesRequest::decode(query_data)
+        );
 
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
-                QueryError::DecodingError("could not decode identities by public key hashes query".to_string()),
+                QueryError::DecodingError(
+                    "could not decode identities by public key hashes query".to_string(),
+                ),
             ));
         };
 
@@ -50,10 +53,11 @@ impl<C> Platform<C> {
             ));
         }
         match version {
-            Version::V0(get_identity_request) => {
-                self.query_identities_by_public_key_hashes_v0(state, get_identity_request, platform_version)
-            }
+            Version::V0(get_identity_request) => self.query_identities_by_public_key_hashes_v0(
+                state,
+                get_identity_request,
+                platform_version,
+            ),
         }
     }
 }
-

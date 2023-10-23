@@ -1,4 +1,6 @@
-use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
+use dapi_grpc::platform::v0::{
+    get_proofs_request, get_proofs_response, GetProofsRequest, GetProofsResponse,
+};
 
 use dpp::document::Document;
 use dpp::identity::PartialIdentity;
@@ -9,6 +11,8 @@ use drive_abci::abci::AbciApplication;
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 
+use dapi_grpc::platform::v0::get_proofs_request::{get_proofs_request_v0, GetProofsRequestV0};
+use dapi_grpc::platform::v0::get_proofs_response::GetProofsResponseV0;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
@@ -75,7 +79,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
         .collect::<Vec<_>>();
 
     for (action, was_executed) in &actions {
-        let mut proofs_request = GetProofsRequest {
+        let mut proofs_request = GetProofsRequestV0 {
             identities: vec![],
             contracts: vec![],
             documents: vec![],
@@ -85,7 +89,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
             StateTransitionAction::DataContractCreateAction(data_contract_create) => {
                 proofs_request
                     .contracts
-                    .push(get_proofs_request::ContractRequest {
+                    .push(get_proofs_request_v0::ContractRequest {
                         contract_id: data_contract_create.data_contract_ref().id().to_vec(),
                     });
                 let result = abci_app
@@ -95,9 +99,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata: _ } =
+                let GetProofsResponse { version } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
+
+                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
+                    version.expect("expected a versioned response");
 
                 let response_proof = proof.expect("proof should be present");
 
@@ -131,7 +138,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
             StateTransitionAction::DataContractUpdateAction(data_contract_update) => {
                 proofs_request
                     .contracts
-                    .push(get_proofs_request::ContractRequest {
+                    .push(get_proofs_request_v0::ContractRequest {
                         contract_id: data_contract_update.data_contract_ref().id().to_vec(),
                     });
                 let result = abci_app
@@ -141,9 +148,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata: _ } =
+                let GetProofsResponse { version } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
+
+                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
+                    version.expect("expected a versioned response");
 
                 let response_proof = proof.expect("proof should be present");
 
@@ -183,7 +193,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     .for_each(|transition| {
                         proofs_request
                             .documents
-                            .push(get_proofs_request::DocumentRequest {
+                            .push(get_proofs_request_v0::DocumentRequest {
                                 contract_id: transition.base().data_contract_id().to_vec(),
                                 document_type: transition.base().document_type_name().clone(),
                                 document_type_keeps_history: transition
@@ -205,9 +215,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata: _ } =
+                let GetProofsResponse { version } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
+
+                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
+                    version.expect("expected a versioned response");
 
                 let response_proof = proof.expect("proof should be present");
 
@@ -331,9 +344,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
             StateTransitionAction::IdentityCreateAction(identity_create_transition) => {
                 proofs_request
                     .identities
-                    .push(get_proofs_request::IdentityRequest {
+                    .push(get_proofs_request_v0::IdentityRequest {
                         identity_id: identity_create_transition.identity_id().to_vec(),
-                        request_type: get_proofs_request::identity_request::Type::FullIdentity
+                        request_type: get_proofs_request_v0::identity_request::Type::FullIdentity
                             .into(),
                     });
                 let result = abci_app
@@ -343,9 +356,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata: _ } =
+                let GetProofsResponse { version } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
+
+                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
+                    version.expect("expected a versioned response");
 
                 let response_proof = proof.expect("proof should be present");
 
@@ -389,9 +405,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
             StateTransitionAction::IdentityTopUpAction(identity_top_up_transition) => {
                 proofs_request
                     .identities
-                    .push(get_proofs_request::IdentityRequest {
+                    .push(get_proofs_request_v0::IdentityRequest {
                         identity_id: identity_top_up_transition.identity_id().to_vec(),
-                        request_type: get_proofs_request::identity_request::Type::Balance.into(),
+                        request_type: get_proofs_request_v0::identity_request::Type::Balance.into(),
                     });
                 let result = abci_app
                     .platform
@@ -400,9 +416,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata: _ } =
+                let GetProofsResponse { version } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
+
+                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
+                    version.expect("expected a versioned response");
 
                 let response_proof = proof.expect("proof should be present");
 
@@ -433,9 +452,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
             ) => {
                 proofs_request
                     .identities
-                    .push(get_proofs_request::IdentityRequest {
+                    .push(get_proofs_request_v0::IdentityRequest {
                         identity_id: identity_credit_withdrawal_transition.identity_id().to_vec(),
-                        request_type: get_proofs_request::identity_request::Type::Balance.into(),
+                        request_type: get_proofs_request_v0::identity_request::Type::Balance.into(),
                     });
                 //todo: we should also verify the document
                 // proofs_request.documents.push(get_proofs_request::DocumentProofRequest {
@@ -454,9 +473,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata: _ } =
+                let GetProofsResponse { version } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
+
+                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
+                    version.expect("expected a versioned response");
 
                 let response_proof = proof.expect("proof should be present");
 
@@ -483,9 +505,9 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
             StateTransitionAction::IdentityUpdateAction(identity_update_transition) => {
                 proofs_request
                     .identities
-                    .push(get_proofs_request::IdentityRequest {
+                    .push(get_proofs_request_v0::IdentityRequest {
                         identity_id: identity_update_transition.identity_id().to_vec(),
-                        request_type: get_proofs_request::identity_request::Type::Keys.into(),
+                        request_type: get_proofs_request_v0::identity_request::Type::Keys.into(),
                     });
                 let result = abci_app
                     .platform
@@ -494,9 +516,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata: _ } =
+                let GetProofsResponse { version } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
+
+                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
+                    version.expect("expected a versioned response");
 
                 let response_proof = proof.expect("proof should be present");
 
@@ -532,16 +557,16 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
             ) => {
                 proofs_request
                     .identities
-                    .push(get_proofs_request::IdentityRequest {
+                    .push(get_proofs_request_v0::IdentityRequest {
                         identity_id: identity_credit_transfer_action.identity_id().to_vec(),
-                        request_type: get_proofs_request::identity_request::Type::Balance.into(),
+                        request_type: get_proofs_request_v0::identity_request::Type::Balance.into(),
                     });
 
                 proofs_request
                     .identities
-                    .push(get_proofs_request::IdentityRequest {
+                    .push(get_proofs_request_v0::IdentityRequest {
                         identity_id: identity_credit_transfer_action.recipient_id().to_vec(),
-                        request_type: get_proofs_request::identity_request::Type::Balance.into(),
+                        request_type: get_proofs_request_v0::identity_request::Type::Balance.into(),
                     });
 
                 let result = abci_app
@@ -551,9 +576,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata: _ } =
+                let GetProofsResponse { version } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
+
+                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
+                    version.expect("expected a versioned response");
 
                 let response_proof = proof.expect("proof should be present");
 

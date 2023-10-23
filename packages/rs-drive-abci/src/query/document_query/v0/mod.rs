@@ -132,40 +132,37 @@ impl<C> Platform<C> {
             document_type,
             &self.config.drive,
         ));
-        let response_data = if prove {
-            let (proof, _) = check_validation_result_with_data!(drive_query.execute_with_proof(
-                &self.drive,
-                None,
-                None,
-                platform_version
-            ));
-            GetDocumentsResponse {
-                version: Some(get_documents_response::Version::V0(
-                    GetDocumentsResponseV0 {
-                        result: Some(
-                            get_documents_response::get_documents_response_v0::Result::Proof(
-                                Proof {
-                                    grovedb_proof: proof,
-                                    quorum_hash: state.last_quorum_hash().to_vec(),
-                                    quorum_type,
-                                    block_id_hash: state.last_block_id_hash().to_vec(),
-                                    signature: state.last_block_signature().to_vec(),
-                                    round: state.last_block_round(),
-                                },
+        let response_data =
+            if prove {
+                let (proof, _) = check_validation_result_with_data!(
+                    drive_query.execute_with_proof(&self.drive, None, None, platform_version)
+                );
+                GetDocumentsResponse {
+                    version: Some(get_documents_response::Version::V0(
+                        GetDocumentsResponseV0 {
+                            result: Some(
+                                get_documents_response::get_documents_response_v0::Result::Proof(
+                                    Proof {
+                                        grovedb_proof: proof,
+                                        quorum_hash: state.last_quorum_hash().to_vec(),
+                                        quorum_type,
+                                        block_id_hash: state.last_block_id_hash().to_vec(),
+                                        signature: state.last_block_signature().to_vec(),
+                                        round: state.last_block_round(),
+                                    },
+                                ),
                             ),
-                        ),
-                        metadata: Some(metadata),
-                    },
-                )),
-            }
-            .encode_to_vec()
-        } else {
-            let results = check_validation_result_with_data!(
-                drive_query.execute_raw_results_no_proof(&self.drive, None, None, platform_version)
-            )
-            .0;
+                            metadata: Some(metadata),
+                        },
+                    )),
+                }
+                .encode_to_vec()
+            } else {
+                let results = check_validation_result_with_data!(drive_query
+                    .execute_raw_results_no_proof(&self.drive, None, None, platform_version))
+                .0;
 
-            GetDocumentsResponse {
+                GetDocumentsResponse {
                 version: Some(get_documents_response::Version::V0(
                     GetDocumentsResponseV0 {
                         result: Some(
@@ -180,7 +177,7 @@ impl<C> Platform<C> {
                 )),
             }
             .encode_to_vec()
-        };
+            };
         Ok(QueryValidationResult::new_with_data(response_data))
     }
 }
