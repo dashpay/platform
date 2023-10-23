@@ -1765,11 +1765,11 @@ __metadata:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": ~0.20.9
     "@dashevo/dpns-contract": "workspace:*"
-    "@dashevo/dpp": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
+    "@dashevo/wasm-dpp": "workspace:*"
     assert: ^2.0.0
     assert-browserify: ^2.0.0
     blake3: ^2.1.4
