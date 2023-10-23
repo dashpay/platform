@@ -44,7 +44,6 @@
     "@dashevo/dashcore-lib": "~0.20.9",
     "@dashevo/dashpay-contract": "workspace:*",
     "@dashevo/dpns-contract": "workspace:*",
-    "@dashevo/dpp": "workspace:*",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",

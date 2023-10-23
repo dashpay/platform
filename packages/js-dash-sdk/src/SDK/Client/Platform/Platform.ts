@@ -1,8 +1,6 @@
-import loadWasmDpp, { DashPlatformProtocol } from '@dashevo/wasm-dpp';
+import loadWasmDpp, { DashPlatformProtocol, getLatestProtocolVersion } from '@dashevo/wasm-dpp';
 import type { DPPModule } from '@dashevo/wasm-dpp';
 import crypto from 'crypto';
-
-import { latestVersion as latestProtocolVersion } from '@dashevo/dpp/lib/version/protocolVersion';
 
 import Client from '../Client';
 import { IStateTransitionResult } from './IStateTransitionResult';
@@ -206,7 +204,7 @@ export class Platform {
     // eslint-disable-next-line
     this.protocolVersion = options.driveProtocolVersion !== undefined
       ? options.driveProtocolVersion
-      : (mappedProtocolVersion !== undefined ? mappedProtocolVersion : latestProtocolVersion);
+      : (mappedProtocolVersion !== undefined ? mappedProtocolVersion : getLatestProtocolVersion());
 
     this.fetcher = new Fetcher(this.client.getDAPIClient());
   }

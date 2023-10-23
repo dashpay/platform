@@ -106,7 +106,7 @@ const {
     BlockHeader,
     // ...
   },
-  PlatformProtocol: { // @dashevo/dpp essentials
+  PlatformProtocol: { // @dashevo/wasm-dpp essentials
     Identity,
     Identifier,
   },
