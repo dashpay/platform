@@ -2,7 +2,6 @@ const { Listr } = require('listr2');
 
 const {
   PRESET_LOCAL,
-  SSL_PROVIDERS,
 } = require('../../../constants');
 
 const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
