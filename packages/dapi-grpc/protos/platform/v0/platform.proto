@@ -11,7 +11,6 @@ service Platform {
   rpc getIdentity (GetIdentityRequest) returns (GetIdentityResponse);
   rpc getIdentities (GetIdentitiesRequest) returns (GetIdentitiesResponse);
   rpc getIdentityKeys (GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
-//  rpc getIdentitiesKeys (GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
   rpc getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse);
   rpc getIdentityBalanceAndRevision(GetIdentityRequest)
           returns (GetIdentityBalanceAndRevisionResponse);
@@ -219,54 +218,6 @@ message GetIdentityKeysResponse {
 
   oneof version {
     GetIdentityKeysResponseV0 v0 = 1;
-  }
-}
-
-message GetIdentitiesKeysRequest {
-  message GetIdentitiesKeysRequestV0 {
-    bytes identity_id = 1;
-    KeyRequestType request_type = 2;
-    google.protobuf.UInt32Value limit = 3;
-    google.protobuf.UInt32Value offset = 4;
-    bool prove = 5;
-
-    message SecurityLevelMap {
-      enum KeyKindRequestType {
-        CURRENT_KEY_OF_KIND_REQUEST = 0;
-      }
-      map<uint32, KeyKindRequestType> security_level_map = 1;
-    }
-  }
-
-  oneof version {
-    GetIdentitiesKeysRequestV0 v0 = 1;
-  }
-}
-
-message GetIdentitiesKeysResponse {
-  message GetIdentitiesKeysResponseV0 {
-    message PublicKey {
-      bytes value = 1;
-    }
-
-    message PublicKeyEntry {
-      bytes key = 1;
-      PublicKey value = 2;
-    }
-
-    message PublicKeyEntries {
-      repeated PublicKeyEntry public_key_entries = 1;
-    }
-
-    oneof result {
-      PublicKeyEntries public_keys = 1;
-      Proof proof = 2;
-    }
-    ResponseMetadata metadata = 3;
-  }
-
-  oneof version {
-    GetIdentitiesKeysResponseV0 v0 = 1;
   }
 }
 

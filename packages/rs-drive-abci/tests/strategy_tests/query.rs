@@ -25,6 +25,7 @@ use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::{CanonicalVote, SignedMsgType, StateId};
 use tenderdash_abci::signatures::{SignBytes, SignDigest};
+use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_request::{GetIdentitiesByPublicKeyHashesRequestV0, Version};
 
 #[derive(Clone, Debug, Default)]
 pub struct QueryStrategy {
@@ -227,8 +228,10 @@ impl QueryStrategy {
             let prove: bool = rng.gen();
 
             let request = GetIdentitiesByPublicKeyHashesRequest {
-                public_key_hashes: public_key_hashes.keys().map(|hash| hash.to_vec()).collect(),
-                prove,
+                version: Some(Version::V0(GetIdentitiesByPublicKeyHashesRequestV0 {
+                    public_key_hashes: public_key_hashes.keys().map(|hash| hash.to_vec()).collect(),
+                    prove,
+                })),
             };
             let encoded_request = request.encode_to_vec();
             let query_validation_result = abci_app

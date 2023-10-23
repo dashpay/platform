@@ -4,7 +4,6 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_identities_keys_request::GetIdentitiesKeysRequestV0;
 use dapi_grpc::platform::v0::get_identity_keys_response::GetIdentityKeysResponseV0;
 use dapi_grpc::platform::v0::{get_identity_keys_response, GetIdentityKeysResponse, Proof};
 use dpp::check_validation_result_with_data;
@@ -12,6 +11,7 @@ use dpp::identifier::Identifier;
 use drive::error::query::QuerySyntaxError;
 use prost::Message;
 use std::collections::BTreeMap;
+use dapi_grpc::platform::v0::get_identity_keys_request::GetIdentityKeysRequestV0;
 
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use dpp::validation::ValidationResult;
@@ -75,12 +75,12 @@ impl<C> Platform<C> {
     pub(super) fn query_keys_v0(
         &self,
         state: &PlatformState,
-        request: GetIdentitiesKeysRequestV0,
+        request: GetIdentityKeysRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
         let quorum_type = self.config.quorum_type() as u32;
-        let GetIdentitiesKeysRequestV0 {
+        let GetIdentityKeysRequestV0 {
             identity_id,
             request_type,
             limit,

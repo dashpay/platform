@@ -7,41 +7,53 @@ use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use prost::Message;
+use dapi_grpc::platform::v0::get_identities_request::Version;
+use dapi_grpc::platform::v0::GetIdentitiesRequest;
+
 mod v0;
 
 impl<C> Platform<C> {
-    /// Querying of an identity
+    /// Querying of an identity by a public key hash
     pub(in crate::query) fn query_identities(
         &self,
         state: &PlatformState,
         query_data: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
+        let GetIdentitiesRequest { version } =
+            check_validation_result_with_data!(GetIdentitiesRequest::decode(query_data));
+
+        let Some(version) = version else {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::DecodingError("could not decode identities query".to_string()),
+            ));
+        };
+
         let feature_version_bounds = &platform_version
             .drive_abci
             .query
             .identity_based_queries
             .identities;
-        let version = version.unwrap_or(feature_version_bounds.default_current_version);
-        if !feature_version_bounds.check_version(version) {
+
+        let feature_version = match &version {
+            Version::V0(_) => 0,
+        };
+        if !feature_version_bounds.check_version(feature_version) {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::UnsupportedQueryVersion(
                     "identities".to_string(),
                     feature_version_bounds.min_version,
                     feature_version_bounds.max_version,
                     platform_version.protocol_version,
-                    version,
+                    feature_version,
                 ),
             ));
         }
         match version {
-            0 => self.query_identities_v0(state, query_data, platform_version),
-            version => Err(ExecutionError::UnknownVersionMismatch {
-                method: "Platform::query_identities".to_string(),
-                known_versions: vec![0],
-                received: version,
+            Version::V0(get_identity_request) => {
+                self.query_identities_v0(state, get_identity_request, platform_version)
             }
-            .into()),
         }
     }
 }
+
