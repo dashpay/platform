@@ -46,7 +46,7 @@ describe('MigrateConfigFileCommand', () => {
           targetConfig = getBaseConfig();
           break;
         case 'testnet':
-          targetConfig = configName === 'base' ? getBaseConfig() :getTestnetConfig();
+          targetConfig = configName === 'base' ? getBaseConfig() : getTestnetConfig();
           break;
         case 'mainnet':
           targetConfig = getMainnetConfig();

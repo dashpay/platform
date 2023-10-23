@@ -241,7 +241,7 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
           });
 
         return configFile;
-      }
+      },
     };
   }
 
