@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
-const { default: loadWasmDpp } = require('../../..');
+const { default: loadWasmDpp, DocumentCreateTransition } = require('../../..');
 const { getLatestProtocolVersion } = require('../../..');
 
 let DataContractFactory;
@@ -77,7 +77,7 @@ describe('Document', () => {
       $type: 'test',
       $dataContractId: dataContract.getId(),
       $ownerId: ownerId,
-      $revision: 1,
+      $revision: DocumentCreateTransition.INITIAL_REVISION,
       $createdAt: now,
       $updatedAt: now,
     };
@@ -88,7 +88,7 @@ describe('Document', () => {
       $type: 'test',
       $dataContractId: dataContract.getId().toBuffer(),
       $ownerId: ownerId.toBuffer(),
-      $revision: 1,
+      $revision: DocumentCreateTransition.INITIAL_REVISION,
       $createdAt: now,
       $updatedAt: now,
     };
