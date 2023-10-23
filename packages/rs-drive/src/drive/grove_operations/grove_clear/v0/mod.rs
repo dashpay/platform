@@ -53,7 +53,7 @@ impl Drive {
                 maybe_params_for_logs.expect("log params should be set above");
 
             tracing::trace!(
-                target: "drive_grovedb_operations",
+                target = "drive_grovedb_operations",
                 path = ?path.to_vec(),
                 ?root_hash,
                 ?previous_root_hash,
