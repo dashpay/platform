@@ -1,21 +1,3 @@
-### [0.25.8](https://github.com/dashpay/platform/compare/v0.25.7...v0.25.8) (2023-10-20)
-
-
-### Bug Fixes
-
-* **drive-abci:** cached protocol versions ([#1516](https://github.com/dashpay/platform/issues/1516))
-
-
-### Miscellaneous Chores
-
-* **drive:** remove runtime state logging ([#1511](https://github.com/dashpay/platform/issues/1511))
-* **drive:** set correct target for grove logs ([#1512](https://github.com/dashpay/platform/issues/1512))
-
-
-### Continuous Integration
-
-* c6id.8xlarge runners ([#1514](https://github.com/dashpay/platform/issues/1514))
-
 ### [0.25.7](https://github.com/dashpay/platform/compare/v0.25.6...v0.25.7) (2023-10-18)
 
 
