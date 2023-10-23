@@ -83,7 +83,6 @@ where
                 method = "run_block_proposal_v0",
                 ?block_proposal,
                 ?epoch_info,
-                platform_state = ?state,
                 platform_state_fingerprint = hex::encode(state.fingerprint()),
                 app_hash = hex::encode(root_hash),
                 "running a block proposal on epoch {}",
@@ -116,9 +115,7 @@ where
         }
 
         // Cleanup block cache before we execute a new proposal
-        let mut drive_cache = self.drive.cache.write().unwrap();
-        drive_cache.cached_contracts.clear_block_cache();
-        drop(drive_cache);
+        self.clear_drive_block_cache(platform_version)?;
 
         // destructure the block proposal
         let block_proposal::v0::BlockProposal {
@@ -333,8 +330,8 @@ where
             tracing::trace!(
                 method = "run_block_proposal_v0",
                 app_hash = hex::encode(root_hash),
-                block_platform_state = ?block_execution_context.block_platform_state(),
-                block_platform_state_fingerprint = hex::encode(block_execution_context.block_platform_state().fingerprint()),
+                block_platform_state_fingerprint =
+                    hex::encode(block_execution_context.block_platform_state().fingerprint()),
                 "block proposal executed successfully",
             );
         }

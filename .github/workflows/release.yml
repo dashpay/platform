@@ -76,7 +76,7 @@ jobs:
 
   release-drive-docker-image:
     name: Release Drive to Docker Hub
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    runs-on: [ "self-hosted", "linux", "x64", "8x-ubuntu-platform" ]
     timeout-minutes: 120
     steps:
       - name: Check out repo
@@ -108,6 +108,7 @@ jobs:
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           push: true
           image_tag: ${{steps.tag.outputs.result}}
+          bucket: multi-runner-linux-x64-platform-8x-cache-wp1sy0o6
           cache_mounts: |
             cargo_registry_index
             cargo_registry_cache
