@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
     Clone,
     Debug,
     PartialEq,
-    Eq,
     Serialize,
     Deserialize,
     Encode,
