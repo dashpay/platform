@@ -92,9 +92,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     .push(get_proofs_request_v0::ContractRequest {
                         contract_id: data_contract_create.data_contract_ref().id().to_vec(),
                     });
+                let versioned_request = GetProofsRequest {
+                    version: Some(get_proofs_request::Version::V0(proofs_request)),
+                };
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
+                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -141,9 +144,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     .push(get_proofs_request_v0::ContractRequest {
                         contract_id: data_contract_update.data_contract_ref().id().to_vec(),
                     });
+                let versioned_request = GetProofsRequest {
+                    version: Some(get_proofs_request::Version::V0(proofs_request)),
+                };
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
+                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -208,9 +214,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 document_id: transition.base().id().to_vec(),
                             });
                     });
+                let versioned_request = GetProofsRequest {
+                    version: Some(get_proofs_request::Version::V0(proofs_request)),
+                };
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
+                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -349,9 +358,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         request_type: get_proofs_request_v0::identity_request::Type::FullIdentity
                             .into(),
                     });
+                let versioned_request = GetProofsRequest {
+                    version: Some(get_proofs_request::Version::V0(proofs_request)),
+                };
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
+                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -409,9 +421,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         identity_id: identity_top_up_transition.identity_id().to_vec(),
                         request_type: get_proofs_request_v0::identity_request::Type::Balance.into(),
                     });
+                let versioned_request = GetProofsRequest {
+                    version: Some(get_proofs_request::Version::V0(proofs_request)),
+                };
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
+                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -465,9 +480,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 // } );
                 // we expect to get an identity that matches the state transition
 
+                let versioned_request = GetProofsRequest {
+                    version: Some(get_proofs_request::Version::V0(proofs_request)),
+                };
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
+                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
 
                 let serialized_get_proofs_response =
@@ -509,9 +527,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         identity_id: identity_update_transition.identity_id().to_vec(),
                         request_type: get_proofs_request_v0::identity_request::Type::Keys.into(),
                     });
+                let versioned_request = GetProofsRequest {
+                    version: Some(get_proofs_request::Version::V0(proofs_request)),
+                };
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
+                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
@@ -569,9 +590,13 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         request_type: get_proofs_request_v0::identity_request::Type::Balance.into(),
                     });
 
+                let versioned_request = GetProofsRequest {
+                    version: Some(get_proofs_request::Version::V0(proofs_request)),
+                };
+
                 let result = abci_app
                     .platform
-                    .query("/proofs", &proofs_request.encode_to_vec(), platform_version)
+                    .query("/proofs", &versioned_request.encode_to_vec(), platform_version)
                     .expect("expected to query proofs");
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
