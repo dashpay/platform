@@ -13,7 +13,6 @@ pub enum QueryError {
     /// Proof Error
     #[error("proof error: {0}")]
     Proof(#[from] ProofError),
-
     /// Syntax Error
     #[error("query syntax error: {0}")]
     Query(#[from] SyntaxError),
