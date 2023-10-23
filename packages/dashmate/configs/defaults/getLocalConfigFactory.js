@@ -5,6 +5,7 @@ const {
 } = require('../../src/constants');
 
 const Config = require('../../src/config/Config');
+const { SSL_PROVIDERS } = require('../../src/constants');
 
 /**
  * @param {getBaseConfig} getBaseConfig
@@ -34,6 +35,9 @@ function getLocalConfigFactory(getBaseConfig) {
       platform: {
         dapi: {
           envoy: {
+            ssl: {
+              provider: SSL_PROVIDERS.SELF_SIGNED,
+            },
             http: {
               port: 2443,
             },

@@ -305,16 +305,11 @@ function setupLocalPresetTaskFactory(
         task: (ctx) => {
           const platformConfigs = ctx.configGroup.filter((config) => config.get('platform.enable'));
 
-          const subTasks = platformConfigs.map((config) => {
-            config.set('platform.dapi.envoy.ssl.provider', SSL_PROVIDERS.SELF_SIGNED);
-
-            configFileRepository.write(configFile);
-
-            return {
-              title: `Generate certificate for ${config.getName()}`,
-              task: async () => obtainSelfSignedCertificateTask(config),
-            };
-          });
+          const subTasks = platformConfigs.map((config) => ({
+            title: `Generate certificate for ${config.getName()}`,
+            task: async () => obtainSelfSignedCertificateTask(config),
+          }
+          ));
 
           return new Listr(subTasks);
         },
