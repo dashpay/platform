@@ -271,20 +271,6 @@ function setupLocalPresetTaskFactory(
             }
           ));
 
-          subTasks.push({
-            title: 'Save configs',
-            task: async () => {
-              configFile.setDefaultGroupName(PRESET_LOCAL);
-
-              for (const config of ctx.configGroup) {
-                const serviceConfigFiles = renderServiceTemplates(config);
-                writeServiceConfigs(config.getName(), serviceConfigFiles);
-              }
-
-              configFileRepository.write(configFile);
-            },
-          });
-
           return new Listr(subTasks);
         },
         options: {
@@ -298,6 +284,19 @@ function setupLocalPresetTaskFactory(
       {
         title: 'Configure Tenderdash nodes',
         task: (ctx) => configureTenderdashTask(ctx.configGroup),
+      },
+      {
+        title: 'Persist configs',
+        task: (ctx) => {
+          configFile.setDefaultGroupName(PRESET_LOCAL);
+
+          for (const config of ctx.configGroup) {
+            const serviceConfigFiles = renderServiceTemplates(config);
+            writeServiceConfigs(config.getName(), serviceConfigFiles);
+          }
+
+          configFileRepository.write(configFile);
+        },
       },
       {
         title: 'Configure SSL certificates',
