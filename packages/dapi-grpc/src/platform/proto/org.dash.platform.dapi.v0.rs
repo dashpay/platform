@@ -1096,128 +1096,229 @@ pub mod get_consensus_params_response {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetVersionUpgradeStateRequest {
-    #[prost(bool, tag = "1")]
-    pub prove: bool,
+    #[prost(oneof = "get_version_upgrade_state_request::Version", tags = "1")]
+    pub version: ::core::option::Option<get_version_upgrade_state_request::Version>,
+}
+/// Nested message and enum types in `GetVersionUpgradeStateRequest`.
+pub mod get_version_upgrade_state_request {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetVersionUpgradeStateRequestV0 {
+        #[prost(bool, tag = "1")]
+        pub prove: bool,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetVersionUpgradeStateRequestV0),
+    }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetVersionUpgradeStateResponse {
-    #[prost(message, optional, tag = "3")]
-    pub metadata: ::core::option::Option<ResponseMetadata>,
-    #[prost(oneof = "get_version_upgrade_state_response::Result", tags = "1, 2")]
-    pub result: ::core::option::Option<get_version_upgrade_state_response::Result>,
+    #[prost(oneof = "get_version_upgrade_state_response::Version", tags = "1")]
+    pub version: ::core::option::Option<get_version_upgrade_state_response::Version>,
 }
 /// Nested message and enum types in `GetVersionUpgradeStateResponse`.
 pub mod get_version_upgrade_state_response {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct VersionEntry {
-        #[prost(uint32, tag = "1")]
-        pub version_number: u32,
-        #[prost(uint32, tag = "2")]
-        pub vote_count: u32,
+    pub struct GetVersionUpgradeStateResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(oneof = "get_version_upgrade_state_response_v0::Result", tags = "1, 2")]
+        pub result: ::core::option::Option<
+            get_version_upgrade_state_response_v0::Result,
+        >,
     }
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct Versions {
-        #[prost(message, repeated, tag = "1")]
-        pub versions: ::prost::alloc::vec::Vec<VersionEntry>,
+    /// Nested message and enum types in `GetVersionUpgradeStateResponseV0`.
+    pub mod get_version_upgrade_state_response_v0 {
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(message, tag = "1")]
+            Versions(super::super::Versions),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
     }
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Result {
+    pub enum Version {
         #[prost(message, tag = "1")]
-        Versions(Versions),
-        #[prost(message, tag = "2")]
-        Proof(super::Proof),
+        V0(GetVersionUpgradeStateResponseV0),
     }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Versions {
+    #[prost(message, repeated, tag = "1")]
+    pub versions: ::prost::alloc::vec::Vec<VersionEntry>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VersionEntry {
+    #[prost(uint32, tag = "1")]
+    pub version_number: u32,
+    #[prost(uint32, tag = "2")]
+    pub vote_count: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetVersionUpgradeVoteStatusRequest {
-    #[prost(bytes = "vec", tag = "1")]
-    pub start_pro_tx_hash: ::prost::alloc::vec::Vec<u8>,
-    #[prost(uint32, tag = "2")]
-    pub count: u32,
-    #[prost(bool, tag = "3")]
-    pub prove: bool,
+    #[prost(oneof = "get_version_upgrade_vote_status_request::Version", tags = "1")]
+    pub version: ::core::option::Option<
+        get_version_upgrade_vote_status_request::Version,
+    >,
+}
+/// Nested message and enum types in `GetVersionUpgradeVoteStatusRequest`.
+pub mod get_version_upgrade_vote_status_request {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetVersionUpgradeVoteStatusRequestV0 {
+        #[prost(bytes = "vec", tag = "1")]
+        pub start_pro_tx_hash: ::prost::alloc::vec::Vec<u8>,
+        #[prost(uint32, tag = "2")]
+        pub count: u32,
+        #[prost(bool, tag = "3")]
+        pub prove: bool,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetVersionUpgradeVoteStatusRequestV0),
+    }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetVersionUpgradeVoteStatusResponse {
-    #[prost(message, optional, tag = "3")]
-    pub metadata: ::core::option::Option<ResponseMetadata>,
-    #[prost(oneof = "get_version_upgrade_vote_status_response::Result", tags = "1, 2")]
-    pub result: ::core::option::Option<get_version_upgrade_vote_status_response::Result>,
+    #[prost(oneof = "get_version_upgrade_vote_status_response::Version", tags = "1")]
+    pub version: ::core::option::Option<
+        get_version_upgrade_vote_status_response::Version,
+    >,
 }
 /// Nested message and enum types in `GetVersionUpgradeVoteStatusResponse`.
 pub mod get_version_upgrade_vote_status_response {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct VersionSignal {
-        #[prost(bytes = "vec", tag = "1")]
-        pub pro_tx_hash: ::prost::alloc::vec::Vec<u8>,
-        #[prost(uint32, tag = "2")]
-        pub version: u32,
+    pub struct GetVersionUpgradeVoteStatusResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(
+            oneof = "get_version_upgrade_vote_status_response_v0::Result",
+            tags = "1, 2"
+        )]
+        pub result: ::core::option::Option<
+            get_version_upgrade_vote_status_response_v0::Result,
+        >,
     }
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct VersionSignals {
-        #[prost(message, repeated, tag = "1")]
-        pub version_signals: ::prost::alloc::vec::Vec<VersionSignal>,
+    /// Nested message and enum types in `GetVersionUpgradeVoteStatusResponseV0`.
+    pub mod get_version_upgrade_vote_status_response_v0 {
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(message, tag = "1")]
+            Versions(super::super::VersionSignals),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
     }
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Result {
+    pub enum Version {
         #[prost(message, tag = "1")]
-        Versions(VersionSignals),
-        #[prost(message, tag = "2")]
-        Proof(super::Proof),
+        V0(GetVersionUpgradeVoteStatusResponseV0),
     }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VersionSignals {
+    #[prost(message, repeated, tag = "1")]
+    pub version_signals: ::prost::alloc::vec::Vec<VersionSignal>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VersionSignal {
+    #[prost(bytes = "vec", tag = "1")]
+    pub pro_tx_hash: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, tag = "2")]
+    pub version: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetEpochsInfoRequest {
-    #[prost(uint32, tag = "1")]
-    pub start_epoch: u32,
-    #[prost(uint32, tag = "2")]
-    pub count: u32,
-    #[prost(bool, tag = "3")]
-    pub prove: bool,
+    #[prost(oneof = "get_epochs_info_request::Version", tags = "1")]
+    pub version: ::core::option::Option<get_epochs_info_request::Version>,
+}
+/// Nested message and enum types in `GetEpochsInfoRequest`.
+pub mod get_epochs_info_request {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetEpochsInfoRequestV0 {
+        #[prost(uint32, tag = "1")]
+        pub start_epoch: u32,
+        #[prost(uint32, tag = "2")]
+        pub count: u32,
+        #[prost(bool, tag = "3")]
+        pub prove: bool,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetEpochsInfoRequestV0),
+    }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetEpochsInfoResponse {
-    #[prost(message, optional, tag = "3")]
-    pub metadata: ::core::option::Option<ResponseMetadata>,
-    #[prost(oneof = "get_epochs_info_response::Result", tags = "1, 2")]
-    pub result: ::core::option::Option<get_epochs_info_response::Result>,
+    #[prost(oneof = "get_epochs_info_response::Version", tags = "1")]
+    pub version: ::core::option::Option<get_epochs_info_response::Version>,
 }
 /// Nested message and enum types in `GetEpochsInfoResponse`.
 pub mod get_epochs_info_response {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct EpochInfo {
-        #[prost(uint32, tag = "1")]
-        pub number: u32,
-        #[prost(uint32, tag = "2")]
-        pub first_block: u32,
-        #[prost(uint32, tag = "3")]
-        pub start_time: u32,
+    pub struct GetEpochsInfoResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(oneof = "get_epochs_info_response_v0::Result", tags = "1, 2")]
+        pub result: ::core::option::Option<get_epochs_info_response_v0::Result>,
     }
-    #[allow(clippy::derive_partial_eq_without_eq)]
-    #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct EpochInfos {
-        #[prost(message, repeated, tag = "1")]
-        pub epoch_infos: ::prost::alloc::vec::Vec<EpochInfo>,
+    /// Nested message and enum types in `GetEpochsInfoResponseV0`.
+    pub mod get_epochs_info_response_v0 {
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct EpochInfos {
+            #[prost(message, repeated, tag = "1")]
+            pub epoch_infos: ::prost::alloc::vec::Vec<EpochInfo>,
+        }
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct EpochInfo {
+            #[prost(uint32, tag = "1")]
+            pub number: u32,
+            #[prost(uint32, tag = "2")]
+            pub first_block: u32,
+            #[prost(uint32, tag = "3")]
+            pub start_time: u32,
+        }
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(message, tag = "1")]
+            Epochs(EpochInfos),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
     }
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
-    pub enum Result {
+    pub enum Version {
         #[prost(message, tag = "1")]
-        Epochs(EpochInfos),
-        #[prost(message, tag = "2")]
-        Proof(super::Proof),
+        V0(GetEpochsInfoResponseV0),
     }
 }
 /// Generated client implementations.
