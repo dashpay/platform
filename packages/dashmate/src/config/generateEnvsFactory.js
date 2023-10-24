@@ -41,6 +41,22 @@ function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
         dockerComposeFiles.push('docker-compose.build.dapi_api.yml');
         dockerComposeFiles.push('docker-compose.build.dapi_tx_filter_stream.yml');
       }
+
+      const fileLogs = Object.entries(config.get('platform.drive.abci.logs')).filter(([, settings]) => (
+        settings.destination !== 'stdout' && settings.destination !== 'stderr'
+      ));
+
+      if (fileLogs.length > 0) {
+        const composeVolumesPath = homeDir.joinPath(
+          config.getName(),
+          'platform',
+          'drive',
+          'abci',
+          'compose-volumes.yml',
+        );
+
+        dockerComposeFiles.push(composeVolumesPath);
+      }
     }
 
     // we need this for compatibility with old configs
@@ -70,18 +86,6 @@ function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
         config.get('core.log.file.path'),
       ),
       DASHMATE_HELPER_DOCKER_IMAGE,
-      PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH: nodePath.dirname(
-        config.get('platform.drive.abci.log.prettyFile.path'),
-      ),
-      PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH: nodePath.dirname(
-        config.get('platform.drive.abci.log.jsonFile.path'),
-      ),
-      PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME: nodePath.basename(
-        config.get('platform.drive.abci.log.prettyFile.path'),
-      ),
-      PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME: nodePath.basename(
-        config.get('platform.drive.abci.log.jsonFile.path'),
-      ),
       PLATFORM_DRIVE_TENDERDASH_LOG_DIRECTORY_PATH: tenderdashLogDirectoryPath,
       ...convertObjectToEnvs(config.getOptions()),
     };

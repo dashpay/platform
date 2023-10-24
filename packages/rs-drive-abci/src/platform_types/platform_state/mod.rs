@@ -24,7 +24,8 @@ use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationErro
 use indexmap::IndexMap;
 
 use crate::error::execution::ExecutionError;
-use std::collections::{BTreeMap, HashMap};
+use dpp::util::hash::hash;
+use std::collections::BTreeMap;
 
 /// Platform state
 #[derive(Clone, Debug, From)]
@@ -108,6 +109,13 @@ impl PlatformDeserializableFromVersionedStructure for PlatformState {
 }
 
 impl PlatformState {
+    /// Get the state fingerprint
+    pub fn fingerprint(&self) -> [u8; 32] {
+        hash(
+            self.serialize_to_bytes()
+                .expect("expected to serialize state"),
+        )
+    }
     /// Get the current platform version
     pub fn current_platform_version(&self) -> Result<&'static PlatformVersion, Error> {
         Ok(PlatformVersion::get(
@@ -303,14 +311,6 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn quorums_extended_info(
-        &self,
-    ) -> &BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>> {
-        match self {
-            PlatformState::V0(v0) => &v0.quorums_extended_info,
-        }
-    }
-
     fn current_validator_set_quorum_hash(&self) -> QuorumHash {
         match self {
             PlatformState::V0(v0) => v0.current_validator_set_quorum_hash,
@@ -365,15 +365,6 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn set_quorums_extended_info(
-        &mut self,
-        info: BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>>,
-    ) {
-        match self {
-            PlatformState::V0(v0) => v0.set_quorums_extended_info(info),
-        }
-    }
-
     fn set_current_validator_set_quorum_hash(&mut self, hash: QuorumHash) {
         match self {
             PlatformState::V0(v0) => v0.set_current_validator_set_quorum_hash(hash),
@@ -425,14 +416,6 @@ impl PlatformStateV0Methods for PlatformState {
     fn next_epoch_protocol_version_mut(&mut self) -> &mut ProtocolVersion {
         match self {
             PlatformState::V0(v0) => v0.next_epoch_protocol_version_mut(),
-        }
-    }
-
-    fn quorums_extended_info_mut(
-        &mut self,
-    ) -> &mut BTreeMap<QuorumType, BTreeMap<QuorumHash, ExtendedQuorumDetails>> {
-        match self {
-            PlatformState::V0(v0) => v0.quorums_extended_info_mut(),
         }
     }
 

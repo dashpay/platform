@@ -3,13 +3,13 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use std::collections::BTreeMap;
 
 use crate::platform_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
 use crate::platform_types::validator_set::ValidatorSet;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::dashcore::QuorumHash;
-use std::collections::BTreeMap;
 use tracing::Level;
 
 impl<C> Platform<C>
@@ -50,19 +50,21 @@ where
             return Ok(()); // no need to do anything
         }
 
-        let all_quorums_by_type = self
+        let mut extended_quorum_list = self
             .core_rpc
-            .get_quorum_listextended_by_type(Some(core_block_height))?;
+            .get_quorum_listextended(Some(core_block_height))?;
 
-        let validator_quorums_list =
-            all_quorums_by_type
-                .get(&self.config.quorum_type())
-                .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
-                    format!(
-                        "expected quorums of type {}, but did not receive any from Dash Core",
-                        self.config.quorum_type
-                    ),
-                )))?;
+        let validator_quorums_list: BTreeMap<_, _> = extended_quorum_list
+            .quorums_by_type
+            .remove(&self.config.quorum_type())
+            .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
+                format!(
+                    "expected quorums of type {}, but did not receive any from Dash Core",
+                    self.config.quorum_type
+                ),
+            )))?
+            .into_iter()
+            .collect();
 
         // Remove validator_sets entries that are no longer valid for the core block height
         block_platform_state
@@ -152,7 +154,13 @@ where
                 }
             });
 
-        block_platform_state.set_quorums_extended_info(all_quorums_by_type);
+        if tracing::enabled!(tracing::Level::TRACE) {
+            tracing::trace!(
+                method = "update_quorum_info_v0",
+                block_platform_state_fingerprint = hex::encode(block_platform_state.fingerprint()),
+                "quorum info updated",
+            );
+        }
 
         Ok(())
     }
