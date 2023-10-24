@@ -18,7 +18,7 @@
 //! See tests/mock_*.rs for more detailed examples.
 pub mod config;
 
-use dapi_grpc::platform::v0::{self as proto};
+use dapi_grpc::platform::v0::{self as proto, GetIdentityBalanceRequest};
 use dpp::{
     document::serialization_traits::DocumentCborMethodsV0,
     document::Document,
@@ -44,7 +44,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::{
-    platform::{DocumentQuery, Fetch, FetchMany, Query},
+    platform::{identity::IdentityRequest, DocumentQuery, Fetch, FetchMany, Query},
     Error,
 };
 
@@ -133,7 +133,11 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetDataContractRequest>(filename)
                         .await?
                 }
-
+                "IdentityRequest" => self.load_expectation::<IdentityRequest>(filename).await?,
+                "GetIdentityBalanceRequest" => {
+                    self.load_expectation::<GetIdentityBalanceRequest>(filename)
+                        .await?
+                }
                 "DocumentQuery" => self.load_expectation::<DocumentQuery>(filename).await?,
                 _ => {
                     return Err(Error::Config(format!(
