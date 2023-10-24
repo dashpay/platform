@@ -75,21 +75,22 @@ impl ValidationResultWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = addError)]
-    pub fn add_error_wasm(&mut self, error_buffer: Buffer) -> Result<JsValue, JsValue> {
-        let error_bytes: Vec<u8> = Uint8Array::new_with_byte_offset_and_length(
-            &error_buffer.buffer(),
-            error_buffer.byte_offset(),
-            error_buffer.length(),
-        )
-        .to_vec();
-
-        let consensus_error = ConsensusError::deserialize(&error_bytes).with_js_error()?;
-
-        self.0.add_error(consensus_error);
-
-        Ok(JsValue::undefined())
-    }
+    // TODO: restore?
+    // #[wasm_bindgen(js_name = addError)]
+    // pub fn add_error_wasm(&mut self, error_buffer: Buffer) -> Result<JsValue, JsValue> {
+    //     let error_bytes: Vec<u8> = Uint8Array::new_with_byte_offset_and_length(
+    //         &error_buffer.buffer(),
+    //         error_buffer.byte_offset(),
+    //         error_buffer.length(),
+    //     )
+    //     .to_vec();
+    //
+    //     let consensus_error = ConsensusError::deserialize(&error_bytes).with_js_error()?;
+    //
+    //     self.0.add_error(consensus_error);
+    //
+    //     Ok(JsValue::undefined())
+    // }
 }
 
 impl ValidationResultWasm {
