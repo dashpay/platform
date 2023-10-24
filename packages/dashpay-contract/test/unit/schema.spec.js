@@ -35,7 +35,6 @@ describe('Dashpay Contract', () => {
   });
 
   it('should have a valid contract definition', async () => {
-    contract = dpp.dataContract.create(identityId, schema);
     expect(() => dpp.dataContract.create(identityId, schema)).to.not.throw();
   });
 
