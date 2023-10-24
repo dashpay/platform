@@ -5,8 +5,10 @@
 // generated types. Later these re-exports could be swapped with actual rs-sdk's requests
 // and while it will change the substance, the API structure will remain the same.
 
+mod delegate;
 mod document_query;
 mod fetch;
+pub mod identity;
 mod list;
 mod query;
 

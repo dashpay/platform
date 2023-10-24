@@ -296,6 +296,7 @@ impl MockDashPlatformSdk {
 
         // This expectation will work for execute
         let mut dapi_guard = self.dapi.lock().await;
+        // We don't really care about the response, as it will be mocked by from_proof
         dapi_guard.expect(&grpc_request, &Default::default());
     }
 

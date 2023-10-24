@@ -11,8 +11,10 @@ use tonic::{transport::Channel, IntoRequest};
 use super::{CanRetry, TransportClient, TransportRequest, TransportResponse};
 use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 
-type PlatformGrpcClient = PlatformClient<Channel>;
-type CoreGrpcClient = CoreClient<Channel>;
+/// Platform Client using gRPC transport.
+pub type PlatformGrpcClient = PlatformClient<Channel>;
+/// Core Client using gRPC transport.
+pub type CoreGrpcClient = CoreClient<Channel>;
 
 impl TransportClient for PlatformGrpcClient {
     type Error = tonic::Status;
@@ -145,6 +147,14 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_identities_by_public_key_hashes
+);
+
+impl_transport_request_grpc!(
+    platform_proto::GetIdentityByPublicKeyHashesRequest,
+    platform_proto::GetIdentityByPublicKeyHashesResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identity_by_public_key_hashes
 );
 
 // Link to each core gRPC request what client and method to use:

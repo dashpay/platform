@@ -30,7 +30,9 @@ tracing = { version = "0.1.37" }
 hex = { version = "0.4.3", optional = true }
 dotenvy = { version = "0.15.7", optional = true }
 envy = { version = "0.4.2", optional = true }
-
+tonic = { version = "0.9.2", features = [], default-features = false }
+futures = { version = "0.3.28" }
+derive_more = { version = "0.99.16" }
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.1" }
 

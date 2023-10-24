@@ -13,6 +13,8 @@
 //! - `Fetch<API>` for [`DataContract`](dpp::prelude::DataContract)
 //! - `Fetch<API>` for [`Document`](dpp::document::Document)
 
+use super::document_query::DocumentQuery;
+use super::identity::IdentityRequest;
 #[cfg(feature = "mocks")]
 use crate::mock::{MockRequest, MockResponse};
 use crate::{error::Error, platform::query::Query, Sdk};
@@ -21,8 +23,6 @@ use dpp::{document::Document, prelude::Identity};
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::fmt::Debug;
-
-use super::document_query::DocumentQuery;
 
 /// Trait implemented by objects that can be fetched from the platform.
 #[async_trait::async_trait]
@@ -90,7 +90,7 @@ where
 
 #[async_trait::async_trait]
 impl Fetch for Identity {
-    type Request = platform_proto::GetIdentityRequest;
+    type Request = IdentityRequest;
 }
 
 #[async_trait::async_trait]

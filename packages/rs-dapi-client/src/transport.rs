@@ -10,6 +10,8 @@ use http::Uri;
 pub use crate::request_settings::AppliedRequestSettings;
 use crate::{CanRetry, RequestSettings};
 
+pub use grpc::{CoreGrpcClient, PlatformGrpcClient};
+
 /// Generic transport layer request.
 /// Requires [Clone] as could be retried and a client in general consumes a request.
 pub trait TransportRequest: Clone + Send + Sync + Debug + serde::Serialize {
