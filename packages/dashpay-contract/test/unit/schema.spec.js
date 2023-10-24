@@ -1,6 +1,6 @@
 const { expect } = require('chai');
 const crypto = require('crypto');
-const { DashPlatformProtocol, default: loadWasmDpp, JsonSchemaError } = require('@dashevo/wasm-dpp');
+const { DashPlatformProtocol, JsonSchemaError } = require('@dashevo/wasm-dpp');
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const schema = require('../../schema/dashpay.schema.json');
 
