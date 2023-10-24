@@ -15,7 +15,6 @@ on:
       - packages/wallet-lib/**
       - packages/js-dapi-client/**
       - packages/dapi-grpc/**
-      - packages/js-dpp/**
       - packages/wasm-dpp/**
       - packages/rs-dpp/**
       - packages/js-grpc-common/**
