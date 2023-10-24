@@ -62,6 +62,8 @@ pub struct MimicExecuteBlockOutcome {
 pub struct MimicExecuteBlockOptions {
     /// don't finalize block
     pub dont_finalize_block: bool,
+    /// rounds before finalization
+    pub rounds_before_finalization: Option<u32>,
 }
 
 impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
@@ -73,13 +75,13 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         current_quorum: &TestQuorumInfo,
         proposed_version: ProtocolVersion,
         block_info: BlockInfo,
+        round: u32,
         expect_validation_errors: Vec<u32>,
         expect_vote_extension_errors: bool,
         state_transitions: Vec<StateTransition>,
         options: MimicExecuteBlockOptions,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
         const APP_VERSION: u64 = 0;
-        const ROUND: i32 = 0;
 
         let mut rng = StdRng::seed_from_u64(block_info.height);
 
@@ -109,7 +111,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             height: height as i64,
             time: Some(time.clone()),
             next_validators_hash: next_validators_hash.to_vec(),
-            round: ROUND,
+            round: round as i32,
             core_chain_locked_height: core_height,
             proposer_pro_tx_hash: proposer_pro_tx_hash.to_vec(),
             proposed_app_version: proposed_version as u64,
@@ -161,7 +163,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             time: time.to_milis(),
         };
         let state_id_hash = state_id
-            .sha256(CHAIN_ID, height as i64, ROUND)
+            .sha256(CHAIN_ID, height as i64, round as i32)
             .expect("cannot hash state id");
 
         let block_header_hash: [u8; 32] = rng.gen();
@@ -174,7 +176,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             state_id: state_id_hash,
         };
         let block_id_hash = block_id
-            .sha256(CHAIN_ID, height as i64, ROUND)
+            .sha256(CHAIN_ID, height as i64, round as i32)
             .expect("cannot hash block id");
 
         let request_process_proposal = RequestProcessProposal {
@@ -188,7 +190,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 nanos: ((time_ms % 1000) * 1000) as i32,
             }),
             next_validators_hash: next_validators_hash.to_vec(),
-            round: ROUND,
+            round: round as i32,
             core_chain_locked_height: core_height,
             core_chain_lock_update,
             proposer_pro_tx_hash: proposer_pro_tx_hash.to_vec(),
@@ -214,7 +216,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         let request_extend_vote = RequestExtendVote {
             hash: block_header_hash.to_vec(),
             height: height as i64,
-            round: ROUND,
+            round: round as i32,
         };
 
         let response_extend_vote = self.extend_vote(request_extend_vote).unwrap_or_else(|e| {
@@ -233,7 +235,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 hash: block_header_hash.to_vec(),
                 validator_pro_tx_hash: validator.pro_tx_hash.to_byte_array().to_vec(),
                 height: height as i64,
-                round: ROUND,
+                round: round as i32,
                 vote_extensions: vote_extensions.clone(),
             };
             let response_validate_vote_extension = self
@@ -308,7 +310,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         let quorum_type = self.platform.config.quorum_type();
         let state_id_hash = state_id
-            .sha256(CHAIN_ID, height as i64, ROUND)
+            .sha256(CHAIN_ID, height as i64, round as i32)
             .expect("cannot calculate state id hash");
 
         let commit = CanonicalVote {
@@ -316,14 +318,14 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             state_id: state_id_hash,
             chain_id: CHAIN_ID.to_string(),
             height: height as i64,
-            round: ROUND as i64,
+            round: round as i64,
             r#type: SignedMsgType::Precommit.into(),
         };
 
         let quorum_hash = current_quorum.quorum_hash.to_byte_array().to_vec();
 
         let mut commit_info = CommitInfo {
-            round: ROUND,
+            round: round as i32,
             quorum_hash: quorum_hash.clone(),
             block_signature: Default::default(),
             threshold_vote_extensions: extensions,
@@ -337,7 +339,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     quorum_type as u8,
                     &quorum_hash,
                     height as i64,
-                    ROUND,
+                    round as i32,
                 )
                 .expect("expected to sign digest");
 
@@ -349,7 +351,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                         ?quorum_hash,
                         CHAIN_ID,
                         height,
-                        ROUND,
+                        round,
                         public_key = ?current_quorum.public_key,
                         "Signing block"
                     );
@@ -401,7 +403,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             misbehavior: vec![],
             hash: block_header_hash.to_vec(),
             height: height as i64,
-            round: ROUND,
+            round: round as i32,
             block: Some(block),
             block_id: Some(block_id),
         };
@@ -424,12 +426,14 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         assert_eq!(app_hash, root_hash_before_finalization);
         drop(transaction_guard);
 
-        if !options.dont_finalize_block {
+        if !options.dont_finalize_block
+            && options.rounds_before_finalization.unwrap_or_default() <= round
+        {
             self.finalize_block(request_finalize_block)
                 .unwrap_or_else(|e| {
                     panic!(
-                        "should finalize block #{} at time #{} : {:?}",
-                        block_info.height, block_info.time_ms, e
+                        "should finalize block #{} round#{} at time #{} : {:?}",
+                        block_info.height, round, block_info.time_ms, e
                     )
                 });
             let root_hash_after_finalization =

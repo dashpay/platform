@@ -4,7 +4,6 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore::hashes::Hash;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::version::PlatformVersion;
@@ -48,7 +47,7 @@ where
                 tracing::debug!(
                     method = "update_masternode_list_v0",
                     "no update mnl at height {}",
-                    core_block_height
+                    core_block_height,
                 );
                 return Ok(()); // no need to do anything
             }
@@ -86,6 +85,16 @@ where
                     Some(transaction),
                     &platform_version.drive,
                 )?;
+            }
+
+            if tracing::enabled!(tracing::Level::TRACE) {
+                let block_platform_state_fingerprint =
+                    hex::encode(block_platform_state.fingerprint());
+                tracing::trace!(
+                    block_platform_state_fingerprint,
+                    method = "update_masternode_list_v0",
+                    "masternode list updated",
+                );
             }
         }
 

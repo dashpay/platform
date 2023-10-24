@@ -21,16 +21,19 @@ impl Drive {
     ///
     /// * `contract_id` - A contract ID as a 32-byte array. The contract ID is used to
     ///   create the path query.
+    /// * `with_limit` - Should be set to false when we are going to merge the path queries.
     ///
     /// # Returns
     ///
     /// * `PathQuery` - A `PathQuery` object representing the query for fetching the contract data.
-    pub fn fetch_contract_query(contract_id: [u8; 32]) -> PathQuery {
+    pub fn fetch_contract_query(contract_id: [u8; 32], with_limit: bool) -> PathQuery {
         let contract_path = contract_root_path_vec(contract_id.as_slice());
         let mut query = PathQuery::new_single_key(contract_path, vec![0]);
 
-        // TODO: remove this limit once `verify_query_with_absence_proof` supports queries without limits
-        query.query.limit = Some(1);
+        if with_limit {
+            // TODO: remove this limit once `verify_query_with_absence_proof` supports queries without limits
+            query.query.limit = Some(1);
+        }
         query
     }
 
@@ -44,16 +47,22 @@ impl Drive {
     ///
     /// * `contract_id` - A contract ID as a 32-byte array. The contract ID is used to
     ///   create the path query.
+    /// * `with_limit` - Should be set to false when we are going to merge the path queries.
     ///
     /// # Returns
     ///
     /// * `PathQuery` - A `PathQuery` object representing the query for fetching the contract data.
-    pub fn fetch_contract_with_history_latest_query(contract_id: [u8; 32]) -> PathQuery {
+    pub fn fetch_contract_with_history_latest_query(
+        contract_id: [u8; 32],
+        with_limit: bool,
+    ) -> PathQuery {
         let contract_path = contract_keeping_history_storage_path_vec(contract_id.as_slice());
         let mut query = PathQuery::new_single_key(contract_path, vec![0]);
 
-        // TODO: remove this limit once `verify_query_with_absence_proof` supports queries without limits
-        query.query.limit = Some(1);
+        if with_limit {
+            // TODO: remove this limit once `verify_query_with_absence_proof` supports queries without limits
+            query.query.limit = Some(1);
+        }
 
         query
     }

@@ -3,10 +3,11 @@ use crate::document::Document;
 use crate::identity::Identity;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
+use bincode::{Decode, Encode};
 use platform_value::{Bytes32, Identifier};
 use rand::prelude::StdRng;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode)]
 pub enum DocumentFieldFillType {
     /// Do not fill a field if that field is not required
     DoNotFillIfNotRequired,
@@ -14,7 +15,7 @@ pub enum DocumentFieldFillType {
     FillIfNotRequired,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Encode, Decode)]
 pub enum DocumentFieldFillSize {
     /// Fill to the min size allowed by the contract
     MinDocumentFillSize,

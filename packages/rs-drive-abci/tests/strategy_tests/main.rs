@@ -38,22 +38,22 @@ use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
 
 use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
-use frequency::Frequency;
+use strategy_tests::frequency::Frequency;
 
 use std::collections::BTreeMap;
 
-use strategy::{ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness};
+use strategy::{
+    ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
+};
+use strategy_tests::Strategy;
 
 mod core_update_tests;
 mod execution;
 mod failures;
-mod frequency;
 mod masternode_list_item_helpers;
 mod masternodes;
-mod operations;
 mod query;
 mod strategy;
-mod transitions;
 mod upgrade_fork_tests;
 mod verify_state_transitions;
 
@@ -63,16 +63,16 @@ pub type BlockHeight = u64;
 mod tests {
     use super::*;
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
-    use crate::operations::DocumentAction::DocumentActionReplace;
-    use crate::operations::{
-        DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
-    };
     use crate::query::QueryStrategy;
-    use crate::strategy::MasternodeListChangesStrategy;
+    use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy};
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use strategy_tests::operations::DocumentAction::DocumentActionReplace;
+    use strategy_tests::operations::{
+        DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
+    };
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
@@ -84,7 +84,7 @@ mod tests {
     use dpp::util::hash::hash_to_hex_string;
     use dpp::version::PlatformVersion;
     use drive_abci::config::{ExecutionConfig, PlatformTestConfig};
-    use drive_abci::logging::LogLevelPreset;
+    use drive_abci::logging::LogLevel;
     use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
     use itertools::Itertools;
@@ -117,13 +117,16 @@ mod tests {
 
     #[test]
     fn run_chain_nothing_happening() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -138,7 +141,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -170,13 +172,16 @@ mod tests {
 
     #[test]
     fn run_chain_block_signing() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -191,7 +196,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -223,13 +227,16 @@ mod tests {
 
     #[test]
     fn run_chain_stop_and_restart() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -244,7 +251,146 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
+        };
+        let config = PlatformConfig {
+            quorum_size: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 25,
+                ..ExecutionConfig::default()
+            },
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default(),
+            ..Default::default()
+        };
+        let TempPlatform {
+            mut platform,
+            tempdir: _,
+        } = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            ..
+        } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
+
+        let known_root_hash = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None)
+            .unwrap()
+            .expect("expected root hash");
+
+        let state = abci_app.platform.state.read().unwrap();
+
+        let protocol_version = state.current_protocol_version_in_consensus();
+        drop(state);
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
+
+        abci_app
+            .platform
+            .recreate_state(platform_version)
+            .expect("expected to recreate state");
+
+        let ResponseInfo {
+            data: _,
+            version: _,
+            app_version: _,
+            last_block_height,
+            last_block_app_hash,
+        } = abci_app
+            .info(RequestInfo {
+                version: tenderdash_abci::proto::meta::TENDERDASH_VERSION.to_string(),
+                block_version: 0,
+                p2p_version: 0,
+                abci_version: tenderdash_abci::proto::meta::ABCI_VERSION.to_string(),
+            })
+            .expect("expected to call info");
+
+        assert_eq!(last_block_height, 15);
+        assert_eq!(last_block_app_hash, known_root_hash);
+
+        let block_start = abci_app
+            .platform
+            .state
+            .read()
+            .unwrap()
+            .last_committed_block_info()
+            .as_ref()
+            .unwrap()
+            .basic_info()
+            .height
+            + 1;
+
+        continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 1,
+                block_count: 30,
+                proposers,
+                quorums,
+                current_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                start_time_ms: 1681094380000,
+                current_time_ms: end_time_ms,
+            },
+            strategy,
+            config,
+            StrategyRandomness::SeedEntropy(7),
+        );
+    }
+
+    #[test]
+    fn run_chain_stop_and_restart_multiround() {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: Some(FailureStrategy {
+                deterministic_start_seed: None,
+                dont_finalize_block: false,
+                expect_errors_with_codes: vec![],
+                rounds_before_successful_block: Some(5),
+            }),
+            query_testing: None,
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -357,13 +503,16 @@ mod tests {
     #[test]
     fn run_chain_one_identity_in_solitude() {
         let platform_version = PlatformVersion::latest();
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -378,7 +527,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -423,13 +571,16 @@ mod tests {
 
     #[test]
     fn run_chain_core_height_randomly_increasing() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -444,7 +595,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -476,13 +626,16 @@ mod tests {
 
     #[test]
     fn run_chain_core_height_randomly_increasing_with_epoch_change() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -497,7 +650,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -536,13 +688,16 @@ mod tests {
 
     #[test]
     fn run_chain_core_height_randomly_increasing_with_quick_epoch_change() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -557,7 +712,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let hour_in_s = 60 * 60;
         let three_mins_in_ms = 1000 * 60 * 3;
@@ -601,13 +755,16 @@ mod tests {
     #[test]
     fn run_chain_core_height_randomly_increasing_with_quorum_updates() {
         let platform_version = PlatformVersion::latest();
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
@@ -622,7 +779,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -685,13 +841,16 @@ mod tests {
 
     #[test]
     fn run_chain_core_height_randomly_increasing_with_quorum_updates_new_proposers() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -712,7 +871,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -753,13 +911,16 @@ mod tests {
 
     #[test]
     fn run_chain_core_height_randomly_increasing_with_quorum_updates_changing_proposers() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -784,7 +945,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -824,13 +984,16 @@ mod tests {
 
     #[test]
     fn run_chain_core_height_randomly_increasing_with_quorum_updates_updating_proposers() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -851,7 +1014,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 10,
@@ -922,13 +1084,16 @@ mod tests {
     #[test]
     fn run_chain_insert_one_new_identity_per_block_with_block_signing() {
         // drive_abci::logging::Loggers::default().try_install().ok();
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -948,7 +1113,6 @@ mod tests {
                 },
             }),
             verify_state_transition_results: true,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -981,13 +1145,16 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_with_epoch_change() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -1002,7 +1169,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1063,13 +1229,16 @@ mod tests {
         )
         .expect("expected to get contract from a json document");
 
-        let strategy = Strategy {
-            contracts_with_updates: vec![(contract, None)],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![(contract, None)],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -1084,7 +1253,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1118,6 +1286,7 @@ mod tests {
             .drive
             .fetch_contract(
                 outcome
+                    .strategy
                     .strategy
                     .contracts_with_updates
                     .first()
@@ -1165,19 +1334,22 @@ mod tests {
 
         contract_update_2.data_contract_mut().set_version(3);
 
-        let strategy = Strategy {
-            contracts_with_updates: vec![(
-                contract,
-                Some(BTreeMap::from([
-                    (3, contract_update_1),
-                    (8, contract_update_2),
-                ])),
-            )],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![(
+                    contract,
+                    Some(BTreeMap::from([
+                        (3, contract_update_1),
+                        (8, contract_update_2),
+                    ])),
+                )],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -1192,7 +1364,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1226,6 +1397,7 @@ mod tests {
             .drive
             .fetch_contract(
                 outcome
+                    .strategy
                     .strategy
                     .contracts_with_updates
                     .first()
@@ -1268,19 +1440,22 @@ mod tests {
                 .to_owned_document_type(),
         };
 
-        let strategy = Strategy {
-            contracts_with_updates: vec![(created_contract, None)],
-            operations: vec![Operation {
-                op_type: OperationType::Document(document_op),
-                frequency: Frequency {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![(created_contract, None)],
+                operations: vec![Operation {
+                    op_type: OperationType::Document(document_op),
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: vec![],
+                identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
-            }],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -1295,7 +1470,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1348,19 +1522,22 @@ mod tests {
                 .to_owned_document_type(),
         };
 
-        let strategy = Strategy {
-            contracts_with_updates: vec![(created_contract, None)],
-            operations: vec![Operation {
-                op_type: OperationType::Document(document_op),
-                frequency: Frequency {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![(created_contract, None)],
+                operations: vec![Operation {
+                    op_type: OperationType::Document(document_op),
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: vec![],
+                identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
-            }],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -1375,7 +1552,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1447,28 +1623,31 @@ mod tests {
                 .to_owned_document_type(),
         };
 
-        let strategy = Strategy {
-            contracts_with_updates: vec![(created_contract, None)],
-            operations: vec![
-                Operation {
-                    op_type: OperationType::Document(document_insertion_op),
-                    frequency: Frequency {
-                        times_per_block_range: 1..2,
-                        chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..2,
+                            chance_per_block: None,
+                        },
                     },
-                },
-                Operation {
-                    op_type: OperationType::Document(document_deletion_op),
-                    frequency: Frequency {
-                        times_per_block_range: 1..2,
-                        chance_per_block: None,
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..2,
+                            chance_per_block: None,
+                        },
                     },
+                ],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
                 },
-            ],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -1483,7 +1662,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1555,28 +1733,31 @@ mod tests {
                 .to_owned_document_type(),
         };
 
-        let strategy = Strategy {
-            contracts_with_updates: vec![(created_contract, None)],
-            operations: vec![
-                Operation {
-                    op_type: OperationType::Document(document_insertion_op),
-                    frequency: Frequency {
-                        times_per_block_range: 1..10,
-                        chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..10,
+                            chance_per_block: None,
+                        },
                     },
-                },
-                Operation {
-                    op_type: OperationType::Document(document_deletion_op),
-                    frequency: Frequency {
-                        times_per_block_range: 1..10,
-                        chance_per_block: None,
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..10,
+                            chance_per_block: None,
+                        },
                     },
+                ],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
                 },
-            ],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -1591,7 +1772,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1677,28 +1857,31 @@ mod tests {
                 .to_owned_document_type(),
         };
 
-        let strategy = Strategy {
-            contracts_with_updates: vec![(created_contract, None)],
-            operations: vec![
-                Operation {
-                    op_type: OperationType::Document(document_insertion_op),
-                    frequency: Frequency {
-                        times_per_block_range: 1..40,
-                        chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..40,
+                            chance_per_block: None,
+                        },
                     },
-                },
-                Operation {
-                    op_type: OperationType::Document(document_deletion_op),
-                    frequency: Frequency {
-                        times_per_block_range: 1..15,
-                        chance_per_block: None,
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..15,
+                            chance_per_block: None,
+                        },
                     },
+                ],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..30,
+                    chance_per_block: None,
                 },
-            ],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..30,
-                chance_per_block: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -1713,7 +1896,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1798,35 +1980,38 @@ mod tests {
                 .to_owned_document_type(),
         };
 
-        let strategy = Strategy {
-            contracts_with_updates: vec![(created_contract, None)],
-            operations: vec![
-                Operation {
-                    op_type: OperationType::Document(document_insertion_op),
-                    frequency: Frequency {
-                        times_per_block_range: 1..40,
-                        chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![(created_contract, None)],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::Document(document_insertion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..40,
+                            chance_per_block: None,
+                        },
                     },
-                },
-                Operation {
-                    op_type: OperationType::Document(document_replace_op),
-                    frequency: Frequency {
-                        times_per_block_range: 1..5,
-                        chance_per_block: None,
+                    Operation {
+                        op_type: OperationType::Document(document_replace_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
                     },
-                },
-                Operation {
-                    op_type: OperationType::Document(document_deletion_op),
-                    frequency: Frequency {
-                        times_per_block_range: 1..5,
-                        chance_per_block: None,
+                    Operation {
+                        op_type: OperationType::Document(document_deletion_op),
+                        frequency: Frequency {
+                            times_per_block_range: 1..5,
+                            chance_per_block: None,
+                        },
                     },
+                ],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..6,
+                    chance_per_block: None,
                 },
-            ],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..6,
-                chance_per_block: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -1841,7 +2026,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1885,21 +2069,24 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_identities() {
-        drive_abci::logging::init_for_tests(LogLevelPreset::Silent);
+        drive_abci::logging::init_for_tests(LogLevel::Silent);
 
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![Operation {
-                op_type: OperationType::IdentityTopUp,
-                frequency: Frequency {
-                    times_per_block_range: 1..3,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::IdentityTopUp,
+                    frequency: Frequency {
+                        times_per_block_range: 1..3,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
-            }],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -1914,7 +2101,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -1964,19 +2150,24 @@ mod tests {
 
     #[test]
     fn run_chain_update_identities_add_keys() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![Operation {
-                op_type: OperationType::IdentityUpdate(IdentityUpdateOp::IdentityUpdateAddKeys(3)),
-                frequency: Frequency {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::IdentityUpdate(
+                        IdentityUpdateOp::IdentityUpdateAddKeys(3),
+                    ),
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: vec![],
+                identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
-            }],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -1993,7 +2184,6 @@ mod tests {
             // because we can add an identity and add keys to it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -2048,21 +2238,24 @@ mod tests {
     #[test]
     fn run_chain_update_identities_remove_keys() {
         let platform_version = PlatformVersion::latest();
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![Operation {
-                op_type: OperationType::IdentityUpdate(IdentityUpdateOp::IdentityUpdateDisableKey(
-                    3,
-                )),
-                frequency: Frequency {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::IdentityUpdate(
+                        IdentityUpdateOp::IdentityUpdateDisableKey(3),
+                    ),
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: vec![],
+                identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
-            }],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -2079,7 +2272,6 @@ mod tests {
             // because we can add an identity and remove keys to it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -2134,28 +2326,31 @@ mod tests {
 
     #[test]
     fn run_chain_top_up_and_withdraw_from_identities() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![
-                Operation {
-                    op_type: OperationType::IdentityTopUp,
-                    frequency: Frequency {
-                        times_per_block_range: 1..4,
-                        chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![
+                    Operation {
+                        op_type: OperationType::IdentityTopUp,
+                        frequency: Frequency {
+                            times_per_block_range: 1..4,
+                            chance_per_block: None,
+                        },
                     },
-                },
-                Operation {
-                    op_type: OperationType::IdentityWithdrawal,
-                    frequency: Frequency {
-                        times_per_block_range: 1..4,
-                        chance_per_block: None,
+                    Operation {
+                        op_type: OperationType::IdentityWithdrawal,
+                        frequency: Frequency {
+                            times_per_block_range: 1..4,
+                            chance_per_block: None,
+                        },
                     },
+                ],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
                 },
-            ],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -2172,7 +2367,6 @@ mod tests {
             // because we can add an identity and withdraw from it in the same block
             // the result would be different then expected
             verify_state_transition_results: false,
-            signer: None,
         };
         let config = PlatformConfig {
             quorum_size: 100,
@@ -2206,14 +2400,17 @@ mod tests {
 
     #[test]
     fn run_chain_rotation_is_deterministic_1_block() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                //we do this to create some paying transactions
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    //we do this to create some paying transactions
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 50,
             extra_normal_mns: 0,
@@ -2228,7 +2425,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2360,14 +2556,17 @@ mod tests {
 
     #[test]
     fn run_chain_heavy_rotation_deterministic_before_payout() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                //we do this to create some paying transactions
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    //we do this to create some paying transactions
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
@@ -2382,7 +2581,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2485,14 +2683,17 @@ mod tests {
     #[test]
     fn run_chain_proposer_proposes_a_chainlock_that_would_remove_themselves_from_the_list_deterministic(
     ) {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                //we do this to create some paying transactions
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    //we do this to create some paying transactions
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
@@ -2507,7 +2708,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2609,15 +2809,18 @@ mod tests {
 
     #[test]
     fn run_chain_stop_and_restart_with_rotation() {
-        drive_abci::logging::init_for_tests(LogLevelPreset::Silent);
+        drive_abci::logging::init_for_tests(LogLevel::Silent);
 
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
-                chance_per_block: None,
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
@@ -2632,7 +2835,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
-            signer: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -2744,19 +2946,22 @@ mod tests {
 
     #[test]
     fn run_chain_transfer_between_identities() {
-        let strategy = Strategy {
-            contracts_with_updates: vec![],
-            operations: vec![Operation {
-                op_type: OperationType::IdentityTransfer,
-                frequency: Frequency {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![Operation {
+                    op_type: OperationType::IdentityTransfer,
+                    frequency: Frequency {
+                        times_per_block_range: 1..2,
+                        chance_per_block: None,
+                    },
+                }],
+                start_identities: vec![],
+                identities_inserts: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
-            }],
-            start_identities: vec![],
-            identities_inserts: Frequency {
-                times_per_block_range: 1..2,
-                chance_per_block: None,
+                signer: None,
             },
             total_hpmns: 100,
             extra_normal_mns: 0,
@@ -2771,7 +2976,6 @@ mod tests {
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: true,
-            signer: None,
         };
 
         let config = PlatformConfig {

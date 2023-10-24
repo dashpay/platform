@@ -21,6 +21,7 @@ class StartCommand extends ConfigBaseCommand {
     {
       'wait-for-readiness': waitForReadiness,
       verbose: isVerbose,
+      force: isForce,
       platform: platformOnly,
     },
     dockerCompose,
@@ -54,6 +55,7 @@ class StartCommand extends ConfigBaseCommand {
     try {
       await tasks.run({
         isVerbose,
+        isForce,
         platformOnly: platformOnly === true,
       });
     } catch (e) {
@@ -68,6 +70,11 @@ StartCommand.flags = {
   ...ConfigBaseCommand.flags,
   'wait-for-readiness': Flags.boolean({ char: 'w', description: 'wait for nodes to be ready', default: false }),
   platform: Flags.boolean({ char: 'p', description: 'start only platform', default: false }),
+  force: Flags.boolean({
+    char: 'f',
+    description: 'force start even if any services are already running',
+    default: false,
+  }),
 };
 
 module.exports = StartCommand;
