@@ -21,4 +21,6 @@ members = [
     "packages/wasm-dpp",
     "packages/rs-dapi-client",
     "packages/rs-sdk",
+    "packages/strategy-tests",
+    "packages/simple-signer",
 ]

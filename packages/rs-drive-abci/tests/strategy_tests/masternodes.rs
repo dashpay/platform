@@ -1,4 +1,3 @@
-use crate::frequency::Frequency;
 use crate::masternode_list_item_helpers::UpdateMasternodeListItem;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash, Txid};
@@ -10,6 +9,7 @@ use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::str::FromStr;
+use strategy_tests::frequency::Frequency;
 
 #[derive(Clone, Debug)]
 pub struct GenerateTestMasternodeUpdates<'a> {

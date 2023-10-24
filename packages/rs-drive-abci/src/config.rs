@@ -334,6 +334,7 @@ impl Default for PlatformTestConfig {
 #[cfg(test)]
 mod tests {
     use super::FromEnv;
+    use crate::logging::LogDestination;
     use dashcore_rpc::dashcore_rpc_json::QuorumType;
     use std::env;
 
@@ -362,7 +363,7 @@ mod tests {
         assert!(config.execution.verify_sum_trees);
         assert_ne!(config.quorum_type(), QuorumType::UNKNOWN);
         for id in vectors {
-            assert_eq!(config.abci.log[id.0].destination.as_str(), "bytes");
+            matches!(config.abci.log[id.0].destination, LogDestination::Bytes);
         }
     }
 }

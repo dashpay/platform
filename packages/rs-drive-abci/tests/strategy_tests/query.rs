@@ -1,4 +1,3 @@
-use crate::frequency::Frequency;
 use crate::strategy::StrategyRandomness;
 use dapi_grpc::platform::v0::{
     get_identities_by_public_key_hashes_response, GetIdentitiesByPublicKeyHashesRequest,
@@ -21,6 +20,7 @@ use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::{HashMap, HashSet};
+use strategy_tests::frequency::Frequency;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::{CanonicalVote, SignedMsgType, StateId};

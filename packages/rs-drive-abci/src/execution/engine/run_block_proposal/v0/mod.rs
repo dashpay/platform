@@ -71,6 +71,17 @@ where
         // Start by getting information from the state
         let state = self.state.read().unwrap();
 
+        if tracing::enabled!(tracing::Level::TRACE) {
+            tracing::trace!(
+                method = "run_block_proposal_v0",
+                ?block_proposal,
+                ?epoch_info,
+                platform_state_fingerprint = hex::encode(state.fingerprint()),
+                "running a block proposal on epoch {}",
+                epoch_info.current_epoch_index()
+            );
+        }
+
         let last_block_time_ms = state.last_block_time_ms();
         let last_block_height =
             state.known_height_or(self.config.abci.genesis_height.saturating_sub(1));
@@ -153,6 +164,43 @@ where
             .epoch_info
             .is_epoch_change_but_not_genesis()
         {
+            tracing::info!(
+                epoch_index = block_execution_context.epoch_info.current_epoch_index(),
+                "epoch change occurring from epoch {} to epoch {}",
+                block_execution_context
+                    .epoch_info
+                    .previous_epoch_index()
+                    .expect("must be set since we aren't on genesis"),
+                block_execution_context.epoch_info.current_epoch_index(),
+            );
+
+            if block_execution_context
+                .block_platform_state
+                .current_protocol_version_in_consensus()
+                == block_execution_context
+                    .block_platform_state
+                    .next_epoch_protocol_version()
+            {
+                tracing::trace!(
+                    epoch_index = block_execution_context.epoch_info.current_epoch_index(),
+                    "protocol version remains the same {}",
+                    block_execution_context
+                        .block_platform_state
+                        .current_protocol_version_in_consensus(),
+                );
+            } else {
+                tracing::info!(
+                    epoch_index = block_execution_context.epoch_info.current_epoch_index(),
+                    "protocol version changed from {} to {}",
+                    block_execution_context
+                        .block_platform_state
+                        .current_protocol_version_in_consensus(),
+                    block_execution_context
+                        .block_platform_state
+                        .next_epoch_protocol_version(),
+                );
+            }
+
             // Set current protocol version to the version from upcoming epoch
             block_execution_context
                 .block_platform_state
