@@ -3,6 +3,7 @@ const { expect, use } = require('chai');
 const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
+const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
 
 use(sinonChai);
 use(chaiAsPromised);
@@ -10,6 +11,7 @@ use(dirtyChai);
 
 process.env.NODE_ENV = 'test';
 
+before(loadWasmDpp);
 beforeEach(function beforeEach() {
   if (!this.sinon) {
     this.sinon = sinon.createSandbox();
