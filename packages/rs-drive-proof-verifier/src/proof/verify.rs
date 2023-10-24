@@ -10,11 +10,11 @@ use crate::Error;
 
 use super::from_proof::QuorumInfoProvider;
 
-pub(crate) fn verify_tenderdash_proof(
+pub(crate) fn verify_tenderdash_proof<'a>(
     proof: &Proof,
     mtd: &ResponseMetadata,
     root_hash: &[u8],
-    provider: &Box<dyn QuorumInfoProvider>,
+    provider: &'a dyn QuorumInfoProvider,
 ) -> Result<(), Error> {
     let block_id_hash = proof.block_id_hash.to_vec();
 
@@ -32,7 +32,7 @@ pub(crate) fn verify_tenderdash_proof(
     let chain_id = mtd.chain_id.clone();
     let quorum_type = proof.quorum_type;
     let pubkey_bytes =
-        provider.get_quorum_public_key(quorum_type, quorum_hash.to_vec(), core_locked_height)?;
+        provider.get_quorum_public_key(quorum_type, quorum_hash, core_locked_height)?;
 
     let state_id = StateId {
         app_version: version,

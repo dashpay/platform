@@ -184,7 +184,7 @@ impl InternalClauses {
 
     #[cfg(any(feature = "full", feature = "verify"))]
     /// Extracts the `WhereClause`s and returns them as type `InternalClauses`.
-    fn extract_from_clauses(all_where_clauses: Vec<WhereClause>) -> Result<Self, Error> {
+    pub fn extract_from_clauses(all_where_clauses: Vec<WhereClause>) -> Result<Self, Error> {
         let primary_key_equal_clauses_array = all_where_clauses
             .iter()
             .filter_map(|where_clause| match where_clause.operator {
@@ -1945,7 +1945,10 @@ impl<'a> From<&DriveQuery<'a>> for BTreeMap<String, Value> {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
+    use dpp::data_contract::data_contract::DataContractV0;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::v0::DocumentTypeV0;
+    use dpp::data_contract::document_type::DocumentType;
     use dpp::prelude::Identifier;
     use serde_json::json;
     use std::borrow::Cow;

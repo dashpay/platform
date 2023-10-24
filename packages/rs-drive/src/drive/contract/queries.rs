@@ -15,34 +15,56 @@ impl Drive {
     ///
     /// This function takes a contract ID and creates a path query for fetching the contract data.
     ///
+    /// Note it can only be used for simple queries that are not merged with other queries.
+    ///
     /// # Arguments
     ///
     /// * `contract_id` - A contract ID as a 32-byte array. The contract ID is used to
     ///   create the path query.
+    /// * `with_limit` - Should be set to false when we are going to merge the path queries.
     ///
     /// # Returns
     ///
     /// * `PathQuery` - A `PathQuery` object representing the query for fetching the contract data.
-    pub fn fetch_contract_query(contract_id: [u8; 32]) -> PathQuery {
+    pub fn fetch_contract_query(contract_id: [u8; 32], with_limit: bool) -> PathQuery {
         let contract_path = contract_root_path_vec(contract_id.as_slice());
-        PathQuery::new_single_key(contract_path, vec![0])
+        let mut query = PathQuery::new_single_key(contract_path, vec![0]);
+
+        if with_limit {
+            // TODO: remove this limit once `verify_query_with_absence_proof` supports queries without limits
+            query.query.limit = Some(1);
+        }
+        query
     }
 
     /// Creates a path query for a specified contract.
     ///
     /// This function takes a contract ID and creates a path query for fetching the contract data.
     ///
+    /// Note it can only be used for simple queries that are not merged with other queries.
+    ///
     /// # Arguments
     ///
     /// * `contract_id` - A contract ID as a 32-byte array. The contract ID is used to
     ///   create the path query.
+    /// * `with_limit` - Should be set to false when we are going to merge the path queries.
     ///
     /// # Returns
     ///
     /// * `PathQuery` - A `PathQuery` object representing the query for fetching the contract data.
-    pub fn fetch_contract_with_history_latest_query(contract_id: [u8; 32]) -> PathQuery {
+    pub fn fetch_contract_with_history_latest_query(
+        contract_id: [u8; 32],
+        with_limit: bool,
+    ) -> PathQuery {
         let contract_path = contract_keeping_history_storage_path_vec(contract_id.as_slice());
-        PathQuery::new_single_key(contract_path, vec![0])
+        let mut query = PathQuery::new_single_key(contract_path, vec![0]);
+
+        if with_limit {
+            // TODO: remove this limit once `verify_query_with_absence_proof` supports queries without limits
+            query.query.limit = Some(1);
+        }
+
+        query
     }
 
     /// Creates a merged path query for multiple contracts.
