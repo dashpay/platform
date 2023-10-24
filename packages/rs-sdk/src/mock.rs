@@ -16,7 +16,9 @@
 //! ```
 //!
 //! See tests/mock_*.rs for more detailed examples.
+pub mod config;
 
+use dapi_grpc::platform::v0::{self as proto};
 use dpp::{
     document::serialization_traits::DocumentCborMethodsV0,
     document::Document,
@@ -31,12 +33,20 @@ use dpp::{
     },
     version::PlatformVersion,
 };
-use drive_proof_verifier::{FromProof, QuorumInfoProvider};
-use rs_dapi_client::{mock::MockDapiClient, transport::TransportRequest};
-use std::{collections::BTreeMap, sync::Arc};
+use drive_proof_verifier::{FromProof, MockQuorumInfoProvider};
+use rs_dapi_client::{
+    mock::{Key, MockDapiClient},
+    transport::TransportRequest,
+    DapiClient, DumpData,
+};
+use serde::Deserialize;
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 
-use crate::platform::{Fetch, List, Query};
+use crate::{
+    platform::{DocumentQuery, Fetch, List, Query},
+    Error,
+};
 
 /// Mechanisms to mock Dash Platform SDK.
 ///
@@ -48,10 +58,11 @@ use crate::platform::{Fetch, List, Query};
 ///
 /// Can panic on errors.
 pub struct MockDashPlatformSdk {
-    from_proof_expectations: BTreeMap<Vec<u8>, Vec<u8>>,
+    from_proof_expectations: BTreeMap<Key, Vec<u8>>,
     platform_version: &'static PlatformVersion,
     dapi: Arc<Mutex<MockDapiClient>>,
     prove: bool,
+    quorum_provider: Option<MockQuorumInfoProvider>,
 }
 
 impl MockDashPlatformSdk {
@@ -65,11 +76,92 @@ impl MockDashPlatformSdk {
             platform_version: version,
             dapi,
             prove,
+            quorum_provider: None,
         }
     }
 
     pub(crate) fn version<'v>(&self) -> &'v PlatformVersion {
         self.platform_version
+    }
+    /// Define a directory where files containing quorum information, like quorum public keys, are stored.
+    ///
+    /// This directory will be used to load quorum information from files.
+    /// You can use [SdkBuilder::with_dump_dir()](crate::SdkBuilder::with_dump_dir()) to generate these files.
+    pub fn quorum_info_dir<P: AsRef<std::path::Path>>(&mut self, dir: P) -> &mut Self {
+        let mut provider = MockQuorumInfoProvider::new();
+        provider.quorum_keys_dir(Some(dir.as_ref().to_path_buf()));
+        self.quorum_provider = Some(provider);
+
+        self
+    }
+
+    /// Load all expectations from files in a directory.
+    ///
+    /// Expectation files must be prefixed with [DapiClient::DUMP_FILE_PREFIX] and
+    /// have `.json` extension.
+    pub async fn load_expectations<P: AsRef<std::path::Path>>(
+        &mut self,
+        dir: P,
+    ) -> Result<&mut Self, Error> {
+        let prefix = DapiClient::DUMP_FILE_PREFIX;
+
+        let entries = dir.as_ref().read_dir().map_err(|e| {
+            Error::Config(format!(
+                "cannot load mock expectations from {}: {}",
+                dir.as_ref().display(),
+                e
+            ))
+        })?;
+
+        let files: Vec<PathBuf> = entries
+            .into_iter()
+            .filter_map(|x| x.ok())
+            .filter(|f| {
+                f.file_type().is_ok_and(|t| t.is_file())
+                    && f.file_name().to_string_lossy().starts_with(prefix)
+                    && f.file_name().to_string_lossy().ends_with(".json")
+            })
+            .map(|f| f.path())
+            .collect();
+
+        for filename in &files {
+            let basename = filename.file_name().unwrap().to_str().unwrap();
+            let request_type = basename.split('_').nth(2).unwrap_or_default();
+
+            match request_type {
+                "GetDataContractRequest" => {
+                    self.load_expectation::<proto::GetDataContractRequest>(filename)
+                        .await?
+                }
+
+                "DocumentQuery" => self.load_expectation::<DocumentQuery>(filename).await?,
+                _ => {
+                    return Err(Error::Config(format!(
+                        "unknown request type {} in {}",
+                        request_type,
+                        filename.display()
+                    )))
+                }
+            };
+        }
+
+        Ok(self)
+    }
+
+    async fn load_expectation<T: TransportRequest + for<'de> Deserialize<'de> + MockRequest>(
+        &mut self,
+        path: &PathBuf,
+    ) -> Result<(), Error> {
+        let data = DumpData::<T>::load(path).map_err(|e| {
+            Error::Config(format!(
+                "cannot load mock expectations from {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
+
+        self.dapi.lock().await.expect(&data.request, &data.response);
+        Ok(())
     }
 
     /// Expect a [Fetch] request and return provided object.
@@ -211,7 +303,7 @@ impl MockDashPlatformSdk {
     pub(crate) fn parse_proof<I, O: FromProof<I>>(
         &self,
         request: O::Request,
-        _response: O::Response,
+        response: O::Response,
     ) -> Result<Option<O>, drive_proof_verifier::Error>
     where
         O::Request: MockRequest,
@@ -219,22 +311,17 @@ impl MockDashPlatformSdk {
         // O: FromProof<<O as FromProof<I>>::Request>,
     {
         let data = match self.from_proof_expectations.get(&request.mock_key()) {
-            Some(d) => d,
-            None => panic!("from_proof_expectations not found"),
+            Some(d) => Option::<O>::mock_deserialize(self, d),
+            None => {
+                let provider = self.quorum_provider.as_ref()
+                    .ok_or(drive_proof_verifier::Error::InvalidQuorum{
+                        error:"expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
+                    })?;
+                O::maybe_from_proof(request, response, provider)?
+            }
         };
 
-        Ok(Option::<O>::mock_deserialize(self, data))
-    }
-}
-
-impl QuorumInfoProvider for MockDashPlatformSdk {
-    fn get_quorum_public_key(
-        &self,
-        _quorum_type: u32,
-        _quorum_hash: [u8; 32],
-        _core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], drive_proof_verifier::Error> {
-        unimplemented!("get_quorum_public_key is not implemented in mock SDK")
+        Ok(data)
     }
 }
 
@@ -245,12 +332,12 @@ pub trait MockRequest {
     /// ## Panics
     ///
     /// Can panic on errors.
-    fn mock_key(&self) -> Vec<u8>;
+    fn mock_key(&self) -> Key;
 }
 
 impl<T: serde::Serialize> MockRequest for T {
-    fn mock_key(&self) -> Vec<u8> {
-        serde_json::to_vec(self).expect("serialize mock request as a key")
+    fn mock_key(&self) -> Key {
+        Key::new(self)
     }
 }
 

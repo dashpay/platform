@@ -11,7 +11,8 @@ use rs_sdk::{
     platform::{DocumentQuery, List},
     Sdk,
 };
-include!("common.rs");
+
+use crate::common::{mock_data_contract, mock_document_type};
 
 /// Given some data contract, document type and 1 document of this type, when I request list of documents, I get that
 /// document.

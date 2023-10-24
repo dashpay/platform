@@ -68,6 +68,8 @@ impl<D: Dapi + Send> Dapi for &mut D {
 pub struct DapiClient {
     address_list: AddressList,
     settings: RequestSettings,
+    #[cfg(feature = "dump")]
+    pub(crate) dump_dir: Option<std::path::PathBuf>,
 }
 
 impl DapiClient {
@@ -76,6 +78,8 @@ impl DapiClient {
         Self {
             address_list,
             settings,
+            #[cfg(feature = "dump")]
+            dump_dir: None,
         }
     }
 }
@@ -100,6 +104,12 @@ impl Dapi for DapiClient {
 
         // Setup retry policy:
         let retry_settings = ExponentialBuilder::default().with_max_times(applied_settings.retries);
+
+        // Save dump dir for later use, as self is moved into routine
+        #[cfg(feature = "dump")]
+        let dump_dir = self.dump_dir.clone();
+        #[cfg(feature = "dump")]
+        let dump_request = request.clone();
 
         // Setup DAPI request execution routine future. It's a closure that will be called
         // more once to build new future on each retry.
@@ -129,10 +139,18 @@ impl Dapi for DapiClient {
         };
 
         // Start the routine with retry policy applied:
-        routine
+        let result = routine
             .retry(&retry_settings)
             .when(|e| e.can_retry())
             .instrument(tracing::info_span!("request routine"))
-            .await
+            .await;
+
+        // Dump request and response to disk if dump_dir is set:
+        #[cfg(feature = "dump")]
+        if let Ok(ref result) = &result {
+            Self::dump_request_response(dump_request, result.clone(), dump_dir);
+        }
+
+        result
     }
 }

@@ -10,17 +10,17 @@ use crate::Error;
 
 use super::from_proof::QuorumInfoProvider;
 
-pub(crate) fn verify_tenderdash_proof<'a>(
+pub(crate) fn verify_tenderdash_proof(
     proof: &Proof,
     mtd: &ResponseMetadata,
     root_hash: &[u8],
-    provider: &'a dyn QuorumInfoProvider,
+    provider: &dyn QuorumInfoProvider,
 ) -> Result<(), Error> {
     let block_id_hash = proof.block_id_hash.to_vec();
 
     let version = mtd.protocol_version as u64;
-    let height = mtd.height as u64;
-    let round = proof.round as u32;
+    let height = mtd.height;
+    let round = proof.round;
     let core_locked_height = mtd.core_chain_locked_height;
     let quorum_hash = TryInto::<[u8; 32]>::try_into(proof.quorum_hash.as_slice()).map_err(|e| {
         Error::InvalidQuorum {
@@ -82,7 +82,7 @@ pub(crate) fn verify_tenderdash_proof<'a>(
 
     tracing::trace!(
         ?state_id,
-        signature = hex::encode(&signature),
+        signature = hex::encode(signature),
         sign_digest = hex::encode(&sign_digest),
         ?pubkey,
         "verify signature"

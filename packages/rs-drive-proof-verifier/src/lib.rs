@@ -8,6 +8,8 @@ mod error;
 pub mod proof;
 
 pub use error::Error;
+#[cfg(feature = "mocks")]
+pub use proof::from_proof::MockQuorumInfoProvider;
 pub use proof::from_proof::{FromProof, QuorumInfoProvider};
 
 #[cfg(feature = "uniffi")]
