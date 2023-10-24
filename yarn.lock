@@ -1717,7 +1717,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/masternode-reward-shares-contract@workspace:packages/masternode-reward-shares-contract"
   dependencies:
-    "@dashevo/dpp": "workspace:*"
+    "@dashevo/wasm-dpp": "workspace:*"
     chai: ^4.3.9
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
