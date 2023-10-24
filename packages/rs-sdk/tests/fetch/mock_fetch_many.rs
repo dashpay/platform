@@ -8,16 +8,16 @@ use dpp::{
     document::Document,
 };
 use rs_sdk::{
-    platform::{DocumentQuery, List},
+    platform::{DocumentQuery, FetchMany},
     Sdk,
 };
 
 use crate::common::{mock_data_contract, mock_document_type};
 
-/// Given some data contract, document type and 1 document of this type, when I request list of documents, I get that
+/// Given some data contract, document type and 1 document of this type, when I request multiple documents, I get that
 /// document.
 #[tokio::test]
-async fn test_mock_document_list() {
+async fn test_mock_document_fetch_many() {
     let mut sdk = Sdk::new_mock();
     let document_type: DocumentType = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
@@ -36,10 +36,10 @@ async fn test_mock_document_list() {
     let query =
         DocumentQuery::new(data_contract, document_type_name).expect("create document query");
     sdk.mock()
-        .expect_list(query.clone(), Some(expected.clone()))
+        .expect_fetch_many(query.clone(), Some(expected.clone()))
         .await;
 
-    let retrieved = Document::list(&mut sdk, query)
+    let retrieved = Document::fetch_many(&mut sdk, query)
         .await
         .unwrap()
         .expect("document should exist");

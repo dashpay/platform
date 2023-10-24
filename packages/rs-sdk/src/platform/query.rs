@@ -25,7 +25,8 @@ use crate::{error::Error, platform::document_query::DocumentQuery};
 ///
 /// ## Example
 ///
-/// To fetch individual [Identity] object by its [Identifier], you just need to create it and use [Fetch] or [List] trait:
+/// To fetch individual [Identity] object by its [Identifier], you just need to create it and use [Fetch]
+/// or [FetchMany] trait:
 ///
 /// ```rust
 /// use rs_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
@@ -37,7 +38,7 @@ use crate::{error::Error, platform::document_query::DocumentQuery};
 /// ```
 ///
 /// As [Identifier] implements [Query], the `query` variable in the code above can be used as a parameter for
-/// [Sdk::fetch()](crate::Sdk::fetch) and [Sdk::list()](crate::Sdk::list) methods.
+/// [Fetch::fetch()] and [FetchMany::fetch_many()] methods.
 pub trait Query<T: TransportRequest>: Send + Debug + Clone {
     /// Converts the current instance into an instance of the `TransportRequest` type.
     ///

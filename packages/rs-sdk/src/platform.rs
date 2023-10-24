@@ -8,8 +8,8 @@
 mod delegate;
 mod document_query;
 mod fetch;
+mod fetch_many;
 pub mod identity;
-mod list;
 mod query;
 
 pub use dapi_grpc::platform::v0::{self as proto};
@@ -21,6 +21,6 @@ pub use drive::{
     },
     query::DriveQuery,
 };
-pub use {document_query::DocumentQuery, fetch::Fetch, list::List, query::Query};
+pub use {document_query::DocumentQuery, fetch::Fetch, fetch_many::FetchMany, query::Query};
 
 pub use rs_dapi_client as dapi;

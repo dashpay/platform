@@ -1,9 +1,9 @@
-//! List Module
+//! Fetch multiple objects from the Platform.
 //!
-//! This module provides a trait to fetch a list of objects from the platform.
+//! This module provides a trait to fetch multiple objects from the platform.
 //!
 //! ## Traits
-//! - `List`: An async trait that lists items of a specific type from the platform.
+//! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from the platform.
 
 use dapi_grpc::platform::v0::GetDocumentsResponse;
 use dpp::document::Document;
@@ -19,27 +19,27 @@ use crate::{
 };
 /// Trait implemented by objects that can be listed or searched.
 #[async_trait::async_trait]
-pub trait List
+pub trait FetchMany
 where
     Self: Sized,
     Vec<Self>: MockResponse
         + FromProof<
             Self::Request,
             Request = Self::Request,
-            Response = <<Self as List>::Request as TransportRequest>::Response,
+            Response = <<Self as FetchMany>::Request as TransportRequest>::Response,
         > + Sync,
 {
-    /// Type of request used to list data from the platform.
+    /// Type of request used to fetch multiple objects from the platform.
     ///
     /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
     /// This type must implement [`TransportRequest`] and [`MockRequest`].
     type Request: TransportRequest
-        + Into<<Vec<Self> as FromProof<<Self as List>::Request>>::Request>;
+        + Into<<Vec<Self> as FromProof<<Self as FetchMany>::Request>>::Request>;
 
-    /// # List or search for multiple objects on the Dash Platform
+    /// # Fetch (or search) multiple objects on the Dash Platform
     ///
-    /// `list` is an asynchronous method provided by the `List` trait that fetches multiple objects from Dash Platform.
+    /// [`fetch_many()`] is an asynchronous method that fetches multiple objects from Dash Platform.
     ///
     /// ## Parameters
     /// - `sdk`: An instance of [Sdk].
@@ -52,11 +52,11 @@ where
     ///
     /// ## Usage
     ///
-    /// See `examples/list_documents.rs` for a full example.
+    /// See `tests/fetch/document.rs` for a full example.
     ///
     /// ## Error Handling
     /// Any errors encountered during the execution are returned as [`Error`](crate::error::Error) instances.
-    async fn list<Q: Query<<Self as List>::Request>>(
+    async fn fetch_many<Q: Query<<Self as FetchMany>::Request>>(
         sdk: &mut Sdk,
         query: Q,
     ) -> Result<Option<Vec<Self>>, Error> {
@@ -80,11 +80,11 @@ where
 }
 
 #[async_trait::async_trait]
-impl List for Document {
+impl FetchMany for Document {
     // We need to use the DocumentQuery type here because the DocumentQuery
     // type stores full contract, which is missing in the GetDocumentsRequest type.
     type Request = DocumentQuery;
-    async fn list<Q: Query<<Self as List>::Request>>(
+    async fn fetch_many<Q: Query<<Self as FetchMany>::Request>>(
         sdk: &mut Sdk,
         query: Q,
     ) -> Result<Option<Vec<Self>>, Error> {
@@ -94,7 +94,7 @@ impl List for Document {
         let response: GetDocumentsResponse =
             request.execute(sdk, RequestSettings::default()).await?;
 
-        tracing::trace!(request=?document_query, response=?response, "list documents");
+        tracing::trace!(request=?document_query, response=?response, "fetch multiple documents");
 
         let object: Option<Vec<Document>> =
             sdk.parse_proof::<DocumentQuery, Vec<Document>>(document_query, response)?;
