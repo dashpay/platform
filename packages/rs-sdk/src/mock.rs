@@ -44,7 +44,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::{
-    platform::{DocumentQuery, Fetch, List, Query},
+    platform::{DocumentQuery, Fetch, FetchMany, Query},
     Error,
 };
 
@@ -52,7 +52,7 @@ use crate::{
 ///
 /// This object is returned by [Sdk::mock()] and is used to define mock expectations.
 ///
-/// Use [expect_list] to define expectations for [List] requests and [expect_fetch] for [Fetch] requests.
+/// Use [expect_fetch_many] to define expectations for [FetchMany] requests and [expect_fetch] for [Fetch] requests.
 ///
 /// ## Panics
 ///
@@ -232,14 +232,14 @@ impl MockDashPlatformSdk {
         self
     }
 
-    /// Expect a [List] request and return provided object.
+    /// Expect a [FetchMany] request and return provided object.
     ///
-    /// This method is used to define mock expectations for [List] requests.
+    /// This method is used to define mock expectations for [FetchMany] requests.
     ///
     /// ## Generic Parameters
     ///
     /// - `O`: Type of the object that will be returned in response to the query.
-    /// Must implement [List]. `Vec<O>` must implement [MockResponse].
+    /// Must implement [FetchMany]. `Vec<O>` must implement [MockResponse].
     /// - `Q`: Type of the query that will be sent to the platform. Must implement [Query] and [MockRequest].
     ///
     /// ## Arguments
@@ -259,19 +259,22 @@ impl MockDashPlatformSdk {
     /// ## Example
     ///
     /// Usage example is similar to [expect_fetch], but the expected object must be a vector of objects.
-    pub async fn expect_list<O: List, Q: Query<<O as List>::Request> + MockRequest>(
+    pub async fn expect_fetch_many<
+        O: FetchMany,
+        Q: Query<<O as FetchMany>::Request> + MockRequest,
+    >(
         &mut self,
         query: Q,
         objects: Option<Vec<O>>,
     ) -> &mut Self
     where
         Vec<O>: MockResponse,
-        <O as List>::Request: MockRequest,
-        <<O as List>::Request as TransportRequest>::Response: Default,
+        <O as FetchMany>::Request: MockRequest,
+        <<O as FetchMany>::Request as TransportRequest>::Response: Default,
         Vec<O>: FromProof<
-                <O as List>::Request,
-                Request = <O as List>::Request,
-                Response = <<O as List>::Request as TransportRequest>::Response,
+                <O as FetchMany>::Request,
+                Request = <O as FetchMany>::Request,
+                Response = <<O as FetchMany>::Request as TransportRequest>::Response,
             > + Sync,
     {
         let grpc_request = query.query(self.prove).expect("query must be correct");

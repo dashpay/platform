@@ -9,7 +9,7 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::{DataContract, Identifier};
 use drive::query::DriveQuery;
 use rs_sdk::platform::DocumentQuery;
-use rs_sdk::platform::{Fetch, List};
+use rs_sdk::platform::{Fetch, FetchMany};
 
 /// Given some data contract ID, document type and document ID, when I fetch it, then I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -28,15 +28,15 @@ async fn document_read() {
             .expect("data contract not found"),
     );
 
-    // List documents so that we get document ID
+    // Fetch multiple documents so that we get document ID
     let all_docs_query = DocumentQuery::new(
         Arc::clone(&contract),
         &cfg.settings.existing_document_type_name,
     )
     .expect("create SdkDocumentQuery");
-    let docs = Document::list(&mut sdk, all_docs_query)
+    let docs = Document::fetch_many(&mut sdk, all_docs_query)
         .await
-        .expect("list documents")
+        .expect("fetch many documents")
         .expect("no documents found");
     let first_doc = docs.first().expect("document must exist");
 
@@ -104,7 +104,7 @@ async fn document_read_no_document() {
     assert!(doc.is_none(), "document must not be found");
 }
 
-/// Given some data contract ID and document type with at least one document, when I list documents using DriveQuery
+/// Given some data contract ID and document type with at least one document, when I fetch many documents using DriveQuery
 /// as a query, then I get one or more items.
 ///
 /// This test is ignored because it requires a running Platform. To run it, set constants in `common.rs` and run:
@@ -133,9 +133,9 @@ async fn document_list_drive_query() {
 
     let query = DriveQuery::any_item_query(&data_contract, doctype);
 
-    let docs = <Document>::list(&mut sdk, query)
+    let docs = <Document>::fetch_many(&mut sdk, query)
         .await
-        .expect("list documents")
+        .expect("fetch many documents")
         .expect("no documents found");
 
     assert!(docs.len() > 0);
@@ -178,9 +178,9 @@ async fn document_list_document_query() {
     )
     .expect("document query created");
 
-    let docs = <Document>::list(&mut sdk, query)
+    let docs = <Document>::fetch_many(&mut sdk, query)
         .await
-        .expect("list documents")
+        .expect("fetch many documents")
         .expect("no documents found");
 
     assert!(docs.len() > 0);

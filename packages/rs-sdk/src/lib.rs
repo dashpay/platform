@@ -26,9 +26,9 @@
 //! approach. The following traits are already implemented:
 //!
 //! 1. [`Fetch`](crate::platform::Fetch)
-//! 2. [`List`](crate::platform::List)
+//! 2. [`FetchMany`](crate::platform::FetchMany)
 //!
-//! Fetch and List traits return objects based on provided queries. Some example queries include:
+//! Fetch and FetchMany traits return objects based on provided queries. Some example queries include:
 //!
 //! 1. [`Identifier`](crate::platform::Identifier) - fetches an object by its identifier
 //! 2. [`DocumentQuery`](crate::platform::DocumentQuery) - fetches documents based on search conditions; see
