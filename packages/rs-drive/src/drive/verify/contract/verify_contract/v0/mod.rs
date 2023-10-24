@@ -48,8 +48,8 @@ impl Drive {
         ) {
             (true, true) => Self::fetch_historical_contracts_query(&[contract_id]),
             (true, false) => Self::fetch_non_historical_contracts_query(&[contract_id]),
-            (false, true) => Self::fetch_contract_with_history_latest_query(contract_id),
-            (false, false) => Self::fetch_contract_query(contract_id),
+            (false, true) => Self::fetch_contract_with_history_latest_query(contract_id, true),
+            (false, false) => Self::fetch_contract_query(contract_id, true),
         };
 
         tracing::trace!(?path_query, "verify contract");
