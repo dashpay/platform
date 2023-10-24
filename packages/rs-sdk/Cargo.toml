@@ -68,4 +68,4 @@ mocks = [
 # This feature is disabled by default because it requires a local Dash Platform
 # node to be running. Configuration of the node is done via environment variables
 # and/or `${CARGO_MAINFEST_DIR}/.env` file; see also `.env.example`.
-online-testing = []
+online-testing = ["mocks"]

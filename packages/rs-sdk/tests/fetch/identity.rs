@@ -8,7 +8,7 @@ use crate::common::{setup_logs, Config};
 
 /// Given some existing identity ID, when I fetch the identity, and I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn test_data_contract_read() {
+async fn test_identity_read() {
     setup_logs();
 
     use dpp::identity::accessors::IdentityGettersV0;
@@ -27,7 +27,7 @@ async fn test_data_contract_read() {
 
 /// Given some existing identity public key, when I fetch the identity, and I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn test_data_contract_read_by_key() {
+async fn test_identity_read_by_key() {
     let cfg = Config::new();
     let id = cfg.settings.existing_identity_id;
 
@@ -48,7 +48,7 @@ async fn test_data_contract_read_by_key() {
 
     let identity2 = Identity::fetch(&mut api, PublicKeyHash(key_hash))
         .await
-        .expect("fetch identity")
-        .expect("found identity");
+        .expect("fetch identity by key hash")
+        .expect("found identity by key hash");
     assert_eq!(identity2, identity);
 }

@@ -44,7 +44,7 @@ macro_rules! delegate_transport_request_variant {
 /// See [delegate_enum!](crate::delegate_enum!) for more details.
 #[macro_export]
 macro_rules! delegate_from_proof_variant {
-    ($request:ty, $response:ty, $object:ty, $($variant:ident),+) => {
+    ($request:ty, $response:ty, $object:ty, $(($variant:ident, $req: ty, $resp: ty)),+) => {
         impl drive_proof_verifier::FromProof<$request> for $object {
             type Request = $request;
             type Response = $response;
@@ -66,7 +66,7 @@ macro_rules! delegate_from_proof_variant {
                 match request {$(
                     req::$variant(request) => {
                         if let resp::$variant(response) = response {
-                            <Self as drive_proof_verifier::FromProof<$request>>::maybe_from_proof(
+                            <Self as drive_proof_verifier::FromProof<$req>>::maybe_from_proof(
                                 request, response, provider,
                             )
                         } else {
@@ -138,7 +138,7 @@ macro_rules! delegate_enum {
             $request,
             $response,
             $object,
-            $($variant),+
+            $(($variant,$req,$resp)),+
         }
     };
 }
