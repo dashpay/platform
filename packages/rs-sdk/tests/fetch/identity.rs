@@ -1,6 +1,7 @@
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::{identity::hash::IdentityPublicKeyHashMethodsV0, prelude::Identity};
 
+use drive_proof_verifier::proof::from_proof::IdentityBalance;
 use rs_sdk::platform::identity::PublicKeyHash;
 use rs_sdk::platform::Fetch;
 
@@ -51,4 +52,24 @@ async fn test_identity_read_by_key() {
         .expect("fetch identity by key hash")
         .expect("found identity by key hash");
     assert_eq!(identity2, identity);
+}
+
+/// Given some existing identity ID, when I fetch the identity balance, I get some number.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_identity_balance_read() {
+    setup_logs();
+
+    use dpp::identity::accessors::IdentityGettersV0;
+    let cfg = Config::new();
+    let id: dpp::prelude::Identifier = cfg.settings.existing_identity_id;
+
+    let mut api = cfg.setup_api().await;
+
+    let balance = IdentityBalance::fetch(&mut api, id)
+        .await
+        .expect("fetch identity balance")
+        .expect("found identity balance");
+
+    assert_ne!(0, balance);
+    tracing::debug!(balance, ?id, "identity balance")
 }
