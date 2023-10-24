@@ -31,7 +31,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        let contract_query = Self::fetch_contract_query(contract_id);
+        let contract_query = Self::fetch_contract_query(contract_id, true);
         tracing::trace!(?contract_query, "proving contract");
         let contract_proof = self.grove_get_proved_path_query(
             &contract_query,
@@ -52,7 +52,8 @@ impl Drive {
             Ok(_) => Ok(contract_proof),
             Err(Error::GroveDB(grovedb::Error::WrongElementType(s))) if s == "expected an item" => {
                 // In this case we are trying to prove a historical type contract
-                let contract_query = Self::fetch_contract_with_history_latest_query(contract_id);
+                let contract_query =
+                    Self::fetch_contract_with_history_latest_query(contract_id, true);
                 tracing::trace!(?contract_query, "proving historical contract");
                 let historical_contract_proof = self.grove_get_proved_path_query(
                     &contract_query,
