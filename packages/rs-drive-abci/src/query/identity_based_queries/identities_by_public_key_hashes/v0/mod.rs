@@ -4,10 +4,12 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
+use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_request::GetIdentitiesByPublicKeyHashesRequestV0;
+use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_response::{
+    GetIdentitiesByPublicKeyHashesResponseV0, PublicKeyHashIdentityEntry,
+};
 use dapi_grpc::platform::v0::{
-    get_identities_by_public_key_hashes_response, get_identity_response,
-    GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse,
-    GetIdentityRequest, GetIdentityResponse, Proof, ResponseMetadata,
+    get_identities_by_public_key_hashes_response, GetIdentitiesByPublicKeyHashesResponse, Proof,
 };
 use dpp::platform_value::Bytes20;
 use dpp::serialization::PlatformSerializable;
@@ -20,17 +22,15 @@ impl<C> Platform<C> {
     pub(super) fn query_identities_by_public_key_hashes_v0(
         &self,
         state: &PlatformState,
-        query_data: &[u8],
+        get_identities_by_public_key_hashes_request: GetIdentitiesByPublicKeyHashesRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
         let quorum_type = self.config.quorum_type() as u32;
-        let GetIdentitiesByPublicKeyHashesRequest {
+        let GetIdentitiesByPublicKeyHashesRequestV0 {
             public_key_hashes,
             prove,
-        } = check_validation_result_with_data!(GetIdentitiesByPublicKeyHashesRequest::decode(
-            query_data
-        ));
+        } = get_identities_by_public_key_hashes_request;
         let public_key_hashes = check_validation_result_with_data!(public_key_hashes
             .into_iter()
             .map(|pub_key_hash_vec| {
@@ -51,22 +51,22 @@ impl<C> Platform<C> {
                     None,
                     platform_version,
                 ));
+
             GetIdentitiesByPublicKeyHashesResponse {
-                result: Some(get_identities_by_public_key_hashes_response::Result::Proof(
-                    Proof {
+                version: Some(get_identities_by_public_key_hashes_response::Version::V0(GetIdentitiesByPublicKeyHashesResponseV0 {
+                    result: Some(get_identities_by_public_key_hashes_response::get_identities_by_public_key_hashes_response_v0::Result::Proof(Proof {
                         grovedb_proof: proof,
                         quorum_hash: state.last_quorum_hash().to_vec(),
                         quorum_type,
                         block_id_hash: state.last_block_id_hash().to_vec(),
                         signature: state.last_block_signature().to_vec(),
                         round: state.last_block_round(),
-                    },
-                )),
-                metadata: Some(metadata),
+                    })),
+                    metadata: Some(metadata),
+                })),
             }
-            .encode_to_vec()
+                .encode_to_vec()
         } else {
-            //todo: fix this so we return optionals
             let identities = check_validation_result_with_data!(self
                 .drive
                 .fetch_full_identities_by_unique_public_key_hashes(
@@ -75,18 +75,28 @@ impl<C> Platform<C> {
                     platform_version,
                 ));
             let identities = check_validation_result_with_data!(identities
-                .into_values()
-                .filter_map(|maybe_identity| Some(maybe_identity?.serialize_consume_to_bytes()))
-                .collect::<Result<Vec<Vec<u8>>, ProtocolError>>());
+                .into_iter()
+                .map(|(hash, maybe_identity)| {
+                    Ok(PublicKeyHashIdentityEntry {
+                        public_key_hash: hash.to_vec(),
+                        value: maybe_identity
+                            .map(|identity| identity.serialize_consume_to_bytes())
+                            .transpose()?,
+                    })
+                })
+                .collect::<Result<Vec<PublicKeyHashIdentityEntry>, ProtocolError>>());
+
             GetIdentitiesByPublicKeyHashesResponse {
-                result: Some(
-                    get_identities_by_public_key_hashes_response::Result::Identities(
-                        get_identities_by_public_key_hashes_response::Identities { identities },
-                    ),
-                ),
-                metadata: Some(metadata),
+                version: Some(get_identities_by_public_key_hashes_response::Version::V0(GetIdentitiesByPublicKeyHashesResponseV0 {
+                    metadata: Some(metadata),
+                    result: Some(get_identities_by_public_key_hashes_response::get_identities_by_public_key_hashes_response_v0::Result::Identities(
+                        get_identities_by_public_key_hashes_response::IdentitiesByPublicKeyHashes {
+                            identity_entries: identities,
+                        },
+                    )),
+                })),
             }
-            .encode_to_vec()
+                .encode_to_vec()
         };
         Ok(QueryValidationResult::new_with_data(response_data))
     }

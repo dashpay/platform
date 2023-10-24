@@ -16,55 +16,41 @@ impl<C> Platform<C> {
         &self,
         query_path: &str,
         query_data: &[u8],
-        version: Option<FeatureVersion>,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let state = self.state.read().unwrap();
         match query_path {
-            "/identity" => self.query_identity(&state, query_data, version, platform_version),
-            "/identities" => self.query_identities(&state, query_data, version, platform_version),
-            "/identity/balance" => {
-                self.query_balance(&state, query_data, version, platform_version)
-            }
+            "/identity" => self.query_identity(&state, query_data, platform_version),
+            "/identities" => self.query_identities(&state, query_data, platform_version),
+            "/identity/balance" => self.query_balance(&state, query_data, platform_version),
             "/identity/balanceAndRevision" => {
-                self.query_balance_and_revision(&state, query_data, version, platform_version)
+                self.query_balance_and_revision(&state, query_data, platform_version)
             }
-            "/identity/keys" => self.query_keys(&state, query_data, version, platform_version),
-            "/identity/by-public-key-hash" => self.query_identity_by_public_key_hash(
-                &state,
-                query_data,
-                version,
-                platform_version,
-            ),
-            "/identities/by-public-key-hash" => self.query_identities_by_public_key_hashes(
-                &state,
-                query_data,
-                version,
-                platform_version,
-            ),
-            "/dataContract" => {
-                self.query_data_contract(&state, query_data, version, platform_version)
+            "/identity/keys" => self.query_keys(&state, query_data, platform_version),
+            "/identity/by-public-key-hash" => {
+                self.query_identity_by_public_key_hash(&state, query_data, platform_version)
             }
-            "/dataContracts" => {
-                self.query_data_contracts(&state, query_data, version, platform_version)
+            "/identities/by-public-key-hash" => {
+                self.query_identities_by_public_key_hashes(&state, query_data, platform_version)
             }
+            "/dataContract" => self.query_data_contract(&state, query_data, platform_version),
+            "/dataContracts" => self.query_data_contracts(&state, query_data, platform_version),
             "/dataContractHistory" => {
-                self.query_data_contract_history(&state, query_data, version, platform_version)
+                self.query_data_contract_history(&state, query_data, platform_version)
             }
             "/documents" | "/dataContract/documents" => {
-                self.query_documents(&state, query_data, version, platform_version)
+                self.query_documents(&state, query_data, platform_version)
             }
-            "/proofs" => self.query_proofs(&state, query_data, version, platform_version),
+            "/proofs" => self.query_proofs(&state, query_data, platform_version),
             "/versionUpgrade/state" => {
-                self.query_version_upgrade_state(&state, query_data, version, platform_version)
+                self.query_version_upgrade_state(&state, query_data, platform_version)
             }
             "/versionUpgrade/voteStatus" => self.query_version_upgrade_vote_status(
                 &state,
                 query_data,
-                version,
                 platform_version,
             ),
-            "/epochInfos" => self.query_epoch_infos(&state, query_data, version, platform_version),
+            "/epochInfos" => self.query_epoch_infos(&state, query_data, platform_version),
             other => Ok(QueryValidationResult::new_with_error(
                 QueryError::InvalidArgument(format!("query path '{}' is not supported", other)),
             )),
@@ -78,9 +64,10 @@ mod test {
         use crate::error::Error;
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+        use chrono::expect;
         use dapi_grpc::platform::v0::{
-            get_data_contract_history_response, GetDataContractHistoryRequest,
-            GetDataContractHistoryResponse,
+            get_data_contract_history_request, get_data_contract_history_response,
+            GetDataContractHistoryRequest, GetDataContractHistoryResponse,
         };
         use dpp::block::block_info::BlockInfo;
 
@@ -88,6 +75,12 @@ mod test {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
 
+        use crate::error::query::QueryError;
+        use crate::query::QueryValidationResult;
+        use dapi_grpc::platform::v0::get_data_contract_history_request::GetDataContractHistoryRequestV0;
+        use dapi_grpc::platform::v0::get_data_contract_history_response::{
+            get_data_contract_history_response_v0, GetDataContractHistoryResponseV0,
+        };
         use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
         use dpp::data_contract::DataContract;
@@ -100,8 +93,8 @@ mod test {
         use drive::error::contract::DataContractError;
         use prost::Message;
 
-        fn default_request() -> GetDataContractHistoryRequest {
-            GetDataContractHistoryRequest {
+        fn default_request_v0() -> GetDataContractHistoryRequestV0 {
+            GetDataContractHistoryRequestV0 {
                 id: vec![1; 32],
                 limit: Some(10),
                 offset: Some(0),
@@ -215,14 +208,18 @@ mod test {
             } = set_up_test();
 
             let request = GetDataContractHistoryRequest {
-                id: original_data_contract.id().to_vec(),
-                ..default_request()
+                version: Some(get_data_contract_history_request::Version::V0(
+                    GetDataContractHistoryRequestV0 {
+                        id: original_data_contract.id().to_vec(),
+                        ..default_request_v0()
+                    },
+                )),
             };
 
             let request_data = request.encode_to_vec();
 
             let result = platform
-                .query_v0("/dataContractHistory", &request_data, 0, platform_version)
+                .query_v0("/dataContractHistory", &request_data, platform_version)
                 .expect("To return result");
 
             let ValidationResult { errors, data } = result;
@@ -238,17 +235,20 @@ mod test {
             let response = GetDataContractHistoryResponse::decode(data.as_slice())
                 .expect("To decode response");
 
-            let GetDataContractHistoryResponse {
-                metadata: _,
+            let GetDataContractHistoryResponse { version } = response;
+
+            let get_data_contract_history_response::Version::V0(GetDataContractHistoryResponseV0 {
                 result,
-            } = response;
+                metadata: _,
+            }) = version.expect("expected a versioned response");
+
             let res = result.expect("expect result to be returned from the query");
 
             let contract_history = match res {
-                get_data_contract_history_response::Result::DataContractHistory(
+                get_data_contract_history_response_v0::Result::DataContractHistory(
                     data_contract_history,
                 ) => data_contract_history,
-                get_data_contract_history_response::Result::Proof(_) => {
+                get_data_contract_history_response_v0::Result::Proof(_) => {
                     panic!("expect result to be DataContractHistory");
                 }
             };
@@ -298,15 +298,22 @@ mod test {
                 original_data_contract,
             } = set_up_test();
 
-            let request = GetDataContractHistoryRequest {
+            let request_v0 = GetDataContractHistoryRequestV0 {
                 id: original_data_contract.id().to_vec(),
                 prove: true,
-                ..default_request()
+                ..default_request_v0()
             };
+
+            let start_at_ms = request_v0.start_at_ms;
+
+            let request = GetDataContractHistoryRequest {
+                version: Some(get_data_contract_history_request::Version::V0(request_v0)),
+            };
+
             let request_data = request.encode_to_vec();
 
             let result = platform
-                .query_v0("/dataContractHistory", &request_data, 0, platform_version)
+                .query_v0("/dataContractHistory", &request_data, platform_version)
                 .expect("To return result");
 
             let ValidationResult { errors, data } = result;
@@ -322,24 +329,27 @@ mod test {
             let response = GetDataContractHistoryResponse::decode(data.as_slice())
                 .expect("To decode response");
 
-            let GetDataContractHistoryResponse {
-                metadata: _,
+            let GetDataContractHistoryResponse { version } = response;
+
+            let get_data_contract_history_response::Version::V0(GetDataContractHistoryResponseV0 {
                 result,
-            } = response;
+                metadata: _,
+            }) = version.expect("expected a versioned response");
+
             let res = result.expect("expect result to be returned from the query");
 
             let contract_proof = match res {
-                get_data_contract_history_response::Result::DataContractHistory(_) => {
+                get_data_contract_history_response_v0::Result::DataContractHistory(_) => {
                     panic!("expect result to be Proof");
                 }
-                get_data_contract_history_response::Result::Proof(proof) => proof,
+                get_data_contract_history_response_v0::Result::Proof(proof) => proof,
             };
 
             // Check that the proof has correct values inside
             let (_root_hash, contract_history) = Drive::verify_contract_history(
                 &contract_proof.grovedb_proof,
                 original_data_contract.id().to_buffer(),
-                request.start_at_ms,
+                start_at_ms,
                 Some(10),
                 Some(0),
                 platform_version,
@@ -378,31 +388,31 @@ mod test {
             } = set_up_test();
 
             let request = GetDataContractHistoryRequest {
-                id: original_data_contract.id().to_vec(),
-                limit: Some(100000),
-                ..default_request()
+                version: Some(get_data_contract_history_request::Version::V0(
+                    GetDataContractHistoryRequestV0 {
+                        id: original_data_contract.id().to_vec(),
+                        limit: Some(100000),
+                        ..default_request_v0()
+                    },
+                )),
             };
+
             let request_data = request.encode_to_vec();
 
-            let error = platform
-                .query_v0("/dataContractHistory", &request_data, 0, platform_version)
-                .unwrap_err();
+            let validation_result = platform
+                .query_v0("/dataContractHistory", &request_data, platform_version)
+                .unwrap();
 
-            match error {
-                Error::Drive(drive_error) => match drive_error {
-                    drive::error::Error::DataContract(contract_error) => match contract_error {
-                        DataContractError::Overflow(error_message) => {
-                            assert_eq!(
-                                error_message,
-                                "can't fit u16 limit from the supplied value"
-                            );
-                        }
-                        _ => panic!("expect contract overflow error"),
-                    },
-                    _ => panic!("expect contract error"),
-                },
-                _ => panic!("expect drive error"),
-            }
+            assert!(!validation_result.is_valid());
+
+            let error = validation_result.errors.first().unwrap();
+
+            assert!(matches!(error, QueryError::InvalidArgument(_)));
+
+            assert_eq!(
+                error.to_string(),
+                "invalid argument error: limit out of bounds"
+            );
         }
 
         #[test]
@@ -415,31 +425,31 @@ mod test {
             } = set_up_test();
 
             let request = GetDataContractHistoryRequest {
-                id: original_data_contract.id().to_vec(),
-                offset: Some(100000),
-                ..default_request()
+                version: Some(get_data_contract_history_request::Version::V0(
+                    GetDataContractHistoryRequestV0 {
+                        id: original_data_contract.id().to_vec(),
+                        offset: Some(100000),
+                        ..default_request_v0()
+                    },
+                )),
             };
+
             let request_data = request.encode_to_vec();
 
-            let error = platform
-                .query_v0("/dataContractHistory", &request_data, 0, platform_version)
-                .unwrap_err();
+            let validation_result = platform
+                .query_v0("/dataContractHistory", &request_data, platform_version)
+                .unwrap();
 
-            match error {
-                Error::Drive(drive_error) => match drive_error {
-                    drive::error::Error::DataContract(contract_error) => match contract_error {
-                        DataContractError::Overflow(error_message) => {
-                            assert_eq!(
-                                error_message,
-                                "can't fit u16 offset from the supplied value"
-                            );
-                        }
-                        _ => panic!("expect contract overflow error"),
-                    },
-                    _ => panic!("expect contract error"),
-                },
-                _ => panic!("expect drive error"),
-            }
+            assert!(!validation_result.is_valid());
+
+            let error = validation_result.errors.first().unwrap();
+
+            assert!(matches!(error, QueryError::InvalidArgument(_)));
+
+            assert_eq!(
+                error.to_string(),
+                "invalid argument error: offset out of bounds"
+            );
         }
     }
 }

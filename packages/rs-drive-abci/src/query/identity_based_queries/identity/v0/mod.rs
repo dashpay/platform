@@ -4,9 +4,9 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::{
-    get_identity_response, GetIdentityRequest, GetIdentityResponse, Proof, ResponseMetadata,
-};
+use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
+use dapi_grpc::platform::v0::get_identity_response::GetIdentityResponseV0;
+use dapi_grpc::platform::v0::{get_identity_response, GetIdentityResponse, Proof};
 use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializable;
@@ -18,13 +18,12 @@ impl<C> Platform<C> {
     pub(super) fn query_identity_v0(
         &self,
         state: &PlatformState,
-        query_data: &[u8],
+        get_identity_request: GetIdentityRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
         let quorum_type = self.config.quorum_type() as u32;
-        let GetIdentityRequest { id, prove } =
-            check_validation_result_with_data!(GetIdentityRequest::decode(query_data));
+        let GetIdentityRequestV0 { id, prove } = get_identity_request;
         let identity_id: Identifier =
             check_validation_result_with_data!(id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
@@ -39,15 +38,19 @@ impl<C> Platform<C> {
             ));
 
             GetIdentityResponse {
-                result: Some(get_identity_response::Result::Proof(Proof {
-                    grovedb_proof: proof,
-                    quorum_hash: state.last_quorum_hash().to_vec(),
-                    quorum_type,
-                    block_id_hash: state.last_block_id_hash().to_vec(),
-                    signature: state.last_block_signature().to_vec(),
-                    round: state.last_block_round(),
+                version: Some(get_identity_response::Version::V0(GetIdentityResponseV0 {
+                    result: Some(
+                        get_identity_response::get_identity_response_v0::Result::Proof(Proof {
+                            grovedb_proof: proof,
+                            quorum_hash: state.last_quorum_hash().to_vec(),
+                            quorum_type,
+                            block_id_hash: state.last_block_id_hash().to_vec(),
+                            signature: state.last_block_signature().to_vec(),
+                            round: state.last_block_round(),
+                        }),
+                    ),
+                    metadata: Some(metadata),
                 })),
-                metadata: Some(metadata),
             }
             .encode_to_vec()
         } else {
@@ -65,8 +68,12 @@ impl<C> Platform<C> {
                     .map_err(QueryError::Protocol)));
 
             GetIdentityResponse {
-                result: Some(get_identity_response::Result::Identity(identity)),
-                metadata: Some(metadata),
+                version: Some(get_identity_response::Version::V0(GetIdentityResponseV0 {
+                    result: Some(
+                        get_identity_response::get_identity_response_v0::Result::Identity(identity),
+                    ),
+                    metadata: Some(metadata),
+                })),
             }
             .encode_to_vec()
         };

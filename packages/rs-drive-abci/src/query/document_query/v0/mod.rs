@@ -4,7 +4,9 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_documents_request::Start;
+use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
+use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV0;
+use dapi_grpc::platform::v0::get_documents_response::GetDocumentsResponseV0;
 use dapi_grpc::platform::v0::{
     get_documents_response, GetDocumentsRequest, GetDocumentsResponse, Proof,
 };
@@ -22,12 +24,12 @@ impl<C> Platform<C> {
     pub(super) fn query_documents_v0(
         &self,
         state: &PlatformState,
-        query_data: &[u8],
+        request: GetDocumentsRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
         let quorum_type = self.config.quorum_type() as u32;
-        let GetDocumentsRequest {
+        let GetDocumentsRequestV0 {
             data_contract_id,
             document_type: document_type_name,
             r#where,
@@ -35,7 +37,7 @@ impl<C> Platform<C> {
             limit,
             prove,
             start,
-        } = check_validation_result_with_data!(GetDocumentsRequest::decode(query_data));
+        } = request;
         let contract_id: Identifier = check_validation_result_with_data!(data_contract_id
             .try_into()
             .map_err(|_| QueryError::InvalidArgument(
@@ -136,28 +138,45 @@ impl<C> Platform<C> {
                     drive_query.execute_with_proof(&self.drive, None, None, platform_version)
                 );
                 GetDocumentsResponse {
-                    result: Some(get_documents_response::Result::Proof(Proof {
-                        grovedb_proof: proof,
-                        quorum_hash: state.last_quorum_hash().to_vec(),
-                        quorum_type,
-                        block_id_hash: state.last_block_id_hash().to_vec(),
-                        signature: state.last_block_signature().to_vec(),
-                        round: state.last_block_round(),
-                    })),
-                    metadata: Some(metadata),
+                    version: Some(get_documents_response::Version::V0(
+                        GetDocumentsResponseV0 {
+                            result: Some(
+                                get_documents_response::get_documents_response_v0::Result::Proof(
+                                    Proof {
+                                        grovedb_proof: proof,
+                                        quorum_hash: state.last_quorum_hash().to_vec(),
+                                        quorum_type,
+                                        block_id_hash: state.last_block_id_hash().to_vec(),
+                                        signature: state.last_block_signature().to_vec(),
+                                        round: state.last_block_round(),
+                                    },
+                                ),
+                            ),
+                            metadata: Some(metadata),
+                        },
+                    )),
                 }
                 .encode_to_vec()
             } else {
                 let results = check_validation_result_with_data!(drive_query
                     .execute_raw_results_no_proof(&self.drive, None, None, platform_version))
                 .0;
+
                 GetDocumentsResponse {
-                    result: Some(get_documents_response::Result::Documents(
-                        get_documents_response::Documents { documents: results },
-                    )),
-                    metadata: Some(metadata),
-                }
-                .encode_to_vec()
+                version: Some(get_documents_response::Version::V0(
+                    GetDocumentsResponseV0 {
+                        result: Some(
+                            get_documents_response::get_documents_response_v0::Result::Documents(
+                                get_documents_response::get_documents_response_v0::Documents {
+                                    documents: results,
+                                },
+                            ),
+                        ),
+                        metadata: Some(metadata),
+                    },
+                )),
+            }
+            .encode_to_vec()
             };
         Ok(QueryValidationResult::new_with_data(response_data))
     }

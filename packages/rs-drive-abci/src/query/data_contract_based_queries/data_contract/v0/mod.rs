@@ -4,10 +4,9 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::{
-    get_data_contract_response, GetDataContractRequest, GetDataContractResponse,
-    GetIdentityBalanceResponse, GetIdentityRequest, Proof,
-};
+use dapi_grpc::platform::v0::get_data_contract_request::GetDataContractRequestV0;
+use dapi_grpc::platform::v0::get_data_contract_response::GetDataContractResponseV0;
+use dapi_grpc::platform::v0::{get_data_contract_response, GetDataContractResponse, Proof};
 use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
@@ -19,13 +18,12 @@ impl<C> Platform<C> {
     pub(super) fn query_data_contract_v0(
         &self,
         state: &PlatformState,
-        query_data: &[u8],
+        request: GetDataContractRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
         let quorum_type = self.config.quorum_type() as u32;
-        let GetDataContractRequest { id, prove } =
-            check_validation_result_with_data!(GetDataContractRequest::decode(query_data));
+        let GetDataContractRequestV0 { id, prove } = request;
         let contract_id: Identifier =
             check_validation_result_with_data!(id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
@@ -40,17 +38,19 @@ impl<C> Platform<C> {
             ));
 
             GetDataContractResponse {
-                result: Some(get_data_contract_response::Result::Proof(Proof {
-                    grovedb_proof: proof,
-                    quorum_hash: state.last_quorum_hash().to_vec(),
-                    quorum_type,
-                    block_id_hash: state.last_block_id_hash().to_vec(),
-                    signature: state.last_block_signature().to_vec(),
-                    round: state.last_block_round(),
+                version: Some(get_data_contract_response::Version::V0(GetDataContractResponseV0 {
+                    result: Some(get_data_contract_response::get_data_contract_response_v0::Result::Proof(Proof {
+                        grovedb_proof: proof,
+                        quorum_hash: state.last_quorum_hash().to_vec(),
+                        quorum_type,
+                        block_id_hash: state.last_block_id_hash().to_vec(),
+                        signature: state.last_block_signature().to_vec(),
+                        round: state.last_block_round(),
+                    })),
+                    metadata: Some(metadata),
                 })),
-                metadata: Some(metadata),
             }
-            .encode_to_vec()
+                .encode_to_vec()
         } else {
             let maybe_data_contract = check_validation_result_with_data!(self
                 .drive
@@ -73,12 +73,12 @@ impl<C> Platform<C> {
                     .map_err(QueryError::Protocol)));
 
             GetDataContractResponse {
-                result: Some(get_data_contract_response::Result::DataContract(
-                    data_contract,
-                )),
-                metadata: Some(metadata),
+                version: Some(get_data_contract_response::Version::V0(GetDataContractResponseV0 {
+                    result: Some(get_data_contract_response::get_data_contract_response_v0::Result::DataContract(data_contract)),
+                    metadata: Some(metadata),
+                })),
             }
-            .encode_to_vec()
+                .encode_to_vec()
         };
         Ok(QueryValidationResult::new_with_data(response_data))
     }

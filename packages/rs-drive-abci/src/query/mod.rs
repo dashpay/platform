@@ -24,11 +24,10 @@ impl<C> Platform<C> {
         &self,
         query_path: &str,
         query_data: &[u8],
-        version: Option<FeatureVersion>,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         match platform_version.drive_abci.query.base_query_structure {
-            0 => self.query_v0(query_path, query_data, version, platform_version),
+            0 => self.query_v0(query_path, query_data, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "Platform::query".to_string(),
                 known_versions: vec![0],

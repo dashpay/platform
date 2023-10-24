@@ -4,10 +4,9 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
-use dapi_grpc::platform::v0::{
-    get_identities_response, GetIdentitiesRequest, GetIdentitiesResponse, Proof,
-};
+use dapi_grpc::platform::v0::get_identities_request::GetIdentitiesRequestV0;
+use dapi_grpc::platform::v0::get_identities_response::{GetIdentitiesResponseV0, IdentityEntry};
+use dapi_grpc::platform::v0::{get_identities_response, GetIdentitiesResponse, Proof};
 use dpp::platform_value::Bytes32;
 use dpp::serialization::PlatformSerializable;
 use dpp::validation::ValidationResult;
@@ -19,13 +18,12 @@ impl<C> Platform<C> {
     pub(super) fn query_identities_v0(
         &self,
         state: &PlatformState,
-        query_data: &[u8],
+        get_identities_request: GetIdentitiesRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
         let quorum_type = self.config.quorum_type() as u32;
-        let GetIdentitiesRequest { ids, prove } =
-            check_validation_result_with_data!(GetIdentitiesRequest::decode(query_data));
+        let GetIdentitiesRequestV0 { ids, prove } = get_identities_request;
         let identity_ids = check_validation_result_with_data!(ids
             .into_iter()
             .map(|identity_id_vec| {
@@ -45,16 +43,25 @@ impl<C> Platform<C> {
                     None,
                     &platform_version.drive
                 ));
+
                 GetIdentitiesResponse {
-                    metadata: Some(metadata),
-                    result: Some(get_identities_response::Result::Proof(Proof {
-                        grovedb_proof: proof,
-                        quorum_hash: state.last_quorum_hash().to_vec(),
-                        quorum_type,
-                        block_id_hash: state.last_block_id_hash().to_vec(),
-                        signature: state.last_block_signature().to_vec(),
-                        round: state.last_block_round(),
-                    })),
+                    version: Some(get_identities_response::Version::V0(
+                        GetIdentitiesResponseV0 {
+                            result: Some(
+                                get_identities_response::get_identities_response_v0::Result::Proof(
+                                    Proof {
+                                        grovedb_proof: proof,
+                                        quorum_hash: state.last_quorum_hash().to_vec(),
+                                        quorum_type,
+                                        block_id_hash: state.last_block_id_hash().to_vec(),
+                                        signature: state.last_block_signature().to_vec(),
+                                        round: state.last_block_round(),
+                                    },
+                                ),
+                            ),
+                            metadata: Some(metadata),
+                        },
+                    )),
                 }
                 .encode_to_vec()
             } else {
@@ -80,15 +87,22 @@ impl<C> Platform<C> {
                         }
                     ))
                     .collect());
+
                 GetIdentitiesResponse {
-                    result: Some(get_identities_response::Result::Identities(
-                        get_identities_response::Identities {
-                            identity_entries: identities,
-                        },
-                    )),
-                    metadata: Some(metadata),
-                }
-                .encode_to_vec()
+                version: Some(get_identities_response::Version::V0(
+                    GetIdentitiesResponseV0 {
+                        result: Some(
+                            get_identities_response::get_identities_response_v0::Result::Identities(
+                                get_identities_response::Identities {
+                                    identity_entries: identities,
+                                },
+                            ),
+                        ),
+                        metadata: Some(metadata),
+                    },
+                )),
+            }
+            .encode_to_vec()
             };
         Ok(QueryValidationResult::new_with_data(response_data))
     }
