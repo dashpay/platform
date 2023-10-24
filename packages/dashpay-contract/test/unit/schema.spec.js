@@ -23,8 +23,6 @@ describe('Dashpay Contract', () => {
   let contract;
   let identityId;
 
-  before(loadWasmDpp);
-
   beforeEach(async () => {
     dpp = new DashPlatformProtocol(
       { generate: () => crypto.randomBytes(32) },
