@@ -1377,7 +1377,6 @@ dependencies = [
  "serde_with 3.3.0",
  "sha2",
  "simple-signer",
- "strategy-tests",
  "tempfile",
  "tenderdash-abci",
  "thiserror",
