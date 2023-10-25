@@ -1,9 +1,9 @@
 use crate::buffer::Buffer;
-use dpp::bincode::Decode;
+
 use dpp::consensus::basic::decode::ProtocolVersionParsingError;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::errors::consensus::ConsensusError;
-use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
+use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::version::PlatformVersion;
 use wasm_bindgen::prelude::*;
 

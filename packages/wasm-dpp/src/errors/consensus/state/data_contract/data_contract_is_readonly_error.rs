@@ -1,10 +1,8 @@
-use crate::buffer::Buffer;
 use crate::identifier::IdentifierWrapper;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
 use dpp::consensus::ConsensusError;
 
-use dpp::serialization::PlatformSerializable;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractIsReadonlyError)]

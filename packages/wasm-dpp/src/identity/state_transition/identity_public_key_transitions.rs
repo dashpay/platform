@@ -1,20 +1,20 @@
 //todo: move this file to transition
-use dpp::platform_value::{BinaryData, ReplacementType, Value};
+use dpp::platform_value::{BinaryData, ReplacementType};
 use dpp::serialization::ValueConvertible;
 use dpp::state_transition::public_key_in_creation::accessors::{
     IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
 };
-use dpp::state_transition::public_key_in_creation::v0::BINARY_DATA_FIELDS;
+
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use js_sys::Reflect::delete_property;
 pub use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+
 use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
 use crate::errors::from_dpp_err;
 use crate::utils::WithJsError;
-use crate::{buffer::Buffer, utils, with_js_error};
+use crate::{buffer::Buffer, with_js_error};
 use dpp::version::PlatformVersion;
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -33,7 +33,7 @@ impl IdentityPublicKeyWithWitnessWasm {
         let platform_version =
             &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        IdentityPublicKeyInCreation::default_versioned(&platform_version)
+        IdentityPublicKeyInCreation::default_versioned(platform_version)
             .map(Into::into)
             .map_err(from_dpp_err)
     }

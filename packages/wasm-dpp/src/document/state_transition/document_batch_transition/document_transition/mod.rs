@@ -6,20 +6,14 @@
 // pub use document_delete_transition::*;
 // pub use document_replace_transition::*;
 
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::Value;
 use dpp::prelude::TimestampMillis;
 use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
 use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::{
-    prelude::Identifier,
-    state_transition::documents_batch_transition::{
-        document_transition::DocumentTransition, DocumentCreateTransition,
-        DocumentDeleteTransition, DocumentReplaceTransition,
-    },
-    util::{json_schema::JsonSchemaExt, json_value::JsonValueExt},
-    ProtocolError,
+    state_transition::documents_batch_transition::document_transition::DocumentTransition,
+    util::json_value::JsonValueExt, ProtocolError,
 };
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -30,7 +24,7 @@ use crate::{
     identifier::{identifier_from_js_value, IdentifierWrapper},
     lodash::lodash_set,
     utils::{Inner, ToSerdeJSONExt, WithJsError},
-    with_js_error, BinaryType, ConversionOptions, DataContractWasm,
+    ConversionOptions,
 };
 
 #[wasm_bindgen(js_name=DocumentTransition)]
@@ -304,7 +298,7 @@ pub(crate) fn to_object<'a>(
     let js_value = value.serialize(&serializer)?;
 
     for path in identifiers_paths.into_iter() {
-        if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path.clone()) {
+        if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
             let buffer = Buffer::from_bytes_owned(bytes);
             if !options.skip_identifiers_conversion {
                 lodash_set(&js_value, path, buffer.into());

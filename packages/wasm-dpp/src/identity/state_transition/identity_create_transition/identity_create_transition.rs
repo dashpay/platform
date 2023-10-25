@@ -1,5 +1,3 @@
-use dpp::platform_value::Value;
-use serde_json::Value as JsonValue;
 use std::default::Default;
 
 use wasm_bindgen::__rt::Ref;
@@ -22,7 +20,7 @@ use crate::{
         ChainAssetLockProofWasm, InstantAssetLockProofWasm,
     },
     identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm,
-    utils, with_js_error,
+    with_js_error,
 };
 
 use crate::bls_adapter::JsBlsAdapter;
@@ -62,7 +60,7 @@ impl IdentityCreateTransitionWasm {
         let platform_version =
             &PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
 
-        IdentityCreateTransition::default_versioned(&platform_version)
+        IdentityCreateTransition::default_versioned(platform_version)
             .map(Into::into)
             .map_err(from_dpp_err)
     }
@@ -360,6 +358,6 @@ impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(js_name=setSignature)]
     pub fn set_signature(&mut self, signature: Option<Vec<u8>>) {
         self.0
-            .set_signature(BinaryData::new(signature.unwrap_or(vec![])))
+            .set_signature(BinaryData::new(signature.unwrap_or_default()))
     }
 }

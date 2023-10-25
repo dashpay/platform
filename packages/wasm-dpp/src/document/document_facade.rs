@@ -3,10 +3,7 @@ use std::sync::Arc;
 use wasm_bindgen::{prelude::*, JsValue};
 
 use crate::document::factory::DocumentFactoryWASM;
-use crate::{
-    utils::{get_class_name, IntoWasm},
-    DataContractWasm, ExtendedDocumentWasm,
-};
+use crate::{DataContractWasm, ExtendedDocumentWasm};
 
 use crate::document::state_transition::document_batch_transition::DocumentsBatchTransitionWasm;
 
