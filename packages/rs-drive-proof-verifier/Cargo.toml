@@ -2,7 +2,7 @@
 name = "drive-proof-verifier"
 version = "0.25.0-dev"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.73"
 
 crate-type = ["cdylib"]
 
