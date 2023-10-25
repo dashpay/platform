@@ -3,7 +3,7 @@
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
 use std::fmt::Debug;
 
-use dapi_grpc::platform::v0::{GetDataContractRequest, GetIdentityRequest};
+use dapi_grpc::platform::v0::{self as proto};
 use drive::query::DriveQuery;
 use rs_dapi_client::transport::TransportRequest;
 
@@ -70,23 +70,13 @@ where
     }
 }
 
-impl Query<GetDataContractRequest> for dpp::prelude::Identifier {
-    fn query(self, prove: bool) -> Result<GetDataContractRequest, Error> {
+impl Query<proto::GetDataContractRequest> for dpp::prelude::Identifier {
+    fn query(self, prove: bool) -> Result<proto::GetDataContractRequest, Error> {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
         let id = self.to_vec();
-        Ok(GetDataContractRequest { id, prove: true })
-    }
-}
-
-impl Query<GetIdentityRequest> for dpp::prelude::Identifier {
-    fn query(self, prove: bool) -> Result<GetIdentityRequest, Error> {
-        if !prove {
-            unimplemented!("queries without proofs are not supported yet");
-        }
-        let id = self.to_vec();
-        Ok(GetIdentityRequest { id, prove: true })
+        Ok(proto::GetDataContractRequest { id, prove: true })
     }
 }
 
