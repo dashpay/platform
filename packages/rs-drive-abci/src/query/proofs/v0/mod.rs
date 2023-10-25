@@ -55,7 +55,16 @@ impl<C> Platform<C> {
                         })?,
                     prove_request_type: IdentityProveRequestType::try_from(
                         identity_request.request_type as u8,
-                    )?,
+                    )
+                    .map_err(|_| {
+                        QueryError::InvalidArgument(
+                            format!(
+                                "invalid prove request type '{}'",
+                                identity_request.request_type
+                            )
+                            .to_string(),
+                        )
+                    })?,
                 })
             })
             .collect::<Result<Vec<IdentityDriveQuery>, QueryError>>());
@@ -85,13 +94,13 @@ impl<C> Platform<C> {
                 })
             })
             .collect::<Result<Vec<_>, QueryError>>());
-        let proof = check_validation_result_with_data!(self.drive.prove_multiple(
+        let proof = self.drive.prove_multiple(
             &identity_requests,
             &contract_ids,
             &document_queries,
             None,
             platform_version,
-        ));
+        )?;
 
         let response_data = GetProofsResponse {
             version: Some(get_proofs_response::Version::V0(GetProofsResponseV0 {

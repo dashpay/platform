@@ -44,13 +44,13 @@ impl<C> Platform<C> {
             })
             .collect::<Result<Vec<[u8; 20]>, QueryError>>());
         let response_data = if prove {
-            let proof = check_validation_result_with_data!(self
+            let proof = self
                 .drive
                 .prove_full_identities_by_unique_public_key_hashes(
                     &public_key_hashes,
                     None,
                     platform_version,
-                ));
+                )?;
 
             GetIdentitiesByPublicKeyHashesResponse {
                 version: Some(get_identities_by_public_key_hashes_response::Version::V0(GetIdentitiesByPublicKeyHashesResponseV0 {
@@ -67,14 +67,14 @@ impl<C> Platform<C> {
             }
                 .encode_to_vec()
         } else {
-            let identities = check_validation_result_with_data!(self
+            let identities = self
                 .drive
                 .fetch_full_identities_by_unique_public_key_hashes(
                     public_key_hashes.as_slice(),
                     None,
                     platform_version,
-                ));
-            let identities = check_validation_result_with_data!(identities
+                )?;
+            let identities = identities
                 .into_iter()
                 .map(|(hash, maybe_identity)| {
                     Ok(PublicKeyHashIdentityEntry {
@@ -84,7 +84,7 @@ impl<C> Platform<C> {
                             .transpose()?,
                     })
                 })
-                .collect::<Result<Vec<PublicKeyHashIdentityEntry>, ProtocolError>>());
+                .collect::<Result<Vec<PublicKeyHashIdentityEntry>, ProtocolError>>()?;
 
             GetIdentitiesByPublicKeyHashesResponse {
                 version: Some(get_identities_by_public_key_hashes_response::Version::V0(GetIdentitiesByPublicKeyHashesResponseV0 {

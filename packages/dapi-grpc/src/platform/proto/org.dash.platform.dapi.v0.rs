@@ -250,7 +250,7 @@ pub mod get_identity_balance_response {
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Result {
-            #[prost(message, tag = "1")]
+            #[prost(uint64, tag = "1")]
             Balance(u64),
             #[prost(message, tag = "2")]
             Proof(super::super::Proof),
@@ -291,10 +291,10 @@ pub mod get_identity_balance_and_revision_response {
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct BalanceAndRevision {
-            #[prost(message, optional, tag = "1")]
-            pub balance: ::core::option::Option<u64>,
-            #[prost(message, optional, tag = "2")]
-            pub revision: ::core::option::Option<u64>,
+            #[prost(uint64, tag = "1")]
+            pub balance: u64,
+            #[prost(uint64, tag = "2")]
+            pub revision: u64,
         }
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
@@ -1065,8 +1065,6 @@ pub mod wait_for_state_transition_result_response {
         pub state_transition: ::prost::alloc::vec::Vec<u8>,
         #[prost(message, optional, tag = "2")]
         pub metadata: ::core::option::Option<super::ResponseMetadata>,
-        #[prost(bool, tag = "3")]
-        pub is_synced: bool,
     }
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]

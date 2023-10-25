@@ -134,11 +134,9 @@ impl<C> Platform<C> {
             offset: offset.map(|o| o as u16),
         };
         let response_data = if prove {
-            let proof = check_validation_result_with_data!(self.drive.prove_identity_keys(
-                key_request,
-                None,
-                platform_version
-            ));
+            let proof = self
+                .drive
+                .prove_identity_keys(key_request, None, platform_version)?;
 
             GetIdentityKeysResponse {
                 version: Some(get_identity_keys_response::Version::V0(GetIdentityKeysResponseV0 {
@@ -155,9 +153,9 @@ impl<C> Platform<C> {
             }
                 .encode_to_vec()
         } else {
-            let keys: SerializedKeyVec = check_validation_result_with_data!(self
-                .drive
-                .fetch_identity_keys(key_request, None, platform_version));
+            let keys: SerializedKeyVec =
+                self.drive
+                    .fetch_identity_keys(key_request, None, platform_version)?;
 
             GetIdentityKeysResponse {
                 version: Some(get_identity_keys_response::Version::V0(

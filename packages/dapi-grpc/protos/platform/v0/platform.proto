@@ -152,7 +152,7 @@ message GetIdentityBalanceResponse {
 
   message GetIdentityBalanceResponseV0 {
     oneof result {
-      google.protobuf.UInt64Value balance = 1;
+      uint64 balance = 1;
       Proof proof = 2;
     }
     ResponseMetadata metadata = 3;
@@ -167,8 +167,8 @@ message GetIdentityBalanceAndRevisionResponse {
 
   message GetIdentityBalanceAndRevisionResponseV0 {
     message BalanceAndRevision {
-      google.protobuf.UInt64Value balance = 1;
-      google.protobuf.UInt64Value revision = 2;
+      uint64 balance = 1;
+      uint64 revision = 2;
     }
 
     oneof result {
@@ -484,7 +484,6 @@ message WaitForStateTransitionResultResponse {
   message WaitForStateTransitionResultResponseV0 {
     bytes state_transition = 1;
     ResponseMetadata metadata = 2;
-    bool is_synced = 3;
   }
   oneof version {
     WaitForStateTransitionResultResponseV0 v0 = 1;
