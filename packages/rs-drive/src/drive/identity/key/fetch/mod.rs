@@ -47,11 +47,9 @@ use dpp::prelude::IdentityPublicKey;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersion;
 
+use crate::drive::identity::identity_contract_info_group_path_key_purpose_vec;
 use crate::drive::identity::key::fetch::KeyRequestType::{
     ContractBoundKey, ContractDocumentTypeBoundKey,
-};
-use crate::drive::identity::{
-    identity_contract_info_group_path_key_purpose_vec, identity_contract_info_group_path_vec,
 };
 #[cfg(feature = "full")]
 use grovedb::query_result_type::{
