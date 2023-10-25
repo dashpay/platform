@@ -72,6 +72,54 @@ pub mod get_identity_request {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIdentityBalanceRequest {
+    #[prost(oneof = "get_identity_balance_request::Version", tags = "1")]
+    pub version: ::core::option::Option<get_identity_balance_request::Version>,
+}
+/// Nested message and enum types in `GetIdentityBalanceRequest`.
+pub mod get_identity_balance_request {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetIdentityRequestV0 {
+        #[prost(bytes = "vec", tag = "1")]
+        pub id: ::prost::alloc::vec::Vec<u8>,
+        #[prost(bool, tag = "2")]
+        pub prove: bool,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetIdentityRequestV0),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIdentityBalanceAndRevisionRequest {
+    #[prost(oneof = "get_identity_balance_and_revision_request::Version", tags = "1")]
+    pub version: ::core::option::Option<
+        get_identity_balance_and_revision_request::Version,
+    >,
+}
+/// Nested message and enum types in `GetIdentityBalanceAndRevisionRequest`.
+pub mod get_identity_balance_and_revision_request {
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetIdentityRequestV0 {
+        #[prost(bytes = "vec", tag = "1")]
+        pub id: ::prost::alloc::vec::Vec<u8>,
+        #[prost(bool, tag = "2")]
+        pub prove: bool,
+    }
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetIdentityRequestV0),
+    }
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityResponse {
     #[prost(oneof = "get_identity_response::Version", tags = "1")]
     pub version: ::core::option::Option<get_identity_response::Version>,
@@ -1295,7 +1343,7 @@ pub mod platform_client {
         }
         pub async fn get_identity_balance(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetIdentityRequest>,
+            request: impl tonic::IntoRequest<super::GetIdentityBalanceRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetIdentityBalanceResponse>,
             tonic::Status,
@@ -1325,7 +1373,7 @@ pub mod platform_client {
         }
         pub async fn get_identity_balance_and_revision(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetIdentityRequest>,
+            request: impl tonic::IntoRequest<super::GetIdentityBalanceAndRevisionRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetIdentityBalanceAndRevisionResponse>,
             tonic::Status,

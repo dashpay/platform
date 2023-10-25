@@ -43,23 +43,25 @@ impl<C> Platform<C> {
             .map_err(|_| QueryError::InvalidArgument(
                 "id must be a valid identifier (32 bytes long)".to_string()
             )));
-        let (_, contract) =
-            check_validation_result_with_data!(self.drive.get_contract_with_fetch_info_and_fee(
-                contract_id.to_buffer(),
-                None,
-                true,
-                None,
-                platform_version,
-            ));
+        let (_, contract) = self.drive.get_contract_with_fetch_info_and_fee(
+            contract_id.to_buffer(),
+            None,
+            true,
+            None,
+            platform_version,
+        )?;
         let contract = check_validation_result_with_data!(contract.ok_or(QueryError::Query(
             QuerySyntaxError::DataContractNotFound(
                 "contract not found when querying from value with contract info",
             )
         )));
         let contract_ref = &contract.contract;
-        let document_type = check_validation_result_with_data!(
-            contract_ref.document_type_for_name(document_type_name.as_str())
-        );
+        let document_type = check_validation_result_with_data!(contract_ref
+            .document_type_for_name(document_type_name.as_str())
+            .map_err(|_| QueryError::InvalidArgument(format!(
+                "document type {} not found for contract {}",
+                document_type_name, contract_id
+            ))));
 
         let where_clause = if r#where.is_empty() {
             Value::Null
@@ -72,9 +74,6 @@ impl<C> Platform<C> {
                 }))
         };
 
-        // TODO: fix?
-        //   Fails with "query syntax error: deserialization error: unable to decode 'order_by' query from cbor"
-        //   cbor deserialization fails if order_by is empty
         let order_by = if !order_by.is_empty() {
             check_validation_result_with_data!(ciborium::de::from_reader(order_by.as_slice())
                 .map_err(|_| {
@@ -132,37 +131,54 @@ impl<C> Platform<C> {
             document_type,
             &self.config.drive,
         ));
-        let response_data =
-            if prove {
-                let (proof, _) = check_validation_result_with_data!(
-                    drive_query.execute_with_proof(&self.drive, None, None, platform_version)
-                );
-                GetDocumentsResponse {
-                    version: Some(get_documents_response::Version::V0(
-                        GetDocumentsResponseV0 {
-                            result: Some(
-                                get_documents_response::get_documents_response_v0::Result::Proof(
-                                    Proof {
-                                        grovedb_proof: proof,
-                                        quorum_hash: state.last_quorum_hash().to_vec(),
-                                        quorum_type,
-                                        block_id_hash: state.last_block_id_hash().to_vec(),
-                                        signature: state.last_block_signature().to_vec(),
-                                        round: state.last_block_round(),
-                                    },
-                                ),
+        let response_data = if prove {
+            let proof =
+                match drive_query.execute_with_proof(&self.drive, None, None, platform_version) {
+                    Ok(result) => result.0,
+                    Err(drive::error::Error::Query(query_error)) => {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                            query_error,
+                        )));
+                    }
+                    Err(e) => return Err(e.into()),
+                };
+            GetDocumentsResponse {
+                version: Some(get_documents_response::Version::V0(
+                    GetDocumentsResponseV0 {
+                        result: Some(
+                            get_documents_response::get_documents_response_v0::Result::Proof(
+                                Proof {
+                                    grovedb_proof: proof,
+                                    quorum_hash: state.last_quorum_hash().to_vec(),
+                                    quorum_type,
+                                    block_id_hash: state.last_block_id_hash().to_vec(),
+                                    signature: state.last_block_signature().to_vec(),
+                                    round: state.last_block_round(),
+                                },
                             ),
-                            metadata: Some(metadata),
-                        },
-                    )),
+                        ),
+                        metadata: Some(metadata),
+                    },
+                )),
+            }
+            .encode_to_vec()
+        } else {
+            let results = match drive_query.execute_raw_results_no_proof(
+                &self.drive,
+                None,
+                None,
+                platform_version,
+            ) {
+                Ok(result) => result.0,
+                Err(drive::error::Error::Query(query_error)) => {
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                        query_error,
+                    )));
                 }
-                .encode_to_vec()
-            } else {
-                let results = check_validation_result_with_data!(drive_query
-                    .execute_raw_results_no_proof(&self.drive, None, None, platform_version))
-                .0;
+                Err(e) => return Err(e.into()),
+            };
 
-                GetDocumentsResponse {
+            GetDocumentsResponse {
                 version: Some(get_documents_response::Version::V0(
                     GetDocumentsResponseV0 {
                         result: Some(
@@ -177,7 +193,7 @@ impl<C> Platform<C> {
                 )),
             }
             .encode_to_vec()
-            };
+        };
         Ok(QueryValidationResult::new_with_data(response_data))
     }
 }
