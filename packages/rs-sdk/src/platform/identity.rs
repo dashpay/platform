@@ -9,6 +9,8 @@ use crate::{
     Error,
 };
 
+// Create enum [IdentityRequest] and [IdentityResponse] that will wrap all possible
+// request/response types for [Identity] object.
 delegate_enum! {
     IdentityRequest,
     IdentityResponse,
@@ -39,7 +41,7 @@ pub struct PublicKeyHash(pub [u8; 20]);
 
 impl Query<IdentityRequest> for PublicKeyHash {
     fn query(self, prove: bool) -> Result<IdentityRequest, Error> {
-        if prove != true {
+        if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
         let request = proto::GetIdentityByPublicKeyHashesRequest {

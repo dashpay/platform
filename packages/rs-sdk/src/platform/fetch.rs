@@ -7,11 +7,6 @@
 //! - [Fetch]: An asynchronous trait that defines how to fetch data from the platform.
 //!   It requires the implementing type to also implement [Debug] and [FromProof]
 //!   traits. The associated [Fetch::Request]` type needs to implement [TransportRequest].
-//!
-//! ## Implementations
-//! - `Fetch<API>` for [`Identity`](dpp::prelude::Identity)
-//! - `Fetch<API>` for [`DataContract`](dpp::prelude::DataContract)
-//! - `Fetch<API>` for [`Document`](dpp::document::Document)
 
 use super::document_query::DocumentQuery;
 use super::identity::IdentityRequest;

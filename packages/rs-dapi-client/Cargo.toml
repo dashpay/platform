@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 default = ["mocks"]
-mocks = ["dep:serde_json"]
+mocks = ["dep:serde_json", "dep:sha2", "dep:hex"]
 # dump requests and responses to file
 dump = ["mocks", "dep:serde_json", "dep:sha2", "dep:chrono", "dep:hex"]
 platform_integration_tests = []

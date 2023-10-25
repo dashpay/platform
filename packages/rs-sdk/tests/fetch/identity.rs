@@ -59,7 +59,6 @@ async fn test_identity_read_by_key() {
 async fn test_identity_balance_read() {
     setup_logs();
 
-    use dpp::identity::accessors::IdentityGettersV0;
     let cfg = Config::new();
     let id: dpp::prelude::Identifier = cfg.settings.existing_identity_id;
 
