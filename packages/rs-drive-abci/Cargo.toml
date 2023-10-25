@@ -99,6 +99,7 @@ dpp = { path = "../rs-dpp", features = [
     "data-contract-cbor-conversion",
 ] }
 drive = { path = "../rs-drive" }
+strategy-tests = { path = "../strategy-tests" }
 
 # For tests of grovedb verify
 rocksdb = { version = "0.21.0" }

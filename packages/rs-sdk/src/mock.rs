@@ -18,7 +18,7 @@
 //! See tests/mock_*.rs for more detailed examples.
 pub mod config;
 
-use dapi_grpc::platform::v0::{self as proto, GetIdentityBalanceRequest};
+use dapi_grpc::platform::v0::{self as proto};
 use dpp::{
     document::serialization_traits::DocumentCborMethodsV0,
     document::Document,
@@ -135,7 +135,7 @@ impl MockDashPlatformSdk {
                 }
                 "IdentityRequest" => self.load_expectation::<IdentityRequest>(filename).await?,
                 "GetIdentityBalanceRequest" => {
-                    self.load_expectation::<GetIdentityBalanceRequest>(filename)
+                    self.load_expectation::<proto::GetIdentityBalanceRequest>(filename)
                         .await?
                 }
                 "DocumentQuery" => self.load_expectation::<DocumentQuery>(filename).await?,
