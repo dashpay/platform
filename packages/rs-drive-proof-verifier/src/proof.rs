@@ -15,7 +15,7 @@ use drive::drive::Drive;
 use drive::query::DriveQuery;
 use hex::ToHex;
 
-use super::verify::verify_tenderdash_proof;
+use crate::verify::verify_tenderdash_proof;
 
 pub type DataContractHistory = BTreeMap<u64, DataContract>;
 pub type DataContracts = BTreeMap<[u8; 32], Option<DataContract>>;
