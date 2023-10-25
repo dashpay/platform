@@ -46,7 +46,7 @@ pub fn any_schema_changes(
     new_schema: &JsonValue,
 ) -> bool {
     let changes = old_schema
-        .into_iter()
+        .iter()
         .filter(|(document_type, original_schema)| {
             let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
             let diff = json_patch::diff(original_schema, new_document_schema);

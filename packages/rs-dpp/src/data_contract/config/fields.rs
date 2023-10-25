@@ -1,5 +1,3 @@
-use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
-
 pub const DEFAULT_CONTRACT_KEEPS_HISTORY: bool = false;
 pub const DEFAULT_CONTRACT_CAN_BE_DELETED: bool = false;
 pub const DEFAULT_CONTRACT_MUTABILITY: bool = true;
