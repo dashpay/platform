@@ -47,7 +47,11 @@ describe('getMasternodeScopeFactory', () => {
       };
 
       mockRpcClient.getBlockchainInfo.returns({ result: { blocks: 1337 } });
-      mockRpcClient.masternode.withArgs('count').returns({ result: { enabled: 666 } });
+      mockRpcClient.masternode.withArgs('count').returns({
+        result: {
+          detailed: { regular: { total: 1337, enabled: 777 }, evo: { total: 1337, enabled: 777 } },
+        },
+      });
       mockRpcClient.masternode.withArgs('status').returns({
         result: {
           dmnState: mockDmnState,
@@ -64,10 +68,13 @@ describe('getMasternodeScopeFactory', () => {
         proTxHash: mockProTxHash,
         state: MasternodeStateEnum.READY,
         status: 'Ready',
+        masternodeTotal: 1337,
+        masternodeEnabled: 777,
+        evonodeTotal: 1337,
+        evonodeEnabled: 777,
         nodeState: {
           dmnState: mockDmnState,
           poSePenalty: mockDmnState.PoSePenalty,
-          enabledCount: 666,
           lastPaidHeight: mockDmnState.lastPaidHeight,
           // ignore these 3
           lastPaidTime: scope.nodeState.lastPaidTime,

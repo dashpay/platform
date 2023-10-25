@@ -87,11 +87,11 @@ describe('colors.js', () => {
     });
 
     it('should color yellow', async () => {
-      expect(colors.poSePenalty(2, 10)).to.be.equal(chalk.yellow);
+      expect(colors.poSePenalty(2, 10, 10)).to.be.equal(chalk.yellow);
     });
 
     it('should color red', async () => {
-      expect(colors.poSePenalty(20, 2)).to.be.equal(chalk.red);
+      expect(colors.poSePenalty(20, 2, 2)).to.be.equal(chalk.red);
     });
   });
 });
