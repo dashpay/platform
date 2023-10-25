@@ -1158,7 +1158,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod test {
     pub mod query_data_contract_history {
-        use crate::error::Error;
+
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
         use dapi_grpc::platform::v0::{

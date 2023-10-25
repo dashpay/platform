@@ -316,7 +316,7 @@ mod test {
             &DATA_SCHEMA.clone(),
             ValidationOptions::default(),
         );
-        assert!(matches!(result, Ok(operations) if operations.len() == 0));
+        assert!(matches!(result, Ok(operations) if operations.is_empty()));
     }
 
     #[test]
@@ -344,7 +344,7 @@ mod test {
             ValidationOptions::default(),
         );
 
-        assert!(matches!(result, Ok(operations) if operations.len() == 0));
+        assert!(matches!(result, Ok(operations) if operations.is_empty()));
     }
 
     #[test]
@@ -358,7 +358,7 @@ mod test {
             ValidationOptions::default(),
         );
 
-        assert!(matches!(result, Ok(operations) if operations.len() == 0));
+        assert!(matches!(result, Ok(operations) if operations.is_empty()));
     }
 
     #[test]
@@ -391,7 +391,7 @@ mod test {
 
         assert!(matches!(
             result,
-            Ok(operations) if operations.len() > 0
+            Ok(operations) if !operations.is_empty()
         ));
     }
 }

@@ -3,7 +3,7 @@ mod tests {
     use crate::execution::run_chain_for_strategy;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeMap;
     use strategy_tests::frequency::Frequency;
 
     use crate::strategy::{FailureStrategy, NetworkStrategy};
@@ -11,13 +11,13 @@ mod tests {
 
     use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
 
-    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
     };
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::platform_value::Value;
-    use dpp::prelude::{Identifier, Identity};
+    use dpp::prelude::Identity;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version::PlatformVersion;
     use simple_signer::signer::SimpleSigner;

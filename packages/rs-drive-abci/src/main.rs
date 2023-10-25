@@ -408,14 +408,13 @@ mod test {
         db_opts.create_missing_column_families(false);
         db_opts.create_if_missing(false);
 
-        let db = rocksdb::DB::open_cf(&db_opts, &db_path, vec!["roots", "meta", "aux"]).unwrap();
+        let db = rocksdb::DB::open_cf(&db_opts, db_path, vec!["roots", "meta", "aux"]).unwrap();
 
         let cf_handle = db.cf_handle(cf).unwrap();
         let iter = db.iterator_cf(cf_handle, IteratorMode::Start);
 
         // let iter = db.iterator(IteratorMode::Start);
-        let mut i = 0;
-        for item in iter {
+        for (i, item) in iter.enumerate() {
             let (key, mut value) = item.unwrap();
             // println!("{} = {}", hex::encode(&key), hex::encode(value));
             tracing::trace!(cf, key=?hex::encode(&key), value=hex::encode(&value),"found item in rocksdb");
@@ -427,7 +426,6 @@ mod test {
                 tracing::debug!(cf, key=?hex::encode(&key), value=hex::encode(&value), "corrupt_rocksdb_item: corrupting item");
                 return;
             }
-            i += 1;
         }
         panic!(
             "cannot corrupt db: cannot find {}-th item in rocksdb column family {}",
