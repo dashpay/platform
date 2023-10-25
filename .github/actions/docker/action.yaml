@@ -82,6 +82,15 @@ runs:
         bucket: ${{ inputs.bucket }}
         mounts: ${{ inputs.cache_mounts }}
 
+    - name: Cache retimer
+      uses: actions/cache@v3
+      with:
+        path: retimer-state
+        key: ${{ runner.os }}-retimer
+
+    - name: Run retimer to set timestamp based on cached hash data
+      uses: dcginfra/retimer@master
+
     - name: Set suffix
       uses: actions/github-script@v6
       id: suffix

@@ -71,9 +71,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore timestamps
-        uses: chetan/git-restore-mtime-action@v2
-
       - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
@@ -131,6 +128,15 @@ jobs:
             target_amd64
             target_wasm
             unplugged_amd64
+
+      - name: Cache retimer
+        uses: actions/cache@v3
+        with:
+          path: retimer-state
+          key: ${{ runner.os }}-retimer
+
+      - name: Run retimer to set timestamp based on cached hash data
+        uses: dcginfra/retimer@master
 
       - name: Setup local network
         run: yarn configure
