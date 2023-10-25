@@ -12,6 +12,7 @@ const wait = require('../../util/wait');
  * @param {ConfigFile} configFile
  * @param {HomeDir} homeDir
  * @param {generateEnvs} generateEnvs
+ * @param {ConfigFileJsonRepository} configFileRepository
  * @return {resetNodeTask}
  */
 function resetNodeTaskFactory(
@@ -23,6 +24,7 @@ function resetNodeTaskFactory(
   configFile,
   homeDir,
   generateEnvs,
+  configFileRepository,
 ) {
   /**
    * @typedef {resetNodeTask}
@@ -131,6 +133,8 @@ function resetNodeTaskFactory(
             configFile.removeConfig(config.getName());
           }
 
+          configFileRepository.write(configFile);
+
           // Remove service configs
           let serviceConfigsPath = homeDir.joinPath(baseConfigName);
 
@@ -139,12 +143,6 @@ function resetNodeTaskFactory(
           }
 
           fs.rmSync(serviceConfigsPath, {
-            recursive: true,
-            force: true,
-          });
-
-          // Remove SSL files
-          fs.rmSync(homeDir.joinPath('ssl', baseConfigName), {
             recursive: true,
             force: true,
           });

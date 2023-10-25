@@ -167,6 +167,31 @@ describe('Testnet HP Fullnode', function main() {
   });
 
   describe('stop', () => {
+    it('should stop only platform', async () => {
+      const stopNodeTask = container.resolve('stopNodeTask');
+      const startNodeTask = container.resolve('startNodeTask');
+
+      let task = stopNodeTask(config);
+
+      await task.run({
+        isVerbose: true,
+        platformOnly: true,
+      });
+
+      await assertServiceRunning(config, 'core', true);
+      await assertServiceRunning(config, 'drive_abci', false);
+
+      task = startNodeTask(config);
+
+      await task.run({
+        isVerbose: true,
+        platformOnly: true,
+      });
+
+      await assertServiceRunning(config, 'core', true);
+      await assertServiceRunning(config, 'drive_abci', true);
+    });
+
     it('should stop fullnode', async () => {
       const stopNodeTask = container.resolve('stopNodeTask');
 
