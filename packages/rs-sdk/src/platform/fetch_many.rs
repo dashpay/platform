@@ -10,7 +10,6 @@ use dpp::document::Document;
 use drive_proof_verifier::proof::from_proof::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 
-#[cfg(feature = "mocks")]
 use crate::mock::MockResponse;
 use crate::{
     error::Error,

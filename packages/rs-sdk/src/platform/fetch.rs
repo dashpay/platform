@@ -13,7 +13,6 @@
 //! - `Fetch<API>` for [`DataContract`](dpp::prelude::DataContract)
 //! - `Fetch<API>` for [`Document`](dpp::document::Document)
 
-#[cfg(feature = "mocks")]
 use crate::mock::{MockRequest, MockResponse};
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto};

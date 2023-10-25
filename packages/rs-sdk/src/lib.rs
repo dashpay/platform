@@ -58,15 +58,10 @@
 //! An example can be found in `tests/common.rs:setup_logs()`.
 #![warn(missing_docs)]
 
-pub mod platform;
-
-pub mod error;
-
 pub mod core;
-
-pub mod sdk;
-
-#[cfg(feature = "mocks")]
+pub mod error;
 pub mod mock;
+pub mod platform;
+pub mod sdk;
 pub use error::Error;
 pub use sdk::{Sdk, SdkBuilder};
