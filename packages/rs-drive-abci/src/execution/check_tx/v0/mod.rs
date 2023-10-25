@@ -205,7 +205,7 @@ mod tests {
             217, 221, 43, 251, 104, 84, 78, 35, 20, 237, 188, 237, 240, 216, 62, 79, 208, 96, 149,
             116, 62, 82, 187, 135, 219,
         ];
-        let state_transitions = StateTransition::deserialize_many(&vec![tx.clone()])
+        let state_transitions = StateTransition::deserialize_many(&[tx.clone()])
             .expect("expected a state transition");
         let state_transition = state_transitions.first().unwrap();
         let StateTransition::DataContractCreate(contract_create) = state_transition else {
