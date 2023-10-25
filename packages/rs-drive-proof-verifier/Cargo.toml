@@ -8,17 +8,14 @@ crate-type = ["cdylib"]
 
 [features]
 default = ["mocks", "json"]
-bindgen = ["uniffi/cli", "dep:camino"]
 mocks = []
 json = ["dep:serde_json"]
-uniffi = ["dep:uniffi"]
+
 
 [dependencies]
-uniffi = { git = "https://github.com/mozilla/uniffi-rs", optional = true }
+
 thiserror = { version = "1.0.39" }
 bytes = { version = "1.4.0" }
-camino = { version = "1.1.4", optional = true }
-
 dapi-grpc = { path = "../dapi-grpc" }
 drive = { path = "../rs-drive", default-features = false, features = [
     "verify",
@@ -57,7 +54,3 @@ sha2 = { version = "0.10" }
 tempfile = { version = "3" }
 
 [build-dependencies]
-
-uniffi = { git = "https://github.com/mozilla/uniffi-rs", features = [
-    "build",
-], optional = true }

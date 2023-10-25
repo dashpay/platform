@@ -1,16 +1,15 @@
-/// Bindings generation using [uniffi]
-#[cfg(feature = "uniffi")]
-pub mod uniffi_bindings;
+//! Proof verification library for Dash Drive
+#[warn(missing_docs)]
 
 /// Error definitions, compatible with bindings
 mod error;
 /// Implementation of proof verification
-pub mod proof;
-
+mod proof;
+mod provider;
+pub mod types;
+mod verify;
 pub use error::Error;
+pub use proof::FromProof;
 #[cfg(feature = "mocks")]
-pub use proof::from_proof::MockQuorumInfoProvider;
-pub use proof::from_proof::{FromProof, QuorumInfoProvider};
-
-#[cfg(feature = "uniffi")]
-uniffi::include_scaffolding!("dash_drive_v0");
+pub use provider::MockQuorumInfoProvider;
+pub use provider::QuorumInfoProvider;

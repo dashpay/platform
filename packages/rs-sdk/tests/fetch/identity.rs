@@ -1,7 +1,7 @@
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::{identity::hash::IdentityPublicKeyHashMethodsV0, prelude::Identity};
 
-use drive_proof_verifier::proof::from_proof::IdentityBalance;
+use drive_proof_verifier::types::IdentityBalance;
 use rs_sdk::platform::identity::PublicKeyHash;
 use rs_sdk::platform::Fetch;
 

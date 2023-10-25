@@ -8,9 +8,6 @@
 //!   It requires the implementing type to also implement [Debug] and [FromProof]
 //!   traits. The associated [Fetch::Request]` type needs to implement [TransportRequest].
 
-use super::document_query::DocumentQuery;
-use super::identity::IdentityRequest;
-#[cfg(feature = "mocks")]
 use crate::mock::{MockRequest, MockResponse};
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto};
@@ -18,6 +15,9 @@ use dpp::{document::Document, prelude::Identity};
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::fmt::Debug;
+
+use super::identity::IdentityRequest;
+use super::DocumentQuery;
 
 /// Trait implemented by objects that can be fetched from the platform.
 #[async_trait::async_trait]
@@ -99,6 +99,6 @@ impl Fetch for Document {
 }
 
 #[async_trait::async_trait]
-impl Fetch for drive_proof_verifier::proof::from_proof::IdentityBalance {
+impl Fetch for drive_proof_verifier::types::IdentityBalance {
     type Request = platform_proto::GetIdentityBalanceRequest;
 }

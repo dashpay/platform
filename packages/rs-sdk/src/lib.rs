@@ -60,10 +60,8 @@
 
 pub mod core;
 pub mod error;
+pub mod mock;
 pub mod platform;
 pub mod sdk;
-
-#[cfg(feature = "mocks")]
-pub mod mock;
 pub use error::Error;
 pub use sdk::{Sdk, SdkBuilder};

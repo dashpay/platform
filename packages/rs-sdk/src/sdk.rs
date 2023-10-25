@@ -6,9 +6,9 @@ use std::{
 };
 
 #[cfg(feature = "mocks")]
-use crate::mock::{MockDashPlatformSdk, MockRequest, MockResponse};
+use crate::mock::MockDashPlatformSdk;
+use crate::mock::{MockRequest, MockResponse};
 use crate::{core::CoreClient, error::Error};
-
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive_proof_verifier::{FromProof, MockQuorumInfoProvider, QuorumInfoProvider};
 #[cfg(feature = "mocks")]
@@ -42,6 +42,7 @@ use tokio::sync::Mutex;
 /// See tests/ for examples of using the SDK.
 pub struct Sdk {
     inner: SdkInstance,
+    #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
 }
 
@@ -396,6 +397,7 @@ impl SdkBuilder {
 
                 Ok(Sdk{
                     inner:SdkInstance::Dapi { dapi, core, version:self.version },
+                    #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                 })
             },

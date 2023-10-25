@@ -185,7 +185,7 @@ impl FromProof<DocumentQuery> for Vec<Document> {
                     error: format!("Failed to convert DocumentQuery to DriveQuery: {}", e),
                 })?;
 
-        <drive_proof_verifier::proof::from_proof::Documents as FromProof<DriveQuery>>::maybe_from_proof(
+        <drive_proof_verifier::types::Documents as FromProof<DriveQuery>>::maybe_from_proof(
             drive_query,
             response,
             provider,

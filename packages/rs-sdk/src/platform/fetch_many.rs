@@ -7,10 +7,9 @@
 
 use dapi_grpc::platform::v0::GetDocumentsResponse;
 use dpp::document::Document;
-use drive_proof_verifier::proof::from_proof::FromProof;
+use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 
-#[cfg(feature = "mocks")]
 use crate::mock::MockResponse;
 use crate::{
     error::Error,
