@@ -13,7 +13,7 @@ use crate::error::Error;
 pub trait DataTriggerExecutor {
     fn validate_with_data_triggers(
         &self,
-        data_trigger_bindings: &Vec<DataTriggerBinding>,
+        data_trigger_bindings: &[DataTriggerBinding],
         context: &DataTriggerExecutionContext<'_>,
         platform_version: &PlatformVersion,
     ) -> Result<DataTriggerExecutionResult, Error>;
@@ -22,7 +22,7 @@ pub trait DataTriggerExecutor {
 impl DataTriggerExecutor for DocumentTransitionAction {
     fn validate_with_data_triggers(
         &self,
-        data_trigger_bindings: &Vec<DataTriggerBinding>,
+        data_trigger_bindings: &[DataTriggerBinding],
         context: &DataTriggerExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<DataTriggerExecutionResult, Error> {

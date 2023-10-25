@@ -239,8 +239,9 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let check_result = platform.check_tx(&tx).expect("expected to check tx");
+        assert!(check_result.is_valid());
 
-        let result = platform
+        let _result = platform
             .platform
             .process_raw_state_transitions(
                 &vec![tx],
@@ -1138,7 +1139,7 @@ mod tests {
 
         let high_key_pair = KeyPair::new(&secp, &mut rng);
 
-        let high_secret_key = high_key_pair.secret_key();
+        let _high_secret_key = high_key_pair.secret_key();
 
         let high_public_key = high_key_pair.public_key();
 
@@ -1181,7 +1182,7 @@ mod tests {
             }),
         };
 
-        let signable_bytes = new_key
+        let _signable_bytes = new_key
             .signable_bytes()
             .expect("expected to get signable bytes");
 
@@ -1196,7 +1197,7 @@ mod tests {
         }
         .into();
 
-        let mut update_transition: StateTransition = update_transition.into();
+        let update_transition: StateTransition = update_transition.into();
 
         let signable_bytes = update_transition
             .signable_bytes()
