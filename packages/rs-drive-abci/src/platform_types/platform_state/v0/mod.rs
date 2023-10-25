@@ -1,8 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
-use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, MasternodeListItem};
-use dashcore_rpc::json::QuorumType;
+use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::block::epoch::{Epoch, EPOCH_0};
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 

@@ -7,7 +7,7 @@ use crate::platform_types::platform_state::v0::{
 };
 
 use crate::platform_types::validator_set::ValidatorSet;
-use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, MasternodeListItem, QuorumType};
+use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use derive_more::From;
 use dpp::bincode::{config, Decode, Encode};
 use dpp::block::epoch::Epoch;

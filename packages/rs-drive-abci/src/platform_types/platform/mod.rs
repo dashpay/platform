@@ -7,7 +7,6 @@ use std::fmt::{Debug, Formatter};
 
 #[cfg(any(feature = "mocks", test))]
 use crate::rpc::core::MockCoreRPCLike;
-use dashcore_rpc::dashcore::hashes::hex::FromHex;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use std::path::Path;
 use std::str::FromStr;

@@ -1,6 +1,5 @@
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::Txid;
-use dpp::prelude::Identifier;
 use std::collections::BTreeMap;
 
 use crate::{error::Error, platform_types::platform::Platform, rpc::core::CoreRPCLike};
