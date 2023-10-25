@@ -350,8 +350,8 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
     Ok(request_type)
 }
 
-impl FromProof<platform::GetIdentityRequest> for IdentityBalance {
-    type Request = platform::GetIdentityRequest;
+impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
+    type Request = platform::GetIdentityBalanceRequest;
     type Response = platform::GetIdentityBalanceResponse;
 
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
@@ -375,7 +375,7 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalance {
             .ok_or(Error::EmptyResponseMetadata)?;
 
         // Load some info from request
-        let id = Identifier::from_bytes(&request.id).map_err(|e| Error::ProtocolError {
+        let id = Identifier::from_bytes(&request.0.id).map_err(|e| Error::ProtocolError {
             error: e.to_string(),
         })?;
 

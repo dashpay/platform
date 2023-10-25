@@ -14,7 +14,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 
 use crate::{
-    platform::{DocumentQuery, Fetch, FetchMany, Query},
+    platform::{identity::IdentityRequest, DocumentQuery, Fetch, FetchMany, Query},
     Error,
 };
 
@@ -105,7 +105,11 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetDataContractRequest>(filename)
                         .await?
                 }
-
+                "IdentityRequest" => self.load_expectation::<IdentityRequest>(filename).await?,
+                "GetIdentityBalanceRequest" => {
+                    self.load_expectation::<proto::GetIdentityBalanceRequest>(filename)
+                        .await?
+                }
                 "DocumentQuery" => self.load_expectation::<DocumentQuery>(filename).await?,
                 _ => {
                     return Err(Error::Config(format!(
@@ -271,6 +275,7 @@ impl MockDashPlatformSdk {
 
         // This expectation will work for execute
         let mut dapi_guard = self.dapi.lock().await;
+        // We don't really care about the response, as it will be mocked by from_proof
         dapi_guard.expect(&grpc_request, &Default::default());
     }
 

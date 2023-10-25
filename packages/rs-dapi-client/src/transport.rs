@@ -2,13 +2,12 @@
 
 pub(crate) mod grpc;
 
-use std::fmt::Debug;
-
-pub use futures::future::BoxFuture;
-use http::Uri;
-
 pub use crate::request_settings::AppliedRequestSettings;
 use crate::{CanRetry, RequestSettings};
+pub use futures::future::BoxFuture;
+pub use grpc::{CoreGrpcClient, PlatformGrpcClient};
+use http::Uri;
+use std::fmt::Debug;
 
 /// Generic transport layer request.
 /// Requires [Clone] as could be retried and a client in general consumes a request.

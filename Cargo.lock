@@ -971,8 +971,6 @@ dependencies = [
 name = "dapi-grpc"
 version = "0.25.0"
 dependencies = [
- "base64 0.21.4",
- "hex",
  "prost 0.11.9",
  "serde",
  "serde_bytes",
@@ -1349,7 +1347,6 @@ dependencies = [
  "envy",
  "hex",
  "lazy_static",
- "mockall",
  "rs-sdk",
  "serde",
  "serde-bytes-repr",
@@ -3502,12 +3499,14 @@ dependencies = [
  "ciborium",
  "dapi-grpc",
  "dashcore-rpc",
+ "derive_more",
  "dotenvy",
  "dpp",
  "drive",
  "drive-abci",
  "drive-proof-verifier",
  "envy",
+ "futures",
  "hex",
  "http",
  "rs-dapi-client",

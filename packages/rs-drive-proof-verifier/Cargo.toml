@@ -8,15 +8,14 @@ crate-type = ["cdylib"]
 
 [features]
 default = ["mocks", "json"]
-mocks = ["drive/mockall", "dep:mockall"]
+mocks = []
 json = ["dep:serde_json"]
 
 
 [dependencies]
+
 thiserror = { version = "1.0.39" }
 bytes = { version = "1.4.0" }
-mockall = { version = "0.11", optional = true }
-
 dapi-grpc = { path = "../dapi-grpc" }
 drive = { path = "../rs-drive", default-features = false, features = [
     "verify",

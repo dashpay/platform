@@ -199,7 +199,7 @@ impl Expectations {
         request: &I,
         response: &O,
     ) -> Key {
-        let key = Key::new(&request);
+        let key = Key::new(request);
         let value = ExpectedResponse::serialize(response);
 
         self.expectations.insert(key.clone(), value);

@@ -148,3 +148,16 @@ impl MockResponse for Document {
         Self::from_cbor(buf, None, None, sdk.version()).expect("decode data")
     }
 }
+
+impl MockResponse for drive_proof_verifier::types::IdentityBalance {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        (*self).to_le_bytes().to_vec()
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        Self::from_le_bytes(buf.try_into().expect("balance should be 8 bytes"))
+    }
+}
