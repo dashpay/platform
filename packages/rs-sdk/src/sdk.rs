@@ -42,6 +42,7 @@ use tokio::sync::Mutex;
 /// See tests/ for examples of using the SDK.
 pub struct Sdk {
     inner: SdkInstance,
+    #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
 }
 
@@ -396,6 +397,7 @@ impl SdkBuilder {
 
                 Ok(Sdk{
                     inner:SdkInstance::Dapi { dapi, core, version:self.version },
+                    #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                 })
             },
