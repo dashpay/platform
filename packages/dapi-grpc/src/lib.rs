@@ -19,7 +19,8 @@ pub mod platform {
         // because it has different response type
         //
         // TODO: Implement GetIdentityBalanceRequest in platform.proto  and remove this one
-        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+        #[derive(Debug, Clone)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         pub struct GetIdentityBalanceRequest(pub GetIdentityRequest);
         impl IntoRequest<GetIdentityRequest> for GetIdentityBalanceRequest {
             fn into_request(self) -> tonic::Request<GetIdentityRequest> {

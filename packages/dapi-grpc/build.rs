@@ -89,7 +89,7 @@ impl MappingConfig {
         #[cfg(feature = "client")]
         let builder = builder.build_client(true).build_transport(true);
         #[cfg(not(feature = "client"))]
-        let builder = pb.build_client(false).build_transport(false);
+        let builder = builder.build_client(false).build_transport(false);
 
         Self {
             protobuf_file,
@@ -99,11 +99,13 @@ impl MappingConfig {
         }
     }
 
+    #[allow(unused)]
     fn type_attribute(mut self, path: &str, attribute: &str) -> Self {
         self.builder = self.builder.type_attribute(path, attribute);
         self
     }
 
+    #[allow(unused)]
     fn field_attribute(mut self, path: &str, attribute: &str) -> Self {
         self.builder = self.builder.field_attribute(path, attribute);
         self
