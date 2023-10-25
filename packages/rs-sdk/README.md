@@ -6,7 +6,9 @@ See Rust documentation of this crate for more details.
 
 ## Examples
 
-You can find quick start examples in `examples/` folder.
+You can find quick start example in `examples/` folder. Examples must be configured by setting constants.
+
+You can also inspect tests in `tests/` folder for more detailed examples.
 
 ## Tests
 
