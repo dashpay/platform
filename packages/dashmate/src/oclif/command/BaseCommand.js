@@ -91,14 +91,6 @@ class BaseCommand extends Command {
   async finally(err) {
     // Save configs collection
     if (this.container) {
-      const configFileRepository = this.container.resolve('configFileRepository');
-
-      if (this.container.has('configFile')) {
-        const configFile = this.container.resolve('configFile');
-
-        configFileRepository.write(configFile);
-      }
-
       // Stop all running containers
       const stopAllContainers = this.container.resolve('stopAllContainers');
       const startedContainers = this.container.resolve('startedContainers');
