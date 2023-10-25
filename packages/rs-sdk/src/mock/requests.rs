@@ -1,4 +1,3 @@
-use dapi_grpc::platform::v0::{self as proto};
 use dpp::{
     document::serialization_traits::DocumentCborMethodsV0,
     document::Document,
@@ -11,22 +10,9 @@ use dpp::{
         PlatformDeserializableWithPotentialValidationFromVersionedStructure,
         PlatformSerializableWithPlatformVersion,
     },
-    version::PlatformVersion,
 };
-use drive_proof_verifier::{FromProof, MockQuorumInfoProvider};
-use rs_dapi_client::{
-    mock::{Key, MockDapiClient},
-    transport::TransportRequest,
-    DapiClient, DumpData,
-};
-use serde::Deserialize;
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
-use tokio::sync::Mutex;
 
-use crate::{
-    platform::{DocumentQuery, Fetch, FetchMany, Query},
-    Error,
-};
+use rs_dapi_client::mock::Key;
 
 use super::MockDashPlatformSdk;
 
