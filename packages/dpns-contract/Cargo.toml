@@ -3,6 +3,7 @@ name = "dpns-contract"
 description = "DPNS data contract schema and tools"
 version = "0.25.0"
 edition = "2021"
+rust-version = "1.73"
 license = "MIT"
 
 [dependencies]
