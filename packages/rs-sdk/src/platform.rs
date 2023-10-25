@@ -5,13 +5,20 @@
 // generated types. Later these re-exports could be swapped with actual rs-sdk's requests
 // and while it will change the substance, the API structure will remain the same.
 
-use dapi_grpc::platform::v0::{self as platform_proto};
+mod document_query;
+mod fetch;
+mod fetch_many;
+mod query;
 
-pub use platform_proto::BroadcastStateTransitionRequest;
-pub use platform_proto::GetConsensusParamsRequest;
-pub use platform_proto::GetDataContractHistoryRequest;
-pub use platform_proto::GetDataContractRequest;
-pub use platform_proto::GetDocumentsRequest;
-pub use platform_proto::GetIdentitiesByPublicKeyHashesRequest;
-pub use platform_proto::GetIdentityRequest;
-pub use platform_proto::WaitForStateTransitionResultRequest;
+pub use dapi_grpc::platform::v0::{self as proto};
+pub use drive::{
+    dpp::{
+        self as dpp,
+        document::Document,
+        prelude::{DataContract, Identifier, Identity, IdentityPublicKey, Revision},
+    },
+    query::DriveQuery,
+};
+pub use {document_query::DocumentQuery, fetch::Fetch, fetch_many::FetchMany, query::Query};
+
+pub use rs_dapi_client as dapi;

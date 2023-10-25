@@ -1,6 +1,7 @@
 //! [DapiClient] definition.
 
 use backon::{ExponentialBuilder, Retryable};
+use tonic::async_trait;
 use tracing::Instrument;
 
 use crate::{
@@ -17,6 +18,10 @@ pub enum DapiClientError<TE> {
     /// There are no valid peer addresses to use.
     #[error("no available addresses to use")]
     NoAvailableAddresses,
+    #[cfg(feature = "mocks")]
+    /// Expectation not found
+    #[error("mock expectation not found for request: {0}")]
+    MockExpectationNotFound(String),
 }
 
 impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
@@ -25,7 +30,36 @@ impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
         match self {
             NoAvailableAddresses => false,
             Transport(transport_error) => transport_error.can_retry(),
+            #[cfg(feature = "mocks")]
+            MockExpectationNotFound(_) => false,
         }
+    }
+}
+
+#[async_trait]
+/// DAPI client trait.
+pub trait Dapi {
+    /// Execute request using this DAPI client.
+    async fn execute<R>(
+        &mut self,
+        request: R,
+        settings: RequestSettings,
+    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
+    where
+        R: TransportRequest;
+}
+
+#[async_trait]
+impl<D: Dapi + Send> Dapi for &mut D {
+    async fn execute<R>(
+        &mut self,
+        request: R,
+        settings: RequestSettings,
+    ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
+    where
+        R: TransportRequest,
+    {
+        (**self).execute(request, settings).await
     }
 }
 
@@ -34,6 +68,8 @@ impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
 pub struct DapiClient {
     address_list: AddressList,
     settings: RequestSettings,
+    #[cfg(feature = "dump")]
+    pub(crate) dump_dir: Option<std::path::PathBuf>,
 }
 
 impl DapiClient {
@@ -42,11 +78,16 @@ impl DapiClient {
         Self {
             address_list,
             settings,
+            #[cfg(feature = "dump")]
+            dump_dir: None,
         }
     }
+}
 
+#[async_trait]
+impl Dapi for DapiClient {
     /// Execute the [DapiRequest].
-    pub(crate) async fn execute<R>(
+    async fn execute<R>(
         &mut self,
         request: R,
         settings: RequestSettings,
@@ -63,6 +104,12 @@ impl DapiClient {
 
         // Setup retry policy:
         let retry_settings = ExponentialBuilder::default().with_max_times(applied_settings.retries);
+
+        // Save dump dir for later use, as self is moved into routine
+        #[cfg(feature = "dump")]
+        let dump_dir = self.dump_dir.clone();
+        #[cfg(feature = "dump")]
+        let dump_request = request.clone();
 
         // Setup DAPI request execution routine future. It's a closure that will be called
         // more once to build new future on each retry.
@@ -92,10 +139,18 @@ impl DapiClient {
         };
 
         // Start the routine with retry policy applied:
-        routine
+        let result = routine
             .retry(&retry_settings)
             .when(|e| e.can_retry())
             .instrument(tracing::info_span!("request routine"))
-            .await
+            .await;
+
+        // Dump request and response to disk if dump_dir is set:
+        #[cfg(feature = "dump")]
+        if let Ok(ref result) = &result {
+            Self::dump_request_response(dump_request, result.clone(), dump_dir);
+        }
+
+        result
     }
 }

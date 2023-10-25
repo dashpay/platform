@@ -66,7 +66,7 @@ pub enum Error {
     InvalidSignature { error: String },
 
     /// Callback error
-    #[error("unexpected callback error: {error}")]
+    #[error("unexpected callback error: {error}, reason: {reason}")]
     UnexpectedCallbackError { error: String, reason: String },
 }
 
