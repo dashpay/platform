@@ -1,8 +1,6 @@
 const {
   v0: {
     GetConsensusParamsResponse,
-    ConsensusParamsBlock,
-    ConsensusParamsEvidence,
   },
 } = require('@dashevo/dapi-grpc');
 const {
@@ -63,14 +61,14 @@ describe('getConsensusParamsHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(GetConsensusParamsResponse);
 
-    const block = result.getBlock();
-    expect(block).to.be.an.instanceOf(ConsensusParamsBlock);
+    const block = result.getV0().getBlock();
+    expect(block).to.be.an.instanceOf(GetConsensusParamsResponse.ConsensusParamsBlock);
     expect(block.getMaxBytes()).to.equal(consensusParamsFixture.block.max_bytes);
     expect(block.getMaxGas()).to.equal(consensusParamsFixture.block.max_gas);
     expect(block.getTimeIotaMs()).to.equal(consensusParamsFixture.block.time_iota_ms);
 
-    const evidence = result.getEvidence();
-    expect(evidence).to.be.an.instanceOf(ConsensusParamsEvidence);
+    const evidence = result.getV0().getEvidence();
+    expect(evidence).to.be.an.instanceOf(GetConsensusParamsResponse.ConsensusParamsEvidence);
     expect(evidence.getMaxBytes()).to.equal(consensusParamsFixture.evidence.max_bytes);
     expect(evidence.getMaxAgeDuration()).to.equal(consensusParamsFixture.evidence.max_age_duration);
     expect(evidence.getMaxAgeNumBlocks())
@@ -141,14 +139,14 @@ describe('getConsensusParamsHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(GetConsensusParamsResponse);
 
-    const block = result.getBlock();
-    expect(block).to.be.an.instanceOf(ConsensusParamsBlock);
+    const block = result.getV0().getBlock();
+    expect(block).to.be.an.instanceOf(GetConsensusParamsResponse.ConsensusParamsBlock);
     expect(block.getMaxBytes()).to.equal(consensusParamsFixture.block.max_bytes);
     expect(block.getMaxGas()).to.equal(consensusParamsFixture.block.max_gas);
     expect(block.getTimeIotaMs()).to.equal(consensusParamsFixture.block.time_iota_ms);
 
-    const evidence = result.getEvidence();
-    expect(evidence).to.be.an.instanceOf(ConsensusParamsEvidence);
+    const evidence = result.getV0().getEvidence();
+    expect(evidence).to.be.an.instanceOf(GetConsensusParamsResponse.ConsensusParamsEvidence);
     expect(evidence.getMaxBytes()).to.equal(consensusParamsFixture.evidence.max_bytes);
     expect(evidence.getMaxAgeDuration()).to.equal(consensusParamsFixture.evidence.max_age_duration);
     expect(evidence.getMaxAgeNumBlocks())

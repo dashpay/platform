@@ -11,8 +11,6 @@ const {
 const {
   v0: {
     GetConsensusParamsResponse,
-    ConsensusParamsBlock,
-    ConsensusParamsEvidence,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -60,20 +58,27 @@ function getConsensusParamsHandlerFactory(getConsensusParams) {
     }
 
     const response = new GetConsensusParamsResponse();
+    const {
+      ConsensusParamsBlock,
+      GetConsensusParamsResponseV0,
+      ConsensusParamsEvidence,
+    } = GetConsensusParamsResponse;
 
     const block = new ConsensusParamsBlock();
     block.setMaxBytes(consensusParams.block.max_bytes);
     block.setMaxGas(consensusParams.block.max_gas);
     block.setTimeIotaMs(consensusParams.block.time_iota_ms);
 
-    response.setBlock(block);
-
     const evidence = new ConsensusParamsEvidence();
     evidence.setMaxAgeNumBlocks(consensusParams.evidence.max_age_num_blocks);
     evidence.setMaxAgeDuration(consensusParams.evidence.max_age_duration);
     evidence.setMaxBytes(consensusParams.evidence.max_bytes);
 
-    response.setEvidence(evidence);
+    response.setV0(
+      new GetConsensusParamsResponseV0()
+        .setBlock(block)
+        .setEvidence(evidence),
+    );
 
     return response;
   }

@@ -1,3 +1,5 @@
+const { BytesValue } = require('google-protobuf/google/protobuf/wrappers_pb');
+
 const {
   server: {
     error: {
@@ -51,14 +53,28 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
     proofMock = new Proof();
     proofMock.setGrovedbProof(proofFixture.merkleProof);
 
-    response = new GetIdentitiesByPublicKeyHashesResponse();
-    const identitiesList = new GetIdentitiesByPublicKeyHashesResponse.Identities();
-    identitiesList.setIdentitiesList([identity.toBuffer()]);
+    const {
+      IdentitiesByPublicKeyHashes,
+      PublicKeyHashIdentityEntry,
+      GetIdentitiesByPublicKeyHashesResponseV0,
+    } = GetIdentitiesByPublicKeyHashesResponse;
 
-    response.setIdentities(identitiesList);
+    response = new GetIdentitiesByPublicKeyHashesResponse();
+    response.setV0(
+      new GetIdentitiesByPublicKeyHashesResponseV0().setIdentities(
+        new IdentitiesByPublicKeyHashes()
+          .setIdentityEntriesList([
+            new PublicKeyHashIdentityEntry()
+              .setPublicKeyHash(publicKeyHash)
+              .setValue(new BytesValue().setValue(identity.toBuffer())),
+          ]),
+      ),
+    );
 
     proofResponse = new GetIdentitiesByPublicKeyHashesResponse();
-    proofResponse.setProof(proofMock);
+    proofResponse.setV0(
+      new GetIdentitiesByPublicKeyHashesResponseV0().setProof(proofMock),
+    );
 
     driveClientMock = {
       fetchIdentitiesByPublicKeyHashes: this.sinon.stub().resolves(response.serializeBinary()),
@@ -74,14 +90,18 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(GetIdentitiesByPublicKeyHashesResponse);
 
-    expect(result.getIdentities().getIdentitiesList()).to.deep.equal(
-      [identity.toBuffer()],
+    expect(result.getV0()
+      .getIdentities()
+      .getIdentityEntriesList()[0]
+      .getValue()
+      .getValue()).to.deep.equal(
+      identity.toBuffer(),
     );
 
     expect(driveClientMock.fetchIdentitiesByPublicKeyHashes)
       .to.be.calledOnceWith(call.request);
 
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.undefined();
   });
@@ -94,7 +114,7 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(GetIdentitiesByPublicKeyHashesResponse);
 
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
     const merkleProof = proof.getGrovedbProof();
