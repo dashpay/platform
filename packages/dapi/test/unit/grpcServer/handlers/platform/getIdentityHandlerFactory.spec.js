@@ -49,10 +49,16 @@ describe('getIdentityHandlerFactory', () => {
     proofMock.setGrovedbProof(proofFixture.merkleProof);
 
     response = new GetIdentityResponse();
-    response.setIdentity(identity.toBuffer());
+    response.setV0(
+      new GetIdentityResponse.GetIdentityResponseV0()
+        .setIdentity(identity.toBuffer()),
+    );
 
     proofResponse = new GetIdentityResponse();
-    proofResponse.setProof(proofMock);
+    proofResponse.setV0(
+      new GetIdentityResponse.GetIdentityResponseV0()
+        .setProof(proofMock),
+    );
 
     driveStateRepositoryMock = {
       fetchIdentity: this.sinon.stub().resolves(response.serializeBinary()),
@@ -67,10 +73,10 @@ describe('getIdentityHandlerFactory', () => {
     const result = await getIdentityHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentityResponse);
-    expect(result.getIdentity()).to.deep.equal(identity.toBuffer());
+    expect(result.getV0().getIdentity()).to.deep.equal(identity.toBuffer());
     expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(call.request);
 
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
     expect(proof).to.be.undefined();
   });
 
@@ -83,7 +89,7 @@ describe('getIdentityHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(GetIdentityResponse);
 
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
     const merkleProof = proof.getGrovedbProof();

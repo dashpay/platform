@@ -112,13 +112,13 @@ type PlatformgetIdentitiesByPublicKeyHashes = {
   readonly responseType: typeof platform_pb.GetIdentitiesByPublicKeyHashesResponse;
 };
 
-type PlatformgetIdentityByPublicKeyHashes = {
+type PlatformgetIdentityByPublicKeyHash = {
   readonly methodName: string;
   readonly service: typeof Platform;
   readonly requestStream: false;
   readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetIdentityByPublicKeyHashesRequest;
-  readonly responseType: typeof platform_pb.GetIdentityByPublicKeyHashesResponse;
+  readonly requestType: typeof platform_pb.GetIdentityByPublicKeyHashRequest;
+  readonly responseType: typeof platform_pb.GetIdentityByPublicKeyHashResponse;
 };
 
 type PlatformwaitForStateTransitionResult = {
@@ -153,7 +153,7 @@ export class Platform {
   static readonly getDataContracts: PlatformgetDataContracts;
   static readonly getDocuments: PlatformgetDocuments;
   static readonly getIdentitiesByPublicKeyHashes: PlatformgetIdentitiesByPublicKeyHashes;
-  static readonly getIdentityByPublicKeyHashes: PlatformgetIdentityByPublicKeyHashes;
+  static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
   static readonly waitForStateTransitionResult: PlatformwaitForStateTransitionResult;
   static readonly getConsensusParams: PlatformgetConsensusParams;
 }
@@ -298,14 +298,14 @@ export class PlatformClient {
     requestMessage: platform_pb.GetIdentitiesByPublicKeyHashesRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesByPublicKeyHashesResponse|null) => void
   ): UnaryResponse;
-  getIdentityByPublicKeyHashes(
-    requestMessage: platform_pb.GetIdentityByPublicKeyHashesRequest,
+  getIdentityByPublicKeyHash(
+    requestMessage: platform_pb.GetIdentityByPublicKeyHashRequest,
     metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityByPublicKeyHashesResponse|null) => void
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityByPublicKeyHashResponse|null) => void
   ): UnaryResponse;
-  getIdentityByPublicKeyHashes(
-    requestMessage: platform_pb.GetIdentityByPublicKeyHashesRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityByPublicKeyHashesResponse|null) => void
+  getIdentityByPublicKeyHash(
+    requestMessage: platform_pb.GetIdentityByPublicKeyHashRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityByPublicKeyHashResponse|null) => void
   ): UnaryResponse;
   waitForStateTransitionResult(
     requestMessage: platform_pb.WaitForStateTransitionResultRequest,

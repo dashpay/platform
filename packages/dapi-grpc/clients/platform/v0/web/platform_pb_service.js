@@ -118,13 +118,13 @@ Platform.getIdentitiesByPublicKeyHashes = {
   responseType: platform_pb.GetIdentitiesByPublicKeyHashesResponse
 };
 
-Platform.getIdentityByPublicKeyHashes = {
-  methodName: "getIdentityByPublicKeyHashes",
+Platform.getIdentityByPublicKeyHash = {
+  methodName: "getIdentityByPublicKeyHash",
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetIdentityByPublicKeyHashesRequest,
-  responseType: platform_pb.GetIdentityByPublicKeyHashesResponse
+  requestType: platform_pb.GetIdentityByPublicKeyHashRequest,
+  responseType: platform_pb.GetIdentityByPublicKeyHashResponse
 };
 
 Platform.waitForStateTransitionResult = {
@@ -524,11 +524,11 @@ PlatformClient.prototype.getIdentitiesByPublicKeyHashes = function getIdentities
   };
 };
 
-PlatformClient.prototype.getIdentityByPublicKeyHashes = function getIdentityByPublicKeyHashes(requestMessage, metadata, callback) {
+PlatformClient.prototype.getIdentityByPublicKeyHash = function getIdentityByPublicKeyHash(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
-  var client = grpc.unary(Platform.getIdentityByPublicKeyHashes, {
+  var client = grpc.unary(Platform.getIdentityByPublicKeyHash, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

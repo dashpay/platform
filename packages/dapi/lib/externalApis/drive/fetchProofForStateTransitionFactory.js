@@ -21,8 +21,10 @@ function fetchProofForStateTransitionFactory(driveClient) {
 
     const modifiedIds = stateTransition.getModifiedDataIds();
 
+    const { GetProofsRequestV0 } = GetProofsRequest;
+
     if (stateTransition.isDocumentStateTransition()) {
-      const { DocumentRequest } = GetProofsRequest;
+      const { DocumentRequest } = GetProofsRequestV0;
 
       const documentsList = stateTransition.getTransitions().map((documentTransition) => {
         const documentRequest = new DocumentRequest();
@@ -32,11 +34,11 @@ function fetchProofForStateTransitionFactory(driveClient) {
         return documentRequest;
       });
 
-      getProofsRequest.setDocumentsList(documentsList);
+      getProofsRequest.setV0(new GetProofsRequestV0().setDocumentsList(documentsList));
     } if (stateTransition.isIdentityStateTransition()) {
-      const { IdentityRequest } = GetProofsRequest;
+      const { IdentityRequest } = GetProofsRequestV0;
 
-      getProofsRequest.setIdentitiesList(modifiedIds.map((id) => {
+      const identitiesList = modifiedIds.map((id) => {
         const identityRequest = new IdentityRequest();
         identityRequest.setIdentityId(id.toBuffer());
         identityRequest.setRequestType(
@@ -44,15 +46,20 @@ function fetchProofForStateTransitionFactory(driveClient) {
             ? IdentityRequest.Type.BALANCE : IdentityRequest.Type.FULL_IDENTITY,
         );
         return identityRequest;
-      }));
-    } if (stateTransition.isDataContractStateTransition()) {
-      const { ContractRequest } = GetProofsRequest;
+      });
 
-      getProofsRequest.setContractsList(modifiedIds.map((id) => {
+      getProofsRequest.setV0(new GetProofsRequestV0().setIdentitiesList(identitiesList));
+    } if (stateTransition.isDataContractStateTransition()) {
+      const { ContractRequest } = GetProofsRequestV0;
+
+      const contractsList = modifiedIds.map((id) => {
         const identityRequest = new ContractRequest();
         identityRequest.setContractId(id.toBuffer());
         return identityRequest;
-      }));
+      });
+
+      getProofsRequest.setV0(new GetProofsRequestV0()
+        .setContractsList(contractsList));
     }
 
     const responseBytes = await driveClient.fetchProofs(getProofsRequest);
