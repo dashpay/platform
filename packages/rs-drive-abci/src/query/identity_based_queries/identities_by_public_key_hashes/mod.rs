@@ -21,7 +21,9 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let GetIdentitiesByPublicKeyHashesRequest { version } = check_validation_result_with_data!(
-            GetIdentitiesByPublicKeyHashesRequest::decode(query_data)
+            GetIdentitiesByPublicKeyHashesRequest::decode(query_data).map_err(|e| {
+                QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
+            })
         );
 
         let Some(version) = version else {

@@ -15,6 +15,7 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::{check_validation_result_with_data, ProtocolError};
 use prost::Message;
+use dapi_grpc::platform::v0::get_data_contract_history_response::get_data_contract_history_response_v0::DataContractHistoryEntry;
 
 impl<C> Platform<C> {
     pub(super) fn query_data_contract_history_v0(
@@ -53,14 +54,14 @@ impl<C> Platform<C> {
             .transpose());
 
         let response_data = if prove {
-            let proof = check_validation_result_with_data!(self.drive.prove_contract_history(
+            let proof = self.drive.prove_contract_history(
                 contract_id.to_buffer(),
                 None,
                 start_at_ms,
                 limit,
                 offset,
                 platform_version,
-            ));
+            )?;
             GetDataContractHistoryResponse {
                 version: Some(get_data_contract_history_response::Version::V0(GetDataContractHistoryResponseV0 {
                     result: Some(get_data_contract_history_response::get_data_contract_history_response_v0::Result::Proof(Proof {
@@ -76,29 +77,32 @@ impl<C> Platform<C> {
             }
                 .encode_to_vec()
         } else {
-            let contracts =
-                check_validation_result_with_data!(self.drive.fetch_contract_with_history(
-                    contract_id.to_buffer(),
-                    None,
-                    start_at_ms,
-                    limit,
-                    offset,
-                    platform_version,
-                ));
+            let contracts = self.drive.fetch_contract_with_history(
+                contract_id.to_buffer(),
+                None,
+                start_at_ms,
+                limit,
+                offset,
+                platform_version,
+            )?;
 
-            let contract_historical_entries = check_validation_result_with_data!(contracts
+            if contracts.is_empty() {
+                return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
+                    format!("data contract {} history not found", contract_id),
+                )));
+            }
+
+            let contract_historical_entries: Vec<DataContractHistoryEntry> = contracts
                 .into_iter()
-                .map(|(date_in_seconds, data_contract)| Ok::<
-                    get_data_contract_history_response::get_data_contract_history_response_v0::DataContractHistoryEntry,
-                    ProtocolError,
-                >(
-                    get_data_contract_history_response::get_data_contract_history_response_v0::DataContractHistoryEntry {
+                .map(|(date_in_seconds, data_contract)| {
+                    Ok::<DataContractHistoryEntry, ProtocolError>(DataContractHistoryEntry {
                         date: date_in_seconds,
                         value: data_contract
-                            .serialize_to_bytes_with_platform_version(platform_version)?
-                    }
-                ))
-                .collect());
+                            .serialize_to_bytes_with_platform_version(platform_version)?,
+                    })
+                })
+                .collect::<Result<Vec<DataContractHistoryEntry>, ProtocolError>>()?;
+
             GetDataContractHistoryResponse {
                 version: Some(get_data_contract_history_response::Version::V0(GetDataContractHistoryResponseV0 {
                     result: Some(get_data_contract_history_response::get_data_contract_history_response_v0::Result::DataContractHistory(

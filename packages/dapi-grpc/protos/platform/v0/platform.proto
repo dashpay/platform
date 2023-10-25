@@ -11,8 +11,8 @@ service Platform {
   rpc getIdentity (GetIdentityRequest) returns (GetIdentityResponse);
   rpc getIdentities (GetIdentitiesRequest) returns (GetIdentitiesResponse);
   rpc getIdentityKeys (GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
-  rpc getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse);
-  rpc getIdentityBalanceAndRevision(GetIdentityRequest)
+  rpc getIdentityBalance(GetIdentityBalanceRequest) returns (GetIdentityBalanceResponse);
+  rpc getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest)
           returns (GetIdentityBalanceAndRevisionResponse);
   rpc getProofs (GetProofsRequest) returns (GetProofsResponse);
   rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
@@ -68,7 +68,30 @@ message GetIdentityRequest {
   }
 }
 
+message GetIdentityBalanceRequest {
 
+  message GetIdentityRequestV0 {
+    bytes id = 1;
+    bool prove = 2;
+  }
+
+  oneof version {
+    GetIdentityRequestV0 v0 = 1;
+  }
+}
+
+
+message GetIdentityBalanceAndRevisionRequest {
+
+  message GetIdentityRequestV0 {
+    bytes id = 1;
+    bool prove = 2;
+  }
+
+  oneof version {
+    GetIdentityRequestV0 v0 = 1;
+  }
+}
 
 message GetIdentityResponse {
 

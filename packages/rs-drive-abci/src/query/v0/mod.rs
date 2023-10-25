@@ -62,6 +62,10 @@ mod test {
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
 
         use crate::error::query::QueryError;
+        use dapi_grpc::platform::v0::get_data_contract_history_request::GetDataContractHistoryRequestV0;
+        use dapi_grpc::platform::v0::get_data_contract_history_response::{
+            get_data_contract_history_response_v0, GetDataContractHistoryResponseV0,
+        };
         use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
         use dpp::data_contract::DataContract;
@@ -72,8 +76,6 @@ mod test {
         use dpp::version::PlatformVersion;
         use drive::drive::Drive;
         use prost::Message;
-        use dapi_grpc::platform::v0::get_data_contract_history_request::GetDataContractHistoryRequestV0;
-        use dapi_grpc::platform::v0::get_data_contract_history_response::{get_data_contract_history_response_v0, GetDataContractHistoryResponseV0};
 
         fn default_request_v0() -> GetDataContractHistoryRequestV0 {
             GetDataContractHistoryRequestV0 {
@@ -387,7 +389,10 @@ mod test {
 
             assert!(!validation_result.is_valid());
 
-            let error = validation_result.errors.first().expect("expect error to exist");
+            let error = validation_result
+                .errors
+                .first()
+                .expect("expect error to exist");
 
             assert!(matches!(error, QueryError::InvalidArgument(_)));
 
@@ -424,7 +429,10 @@ mod test {
 
             assert!(!validation_result.is_valid());
 
-            let error = validation_result.errors.first().expect("expect error to exist");
+            let error = validation_result
+                .errors
+                .first()
+                .expect("expect error to exist");
 
             assert!(matches!(error, QueryError::InvalidArgument(_)));
 
