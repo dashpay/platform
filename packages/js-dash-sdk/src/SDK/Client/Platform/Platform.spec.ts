@@ -1,6 +1,5 @@
 import { expect } from 'chai';
-// import { latestVersion as latestProtocolVersion }
-// from '@dashevo/dpp/lib/version/protocolVersion';
+// import { getLatestProtocolVersion } from '@dashevo/wasm-dpp';
 import { Platform } from './index';
 import 'mocha';
 import Client from '../Client';

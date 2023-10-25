@@ -1,10 +1,8 @@
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
-
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-
 const sinon = require('sinon');
+const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/getDocumentsFixture');
+const getContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
+const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
@@ -30,7 +28,7 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
   let ownerId;
   let executionContext;
 
-  beforeEach(async function beforeEach() {
+  beforeEach(async () => {
     ({
       Document,
       DataContract,
@@ -62,12 +60,6 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
         ),
       ),
     );
-
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchDocuments.resolves([]);
-
-    stateRepositoryMockJs = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMockJs.fetchDocuments.resolves([]);
 
     executionContext = new StateTransitionExecutionContext();
   });

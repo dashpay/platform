@@ -9,10 +9,10 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
+const { DashPlatformProtocol } = require('@dashevo/wasm-dpp');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const PlatformMethodsFacade = require('../../../../lib/methods/platform/PlatformMethodsFacade');
 
@@ -33,10 +33,9 @@ describe('PlatformMethodsFacade', () => {
       const response = new BroadcastStateTransitionResponse();
       grpcTransportMock.request.resolves(response);
 
-      const dpp = new DashPlatformProtocol();
-      await dpp.initialize();
+      const dpp = new DashPlatformProtocol(null, 1);
       const stateTransition = dpp.dataContract.createDataContractCreateTransition(
-        getDataContractFixture(),
+        await getDataContractFixture(),
       );
 
       await platformMethods.broadcastStateTransition(stateTransition);
@@ -49,10 +48,10 @@ describe('PlatformMethodsFacade', () => {
     it('should get data contract', async () => {
       const response = new GetDataContractResponse();
       response.setMetadata(new ResponseMetadata());
-      response.setDataContract(getDataContractFixture().toBuffer());
+      response.setDataContract((await getDataContractFixture()).toBuffer());
       grpcTransportMock.request.resolves(response);
 
-      await platformMethods.getDataContract(getDataContractFixture().getId());
+      await platformMethods.getDataContract((await getDataContractFixture()).getId());
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });
@@ -78,7 +77,7 @@ describe('PlatformMethodsFacade', () => {
       const response = new GetIdentityResponse();
 
       response.setMetadata(new ResponseMetadata());
-      response.setIdentity(getIdentityFixture().toBuffer());
+      response.setIdentity((await getIdentityFixture()).toBuffer());
 
       grpcTransportMock.request.resolves(response);
 

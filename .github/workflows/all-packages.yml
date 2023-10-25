@@ -180,7 +180,7 @@ jobs:
         run: yarn workspace dash test:functional
 
       - name: Run test suite
-        run: yarn test:suite
+        run: yarn test:suite -b
 
       - name: Show Docker logs
         if: ${{ failure() }}
