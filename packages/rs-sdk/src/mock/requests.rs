@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use dpp::{
     document::serialization_traits::DocumentCborMethodsV0,
     document::Document,
@@ -13,6 +15,7 @@ use dpp::{
 };
 
 use rs_dapi_client::mock::Key;
+use serde::{Deserialize, Serialize};
 
 use super::MockDashPlatformSdk;
 
@@ -95,6 +98,20 @@ impl<T: MockResponse> MockResponse for Vec<T> {
             .collect();
 
         bincode::encode_to_vec(data, bincode::config::standard()).expect("encode vec of data")
+    }
+}
+impl<K: Ord + Serialize + for<'de> Deserialize<'de>, V: Serialize + for<'de> Deserialize<'de>>
+    MockResponse for BTreeMap<K, V>
+{
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        serde_json::from_slice(buf).expect("decode vec of data")
+    }
+
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        serde_json::to_vec(self).expect("encode vec of data")
     }
 }
 

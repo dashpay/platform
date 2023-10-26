@@ -239,21 +239,22 @@ impl MockDashPlatformSdk {
     /// [MockDashPlatformSdk::expect_fetch()], but the expected
     /// object must be a vector of objects.
     pub async fn expect_fetch_many<
-        O: FetchMany,
-        Q: Query<<O as FetchMany>::Request> + MockRequest,
+        K: Ord,
+        O: FetchMany<K>,
+        Q: Query<<O as FetchMany<K>>::Request> + MockRequest,
     >(
         &mut self,
         query: Q,
-        objects: Option<Vec<O>>,
+        objects: Option<BTreeMap<K, Option<O>>>,
     ) -> &mut Self
     where
-        Vec<O>: MockResponse,
-        <O as FetchMany>::Request: MockRequest,
-        <<O as FetchMany>::Request as TransportRequest>::Response: Default,
-        Vec<O>: FromProof<
-                <O as FetchMany>::Request,
-                Request = <O as FetchMany>::Request,
-                Response = <<O as FetchMany>::Request as TransportRequest>::Response,
+        BTreeMap<K, Option<O>>: MockResponse,
+        <O as FetchMany<K>>::Request: MockRequest,
+        <<O as FetchMany<K>>::Request as TransportRequest>::Response: Default,
+        BTreeMap<K, Option<O>>: FromProof<
+                <O as FetchMany<K>>::Request,
+                Request = <O as FetchMany<K>>::Request,
+                Response = <<O as FetchMany<K>>::Request as TransportRequest>::Response,
             > + Sync,
     {
         let grpc_request = query.query(self.prove).expect("query must be correct");
