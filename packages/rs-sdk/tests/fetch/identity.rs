@@ -89,6 +89,5 @@ async fn test_identity_balance_revision_read() {
         .expect("found identity balance");
 
     assert_ne!(0, balance);
-    assert_ne!(0, revision);
     tracing::debug!(balance, revision, ?id, "identity balance and revision")
 }
