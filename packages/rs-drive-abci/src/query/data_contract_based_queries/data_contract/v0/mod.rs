@@ -7,12 +7,11 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_data_contract_request::GetDataContractRequestV0;
 use dapi_grpc::platform::v0::get_data_contract_response::GetDataContractResponseV0;
 use dapi_grpc::platform::v0::{get_data_contract_response, GetDataContractResponse, Proof};
+use dpp::check_validation_result_with_data;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
-use dpp::{check_validation_result_matches_error_with_data, check_validation_result_with_data};
-use drive::grovedb;
 use prost::Message;
 
 impl<C> Platform<C> {
