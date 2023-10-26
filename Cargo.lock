@@ -1336,30 +1336,16 @@ dependencies = [
 name = "drive-proof-verifier"
 version = "0.25.0-dev"
 dependencies = [
- "base64 0.21.4",
- "bytes",
  "dapi-grpc",
- "derive_more",
- "dotenvy",
  "dpp",
  "drive",
- "drive-abci",
- "envy",
  "hex",
  "lazy_static",
- "rs-sdk",
  "serde",
- "serde-bytes-repr",
- "serde_bytes",
  "serde_json",
- "serde_with 3.3.0",
- "sha2",
- "tempfile",
  "tenderdash-abci",
  "thiserror",
- "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -3785,16 +3771,6 @@ version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3323f09a748af288c3dc2474ea6803ee81f118321775bffa3ac8f7e65c5e90e7"
 dependencies = [
- "serde",
-]
-
-[[package]]
-name = "serde-bytes-repr"
-version = "0.2.0"
-source = "git+https://github.com/lklimek/rfi-serde-byte-repr?rev=64653d2#64653d2232b18aae0f0d8a48a47b8238a873ff8a"
-dependencies = [
- "base64 0.21.4",
- "hex",
  "serde",
 ]
 
