@@ -80,7 +80,7 @@ pub struct GetIdentityBalanceRequest {
 pub mod get_identity_balance_request {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct GetIdentityRequestV0 {
+    pub struct GetIdentityBalanceRequestV0 {
         #[prost(bytes = "vec", tag = "1")]
         pub id: ::prost::alloc::vec::Vec<u8>,
         #[prost(bool, tag = "2")]
@@ -90,7 +90,7 @@ pub mod get_identity_balance_request {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Version {
         #[prost(message, tag = "1")]
-        V0(GetIdentityRequestV0),
+        V0(GetIdentityBalanceRequestV0),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -105,7 +105,7 @@ pub struct GetIdentityBalanceAndRevisionRequest {
 pub mod get_identity_balance_and_revision_request {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct GetIdentityRequestV0 {
+    pub struct GetIdentityBalanceAndRevisionRequestV0 {
         #[prost(bytes = "vec", tag = "1")]
         pub id: ::prost::alloc::vec::Vec<u8>,
         #[prost(bool, tag = "2")]
@@ -115,7 +115,7 @@ pub mod get_identity_balance_and_revision_request {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Version {
         #[prost(message, tag = "1")]
-        V0(GetIdentityRequestV0),
+        V0(GetIdentityBalanceAndRevisionRequestV0),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]

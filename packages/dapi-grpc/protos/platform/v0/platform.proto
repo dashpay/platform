@@ -70,26 +70,26 @@ message GetIdentityRequest {
 
 message GetIdentityBalanceRequest {
 
-  message GetIdentityRequestV0 {
+  message GetIdentityBalanceRequestV0 {
     bytes id = 1;
     bool prove = 2;
   }
 
   oneof version {
-    GetIdentityRequestV0 v0 = 1;
+    GetIdentityBalanceRequestV0 v0 = 1;
   }
 }
 
 
 message GetIdentityBalanceAndRevisionRequest {
 
-  message GetIdentityRequestV0 {
+  message GetIdentityBalanceAndRevisionRequestV0 {
     bytes id = 1;
     bool prove = 2;
   }
 
   oneof version {
-    GetIdentityRequestV0 v0 = 1;
+    GetIdentityBalanceAndRevisionRequestV0 v0 = 1;
   }
 }
 

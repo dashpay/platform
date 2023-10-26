@@ -156,6 +156,7 @@ mod tests {
         use crate::error::query::QueryError;
         use crate::query::tests::assert_invalid_identifier;
         use bs58::encode;
+        use dapi_grpc::platform::v0::get_identity_request::{GetIdentityRequestV0, Version};
         use dapi_grpc::platform::v0::{
             get_identity_response, GetIdentityRequest, GetIdentityResponse,
         };
@@ -168,8 +169,10 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentityRequest {
-                id: vec![0; 8],
-                prove: false,
+                version: Some(Version::V0(GetIdentityRequestV0 {
+                    id: vec![0; 8],
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -184,8 +187,10 @@ mod tests {
 
             let id = vec![0; 32];
             let request = GetIdentityRequest {
-                id: id.clone(),
-                prove: false,
+                version: Some(Version::V0(GetIdentityRequestV0 {
+                    id: id.clone(),
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -208,8 +213,10 @@ mod tests {
 
             let id = vec![0; 32];
             let request = GetIdentityRequest {
-                id: id.clone(),
-                prove: true,
+                version: Some(Version::V0(GetIdentityRequestV0 {
+                    id: id.clone(),
+                    prove: true,
+                })),
             }
             .encode_to_vec();
 
@@ -227,6 +234,7 @@ mod tests {
     }
 
     mod identities {
+        use dapi_grpc::platform::v0::get_identities_request::{GetIdentitiesRequestV0, Version};
         use dapi_grpc::platform::v0::{
             get_identities_response, GetIdentitiesRequest, GetIdentitiesResponse,
         };
@@ -239,8 +247,10 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentitiesRequest {
-                ids: vec![vec![0; 8]],
-                prove: false,
+                version: Some(Version::V0(GetIdentitiesRequestV0 {
+                    ids: vec![vec![0; 8]],
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -254,9 +264,12 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let id = vec![0; 32];
+
             let request = GetIdentitiesRequest {
-                ids: vec![id.clone()],
-                prove: false,
+                version: Some(Version::V0(GetIdentitiesRequestV0 {
+                    ids: vec![id.clone()],
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -281,8 +294,10 @@ mod tests {
 
             let id = vec![0; 32];
             let request = GetIdentitiesRequest {
-                ids: vec![id.clone()],
-                prove: true,
+                version: Some(Version::V0(GetIdentitiesRequestV0 {
+                    ids: vec![id.clone()],
+                    prove: true,
+                })),
             }
             .encode_to_vec();
 
@@ -302,8 +317,11 @@ mod tests {
     mod identity_balance {
         use crate::error::query::QueryError;
         use bs58::encode;
+        use dapi_grpc::platform::v0::get_identity_balance_request::{
+            GetIdentityBalanceRequestV0, Version,
+        };
         use dapi_grpc::platform::v0::{
-            get_identity_balance_response, GetIdentityBalanceResponse, GetIdentityRequest,
+            get_identity_balance_response, GetIdentityBalanceRequest, GetIdentityBalanceResponse,
         };
         use prost::Message;
 
@@ -313,9 +331,11 @@ mod tests {
         fn test_invalid_identity_id() {
             let (platform, version) = super::setup_platform();
 
-            let request = GetIdentityRequest {
-                id: vec![0; 8],
-                prove: false,
+            let request = GetIdentityBalanceRequest {
+                version: Some(Version::V0(GetIdentityBalanceRequestV0 {
+                    id: vec![0; 8],
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -329,9 +349,12 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let id = vec![0; 32];
-            let request = GetIdentityRequest {
-                id: id.clone(),
-                prove: false,
+
+            let request = GetIdentityBalanceRequest {
+                version: Some(Version::V0(GetIdentityBalanceRequestV0 {
+                    id: id.clone(),
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -353,9 +376,12 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let id = vec![0; 32];
-            let request = GetIdentityRequest {
-                id: id.clone(),
-                prove: true,
+
+            let request = GetIdentityBalanceRequest {
+                version: Some(Version::V0(GetIdentityBalanceRequestV0 {
+                    id: id.clone(),
+                    prove: true,
+                })),
             }
             .encode_to_vec();
 
@@ -375,9 +401,12 @@ mod tests {
     mod identity_balance_and_revision {
         use crate::error::query::QueryError;
         use bs58::encode;
+        use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::{
+            GetIdentityBalanceAndRevisionRequestV0, Version,
+        };
         use dapi_grpc::platform::v0::{
-            get_identity_balance_and_revision_response, GetIdentityBalanceAndRevisionResponse,
-            GetIdentityRequest,
+            get_identity_balance_and_revision_response, GetIdentityBalanceAndRevisionRequest,
+            GetIdentityBalanceAndRevisionResponse,
         };
         use prost::Message;
 
@@ -387,9 +416,11 @@ mod tests {
         fn test_invalid_identity_id() {
             let (platform, version) = super::setup_platform();
 
-            let request = GetIdentityRequest {
-                id: vec![0; 8],
-                prove: false,
+            let request = GetIdentityBalanceAndRevisionRequest {
+                version: Some(Version::V0(GetIdentityBalanceAndRevisionRequestV0 {
+                    id: vec![0; 8],
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -403,9 +434,12 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let id = vec![0; 32];
-            let request = GetIdentityRequest {
-                id: id.clone(),
-                prove: false,
+
+            let request = GetIdentityBalanceAndRevisionRequest {
+                version: Some(Version::V0(GetIdentityBalanceAndRevisionRequestV0 {
+                    id: id.clone(),
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -430,9 +464,12 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let id = vec![0; 32];
-            let request = GetIdentityRequest {
-                id: id.clone(),
-                prove: true,
+
+            let request = GetIdentityBalanceAndRevisionRequest {
+                version: Some(Version::V0(GetIdentityBalanceAndRevisionRequestV0 {
+                    id: id.clone(),
+                    prove: true,
+                })),
             }
             .encode_to_vec();
 
@@ -453,6 +490,9 @@ mod tests {
 
     mod identity_keys {
         use crate::error::query::QueryError;
+        use dapi_grpc::platform::v0::get_identity_keys_request::{
+            GetIdentityKeysRequestV0, Version,
+        };
         use dapi_grpc::platform::v0::{
             get_identity_keys_response, key_request_type::Request, AllKeys, GetIdentityKeysRequest,
             GetIdentityKeysResponse, KeyRequestType, SearchKey, SecurityLevelMap,
@@ -467,11 +507,13 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentityKeysRequest {
-                identity_id: vec![0; 8],
-                request_type: None,
-                limit: None,
-                offset: None,
-                prove: false,
+                version: Some(Version::V0(GetIdentityKeysRequestV0 {
+                    identity_id: vec![0; 8],
+                    request_type: None,
+                    limit: None,
+                    offset: None,
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -485,11 +527,13 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentityKeysRequest {
-                identity_id: vec![0; 32],
-                request_type: None,
-                limit: Some(u32::MAX),
-                offset: None,
-                prove: false,
+                version: Some(Version::V0(GetIdentityKeysRequestV0 {
+                    identity_id: vec![0; 32],
+                    request_type: None,
+                    limit: Some(u32::MAX),
+                    offset: None,
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -509,11 +553,13 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentityKeysRequest {
-                identity_id: vec![0; 32],
-                request_type: None,
-                limit: Some((platform.config.drive.max_query_limit + 1) as u32),
-                offset: None,
-                prove: false,
+                version: Some(Version::V0(GetIdentityKeysRequestV0 {
+                    identity_id: vec![0; 32],
+                    request_type: None,
+                    limit: Some((platform.config.drive.max_query_limit + 1) as u32),
+                    offset: None,
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -538,11 +584,13 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentityKeysRequest {
-                identity_id: vec![0; 32],
-                request_type: None,
-                limit: None,
-                offset: Some(u32::MAX),
-                prove: false,
+                version: Some(Version::V0(GetIdentityKeysRequestV0 {
+                    identity_id: vec![0; 32],
+                    request_type: None,
+                    limit: None,
+                    offset: Some(u32::MAX),
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -562,11 +610,13 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentityKeysRequest {
-                identity_id: vec![0; 32],
-                request_type: None,
-                limit: None,
-                offset: None,
-                prove: false,
+                version: Some(Version::V0(GetIdentityKeysRequestV0 {
+                    identity_id: vec![0; 32],
+                    request_type: None,
+                    limit: None,
+                    offset: None,
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -586,11 +636,13 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentityKeysRequest {
-                identity_id: vec![0; 32],
-                request_type: Some(KeyRequestType { request: None }),
-                limit: None,
-                offset: None,
-                prove: false,
+                version: Some(Version::V0(GetIdentityKeysRequestV0 {
+                    identity_id: vec![0; 32],
+                    request_type: Some(KeyRequestType { request: None }),
+                    limit: None,
+                    offset: None,
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -610,22 +662,24 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentityKeysRequest {
-                identity_id: vec![0; 32],
-                request_type: Some(KeyRequestType {
-                    request: Some(Request::SearchKey(SearchKey {
-                        purpose_map: [(
-                            0,
-                            SecurityLevelMap {
-                                security_level_map: [(u32::MAX, 0)].into_iter().collect(),
-                            },
-                        )]
-                        .into_iter()
-                        .collect(),
-                    })),
-                }),
-                limit: None,
-                offset: None,
-                prove: false,
+                version: Some(Version::V0(GetIdentityKeysRequestV0 {
+                    identity_id: vec![0; 32],
+                    request_type: Some(KeyRequestType {
+                        request: Some(Request::SearchKey(SearchKey {
+                            purpose_map: [(
+                                0,
+                                SecurityLevelMap {
+                                    security_level_map: [(u32::MAX, 0)].into_iter().collect(),
+                                },
+                            )]
+                            .into_iter()
+                            .collect(),
+                        })),
+                    }),
+                    limit: None,
+                    offset: None,
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -645,13 +699,15 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentityKeysRequest {
-                identity_id: vec![0; 32],
-                request_type: Some(KeyRequestType {
-                    request: Some(Request::AllKeys(AllKeys {})),
-                }),
-                limit: None,
-                offset: None,
-                prove: false,
+                version: Some(Version::V0(GetIdentityKeysRequestV0 {
+                    identity_id: vec![0; 32],
+                    request_type: Some(KeyRequestType {
+                        request: Some(Request::AllKeys(AllKeys {})),
+                    }),
+                    limit: None,
+                    offset: None,
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -676,13 +732,15 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentityKeysRequest {
-                identity_id: vec![0; 32],
-                request_type: Some(KeyRequestType {
-                    request: Some(Request::AllKeys(AllKeys {})),
-                }),
-                limit: None,
-                offset: None,
-                prove: true,
+                version: Some(Version::V0(GetIdentityKeysRequestV0 {
+                    identity_id: vec![0; 32],
+                    request_type: Some(KeyRequestType {
+                        request: Some(Request::AllKeys(AllKeys {})),
+                    }),
+                    limit: None,
+                    offset: None,
+                    prove: true,
+                })),
             }
             .encode_to_vec();
 
@@ -703,6 +761,9 @@ mod tests {
     mod data_contract {
         use crate::error::query::QueryError;
         use bs58::encode;
+        use dapi_grpc::platform::v0::get_data_contract_request::{
+            GetDataContractRequestV0, Version,
+        };
         use dapi_grpc::platform::v0::{
             get_data_contract_response, GetDataContractRequest, GetDataContractResponse,
         };
@@ -715,8 +776,10 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetDataContractRequest {
-                id: vec![0; 8],
-                prove: false,
+                version: Some(Version::V0(GetDataContractRequestV0 {
+                    id: vec![0; 8],
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -731,8 +794,10 @@ mod tests {
 
             let id = vec![0; 32];
             let request = GetDataContractRequest {
-                id: id.clone(),
-                prove: false,
+                version: Some(Version::V0(GetDataContractRequestV0 {
+                    id: id.clone(),
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -757,8 +822,10 @@ mod tests {
 
             let id = vec![0; 32];
             let request = GetDataContractRequest {
-                id: id.clone(),
-                prove: true,
+                version: Some(Version::V0(GetDataContractRequestV0 {
+                    id: id.clone(),
+                    prove: true,
+                })),
             }
             .encode_to_vec();
 
@@ -777,6 +844,9 @@ mod tests {
     }
 
     mod data_contracts {
+        use dapi_grpc::platform::v0::get_data_contracts_request::{
+            GetDataContractsRequestV0, Version,
+        };
         use dapi_grpc::platform::v0::{
             get_data_contracts_response, GetDataContractsRequest, GetDataContractsResponse,
         };
@@ -789,8 +859,10 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetDataContractsRequest {
-                ids: vec![vec![0; 8]],
-                prove: false,
+                version: Some(Version::V0(GetDataContractsRequestV0 {
+                    ids: vec![vec![0; 8]],
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -805,8 +877,10 @@ mod tests {
 
             let id = vec![0; 32];
             let request = GetDataContractsRequest {
-                ids: vec![id.clone()],
-                prove: false,
+                version: Some(Version::V0(GetDataContractsRequestV0 {
+                    ids: vec![id.clone()],
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -834,8 +908,10 @@ mod tests {
 
             let id = vec![0; 32];
             let request = GetDataContractsRequest {
-                ids: vec![id.clone()],
-                prove: true,
+                version: Some(Version::V0(GetDataContractsRequestV0 {
+                    ids: vec![id.clone()],
+                    prove: true,
+                })),
             }
             .encode_to_vec();
 
@@ -856,6 +932,9 @@ mod tests {
     mod data_contract_history {
         use crate::error::query::QueryError;
         use bs58::encode;
+        use dapi_grpc::platform::v0::get_data_contract_history_request::{
+            GetDataContractHistoryRequestV0, Version,
+        };
         use dapi_grpc::platform::v0::{
             get_data_contract_history_response, GetDataContractHistoryRequest,
             GetDataContractHistoryResponse,
@@ -869,11 +948,13 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetDataContractHistoryRequest {
-                id: vec![0; 8],
-                limit: None,
-                offset: None,
-                start_at_ms: 0,
-                prove: false,
+                version: Some(Version::V0(GetDataContractHistoryRequestV0 {
+                    id: vec![0; 8],
+                    limit: None,
+                    offset: None,
+                    start_at_ms: 0,
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -887,11 +968,13 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetDataContractHistoryRequest {
-                id: vec![0; 32],
-                limit: Some(u32::MAX),
-                offset: None,
-                start_at_ms: 0,
-                prove: false,
+                version: Some(Version::V0(GetDataContractHistoryRequestV0 {
+                    id: vec![0; 32],
+                    limit: Some(u32::MAX),
+                    offset: None,
+                    start_at_ms: 0,
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -911,11 +994,13 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetDataContractHistoryRequest {
-                id: vec![0; 32],
-                limit: None,
-                offset: Some(u32::MAX),
-                start_at_ms: 0,
-                prove: false,
+                version: Some(Version::V0(GetDataContractHistoryRequestV0 {
+                    id: vec![0; 32],
+                    limit: None,
+                    offset: Some(u32::MAX),
+                    start_at_ms: 0,
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -935,12 +1020,15 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let id = vec![0; 32];
+
             let request = GetDataContractHistoryRequest {
-                id: vec![0; 32],
-                limit: None,
-                offset: None,
-                start_at_ms: 0,
-                prove: false,
+                version: Some(Version::V0(GetDataContractHistoryRequestV0 {
+                    id: vec![0; 32],
+                    limit: None,
+                    offset: None,
+                    start_at_ms: 0,
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -967,11 +1055,13 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetDataContractHistoryRequest {
-                id: vec![0; 32],
-                limit: None,
-                offset: None,
-                start_at_ms: 0,
-                prove: true,
+                version: Some(Version::V0(GetDataContractHistoryRequestV0 {
+                    id: vec![0; 32],
+                    limit: None,
+                    offset: None,
+                    start_at_ms: 0,
+                    prove: true,
+                })),
             }
             .encode_to_vec();
 
@@ -996,7 +1086,9 @@ mod tests {
             get_documents_response, GetDocumentsRequest, GetDocumentsResponse,
         };
 
-        use dapi_grpc::platform::v0::get_documents_request::Start;
+        use dapi_grpc::platform::v0::get_documents_request::{
+            GetDocumentsRequestV0, Start, Version,
+        };
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::platform_value::string_encoding::Encoding;
         use dpp::tests::fixtures::get_data_contract_fixture;
@@ -1010,13 +1102,15 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetDocumentsRequest {
-                data_contract_id: vec![0; 8],
-                document_type: "niceDocument".to_string(),
-                r#where: vec![],
-                limit: 0,
-                order_by: vec![],
-                prove: false,
-                start: None,
+                version: Some(Version::V0(GetDocumentsRequestV0 {
+                    data_contract_id: vec![0; 8],
+                    document_type: "niceDocument".to_string(),
+                    r#where: vec![],
+                    limit: 0,
+                    order_by: vec![],
+                    prove: false,
+                    start: None,
+                })),
             }
             .encode_to_vec();
 
@@ -1030,14 +1124,17 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let data_contract_id = vec![0; 32];
+
             let request = GetDocumentsRequest {
-                data_contract_id: data_contract_id.clone(),
-                document_type: "niceDocument".to_string(),
-                r#where: vec![],
-                limit: 0,
-                order_by: vec![],
-                prove: false,
-                start: None,
+                version: Some(Version::V0(GetDocumentsRequestV0 {
+                    data_contract_id: data_contract_id.clone(),
+                    document_type: "niceDocument".to_string(),
+                    r#where: vec![],
+                    limit: 0,
+                    order_by: vec![],
+                    prove: false,
+                    start: None,
+                })),
             }
             .encode_to_vec();
 
@@ -1063,14 +1160,17 @@ mod tests {
 
             let data_contract_id = created_data_contract.data_contract().id();
             let document_type = "fakeDocument";
+
             let request = GetDocumentsRequest {
-                data_contract_id: data_contract_id.to_vec(),
-                document_type: document_type.to_string(),
-                r#where: vec![],
-                limit: 0,
-                order_by: vec![],
-                prove: false,
-                start: None,
+                version: Some(Version::V0(GetDocumentsRequestV0 {
+                    data_contract_id: data_contract_id.to_vec(),
+                    document_type: document_type.to_string(),
+                    r#where: vec![],
+                    limit: 0,
+                    order_by: vec![],
+                    prove: false,
+                    start: None,
+                })),
             }
             .encode_to_vec();
 
@@ -1097,14 +1197,17 @@ mod tests {
 
             let data_contract_id = created_data_contract.data_contract().id();
             let document_type = "niceDocument";
+
             let request = GetDocumentsRequest {
-                data_contract_id: data_contract_id.to_vec(),
-                document_type: document_type.to_string(),
-                r#where: vec![0x9F], // Incomplete CBOR array
-                limit: 0,
-                order_by: vec![],
-                prove: false,
-                start: None,
+                version: Some(Version::V0(GetDocumentsRequestV0 {
+                    data_contract_id: data_contract_id.to_vec(),
+                    document_type: document_type.to_string(),
+                    r#where: vec![0x9F], // Incomplete CBOR array
+                    limit: 0,
+                    order_by: vec![],
+                    prove: false,
+                    start: None,
+                })),
             }
             .encode_to_vec();
 
@@ -1126,14 +1229,17 @@ mod tests {
 
             let data_contract_id = created_data_contract.data_contract().id();
             let document_type = "niceDocument";
+
             let request = GetDocumentsRequest {
-                data_contract_id: data_contract_id.to_vec(),
-                document_type: document_type.to_string(),
-                r#where: vec![],
-                limit: 0,
-                order_by: vec![0x9F], // Incomplete CBOR array
-                prove: false,
-                start: None,
+                version: Some(Version::V0(GetDocumentsRequestV0 {
+                    data_contract_id: data_contract_id.to_vec(),
+                    document_type: document_type.to_string(),
+                    r#where: vec![],
+                    limit: 0,
+                    order_by: vec![0x9F], // Incomplete CBOR array
+                    prove: false,
+                    start: None,
+                })),
             }
             .encode_to_vec();
 
@@ -1155,14 +1261,17 @@ mod tests {
 
             let data_contract_id = created_data_contract.data_contract().id();
             let document_type = "niceDocument";
+
             let request = GetDocumentsRequest {
-                data_contract_id: data_contract_id.to_vec(),
-                document_type: document_type.to_string(),
-                r#where: vec![],
-                limit: 0,
-                order_by: vec![],
-                prove: false,
-                start: Some(Start::StartAt(vec![0; 8])),
+                version: Some(Version::V0(GetDocumentsRequestV0 {
+                    data_contract_id: data_contract_id.to_vec(),
+                    document_type: document_type.to_string(),
+                    r#where: vec![],
+                    limit: 0,
+                    order_by: vec![],
+                    prove: false,
+                    start: Some(Start::StartAt(vec![0; 8])),
+                })),
             }
             .encode_to_vec();
 
@@ -1184,14 +1293,17 @@ mod tests {
 
             let data_contract_id = created_data_contract.data_contract().id();
             let document_type = "niceDocument";
+
             let request = GetDocumentsRequest {
-                data_contract_id: data_contract_id.to_vec(),
-                document_type: document_type.to_string(),
-                r#where: vec![],
-                limit: 0,
-                order_by: vec![],
-                prove: false,
-                start: Some(Start::StartAfter(vec![0; 8])),
+                version: Some(Version::V0(GetDocumentsRequestV0 {
+                    data_contract_id: data_contract_id.to_vec(),
+                    document_type: document_type.to_string(),
+                    r#where: vec![],
+                    limit: 0,
+                    order_by: vec![],
+                    prove: false,
+                    start: Some(Start::StartAfter(vec![0; 8])),
+                })),
             }
             .encode_to_vec();
 
@@ -1214,14 +1326,17 @@ mod tests {
             let data_contract_id = created_data_contract.data_contract().id();
             let document_type = "niceDocument";
             let limit = u32::MAX;
+
             let request = GetDocumentsRequest {
-                data_contract_id: data_contract_id.to_vec(),
-                document_type: document_type.to_string(),
-                r#where: vec![],
-                limit,
-                order_by: vec![],
-                prove: false,
-                start: None,
+                version: Some(Version::V0(GetDocumentsRequestV0 {
+                    data_contract_id: data_contract_id.to_vec(),
+                    document_type: document_type.to_string(),
+                    r#where: vec![],
+                    limit,
+                    order_by: vec![],
+                    prove: false,
+                    start: None,
+                })),
             }
             .encode_to_vec();
 
@@ -1243,14 +1358,17 @@ mod tests {
 
             let data_contract_id = created_data_contract.data_contract().id();
             let document_type = "niceDocument";
+
             let request = GetDocumentsRequest {
-                data_contract_id: data_contract_id.to_vec(),
-                document_type: document_type.to_string(),
-                r#where: vec![],
-                limit: 0,
-                order_by: vec![],
-                prove: false,
-                start: None,
+                version: Some(Version::V0(GetDocumentsRequestV0 {
+                    data_contract_id: data_contract_id.to_vec(),
+                    document_type: document_type.to_string(),
+                    r#where: vec![],
+                    limit: 0,
+                    order_by: vec![],
+                    prove: false,
+                    start: None,
+                })),
             }
             .encode_to_vec();
 
@@ -1283,14 +1401,17 @@ mod tests {
 
             let data_contract_id = created_data_contract.data_contract().id();
             let document_type = "niceDocument";
+
             let request = GetDocumentsRequest {
-                data_contract_id: data_contract_id.to_vec(),
-                document_type: document_type.to_string(),
-                r#where: vec![],
-                limit: 0,
-                order_by: vec![],
-                prove: true,
-                start: None,
+                version: Some(Version::V0(GetDocumentsRequestV0 {
+                    data_contract_id: data_contract_id.to_vec(),
+                    document_type: document_type.to_string(),
+                    r#where: vec![],
+                    limit: 0,
+                    order_by: vec![],
+                    prove: true,
+                    start: None,
+                })),
             }
             .encode_to_vec();
 
@@ -1312,8 +1433,12 @@ mod tests {
 
     mod identity_by_public_key_hash {
         use crate::query::QueryError;
+        use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::{
+            GetIdentityByPublicKeyHashRequestV0, Version,
+        };
         use dapi_grpc::platform::v0::{
-            get_identity_by_public_key_hashes_response, GetIdentityByPublicKeyHashesRequest,
+            get_identity_by_public_key_hashes_response, GetIdentityByPublicKeyHashRequest,
+            GetIdentityByPublicKeyHashResponse, GetIdentityByPublicKeyHashesRequest,
             GetIdentityByPublicKeyHashesResponse,
         };
         use prost::Message;
@@ -1324,9 +1449,11 @@ mod tests {
         fn test_invalid_public_key_hash() {
             let (platform, version) = super::setup_platform();
 
-            let request = GetIdentityByPublicKeyHashesRequest {
-                public_key_hash: vec![0; 8],
-                prove: false,
+            let request = GetIdentityByPublicKeyHashRequest {
+                version: Some(Version::V0(GetIdentityByPublicKeyHashRequestV0 {
+                    public_key_hash: vec![0; 8],
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -1346,9 +1473,11 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let public_key_hash = vec![0; 20];
-            let request = GetIdentityByPublicKeyHashesRequest {
-                public_key_hash: public_key_hash.clone(),
-                prove: false,
+            let request = GetIdentityByPublicKeyHashRequest {
+                version: Some(Version::V0(GetIdentityByPublicKeyHashRequestV0 {
+                    public_key_hash: public_key_hash.clone(),
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -1371,9 +1500,11 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let public_key_hash = vec![0; 20];
-            let request = GetIdentityByPublicKeyHashesRequest {
-                public_key_hash: public_key_hash.clone(),
-                prove: true,
+            let request = GetIdentityByPublicKeyHashRequest {
+                version: Some(Version::V0(GetIdentityByPublicKeyHashRequestV0 {
+                    public_key_hash: public_key_hash.clone(),
+                    prove: true,
+                })),
             }
             .encode_to_vec();
 
@@ -1382,7 +1513,7 @@ mod tests {
 
             let validation_result = result.unwrap();
 
-            let response = GetIdentityByPublicKeyHashesResponse::decode(
+            let response = GetIdentityByPublicKeyHashResponse::decode(
                 validation_result.data.unwrap().as_slice(),
             )
             .expect("response decoded");
@@ -1397,6 +1528,9 @@ mod tests {
 
     mod identities_by_public_key_hash {
         use crate::query::QueryError;
+        use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_request::{
+            GetIdentitiesByPublicKeyHashesRequestV0, Version,
+        };
         use dapi_grpc::platform::v0::{
             get_identities_by_public_key_hashes_response, GetIdentitiesByPublicKeyHashesRequest,
             GetIdentitiesByPublicKeyHashesResponse,
@@ -1410,8 +1544,10 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentitiesByPublicKeyHashesRequest {
-                public_key_hashes: vec![vec![0; 8]],
-                prove: false,
+                version: Some(Version::V0(GetIdentitiesByPublicKeyHashesRequestV0 {
+                    public_key_hashes: vec![vec![0; 8]],
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -1431,8 +1567,10 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentitiesByPublicKeyHashesRequest {
-                public_key_hashes: vec![vec![0; 20]],
-                prove: false,
+                version: Some(Version::V0(GetIdentitiesByPublicKeyHashesRequestV0 {
+                    public_key_hashes: vec![vec![0; 20]],
+                    prove: false,
+                })),
             }
             .encode_to_vec();
 
@@ -1459,8 +1597,10 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentitiesByPublicKeyHashesRequest {
-                public_key_hashes: vec![vec![0; 20]],
-                prove: true,
+                version: Some(Version::V0(GetIdentitiesByPublicKeyHashesRequestV0 {
+                    public_key_hashes: vec![vec![0; 20]],
+                    prove: true,
+                })),
             }
             .encode_to_vec();
 
@@ -1482,8 +1622,11 @@ mod tests {
 
     mod proofs {
         use crate::query::QueryError;
-        use dapi_grpc::platform::v0::get_proofs_request::{
+        use dapi_grpc::platform::v0::get_proofs_request::get_proofs_request_v0::{
             ContractRequest, DocumentRequest, IdentityRequest,
+        };
+        use dapi_grpc::platform::v0::get_proofs_request::{
+            ContractRequest, DocumentRequest, GetProofsRequestV0, IdentityRequest, Version,
         };
         use dapi_grpc::platform::v0::{GetProofsRequest, GetProofsResponse};
         use prost::Message;
@@ -1495,12 +1638,14 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetProofsRequest {
-                identities: vec![IdentityRequest {
-                    identity_id: vec![0; 8],
-                    request_type: 0,
-                }],
-                contracts: vec![],
-                documents: vec![],
+                version: Some(Version::V0(GetProofsRequestV0 {
+                    identities: vec![IdentityRequest {
+                        identity_id: vec![0; 8],
+                        request_type: 0,
+                    }],
+                    contracts: vec![],
+                    documents: vec![],
+                })),
             }
             .encode_to_vec();
 
@@ -1514,13 +1659,16 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request_type = 10;
+
             let request = GetProofsRequest {
-                identities: vec![IdentityRequest {
-                    identity_id: vec![0; 32],
-                    request_type,
-                }],
-                contracts: vec![],
-                documents: vec![],
+                version: Some(Version::V0(GetProofsRequestV0 {
+                    identities: vec![IdentityRequest {
+                        identity_id: vec![0; 32],
+                        request_type,
+                    }],
+                    contracts: vec![],
+                    documents: vec![],
+                })),
             }
             .encode_to_vec();
 
@@ -1542,11 +1690,13 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetProofsRequest {
-                identities: vec![],
-                contracts: vec![ContractRequest {
-                    contract_id: vec![0; 8],
-                }],
-                documents: vec![],
+                version: Some(Version::V0(GetProofsRequestV0 {
+                    identities: vec![],
+                    contracts: vec![ContractRequest {
+                        contract_id: vec![0; 8],
+                    }],
+                    documents: vec![],
+                })),
             }
             .encode_to_vec();
 
@@ -1560,14 +1710,16 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetProofsRequest {
-                identities: vec![],
-                contracts: vec![],
-                documents: vec![DocumentRequest {
-                    contract_id: vec![0; 8],
-                    document_type: "niceDocument".to_string(),
-                    document_type_keeps_history: false,
-                    document_id: vec![0; 32],
-                }],
+                version: Some(Version::V0(GetProofsRequestV0 {
+                    identities: vec![],
+                    contracts: vec![],
+                    documents: vec![DocumentRequest {
+                        contract_id: vec![0; 8],
+                        document_type: "niceDocument".to_string(),
+                        document_type_keeps_history: false,
+                        document_id: vec![0; 32],
+                    }],
+                })),
             }
             .encode_to_vec();
 
@@ -1581,14 +1733,16 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetProofsRequest {
-                identities: vec![],
-                contracts: vec![],
-                documents: vec![DocumentRequest {
-                    contract_id: vec![0; 32],
-                    document_type: "niceDocument".to_string(),
-                    document_type_keeps_history: false,
-                    document_id: vec![0; 8],
-                }],
+                version: Some(Version::V0(GetProofsRequestV0 {
+                    identities: vec![],
+                    contracts: vec![],
+                    documents: vec![DocumentRequest {
+                        contract_id: vec![0; 32],
+                        document_type: "niceDocument".to_string(),
+                        document_type_keeps_history: false,
+                        document_id: vec![0; 8],
+                    }],
+                })),
             }
             .encode_to_vec();
 
@@ -1604,14 +1758,16 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetProofsRequest {
-                identities: vec![],
-                contracts: vec![],
-                documents: vec![DocumentRequest {
-                    contract_id: vec![0; 32],
-                    document_type: "niceDocument".to_string(),
-                    document_type_keeps_history: false,
-                    document_id: vec![0; 32],
-                }],
+                version: Some(Version::V0(GetProofsRequestV0 {
+                    identities: vec![],
+                    contracts: vec![],
+                    documents: vec![DocumentRequest {
+                        contract_id: vec![0; 32],
+                        document_type: "niceDocument".to_string(),
+                        document_type_keeps_history: false,
+                        document_id: vec![0; 32],
+                    }],
+                })),
             }
             .encode_to_vec();
 
