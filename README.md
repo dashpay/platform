@@ -101,7 +101,7 @@ The ones that don't, should. #up-for-grabs
 - [node.js](https://nodejs.org/) v18
 - [docker](https://docs.docker.com/get-docker/) v20.10+
 - [rust](https://www.rust-lang.org/tools/install) v1.67+ \
-  with wasm32 target (`rustup target add wasm32-unknown-unknown`)
+  - `wasm32-unknown-unknown` target
 - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/)
 - [`protoc`](https://github.com/protocolbuffers/protobuf/releases) 22.4
 
@@ -233,7 +233,15 @@ brew install protobuf
    cargo install wasm-bindgen-cli@"$my_wbg_cli_ver"
    wasm-bindgen -V
    ```
+3. Install wasm32 rust target
+   ```sh
+   rustup target add wasm32-unknown-unknown
+   ```
 3. Install platform packages
+   ```sh
+   corepack enable
+   yarn install
+   ```
 
 ### Supported networks
 
