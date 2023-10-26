@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use dpp::{
     document::Document,
     identity::KeyID,
-    prelude::{DataContract, IdentityPublicKey, Revision},
+    prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
 };
 
 /// History of a data contract.
@@ -34,4 +34,4 @@ pub type IdentityBalanceAndRevision = (u64, Revision);
 pub type IdentityPublicKeys = BTreeMap<KeyID, Option<IdentityPublicKey>>;
 
 /// Collection of documents.
-pub type Documents = Vec<Document>;
+pub type Documents = BTreeMap<Identifier, Option<Document>>;

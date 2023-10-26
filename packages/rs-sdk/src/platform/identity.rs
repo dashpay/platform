@@ -1,6 +1,6 @@
 //! Identity related types and functions
 
-use dapi_grpc::platform::v0::GetIdentityBalanceRequest;
+use dapi_grpc::platform::v0::{GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceRequest};
 use dpp::prelude::Identity;
 
 use crate::delegate_enum;
@@ -63,5 +63,17 @@ impl Query<GetIdentityBalanceRequest> for dpp::prelude::Identifier {
             id,
             prove,
         }))
+    }
+}
+
+impl Query<GetIdentityBalanceAndRevisionRequest> for dpp::prelude::Identifier {
+    fn query(self, prove: bool) -> Result<GetIdentityBalanceAndRevisionRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+        let id = self.to_vec();
+        Ok(GetIdentityBalanceAndRevisionRequest(
+            proto::GetIdentityRequest { id, prove },
+        ))
     }
 }

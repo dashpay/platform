@@ -34,11 +34,13 @@ async fn document_read() {
         &cfg.settings.existing_document_type_name,
     )
     .expect("create SdkDocumentQuery");
-    let docs = Document::fetch_many(&mut sdk, all_docs_query)
+    let first_doc = Document::fetch_many(&mut sdk, all_docs_query)
         .await
         .expect("fetch many documents")
-        .expect("no documents found");
-    let first_doc = docs.first().expect("document must exist");
+        .pop_first()
+        .expect("first item must exist")
+        .1
+        .expect("document must exist");
 
     // Now query for individual document
     let query = DocumentQuery::new(contract, &cfg.settings.existing_document_type_name)
@@ -50,7 +52,7 @@ async fn document_read() {
         .expect("fetch document")
         .expect("document must be found");
 
-    assert_eq!(first_doc, &doc);
+    assert_eq!(first_doc, doc);
 }
 
 /// Given some non-existing data contract ID, when I create [DocumentQuery], I get an error.
@@ -108,11 +110,6 @@ async fn document_read_no_document() {
 /// as a query, then I get one or more items.
 ///
 /// This test is ignored because it requires a running Platform. To run it, set constants in `common.rs` and run:
-///
-/// ```bash
-/// cargo test -p rs-sdk -- --ignored
-/// ```
-#[ignore = "needs access to running Dash Platform network"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn document_list_drive_query() {
     setup_logs();
@@ -135,13 +132,12 @@ async fn document_list_drive_query() {
 
     let docs = <Document>::fetch_many(&mut sdk, query)
         .await
-        .expect("fetch many documents")
-        .expect("no documents found");
+        .expect("fetch many documents");
 
     assert!(!docs.is_empty());
     let doc_ids: Vec<String> = docs
         .iter()
-        .map(|d| d.id().to_string(Encoding::Base64))
+        .map(|d| d.0.to_string(Encoding::Base64))
         .collect();
 
     tracing::info!(documents=?doc_ids, "fetched documents");
@@ -149,13 +145,6 @@ async fn document_list_drive_query() {
 
 /// Given some data contract ID and document type with at least one document, when I list documents using DocumentQuery
 /// as a query, then I get one or more items.
-///
-/// This test is ignored because it requires a running Platform. To run it, set constants in `common.rs` and run:
-///
-/// ```bash
-/// cargo test -p rs-sdk -- --ignored
-/// ```
-#[ignore = "needs access to running Dash Platform network"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn document_list_document_query() {
     setup_logs();
@@ -180,13 +169,12 @@ async fn document_list_document_query() {
 
     let docs = <Document>::fetch_many(&mut sdk, query)
         .await
-        .expect("fetch many documents")
-        .expect("no documents found");
+        .expect("fetch many documents");
 
     assert!(!docs.is_empty());
     let doc_ids: Vec<String> = docs
         .iter()
-        .map(|d| d.id().to_string(Encoding::Base64))
+        .map(|d| d.0.to_string(Encoding::Base64))
         .collect();
 
     tracing::info!(documents=?doc_ids, "fetched documents");

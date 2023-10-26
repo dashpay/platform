@@ -5,27 +5,34 @@
 //! ## Traits
 //! - `[FetchMany]`: An async trait that fetches multiple items of a specific type from the platform.
 
-use dapi_grpc::platform::v0::GetDocumentsResponse;
-use dpp::document::Document;
-use drive_proof_verifier::FromProof;
-use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
-
 use crate::mock::MockResponse;
 use crate::{
     error::Error,
     platform::{document_query::DocumentQuery, query::Query},
     Sdk,
 };
+use dapi_grpc::platform::v0::{GetDocumentsResponse, GetIdentityKeysRequest};
+use dpp::document::Document;
+use dpp::identity::KeyID;
+use dpp::prelude::{Identifier, IdentityPublicKey};
+use drive_proof_verifier::{types::Documents, FromProof};
+use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
+use std::collections::BTreeMap;
+
 /// Trait implemented by objects that can be listed or searched.
+///
+/// ## Generic Parameters
+///
+/// - `K`: The type of the key used to index the object
 #[async_trait::async_trait]
-pub trait FetchMany
+pub trait FetchMany<K: Ord>
 where
     Self: Sized,
-    Vec<Self>: MockResponse
+    BTreeMap<K, Option<Self>>: MockResponse
         + FromProof<
             Self::Request,
             Request = Self::Request,
-            Response = <<Self as FetchMany>::Request as TransportRequest>::Response,
+            Response = <<Self as FetchMany<K>>::Request as TransportRequest>::Response,
         > + Sync,
 {
     /// Type of request used to fetch multiple objects from the platform.
@@ -34,7 +41,7 @@ where
     ///
     /// This type must implement [`TransportRequest`] and [`MockRequest`](crate::mock::MockRequest).
     type Request: TransportRequest
-        + Into<<Vec<Self> as FromProof<<Self as FetchMany>::Request>>::Request>;
+        + Into<<BTreeMap<K, Option<Self>> as FromProof<<Self as FetchMany<K>>::Request>>::Request>;
 
     /// # Fetch (or search) multiple objects on the Dash Platform
     ///
@@ -46,19 +53,24 @@ where
     ///
     /// ## Returns
     /// Returns a `Result` containing either :
-    /// * `Option<Vec<Self>>` where `Self` is the type of the fetched object (like a [Document]), or
+    ///
+    /// * list of objects matching the [Query] indexed by a key type `K`, where an item can be None of
+    /// the object was not found for provided key
     /// *  [`Error`](crate::error::Error).
+    ///
+    /// Note that behavior when no items are found can be either empty collection or collection containing None values.
     ///
     /// ## Usage
     ///
     /// See `tests/fetch/document.rs` for a full example.
     ///
     /// ## Error Handling
+    ///
     /// Any errors encountered during the execution are returned as [`Error`](crate::error::Error) instances.
-    async fn fetch_many<Q: Query<<Self as FetchMany>::Request>>(
+    async fn fetch_many<Q: Query<<Self as FetchMany<K>>::Request>>(
         sdk: &mut Sdk,
         query: Q,
-    ) -> Result<Option<Vec<Self>>, Error> {
+    ) -> Result<BTreeMap<K, Option<Self>>, Error> {
         let request = query.query(sdk.prove())?;
 
         let response = request
@@ -69,24 +81,25 @@ where
         let object_type = std::any::type_name::<Self>().to_string();
         tracing::trace!(request = ?request, response = ?response, object_type, "fetched object from platform");
 
-        let object: Option<Vec<Self>> = sdk.parse_proof(request, response)?;
+        let object: BTreeMap<K, Option<Self>> = sdk
+            .parse_proof::<<Self as FetchMany<K>>::Request, BTreeMap<K, Option<Self>>>(
+                request, response,
+            )?
+            .unwrap_or_default();
 
-        match object {
-            Some(items) => Ok(items.into()),
-            None => Ok(None),
-        }
+        Ok(object)
     }
 }
 
 #[async_trait::async_trait]
-impl FetchMany for Document {
+impl FetchMany<Identifier> for Document {
     // We need to use the DocumentQuery type here because the DocumentQuery
     // type stores full contract, which is missing in the GetDocumentsRequest type.
     type Request = DocumentQuery;
-    async fn fetch_many<Q: Query<<Self as FetchMany>::Request>>(
+    async fn fetch_many<Q: Query<<Self as FetchMany<Identifier>>::Request>>(
         sdk: &mut Sdk,
         query: Q,
-    ) -> Result<Option<Vec<Self>>, Error> {
+    ) -> Result<BTreeMap<Identifier, Option<Self>>, Error> {
         let document_query: DocumentQuery = query.query(sdk.prove())?;
 
         let request = document_query.clone();
@@ -95,12 +108,15 @@ impl FetchMany for Document {
 
         tracing::trace!(request=?document_query, response=?response, "fetch multiple documents");
 
-        let object: Option<Vec<Document>> =
-            sdk.parse_proof::<DocumentQuery, Vec<Document>>(document_query, response)?;
+        // let object: Option<BTreeMap<K,Document>> = sdk
+        let documents: BTreeMap<Identifier, Option<Document>> = sdk
+            .parse_proof::<DocumentQuery, Documents>(document_query, response)?
+            .unwrap_or_default();
 
-        match object {
-            Some(documents) => Ok(Some(documents)),
-            None => Ok(None),
-        }
+        Ok(documents)
     }
+}
+#[async_trait::async_trait]
+impl FetchMany<KeyID> for IdentityPublicKey {
+    type Request = GetIdentityKeysRequest;
 }

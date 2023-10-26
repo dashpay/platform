@@ -102,3 +102,8 @@ impl Fetch for Document {
 impl Fetch for drive_proof_verifier::types::IdentityBalance {
     type Request = platform_proto::GetIdentityBalanceRequest;
 }
+
+#[async_trait::async_trait]
+impl Fetch for drive_proof_verifier::types::IdentityBalanceAndRevision {
+    type Request = platform_proto::GetIdentityBalanceAndRevisionRequest;
+}

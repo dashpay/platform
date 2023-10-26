@@ -16,7 +16,7 @@ use dpp::{
     prelude::{DataContract, Identifier},
 };
 use drive::query::{DriveQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
-use drive_proof_verifier::FromProof;
+use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
 };
@@ -150,14 +150,13 @@ impl FromProof<DocumentQuery> for Document {
     {
         let request: Self::Request = request.into();
 
-        let documents: Option<Vec<Document>> =
-            <Vec<Self> as FromProof<Self::Request>>::maybe_from_proof(request, response, provider)?;
+        let documents: Option<Documents> =
+            <Documents as FromProof<Self::Request>>::maybe_from_proof(request, response, provider)?;
 
         match documents {
             None => Ok(None),
-            Some(mut docs) => match docs.len() {
-                0 => Ok(None),
-                1 => Ok(Some(docs.remove(0))),
+            Some(docs) => match docs.len() {
+                0 | 1 => Ok(docs.into_iter().next().and_then(|(_, v)| v)),
                 n => Err(drive_proof_verifier::Error::ResponseDecodeError {
                     error: format!("expected 1 element, got {}", n),
                 }),
@@ -166,7 +165,7 @@ impl FromProof<DocumentQuery> for Document {
     }
 }
 
-impl FromProof<DocumentQuery> for Vec<Document> {
+impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
     type Request = DocumentQuery;
     type Response = platform_proto::GetDocumentsResponse;
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(

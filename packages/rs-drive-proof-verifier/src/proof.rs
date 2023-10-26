@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::{types::*, Error, QuorumInfoProvider};
 use dapi_grpc::platform::v0::get_identities_keys_request::security_level_map::KeyKindRequestType as GrpcKeyKind;
 use dapi_grpc::platform::v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType};
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::{DataContract, Identifier, Identity};
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{
@@ -411,8 +411,8 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
     }
 }
 
-impl FromProof<platform::GetIdentityRequest> for IdentityBalanceAndRevision {
-    type Request = platform::GetIdentityRequest;
+impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalanceAndRevision {
+    type Request = platform::GetIdentityBalanceAndRevisionRequest;
     type Response = platform::GetIdentityBalanceAndRevisionResponse;
 
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
@@ -439,7 +439,7 @@ impl FromProof<platform::GetIdentityRequest> for IdentityBalanceAndRevision {
             .ok_or(Error::EmptyResponseMetadata)?;
 
         // Load some info from request
-        let id = Identifier::from_bytes(&request.id).map_err(|e| Error::ProtocolError {
+        let id = Identifier::from_bytes(&request.0.id).map_err(|e| Error::ProtocolError {
             error: e.to_string(),
         })?;
 
@@ -664,6 +664,10 @@ where
             .map_err(|e| Error::DriveError {
                 error: e.to_string(),
             })?;
+        let documents = documents
+            .into_iter()
+            .map(|d| (d.id(), Some(d)))
+            .collect::<Documents>();
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 

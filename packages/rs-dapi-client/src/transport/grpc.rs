@@ -165,6 +165,22 @@ impl_transport_request_grpc!(
     get_identity_balance
 );
 
+impl_transport_request_grpc!(
+    platform_proto::GetIdentityBalanceAndRevisionRequest,
+    platform_proto::GetIdentityBalanceAndRevisionResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identity_balance_and_revision
+);
+
+impl_transport_request_grpc!(
+    platform_proto::GetIdentityKeysRequest,
+    platform_proto::GetIdentityKeysResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_identity_keys
+);
+
 // Link to each core gRPC request what client and method to use:
 /*
 TODO: Implement serde on Core gRPC requests and responses

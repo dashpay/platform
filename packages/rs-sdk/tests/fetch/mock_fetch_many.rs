@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters,
@@ -5,7 +7,7 @@ use dpp::{
             accessors::DocumentTypeV0Getters, random_document::CreateRandomDocument, DocumentType,
         },
     },
-    document::Document,
+    document::{Document, DocumentV0Getters},
 };
 use rs_sdk::{
     platform::{DocumentQuery, FetchMany},
@@ -22,9 +24,10 @@ async fn test_mock_document_fetch_many() {
     let document_type: DocumentType = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
 
-    let expected = vec![document_type
+    let expected_doc = document_type
         .random_document(None, sdk.version())
-        .expect("document should be created")];
+        .expect("document should be created");
+    let expected = BTreeMap::from([(expected_doc.id(), Some(expected_doc.clone()))]);
 
     let document_type_name = document_type.name();
 
@@ -39,10 +42,8 @@ async fn test_mock_document_fetch_many() {
         .expect_fetch_many(query.clone(), Some(expected.clone()))
         .await;
 
-    let retrieved = Document::fetch_many(&mut sdk, query)
-        .await
-        .unwrap()
-        .expect("document should exist");
+    let retrieved = Document::fetch_many(&mut sdk, query).await.unwrap();
 
+    assert!(!retrieved.is_empty());
     assert_eq!(retrieved, expected);
 }
