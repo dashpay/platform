@@ -401,12 +401,12 @@ mod tests {
                 .expect("expected query to succeed");
             let validation_error = validation_result.first_error().unwrap();
 
-            let error_message = format!("identity {} balance not found", encode(id).into_string());
+            assert_eq!(
+                validation_error.to_string(),
+                "not found error: No Identity found".to_string()
+            );
 
-            assert!(matches!(
-                validation_error,
-                QueryError::NotFound(msg) if msg.contains(&error_message)
-            ));
+            assert!(matches!(validation_error, QueryError::NotFound(_)));
         }
 
         #[test]
