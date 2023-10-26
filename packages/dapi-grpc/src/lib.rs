@@ -27,6 +27,20 @@ pub mod platform {
                 self.0.into_request()
             }
         }
+
+        /// Request to get identity balance and history.
+        // We need to create separate [GetIdentityBalanceAndRevisionRequest]
+        // because it has different response type
+        //
+        // TODO: Implement GetIdentityBalanceAndRevisionRequest in platform.proto and remove this one
+        #[derive(Debug, Clone)]
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+        pub struct GetIdentityBalanceAndRevisionRequest(pub GetIdentityRequest);
+        impl IntoRequest<GetIdentityRequest> for GetIdentityBalanceAndRevisionRequest {
+            fn into_request(self) -> tonic::Request<GetIdentityRequest> {
+                self.0.into_request()
+            }
+        }
     }
     #[cfg(feature = "tenderdash-proto")]
     pub use tenderdash_proto as proto;

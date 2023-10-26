@@ -1,7 +1,7 @@
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::{identity::hash::IdentityPublicKeyHashMethodsV0, prelude::Identity};
 
-use drive_proof_verifier::types::IdentityBalance;
+use drive_proof_verifier::types::{IdentityBalance, IdentityBalanceAndRevision};
 use rs_sdk::platform::identity::PublicKeyHash;
 use rs_sdk::platform::Fetch;
 
@@ -71,4 +71,24 @@ async fn test_identity_balance_read() {
 
     assert_ne!(0, balance);
     tracing::debug!(balance, ?id, "identity balance")
+}
+
+/// Given some existing identity ID, when I fetch the identity balance, I get some number.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_identity_balance_revision_read() {
+    setup_logs();
+
+    let cfg = Config::new();
+    let id: dpp::prelude::Identifier = cfg.settings.existing_identity_id;
+
+    let mut api = cfg.setup_api().await;
+
+    let (balance, revision) = IdentityBalanceAndRevision::fetch(&mut api, id)
+        .await
+        .expect("fetch identity balance")
+        .expect("found identity balance");
+
+    assert_ne!(0, balance);
+    assert_ne!(0, revision);
+    tracing::debug!(balance, revision, ?id, "identity balance and revision")
 }

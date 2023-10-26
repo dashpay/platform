@@ -161,3 +161,19 @@ impl MockResponse for drive_proof_verifier::types::IdentityBalance {
         Self::from_le_bytes(buf.try_into().expect("balance should be 8 bytes"))
     }
 }
+
+impl MockResponse for drive_proof_verifier::types::IdentityBalanceAndRevision {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec(self, bincode::config::standard())
+            .expect("encode IdentityBalanceAndRevision")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let (item, _len) = bincode::decode_from_slice(buf, bincode::config::standard())
+            .expect("decode IdentityBalanceAndRevision");
+        item
+    }
+}
