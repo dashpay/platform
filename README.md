@@ -16,6 +16,20 @@
   <a href="https://twitter.com/intent/follow?screen_name=Dashpay"><img alt="Follow on Twitter" src="https://img.shields.io/twitter/follow/Dashpay.svg?style=social&label=Follow"></a>
 </p>
 
+## Table of Contents
+
+- Philosophy
+- Install (TODO)
+- Usage (Testnet Only)
+- Packages Overview
+- Build
+  - Repo
+  - Pre-Requisites
+    - Linux
+    - Mac
+
+## Philosophy
+
 Dash Platform is a technology stack for building decentralized applications on
 the Dash network. The two main architectural components, Drive and DAPI, turn
 the Dash P2P network into a cloud that developers can integrate with their
@@ -25,15 +39,201 @@ If you are looking for how to contribute to the project or need any help with
 building an app on the Dash Platform - message us on the [Devs
 Discord](https://chat.dashdevs.org/)!
 
-## Note: Dash Platform is currently available on the Dash Testnet only
+## Install
 
-## Intro
+Coming soon...
 
-This is a multi-package repository - sometimes also known as monorepository -
-that contains all packages that comprise the Dash platform - for example, Drive,
-which is the storage component of Dash Platform, the JavaScript SDK, wallet-lib,
-DAPI, and others. Every individual package contains its own readme. Packages are
-located in the [packages](./packages) directory.
+## Usage (Testnet Only)
+
+Dash Platform is currently available on the Dash Testnet only.
+
+| Command           | Description                                                                  |
+| ----------------- | ---------------------------------------------------------------------------- |
+| `corepack enable` | Enables `yarn`. See <https://nodejs.org/dist/latest/docs/api/corepack.html>. |
+| `yarn setup`      | Install dependencies and configure and build all packages.                   |
+| `yarn build`      | Rebuild the project after changes (then run `yarn restart` to apply them).   |
+| `yarn restart`    | `yarn stop` and `yarn start`                                                 |
+| `yarn start`      | Start the local dev environment built from the sources.                      |
+| `yarn stop`       | Stop the local dev environment.                                              |
+| `yarn test`       | Run the whole test suite (run `yarn start` first to start a node to test).   |
+|                   | Run tests for a specific package with `yarn workspace <package_name> test`.  |
+|                   | See the [./packages/README.md](./packages/README.md) for available packages  |
+|                   | Ex: `yarn workspace @dashevo/dapi-client test` tests the JS DAPI client      |
+| `yarn reset`      | Completely reset all local builds and data                                   |
+
+A note on **System Resources**: Running a dev environment requires a non-trivial amount of system resources,
+ so it is best to stop the local node when not in use.
+
+Todo.
+
+## Packages Overview
+
+🤯 See the README in [./packages/](./packages/) for a **structured listing**.
+
+### TL;DR
+
+This monorepo contains all of the Dash platform packages - JavaScript, Rust, and otherwise.
+
+For example:
+
+- Drive (storage layer, in Rust)
+- JavaScript SDK
+- wallet-lib
+- DAPI
+
+Some packages have a `README.md`.
+
+The ones that don't, should. #up-for-grabs
+
+## Build
+
+**DO THIS FIRST**
+
+0. Clone and enter `dashpay/platform`
+   ```sh
+   # a shallow clone is 115.66 MiB
+   git clone --depth=1 git@github.com:dashpay/platform.git ./dashpay-platform/
+   pushd ./dashpay-platform/
+   ```
+
+### Pre-Requisites
+
+- [node.js](https://nodejs.org/) v18
+- [docker](https://docs.docker.com/get-docker/) v20.10+
+- [rust](https://www.rust-lang.org/tools/install) v1.67+ \
+  with wasm32 target (`rustup target add wasm32-unknown-unknown`)
+- [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/)
+- [`protoc`](https://github.com/protocolbuffers/protobuf/releases) 22.4
+
+On Mac and Linux:
+
+```sh
+# Installs rust from rustup.sh
+curl https://webi.sh/rust | sh
+
+# Installs node from nodejs.org
+curl https://webi.sh/node@v18 | sh
+
+# Immediately update PATH without opening a new Terminal
+source ~/.config/envman/PATH.env
+```
+
+##### Linux
+
+Install `llvm` (clang) and other build tools:
+
+```sh
+# System Tools
+sudo apt install -y \
+    curl \
+    gnupg2
+
+# Build Tooling
+sudo apt install -y \
+    build-essential \
+    clang \
+    cmake \
+    g++ \
+    gcc \
+    libgmp-dev \
+    libpython3.10-dev \
+    libssl-dev \
+    libzmq3-dev \
+    pkg-config
+
+# usually not needed, but just in case
+# (lsb includes things "minimal" Linux installs may lack)
+sudo apt install -y \
+    lsb-release
+```
+
+```sh
+apt install -y protobuf-compiler
+```
+
+##### macOS
+
+⚠️ You'll need a **conflict-free brew** intstall. \
+⚠️ You'll need a **custom install of llvm**. \
+❌ The **built-in llvm** will not work. \
+❌ A **legacy brew** install may cause conflicts. \
+✅ The install method below is **conflict-free** (it won't bork your install of macOS). \
+⏰ This takes 20 minutes on an Apple M2 Pro Max. \
+   It may take an hour or two or your machine. \
+   (due to the conflict-free path, more dependencies will be freshly compiled)
+
+**Why the conflict-free method?**
+
+> "macOS already provides this software and installing another version in
+> parallel can cause all kinds of trouble." - `brew`
+
+```sh
+# 0. Backup `brew` if it's installed in potentially conflicting system location
+brew bundle dump --file ./Brewfile-"$(date '+%F')"
+# (and check the backup)
+cat ./Brewfile-*
+
+# 1. Install `brew` in conflict-free fashion & restore your builds.
+#    Webi does this in accordance with brew's conflict-free / tar anywhere method:
+#    https://docs.brew.sh/Installation#alternative-installs
+curl https://webi.sh/brew | sh
+brew bundle --file ./Brewfile-*
+
+# 2. Install `llvm` in conflict-free fashion.
+#    This is important because we don't want to cause issues with macOS' built-in 'llvm'
+brew install llvm
+# install from ./dashpay-platform/Brewfile
+brew bundle --file ./Brewfile
+   
+# 3. Install `pathman` to more edit PATHs
+curl https://webi.sh/pathman | sh
+source ~/.config/envman/PATH.env
+
+# 4. Update your PATH to include our special llvm.
+#    This works for bash, zsh, and fish
+pathman add ~/.local/opt/brew/opt/llvm/bin
+```
+
+```sh
+export LDFLAGS="-L$HOME/.local/opt/brew/opt/llvm/lib/c++ -Wl,-rpath,${HOME}/.local/opt/brew/opt/llvm/lib/c++"
+set -gx LDFLAGS "-L$HOME/.local/opt/brew/opt/llvm/lib"
+set -gx CPPFLAGS "-I$HOME/.local/opt/brew/opt/llvm/include"
+```
+
+```sh
+brew install protobuf
+```
+
+### Others
+
+- `protoc`: See [Protocol Buffers releases page]()
+
+#### Build Evo
+
+0. You may need to set the `PROTOC` ENV to the install path of `protoc`:
+   ```sh
+   command -v protoc
+   # ex: ~/.local/opt/brew/bin/protoc
+   
+   export PROTOC="$HOME/.local/opt/brew/bin/protoc"
+   ```
+2. Build `wasm-bindgen` (TODO this needs to go into a script)
+   ```sh
+   # Check the VERSION (ex: 0.2.85)
+   grep -B 1 -A 8 'name = "wasm-bindgen"' Cargo.lock
+
+   # Install *that* version of the CLI
+   my_wbg_cli_ver="$(
+       grep -B 1 -A 8 'name = "wasm-bindgen"' Cargo.lock |
+           grep 'version' |
+           cut -d'"' -f2
+   )"
+   echo "$my_wbg_cli_ver"
+   # ex: 0.2.86
+   cargo install wasm-bindgen-cli@"$my_wbg_cli_ver"
+   wasm-bindgen -V
+   ```
+3. Install platform packages
 
 ### Supported networks
 
@@ -46,40 +246,6 @@ this repository may be used on the following networks:
 - [ ] [Mainnet](https://dashplatform.readme.io/docs/reference-glossary#mainnet)
 
 ## FAQ
-
-### How to build and set up a node from the code in this repo?
-
-- Clone the repo
-- Install prerequisites:
-  - [node.js](https://nodejs.org/) v18
-  - [docker](https://docs.docker.com/get-docker/) v20.10+
-  - [rust](https://www.rust-lang.org/tools/install) v1.67+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
-  - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/):
-    - **IMPORTANT (OSX only)**: built-in `llvm` on OSX does not work, needs to be installed from brew:
-      - `brew install llvm`
-      - LLVM installed from brew is keg only, and path to it must be provided in the profile file, e.g.`echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc`
-    - install `protoc` - protobuf compiler:
-      - on debian/ubuntu: `apt install -y protobuf-compiler`
-      - on Mac: `brew install protobuf`
-      - on other systems, install most recent version from [Protocol Buffers releases page](https://github.com/protocolbuffers/protobuf/releases) (tested with protobuf 22.4)
-      - if needed, set PROTOC environment variable to location of `protoc` binary
-    - `cargo install wasm-bindgen-cli@0.2.85`
-      - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*
-      - *Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)*
-  - essential build tools - example for Debian/Ubuntu: `apt install -y build-essential libssl-dev pkg-config clang`
-- Run `corepack enable` to enable [corepack](https://nodejs.org/dist/latest/docs/api/corepack.html) and install yarn
-- Run `yarn setup` to install dependencies and configure and build all packages
-- Run `yarn start` to start the local dev environment built from the sources
-- Run `yarn test` to run the whole test suite (note that running tests requires a running node,
- so be sure to call `yarn start` first). Alternatively, you can run tests for a specific
- package by running `yarn workspace <package_name> test`, for example running
- `yarn workspace @dashevo/dapi-client test` will run tests for the JS DAPI client. To see
- all available packages, please see the [packages readme](./packages/README.md)
-- `yarn stop` will stop the local dev environment. Running a dev environment requires a non-trivial amount of system resources,
- so it is best to stop the local node when not in use
-- Run `yarn build` to rebuild the project after changes. If you have a local node
- running, you may need to restart it by running `yarn restart`
-- To completely reset all local data and builds, run `yarn reset`
 
 ### Looking for support?
 
