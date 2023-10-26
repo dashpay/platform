@@ -18,6 +18,7 @@ use crate::{
 use hex::ToHex;
 use sha2::Digest;
 use std::{
+    any::type_name,
     collections::HashMap,
     fmt::{Debug, Display},
 };
@@ -132,7 +133,7 @@ impl Key {
 
     /// Generate unique identifier of some serializable object (e.g. request).
     pub fn try_new<S: serde::Serialize>(request: S) -> Result<Self, std::io::Error> {
-        let encoded = match serde_json::to_vec(&request) {
+        let mut encoded = match serde_json::to_vec(&request) {
             Ok(b) => b,
             Err(e) => {
                 return Err(std::io::Error::new(
@@ -141,6 +142,10 @@ impl Key {
                 ))
             }
         };
+        // we append type name to the encoded value to make sure that different types
+        // will have different keys
+        let typ = type_name::<S>().replace('&', ""); //remove & from type name
+        encoded.append(&mut typ.as_bytes().to_vec());
 
         let mut e = sha2::Sha256::new();
         e.update(encoded);

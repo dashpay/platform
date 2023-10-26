@@ -111,6 +111,10 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetIdentityBalanceRequest>(filename)
                         .await?
                 }
+                "GetIdentityBalanceAndRevisionRequest" => {
+                    self.load_expectation::<proto::GetIdentityBalanceAndRevisionRequest>(filename)
+                        .await?
+                }
                 "DocumentQuery" => self.load_expectation::<DocumentQuery>(filename).await?,
                 _ => {
                     return Err(Error::Config(format!(

@@ -110,11 +110,6 @@ async fn document_read_no_document() {
 /// as a query, then I get one or more items.
 ///
 /// This test is ignored because it requires a running Platform. To run it, set constants in `common.rs` and run:
-///
-/// ```bash
-/// cargo test -p rs-sdk -- --ignored
-/// ```
-#[ignore = "needs access to running Dash Platform network"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn document_list_drive_query() {
     setup_logs();
@@ -150,13 +145,6 @@ async fn document_list_drive_query() {
 
 /// Given some data contract ID and document type with at least one document, when I list documents using DocumentQuery
 /// as a query, then I get one or more items.
-///
-/// This test is ignored because it requires a running Platform. To run it, set constants in `common.rs` and run:
-///
-/// ```bash
-/// cargo test -p rs-sdk -- --ignored
-/// ```
-#[ignore = "needs access to running Dash Platform network"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn document_list_document_query() {
     setup_logs();
