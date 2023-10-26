@@ -162,7 +162,7 @@ impl Sdk {
     ///
     /// Any errors are logged on `warn` level and ignored.
     #[cfg(feature = "mocks")]
-    fn dump_quorum_public_keys(
+    fn dump_quorum_public_key(
         &self,
         quorum_type: u32,
         quorum_hash: [u8; 32],
@@ -208,7 +208,7 @@ impl QuorumInfoProvider for Sdk {
             provider.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)?;
 
         #[cfg(feature = "mocks")]
-        self.dump_quorum_public_keys(quorum_type, quorum_hash, core_chain_locked_height, &key);
+        self.dump_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height, &key);
 
         Ok(key)
     }
