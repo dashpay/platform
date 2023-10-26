@@ -2,9 +2,11 @@
 //!
 //! This module provides a way to mock SDK operations. It is used in tests and examples.
 //!
-//! In order to mock SDK operations, you need to create a mock SDK instance using [Sdk::new_mock()].
-//! Next step is to create mock query expectations on [MockDashPlatformSdk] object returned by [Sdk::mock()], using
-//! [MockDashPlatformSdk::expect_fetch()] and [MockDashPlatformSdk::expect_list()].
+//! In order to mock SDK operations, you need to create a mock SDK instance using
+//! [Sdk::new_mock()](crate::Sdk::new_mock()).
+//! Next step is to create mock query expectations on [MockDashPlatformSdk] object returned by
+//! [Sdk::mock()](crate::Sdk::mock()), using [MockDashPlatformSdk::expect_fetch()]
+//! and [MockDashPlatformSdk::expect_fetch_many()].
 //!
 //!
 //! ## Example

@@ -32,13 +32,13 @@ where
     ///
     /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
-    /// This type must implement [`TransportRequest`] and [`MockRequest`].
+    /// This type must implement [`TransportRequest`] and [`MockRequest`](crate::mock::MockRequest).
     type Request: TransportRequest
         + Into<<Vec<Self> as FromProof<<Self as FetchMany>::Request>>::Request>;
 
     /// # Fetch (or search) multiple objects on the Dash Platform
     ///
-    /// [`fetch_many()`] is an asynchronous method that fetches multiple objects from Dash Platform.
+    /// [`FetchMany::fetch_many()`] is an asynchronous method that fetches multiple objects from Dash Platform.
     ///
     /// ## Parameters
     /// - `sdk`: An instance of [Sdk].

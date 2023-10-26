@@ -1,5 +1,6 @@
 //! [Sdk] entrypoint to Dash Platform.
 
+#[cfg(feature = "mocks")]
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -10,16 +11,20 @@ use crate::mock::MockDashPlatformSdk;
 use crate::mock::{MockRequest, MockResponse};
 use crate::{core::CoreClient, error::Error};
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
-use drive_proof_verifier::{FromProof, MockQuorumInfoProvider, QuorumInfoProvider};
+#[cfg(feature = "mocks")]
+use drive_proof_verifier::MockQuorumInfoProvider;
+use drive_proof_verifier::{FromProof, QuorumInfoProvider};
 #[cfg(feature = "mocks")]
 use hex::ToHex;
 pub use http::Uri;
+#[cfg(feature = "mocks")]
+use rs_dapi_client::mock::MockDapiClient;
 pub use rs_dapi_client::AddressList;
 use rs_dapi_client::{
-    mock::MockDapiClient,
     transport::{TransportClient, TransportRequest},
     Dapi, DapiClient, DapiClientError, RequestSettings,
 };
+#[cfg(feature = "mocks")]
 use tokio::sync::Mutex;
 
 /// Dash Platform SDK
@@ -29,7 +34,7 @@ use tokio::sync::Mutex;
 /// - `Normal`: Connects to a remote Dash Platform node.
 /// - `Mock`: Uses a mock implementation of Dash Platform.
 ///
-/// Recommended method of initialization is to use [`SdkBuilder`](crate::sdk::SdkBuilder). There are also some helper
+/// Recommended method of initialization is to use [`SdkBuilder`]. There are also some helper
 /// methods:
 ///
 /// * [`SdkBuilder::new_testnet()`] Create a [SdkBuilder] that connects to testnet.
@@ -42,6 +47,10 @@ use tokio::sync::Mutex;
 /// See tests/ for examples of using the SDK.
 pub struct Sdk {
     inner: SdkInstance,
+    /// Use proofs when retrieving data from the platform.
+    ///
+    /// This is set to `true` by default. `false` is not implemented yet.
+    proofs: bool,
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
 }
@@ -66,9 +75,7 @@ enum SdkInstance {
         /// Mock DAPI client used to communicate with Dash Platform.
         dapi: Arc<Mutex<MockDapiClient>>,
         /// Mock SDK implementation processing mock expectations and responses.
-        #[cfg(feature = "mocks")]
         mock: MockDashPlatformSdk,
-        #[cfg(feature = "mocks")]
         quorum_provider: MockQuorumInfoProvider,
     },
 }
@@ -78,7 +85,7 @@ impl Sdk {
     ///
     /// This is a helper method that uses [`SdkBuilder`] to initialize the SDK in mock mode.
     ///
-    /// See also [`SdkBuilder`](crate::sdk::SdkBuilder).
+    /// See also [`SdkBuilder`].
     pub fn new_mock() -> Self {
         SdkBuilder::default()
             .build()
@@ -132,7 +139,7 @@ impl Sdk {
     ///
     ///
     ///
-    /// This is the version configured in [`SdkBuilder`](crate::sdk::SdkBuilder).
+    /// This is the version configured in [`SdkBuilder`].
     /// Useful whenever you need to provide [PlatformVersion] to other SDK and DPP methods.
     pub fn version<'a>(&self) -> &'a PlatformVersion {
         match &self.inner {
@@ -144,7 +151,7 @@ impl Sdk {
 
     /// Indicate if the sdk should request and verify proofs.
     pub fn prove(&self) -> bool {
-        true
+        self.proofs
     }
 
     /// Save quorum public key to disk.
@@ -225,7 +232,7 @@ impl Dapi for Sdk {
     }
 }
 
-/// Dash Platform SDK Builder, used to configure and [`build()`] the [Sdk].
+/// Dash Platform SDK Builder, used to configure and [`SdkBuilder::build()`] the [Sdk].
 ///
 /// [SdkBuilder] implemenents a "builder" design pattern to allow configuration of the Sdk before it is instantiated.
 /// It allows creation of Sdk in two modes:
@@ -358,7 +365,7 @@ impl SdkBuilder {
     /// Data is saved in JSON format.
     ///
     /// These files can be used together with [MockDashPlatformSdk] to replay the requests and responses.
-    /// See [MockDashPlatformSdk::load] for more information.
+    /// See [MockDashPlatformSdk::load_expectations()] for more information.
     ///
     /// Available only when `mocks` feature is enabled.
     #[cfg(feature = "mocks")]
@@ -397,6 +404,7 @@ impl SdkBuilder {
 
                 Ok(Sdk{
                     inner:SdkInstance::Dapi { dapi, core, version:self.version },
+                    proofs:self.proofs,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                 })
@@ -410,6 +418,7 @@ impl SdkBuilder {
                         quorum_provider: MockQuorumInfoProvider::new(),
                     },
                     dump_dir: self.dump_dir,
+                    proofs:self.proofs,
             })},
             #[cfg(not(feature = "mocks"))]
             None => Err(Error::Config(

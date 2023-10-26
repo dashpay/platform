@@ -79,13 +79,11 @@ pub fn mock_data_contract(
         document_types.insert(doc.name().to_string(), schema.clone());
     }
 
-    let data_contract = DataContractFactory::new(protocol_version, None)
+    DataContractFactory::new(protocol_version, None)
         .unwrap()
         .create(owner_id, platform_value!(document_types), None, None)
         .expect("create data contract")
-        .data_contract_owned();
-
-    data_contract
+        .data_contract_owned()
 }
 
 /// Enable logging for tests

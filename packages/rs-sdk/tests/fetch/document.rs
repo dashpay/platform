@@ -138,7 +138,7 @@ async fn document_list_drive_query() {
         .expect("fetch many documents")
         .expect("no documents found");
 
-    assert!(docs.len() > 0);
+    assert!(!docs.is_empty());
     let doc_ids: Vec<String> = docs
         .iter()
         .map(|d| d.id().to_string(Encoding::Base64))
@@ -183,7 +183,7 @@ async fn document_list_document_query() {
         .expect("fetch many documents")
         .expect("no documents found");
 
-    assert!(docs.len() > 0);
+    assert!(!docs.is_empty());
     let doc_ids: Vec<String> = docs
         .iter()
         .map(|d| d.id().to_string(Encoding::Base64))

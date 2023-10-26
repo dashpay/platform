@@ -27,7 +27,7 @@ pub struct Config<D> {
 
     /// Directory where all generated test vectors will be saved.
     ///
-    /// See [SdkBuilder::with_dump_dir()](rs_sdk::SdkBuilder::with_dump_dir()) for more details.
+    /// See [SdkBuilder::with_dump_dir()](crate::SdkBuilder::with_dump_dir()) for more details.
     #[serde(default = "default_dump_dir")]
     pub dump_dir: PathBuf,
 
@@ -37,7 +37,8 @@ pub struct Config<D> {
 }
 
 impl<D: for<'de1> Deserialize<'de1>> Config<D> {
-    const CONFIG_PREFIX: &str = "RS_SDK_";
+    /// Prefix of configuration options in the enviroment variables and `.env` file.
+    pub const CONFIG_PREFIX: &str = "RS_SDK_";
     /// Load configuration from operating system enviroment variables and `.env` file.
     ///
     /// Create new [Config] with data from enviroment variables and `${CARGO_MANIFEST_DIR}/.env` file.
@@ -67,12 +68,12 @@ impl<D: for<'de1> Deserialize<'de1>> Config<D> {
     ///
     /// ## Feature flags
     ///
-    /// * `online-testing` is set - connect to the platform and generate
+    /// * `offline-testing` is not set - connect to the platform and generate
     /// new test vectors during execution
-    /// * `online-testing` is not set - use mock implementation and
+    /// * `offline-testing` is set - use mock implementation and
     /// load existing test vectors from disk
     pub async fn setup_api(&self) -> crate::Sdk {
-        #[cfg(feature = "online-testing")]
+        #[cfg(not(feature = "offline-testing"))]
         // Dump all traffic to disk
         let sdk = crate::SdkBuilder::new(self.address_list())
             .with_core(
@@ -85,7 +86,7 @@ impl<D: for<'de1> Deserialize<'de1>> Config<D> {
             .build()
             .expect("cannot initialize api");
 
-        #[cfg(not(feature = "online-testing"))]
+        #[cfg(feature = "offline-testing")]
         let sdk = {
             let mut mock_sdk = crate::SdkBuilder::new_mock()
                 .build()

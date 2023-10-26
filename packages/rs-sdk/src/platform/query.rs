@@ -18,15 +18,16 @@ use crate::{error::Error, platform::document_query::DocumentQuery};
 ///
 /// 1. [`Identifier`](crate::platform::Identifier) - fetches an object by its identifier; implemented for
 /// [Identity](dpp::prelude::Identity), [DataContract](dpp::prelude::DataContract) and [Document](dpp::document::Document).
-/// 2. [`DocumentQuery`](crate::platform::DocumentQuery) - fetches [Document](dpp::document::Document) based on search
+/// 2. [`DocumentQuery`] - fetches [Document](dpp::document::Document) based on search
 /// conditions; see
 /// [query syntax documentation](https://docs.dash.org/projects/platform/en/stable/docs/reference/query-syntax.html)
 /// for more details.
 ///
 /// ## Example
 ///
-/// To fetch individual [Identity] object by its [Identifier], you just need to create it and use [Fetch]
-/// or [FetchMany] trait:
+/// To fetch individual [Identity](dpp::prelude::Identity) object by its [Identifier](crate::platform::Identifier),
+/// you just need to create it and use [Fetch](crate::platform::Fetch)
+/// or [FetchMany](crate::platform::FetchMany) trait:
 ///
 /// ```rust
 /// use rs_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
@@ -37,8 +38,9 @@ use crate::{error::Error, platform::document_query::DocumentQuery};
 /// let identity = Identity::fetch(&mut sdk, query);
 /// ```
 ///
-/// As [Identifier] implements [Query], the `query` variable in the code above can be used as a parameter for
-/// [Fetch::fetch()] and [FetchMany::fetch_many()] methods.
+/// As [Identifier](crate::platform::Identifier) implements [Query], the `query` variable in the code
+/// above can be used as a parameter for [Fetch::fetch()](crate::platform::Fetch::fetch())
+/// and [FetchMany::fetch_many()](crate::platform::FetchMany::fetch_many()) methods.
 pub trait Query<T: TransportRequest>: Send + Debug + Clone {
     /// Converts the current instance into an instance of the `TransportRequest` type.
     ///
@@ -50,10 +52,11 @@ pub trait Query<T: TransportRequest>: Send + Debug + Clone {
     ///
     /// # Returns
     /// On success, this method yields an instance of the `TransportRequest` type (`T`).
-    /// On failure, it yields an [`Error`](crate::error::Error).
+    /// On failure, it yields an [`Error`].
     ///
     /// # Error Handling
-    /// This method propagates any errors encountered during the conversion process. These are returned as [`Error`](crate::error::Error) instances.
+    /// This method propagates any errors encountered during the conversion process.
+    /// These are returned as [`Error`] instances.
     fn query(self, prove: bool) -> Result<T, Error>;
 }
 

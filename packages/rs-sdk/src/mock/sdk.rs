@@ -22,9 +22,10 @@ use super::{MockRequest, MockResponse};
 
 /// Mechanisms to mock Dash Platform SDK.
 ///
-/// This object is returned by [Sdk::mock()] and is used to define mock expectations.
+/// This object is returned by [Sdk::mock()](crate::Sdk::mock()) and is used to define mock expectations.
 ///
-/// Use [expect_fetch_many] to define expectations for [FetchMany] requests and [expect_fetch] for [Fetch] requests.
+/// Use [MockDashPlatformSdk::expect_fetch_many()] to define expectations for [FetchMany] requests
+/// and [MockDashPlatformSdk::expect_fetch()] for [Fetch] requests.
 ///
 /// ## Panics
 ///
@@ -225,8 +226,8 @@ impl MockDashPlatformSdk {
     ///
     /// ## Returns
     ///
-    /// * Some(Vec<O>): If the objects are expected to exist.
-    /// * None: If the objects are expected to not exist.
+    /// * `Some(Vec<O>)`: If the objects are expected to exist.
+    /// * `None`: If the objects are expected to not exist.
     ///
     /// ## Panics
     ///
@@ -234,7 +235,9 @@ impl MockDashPlatformSdk {
     ///
     /// ## Example
     ///
-    /// Usage example is similar to [expect_fetch], but the expected object must be a vector of objects.
+    /// Usage example is similar to
+    /// [MockDashPlatformSdk::expect_fetch()], but the expected
+    /// object must be a vector of objects.
     pub async fn expect_fetch_many<
         O: FetchMany,
         Q: Query<<O as FetchMany>::Request> + MockRequest,
