@@ -212,6 +212,114 @@ export namespace GetIdentityRequest {
   }
 }
 
+export class GetIdentityBalanceRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetIdentityBalanceRequest.GetIdentityBalanceRequestV0 | undefined;
+  setV0(value?: GetIdentityBalanceRequest.GetIdentityBalanceRequestV0): void;
+
+  getVersionCase(): GetIdentityBalanceRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetIdentityBalanceRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetIdentityBalanceRequest): GetIdentityBalanceRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetIdentityBalanceRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetIdentityBalanceRequest;
+  static deserializeBinaryFromReader(message: GetIdentityBalanceRequest, reader: jspb.BinaryReader): GetIdentityBalanceRequest;
+}
+
+export namespace GetIdentityBalanceRequest {
+  export type AsObject = {
+    v0?: GetIdentityBalanceRequest.GetIdentityBalanceRequestV0.AsObject,
+  }
+
+  export class GetIdentityBalanceRequestV0 extends jspb.Message {
+    getId(): Uint8Array | string;
+    getId_asU8(): Uint8Array;
+    getId_asB64(): string;
+    setId(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetIdentityBalanceRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetIdentityBalanceRequestV0): GetIdentityBalanceRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetIdentityBalanceRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetIdentityBalanceRequestV0;
+    static deserializeBinaryFromReader(message: GetIdentityBalanceRequestV0, reader: jspb.BinaryReader): GetIdentityBalanceRequestV0;
+  }
+
+  export namespace GetIdentityBalanceRequestV0 {
+    export type AsObject = {
+      id: Uint8Array | string,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetIdentityBalanceAndRevisionRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetIdentityBalanceAndRevisionRequest.GetIdentityBalanceAndRevisionRequestV0 | undefined;
+  setV0(value?: GetIdentityBalanceAndRevisionRequest.GetIdentityBalanceAndRevisionRequestV0): void;
+
+  getVersionCase(): GetIdentityBalanceAndRevisionRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetIdentityBalanceAndRevisionRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetIdentityBalanceAndRevisionRequest): GetIdentityBalanceAndRevisionRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetIdentityBalanceAndRevisionRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetIdentityBalanceAndRevisionRequest;
+  static deserializeBinaryFromReader(message: GetIdentityBalanceAndRevisionRequest, reader: jspb.BinaryReader): GetIdentityBalanceAndRevisionRequest;
+}
+
+export namespace GetIdentityBalanceAndRevisionRequest {
+  export type AsObject = {
+    v0?: GetIdentityBalanceAndRevisionRequest.GetIdentityBalanceAndRevisionRequestV0.AsObject,
+  }
+
+  export class GetIdentityBalanceAndRevisionRequestV0 extends jspb.Message {
+    getId(): Uint8Array | string;
+    getId_asU8(): Uint8Array;
+    getId_asB64(): string;
+    setId(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetIdentityBalanceAndRevisionRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetIdentityBalanceAndRevisionRequestV0): GetIdentityBalanceAndRevisionRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetIdentityBalanceAndRevisionRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetIdentityBalanceAndRevisionRequestV0;
+    static deserializeBinaryFromReader(message: GetIdentityBalanceAndRevisionRequestV0, reader: jspb.BinaryReader): GetIdentityBalanceAndRevisionRequestV0;
+  }
+
+  export namespace GetIdentityBalanceAndRevisionRequestV0 {
+    export type AsObject = {
+      id: Uint8Array | string,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetIdentityResponse extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
@@ -505,8 +613,8 @@ export namespace GetIdentityBalanceResponse {
   export class GetIdentityBalanceResponseV0 extends jspb.Message {
     hasBalance(): boolean;
     clearBalance(): void;
-    getBalance(): google_protobuf_wrappers_pb.UInt64Value | undefined;
-    setBalance(value?: google_protobuf_wrappers_pb.UInt64Value): void;
+    getBalance(): number;
+    setBalance(value: number): void;
 
     hasProof(): boolean;
     clearProof(): void;
@@ -531,7 +639,7 @@ export namespace GetIdentityBalanceResponse {
 
   export namespace GetIdentityBalanceResponseV0 {
     export type AsObject = {
-      balance?: google_protobuf_wrappers_pb.UInt64Value.AsObject,
+      balance: number,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
     }
@@ -606,15 +714,11 @@ export namespace GetIdentityBalanceAndRevisionResponse {
     }
 
     export class BalanceAndRevision extends jspb.Message {
-      hasBalance(): boolean;
-      clearBalance(): void;
-      getBalance(): google_protobuf_wrappers_pb.UInt64Value | undefined;
-      setBalance(value?: google_protobuf_wrappers_pb.UInt64Value): void;
+      getBalance(): number;
+      setBalance(value: number): void;
 
-      hasRevision(): boolean;
-      clearRevision(): void;
-      getRevision(): google_protobuf_wrappers_pb.UInt64Value | undefined;
-      setRevision(value?: google_protobuf_wrappers_pb.UInt64Value): void;
+      getRevision(): number;
+      setRevision(value: number): void;
 
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): BalanceAndRevision.AsObject;
@@ -628,8 +732,8 @@ export namespace GetIdentityBalanceAndRevisionResponse {
 
     export namespace BalanceAndRevision {
       export type AsObject = {
-        balance?: google_protobuf_wrappers_pb.UInt64Value.AsObject,
-        revision?: google_protobuf_wrappers_pb.UInt64Value.AsObject,
+        balance: number,
+        revision: number,
       }
     }
 
@@ -2200,19 +2304,22 @@ export namespace WaitForStateTransitionResultResponse {
   }
 
   export class WaitForStateTransitionResultResponseV0 extends jspb.Message {
-    getStateTransition(): Uint8Array | string;
-    getStateTransition_asU8(): Uint8Array;
-    getStateTransition_asB64(): string;
-    setStateTransition(value: Uint8Array | string): void;
+    hasError(): boolean;
+    clearError(): void;
+    getError(): StateTransitionBroadcastError | undefined;
+    setError(value?: StateTransitionBroadcastError): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
 
     hasMetadata(): boolean;
     clearMetadata(): void;
     getMetadata(): ResponseMetadata | undefined;
     setMetadata(value?: ResponseMetadata): void;
 
-    getIsSynced(): boolean;
-    setIsSynced(value: boolean): void;
-
+    getResultCase(): WaitForStateTransitionResultResponseV0.ResultCase;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): WaitForStateTransitionResultResponseV0.AsObject;
     static toObject(includeInstance: boolean, msg: WaitForStateTransitionResultResponseV0): WaitForStateTransitionResultResponseV0.AsObject;
@@ -2225,9 +2332,15 @@ export namespace WaitForStateTransitionResultResponse {
 
   export namespace WaitForStateTransitionResultResponseV0 {
     export type AsObject = {
-      stateTransition: Uint8Array | string,
+      error?: StateTransitionBroadcastError.AsObject,
+      proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
-      isSynced: boolean,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      ERROR = 1,
+      PROOF = 2,
     }
   }
 

@@ -31,7 +31,7 @@ function getConsensusParamsHandlerFactory(getConsensusParams) {
   async function getConsensusParamsHandler(call) {
     const { request } = call;
 
-    const prove = request.getProve();
+    const prove = request.getV0().getProve();
 
     if (prove) {
       throw new InvalidArgumentGrpcError('Prove is not implemented yet');
@@ -39,7 +39,7 @@ function getConsensusParamsHandlerFactory(getConsensusParams) {
 
     // If height is not set - gRPC returns 0
     // in this case we use undefined
-    const height = request.getHeight() || undefined;
+    const height = request.getV0().getHeight() || undefined;
 
     let consensusParams;
 

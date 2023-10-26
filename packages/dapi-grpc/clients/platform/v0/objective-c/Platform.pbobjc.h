@@ -30,7 +30,6 @@ CF_EXTERN_C_BEGIN
 @class AllKeys;
 @class GPBBytesValue;
 @class GPBUInt32Value;
-@class GPBUInt64Value;
 @class GetConsensusParamsRequest_GetConsensusParamsRequestV0;
 @class GetConsensusParamsResponse_ConsensusParamsBlock;
 @class GetConsensusParamsResponse_ConsensusParamsEvidence;
@@ -57,8 +56,10 @@ CF_EXTERN_C_BEGIN
 @class GetIdentitiesResponse_Identities;
 @class GetIdentitiesResponse_IdentityEntry;
 @class GetIdentitiesResponse_IdentityValue;
+@class GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevisionRequestV0;
 @class GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0;
 @class GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0_BalanceAndRevision;
+@class GetIdentityBalanceRequest_GetIdentityBalanceRequestV0;
 @class GetIdentityBalanceResponse_GetIdentityBalanceResponseV0;
 @class GetIdentityByPublicKeyHashRequest_GetIdentityByPublicKeyHashRequestV0;
 @class GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0;
@@ -78,6 +79,7 @@ CF_EXTERN_C_BEGIN
 @class SearchKey;
 @class SecurityLevelMap;
 @class SpecificKeys;
+@class StateTransitionBroadcastError;
 @class WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0;
 @class WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0;
 
@@ -260,6 +262,84 @@ typedef GPB_ENUM(GetIdentityRequest_GetIdentityRequestV0_FieldNumber) {
 };
 
 GPB_FINAL @interface GetIdentityRequest_GetIdentityRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetIdentityBalanceRequest
+
+typedef GPB_ENUM(GetIdentityBalanceRequest_FieldNumber) {
+  GetIdentityBalanceRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentityBalanceRequest_Version_OneOfCase) {
+  GetIdentityBalanceRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityBalanceRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentityBalanceRequest : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityBalanceRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityBalanceRequest_GetIdentityBalanceRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentityBalanceRequest_ClearVersionOneOfCase(GetIdentityBalanceRequest *message);
+
+#pragma mark - GetIdentityBalanceRequest_GetIdentityBalanceRequestV0
+
+typedef GPB_ENUM(GetIdentityBalanceRequest_GetIdentityBalanceRequestV0_FieldNumber) {
+  GetIdentityBalanceRequest_GetIdentityBalanceRequestV0_FieldNumber_Id_p = 1,
+  GetIdentityBalanceRequest_GetIdentityBalanceRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetIdentityBalanceRequest_GetIdentityBalanceRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetIdentityBalanceAndRevisionRequest
+
+typedef GPB_ENUM(GetIdentityBalanceAndRevisionRequest_FieldNumber) {
+  GetIdentityBalanceAndRevisionRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentityBalanceAndRevisionRequest_Version_OneOfCase) {
+  GetIdentityBalanceAndRevisionRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityBalanceAndRevisionRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentityBalanceAndRevisionRequest : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityBalanceAndRevisionRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevisionRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentityBalanceAndRevisionRequest_ClearVersionOneOfCase(GetIdentityBalanceAndRevisionRequest *message);
+
+#pragma mark - GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevisionRequestV0
+
+typedef GPB_ENUM(GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevisionRequestV0_FieldNumber) {
+  GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevisionRequestV0_FieldNumber_Id_p = 1,
+  GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevisionRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetIdentityBalanceAndRevisionRequest_GetIdentityBalanceAndRevisionRequestV0 : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *id_p;
 
@@ -507,7 +587,7 @@ GPB_FINAL @interface GetIdentityBalanceResponse_GetIdentityBalanceResponseV0 : G
 
 @property(nonatomic, readonly) GetIdentityBalanceResponse_GetIdentityBalanceResponseV0_Result_OneOfCase resultOneOfCase;
 
-@property(nonatomic, readwrite, strong, null_resettable) GPBUInt64Value *balance;
+@property(nonatomic, readwrite) uint64_t balance;
 
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
@@ -588,13 +668,9 @@ typedef GPB_ENUM(GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevi
 
 GPB_FINAL @interface GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0_BalanceAndRevision : GPBMessage
 
-@property(nonatomic, readwrite, strong, null_resettable) GPBUInt64Value *balance;
-/** Test to see if @c balance has been set. */
-@property(nonatomic, readwrite) BOOL hasBalance;
+@property(nonatomic, readwrite) uint64_t balance;
 
-@property(nonatomic, readwrite, strong, null_resettable) GPBUInt64Value *revision;
-/** Test to see if @c revision has been set. */
-@property(nonatomic, readwrite) BOOL hasRevision;
+@property(nonatomic, readwrite) uint64_t revision;
 
 @end
 
@@ -1750,22 +1826,35 @@ void WaitForStateTransitionResultResponse_ClearVersionOneOfCase(WaitForStateTran
 #pragma mark - WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0
 
 typedef GPB_ENUM(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber) {
-  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_StateTransition = 1,
-  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Metadata = 2,
-  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_IsSynced = 3,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Error = 1,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Proof = 2,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase) {
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_Error = 1,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_Proof = 2,
 };
 
 GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0 : GPBMessage
 
-@property(nonatomic, readwrite, copy, null_resettable) NSData *stateTransition;
+@property(nonatomic, readonly) WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) StateTransitionBroadcastError *error;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
 
-@property(nonatomic, readwrite) BOOL isSynced;
-
 @end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_ClearResultOneOfCase(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0 *message);
 
 #pragma mark - GetConsensusParamsRequest
 

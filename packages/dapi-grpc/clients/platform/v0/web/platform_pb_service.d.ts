@@ -45,7 +45,7 @@ type PlatformgetIdentityBalance = {
   readonly service: typeof Platform;
   readonly requestStream: false;
   readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetIdentityRequest;
+  readonly requestType: typeof platform_pb.GetIdentityBalanceRequest;
   readonly responseType: typeof platform_pb.GetIdentityBalanceResponse;
 };
 
@@ -54,7 +54,7 @@ type PlatformgetIdentityBalanceAndRevision = {
   readonly service: typeof Platform;
   readonly requestStream: false;
   readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetIdentityRequest;
+  readonly requestType: typeof platform_pb.GetIdentityBalanceAndRevisionRequest;
   readonly responseType: typeof platform_pb.GetIdentityBalanceAndRevisionResponse;
 };
 
@@ -227,21 +227,21 @@ export class PlatformClient {
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityKeysResponse|null) => void
   ): UnaryResponse;
   getIdentityBalance(
-    requestMessage: platform_pb.GetIdentityRequest,
+    requestMessage: platform_pb.GetIdentityBalanceRequest,
     metadata: grpc.Metadata,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityBalanceResponse|null) => void
   ): UnaryResponse;
   getIdentityBalance(
-    requestMessage: platform_pb.GetIdentityRequest,
+    requestMessage: platform_pb.GetIdentityBalanceRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityBalanceResponse|null) => void
   ): UnaryResponse;
   getIdentityBalanceAndRevision(
-    requestMessage: platform_pb.GetIdentityRequest,
+    requestMessage: platform_pb.GetIdentityBalanceAndRevisionRequest,
     metadata: grpc.Metadata,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityBalanceAndRevisionResponse|null) => void
   ): UnaryResponse;
   getIdentityBalanceAndRevision(
-    requestMessage: platform_pb.GetIdentityRequest,
+    requestMessage: platform_pb.GetIdentityBalanceAndRevisionRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityBalanceAndRevisionResponse|null) => void
   ): UnaryResponse;
   getProofs(
