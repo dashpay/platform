@@ -86,7 +86,7 @@ impl DapiClient {
 
 #[async_trait]
 impl Dapi for DapiClient {
-    /// Execute the [DapiRequest].
+    /// Execute the [DapiRequest](crate::DapiRequest).
     async fn execute<R>(
         &mut self,
         request: R,

@@ -1,13 +1,13 @@
 //! Mock implementation of rs-dapi-client for testing
 //!
 //! rs-dapi-client provides `mocks` feature that makes it possible to mock the transport layer.
-//! Core concept of the mocks is a [MockDapiClient] that mimics [DapiClient] behavior and allows
+//! Core concept of the mocks is a [MockDapiClient] that mimics [DapiClient](crate::DapiClient) behavior and allows
 //! to define expectations for requests and responses using [`MockDapiClient::expect`] function.
 //!
 //! In order to use the mocking feature, you need to:
 //!
 //! 1. Define your requests and responses.
-//! 2. Create a [MockDapiClient] and use it instead of [DapiClient] in your tests.
+//! 2. Create a [MockDapiClient] and use it instead of [DapiClient](crate::DapiClient) in your tests.
 //!
 //! See `tests/mock_dapi_client.rs` for an example.
 
