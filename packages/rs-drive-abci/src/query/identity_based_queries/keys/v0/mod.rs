@@ -111,7 +111,7 @@ impl<C> Platform<C> {
         if let Some(offset) = offset {
             if offset > u16::MAX as u32 {
                 return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                    QuerySyntaxError::InvalidParameter("limit out of bounds".to_string()),
+                    QuerySyntaxError::InvalidParameter("offset out of bounds".to_string()),
                 )));
             }
         }
