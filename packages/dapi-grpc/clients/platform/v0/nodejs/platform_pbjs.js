@@ -18273,6 +18273,7 @@ $root.org = (function() {
                              * @interface IWaitForStateTransitionResultResponseV0
                              * @property {org.dash.platform.dapi.v0.IStateTransitionBroadcastError|null} [error] WaitForStateTransitionResultResponseV0 error
                              * @property {org.dash.platform.dapi.v0.IProof|null} [proof] WaitForStateTransitionResultResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] WaitForStateTransitionResultResponseV0 metadata
                              */
 
                             /**
@@ -18307,6 +18308,28 @@ $root.org = (function() {
                             WaitForStateTransitionResultResponseV0.prototype.proof = null;
 
                             /**
+                             * WaitForStateTransitionResultResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0
+                             * @instance
+                             */
+                            WaitForStateTransitionResultResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * WaitForStateTransitionResultResponseV0 result.
+                             * @member {"error"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(WaitForStateTransitionResultResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["error", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
                              * Creates a new WaitForStateTransitionResultResponseV0 instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0
@@ -18334,6 +18357,8 @@ $root.org = (function() {
                                     $root.org.dash.platform.dapi.v0.StateTransitionBroadcastError.encode(message.error, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                                 if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
                                     $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                                 return writer;
                             };
 
@@ -18374,6 +18399,9 @@ $root.org = (function() {
                                     case 2:
                                         message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
                                         break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
                                     default:
                                         reader.skipType(tag & 7);
                                         break;
@@ -18409,15 +18437,29 @@ $root.org = (function() {
                             WaitForStateTransitionResultResponseV0.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
+                                var properties = {};
                                 if (message.error != null && message.hasOwnProperty("error")) {
-                                    var error = $root.org.dash.platform.dapi.v0.StateTransitionBroadcastError.verify(message.error);
-                                    if (error)
-                                        return "error." + error;
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.StateTransitionBroadcastError.verify(message.error);
+                                        if (error)
+                                            return "error." + error;
+                                    }
                                 }
                                 if (message.proof != null && message.hasOwnProperty("proof")) {
-                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
                                     if (error)
-                                        return "proof." + error;
+                                        return "metadata." + error;
                                 }
                                 return null;
                             };
@@ -18444,6 +18486,11 @@ $root.org = (function() {
                                         throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.proof: object expected");
                                     message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
                                 }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
                                 return message;
                             };
 
@@ -18460,14 +18507,20 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.defaults) {
-                                    object.error = null;
-                                    object.proof = null;
-                                }
-                                if (message.error != null && message.hasOwnProperty("error"))
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.error != null && message.hasOwnProperty("error")) {
                                     object.error = $root.org.dash.platform.dapi.v0.StateTransitionBroadcastError.toObject(message.error, options);
-                                if (message.proof != null && message.hasOwnProperty("proof"))
+                                    if (options.oneofs)
+                                        object.result = "error";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
                                     object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
                                 return object;
                             };
 

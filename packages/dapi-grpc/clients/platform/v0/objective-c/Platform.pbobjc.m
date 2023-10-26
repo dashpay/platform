@@ -4893,13 +4893,16 @@ void WaitForStateTransitionResultResponse_ClearVersionOneOfCase(WaitForStateTran
 
 @implementation WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0
 
-@dynamic hasError, error;
-@dynamic hasProof, proof;
+@dynamic resultOneOfCase;
+@dynamic error;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
 
 typedef struct WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_ {
-  uint32_t _has_storage_[1];
+  uint32_t _has_storage_[2];
   StateTransitionBroadcastError *error;
   Proof *proof;
+  ResponseMetadata *metadata;
 } WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -4912,7 +4915,7 @@ typedef struct WaitForStateTransitionResultResponse_WaitForStateTransitionResult
         .name = "error",
         .dataTypeSpecific.clazz = GPBObjCClass(StateTransitionBroadcastError),
         .number = WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Error,
-        .hasIndex = 0,
+        .hasIndex = -1,
         .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_, error),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
@@ -4921,8 +4924,17 @@ typedef struct WaitForStateTransitionResultResponse_WaitForStateTransitionResult
         .name = "proof",
         .dataTypeSpecific.clazz = GPBObjCClass(Proof),
         .number = WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Proof,
-        .hasIndex = 1,
+        .hasIndex = -1,
         .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_, metadata),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
@@ -4935,6 +4947,12 @@ typedef struct WaitForStateTransitionResultResponse_WaitForStateTransitionResult
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(WaitForStateTransitionResultResponse)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
@@ -4946,6 +4964,11 @@ typedef struct WaitForStateTransitionResultResponse_WaitForStateTransitionResult
 
 @end
 
+void WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_ClearResultOneOfCase(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0 *message) {
+  GPBDescriptor *descriptor = [WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
 #pragma mark - GetConsensusParamsRequest
 
 @implementation GetConsensusParamsRequest

@@ -1828,19 +1828,33 @@ void WaitForStateTransitionResultResponse_ClearVersionOneOfCase(WaitForStateTran
 typedef GPB_ENUM(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber) {
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Error = 1,
   WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Proof = 2,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase) {
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_Error = 1,
+  WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase_Proof = 2,
 };
 
 GPB_FINAL @interface WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0 : GPBMessage
 
+@property(nonatomic, readonly) WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_Result_OneOfCase resultOneOfCase;
+
 @property(nonatomic, readwrite, strong, null_resettable) StateTransitionBroadcastError *error;
-/** Test to see if @c error has been set. */
-@property(nonatomic, readwrite) BOOL hasError;
 
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
-/** Test to see if @c proof has been set. */
-@property(nonatomic, readwrite) BOOL hasProof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
 
 @end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0_ClearResultOneOfCase(WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0 *message);
 
 #pragma mark - GetConsensusParamsRequest
 

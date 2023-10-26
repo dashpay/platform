@@ -2314,6 +2314,12 @@ export namespace WaitForStateTransitionResultResponse {
     getProof(): Proof | undefined;
     setProof(value?: Proof): void;
 
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): WaitForStateTransitionResultResponseV0.ResultCase;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): WaitForStateTransitionResultResponseV0.AsObject;
     static toObject(includeInstance: boolean, msg: WaitForStateTransitionResultResponseV0): WaitForStateTransitionResultResponseV0.AsObject;
@@ -2328,6 +2334,13 @@ export namespace WaitForStateTransitionResultResponse {
     export type AsObject = {
       error?: StateTransitionBroadcastError.AsObject,
       proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      ERROR = 1,
+      PROOF = 2,
     }
   }
 

@@ -31,7 +31,7 @@ message Proof {
   bytes signature = 3;
   uint32 round = 4;
   bytes block_id_hash = 5;
-  uint32 quorum_type = 6;    
+  uint32 quorum_type = 6;
 }
 
 message ResponseMetadata {
@@ -482,8 +482,11 @@ message WaitForStateTransitionResultRequest {
 
 message WaitForStateTransitionResultResponse {
   message WaitForStateTransitionResultResponseV0 {
-    StateTransitionBroadcastError error = 1;
-    Proof proof = 2;
+    oneof result {
+      StateTransitionBroadcastError error = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
   }
   oneof version {
     WaitForStateTransitionResultResponseV0 v0 = 1;
