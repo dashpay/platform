@@ -102,6 +102,7 @@ impl MockDashPlatformSdk {
             let request_type = basename.split('_').nth(2).unwrap_or_default();
 
             match request_type {
+                "DocumentQuery" => self.load_expectation::<DocumentQuery>(filename).await?,
                 "GetDataContractRequest" => {
                     self.load_expectation::<proto::GetDataContractRequest>(filename)
                         .await?
@@ -115,7 +116,10 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetIdentityBalanceAndRevisionRequest>(filename)
                         .await?
                 }
-                "DocumentQuery" => self.load_expectation::<DocumentQuery>(filename).await?,
+                "GetIdentityKeysRequest" => {
+                    self.load_expectation::<proto::GetIdentityKeysRequest>(filename)
+                        .await?
+                }
                 _ => {
                     return Err(Error::Config(format!(
                         "unknown request type {} in {}",

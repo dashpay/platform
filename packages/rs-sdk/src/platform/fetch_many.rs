@@ -11,9 +11,10 @@ use crate::{
     platform::{document_query::DocumentQuery, query::Query},
     Sdk,
 };
-use dapi_grpc::platform::v0::GetDocumentsResponse;
+use dapi_grpc::platform::v0::{GetDocumentsResponse, GetIdentityKeysRequest};
 use dpp::document::Document;
-use dpp::prelude::Identifier;
+use dpp::identity::KeyID;
+use dpp::prelude::{Identifier, IdentityPublicKey};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
@@ -114,4 +115,8 @@ impl FetchMany<Identifier> for Document {
 
         Ok(documents)
     }
+}
+#[async_trait::async_trait]
+impl FetchMany<KeyID> for IdentityPublicKey {
+    type Request = GetIdentityKeysRequest;
 }

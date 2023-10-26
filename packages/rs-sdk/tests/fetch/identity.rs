@@ -1,9 +1,11 @@
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::prelude::IdentityPublicKey;
 use dpp::{identity::hash::IdentityPublicKeyHashMethodsV0, prelude::Identity};
 
 use drive_proof_verifier::types::{IdentityBalance, IdentityBalanceAndRevision};
 use rs_sdk::platform::identity::PublicKeyHash;
-use rs_sdk::platform::Fetch;
+use rs_sdk::platform::{Fetch, FetchMany};
 
 use crate::common::{setup_logs, Config};
 
@@ -90,4 +92,30 @@ async fn test_identity_balance_revision_read() {
 
     assert_ne!(0, balance);
     tracing::debug!(balance, revision, ?id, "identity balance and revision")
+}
+
+/// Given some existing identity ID, when I fetch the identity keys, I get some of them indexed by key ID.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_identity_public_keys_all_read() {
+    setup_logs();
+
+    let cfg = Config::new();
+    let id: dpp::prelude::Identifier = cfg.settings.existing_identity_id;
+
+    let mut api = cfg.setup_api().await;
+
+    let public_keys = IdentityPublicKey::fetch_many(&mut api, id)
+        .await
+        .expect("fetch identity public keys");
+
+    assert!(!public_keys.is_empty());
+    tracing::debug!(?public_keys, ?id, "fetched identity public keys");
+
+    // key IDs must match
+    for item in public_keys {
+        let id = item.0;
+        let pubkey = item.1.expect("public key should exist");
+
+        assert_eq!(id, pubkey.id());
+    }
 }
