@@ -9,6 +9,7 @@ authors = [
   "Wisdom Ogwu <wisdom@dash.org",
 ]
 edition = "2021"
+rust-version = "1.73"
 license = "MIT"
 private = true
 
