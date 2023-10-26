@@ -2,7 +2,7 @@ pub use tenderdash_proto::serializers::bytes::{
     base64string, hexstring, option_base64string, vec_base64string,
 };
 
-/// Serialize using [ToString] and deserialize using [FromStr] trait implementations.
+/// Serialize using [ToString] and deserialize using [FromStr](std::str::FromStr) trait implementations.
 pub mod from_to_string {
     use std::{fmt::Display, str::FromStr};
 
