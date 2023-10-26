@@ -60,15 +60,9 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
         let mut cache = self.cache.write().unwrap();
-        let maybe_version_counter = &mut cache.protocol_versions_counter;
+        let version_counter = &mut cache.protocol_versions_counter;
 
-        let version_counter = if let Some(version_counter) = maybe_version_counter {
-            version_counter
-        } else {
-            *maybe_version_counter =
-                Some(self.fetch_versions_with_counter(transaction, drive_version)?);
-            maybe_version_counter.as_mut().unwrap()
-        };
+        version_counter.load_if_needed(self, transaction, drive_version)?;
 
         let path = desired_version_for_validators_path();
         let version_bytes = version.encode_var_vec();
@@ -97,39 +91,44 @@ impl Drive {
                     )))
                     .map(|(value, _)| value)?;
                 //we should remove 1 from the previous version
-                let previous_count =
-                    version_counter
-                        .get_mut(&previous_version)
-                        .ok_or(Error::Drive(DriveError::CorruptedCacheState(
-                            "trying to lower the count of a version from cache that is not found"
-                                .to_string(),
-                        )))?;
+                let previous_count = version_counter.get(&previous_version).ok_or(Error::Drive(
+                    DriveError::CorruptedCacheState(
+                        "trying to lower the count of a version from cache that is not found"
+                            .to_string(),
+                    ),
+                ))?;
                 if previous_count == &0 {
                     return Err(Error::Drive(DriveError::CorruptedCacheState(
                         "trying to lower the count of a version from cache that is already at 0"
                             .to_string(),
                     )));
                 }
-                *previous_count -= 1;
+                let new_count = previous_count - 1;
+                version_counter.set_block_cache_version_count(previous_version, new_count); // push to block_cache
                 self.batch_insert(
                     PathKeyElementInfo::PathFixedSizeKeyRefElement((
                         versions_counter_path(),
                         previous_version_bytes,
-                        Element::new_item(previous_count.encode_var_vec()),
+                        Element::new_item(new_count.encode_var_vec()),
                     )),
                     drive_operations,
                     drive_version,
                 )?;
             }
 
-            let version_count = version_counter.entry(version).or_default();
-            if version_count == &u64::MAX {
+            // Assuming `self` is an instance of ProtocolVersionsCache
+            let mut version_count = version_counter.get(&version).cloned().unwrap_or_default();
+
+            version_count += 1;
+
+            if version_count == u64::MAX {
                 return Err(Error::Drive(DriveError::CorruptedCacheState(
                     "trying to raise the count of a version from cache that is already at max"
                         .to_string(),
                 )));
             }
-            *version_count += 1;
+            version_counter.set_block_cache_version_count(version, version_count); // push to block_cache
+
             self.batch_insert(
                 PathKeyElementInfo::PathFixedSizeKeyRefElement((
                     versions_counter_path(),
