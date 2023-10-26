@@ -45,6 +45,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
   let wsMessagesFixture;
   let stateTransitionFixture;
   let request;
+  let requestPayloadMock;
   let fetchProofForStateTransition;
   let waitForTransactionToBeProvable;
   let transactionNotFoundError;
@@ -162,9 +163,12 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
       },
     };
 
-    call = new GrpcCallMock(this.sinon, {
+    requestPayloadMock = {
       getStateTransitionHash: this.sinon.stub().returns(hash),
       getProve: this.sinon.stub().returns(false),
+    };
+    call = new GrpcCallMock(this.sinon, {
+      getV0: () => requestPayloadMock,
     });
 
     tenderDashWsClientMock = new EventEmitter();
@@ -183,8 +187,11 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     metadataFixture.setProtocolVersion(1);
 
     const response = new GetProofsResponse();
-    response.setProof(proofFixture);
-    response.setMetadata(metadataFixture);
+    response.setV0(
+      new GetProofsResponse.GetProofsResponseV0()
+        .setProof(proofFixture)
+        .setMetadata(metadataFixture),
+    );
 
     driveClientMock = {
       fetchProofs: this.sinon.stub().resolves(response.serializeBinary()),
@@ -241,12 +248,12 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     const result = await promise;
 
     expect(result).to.be.an.instanceOf(WaitForStateTransitionResultResponse);
-    expect(result.getProof()).to.be.undefined();
-    expect(result.getError()).to.be.undefined();
+    expect(result.getV0().getProof()).to.be.undefined();
+    expect(result.getV0().getError()).to.be.undefined();
   });
 
   it('should wait for state transition and return result with proof', async () => {
-    call.request.getProve.returns(true);
+    requestPayloadMock.getProve.returns(true);
 
     const promise = waitForStateTransitionResultHandler(call);
 
@@ -267,23 +274,29 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     const result = await promise;
 
     expect(result).to.be.an.instanceOf(WaitForStateTransitionResultResponse);
-    expect(result.getError()).to.be.undefined();
-    const proof = result.getProof();
+    expect(result.getV0().getError()).to.be.undefined();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
     const merkleProof = proof.getGrovedbProof();
 
     expect(merkleProof).to.deep.equal(proofFixture.getGrovedbProof());
 
+    const { GetProofsRequestV0 } = GetProofsRequest;
     const getProofsRequest = new GetProofsRequest();
-    const { IdentityRequest } = GetProofsRequest;
+    const { IdentityRequest } = GetProofsRequestV0;
 
-    getProofsRequest.setIdentitiesList(stateTransitionFixture.getModifiedDataIds().map((id) => {
+    const identitiesList = stateTransitionFixture.getModifiedDataIds().map((id) => {
       const identityRequest = new IdentityRequest();
       identityRequest.setIdentityId(id.toBuffer());
       identityRequest.setRequestType(IdentityRequest.Type.FULL_IDENTITY);
       return identityRequest;
-    }));
+    });
+
+    getProofsRequest.setV0(
+      new GetProofsRequestV0()
+        .setIdentitiesList(identitiesList),
+    );
 
     expect(driveClientMock.fetchProofs).to.be.calledOnceWithExactly(getProofsRequest);
   });
@@ -291,9 +304,9 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
   it('should wait for state transition and return result with error', (done) => {
     waitForStateTransitionResultHandler(call).then((result) => {
       expect(result).to.be.an.instanceOf(WaitForStateTransitionResultResponse);
-      expect(result.getProof()).to.be.undefined();
+      expect(result.getV0().getProof()).to.be.undefined();
 
-      const error = result.getError();
+      const error = result.getV0().getError();
       expect(error).to.be.an.instanceOf(StateTransitionBroadcastError);
 
       const errorData = error.getData();
@@ -319,6 +332,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
 
   it('should throw an InvalidArgumentGrpcError if stateTransitionHash wasn\'t set', async () => {
     request = new WaitForStateTransitionResultRequest();
+    request.setV0(new WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0());
 
     call.request = WaitForStateTransitionResultRequest.deserializeBinary(request.serializeBinary());
 
@@ -336,10 +350,11 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     const hashString = 'ABFF';
 
     request = new WaitForStateTransitionResultRequest();
+    request.setV0(new WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0());
 
     const stHash = Buffer.from(hashString, 'hex');
 
-    request.setStateTransitionHash(stHash);
+    request.getV0().setStateTransitionHash(stHash);
 
     transactionNotFoundError.data = `tx (${hashString}) not found, err: %!w(<nil>)`;
 
