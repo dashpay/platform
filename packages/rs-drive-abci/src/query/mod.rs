@@ -156,10 +156,8 @@ mod tests {
         use crate::error::query::QueryError;
         use crate::query::tests::assert_invalid_identifier;
         use bs58::encode;
-        use dapi_grpc::platform::v0::get_identity_request::{GetIdentityRequestV0, Version};
-        use dapi_grpc::platform::v0::{
-            get_identity_response, GetIdentityRequest, GetIdentityResponse,
-        };
+        use dapi_grpc::platform::v0::get_identity_request::{GetIdentityRequestV0};
+        use dapi_grpc::platform::v0::{get_identity_request, get_identity_response, GetIdentityRequest, GetIdentityResponse};
         use prost::Message;
 
         const QUERY_PATH: &str = "/identity";
@@ -169,7 +167,7 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetIdentityRequest {
-                version: Some(Version::V0(GetIdentityRequestV0 {
+                version: Some(get_identity_request::Version::V0(GetIdentityRequestV0 {
                     id: vec![0; 8],
                     prove: false,
                 })),
@@ -187,7 +185,7 @@ mod tests {
 
             let id = vec![0; 32];
             let request = GetIdentityRequest {
-                version: Some(Version::V0(GetIdentityRequestV0 {
+                version: Some(get_identity_request::Version::V0(GetIdentityRequestV0 {
                     id: id.clone(),
                     prove: false,
                 })),
@@ -213,7 +211,7 @@ mod tests {
 
             let id = vec![0; 32];
             let request = GetIdentityRequest {
-                version: Some(Version::V0(GetIdentityRequestV0 {
+                version: Some(get_identity_request::Version::V0(GetIdentityRequestV0 {
                     id: id.clone(),
                     prove: true,
                 })),
@@ -280,7 +278,7 @@ mod tests {
             let data = validation_result.data.unwrap();
             let response = GetIdentitiesResponse::decode(data.as_slice()).unwrap();
 
-            let get_identities_response::Result::Identities(identities) = response.result.unwrap()
+            let get_identities_response::get_identities_response_v0::Result::Identities(identities) = response.version.result.unwrap()
             else {
                 panic!("invalid response")
             };
@@ -1777,7 +1775,7 @@ mod tests {
             let response =
                 GetProofsResponse::decode(validation_result.data.unwrap().as_slice()).unwrap();
 
-            assert!(response.proof.is_some())
+            assert!(response.version.expect("expected a versioned response").proof.is_some())
         }
     }
 }
