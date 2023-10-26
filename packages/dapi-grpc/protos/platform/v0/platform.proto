@@ -482,7 +482,7 @@ message WaitForStateTransitionResultRequest {
 
 message WaitForStateTransitionResultResponse {
   message WaitForStateTransitionResultResponseV0 {
-    bytes state_transition = 1;
+    StateTransitionBroadcastError error = 1;
     ResponseMetadata metadata = 2;
   }
   oneof version {

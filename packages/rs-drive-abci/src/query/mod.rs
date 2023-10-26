@@ -226,7 +226,7 @@ mod tests {
 
             assert!(matches!(
                 response.result.unwrap(),
-                get_identity_response::Result::Proof(_)
+                get_identity_response::get_identity_response_v0::Result::Proof(_)
             ));
         }
     }
@@ -391,7 +391,7 @@ mod tests {
 
             assert!(matches!(
                 response.result.unwrap(),
-                get_identity_balance_response::Result::Proof(_)
+                get_identity_balance_response::get_identity_balance_response_v0::Result::Proof(_)
             ));
         }
     }
@@ -481,7 +481,7 @@ mod tests {
 
             assert!(matches!(
                 response.result.unwrap(),
-                get_identity_balance_and_revision_response::Result::Proof(_)
+                get_identity_balance_and_revision_response::get_identity_balance_and_revision_response_v0::Result::Proof(_)
             ));
         }
     }
@@ -716,7 +716,7 @@ mod tests {
             let data = validation_result.data.unwrap();
 
             let response = GetIdentityKeysResponse::decode(data.as_slice()).unwrap();
-            let get_identity_keys_response::Result::Keys(keys) = response.result.unwrap() else {
+            let get_identity_keys_response::get_identity_keys_response_v0::Result::Keys(keys) = response.result.unwrap() else {
                 panic!("invalid response")
             };
 
@@ -751,7 +751,7 @@ mod tests {
 
             assert!(matches!(
                 response.result.unwrap(),
-                get_identity_keys_response::Result::Proof(_)
+                get_identity_keys_response::get_identity_keys_response_v0::Result::Proof(_)
             ));
         }
     }
@@ -836,7 +836,7 @@ mod tests {
 
             assert!(matches!(
                 response.result.unwrap(),
-                get_data_contract_response::Result::Proof(_)
+                get_data_contract_response::get_data_contract_response_v0::Result::Proof(_)
             ));
         }
     }
@@ -889,7 +889,7 @@ mod tests {
             let data = validation_result.data.unwrap();
             let response = GetDataContractsResponse::decode(data.as_slice()).unwrap();
 
-            let get_data_contracts_response::Result::DataContracts(contracts) =
+            let get_data_contracts_response::get_data_contracts_response_v0::Result::DataContracts(contracts) =
                 response.result.unwrap()
             else {
                 panic!("invalid response")
@@ -922,7 +922,7 @@ mod tests {
 
             assert!(matches!(
                 response.result.unwrap(),
-                get_data_contracts_response::Result::Proof(_)
+                get_data_contracts_response::get_data_contracts_response_v0::Result::Proof(_)
             ));
         }
     }
@@ -1072,7 +1072,7 @@ mod tests {
 
             assert!(matches!(
                 response.result.unwrap(),
-                get_data_contract_history_response::Result::Proof(_)
+                get_data_contract_history_response::get_data_contract_history_response_v0::Result::Proof(_)
             ));
         }
     }
@@ -1092,6 +1092,7 @@ mod tests {
         use dpp::tests::fixtures::get_data_contract_fixture;
         use drive::error::query::QuerySyntaxError;
         use prost::Message;
+        use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
 
         const QUERY_PATH: &str = "/documents";
 
@@ -1383,7 +1384,7 @@ mod tests {
                 panic!("invalid response")
             };
 
-            let get_documents_response::Result::Documents(documents) = result else {
+            let get_documents_response::get_documents_response_v0::Result::Documents(documents) = result else {
                 panic!("invalid response")
             };
 
@@ -1581,7 +1582,7 @@ mod tests {
             )
             .expect("response decoded");
 
-            let get_identities_by_public_key_hashes_response::Result::Identities(identities) =
+            let get_identities_by_public_key_hashes_response::get_identities_by_public_key_hashes_response_v0::Result::Identities(identities) =
                 response.result.unwrap()
             else {
                 panic!("invalid response")
@@ -1624,7 +1625,7 @@ mod tests {
             ContractRequest, DocumentRequest, IdentityRequest,
         };
         use dapi_grpc::platform::v0::get_proofs_request::{
-            ContractRequest, DocumentRequest, GetProofsRequestV0, IdentityRequest, Version,
+            GetProofsRequestV0, Version,
         };
         use dapi_grpc::platform::v0::{GetProofsRequest, GetProofsResponse};
         use prost::Message;

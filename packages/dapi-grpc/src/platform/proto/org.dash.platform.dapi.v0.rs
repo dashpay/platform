@@ -1061,8 +1061,8 @@ pub mod wait_for_state_transition_result_response {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct WaitForStateTransitionResultResponseV0 {
-        #[prost(bytes = "vec", tag = "1")]
-        pub state_transition: ::prost::alloc::vec::Vec<u8>,
+        #[prost(message, optional, tag = "1")]
+        pub error: ::core::option::Option<super::StateTransitionBroadcastError>,
         #[prost(message, optional, tag = "2")]
         pub metadata: ::core::option::Option<super::ResponseMetadata>,
     }
