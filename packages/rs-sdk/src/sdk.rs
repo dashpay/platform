@@ -29,7 +29,7 @@ use tokio::sync::Mutex;
 /// - `Normal`: Connects to a remote Dash Platform node.
 /// - `Mock`: Uses a mock implementation of Dash Platform.
 ///
-/// Recommended method of initialization is to use [`SdkBuilder`](crate::sdk::SdkBuilder). There are also some helper
+/// Recommended method of initialization is to use [`SdkBuilder`]. There are also some helper
 /// methods:
 ///
 /// * [`SdkBuilder::new_testnet()`] Create a [SdkBuilder] that connects to testnet.
@@ -78,7 +78,7 @@ impl Sdk {
     ///
     /// This is a helper method that uses [`SdkBuilder`] to initialize the SDK in mock mode.
     ///
-    /// See also [`SdkBuilder`](crate::sdk::SdkBuilder).
+    /// See also [`SdkBuilder`].
     pub fn new_mock() -> Self {
         SdkBuilder::default()
             .build()
@@ -132,7 +132,7 @@ impl Sdk {
     ///
     ///
     ///
-    /// This is the version configured in [`SdkBuilder`](crate::sdk::SdkBuilder).
+    /// This is the version configured in [`SdkBuilder`].
     /// Useful whenever you need to provide [PlatformVersion] to other SDK and DPP methods.
     pub fn version<'a>(&self) -> &'a PlatformVersion {
         match &self.inner {
@@ -225,7 +225,7 @@ impl Dapi for Sdk {
     }
 }
 
-/// Dash Platform SDK Builder, used to configure and [`build()`] the [Sdk].
+/// Dash Platform SDK Builder, used to configure and [`SdkBuilder::build()`] the [Sdk].
 ///
 /// [SdkBuilder] implemenents a "builder" design pattern to allow configuration of the Sdk before it is instantiated.
 /// It allows creation of Sdk in two modes:
@@ -358,7 +358,7 @@ impl SdkBuilder {
     /// Data is saved in JSON format.
     ///
     /// These files can be used together with [MockDashPlatformSdk] to replay the requests and responses.
-    /// See [MockDashPlatformSdk::load] for more information.
+    /// See [MockDashPlatformSdk::load_expectations()] for more information.
     ///
     /// Available only when `mocks` feature is enabled.
     #[cfg(feature = "mocks")]
