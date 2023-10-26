@@ -1,4 +1,4 @@
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 const {
   v0: {
     GetDocumentsResponse,
@@ -22,9 +22,9 @@ describe('GetDocumentsResponse', () => {
   let serializedDocuments;
   let proofFixture;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    documentsFixture = getDocumentsFixture();
+    documentsFixture = await getDocumentsFixture();
     proofFixture = getProofFixture();
 
     proto = new GetDocumentsResponse();

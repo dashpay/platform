@@ -1,4 +1,4 @@
-const Identifier = require('@dashevo/dpp/lib/Identifier');
+const { Identifier } = require('@dashevo/wasm-dpp');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForSTPropagated = require('../../lib/waitForSTPropagated');
