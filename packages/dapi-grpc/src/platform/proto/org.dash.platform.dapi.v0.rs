@@ -1064,7 +1064,7 @@ pub mod wait_for_state_transition_result_response {
         #[prost(message, optional, tag = "1")]
         pub error: ::core::option::Option<super::StateTransitionBroadcastError>,
         #[prost(message, optional, tag = "2")]
-        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        pub proof: ::core::option::Option<super::Proof>,
     }
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
