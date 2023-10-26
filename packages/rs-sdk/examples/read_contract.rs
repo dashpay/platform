@@ -37,5 +37,5 @@ async fn main() {
 
     // Check the result; note that in our case, we expect to not find the data contract, as the
     // identifier is not valid.
-    assert!(matches!(contract, None), "result: {:?}", contract);
+    assert!(contract.is_none(), "result: {:?}", contract);
 }
