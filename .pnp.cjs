@@ -2834,7 +2834,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["chai", "npm:4.3.9"],\
             ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
             ["crypto-browserify", "npm:3.12.0"],\
-            ["crypto-js", "npm:4.1.1"],\
+            ["crypto-js", "npm:4.2.0"],\
             ["dirty-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.0.1"],\
             ["dotenv-safe", "npm:8.2.0"],\
             ["eslint", "npm:7.32.0"],\
@@ -7967,10 +7967,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["crypto-js", [\
-        ["npm:4.1.1", {\
-          "packageLocation": "./.yarn/cache/crypto-js-npm-4.1.1-38a3b8c19d-b3747c12ee.zip/node_modules/crypto-js/",\
+        ["npm:4.2.0", {\
+          "packageLocation": "./.yarn/cache/crypto-js-npm-4.2.0-d6f7744e63-f051666dbc.zip/node_modules/crypto-js/",\
           "packageDependencies": [\
-            ["crypto-js", "npm:4.1.1"]\
+            ["crypto-js", "npm:4.2.0"]\
           ],\
           "linkType": "HARD"\
         }]\

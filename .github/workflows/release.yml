@@ -32,7 +32,6 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
-          toolchain: stable
           target: wasm32-unknown-unknown
 
       - name: Setup Node.JS
@@ -308,7 +307,6 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
-          toolchain: stable
           target: wasm32-unknown-unknown
 
       # TODO: We don't need to build it, since pack should use released npm packages

@@ -1,2 +1,3 @@
 [toolchain]
-channel = "stable"
+# Rust version the same as in /README.md
+channel = "1.73"
