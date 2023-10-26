@@ -11,7 +11,6 @@ use crate::platform_types::platform::Platform;
 
 use crate::error::execution::ExecutionError;
 use dpp::validation::ValidationResult;
-use dpp::version::FeatureVersion;
 use dpp::version::PlatformVersion;
 
 /// A query validation result
@@ -43,10 +42,10 @@ mod tests {
         ($expression:expr, $pattern:pat, $binding:ident) => {
             match $expression {
                 $pattern => $binding,
-                _ => panic!(
-                    "Expected pattern {} but got another variant",
-                    stringify!($pattern)
-                ),
+                // _ => panic!(
+                //     "Expected pattern {} but got another variant",
+                //     stringify!($pattern)
+                // ),
             }
         };
     }
@@ -122,7 +121,7 @@ mod tests {
 
         let data = vec![0; 32];
         let path = "/invalid_path";
-        let result = platform.query(path, &data, &platform_version);
+        let result = platform.query(path, &data, platform_version);
         assert!(result.is_ok());
 
         let validation_result = result.unwrap();
@@ -153,7 +152,7 @@ mod tests {
         ];
 
         paths.iter().for_each(|path| {
-                let result = platform.query(path, &vec![0; 8], &version);
+                let result = platform.query(path, &[0; 8], version);
                 assert!(result.is_ok());
 
                 let validation_result = result.unwrap();
@@ -189,7 +188,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             assert_invalid_identifier(result.unwrap());
         }
@@ -207,7 +206,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
@@ -233,7 +232,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let response =
@@ -276,7 +275,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             super::assert_invalid_identifier(result.unwrap());
         }
@@ -297,7 +296,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
 
             let validation_result = result.unwrap();
@@ -334,7 +333,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let response =
@@ -378,7 +377,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             super::assert_invalid_identifier(result.unwrap());
         }
@@ -424,7 +423,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             let validation_result = result.unwrap();
             let response =
                 GetIdentityBalanceResponse::decode(validation_result.data.unwrap().as_slice())
@@ -469,7 +468,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             super::assert_invalid_identifier(result.unwrap());
         }
@@ -518,7 +517,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let response = GetIdentityBalanceAndRevisionResponse::decode(
@@ -562,7 +561,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             super::assert_invalid_identifier(result.unwrap());
         }
@@ -582,7 +581,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
@@ -608,7 +607,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
@@ -665,7 +664,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
@@ -691,7 +690,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
@@ -728,7 +727,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
@@ -756,7 +755,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
 
             let validation_result = result.unwrap();
@@ -840,7 +839,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             super::assert_invalid_identifier(result.unwrap());
         }
@@ -858,7 +857,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
@@ -927,7 +926,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             super::assert_invalid_identifier(result.unwrap());
         }
@@ -945,7 +944,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
 
             let validation_result = result.unwrap();
@@ -1030,7 +1029,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             super::assert_invalid_identifier(result.unwrap());
         }
@@ -1104,7 +1103,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             let validation_error = validation_result.first_error().unwrap();
@@ -1183,7 +1182,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             super::assert_invalid_identifier(result.unwrap());
         }
@@ -1243,7 +1242,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             let validation_result = result.unwrap();
 
             let message = format!(
@@ -1280,7 +1279,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             let validation_result = result.unwrap();
 
             assert!(matches!(
@@ -1312,7 +1311,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             let validation_result = result.unwrap();
 
             assert!(matches!(
@@ -1344,7 +1343,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             let validation_result = result.unwrap();
 
             assert!(matches!(
@@ -1376,7 +1375,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             let validation_result = result.unwrap();
 
             assert!(matches!(
@@ -1409,7 +1408,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             let validation_result = result.unwrap();
 
             assert!(matches!(
@@ -1441,7 +1440,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             assert!(validation_result.is_valid());
@@ -1492,7 +1491,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(QUERY_PATH, &request, &version);
+            let result = platform.query(QUERY_PATH, &request, version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
             assert!(validation_result.is_valid());
@@ -1539,7 +1538,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(PATH, &request, &version);
+            let result = platform.query(PATH, &request, version);
             assert!(result.is_ok());
 
             let validation_result = result.unwrap();
@@ -1627,7 +1626,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(PATH, &request, &version);
+            let result = platform.query(PATH, &request, version);
             assert!(result.is_ok());
 
             let validation_result = result.unwrap();
@@ -1679,7 +1678,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(PATH, &request, &version);
+            let result = platform.query(PATH, &request, version);
             assert!(result.is_ok());
 
             let validation_result = result.unwrap();
@@ -1722,7 +1721,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(PATH, &request, &version);
+            let result = platform.query(PATH, &request, version);
             assert!(result.is_ok());
             super::assert_invalid_identifier(result.unwrap());
         }
@@ -1745,7 +1744,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(PATH, &request, &version);
+            let result = platform.query(PATH, &request, version);
             assert!(result.is_ok());
             let validation_result = result.unwrap();
 
@@ -1773,7 +1772,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(PATH, &request, &version);
+            let result = platform.query(PATH, &request, version);
             assert!(result.is_ok());
             super::assert_invalid_identifier(result.unwrap());
         }
@@ -1796,7 +1795,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(PATH, &request, &version);
+            let result = platform.query(PATH, &request, version);
             assert!(result.is_ok());
             super::assert_invalid_identifier(result.unwrap());
         }
@@ -1819,7 +1818,7 @@ mod tests {
             }
             .encode_to_vec();
 
-            let result = platform.query(PATH, &request, &version);
+            let result = platform.query(PATH, &request, version);
             assert!(result.is_ok());
             super::assert_invalid_identifier(result.unwrap());
         }
