@@ -51,7 +51,7 @@ Platform.getIdentityBalance = {
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetIdentityRequest,
+  requestType: platform_pb.GetIdentityBalanceRequest,
   responseType: platform_pb.GetIdentityBalanceResponse
 };
 
@@ -60,7 +60,7 @@ Platform.getIdentityBalanceAndRevision = {
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetIdentityRequest,
+  requestType: platform_pb.GetIdentityBalanceAndRevisionRequest,
   responseType: platform_pb.GetIdentityBalanceAndRevisionResponse
 };
 

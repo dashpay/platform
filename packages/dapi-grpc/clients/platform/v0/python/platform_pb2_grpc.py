@@ -36,12 +36,12 @@ class PlatformStub(object):
                 )
         self.getIdentityBalance = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityBalance',
-                request_serializer=platform__pb2.GetIdentityRequest.SerializeToString,
+                request_serializer=platform__pb2.GetIdentityBalanceRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityBalanceResponse.FromString,
                 )
         self.getIdentityBalanceAndRevision = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityBalanceAndRevision',
-                request_serializer=platform__pb2.GetIdentityRequest.SerializeToString,
+                request_serializer=platform__pb2.GetIdentityBalanceAndRevisionRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityBalanceAndRevisionResponse.FromString,
                 )
         self.getProofs = channel.unary_unary(
@@ -209,12 +209,12 @@ def add_PlatformServicer_to_server(servicer, server):
             ),
             'getIdentityBalance': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityBalance,
-                    request_deserializer=platform__pb2.GetIdentityRequest.FromString,
+                    request_deserializer=platform__pb2.GetIdentityBalanceRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityBalanceResponse.SerializeToString,
             ),
             'getIdentityBalanceAndRevision': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityBalanceAndRevision,
-                    request_deserializer=platform__pb2.GetIdentityRequest.FromString,
+                    request_deserializer=platform__pb2.GetIdentityBalanceAndRevisionRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityBalanceAndRevisionResponse.SerializeToString,
             ),
             'getProofs': grpc.unary_unary_rpc_method_handler(
@@ -352,7 +352,7 @@ class Platform(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityBalance',
-            platform__pb2.GetIdentityRequest.SerializeToString,
+            platform__pb2.GetIdentityBalanceRequest.SerializeToString,
             platform__pb2.GetIdentityBalanceResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
@@ -369,7 +369,7 @@ class Platform(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityBalanceAndRevision',
-            platform__pb2.GetIdentityRequest.SerializeToString,
+            platform__pb2.GetIdentityBalanceAndRevisionRequest.SerializeToString,
             platform__pb2.GetIdentityBalanceAndRevisionResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
