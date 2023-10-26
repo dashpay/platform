@@ -2,9 +2,11 @@ use hex::ToHex;
 
 /// `QuorumInfoProvider` trait provides an interface to fetch quorum related information, required to verify the proof.
 ///
-/// Developers should implement this trait to provide required quorum details to [FromProof] implementations.
+/// Developers should implement this trait to provide required quorum details to [FromProof](crate::FromProof)
+/// implementations.
 ///
-/// It defines a single method `get_quorum_public_key` which retrieves the public key of a given quorum.
+/// It defines a single method [`get_quorum_public_key()`](QuorumInfoProvider::get_quorum_public_key())
+/// which retrieves the public key of a given quorum.
 pub trait QuorumInfoProvider: Send + Sync {
     /// Fetches the public key for a specified quorum.
     ///
@@ -28,8 +30,7 @@ pub trait QuorumInfoProvider: Send + Sync {
 
 /// Mock QuorumInfoProvider that can read quorum keys from files.
 ///
-/// Use [SdkBuilder::with_dump_dir](rs_sdk::SdkBuilder::with_dump_dir())
-/// to generate quorum keys files.
+/// Use `rs_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.
 #[cfg(feature = "mocks")]
 pub struct MockQuorumInfoProvider {
     quorum_keys_dir: Option<std::path::PathBuf>,
@@ -50,6 +51,10 @@ impl MockQuorumInfoProvider {
             quorum_keys_dir: None,
         }
     }
+
+    /// Set the directory where quorum keys are stored.
+    ///
+    /// This directory should contain quorum keys files generated using `rs_sdk::SdkBuilder::with_dump_dir()`.
     pub fn quorum_keys_dir(&mut self, quorum_keys_dir: Option<std::path::PathBuf>) {
         self.quorum_keys_dir = quorum_keys_dir;
     }
@@ -65,7 +70,7 @@ impl Default for MockQuorumInfoProvider {
 impl QuorumInfoProvider for MockQuorumInfoProvider {
     /// Mock implementation of [QuorumInfoProvider] that returns keys from files saved on disk.
     ///
-    /// See [Sdk::dump_quorum_public_keys()] for more details.
+    /// Use `rs_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.   
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,

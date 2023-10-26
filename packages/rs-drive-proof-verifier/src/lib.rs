@@ -1,7 +1,7 @@
 //! Proof verification library for Dash Drive
-#[warn(missing_docs)]
+#![warn(missing_docs)]
 
-/// Error definitions, compatible with bindings
+/// Errors that can occur during proof verification
 mod error;
 /// Implementation of proof verification
 mod proof;
