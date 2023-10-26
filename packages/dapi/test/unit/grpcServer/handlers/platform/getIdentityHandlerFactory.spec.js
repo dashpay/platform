@@ -29,14 +29,18 @@ describe('getIdentityHandlerFactory', () => {
   let identity;
   let proofFixture;
   let proofMock;
+  let request;
   let response;
   let proofResponse;
 
   beforeEach(async function beforeEach() {
     id = await generateRandomIdentifierAsync();
-    call = new GrpcCallMock(this.sinon, {
+    request = {
       getId: this.sinon.stub().returns(id),
       getProve: this.sinon.stub().returns(false),
+    };
+    call = new GrpcCallMock(this.sinon, {
+      getV0: () => request,
     });
 
     identity = await getIdentityFixture();
@@ -81,7 +85,7 @@ describe('getIdentityHandlerFactory', () => {
   });
 
   it('should return proof', async () => {
-    call.request.getProve.returns(true);
+    request.getProve.returns(true);
 
     driveStateRepositoryMock.fetchIdentity.resolves(proofResponse.serializeBinary());
 
@@ -100,7 +104,7 @@ describe('getIdentityHandlerFactory', () => {
   });
 
   it('should throw an InvalidArgumentGrpcError if id is not specified', async () => {
-    call.request.getId.returns(null);
+    request.getId.returns(null);
 
     try {
       await getIdentityHandler(call);

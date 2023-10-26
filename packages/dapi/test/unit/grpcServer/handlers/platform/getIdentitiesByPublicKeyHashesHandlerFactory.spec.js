@@ -33,15 +33,20 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
   let proofMock;
   let response;
   let proofResponse;
+  let request;
 
   beforeEach(async function beforeEach() {
     publicKeyHash = Buffer.from('556c2910d46fda2b327ef9d9bda850cc84d30db0', 'hex');
 
-    call = new GrpcCallMock(this.sinon, {
+    request = {
       getPublicKeyHashesList: this.sinon.stub().returns(
         [publicKeyHash],
       ),
       getProve: this.sinon.stub().returns(false),
+    };
+
+    call = new GrpcCallMock(this.sinon, {
+      getV0: () => request,
     });
 
     identity = await getIdentityFixture();
@@ -107,7 +112,7 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
   });
 
   it('should return proof', async () => {
-    call.request.getProve.returns(true);
+    request.getProve.returns(true);
     driveClientMock.fetchIdentitiesByPublicKeyHashes.resolves(proofResponse.serializeBinary());
 
     const result = await getIdentitiesByPublicKeyHashesHandler(call);
@@ -123,7 +128,7 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
   });
 
   it('should throw an InvalidArgumentGrpcError if no hashes were submitted', async () => {
-    call.request.getPublicKeyHashesList.returns([]);
+    request.getPublicKeyHashesList.returns([]);
 
     try {
       await getIdentitiesByPublicKeyHashesHandler(call);

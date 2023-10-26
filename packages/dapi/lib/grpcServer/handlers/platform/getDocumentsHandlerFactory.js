@@ -29,11 +29,11 @@ function getDocumentsHandlerFactory(driveClient) {
   async function getDocumentsHandler(call) {
     const { request } = call;
 
-    if (!request.getDataContractId()) {
+    if (!request.getV0().getDataContractId()) {
       throw new InvalidArgumentGrpcError('dataContractId is not specified');
     }
 
-    if (!request.getDocumentType()) {
+    if (!request.getV0().getDocumentType()) {
       throw new InvalidArgumentGrpcError('documentType is not specified');
     }
 

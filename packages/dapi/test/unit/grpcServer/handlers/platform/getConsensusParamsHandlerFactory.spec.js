@@ -29,7 +29,9 @@ describe('getConsensusParamsHandlerFactory', () => {
       getProve: this.sinon.stub().returns(false),
     };
 
-    call = new GrpcCallMock(this.sinon, request);
+    call = new GrpcCallMock(this.sinon, {
+      getV0: () => request,
+    });
 
     consensusParamsFixture = {
       block: {
