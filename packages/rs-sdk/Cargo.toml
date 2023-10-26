@@ -47,7 +47,7 @@ dpp = { path = "../rs-dpp", features = [
 
 
 [features]
-default = ["mocks"]
+default = ["mocks", "offline-testing"]
 mocks = [
     "dep:serde_json",
     "rs-dapi-client/mocks",
@@ -62,10 +62,10 @@ mocks = [
     "dep:envy",
 ]
 
-# Enable this feature to run integration tests against a local Dash Platform
+# Disable this feature to run integration tests against a local Dash Platform
 # and dump all traffic to generate test vectors.
 #
-# This feature is disabled by default because it requires a local Dash Platform
+# This feature is enabled by default because disabling it requires a local Dash Platform
 # node to be running. Configuration of the node is done via environment variables
 # and/or `${CARGO_MAINFEST_DIR}/.env` file; see also `.env.example`.
-online-testing = ["mocks"]
+offline-testing = ["mocks"]

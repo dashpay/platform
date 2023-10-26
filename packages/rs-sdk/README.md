@@ -22,14 +22,14 @@ Follow these steps to conduct online testing:
 
 1. Configure the environment variables in `packages/rs-sdk/.env`. Refer to the "Test Configuration" section below.
 2. Optionally, you can remove existing test vectors.
-3. Run the test with the `online-testing` feature.
+3. Run the test without default features, but with `mocks` feature enabled.
 
 Use the following commands for the above steps:
 
 ```bash
 cd packages/rs-sdk
 rm tests/vectors/*
-cargo test -p rs-sdk --features online-testing
+cargo test -p rs-sdk --no-default-features --features mocks
 ```
 
 ## Offline Testing
@@ -44,7 +44,7 @@ cargo test -p rs-sdk
 
 ## Test Configuration
 
-For the `online-testing` feature, you need to set the configuration in the environment variables or in `packages/rs-sdk/.env` file. You can refer to `packages/rs-sdk/.env.example` for the format.
+For the `offline-testing` feature, you need to set the configuration in the environment variables or in `packages/rs-sdk/.env` file. You can refer to `packages/rs-sdk/.env.example` for the format.
 
 The identifiers are generated with the platform test suite. To display them, apply the following diff:
 

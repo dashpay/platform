@@ -68,12 +68,12 @@ impl<D: for<'de1> Deserialize<'de1>> Config<D> {
     ///
     /// ## Feature flags
     ///
-    /// * `online-testing` is set - connect to the platform and generate
+    /// * `offline-testing` is not set - connect to the platform and generate
     /// new test vectors during execution
-    /// * `online-testing` is not set - use mock implementation and
+    /// * `offline-testing` is set - use mock implementation and
     /// load existing test vectors from disk
     pub async fn setup_api(&self) -> crate::Sdk {
-        #[cfg(feature = "online-testing")]
+        #[cfg(not(feature = "offline-testing"))]
         // Dump all traffic to disk
         let sdk = crate::SdkBuilder::new(self.address_list())
             .with_core(
@@ -86,7 +86,7 @@ impl<D: for<'de1> Deserialize<'de1>> Config<D> {
             .build()
             .expect("cannot initialize api");
 
-        #[cfg(not(feature = "online-testing"))]
+        #[cfg(feature = "offline-testing")]
         let sdk = {
             let mut mock_sdk = crate::SdkBuilder::new_mock()
                 .build()
