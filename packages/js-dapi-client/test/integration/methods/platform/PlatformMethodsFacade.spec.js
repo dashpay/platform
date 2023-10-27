@@ -16,6 +16,11 @@ const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdent
 
 const PlatformMethodsFacade = require('../../../../lib/methods/platform/PlatformMethodsFacade');
 
+const { WaitForStateTransitionResultResponseV0 } = WaitForStateTransitionResultResponse;
+const { GetIdentityResponseV0 } = GetIdentityResponse;
+const { GetDocumentsResponseV0 } = GetDocumentsResponse;
+const { GetDataContractResponseV0 } = GetDataContractResponse;
+
 describe('PlatformMethodsFacade', () => {
   let grpcTransportMock;
   let platformMethods;
@@ -47,8 +52,11 @@ describe('PlatformMethodsFacade', () => {
   describe('#getDataContract', () => {
     it('should get data contract', async () => {
       const response = new GetDataContractResponse();
-      response.setMetadata(new ResponseMetadata());
-      response.setDataContract((await getDataContractFixture()).toBuffer());
+      response.setV0(
+        new GetDataContractResponseV0()
+          .setMetadata(new ResponseMetadata())
+          .setDataContract((await getDataContractFixture()).toBuffer()),
+      );
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getDataContract((await getDataContractFixture()).getId());
@@ -60,7 +68,10 @@ describe('PlatformMethodsFacade', () => {
   describe('#getDocuments', () => {
     it('should get documents', async () => {
       const response = new GetDocumentsResponse();
-      response.setMetadata(new ResponseMetadata());
+      response.setV0(
+        new GetDocumentsResponseV0()
+          .setMetadata(new ResponseMetadata()),
+      );
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getDocuments(
@@ -75,9 +86,11 @@ describe('PlatformMethodsFacade', () => {
   describe('#getIdentity', () => {
     it('should get Identity', async () => {
       const response = new GetIdentityResponse();
-
-      response.setMetadata(new ResponseMetadata());
-      response.setIdentity((await getIdentityFixture()).toBuffer());
+      response.setV0(
+        new GetIdentityResponseV0()
+          .setMetadata(new ResponseMetadata())
+          .setIdentity((await getIdentityFixture()).toBuffer()),
+      );
 
       grpcTransportMock.request.resolves(response);
 
@@ -90,7 +103,11 @@ describe('PlatformMethodsFacade', () => {
   describe('#waitForStateTransitionResult', () => {
     it('should wait for state transition', async () => {
       const response = new WaitForStateTransitionResultResponse();
-      response.setMetadata(new ResponseMetadata());
+      response.setV0(
+        new WaitForStateTransitionResultResponseV0()
+          .setMetadata(new ResponseMetadata()),
+      );
+
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.waitForStateTransitionResult(
