@@ -30,7 +30,9 @@ class GetIdentitiesByPublicKeyHashesResponse extends AbstractResponse {
 
     return new GetIdentitiesByPublicKeyHashesResponse(
       identitiesList !== undefined
-        ? identitiesList.getIdentityEntriesList().map((identity) => identity.getValue().getValue()) : [],
+        ? identitiesList.getIdentityEntriesList()
+          .map((identity) => identity.getValue().getValue())
+        : [],
       metadata,
       proof,
     );
