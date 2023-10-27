@@ -48,8 +48,8 @@ impl Drive {
         );
         match result {
             Ok(_) => Ok(contract_proof),
-            Err(Error::GroveDB(grovedb::Error::WrongElementType(s))) if s == "expected an item" => {
-                // In this case we are trying to prove a historical type contract
+            Err(Error::GroveDB(grovedb::Error::WrongElementType(_))) => {
+                // In this case we are trying to prove a historical type contract we would have a tree instead
                 let contract_query = Self::fetch_contract_with_history_latest_query(contract_id);
                 let historical_contract_proof = self.grove_get_proved_path_query(
                     &contract_query,
@@ -58,16 +58,16 @@ impl Drive {
                     &mut vec![],
                     &platform_version.drive,
                 )?;
-                let (_, proof_returned_historical_contract) = Drive::verify_contract(
+                if let Ok(Some(_)) = Drive::verify_contract(
                     historical_contract_proof.as_slice(),
                     Some(true),
                     false,
                     contract_id,
                     platform_version,
                 )
-                .expect("expected to get contract from proof");
-                // Only return the historical proof if an element was found
-                if proof_returned_historical_contract.is_some() {
+                .map(|(_, proof_returned_historical_contract)| proof_returned_historical_contract)
+                {
+                    // Only return the historical proof if an element was found
                     Ok(historical_contract_proof)
                 } else {
                     Ok(contract_proof)

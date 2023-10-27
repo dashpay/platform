@@ -34,7 +34,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<Option<[u8; 32]>, Error> {
         let unique_key_hashes = unique_key_hashes_tree_path();
-        match self.grove_get_raw(
+        match self.grove_get_raw_optional(
             (&unique_key_hashes).into(),
             public_key_hash.as_slice(),
             StatefulDirectQuery,
