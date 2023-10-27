@@ -496,6 +496,7 @@ message WaitForStateTransitionResultResponse {
 message GetConsensusParamsRequest {
   message GetConsensusParamsRequestV0 {
     int32 height = 1;
+    bool prove = 2;
   }
   oneof version {
     GetConsensusParamsRequestV0 v0 = 1;

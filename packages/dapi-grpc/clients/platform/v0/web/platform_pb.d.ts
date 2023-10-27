@@ -2376,6 +2376,9 @@ export namespace GetConsensusParamsRequest {
     getHeight(): number;
     setHeight(value: number): void;
 
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetConsensusParamsRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetConsensusParamsRequestV0): GetConsensusParamsRequestV0.AsObject;
@@ -2389,6 +2392,7 @@ export namespace GetConsensusParamsRequest {
   export namespace GetConsensusParamsRequestV0 {
     export type AsObject = {
       height: number,
+      prove: boolean,
     }
   }
 

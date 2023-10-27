@@ -5031,6 +5031,7 @@ void GetConsensusParamsRequest_ClearVersionOneOfCase(GetConsensusParamsRequest *
 @implementation GetConsensusParamsRequest_GetConsensusParamsRequestV0
 
 @dynamic height;
+@dynamic prove;
 
 typedef struct GetConsensusParamsRequest_GetConsensusParamsRequestV0__storage_ {
   uint32_t _has_storage_[1];
@@ -5051,6 +5052,15 @@ typedef struct GetConsensusParamsRequest_GetConsensusParamsRequestV0__storage_ {
         .offset = (uint32_t)offsetof(GetConsensusParamsRequest_GetConsensusParamsRequestV0__storage_, height),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeInt32,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetConsensusParamsRequest_GetConsensusParamsRequestV0_FieldNumber_Prove,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
       },
     };
     GPBDescriptor *localDescriptor =
