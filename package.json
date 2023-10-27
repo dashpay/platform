@@ -82,6 +82,7 @@
     "protobufjs": "^6.11.4"
   },
   "dependencies": {
+    "browserify-sign": "4.2.2",
     "node-gyp": "^9.3.1"
   }
 }
