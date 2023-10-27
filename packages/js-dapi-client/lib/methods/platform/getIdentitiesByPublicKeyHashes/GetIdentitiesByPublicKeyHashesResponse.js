@@ -32,9 +32,9 @@ class GetIdentitiesByPublicKeyHashesResponse extends AbstractResponse {
       identitiesList !== undefined
         ? identitiesList.getIdentityEntriesList()
           .map((identity) => {
-            // TODO: rework to return whole `identity.getValue()` instead of inner value
             const value = identity.getValue();
-            return value && value.getValue();
+            // TODO: rework to return whole `identity.getValue()` instead of inner getValue()
+            return value && Buffer.from(value.getValue());
           })
         : [],
       metadata,
