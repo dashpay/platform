@@ -1362,10 +1362,14 @@ pub mod get_epochs_info_response {
         pub struct EpochInfo {
             #[prost(uint32, tag = "1")]
             pub number: u32,
-            #[prost(uint32, tag = "2")]
-            pub first_block: u32,
-            #[prost(uint32, tag = "3")]
-            pub start_time: u32,
+            #[prost(uint64, tag = "2")]
+            pub first_block_height: u64,
+            #[prost(uint64, tag = "3")]
+            pub first_block_core_height: u64,
+            #[prost(uint64, tag = "4")]
+            pub start_time: u64,
+            #[prost(double, tag = "5")]
+            pub fee_multiplier: f64,
         }
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]

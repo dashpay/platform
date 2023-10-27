@@ -9,6 +9,7 @@ use grovedb::TransactionArg;
 use dpp::version::PlatformVersion;
 
 impl Drive {
+    /// Prove multiple epoch infos starting at a given epoch index
     pub fn prove_epochs_infos(
         &self,
         start_epoch_index: u16,

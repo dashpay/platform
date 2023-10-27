@@ -33,7 +33,7 @@ impl Drive {
         let path = desired_version_for_validators_path_vec();
 
         let query_item = if let Some(start_protx_hash) = start_protx_hash {
-            QueryItem::RangeFrom(start_protx_hash.into())
+            QueryItem::RangeFrom(start_protx_hash.to_vec()..)
         } else {
             QueryItem::RangeFull(RangeFull)
         };
@@ -63,7 +63,14 @@ impl Drive {
                         "version in state not representative of a ProtocolVersion".to_string(),
                     )))?
                     .0;
-                Ok((key.try_into()?, version))
+                Ok((
+                    key.try_into().map_err(|_| {
+                        Error::Drive(DriveError::CorruptedDriveState(
+                            "key protxhash not 32 bytes long".to_string(),
+                        ))
+                    })?,
+                    version,
+                ))
             })
             .collect()
     }

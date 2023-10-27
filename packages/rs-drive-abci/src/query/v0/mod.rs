@@ -42,11 +42,9 @@ impl<C> Platform<C> {
             "/versionUpgrade/state" => {
                 self.query_version_upgrade_state(&state, query_data, platform_version)
             }
-            "/versionUpgrade/voteStatus" => self.query_version_upgrade_vote_status(
-                &state,
-                query_data,
-                platform_version,
-            ),
+            "/versionUpgrade/voteStatus" => {
+                self.query_version_upgrade_vote_status(&state, query_data, platform_version)
+            }
             "/epochInfos" => self.query_epoch_infos(&state, query_data, platform_version),
             other => Ok(QueryValidationResult::new_with_error(
                 QueryError::InvalidArgument(format!("query path '{}' is not supported", other)),

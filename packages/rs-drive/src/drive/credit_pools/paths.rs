@@ -16,7 +16,7 @@ pub fn epoch_path_vec(epoch: EpochIndex) -> Result<Vec<Vec<u8>>, Error> {
         .ok_or(ProtocolError::Overflow("stored epoch index too high"))?;
     Ok(vec![
         vec![RootTree::Pools as u8],
-        index_with_offset.to_be_bytes(),
+        index_with_offset.to_be_bytes().to_vec(),
     ])
 }
 

@@ -617,8 +617,10 @@ message GetEpochsInfoResponse {
 
     message EpochInfo {
       uint32 number = 1;
-      uint32 first_block = 2;
-      uint32 start_time = 3;
+      uint64 first_block_height = 2;
+      uint64 first_block_core_height = 3;
+      uint64 start_time = 4;
+      double fee_multiplier = 5;
     }
 
     oneof result {

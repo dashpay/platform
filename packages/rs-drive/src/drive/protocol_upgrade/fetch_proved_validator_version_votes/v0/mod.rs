@@ -28,7 +28,7 @@ impl Drive {
         let path = desired_version_for_validators_path_vec();
 
         let query_item = if let Some(start_protx_hash) = start_protx_hash {
-            QueryItem::RangeFrom(start_protx_hash.into())
+            QueryItem::RangeFrom(start_protx_hash.to_vec()..)
         } else {
             QueryItem::RangeFull(RangeFull)
         };

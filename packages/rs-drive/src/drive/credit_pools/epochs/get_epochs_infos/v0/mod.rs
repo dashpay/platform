@@ -8,6 +8,7 @@ use dpp::ProtocolError;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
+use std::u64;
 
 use crate::drive::credit_pools::pools_vec_path;
 use crate::error::query::QuerySyntaxError;
@@ -80,9 +81,30 @@ impl Drive {
             .filter_map(|(path, inner_map)| {
                 // Extract the epoch index from the path's last component
                 // and adjust by subtracting the EPOCH_KEY_OFFSET
-                let epoch_index_bytes = path.last()?;
-                let epoch_index = EpochIndex::from_be_bytes(epoch_index_bytes.try_into().ok()?)
-                    .checked_sub(EPOCH_KEY_OFFSET)?;
+                let epoch_index_result: Result<EpochIndex, Error> = path
+                    .last()
+                    .ok_or(Error::Drive(DriveError::CorruptedSerialization(
+                        "path can not be empty",
+                    )))
+                    .and_then(|epoch_index_vec| {
+                        epoch_index_vec.as_slice().try_into().map_err(|_| {
+                            Error::Drive(DriveError::CorruptedSerialization(
+                                "item have an invalid length",
+                            ))
+                        })
+                    })
+                    .and_then(|epoch_index_bytes| {
+                        EpochIndex::from_be_bytes(epoch_index_bytes)
+                            .checked_sub(EPOCH_KEY_OFFSET)
+                            .ok_or(Error::Drive(DriveError::CorruptedSerialization(
+                                "epoch bytes on disk too small, should be over epoch key offset",
+                            )))
+                    });
+
+                let epoch_index = match epoch_index_result {
+                    Ok(value) => value,
+                    Err(e) => return Some(Err(e)),
+                };
 
                 let first_block_time_element = inner_map.get(&KEY_START_TIME.to_vec())?;
 
@@ -92,10 +114,17 @@ impl Drive {
                     ))));
                 };
 
-                let first_block_time =
-                    u64::from_be_bytes(encoded_start_time.as_slice().try_into().map_err(|_| {
-                        Error::Drive(DriveError::CorruptedSerialization("start time must be u64"))
-                    })?);
+                let first_block_time_bytes: [u8; 8] =
+                    match encoded_start_time.as_slice().try_into().map_err(|_| {
+                        Error::Drive(DriveError::CorruptedSerialization(
+                            "block time must be 8 bytes for a u64",
+                        ))
+                    }) {
+                        Ok(value) => value,
+                        Err(e) => return Some(Err(e)),
+                    };
+
+                let first_block_time = u64::from_be_bytes(first_block_time_bytes);
 
                 let first_block_height_element = inner_map.get(&KEY_START_BLOCK_HEIGHT.to_vec())?;
 
@@ -106,14 +135,19 @@ impl Drive {
                     ))));
                 };
 
-                let first_block_height =
-                    u64::from_be_bytes(encoded_start_block_height.as_slice().try_into().map_err(
-                        |_| {
-                            Error::Drive(DriveError::CorruptedSerialization(
-                                "start time must be u64",
-                            ))
-                        },
-                    )?);
+                let first_block_height_bytes: [u8; 8] = match encoded_start_block_height
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| {
+                        Error::Drive(DriveError::CorruptedSerialization(
+                            "block height must be 8 bytes for a u64",
+                        ))
+                    }) {
+                    Ok(value) => value,
+                    Err(e) => return Some(Err(e)),
+                };
+
+                let first_block_height = u64::from_be_bytes(first_block_height_bytes);
 
                 let first_core_block_height_element =
                     inner_map.get(&KEY_START_BLOCK_CORE_HEIGHT.to_vec())?;
@@ -126,16 +160,19 @@ impl Drive {
                     ))));
                 };
 
-                let first_core_block_height = u32::from_be_bytes(
-                    encoded_start_core_block_height
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| {
-                            Error::Drive(DriveError::CorruptedSerialization(
-                                "start time must be u64",
-                            ))
-                        })?,
-                );
+                let first_core_block_height_bytes: [u8; 4] = match encoded_start_core_block_height
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| {
+                        Error::Drive(DriveError::CorruptedSerialization(
+                            "core block height must be 4 bytes for a u32",
+                        ))
+                    }) {
+                    Ok(value) => value,
+                    Err(e) => return Some(Err(e)),
+                };
+
+                let first_core_block_height = u32::from_be_bytes(first_core_block_height_bytes);
 
                 let fee_multiplier_element = inner_map.get(&KEY_FEE_MULTIPLIER.to_vec())?;
 
@@ -145,26 +182,29 @@ impl Drive {
                     ))));
                 };
 
-                let fee_multiplier =
-                    f64::from_be_bytes(encoded_multiplier.as_slice().try_into().map_err(|_| {
+                let fee_multiplier_bytes: [u8; 8] =
+                    match encoded_multiplier.as_slice().try_into().map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
-                            "epochs multiplier must be f64",
+                            "fee multiplier must be 8 bytes for a f64",
                         ))
-                    })?);
+                    }) {
+                        Ok(value) => value,
+                        Err(e) => return Some(Err(e)),
+                    };
+
+                let fee_multiplier = f64::from_be_bytes(fee_multiplier_bytes);
 
                 // Construct the ExtendedEpochInfo
-                Some(
-                    ExtendedEpochInfoV0 {
-                        index: epoch_index,
-                        first_block_time,
-                        first_block_height,
-                        first_core_block_height,
-                        fee_multiplier,
-                    }
-                    .into(),
-                )
+                Some(Ok(ExtendedEpochInfoV0 {
+                    index: epoch_index,
+                    first_block_time,
+                    first_block_height,
+                    first_core_block_height,
+                    fee_multiplier,
+                }
+                .into()))
             })
-            .collect::<Result<Vec<_>, Error>>()?;
+            .collect::<Result<Vec<ExtendedEpochInfo>, Error>>()?;
 
         Ok(extended_epoch_infos)
     }

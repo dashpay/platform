@@ -10,6 +10,7 @@ use grovedb::TransactionArg;
 use dpp::version::PlatformVersion;
 
 impl Drive {
+    /// Get multiple epoch infos starting at a given epoch index
     pub fn get_epochs_infos(
         &self,
         start_epoch_index: u16,
