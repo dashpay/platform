@@ -541,6 +541,15 @@ message GetVersionUpgradeStateRequest {
 
 message GetVersionUpgradeStateResponse {
   message GetVersionUpgradeStateResponseV0 {
+    message Versions {
+      repeated VersionEntry versions = 1;
+    }
+
+    message VersionEntry {
+      uint32 version_number = 1;
+      uint32 vote_count = 2;
+    }
+
     oneof result {
       Versions versions = 1;
       Proof proof = 2;
@@ -551,15 +560,6 @@ message GetVersionUpgradeStateResponse {
   oneof version {
     GetVersionUpgradeStateResponseV0 v0 = 1;
   }
-}
-
-message Versions {
-  repeated VersionEntry versions = 1;
-}
-
-message VersionEntry {
-  uint32 version_number = 1;
-  uint32 vote_count = 2;
 }
 
 message GetVersionUpgradeVoteStatusRequest {
@@ -576,6 +576,15 @@ message GetVersionUpgradeVoteStatusRequest {
 
 message GetVersionUpgradeVoteStatusResponse {
   message GetVersionUpgradeVoteStatusResponseV0 {
+    message VersionSignals {
+      repeated VersionSignal version_signals = 1;
+    }
+
+    message VersionSignal {
+      bytes pro_tx_hash = 1;
+      uint32 version = 2;
+    }
+
     oneof result {
       VersionSignals versions = 1;
       Proof proof = 2;
@@ -586,15 +595,6 @@ message GetVersionUpgradeVoteStatusResponse {
   oneof version {
     GetVersionUpgradeVoteStatusResponseV0 v0 = 1;
   }
-}
-
-message VersionSignals {
-  repeated VersionSignal version_signals = 1;
-}
-
-message VersionSignal {
-  bytes pro_tx_hash = 1;
-  uint32 version = 2;
 }
 
 message GetEpochsInfoRequest {
@@ -611,12 +611,6 @@ message GetEpochsInfoRequest {
 
 message GetEpochsInfoResponse {
   message GetEpochsInfoResponseV0 {
-    oneof result {
-      EpochInfos epochs = 1;
-      Proof proof = 2;
-    }
-    ResponseMetadata metadata = 3;
-
     message EpochInfos {
       repeated EpochInfo epoch_infos = 1;
     }
@@ -626,6 +620,12 @@ message GetEpochsInfoResponse {
       uint32 first_block = 2;
       uint32 start_time = 3;
     }
+
+    oneof result {
+      EpochInfos epochs = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
   }
 
   oneof version {

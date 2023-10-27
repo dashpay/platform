@@ -1197,10 +1197,24 @@ pub mod get_version_upgrade_state_response {
     /// Nested message and enum types in `GetVersionUpgradeStateResponseV0`.
     pub mod get_version_upgrade_state_response_v0 {
         #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct Versions {
+            #[prost(message, repeated, tag = "1")]
+            pub versions: ::prost::alloc::vec::Vec<VersionEntry>,
+        }
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct VersionEntry {
+            #[prost(uint32, tag = "1")]
+            pub version_number: u32,
+            #[prost(uint32, tag = "2")]
+            pub vote_count: u32,
+        }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Result {
             #[prost(message, tag = "1")]
-            Versions(super::super::Versions),
+            Versions(Versions),
             #[prost(message, tag = "2")]
             Proof(super::super::Proof),
         }
@@ -1211,20 +1225,6 @@ pub mod get_version_upgrade_state_response {
         #[prost(message, tag = "1")]
         V0(GetVersionUpgradeStateResponseV0),
     }
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Versions {
-    #[prost(message, repeated, tag = "1")]
-    pub versions: ::prost::alloc::vec::Vec<VersionEntry>,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct VersionEntry {
-    #[prost(uint32, tag = "1")]
-    pub version_number: u32,
-    #[prost(uint32, tag = "2")]
-    pub vote_count: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1279,10 +1279,24 @@ pub mod get_version_upgrade_vote_status_response {
     /// Nested message and enum types in `GetVersionUpgradeVoteStatusResponseV0`.
     pub mod get_version_upgrade_vote_status_response_v0 {
         #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct VersionSignals {
+            #[prost(message, repeated, tag = "1")]
+            pub version_signals: ::prost::alloc::vec::Vec<VersionSignal>,
+        }
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct VersionSignal {
+            #[prost(bytes = "vec", tag = "1")]
+            pub pro_tx_hash: ::prost::alloc::vec::Vec<u8>,
+            #[prost(uint32, tag = "2")]
+            pub version: u32,
+        }
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Clone, PartialEq, ::prost::Oneof)]
         pub enum Result {
             #[prost(message, tag = "1")]
-            Versions(super::super::VersionSignals),
+            Versions(VersionSignals),
             #[prost(message, tag = "2")]
             Proof(super::super::Proof),
         }
@@ -1293,20 +1307,6 @@ pub mod get_version_upgrade_vote_status_response {
         #[prost(message, tag = "1")]
         V0(GetVersionUpgradeVoteStatusResponseV0),
     }
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct VersionSignals {
-    #[prost(message, repeated, tag = "1")]
-    pub version_signals: ::prost::alloc::vec::Vec<VersionSignal>,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct VersionSignal {
-    #[prost(bytes = "vec", tag = "1")]
-    pub pro_tx_hash: ::prost::alloc::vec::Vec<u8>,
-    #[prost(uint32, tag = "2")]
-    pub version: u32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
