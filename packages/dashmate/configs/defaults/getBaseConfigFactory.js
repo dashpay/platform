@@ -65,7 +65,7 @@ function getBaseConfigFactory(homeDir) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:20.0.0-beta.5',
+          image: 'dcgknst/dashd:20.0.0-dev.5648',
         },
         p2p: {
           port: 9999,
