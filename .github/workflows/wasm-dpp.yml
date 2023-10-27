@@ -40,7 +40,7 @@ jobs:
 
   wasm-errors:
     name: WASM compilation
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    runs-on: ["self-hosted", "linux", "x64", "ubuntu-platform"]
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     timeout-minutes: 15
     steps:
@@ -50,7 +50,6 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
-          toolchain: stable
           target: wasm32-unknown-unknown
 
       - name: Compile WASM

@@ -2,7 +2,6 @@ const { Listr } = require('listr2');
 
 const {
   PRESET_LOCAL,
-  SSL_PROVIDERS,
 } = require('../../../constants');
 
 const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
@@ -18,6 +17,8 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {configFileRepository} configFileRepository
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
  * @param {HomeDir} homeDir
+ * @param {writeServiceConfigs} writeServiceConfigs
+ * @param {renderServiceTemplates} renderServiceTemplates
  */
 function setupLocalPresetTaskFactory(
   configFile,
@@ -28,6 +29,8 @@ function setupLocalPresetTaskFactory(
   configFileRepository,
   generateHDPrivateKeys,
   homeDir,
+  writeServiceConfigs,
+  renderServiceTemplates,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -268,16 +271,6 @@ function setupLocalPresetTaskFactory(
             }
           ));
 
-          subTasks.push({
-            title: 'Save configs',
-            task: async () => {
-              configFile.setDefaultGroupName(PRESET_LOCAL);
-
-              // Persist configs
-              configFileRepository.write(configFile);
-            },
-          });
-
           return new Listr(subTasks);
         },
         options: {
@@ -293,18 +286,28 @@ function setupLocalPresetTaskFactory(
         task: (ctx) => configureTenderdashTask(ctx.configGroup),
       },
       {
+        title: 'Persist configs',
+        task: (ctx) => {
+          configFile.setDefaultGroupName(PRESET_LOCAL);
+
+          for (const config of ctx.configGroup) {
+            const serviceConfigFiles = renderServiceTemplates(config);
+            writeServiceConfigs(config.getName(), serviceConfigFiles);
+          }
+
+          configFileRepository.write(configFile);
+        },
+      },
+      {
         title: 'Configure SSL certificates',
         task: (ctx) => {
           const platformConfigs = ctx.configGroup.filter((config) => config.get('platform.enable'));
 
-          const subTasks = platformConfigs.map((config) => {
-            config.set('platform.dapi.envoy.ssl.provider', SSL_PROVIDERS.SELF_SIGNED);
-
-            return {
-              title: `Generate certificate for ${config.getName()}`,
-              task: async () => obtainSelfSignedCertificateTask(config),
-            };
-          });
+          const subTasks = platformConfigs.map((config) => ({
+            title: `Generate certificate for ${config.getName()}`,
+            task: async () => obtainSelfSignedCertificateTask(config),
+          }
+          ));
 
           return new Listr(subTasks);
         },

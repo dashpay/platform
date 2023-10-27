@@ -39,14 +39,6 @@ class GroupBaseCommand extends BaseCommand {
       configGroup: asValue(group),
     });
 
-    const renderServiceTemplates = this.container.resolve('renderServiceTemplates');
-    const writeServiceConfigs = this.container.resolve('writeServiceConfigs');
-
-    for (const config of group) {
-      const serviceConfigFiles = renderServiceTemplates(config);
-      writeServiceConfigs(config.getName(), serviceConfigFiles);
-    }
-
     return super.run();
   }
 }

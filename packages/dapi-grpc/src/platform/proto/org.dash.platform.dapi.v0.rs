@@ -1061,10 +1061,26 @@ pub mod wait_for_state_transition_result_response {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct WaitForStateTransitionResultResponseV0 {
-        #[prost(message, optional, tag = "1")]
-        pub error: ::core::option::Option<super::StateTransitionBroadcastError>,
-        #[prost(message, optional, tag = "2")]
-        pub proof: ::core::option::Option<super::Proof>,
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(
+            oneof = "wait_for_state_transition_result_response_v0::Result",
+            tags = "1, 2"
+        )]
+        pub result: ::core::option::Option<
+            wait_for_state_transition_result_response_v0::Result,
+        >,
+    }
+    /// Nested message and enum types in `WaitForStateTransitionResultResponseV0`.
+    pub mod wait_for_state_transition_result_response_v0 {
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(message, tag = "1")]
+            Error(super::super::StateTransitionBroadcastError),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
     }
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]

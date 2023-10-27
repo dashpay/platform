@@ -401,12 +401,12 @@ mod tests {
                 .expect("expected query to succeed");
             let validation_error = validation_result.first_error().unwrap();
 
-            let error_message = format!("identity {} balance not found", encode(id).into_string());
+            assert_eq!(
+                validation_error.to_string(),
+                "not found error: No Identity found".to_string()
+            );
 
-            assert!(matches!(
-                validation_error,
-                QueryError::NotFound(msg) if msg.contains(&error_message)
-            ));
+            assert!(matches!(validation_error, QueryError::NotFound(_)));
         }
 
         #[test]
@@ -474,7 +474,7 @@ mod tests {
         }
 
         #[test]
-        fn test_identity_not_found() {
+        fn test_identity_not_found_when_querying_balance_and_revision() {
             let (platform, version) = super::setup_platform();
 
             let id = vec![0; 32];
@@ -492,15 +492,12 @@ mod tests {
                 .expect("expected query to succeed");
             let validation_error = validation_result.first_error().unwrap();
 
-            let error_message = format!(
-                "identity {} balance and revision not found",
-                encode(id).into_string()
+            assert_eq!(
+                validation_error.to_string(),
+                "not found error: No Identity balance found".to_string()
             );
 
-            assert!(matches!(
-                validation_error,
-                QueryError::NotFound(msg) if msg.contains(&error_message)
-            ));
+            assert!(matches!(validation_error, QueryError::NotFound(_)));
         }
 
         #[test]
@@ -1054,10 +1051,11 @@ mod tests {
                 .expect("expected query to succeed");
             let validation_error = validation_result.first_error().unwrap();
 
-            assert!(matches!(
-                validation_error,
-                QueryError::InvalidArgument(msg) if msg.contains("can't fit u16 limit from the supplied value")
-            ));
+            assert!(matches!(validation_error, QueryError::InvalidArgument(_)));
+            assert_eq!(
+                validation_error.to_string().as_str(),
+                "invalid argument error: limit out of bounds"
+            )
         }
 
         #[test]
@@ -1080,10 +1078,11 @@ mod tests {
                 .expect("expected query to succeed");
             let validation_error = validation_result.first_error().unwrap();
 
-            assert!(matches!(
-                validation_error,
-                QueryError::InvalidArgument(msg) if msg.contains("can't fit u16 offset from the supplied value")
-            ));
+            assert!(matches!(validation_error, QueryError::InvalidArgument(_)));
+            assert_eq!(
+                validation_error.to_string().as_str(),
+                "invalid argument error: offset out of bounds"
+            );
         }
 
         #[test]
@@ -1188,7 +1187,7 @@ mod tests {
         }
 
         #[test]
-        fn test_data_contract_not_found() {
+        fn test_data_contract_not_found_in_documents_request() {
             let (platform, version) = super::setup_platform();
 
             let data_contract_id = vec![0; 32];
@@ -1209,14 +1208,12 @@ mod tests {
             let validation_result = platform
                 .query(QUERY_PATH, &request, version)
                 .expect("expected query to succeed");
-            let message = format!(
-                "data contract {} not found",
-                bs58::encode(data_contract_id).into_string()
-            );
+            let validation_error = validation_result.first_error().expect("expected an error");
+            assert_eq!(validation_error.to_string().as_str(), "query syntax error: contract not found error: contract not found when querying from value with contract info");
             assert!(matches!(
-                validation_result.first_error().unwrap(),
-                QueryError::NotFound(msg) if msg.contains(message.as_str())
-            ))
+                validation_error,
+                QueryError::Query(QuerySyntaxError::DataContractNotFound(_))
+            ));
         }
 
         #[test]
@@ -1663,7 +1660,7 @@ mod tests {
                 panic!("invalid response")
             };
 
-            assert_eq!(identities.identity_entries.len(), 0);
+            assert!(identities.identity_entries.first().unwrap().value.is_none());
         }
 
         #[test]
