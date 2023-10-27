@@ -38,11 +38,9 @@ impl<C> Platform<C> {
             })
             .collect::<Result<Vec<[u8; 32]>, QueryError>>());
         let response_data = if prove {
-            let proof = check_validation_result_with_data!(self.drive.prove_contracts(
-                contract_ids.as_slice(),
-                None,
-                platform_version
-            ));
+            let proof =
+                self.drive
+                    .prove_contracts(contract_ids.as_slice(), None, platform_version)?;
             GetDataContractsResponse {
                 version: Some(get_data_contracts_response::Version::V0(GetDataContractsResponseV0 {
                     result: Some(get_data_contracts_response::get_data_contracts_response_v0::Result::Proof(Proof {
@@ -58,31 +56,28 @@ impl<C> Platform<C> {
             }
                 .encode_to_vec()
         } else {
-            let contracts =
-                check_validation_result_with_data!(self.drive.get_contracts_with_fetch_info(
-                    contract_ids.as_slice(),
-                    false,
-                    None,
-                    platform_version
-                ));
+            let contracts = self.drive.get_contracts_with_fetch_info(
+                contract_ids.as_slice(),
+                false,
+                None,
+                platform_version,
+            )?;
 
-            let contracts = check_validation_result_with_data!(contracts
+            let contracts = contracts
                 .into_iter()
-                .map(
-                    |(key, maybe_contract)| Ok::<DataContractEntry, ProtocolError>(
-                        get_data_contracts_response::DataContractEntry {
-                            identifier: key.to_vec(),
-                            data_contract: maybe_contract
-                                .map(|contract| {
-                                    contract
-                                        .contract
-                                        .serialize_to_bytes_with_platform_version(platform_version)
-                                })
-                                .transpose()?,
-                        }
-                    )
-                )
-                .collect());
+                .map(|(key, maybe_contract)| {
+                    Ok::<DataContractEntry, ProtocolError>(DataContractEntry {
+                        identifier: key.to_vec(),
+                        data_contract: maybe_contract
+                            .map(|contract| {
+                                contract
+                                    .contract
+                                    .serialize_to_bytes_with_platform_version(platform_version)
+                            })
+                            .transpose()?,
+                    })
+                })
+                .collect::<Result<Vec<DataContractEntry>, ProtocolError>>()?;
 
             GetDataContractsResponse {
                 version: Some(get_data_contracts_response::Version::V0(GetDataContractsResponseV0 {

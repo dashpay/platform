@@ -11,8 +11,8 @@ service Platform {
   rpc getIdentity (GetIdentityRequest) returns (GetIdentityResponse);
   rpc getIdentities (GetIdentitiesRequest) returns (GetIdentitiesResponse);
   rpc getIdentityKeys (GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
-  rpc getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse);
-  rpc getIdentityBalanceAndRevision(GetIdentityRequest)
+  rpc getIdentityBalance(GetIdentityBalanceRequest) returns (GetIdentityBalanceResponse);
+  rpc getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest)
           returns (GetIdentityBalanceAndRevisionResponse);
   rpc getProofs (GetProofsRequest) returns (GetProofsResponse);
   rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
@@ -34,7 +34,7 @@ message Proof {
   bytes signature = 3;
   uint32 round = 4;
   bytes block_id_hash = 5;
-  uint32 quorum_type = 6;    
+  uint32 quorum_type = 6;
 }
 
 message ResponseMetadata {
@@ -72,7 +72,30 @@ message GetIdentityRequest {
   }
 }
 
+message GetIdentityBalanceRequest {
 
+  message GetIdentityBalanceRequestV0 {
+    bytes id = 1;
+    bool prove = 2;
+  }
+
+  oneof version {
+    GetIdentityBalanceRequestV0 v0 = 1;
+  }
+}
+
+
+message GetIdentityBalanceAndRevisionRequest {
+
+  message GetIdentityBalanceAndRevisionRequestV0 {
+    bytes id = 1;
+    bool prove = 2;
+  }
+
+  oneof version {
+    GetIdentityBalanceAndRevisionRequestV0 v0 = 1;
+  }
+}
 
 message GetIdentityResponse {
 
@@ -133,7 +156,7 @@ message GetIdentityBalanceResponse {
 
   message GetIdentityBalanceResponseV0 {
     oneof result {
-      google.protobuf.UInt64Value balance = 1;
+      uint64 balance = 1;
       Proof proof = 2;
     }
     ResponseMetadata metadata = 3;
@@ -148,8 +171,8 @@ message GetIdentityBalanceAndRevisionResponse {
 
   message GetIdentityBalanceAndRevisionResponseV0 {
     message BalanceAndRevision {
-      google.protobuf.UInt64Value balance = 1;
-      google.protobuf.UInt64Value revision = 2;
+      uint64 balance = 1;
+      uint64 revision = 2;
     }
 
     oneof result {
@@ -463,9 +486,11 @@ message WaitForStateTransitionResultRequest {
 
 message WaitForStateTransitionResultResponse {
   message WaitForStateTransitionResultResponseV0 {
-    bytes state_transition = 1;
-    ResponseMetadata metadata = 2;
-    bool is_synced = 3;
+    oneof result {
+      StateTransitionBroadcastError error = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
   }
   oneof version {
     WaitForStateTransitionResultResponseV0 v0 = 1;
@@ -502,6 +527,8 @@ message GetConsensusParamsResponse {
     GetConsensusParamsResponseV0 v0 = 1;
   }
 }
+
+
 message GetVersionUpgradeStateRequest {
   message GetVersionUpgradeStateRequestV0 {
     bool prove = 1;

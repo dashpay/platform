@@ -36,59 +36,59 @@ impl<C> Platform<C> {
                     })
             })
             .collect::<Result<Vec<[u8; 32]>, QueryError>>());
-        let response_data =
-            if prove {
-                let proof = check_validation_result_with_data!(self.drive.prove_full_identities(
-                    identity_ids.as_slice(),
-                    None,
-                    &platform_version.drive
-                ));
+        let response_data = if prove {
+            let proof = self.drive.prove_full_identities(
+                identity_ids.as_slice(),
+                None,
+                &platform_version.drive,
+            )?;
 
-                GetIdentitiesResponse {
-                    version: Some(get_identities_response::Version::V0(
-                        GetIdentitiesResponseV0 {
-                            result: Some(
-                                get_identities_response::get_identities_response_v0::Result::Proof(
-                                    Proof {
-                                        grovedb_proof: proof,
-                                        quorum_hash: state.last_quorum_hash().to_vec(),
-                                        quorum_type,
-                                        block_id_hash: state.last_block_id_hash().to_vec(),
-                                        signature: state.last_block_signature().to_vec(),
-                                        round: state.last_block_round(),
-                                    },
-                                ),
+            GetIdentitiesResponse {
+                version: Some(get_identities_response::Version::V0(
+                    GetIdentitiesResponseV0 {
+                        result: Some(
+                            get_identities_response::get_identities_response_v0::Result::Proof(
+                                Proof {
+                                    grovedb_proof: proof,
+                                    quorum_hash: state.last_quorum_hash().to_vec(),
+                                    quorum_type,
+                                    block_id_hash: state.last_block_id_hash().to_vec(),
+                                    signature: state.last_block_signature().to_vec(),
+                                    round: state.last_block_round(),
+                                },
                             ),
-                            metadata: Some(metadata),
-                        },
-                    )),
-                }
-                .encode_to_vec()
-            } else {
-                let identities = check_validation_result_with_data!(self
-                    .drive
-                    .fetch_full_identities(identity_ids.as_slice(), None, platform_version));
+                        ),
+                        metadata: Some(metadata),
+                    },
+                )),
+            }
+            .encode_to_vec()
+        } else {
+            let identities = self.drive.fetch_full_identities(
+                identity_ids.as_slice(),
+                None,
+                platform_version,
+            )?;
 
-                let identities = check_validation_result_with_data!(identities
-                    .into_iter()
-                    .map(|(key, maybe_identity)| Ok::<IdentityEntry, ProtocolError>(
-                        get_identities_response::IdentityEntry {
-                            key: key.to_vec(),
-                            value: maybe_identity
-                                .map(|identity| Ok::<
-                                    get_identities_response::IdentityValue,
-                                    ProtocolError,
-                                >(
+            let identities = identities
+                .into_iter()
+                .map(|(key, maybe_identity)| {
+                    Ok::<IdentityEntry, ProtocolError>(IdentityEntry {
+                        key: key.to_vec(),
+                        value: maybe_identity
+                            .map(|identity| {
+                                Ok::<get_identities_response::IdentityValue, ProtocolError>(
                                     get_identities_response::IdentityValue {
-                                        value: identity.serialize_consume_to_bytes()?
-                                    }
-                                ))
-                                .transpose()?,
-                        }
-                    ))
-                    .collect());
+                                        value: identity.serialize_consume_to_bytes()?,
+                                    },
+                                )
+                            })
+                            .transpose()?,
+                    })
+                })
+                .collect::<Result<Vec<IdentityEntry>, ProtocolError>>()?;
 
-                GetIdentitiesResponse {
+            GetIdentitiesResponse {
                 version: Some(get_identities_response::Version::V0(
                     GetIdentitiesResponseV0 {
                         result: Some(
@@ -103,7 +103,7 @@ impl<C> Platform<C> {
                 )),
             }
             .encode_to_vec()
-            };
+        };
         Ok(QueryValidationResult::new_with_data(response_data))
     }
 }

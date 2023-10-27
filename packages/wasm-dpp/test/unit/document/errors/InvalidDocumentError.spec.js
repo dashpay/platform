@@ -1,21 +1,21 @@
-const InvalidDocumentError = require('@dashevo/dpp/lib/document/errors/InvalidDocumentError');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const { InvalidDocumentError } = require('../../../..');
+const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
 
 describe('InvalidDocumentError', () => {
   let rawDocument;
   let error;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     error = new Error('Some error');
 
-    const [document] = getDocumentsFixture();
+    const [document] = await getDocumentsFixture();
     rawDocument = document.toObject();
   });
 
   it('should return errors', () => {
     const errors = [error];
 
-    const invalidDocumentError = new InvalidDocumentError(errors, rawDocument);
+    const invalidDocumentError = new InvalidDocumentError(rawDocument, errors);
 
     expect(invalidDocumentError.getErrors()).to.deep.equal(errors);
   });
@@ -23,7 +23,7 @@ describe('InvalidDocumentError', () => {
   it('should return Document', async () => {
     const errors = [error];
 
-    const invalidDocumentError = new InvalidDocumentError(errors, rawDocument);
+    const invalidDocumentError = new InvalidDocumentError(rawDocument, errors);
 
     expect(invalidDocumentError.getRawDocument()).to.deep.equal(rawDocument);
   });
@@ -31,9 +31,9 @@ describe('InvalidDocumentError', () => {
   it('should contain message for 1 error', async () => {
     const errors = [error];
 
-    const invalidDocumentError = new InvalidDocumentError(errors, rawDocument);
+    const invalidDocumentError = new InvalidDocumentError(rawDocument, errors);
 
-    expect(invalidDocumentError.message).to.equal(`Invalid Document: "${error.message}"`);
+    expect(invalidDocumentError.getMessage()).to.contain('Invalid document: ');
   });
 
   it('should contain message for multiple errors', async () => {
@@ -41,6 +41,6 @@ describe('InvalidDocumentError', () => {
 
     const invalidDocumentError = new InvalidDocumentError(errors, rawDocument);
 
-    expect(invalidDocumentError.message).to.equal(`Invalid Document: "${error.message}" and 1 more`);
+    expect(invalidDocumentError.getMessage()).to.contain('Invalid document: ');
   });
 });

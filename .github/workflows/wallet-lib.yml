@@ -14,7 +14,6 @@ on:
       - packages/wallet-lib/**
       - packages/js-dapi-client/**
       - packages/dapi-grpc/**
-      - packages/js-dpp/**
       - packages/js-grpc-common/**
       - packages/dashpay-contract/**
       - packages/feature-flags-contract/**

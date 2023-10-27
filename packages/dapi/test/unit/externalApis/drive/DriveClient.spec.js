@@ -5,6 +5,8 @@ const cbor = require('cbor');
 const chaiAsPromised = require('chai-as-promised');
 const dirtyChai = require('dirty-chai');
 
+const { BytesValue } = require('google-protobuf/google/protobuf/wrappers_pb');
+
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
@@ -100,12 +102,20 @@ describe('DriveClient', () => {
       const contractId = 'someId';
       const data = Buffer.from('someData');
 
+      const { GetDataContractRequestV0 } = GetDataContractRequest;
       const request = new GetDataContractRequest();
-      request.setId(contractId);
-      request.setProve(false);
+      request.setV0(
+        new GetDataContractRequestV0()
+          .setId(contractId)
+          .setProve(false),
+      );
 
+      const { GetDataContractResponseV0 } = GetDataContractResponse;
       const response = new GetDataContractResponse();
-      response.setDataContract(data);
+      response.setV0(
+        new GetDataContractResponseV0()
+          .setDataContract(data),
+      );
       const responseBytes = response.serializeBinary();
 
       sinon.stub(drive.client, 'request')
@@ -135,15 +145,22 @@ describe('DriveClient', () => {
         where: 'id === someId',
       };
 
+      const { GetDocumentsRequestV0 } = GetDocumentsRequest;
       const request = new GetDocumentsRequest();
-      request.setDataContractId(contractId);
-      request.setDocumentType(type);
-      request.setWhere(cbor.encode({ where: options.where }));
+      request.setV0(
+        new GetDocumentsRequestV0()
+          .setDataContractId(contractId)
+          .setDocumentType(type)
+          .setWhere(cbor.encode({ where: options.where })),
+      );
 
+      const { GetDocumentsResponseV0 } = GetDocumentsResponse;
       const response = new GetDocumentsResponse();
-      const documents = new GetDocumentsResponse.Documents();
-      documents.setDocumentsList([]);
-      response.setDocuments(documents);
+      response.setV0(
+        new GetDocumentsResponseV0()
+          .setDocuments(new GetDocumentsResponseV0.Documents().setDocumentsList([])),
+      );
+
       const responseBytes = response.serializeBinary();
 
       sinon.stub(drive.client, 'request')
@@ -170,11 +187,19 @@ describe('DriveClient', () => {
       const identityId = 'someId';
       const data = Buffer.from('someData');
 
+      const { GetIdentityRequestV0 } = GetIdentityRequest;
       const request = new GetIdentityRequest();
-      request.setId(identityId);
+      request.setV0(
+        new GetIdentityRequestV0()
+          .setId(identityId),
+      );
 
+      const { GetIdentityResponseV0 } = GetIdentityResponse;
       const response = new GetIdentityResponse();
-      response.setIdentity(data);
+      response.setV0(
+        new GetIdentityResponseV0()
+          .setIdentity(data),
+      );
       const responseBytes = response.serializeBinary();
 
       sinon.stub(drive.client, 'request')
@@ -202,14 +227,31 @@ describe('DriveClient', () => {
 
       const publicKeyHashes = [Buffer.alloc(1)];
 
+      const { GetIdentitiesByPublicKeyHashesRequestV0 } = GetIdentitiesByPublicKeyHashesRequest;
       const request = new GetIdentitiesByPublicKeyHashesRequest();
-      request.setPublicKeyHashesList(publicKeyHashes);
-      request.setProve(false);
+      request.setV0(
+        new GetIdentitiesByPublicKeyHashesRequestV0()
+          .setPublicKeyHashesList(publicKeyHashes)
+          .setProve(false),
+      );
+
+      const {
+        IdentitiesByPublicKeyHashes,
+        PublicKeyHashIdentityEntry,
+        GetIdentitiesByPublicKeyHashesResponseV0,
+      } = GetIdentitiesByPublicKeyHashesResponse;
 
       const response = new GetIdentitiesByPublicKeyHashesResponse();
-      const identitiesList = new GetIdentitiesByPublicKeyHashesResponse.Identities();
-      identitiesList.setIdentitiesList([identity.toBuffer()]);
-      response.setIdentities(identitiesList);
+      response.setV0(
+        new GetIdentitiesByPublicKeyHashesResponseV0().setIdentities(
+          new IdentitiesByPublicKeyHashes()
+            .setIdentityEntriesList([
+              new PublicKeyHashIdentityEntry()
+                .setPublicKeyHash(publicKeyHashes[0])
+                .setValue(new BytesValue().setValue(identity.toBuffer())),
+            ]),
+        ),
+      );
       const responseBytes = response.serializeBinary();
 
       sinon.stub(drive.client, 'request')
@@ -236,17 +278,26 @@ describe('DriveClient', () => {
       const identityIds = [Buffer.from('id')];
 
       const request = new GetProofsRequest();
-      request.setIdentitiesList(identityIds.map((id) => {
-        const { IdentityRequest } = GetProofsRequest;
-        const identityRequest = new IdentityRequest();
-        identityRequest.setIdentityId(id);
-        identityRequest.setRequestType(IdentityRequest.Type.FULL_IDENTITY);
-        return identityRequest;
-      }));
+      const { GetProofsRequestV0 } = GetProofsRequest;
+      request.setV0(
+        new GetProofsRequestV0()
+          .setIdentitiesList(identityIds.map((id) => {
+            const { IdentityRequest } = GetProofsRequestV0;
+            const identityRequest = new IdentityRequest();
+            identityRequest.setIdentityId(id);
+            identityRequest.setRequestType(IdentityRequest.Type.FULL_IDENTITY);
+            return identityRequest;
+          })),
+      );
 
+      const { GetProofsResponseV0 } = GetProofsResponse;
       const response = new GetProofsResponse();
-      response.setProof(new Proof());
-      response.setMetadata(new ResponseMetadata());
+      response.setV0(
+        new GetProofsResponseV0()
+          .setProof(new Proof())
+          .setMetadata(new ResponseMetadata()),
+      );
+
       const responseBytes = response.serializeBinary();
 
       sinon.stub(drive.client, 'request')

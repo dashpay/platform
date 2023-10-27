@@ -31,11 +31,11 @@ impl<C> Platform<C> {
                 )
             }));
         let response_data = if prove {
-            let proof = check_validation_result_with_data!(self.drive.prove_full_identity(
+            let proof = self.drive.prove_full_identity(
                 identity_id.into_buffer(),
                 None,
-                &platform_version.drive
-            ));
+                &platform_version.drive,
+            )?;
 
             GetIdentityResponse {
                 version: Some(get_identity_response::Version::V0(GetIdentityResponseV0 {
@@ -54,23 +54,26 @@ impl<C> Platform<C> {
             }
             .encode_to_vec()
         } else {
-            let maybe_identity = check_validation_result_with_data!(self
-                .drive
-                .fetch_full_identity(identity_id.into_buffer(), None, platform_version)
-                .map_err(QueryError::Drive));
+            let maybe_identity = self.drive.fetch_full_identity(
+                identity_id.into_buffer(),
+                None,
+                platform_version,
+            )?;
 
-            let identity = check_validation_result_with_data!(maybe_identity
-                .ok_or_else(|| {
-                    QueryError::NotFound(format!("identity {} not found", identity_id))
-                })
-                .and_then(|identity| identity
-                    .serialize_consume_to_bytes()
-                    .map_err(QueryError::Protocol)));
+            let identity = check_validation_result_with_data!(maybe_identity.ok_or_else(|| {
+                QueryError::NotFound(format!("identity {} not found", identity_id))
+            }));
+
+            let serialized_identity = identity
+                .serialize_consume_to_bytes()
+                .map_err(Error::Protocol)?;
 
             GetIdentityResponse {
                 version: Some(get_identity_response::Version::V0(GetIdentityResponseV0 {
                     result: Some(
-                        get_identity_response::get_identity_response_v0::Result::Identity(identity),
+                        get_identity_response::get_identity_response_v0::Result::Identity(
+                            serialized_identity,
+                        ),
                     ),
                     metadata: Some(metadata),
                 })),

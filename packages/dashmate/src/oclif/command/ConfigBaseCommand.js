@@ -24,7 +24,7 @@ class ConfigBaseCommand extends BaseCommand {
 
       if (defaultConfigName === null) {
         throw new Error(`Default config is not set.
-        
+
 You probably need to set up a node with the 'dashmate setup' command first.
 
 You can also use the '--config' option, or set the default config with 'dashmate config default'`);
@@ -42,12 +42,6 @@ You can also use the '--config' option, or set the default config with 'dashmate
     this.container.register({
       config: asValue(config),
     });
-
-    const renderServiceTemplates = this.container.resolve('renderServiceTemplates');
-    const writeServiceConfigs = this.container.resolve('writeServiceConfigs');
-
-    const serviceConfigFiles = renderServiceTemplates(config);
-    writeServiceConfigs(config.getName(), serviceConfigFiles);
 
     return super.run();
   }

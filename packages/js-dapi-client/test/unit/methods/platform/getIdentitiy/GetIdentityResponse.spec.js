@@ -1,4 +1,4 @@
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const {
   v0: {
     GetIdentityResponse,
@@ -21,9 +21,9 @@ describe('GetIdentityResponse', () => {
   let proto;
   let proofFixture;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    identityFixture = getIdentityFixture();
+    identityFixture = await getIdentityFixture();
     proofFixture = getProofFixture();
 
     proto = new GetIdentityResponse();

@@ -21,20 +21,21 @@ describe('fetchProofForStateTransition', () => {
   let stateTransitionFixture;
 
   beforeEach(async function beforeEach() {
+    const { GetProofsResponseV0 } = GetProofsResponse;
     dataContractsProofResponse = new GetProofsResponse();
-    dataContractsProofResponse.setProof(new Proof([Buffer.from('data contracts proof')]));
+    dataContractsProofResponse.setV0(new GetProofsResponseV0().setProof(new Proof([Buffer.from('data contracts proof')])));
     documentsProofResponse = new GetProofsResponse();
-    documentsProofResponse.setProof(new Proof([Buffer.from('documents contracts proof')]));
+    documentsProofResponse.setV0(new GetProofsResponseV0().setProof(new Proof([Buffer.from('documents contracts proof')])));
     identitiesProofResponse = new GetProofsResponse();
-    identitiesProofResponse.setProof(new Proof([Buffer.from('identities contracts proof')]));
+    identitiesProofResponse.setV0(new GetProofsResponseV0().setProof(new Proof([Buffer.from('identities contracts proof')])));
 
     driveClientMock = {
       fetchProofs: this.sinon.stub().callsFake(async (requestProto) => {
-        if (requestProto.getIdentitiesList().length > 0) {
+        if (requestProto.getV0().getIdentitiesList().length > 0) {
           return identitiesProofResponse.serializeBinary();
-        } if (requestProto.getDocumentsList().length > 0) {
+        } if (requestProto.getV0().getDocumentsList().length > 0) {
           return documentsProofResponse.serializeBinary();
-        } if (requestProto.getContractsList().length > 0) {
+        } if (requestProto.getV0().getContractsList().length > 0) {
           return dataContractsProofResponse.serializeBinary();
         }
 

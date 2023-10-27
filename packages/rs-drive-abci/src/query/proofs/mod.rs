@@ -21,7 +21,9 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let GetProofsRequest { version } =
-            check_validation_result_with_data!(GetProofsRequest::decode(query_data));
+            check_validation_result_with_data!(GetProofsRequest::decode(query_data).map_err(|e| {
+                QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
+            }));
 
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(

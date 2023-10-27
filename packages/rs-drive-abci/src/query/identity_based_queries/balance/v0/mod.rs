@@ -51,13 +51,13 @@ impl<C> Platform<C> {
                 }
                     .encode_to_vec()
         } else {
-            let balance = check_validation_result_with_data!(self.drive.fetch_identity_balance(
+            let maybe_balance = self.drive.fetch_identity_balance(
                 identity_id.into_buffer(),
                 None,
-                platform_version
-            ));
+                platform_version,
+            )?;
 
-            let Some(balance) = balance else {
+            let Some(balance) = maybe_balance else {
                 return Ok(ValidationResult::new_with_error(QueryError::NotFound(
                     "No Identity found".to_string(),
                 )));

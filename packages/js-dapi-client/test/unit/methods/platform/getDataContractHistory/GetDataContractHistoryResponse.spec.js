@@ -1,4 +1,4 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const {
   v0: {
     GetDataContractHistoryResponse,
@@ -21,9 +21,9 @@ describe('GetDataContractHistoryResponse', () => {
   let proofFixture;
   let dataContractHistoryFixture;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    dataContractFixture = getDataContractFixture();
+    dataContractFixture = await getDataContractFixture();
     dataContractHistoryFixture = {
       2000: dataContractFixture.toBuffer(),
       3000: dataContractFixture.toBuffer(),

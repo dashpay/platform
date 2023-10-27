@@ -5,10 +5,7 @@ use crate::platform_types::platform::Platform;
 use crate::query::QueryValidationResult;
 use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::version::FeatureVersion;
 use dpp::version::PlatformVersion;
-use prost::Message;
 
 impl<C> Platform<C> {
     /// Querying
@@ -61,10 +58,8 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod test {
     pub mod query_data_contract_history {
-        use crate::error::Error;
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
-        use chrono::expect;
         use dapi_grpc::platform::v0::{
             get_data_contract_history_request, get_data_contract_history_response,
             GetDataContractHistoryRequest, GetDataContractHistoryResponse,
@@ -76,7 +71,6 @@ mod test {
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
 
         use crate::error::query::QueryError;
-        use crate::query::QueryValidationResult;
         use dapi_grpc::platform::v0::get_data_contract_history_request::GetDataContractHistoryRequestV0;
         use dapi_grpc::platform::v0::get_data_contract_history_response::{
             get_data_contract_history_response_v0, GetDataContractHistoryResponseV0,
@@ -90,7 +84,6 @@ mod test {
         use dpp::validation::ValidationResult;
         use dpp::version::PlatformVersion;
         use drive::drive::Drive;
-        use drive::error::contract::DataContractError;
         use prost::Message;
 
         fn default_request_v0() -> GetDataContractHistoryRequestV0 {
@@ -401,11 +394,14 @@ mod test {
 
             let validation_result = platform
                 .query_v0("/dataContractHistory", &request_data, platform_version)
-                .unwrap();
+                .expect("To return validation result with an error");
 
             assert!(!validation_result.is_valid());
 
-            let error = validation_result.errors.first().unwrap();
+            let error = validation_result
+                .errors
+                .first()
+                .expect("expect error to exist");
 
             assert!(matches!(error, QueryError::InvalidArgument(_)));
 
@@ -438,11 +434,14 @@ mod test {
 
             let validation_result = platform
                 .query_v0("/dataContractHistory", &request_data, platform_version)
-                .unwrap();
+                .expect("To return validation result with an error");
 
             assert!(!validation_result.is_valid());
 
-            let error = validation_result.errors.first().unwrap();
+            let error = validation_result
+                .errors
+                .first()
+                .expect("expect error to exist");
 
             assert!(matches!(error, QueryError::InvalidArgument(_)));
 

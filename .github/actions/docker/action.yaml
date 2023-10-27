@@ -117,6 +117,7 @@ runs:
       with:
         name: ${{ inputs.image }}
         head_ref: ${{ inputs.image_tag }}
+        bucket: ${{ inputs.bucket }}
 
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
