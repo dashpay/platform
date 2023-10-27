@@ -13,8 +13,10 @@ const {
 const {
   v0: {
     GetDataContractHistoryResponse: {
-      DataContractHistory,
-      DataContractHistoryEntry,
+      GetDataContractHistoryResponseV0: {
+        DataContractHistory,
+        DataContractHistoryEntry,
+      },
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -58,8 +60,8 @@ describe('getDataContractHistoryFactory', () => {
       dataContractHistoryEntryProto2,
     ]);
 
+    const { GetDataContractHistoryResponseV0 } = GetDataContractHistoryResponse;
     response = new GetDataContractHistoryResponse();
-    response.setDataContractHistory(dataContractHistoryProto);
 
     metadataFixture = getMetadataFixture();
     proofFixture = getProofFixture();
@@ -70,7 +72,11 @@ describe('getDataContractHistoryFactory', () => {
     metadata.setTimeMs(metadataFixture.timeMs);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
-    response.setMetadata(metadata);
+    response.setV0(
+      new GetDataContractHistoryResponseV0()
+        .setDataContractHistory(dataContractHistoryProto)
+        .setMetadata(metadata),
+    );
 
     grpcTransportMock = {
       request: this.sinon.stub().resolves(response),
@@ -94,12 +100,16 @@ describe('getDataContractHistoryFactory', () => {
     const contractId = dataContractFixture.getId().toBuffer();
     const result = await getDataContractHistory(contractId, 0, 10, 0, options);
 
+    const { GetDataContractHistoryRequestV0 } = GetDataContractHistoryRequest;
     const request = new GetDataContractHistoryRequest();
-    request.setId(contractId);
-    request.setLimit(new UInt32Value([10]));
-    request.setOffset(new UInt32Value([0]));
-    request.setStartAtMs(0);
-    request.setProve(false);
+    request.setV0(
+      new GetDataContractHistoryRequestV0()
+        .setId(contractId)
+        .setLimit(new UInt32Value([10]))
+        .setOffset(new UInt32Value([0]))
+        .setStartAtMs(0)
+        .setProve(false),
+    );
 
     expect(grpcTransportMock.request.getCall(0).args).to.have.deep.members([
       PlatformPromiseClient,
@@ -118,18 +128,22 @@ describe('getDataContractHistoryFactory', () => {
 
   it('should return proof', async () => {
     options.prove = true;
-    response.setProof(proof);
-    response.setDataContractHistory(undefined);
+    response.getV0().setProof(proof);
+    response.getV0().setDataContractHistory(undefined);
 
     const contractId = dataContractFixture.getId().toBuffer();
     const result = await getDataContractHistory(contractId, 0, 10, 0, options);
 
+    const { GetDataContractHistoryRequestV0 } = GetDataContractHistoryRequest;
     const request = new GetDataContractHistoryRequest();
-    request.setId(contractId);
-    request.setLimit(new UInt32Value([10]));
-    request.setOffset(new UInt32Value([0]));
-    request.setStartAtMs(0);
-    request.setProve(true);
+    request.setV0(
+      new GetDataContractHistoryRequestV0()
+        .setId(contractId)
+        .setLimit(new UInt32Value([10]))
+        .setOffset(new UInt32Value([0]))
+        .setStartAtMs(0)
+        .setProve(true),
+    );
 
     expect(grpcTransportMock.request.getCall(0).args).to.have.deep.members([
       PlatformPromiseClient,
@@ -157,12 +171,16 @@ describe('getDataContractHistoryFactory', () => {
 
     grpcTransportMock.request.throws(error);
 
+    const { GetDataContractHistoryRequestV0 } = GetDataContractHistoryRequest;
     const request = new GetDataContractHistoryRequest();
-    request.setId(contractId.toBuffer());
-    request.setLimit(new UInt32Value([10]));
-    request.setOffset(new UInt32Value([0]));
-    request.setStartAtMs(0);
-    request.setProve(false);
+    request.setV0(
+      new GetDataContractHistoryRequestV0()
+        .setId(contractId.toBuffer())
+        .setLimit(new UInt32Value([10]))
+        .setOffset(new UInt32Value([0]))
+        .setStartAtMs(0)
+        .setProve(false),
+    );
 
     try {
       await getDataContractHistory(contractId, 0, 10, 0, options);

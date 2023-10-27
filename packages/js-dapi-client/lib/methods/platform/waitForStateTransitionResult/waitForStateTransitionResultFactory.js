@@ -31,10 +31,13 @@ function waitForStateTransitionResultFactory(grpcTransport) {
       ...options,
     };
 
+    const { WaitForStateTransitionResultRequestV0 } = WaitForStateTransitionResultRequest;
     const waitForStateTransitionResultRequest = new WaitForStateTransitionResultRequest();
-
-    waitForStateTransitionResultRequest.setStateTransitionHash(stateTransitionHash);
-    waitForStateTransitionResultRequest.setProve(options.prove);
+    waitForStateTransitionResultRequest.setV0(
+      new WaitForStateTransitionResultRequestV0()
+        .setStateTransitionHash(stateTransitionHash)
+        .setProve(options.prove),
+    );
 
     let lastError;
 
