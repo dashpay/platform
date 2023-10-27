@@ -8,7 +8,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
 
@@ -28,8 +28,8 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
   let proofFixture;
   let proofResponse;
 
-  beforeEach(function beforeEach() {
-    identityFixture = getIdentityFixture();
+  beforeEach(async function beforeEach() {
+    identityFixture = await getIdentityFixture();
     metadataFixture = getMetadataFixture();
     proofFixture = getProofFixture();
 

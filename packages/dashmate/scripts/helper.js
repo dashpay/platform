@@ -1,8 +1,12 @@
 const dotenv = require('dotenv');
 const { asValue } = require('awilix');
+const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
 const createDIContainer = require('../src/createDIContainer');
 
 (async function main() {
+  // Load wasm-dpp for further usage
+  await loadWasmDpp();
+
   // Read environment variables from .env file
   dotenv.config();
 

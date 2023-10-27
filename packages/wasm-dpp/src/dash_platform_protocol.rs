@@ -79,11 +79,11 @@ impl DashPlatformProtocolWasm {
     pub fn state_transition(&self) -> StateTransitionFactoryWasm {
         self.protocol.state_transition().into()
     }
-    //
-    // #[wasm_bindgen(getter = protocolVersion)]
-    // pub fn protocol_version(&self) -> u32 {
-    //     self.protocol_version
-    // }
+
+    #[wasm_bindgen(getter = protocolVersion)]
+    pub fn protocol_version(&self) -> u32 {
+        self.protocol.protocol_version
+    }
     //
     // #[wasm_bindgen(js_name = getProtocolVersion)]
     // pub fn get_protocol_version(&self) -> u32 {
