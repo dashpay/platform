@@ -14,8 +14,6 @@ class GroupResetCommand extends GroupBaseCommand {
    * @param {Config[]} configGroup
    * @param {configureCoreTask} configureCoreTask
    * @param {configureTenderdashTask} configureTenderdashTask
-   * @param {generateToAddressTask} generateToAddressTask
-   * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -30,8 +28,6 @@ class GroupResetCommand extends GroupBaseCommand {
     configGroup,
     configureCoreTask,
     configureTenderdashTask,
-    generateToAddressTask,
-    configFile,
   ) {
     const groupName = configGroup[0].get('group');
 
@@ -39,7 +35,9 @@ class GroupResetCommand extends GroupBaseCommand {
       [
         {
           title: `Reset ${groupName} nodes`,
-          task: () => {
+          task: (ctx) => {
+            ctx.removeConfig = ctx.isHardReset && groupName === PRESET_LOCAL;
+
             const resetTasks = configGroup.map((config) => ({
               title: `Reset ${config.getName()} node`,
               task: () => resetNodeTask(config),
@@ -47,15 +45,6 @@ class GroupResetCommand extends GroupBaseCommand {
 
             return new Listr(resetTasks);
           },
-        },
-        {
-          enabled: (ctx) => ctx.isHardReset && groupName === PRESET_LOCAL,
-          title: 'Delete node configs',
-          task: () => (
-            configGroup
-              .filter((config) => configFile.isConfigExists(config.getName()))
-              .forEach((config) => configFile.removeConfig(config.getName()))
-          ),
         },
         {
           enabled: (ctx) => !ctx.isHardReset
