@@ -1,14 +1,13 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::rpc::core::{CoreRPCLike, CORE_RPC_INVALID_ADDRESS_OR_KEY};
-use dashcore_rpc::dashcore_rpc_json::GetTransactionResult;
+use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionIsNotFoundError, IdentityAssetLockTransactionOutputNotFoundError,
     InvalidAssetLockProofTransactionHeightError,
 };
 use dpp::dashcore::secp256k1::ThirtyTwoByteHash;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
-use dpp::dashcore::{TxOut, Txid};
+use dpp::dashcore::TxOut;
 use dpp::identity::state_transition::asset_lock_proof::validate_asset_lock_transaction_structure::validate_asset_lock_transaction_structure;
 use dpp::prelude::{AssetLockProof, ConsensusValidationResult};
 use dpp::validation::ValidationResult;
@@ -37,8 +36,15 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
 
             // Fetch transaction
 
-            let Some(transaction_info) = fetch_transaction_info(core_rpc, &transaction_hash)?
-            else {
+            let maybe_transaction_info = core_rpc
+                .get_optional_transaction_extended_info(&transaction_hash)
+                .map_err(|e| {
+                    Error::Execution(ExecutionError::DashCoreBadResponseError(format!(
+                        "can't fetch asset transaction for chain asset lock proof: {e}",
+                    )))
+                })?;
+
+            let Some(transaction_info) = maybe_transaction_info else {
                 // Transaction hash bytes needs to be reversed to match actual transaction hash
                 let mut hash = transaction_hash.as_raw_hash().into_32();
                 hash.reverse();
@@ -50,7 +56,7 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
 
             // Make sure transaction is mined on the chain locked block or before
 
-            let Some(transaction_height) = transaction_info.blockindex else {
+            let Some(transaction_height) = transaction_info.height else {
                 return Ok(ConsensusValidationResult::new_with_error(
                     InvalidAssetLockProofTransactionHeightError::new(
                         proof.core_chain_locked_height,
@@ -104,24 +110,5 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
                 "transaction should have outpoint",
             )))
         }
-    }
-}
-
-fn fetch_transaction_info<C: CoreRPCLike>(
-    core_rpc: &C,
-    transaction_id: &Txid,
-) -> Result<Option<GetTransactionResult>, Error> {
-    match core_rpc.get_transaction_extended_info(transaction_id) {
-        Ok(transaction) => Ok(Some(transaction)),
-        // Return None if transaction with specified tx id is not present
-        Err(dashcore_rpc::Error::JsonRpc(dashcore_rpc::jsonrpc::error::Error::Rpc(
-            dashcore_rpc::jsonrpc::error::RpcError {
-                code: CORE_RPC_INVALID_ADDRESS_OR_KEY,
-                ..
-            },
-        ))) => Ok(None),
-        Err(e) => Err(Error::Execution(ExecutionError::DashCoreBadResponseError(
-            format!("can't fetch asset lock transaction for chain asset lock proof: {e}",),
-        ))),
     }
 }

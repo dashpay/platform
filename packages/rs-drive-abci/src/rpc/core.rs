@@ -5,7 +5,7 @@ use dashcore_rpc::dashcore_rpc_json::{
     GetTransactionLockedResult, MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType,
     SoftforkInfo,
 };
-use dashcore_rpc::json::GetTransactionResult;
+use dashcore_rpc::json::GetRawTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dpp::dashcore::{hashes::Hash, InstantLock};
 use serde_json::Value;
@@ -37,7 +37,27 @@ pub trait CoreRPCLike {
     ) -> Result<Vec<GetTransactionLockedResult>, Error>;
 
     /// Get transaction
-    fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error>;
+    fn get_transaction_extended_info(&self, tx_id: &Txid)
+        -> Result<GetRawTransactionResult, Error>;
+
+    /// Get optional transaction extended info
+    /// Returns None if transaction doesn't exists
+    fn get_optional_transaction_extended_info(
+        &self,
+        transaction_id: &Txid,
+    ) -> Result<Option<GetRawTransactionResult>, Error> {
+        match self.get_transaction_extended_info(transaction_id) {
+            Ok(transaction_info) => Ok(Some(transaction_info)),
+            // Return None if transaction with specified tx id is not present
+            Err(Error::JsonRpc(dashcore_rpc::jsonrpc::error::Error::Rpc(
+                dashcore_rpc::jsonrpc::error::RpcError {
+                    code: CORE_RPC_INVALID_ADDRESS_OR_KEY,
+                    ..
+                },
+            ))) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
 
     /// Get block by hash
     fn get_fork_info(&self, name: &str) -> Result<Option<SoftforkInfo>, Error>;
@@ -208,8 +228,11 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self.inner.get_transaction_are_locked(&tx_ids))
     }
 
-    fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error> {
-        retry!(self.inner.get_transaction(tx_id, None))
+    fn get_transaction_extended_info(
+        &self,
+        tx_id: &Txid,
+    ) -> Result<GetRawTransactionResult, Error> {
+        retry!(self.inner.get_raw_transaction_info(tx_id, None))
     }
 
     fn get_fork_info(&self, name: &str) -> Result<Option<SoftforkInfo>, Error> {
