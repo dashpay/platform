@@ -1,7 +1,6 @@
 const Dash = require('dash');
 
 const crypto = require('crypto');
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 
 const {
@@ -18,7 +17,7 @@ let randomOwnerId = null;
 module.exports = async function getDataContractFixture(
   ownerId = randomOwnerId,
 ) {
-  const { DataContractFactory, Identifier } = await Platform
+  const { DataContractFactory, Identifier, getLatestProtocolVersion } = await Platform
     .initializeDppModule();
 
   if (!randomOwnerId) {
@@ -134,7 +133,7 @@ module.exports = async function getDataContractFixture(
     },
   };
   const factory = new DataContractFactory(
-    protocolVersion.latestVersion,
+    getLatestProtocolVersion(),
     entropyGenerator,
   );
 

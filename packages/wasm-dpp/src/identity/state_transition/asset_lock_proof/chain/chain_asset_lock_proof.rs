@@ -23,8 +23,6 @@ pub struct ChainAssetLockProofWasm(ChainAssetLockProof);
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ChainAssetLockProofParams {
-    #[serde(rename = "type")]
-    lock_type: u8,
     core_chain_locked_height: u32,
     out_point: Vec<u8>,
 }

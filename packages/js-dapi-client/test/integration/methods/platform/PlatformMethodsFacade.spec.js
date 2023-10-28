@@ -9,12 +9,17 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
+const { DashPlatformProtocol } = require('@dashevo/wasm-dpp');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const PlatformMethodsFacade = require('../../../../lib/methods/platform/PlatformMethodsFacade');
+
+const { WaitForStateTransitionResultResponseV0 } = WaitForStateTransitionResultResponse;
+const { GetIdentityResponseV0 } = GetIdentityResponse;
+const { GetDocumentsResponseV0 } = GetDocumentsResponse;
+const { GetDataContractResponseV0 } = GetDataContractResponse;
 
 describe('PlatformMethodsFacade', () => {
   let grpcTransportMock;
@@ -33,10 +38,9 @@ describe('PlatformMethodsFacade', () => {
       const response = new BroadcastStateTransitionResponse();
       grpcTransportMock.request.resolves(response);
 
-      const dpp = new DashPlatformProtocol();
-      await dpp.initialize();
+      const dpp = new DashPlatformProtocol(null, 1);
       const stateTransition = dpp.dataContract.createDataContractCreateTransition(
-        getDataContractFixture(),
+        await getDataContractFixture(),
       );
 
       await platformMethods.broadcastStateTransition(stateTransition);
@@ -48,11 +52,14 @@ describe('PlatformMethodsFacade', () => {
   describe('#getDataContract', () => {
     it('should get data contract', async () => {
       const response = new GetDataContractResponse();
-      response.setMetadata(new ResponseMetadata());
-      response.setDataContract(getDataContractFixture().toBuffer());
+      response.setV0(
+        new GetDataContractResponseV0()
+          .setMetadata(new ResponseMetadata())
+          .setDataContract((await getDataContractFixture()).toBuffer()),
+      );
       grpcTransportMock.request.resolves(response);
 
-      await platformMethods.getDataContract(getDataContractFixture().getId());
+      await platformMethods.getDataContract((await getDataContractFixture()).getId());
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });
@@ -61,7 +68,10 @@ describe('PlatformMethodsFacade', () => {
   describe('#getDocuments', () => {
     it('should get documents', async () => {
       const response = new GetDocumentsResponse();
-      response.setMetadata(new ResponseMetadata());
+      response.setV0(
+        new GetDocumentsResponseV0()
+          .setMetadata(new ResponseMetadata()),
+      );
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getDocuments(
@@ -76,9 +86,11 @@ describe('PlatformMethodsFacade', () => {
   describe('#getIdentity', () => {
     it('should get Identity', async () => {
       const response = new GetIdentityResponse();
-
-      response.setMetadata(new ResponseMetadata());
-      response.setIdentity(getIdentityFixture().toBuffer());
+      response.setV0(
+        new GetIdentityResponseV0()
+          .setMetadata(new ResponseMetadata())
+          .setIdentity((await getIdentityFixture()).toBuffer()),
+      );
 
       grpcTransportMock.request.resolves(response);
 
@@ -91,7 +103,11 @@ describe('PlatformMethodsFacade', () => {
   describe('#waitForStateTransitionResult', () => {
     it('should wait for state transition', async () => {
       const response = new WaitForStateTransitionResultResponse();
-      response.setMetadata(new ResponseMetadata());
+      response.setV0(
+        new WaitForStateTransitionResultResponseV0()
+          .setMetadata(new ResponseMetadata()),
+      );
+
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.waitForStateTransitionResult(

@@ -76,7 +76,6 @@ async function getInstantAssetLockProofFixture(oneTimePrivateKey = new PrivateKe
   });
 
   return new InstantAssetLockProof({
-    type: 0,
     instantLock: instantLock.toBuffer(),
     transaction: transaction.toBuffer(),
     outputIndex: 0,

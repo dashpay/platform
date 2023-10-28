@@ -1,8 +1,6 @@
-import loadWasmDpp, { DashPlatformProtocol } from '@dashevo/wasm-dpp';
+import loadWasmDpp, { DashPlatformProtocol, getLatestProtocolVersion } from '@dashevo/wasm-dpp';
 import type { DPPModule } from '@dashevo/wasm-dpp';
 import crypto from 'crypto';
-
-import { latestVersion as latestProtocolVersion } from '@dashevo/dpp/lib/version/protocolVersion';
 
 import Client from '../Client';
 import { IStateTransitionResult } from './IStateTransitionResult';
@@ -112,7 +110,7 @@ export class Platform {
   // @ts-ignore
   dpp: DashPlatformProtocol;
 
-  protocolVersion: number;
+  protocolVersion?: number;
 
   public documents: Records;
 
@@ -196,17 +194,10 @@ export class Platform {
     const walletId = this.client.wallet ? this.client.wallet.walletId : 'noid';
     this.logger = logger.getForId(walletId);
 
-    const mappedProtocolVersion = Platform.networkToProtocolVersion.get(
-      options.network,
-    );
-
     // use protocol version from options if set
-    // use mapped one otherwise
-    // fallback to one that set in dpp as the last option
-    // eslint-disable-next-line
-    this.protocolVersion = options.driveProtocolVersion !== undefined
-      ? options.driveProtocolVersion
-      : (mappedProtocolVersion !== undefined ? mappedProtocolVersion : latestProtocolVersion);
+    if (options.driveProtocolVersion !== undefined) {
+      this.protocolVersion = options.driveProtocolVersion;
+    }
 
     this.fetcher = new Fetcher(this.client.getDAPIClient());
   }
@@ -214,6 +205,20 @@ export class Platform {
   async initialize() {
     if (!this.dpp) {
       await Platform.initializeDppModule();
+
+      if (this.protocolVersion === undefined) {
+        // use mapped protocol version otherwise
+        // fallback to one that set in dpp as the last option
+
+        const mappedProtocolVersion = Platform.networkToProtocolVersion.get(
+          this.client.network,
+        );
+
+        this.protocolVersion = mappedProtocolVersion !== undefined
+          ? mappedProtocolVersion : getLatestProtocolVersion();
+      }
+
+      // eslint-disable-next-line
 
       this.dpp = new DashPlatformProtocol(
         {

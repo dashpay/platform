@@ -28,6 +28,9 @@ inputs:
   cargo_profile:
     description: Cargo build profile, i.e release or dev
     default: release
+  bucket:
+    description: S3 bucket to use for caching, must match runner define in `runs-on`
+    default: multi-runner-linux-x64-platform-cache-ui535z23
 
 runs:
   using: composite
@@ -76,7 +79,7 @@ runs:
       uses: dcginfra/buildkit-cache-dance/inject@main
       if: ${{ inputs.cache_mounts != '' }}
       with:
-        bucket: multi-runner-linux-x64-platform-cache-ui535z23
+        bucket: ${{ inputs.bucket }}
         mounts: ${{ inputs.cache_mounts }}
 
     - name: Set suffix
@@ -114,6 +117,7 @@ runs:
       with:
         name: ${{ inputs.image }}
         head_ref: ${{ inputs.image_tag }}
+        bucket: ${{ inputs.bucket }}
 
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
@@ -136,5 +140,5 @@ runs:
       uses: dcginfra/buildkit-cache-dance/extract@main
       if: ${{ inputs.cache_mounts != '' }}
       with:
-        bucket: multi-runner-linux-x64-platform-cache-ui535z23
+        bucket: ${{ inputs.bucket }}
         mounts: ${{ inputs.cache_mounts }}

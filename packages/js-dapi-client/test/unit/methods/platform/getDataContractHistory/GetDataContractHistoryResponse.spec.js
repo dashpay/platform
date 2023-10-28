@@ -1,4 +1,4 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const {
   v0: {
     GetDataContractHistoryResponse,
@@ -21,9 +21,9 @@ describe('GetDataContractHistoryResponse', () => {
   let proofFixture;
   let dataContractHistoryFixture;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    dataContractFixture = getDataContractFixture();
+    dataContractFixture = await getDataContractFixture();
     dataContractHistoryFixture = {
       2000: dataContractFixture.toBuffer(),
       3000: dataContractFixture.toBuffer(),
@@ -63,9 +63,14 @@ describe('GetDataContractHistoryResponse', () => {
 
   it('should create an instance from proto', () => {
     const {
+
+      GetDataContractHistoryResponseV0,
+    } = GetDataContractHistoryResponse;
+
+    const {
       DataContractHistory,
       DataContractHistoryEntry,
-    } = GetDataContractHistoryResponse;
+    } = GetDataContractHistoryResponseV0;
 
     const dataContractHistoryEntryProto = new DataContractHistoryEntry();
     dataContractHistoryEntryProto.setDate(1000);
@@ -84,13 +89,16 @@ describe('GetDataContractHistoryResponse', () => {
     // Each entry has date and value, and value also has a value?
 
     const proto = new GetDataContractHistoryResponse();
-    proto.setDataContractHistory(dataContractHistoryProto);
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
 
-    proto.setMetadata(metadata);
+    proto.setV0(
+      new GetDataContractHistoryResponseV0()
+        .setDataContractHistory(dataContractHistoryProto)
+        .setMetadata(metadata),
+    );
 
     getDataContractHistoryResponse = GetDataContractHistoryResponseClass.createFromProto(proto);
 
@@ -117,16 +125,19 @@ describe('GetDataContractHistoryResponse', () => {
     proofProto.setSignature(proofFixture.signature);
     proofProto.setGrovedbProof(proofFixture.merkleProof);
 
+    const { GetDataContractHistoryResponseV0 } = GetDataContractHistoryResponse;
     const proto = new GetDataContractHistoryResponse();
-
-    proto.setDataContractHistory(undefined);
-    proto.setProof(proofProto);
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
 
-    proto.setMetadata(metadata);
+    proto.setV0(
+      new GetDataContractHistoryResponseV0()
+        .setDataContractHistory(undefined)
+        .setProof(proofProto)
+        .setMetadata(metadata),
+    );
 
     getDataContractHistoryResponse = GetDataContractHistoryResponseClass.createFromProto(proto);
     expect(getDataContractHistoryResponse).to.be.an.instanceOf(GetDataContractHistoryResponseClass);
@@ -149,9 +160,13 @@ describe('GetDataContractHistoryResponse', () => {
 
   it('should throw InvalidResponseError if Metadata is not defined', () => {
     const {
+      GetDataContractHistoryResponseV0,
+    } = GetDataContractHistoryResponse;
+
+    const {
       DataContractHistory,
       DataContractHistoryEntry,
-    } = GetDataContractHistoryResponse;
+    } = GetDataContractHistoryResponseV0;
 
     const dataContractHistoryEntryProto = new DataContractHistoryEntry();
     dataContractHistoryEntryProto.setDate(1000);
@@ -168,7 +183,10 @@ describe('GetDataContractHistoryResponse', () => {
     ]);
 
     const proto = new GetDataContractHistoryResponse();
-    proto.setDataContractHistory(dataContractHistoryProto);
+    proto.setV0(
+      new GetDataContractHistoryResponseV0()
+        .setDataContractHistory(dataContractHistoryProto),
+    );
 
     try {
       getDataContractHistoryResponse = GetDataContractHistoryResponseClass.createFromProto(proto);
@@ -180,12 +198,16 @@ describe('GetDataContractHistoryResponse', () => {
   });
 
   it('should throw InvalidResponseError if DataContractHistory is not defined', () => {
+    const { GetDataContractHistoryResponseV0 } = GetDataContractHistoryResponse;
     const proto = new GetDataContractHistoryResponse();
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
 
-    proto.setMetadata(metadata);
+    proto.setV0(
+      new GetDataContractHistoryResponseV0()
+        .setMetadata(metadata),
+    );
 
     try {
       getDataContractHistoryResponse = GetDataContractHistoryResponseClass.createFromProto(proto);

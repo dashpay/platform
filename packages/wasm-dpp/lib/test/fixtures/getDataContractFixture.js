@@ -1,9 +1,7 @@
 const crypto = require('crypto');
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const JsIdentifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const generateRandomIdentifierAsync = require('../utils/generateRandomIdentifierAsync');
 const { default: loadWasmDpp } = require('../../..');
-let { DataContractFactory } = require('../../..');
+const { DataContractFactory, getLatestProtocolVersion, Identifier } = require('../../..');
 
 let randomOwnerId = null;
 
@@ -13,7 +11,7 @@ let randomOwnerId = null;
  * @return {Promise<DataContract>}
  */
 module.exports = async function getDataContractFixture(ownerId = randomOwnerId) {
-  ({ DataContractFactory } = await loadWasmDpp());
+  await loadWasmDpp();
 
   if (!randomOwnerId) {
     randomOwnerId = await generateRandomIdentifierAsync();
@@ -191,7 +189,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
         identifierField: {
           type: 'array',
           byteArray: true,
-          contentMediaType: JsIdentifier.MEDIA_TYPE,
+          contentMediaType: Identifier.MEDIA_TYPE,
           minItems: 32,
           maxItems: 32,
         },
@@ -256,7 +254,7 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
     },
   };
   const factory = new DataContractFactory(
-    protocolVersion.latestVersion,
+    getLatestProtocolVersion(),
     entropyGenerator,
   );
 

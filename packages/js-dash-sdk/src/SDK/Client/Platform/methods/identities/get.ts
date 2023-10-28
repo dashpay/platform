@@ -1,5 +1,5 @@
 import { Identifier, Metadata } from '@dashevo/wasm-dpp';
-import { GetIdentityResponse } from '@dashevo/dapi-grpc/clients/platform/v0/web/platform_pb';
+import { GetIdentityResponse } from '@dashevo/dapi-client/lib/methods/platform/getIdentity/GetIdentityResponse';
 import { Platform } from '../../Platform';
 
 const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');

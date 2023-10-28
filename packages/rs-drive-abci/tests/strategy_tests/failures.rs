@@ -18,8 +18,8 @@ mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::platform_value::Value;
     use dpp::prelude::{Identifier, Identity};
+    use dpp::version::PlatformVersion;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
-    use platform_version::version::PlatformVersion;
     use simple_signer::signer::SimpleSigner;
     use strategy_tests::operations::{DocumentAction, DocumentOp, Operation, OperationType};
     use tenderdash_abci::proto::types::CoreChainLock;

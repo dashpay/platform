@@ -79,6 +79,7 @@ where
                         platform_version,
                     )?;
 
+                    // TODO: Provide short details on state transition (hash, type) instead of full print
                     if tracing::enabled!(tracing::Level::TRACE) {
                         tracing::trace!(
                             method = "process_raw_state_transitions_v0",

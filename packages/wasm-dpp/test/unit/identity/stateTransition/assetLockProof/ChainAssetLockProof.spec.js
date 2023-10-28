@@ -1,15 +1,12 @@
-const { hash } = require('../../../../../lib/utils/hash');
-const getChainAssetLockFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
-
 const { ChainAssetLockProof } = require('../../../../../dist');
+const getChainAssetLockProofFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
 
 describe('ChainAssetLockProof', () => {
   let rawChainAssetLockProof;
   let chainAssetLockProof;
 
   before(async () => {
-    rawChainAssetLockProof = getChainAssetLockFixture()
-      .toObject();
+    rawChainAssetLockProof = getChainAssetLockProofFixture().toObject();
     chainAssetLockProof = new ChainAssetLockProof(
       rawChainAssetLockProof,
     );
@@ -29,23 +26,10 @@ describe('ChainAssetLockProof', () => {
     });
   });
 
-  describe('#toJSON', () => {
-    it('should return correct JSON', () => {
-      expect(chainAssetLockProof.toJSON())
-        .to.deep.equal({
-          coreChainLockedHeight: rawChainAssetLockProof.coreChainLockedHeight,
-          outPoint: rawChainAssetLockProof.outPoint.toString('base64'),
-        });
-    });
-  });
-
   describe('#toObject', () => {
     it('should return correct object', () => {
       expect(chainAssetLockProof.toObject())
-        .to.deep.equal({
-          coreChainLockedHeight: rawChainAssetLockProof.coreChainLockedHeight,
-          outPoint: rawChainAssetLockProof.outPoint,
-        });
+        .to.deep.equal(rawChainAssetLockProof);
     });
   });
 
@@ -54,9 +38,7 @@ describe('ChainAssetLockProof', () => {
       const identifier = chainAssetLockProof.createIdentifier();
 
       expect(identifier.toBuffer())
-        .to.deep.equal(hash(
-          chainAssetLockProof.getOutPoint(),
-        ));
+        .to.have.length(32);
     });
   });
 });

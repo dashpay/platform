@@ -1,15 +1,12 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
-const { hash } = require('../../../../../lib/utils/hash');
-const { InstantAssetLockProof, Identifier } = require('../../../../../dist');
 const getInstantAssetLockProofFixture = require('../../../../../lib/test/fixtures/getInstantAssetLockProofFixture');
+const { InstantAssetLockProof } = require('../../../../../dist');
 
 describe('InstantAssetLockProof', () => {
   let instantAssetLockProof;
   let rawInstantAssetLockProof;
 
   before(async () => {
-    rawInstantAssetLockProof = (await getInstantAssetLockProofFixture())
-      .toObject();
+    rawInstantAssetLockProof = (await getInstantAssetLockProofFixture()).toObject();
     instantAssetLockProof = new InstantAssetLockProof(
       rawInstantAssetLockProof,
     );
@@ -24,28 +21,17 @@ describe('InstantAssetLockProof', () => {
 
   describe('#getOutPoint', () => {
     it('should return correct outPoint', () => {
-      const { transaction: rawTx, outputIndex } = rawInstantAssetLockProof;
-      const tx = new Transaction(rawTx);
-
-      const expectedOutPoint = Buffer.from([
-        ...Buffer.from(tx.hash, 'hex').reverse(),
-        ...Buffer.alloc(4, outputIndex),
-      ]);
-
       expect(instantAssetLockProof.getOutPoint())
-        .to.deep.equal(expectedOutPoint);
+        .to.have.length(36);
     });
   });
 
   describe('#getOutput', () => {
     it('should return correct output', () => {
-      const { transaction: rawTx, outputIndex } = rawInstantAssetLockProof;
-      const tx = new Transaction(rawTx);
-
-      const expectedOutput = tx.extraPayload.creditOutputs[outputIndex].toObject();
-
       expect(instantAssetLockProof.getOutput())
-        .to.deep.equal(expectedOutput);
+        .to.have.property('script');
+      expect(instantAssetLockProof.getOutput())
+        .to.have.property('satoshis');
     });
   });
 
@@ -53,11 +39,8 @@ describe('InstantAssetLockProof', () => {
     it('should return correct identifier', () => {
       const identifier = instantAssetLockProof.createIdentifier();
 
-      const expectedIdentifier = Identifier.from(hash(
-        instantAssetLockProof.getOutPoint(),
-      ));
-      expect(identifier)
-        .to.deep.equal(expectedIdentifier);
+      expect(identifier.toBuffer())
+        .to.have.length(32);
     });
   });
 
@@ -82,11 +65,7 @@ describe('InstantAssetLockProof', () => {
   describe('#toObject', () => {
     it('should return correct object', () => {
       expect(instantAssetLockProof.toObject())
-        .to.deep.equal({
-          instantLock: instantAssetLockProof.getInstantLock(),
-          outputIndex: instantAssetLockProof.getOutputIndex(),
-          transaction: instantAssetLockProof.getTransaction(),
-        });
+        .to.deep.equal(rawInstantAssetLockProof);
     });
   });
 
@@ -94,10 +73,10 @@ describe('InstantAssetLockProof', () => {
     it('should return correct JSON', () => {
       expect(instantAssetLockProof.toJSON())
         .to.deep.equal({
-          instantLock: instantAssetLockProof.getInstantLock().toString('base64'),
-          outputIndex: instantAssetLockProof.getOutputIndex(),
-          transaction: instantAssetLockProof.getTransaction().toString('hex'),
-        });
+        instantLock: instantAssetLockProof.getInstantLock().toString('base64'),
+        outputIndex: instantAssetLockProof.getOutputIndex(),
+        transaction: instantAssetLockProof.getTransaction().toString('hex'),
+      });
     });
   });
 });

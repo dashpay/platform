@@ -11,14 +11,16 @@ use crate::version::dpp_versions::{
 };
 use crate::version::drive_abci_versions::{
     DriveAbciAssetLockValidationVersions, DriveAbciBlockEndMethodVersions,
-    DriveAbciBlockFeeProcessingMethodVersions, DriveAbciCoreBasedUpdatesMethodVersions,
-    DriveAbciCoreSubsidyMethodVersions, DriveAbciDocumentsStateTransitionValidationVersions,
-    DriveAbciEngineMethodVersions, DriveAbciEpochMethodVersions,
-    DriveAbciFeePoolInwardsDistributionMethodVersions,
+    DriveAbciBlockFeeProcessingMethodVersions, DriveAbciBlockStartMethodVersions,
+    DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreSubsidyMethodVersions,
+    DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciEngineMethodVersions,
+    DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions,
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
-    DriveAbciProtocolUpgradeMethodVersions, DriveAbciStateTransitionCommonValidationVersions,
+    DriveAbciProtocolUpgradeMethodVersions, DriveAbciQueryDataContractVersions,
+    DriveAbciQueryIdentityVersions, DriveAbciQueryVersions,
+    DriveAbciStateTransitionCommonValidationVersions,
     DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion,
     DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
     DriveAbciValidationDataTriggerAndBindingVersions, DriveAbciValidationDataTriggerVersions,
@@ -514,9 +516,13 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 gather_epoch_info: 0,
                 get_genesis_time: 0,
             },
+            block_start: DriveAbciBlockStartMethodVersions {
+                clear_drive_block_cache: 0,
+            },
             block_end: DriveAbciBlockEndMethodVersions {
                 store_ephemeral_state: 0,
                 update_state_cache: 0,
+                update_drive_cache: 0,
                 validator_set_update: 0,
             },
         },
@@ -602,6 +608,74 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                     },
             },
             process_state_transition: 0,
+        },
+        query: DriveAbciQueryVersions {
+            response_metadata: 0,
+            base_query_structure: 0,
+            proofs_query: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            document_query: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            identity_based_queries: DriveAbciQueryIdentityVersions {
+                identity: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                identities: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                keys: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                balance: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                balance_and_revision: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                identity_by_public_key_hash: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                identities_by_public_key_hashes: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
+            data_contract_based_queries: DriveAbciQueryDataContractVersions {
+                data_contract: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                data_contract_history: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                data_contracts: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
         },
     },
     dpp: DPPVersion {

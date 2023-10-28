@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wasm-dpp",
-  "version": "0.25.5",
+  "version": "0.25.8",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -45,8 +45,6 @@
     "@babel/preset-env": "^7.15.4",
     "@dashevo/dashcore-lib": "~0.20.10",
     "@dashevo/dpns-contract": "workspace:*",
-    "@dashevo/dpp": "workspace:*",
-    "@dashevo/wasm-re2": "~2.0.4",
     "@types/bs58": "^4.0.1",
     "@types/node": "^14.6.0",
     "@yarnpkg/pnpify": "^4.0.0-rc.42",

@@ -1,7 +1,9 @@
 use crate::strategy::StrategyRandomness;
+use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_request::GetIdentitiesByPublicKeyHashesRequestV0;
+use dapi_grpc::platform::v0::get_identities_by_public_key_hashes_response::PublicKeyHashIdentityEntry;
 use dapi_grpc::platform::v0::{
-    get_identities_by_public_key_hashes_response, GetIdentitiesByPublicKeyHashesRequest,
-    GetIdentitiesByPublicKeyHashesResponse, Proof,
+    get_identities_by_public_key_hashes_request, get_identities_by_public_key_hashes_response,
+    GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse, Proof,
 };
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -227,8 +229,15 @@ impl QueryStrategy {
             let prove: bool = rng.gen();
 
             let request = GetIdentitiesByPublicKeyHashesRequest {
-                public_key_hashes: public_key_hashes.keys().map(|hash| hash.to_vec()).collect(),
-                prove,
+                version: Some(get_identities_by_public_key_hashes_request::Version::V0(
+                    GetIdentitiesByPublicKeyHashesRequestV0 {
+                        public_key_hashes: public_key_hashes
+                            .keys()
+                            .map(|hash| hash.to_vec())
+                            .collect(),
+                        prove,
+                    },
+                )),
             };
             let encoded_request = request.encode_to_vec();
             let query_validation_result = abci_app
@@ -252,9 +261,13 @@ impl QueryStrategy {
             let response = GetIdentitiesByPublicKeyHashesResponse::decode(query_data.as_slice())
                 .expect("expected to deserialize");
 
-            let result = response.result.expect("expect to receive proof back");
-            match result {
-                get_identities_by_public_key_hashes_response::Result::Proof(proof) => {
+            let versioned_result = response.version.expect("expected a result");
+            match versioned_result {
+                get_identities_by_public_key_hashes_response::Version::V0(v0) => {
+                    let result = v0.result.expect("expected a result");
+
+                    match result {
+                get_identities_by_public_key_hashes_response::get_identities_by_public_key_hashes_response_v0::Result::Proof(proof) => {
                     let (proof_root_hash, identities): (
                         RootHash,
                         HashMap<[u8; 20], Option<Identity>>,
@@ -284,12 +297,13 @@ impl QueryStrategy {
                         .is_valid());
                     assert_eq!(identities, public_key_hashes);
                 }
-                get_identities_by_public_key_hashes_response::Result::Identities(data) => {
+                get_identities_by_public_key_hashes_response::get_identities_by_public_key_hashes_response_v0::Result::Identities(data) => {
                     let identities_returned = data
-                        .identities
+                        .identity_entries
                         .into_iter()
-                        .map(|serialized| {
-                            Identity::deserialize_from_bytes(&serialized)
+                        .map(|entry| {
+                            let PublicKeyHashIdentityEntry{  value, .. } = entry;
+                            Identity::deserialize_from_bytes(&value.expect("expected a value"))
                                 .expect("expected to deserialize identity")
                                 .id()
                         })
@@ -301,6 +315,8 @@ impl QueryStrategy {
                             .map(|partial_identity| partial_identity.id)
                             .collect()
                     );
+                }
+            }
                 }
             }
         }

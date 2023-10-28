@@ -2,7 +2,7 @@ const crypto = require('crypto');
 
 const dpnsDocumentTypes = require('@dashevo/dpns-contract/schema/dpns-contract-documents');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
 const TYPES = require('../../lib/benchmarks/types');
 
@@ -45,7 +45,7 @@ module.exports = {
      * @param {string} type - Document type
      * @returns {Object}
      */
-    domain() {
+    async domain() {
       const label = crypto.randomBytes(10).toString('hex');
 
       return {
@@ -54,7 +54,7 @@ module.exports = {
         normalizedParentDomainName: 'dash',
         preorderSalt: crypto.randomBytes(32),
         records: {
-          dashUniqueIdentityId: generateRandomIdentifier(),
+          dashUniqueIdentityId: await generateRandomIdentifier(),
         },
         subdomainRules: {
           allowSubdomains: false,
