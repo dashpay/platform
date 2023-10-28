@@ -1364,8 +1364,8 @@ pub mod get_epochs_info_response {
             pub number: u32,
             #[prost(uint64, tag = "2")]
             pub first_block_height: u64,
-            #[prost(uint64, tag = "3")]
-            pub first_block_core_height: u64,
+            #[prost(uint32, tag = "3")]
+            pub first_core_block_height: u32,
             #[prost(uint64, tag = "4")]
             pub start_time: u64,
             #[prost(double, tag = "5")]

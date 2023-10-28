@@ -8,7 +8,9 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_version_upgrade_state_request::Version;
 use dapi_grpc::platform::v0::GetVersionUpgradeStateRequest;
 use dpp::check_validation_result_with_data;
+use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use prost::Message;
 
 impl<C> Platform<C> {
     /// Querying of version upgrade state

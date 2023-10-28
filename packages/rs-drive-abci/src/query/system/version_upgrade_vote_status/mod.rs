@@ -1,6 +1,5 @@
 mod v0;
 
-use crate::error::execution::ExecutionError;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -9,8 +8,9 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_version_upgrade_vote_status_request::Version;
 use dapi_grpc::platform::v0::GetVersionUpgradeVoteStatusRequest;
 use dpp::check_validation_result_with_data;
-use dpp::version::FeatureVersion;
+use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use prost::Message;
 
 impl<C> Platform<C> {
     /// Querying of version upgrade vote status

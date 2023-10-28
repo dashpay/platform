@@ -1,3 +1,4 @@
+use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -31,12 +32,27 @@ impl<C> Platform<C> {
             prove,
         } = request;
 
+        if start_epoch >= u16::MAX as u32 {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(format!(
+                    "start epoch too high, received {}",
+                    start_epoch
+                )),
+            ));
+        }
+
+        if start_epoch + count >= u16::MAX as u32 {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(format!("count too high, received {}", count)),
+            ));
+        }
+
         let response_data = if prove {
             let proof = check_validation_result_with_data!(self.drive.prove_epochs_infos(
-                start_epoch,
-                count,
+                start_epoch as u16,
+                count as u16,
                 None,
-                &platform_version.drive
+                platform_version
             ));
 
             GetEpochsInfoResponse {
@@ -61,20 +77,20 @@ impl<C> Platform<C> {
             .encode_to_vec()
         } else {
             let result = check_validation_result_with_data!(self.drive.get_epochs_infos(
-                start_pro_tx_hash,
-                count,
+                start_epoch as u16,
+                count as u16,
                 None,
-                &platform_version.drive
+                platform_version
             ));
             let epoch_infos = result
                 .into_iter()
                 .map(|epoch_info| {
                     get_epochs_info_response::get_epochs_info_response_v0::EpochInfo {
                         number: 0,
-                        first_block_height: None,
-                        first_block_core_height: None,
-                        start_time: None,
-                        fee_multiplier: None,
+                        first_block_height: epoch_info.first_block_height(),
+                        first_core_block_height: epoch_info.first_core_block_height(),
+                        start_time: epoch_info.first_block_time(),
+                        fee_multiplier: epoch_info.fee_multiplier(),
                     }
                 })
                 .collect();

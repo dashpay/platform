@@ -16,12 +16,13 @@ use prost::Message;
 use dapi_grpc::platform::v0::get_version_upgrade_vote_status_request::GetVersionUpgradeVoteStatusRequestV0;
 use dapi_grpc::platform::v0::get_version_upgrade_vote_status_response::get_version_upgrade_vote_status_response_v0::{VersionSignal, VersionSignals};
 use dapi_grpc::platform::v0::get_version_upgrade_vote_status_response::GetVersionUpgradeVoteStatusResponseV0;
+use crate::error::query::QueryError;
 
 impl<C> Platform<C> {
     pub(super) fn query_version_upgrade_vote_status_v0(
         &self,
         state: &PlatformState,
-        request: GetVersionUpgradeVoteStatusResponseV0,
+        request: GetVersionUpgradeVoteStatusRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
@@ -32,18 +33,34 @@ impl<C> Platform<C> {
             prove,
         } = request;
 
-        let start_pro_tx_hash: Option<Bytes32> = if start_pro_tx_hash.is_empty() {
+        let start_pro_tx_hash: Option<[u8; 32]> = if start_pro_tx_hash.is_empty() {
             None
         } else {
-            Some(start_pro_tx_hash.try_into()?)
+            match start_pro_tx_hash.try_into() {
+                Ok(bytes) => Some(bytes),
+                Err(e) => {
+                    return Ok(QueryValidationResult::new_with_error(
+                        QueryError::InvalidArgument(format!(
+                            "start_pro_tx_hash not 32 bytes long, received {}",
+                            hex::encode(e)
+                        )),
+                    ))
+                }
+            }
         };
+
+        if count >= u16::MAX as u32 {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(format!("count too high, received {}", count)),
+            ));
+        }
 
         let response_data = if prove {
             let proof = check_validation_result_with_data!(self
                 .drive
                 .fetch_proved_validator_version_votes(
                     start_pro_tx_hash,
-                    count,
+                    count as u16,
                     None,
                     &platform_version.drive
                 ));
@@ -72,7 +89,7 @@ impl<C> Platform<C> {
             let result =
                 check_validation_result_with_data!(self.drive.fetch_validator_version_votes(
                     start_pro_tx_hash,
-                    count,
+                    count as u16,
                     None,
                     &platform_version.drive
                 ));

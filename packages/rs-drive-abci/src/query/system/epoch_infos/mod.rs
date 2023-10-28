@@ -1,6 +1,5 @@
 mod v0;
 
-use crate::error::execution::ExecutionError;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -9,8 +8,9 @@ use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_epochs_info_request::Version;
 use dapi_grpc::platform::v0::GetEpochsInfoRequest;
 use dpp::check_validation_result_with_data;
-use dpp::version::FeatureVersion;
+use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use prost::Message;
 
 impl<C> Platform<C> {
     /// Querying of version upgrade state
@@ -21,10 +21,9 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let GetEpochsInfoRequest { version } =
-            check_validation_result_with_data!(GetVersionUpgradeStateRequest::decode(query_data)
-                .map_err(|e| {
-                    QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
-                }));
+            check_validation_result_with_data!(GetEpochsInfoRequest::decode(query_data).map_err(
+                |e| { QueryError::InvalidArgument(format!("invalid query proto message: {}", e)) }
+            ));
 
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
