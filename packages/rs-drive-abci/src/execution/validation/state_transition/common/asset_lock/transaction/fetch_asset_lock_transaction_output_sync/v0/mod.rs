@@ -66,11 +66,22 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
                 ));
             };
 
-            if transaction_height > proof.core_chain_locked_height {
+            let is_transaction_not_mined = transaction_height == -1;
+            let transaction_height = transaction_height as u32;
+
+            // Return an error if transaction is not mined
+            // or if it is mined after the chain locked height
+            if is_transaction_not_mined || transaction_height > proof.core_chain_locked_height {
+                let reported_height = if is_transaction_not_mined {
+                    None
+                } else {
+                    Some(transaction_height)
+                };
+
                 return Ok(ConsensusValidationResult::new_with_error(
                     InvalidAssetLockProofTransactionHeightError::new(
                         proof.core_chain_locked_height,
-                        Some(transaction_height),
+                        reported_height,
                     )
                     .into(),
                 ));
