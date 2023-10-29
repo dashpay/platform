@@ -17,7 +17,7 @@ private = true
 serde = { version = "1.0.152", features = ["derive"] }
 platform-version = { path = "../rs-platform-version" }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
-integer-encoding = { version = "3.0.4" }
+integer-encoding = { version = "4.0.0" }
 rand = { version = "0.8.4", features = ["small_rng"] }
 byteorder = { version = "1.4.3" }
 indexmap = { version = "1.8.0" }
