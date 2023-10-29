@@ -277,12 +277,6 @@ impl CoreRPCLike for DefaultCoreRPC {
         base_block: Option<u32>,
         block: u32,
     ) -> Result<MasternodeListDiff, Error> {
-        tracing::debug!(
-            method = "get_protx_diff_with_masternodes",
-            "base block {:?} block {}",
-            base_block,
-            block
-        );
         retry!(self
             .inner
             .get_protx_listdiff(base_block.unwrap_or(1), block))
@@ -296,21 +290,13 @@ impl CoreRPCLike for DefaultCoreRPC {
         instant_lock: &InstantLock,
         max_height: Option<u32>,
     ) -> Result<bool, Error> {
-        tracing::debug!(
-            method = "verify_instant_lock",
-            "instant_lock {:?} max_height {:?}",
-            instant_lock,
-            max_height
-        );
+        let request_id = instant_lock.request_id()?.to_string();
+        let transaction_id = instant_lock.txid.to_string();
+        let signature = hex::encode(instant_lock.signature);
 
-        let request_id = hex::encode(instant_lock.request_id()?);
-
-        retry!(self.inner.get_verifyislock(
-            request_id.as_str(),
-            &instant_lock.txid.to_hex(),
-            hex::encode(instant_lock.signature).as_str(),
-            max_height,
-        ))
+        retry!(self
+            .inner
+            .get_verifyislock(&request_id, &transaction_id, &signature, max_height))
     }
 
     /// Verify a chain lock signature
@@ -321,18 +307,12 @@ impl CoreRPCLike for DefaultCoreRPC {
         chain_lock: &ChainLock,
         max_height: Option<u32>,
     ) -> Result<bool, Error> {
-        tracing::debug!(
-            method = "verify_chain_lock",
-            "chain lock {:?} max height {:?}",
-            chain_lock,
-            max_height,
-        );
+        let block_hash = chain_lock.block_hash.to_string();
+        let signature = hex::encode(chain_lock.signature);
 
-        retry!(self.inner.get_verifychainlock(
-            hex::encode(chain_lock.block_hash).as_str(),
-            hex::encode(chain_lock.signature).as_str(),
-            max_height
-        ))
+        retry!(self
+            .inner
+            .get_verifychainlock(block_hash.as_str(), &signature, max_height))
     }
 
     /// Returns masternode sync status
