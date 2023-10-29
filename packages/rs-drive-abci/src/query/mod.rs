@@ -1902,7 +1902,7 @@ mod tests {
                     prove: false,
                 })),
             }
-                .encode_to_vec();
+            .encode_to_vec();
 
             let validation_result = platform
                 .query(PATH, &request, version)
@@ -1916,8 +1916,8 @@ mod tests {
                 get_version_upgrade_state_response::Version::V0(inner),
                 inner
             )
-                .result
-                .expect("expected a result");
+            .result
+            .expect("expected a result");
 
             let versions = extract_variant_or_panic!(
                 result,
@@ -2012,7 +2012,7 @@ mod tests {
                     prove: false,
                 })),
             }
-                .encode_to_vec();
+            .encode_to_vec();
 
             let validation_result = platform
                 .query(PATH, &request, version)
@@ -2026,8 +2026,8 @@ mod tests {
                 get_version_upgrade_state_response::Version::V0(inner),
                 inner
             )
-                .result
-                .expect("expected a result");
+            .result
+            .expect("expected a result");
 
             let versions = extract_variant_or_panic!(
                 result,
@@ -2045,7 +2045,7 @@ mod tests {
             let request = GetVersionUpgradeStateRequest {
                 version: Some(Version::V0(GetVersionUpgradeStateRequestV0 { prove: true })),
             }
-                .encode_to_vec();
+            .encode_to_vec();
 
             let validation_result = platform
                 .query(PATH, &request, version)
@@ -2059,8 +2059,8 @@ mod tests {
                 get_version_upgrade_state_response::Version::V0(inner),
                 inner
             )
-                .result
-                .expect("expected a result");
+            .result
+            .expect("expected a result");
 
             let proof = extract_variant_or_panic!(
                 result,
@@ -2162,7 +2162,7 @@ mod tests {
             let request = GetVersionUpgradeStateRequest {
                 version: Some(Version::V0(GetVersionUpgradeStateRequestV0 { prove: true })),
             }
-                .encode_to_vec();
+            .encode_to_vec();
 
             let validation_result = platform
                 .query(PATH, &request, version)
@@ -2176,8 +2176,8 @@ mod tests {
                 get_version_upgrade_state_response::Version::V0(inner),
                 inner
             )
-                .result
-                .expect("expected a result");
+            .result
+            .expect("expected a result");
 
             let proof = extract_variant_or_panic!(
                 result,
@@ -2214,51 +2214,56 @@ mod tests {
         }
     }
 
+    mod version_upgrade_vote_status {
+        use dapi_grpc::platform::v0::get_version_upgrade_vote_status_request::Version;
 
-mod version_upgrade_vote_status {
-    use dapi_grpc::platform::v0::get_version_upgrade_vote_status_request::{
-        Version,
-    };
+        use dapi_grpc::platform::v0::get_version_upgrade_vote_status_request::GetVersionUpgradeVoteStatusRequestV0;
+        use dapi_grpc::platform::v0::get_version_upgrade_vote_status_response::get_version_upgrade_vote_status_response_v0;
+        use dapi_grpc::platform::v0::{
+            get_version_upgrade_vote_status_response, GetVersionUpgradeVoteStatusRequest,
+            GetVersionUpgradeVoteStatusResponse,
+        };
+        use drive::drive::grove_operations::BatchInsertApplyType;
+        use drive::drive::object_size_info::PathKeyElementInfo;
+        use drive::drive::protocol_upgrade::{
+            desired_version_for_validators_path, desired_version_for_validators_path_vec,
+            versions_counter_path,
+        };
+        use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery};
+        use drive::query::GroveDb;
+        use integer_encoding::VarInt;
+        use prost::Message;
+        use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
 
-    use dapi_grpc::platform::v0::{get_version_upgrade_vote_status_response, GetVersionUpgradeVoteStatusRequest, GetVersionUpgradeVoteStatusResponse};
-    use drive::drive::grove_operations::BatchInsertApplyType;
-    use drive::drive::object_size_info::PathKeyElementInfo;
-    use drive::drive::protocol_upgrade::{desired_version_for_validators_path, desired_version_for_validators_path_vec, versions_counter_path};
-    use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery};
-    use drive::query::GroveDb;
-    use integer_encoding::VarInt;
-    use prost::Message;
-    use rand::rngs::StdRng;
-    use rand::{Rng, SeedableRng};
-    use dapi_grpc::platform::v0::get_version_upgrade_vote_status_request::GetVersionUpgradeVoteStatusRequestV0;
-    use dapi_grpc::platform::v0::get_version_upgrade_vote_status_response::get_version_upgrade_vote_status_response_v0;
+        const PATH: &str = "/versionUpgrade/voteStatus";
 
-    const PATH: &str = "/versionUpgrade/voteStatus";
+        #[test]
+        fn test_query_empty_upgrade_vote_status() {
+            let (platform, version) = super::setup_platform();
 
-    #[test]
-    fn test_query_empty_upgrade_vote_status() {
-        let (platform, version) = super::setup_platform();
+            let mut rand = StdRng::seed_from_u64(10);
 
-        let mut rand = StdRng::seed_from_u64(10);
+            let validator_pro_tx_hash: [u8; 32] = rand.gen();
 
-        let validator_pro_tx_hash: [u8; 32] = rand.gen();
+            let request = GetVersionUpgradeVoteStatusRequest {
+                version: Some(Version::V0(GetVersionUpgradeVoteStatusRequestV0 {
+                    start_pro_tx_hash: validator_pro_tx_hash.to_vec(),
+                    count: 5,
+                    prove: false,
+                })),
+            }
+            .encode_to_vec();
 
-        let request = GetVersionUpgradeVoteStatusRequest {
-            version: Some(Version::V0(GetVersionUpgradeVoteStatusRequestV0 {
-                start_pro_tx_hash: validator_pro_tx_hash.to_vec(),
-                count: 5,
-                prove: false,
-            })),
-        }.encode_to_vec();
+            let validation_result = platform
+                .query(PATH, &request, version)
+                .expect("expected query to succeed");
+            let response = GetVersionUpgradeVoteStatusResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .unwrap();
 
-        let validation_result = platform
-            .query(PATH, &request, version)
-            .expect("expected query to succeed");
-        let response =
-            GetVersionUpgradeVoteStatusResponse::decode(validation_result.data.unwrap().as_slice())
-                .unwrap();
-
-        let result = extract_single_variant_or_panic!(
+            let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
                 get_version_upgrade_vote_status_response::Version::V0(inner),
                 inner
@@ -2266,110 +2271,112 @@ mod version_upgrade_vote_status {
             .result
             .expect("expected a result");
 
-        let version_signals = extract_variant_or_panic!(
+            let version_signals = extract_variant_or_panic!(
                 result,
                 get_version_upgrade_vote_status_response::get_version_upgrade_vote_status_response_v0::Result::Versions(inner),
                 inner
             );
 
-        // we just started chain, there should be no versions
+            // we just started chain, there should be no versions
 
-        assert!(version_signals.version_signals.is_empty())
-    }
+            assert!(version_signals.version_signals.is_empty())
+        }
 
-    #[test]
-    fn test_query_upgrade_vote_status() {
-        let (platform, version) = super::setup_platform();
+        #[test]
+        fn test_query_upgrade_vote_status() {
+            let (platform, version) = super::setup_platform();
 
-        let mut rand = StdRng::seed_from_u64(10);
+            let mut rand = StdRng::seed_from_u64(10);
 
-        let validator_pro_tx_hash: [u8; 32] = rand.gen();
+            let validator_pro_tx_hash: [u8; 32] = rand.gen();
 
-        let drive = &platform.drive;
+            let drive = &platform.drive;
 
-        let mut cache = drive.cache.write().unwrap();
-        let version_counter = &mut cache.protocol_versions_counter;
+            let mut cache = drive.cache.write().unwrap();
+            let version_counter = &mut cache.protocol_versions_counter;
 
-        let transaction = drive.grove.start_transaction();
+            let transaction = drive.grove.start_transaction();
 
-        version_counter
-            .load_if_needed(drive, Some(&transaction), &version.drive)
-            .expect("expected to load version counter");
+            version_counter
+                .load_if_needed(drive, Some(&transaction), &version.drive)
+                .expect("expected to load version counter");
 
-        let path = desired_version_for_validators_path();
-        let version_bytes = version.protocol_version.encode_var_vec();
-        let version_element = Element::new_item(version_bytes.clone());
+            let path = desired_version_for_validators_path();
+            let version_bytes = version.protocol_version.encode_var_vec();
+            let version_element = Element::new_item(version_bytes.clone());
 
-        let mut operations = vec![];
-        drive
-            .batch_insert_if_changed_value(
-                PathKeyElementInfo::PathFixedSizeKeyRefElement((
-                    path,
-                    validator_pro_tx_hash.as_slice(),
-                    version_element,
-                )),
-                BatchInsertApplyType::StatefulBatchInsert,
-                Some(&transaction),
-                &mut operations,
-                &version.drive,
+            let mut operations = vec![];
+            drive
+                .batch_insert_if_changed_value(
+                    PathKeyElementInfo::PathFixedSizeKeyRefElement((
+                        path,
+                        validator_pro_tx_hash.as_slice(),
+                        version_element,
+                    )),
+                    BatchInsertApplyType::StatefulBatchInsert,
+                    Some(&transaction),
+                    &mut operations,
+                    &version.drive,
+                )
+                .expect("expected batch to insert");
+
+            let mut version_count = version_counter
+                .get(&version.protocol_version)
+                .cloned()
+                .unwrap_or_default();
+
+            version_count += 1;
+
+            version_counter.set_block_cache_version_count(version.protocol_version, version_count); // push to block_cache
+
+            drive
+                .batch_insert(
+                    PathKeyElementInfo::PathFixedSizeKeyRefElement((
+                        versions_counter_path(),
+                        version_bytes.as_slice(),
+                        Element::new_item(version_count.encode_var_vec()),
+                    )),
+                    &mut operations,
+                    &version.drive,
+                )
+                .expect("expected batch to insert");
+
+            drive
+                .apply_batch_low_level_drive_operations(
+                    None,
+                    Some(&transaction),
+                    operations,
+                    &mut vec![],
+                    &version.drive,
+                )
+                .expect("expected to apply operations");
+
+            drive
+                .commit_transaction(transaction, &version.drive)
+                .expect("expected to commit");
+
+            cache.protocol_versions_counter.merge_block_cache();
+
+            drop(cache);
+
+            let request = GetVersionUpgradeVoteStatusRequest {
+                version: Some(Version::V0(GetVersionUpgradeVoteStatusRequestV0 {
+                    start_pro_tx_hash: validator_pro_tx_hash.to_vec(),
+                    count: 5,
+                    prove: false,
+                })),
+            }
+            .encode_to_vec();
+
+            let validation_result = platform
+                .query(PATH, &request, version)
+                .expect("expected query to succeed");
+            let response = GetVersionUpgradeVoteStatusResponse::decode(
+                validation_result.data.unwrap().as_slice(),
             )
-            .expect("expected batch to insert");
+            .unwrap();
 
-        let mut version_count = version_counter
-            .get(&version.protocol_version)
-            .cloned()
-            .unwrap_or_default();
-
-        version_count += 1;
-
-        version_counter.set_block_cache_version_count(version.protocol_version, version_count); // push to block_cache
-
-        drive
-            .batch_insert(
-                PathKeyElementInfo::PathFixedSizeKeyRefElement((
-                    versions_counter_path(),
-                    version_bytes.as_slice(),
-                    Element::new_item(version_count.encode_var_vec()),
-                )),
-                &mut operations,
-                &version.drive,
-            )
-            .expect("expected batch to insert");
-
-        drive
-            .apply_batch_low_level_drive_operations(
-                None,
-                Some(&transaction),
-                operations,
-                &mut vec![],
-                &version.drive,
-            )
-            .expect("expected to apply operations");
-
-        drive
-            .commit_transaction(transaction, &version.drive)
-            .expect("expected to commit");
-
-        cache.protocol_versions_counter.merge_block_cache();
-
-        drop(cache);
-
-        let request = GetVersionUpgradeVoteStatusRequest {
-            version: Some(Version::V0(GetVersionUpgradeVoteStatusRequestV0 {
-                start_pro_tx_hash: validator_pro_tx_hash.to_vec(),
-                count: 5,
-                prove: false,
-            })),
-        }.encode_to_vec();
-
-        let validation_result = platform
-            .query(PATH, &request, version)
-            .expect("expected query to succeed");
-        let response =
-            GetVersionUpgradeVoteStatusResponse::decode(validation_result.data.unwrap().as_slice())
-                .unwrap();
-
-        let result = extract_single_variant_or_panic!(
+            let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
                 get_version_upgrade_vote_status_response::Version::V0(inner),
                 inner
@@ -2377,39 +2384,41 @@ mod version_upgrade_vote_status {
             .result
             .expect("expected a result");
 
-        let version_signals = extract_variant_or_panic!(
+            let version_signals = extract_variant_or_panic!(
                 result,
                 get_version_upgrade_vote_status_response::get_version_upgrade_vote_status_response_v0::Result::Versions(inner),
                 inner
             );
 
-        assert_eq!(version_signals.version_signals.len(), 1)
-    }
+            assert_eq!(version_signals.version_signals.len(), 1)
+        }
 
-    #[test]
-    fn test_prove_empty_upgrade_vote_status() {
-        let (platform, version) = super::setup_platform();
+        #[test]
+        fn test_prove_empty_upgrade_vote_status() {
+            let (platform, version) = super::setup_platform();
 
-        let mut rand = StdRng::seed_from_u64(10);
+            let mut rand = StdRng::seed_from_u64(10);
 
-        let validator_pro_tx_hash: [u8; 32] = rand.gen();
+            let validator_pro_tx_hash: [u8; 32] = rand.gen();
 
-        let request = GetVersionUpgradeVoteStatusRequest {
-            version: Some(Version::V0(GetVersionUpgradeVoteStatusRequestV0 {
-                start_pro_tx_hash: validator_pro_tx_hash.to_vec(),
-                count: 5,
-                prove: true,
-            })),
-        }.encode_to_vec();
+            let request = GetVersionUpgradeVoteStatusRequest {
+                version: Some(Version::V0(GetVersionUpgradeVoteStatusRequestV0 {
+                    start_pro_tx_hash: validator_pro_tx_hash.to_vec(),
+                    count: 5,
+                    prove: true,
+                })),
+            }
+            .encode_to_vec();
 
-        let validation_result = platform
-            .query(PATH, &request, version)
-            .expect("expected query to succeed");
-        let response =
-            GetVersionUpgradeVoteStatusResponse::decode(validation_result.data.unwrap().as_slice())
-                .unwrap();
+            let validation_result = platform
+                .query(PATH, &request, version)
+                .expect("expected query to succeed");
+            let response = GetVersionUpgradeVoteStatusResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .unwrap();
 
-        let result = extract_single_variant_or_panic!(
+            let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
                 get_version_upgrade_vote_status_response::Version::V0(inner),
                 inner
@@ -2417,123 +2426,125 @@ mod version_upgrade_vote_status {
             .result
             .expect("expected a result");
 
-        let proof = extract_variant_or_panic!(
+            let proof = extract_variant_or_panic!(
                 result,
                 get_version_upgrade_vote_status_response_v0::Result::Proof(inner),
                 inner
             );
 
-        let path = desired_version_for_validators_path_vec();
+            let path = desired_version_for_validators_path_vec();
 
-        let query_item = QueryItem::RangeFrom(validator_pro_tx_hash.to_vec()..);
+            let query_item = QueryItem::RangeFrom(validator_pro_tx_hash.to_vec()..);
 
-        let path_query = PathQuery::new(
-            path,
-            SizedQuery::new(Query::new_single_query_item(query_item), Some(5), None),
-        );
+            let path_query = PathQuery::new(
+                path,
+                SizedQuery::new(Query::new_single_query_item(query_item), Some(5), None),
+            );
 
-        let elements = GroveDb::verify_query(proof.grovedb_proof.as_slice(), &path_query)
-            .expect("expected to be able to verify query")
-            .1;
+            let elements = GroveDb::verify_query(proof.grovedb_proof.as_slice(), &path_query)
+                .expect("expected to be able to verify query")
+                .1;
 
-        // we just started chain, there should be no versions
+            // we just started chain, there should be no versions
 
-        assert!(elements.is_empty())
-    }
+            assert!(elements.is_empty())
+        }
 
-    #[test]
-    fn test_prove_upgrade_vote_status() {
-        let (platform, version) = super::setup_platform();
+        #[test]
+        fn test_prove_upgrade_vote_status() {
+            let (platform, version) = super::setup_platform();
 
-        let mut rand = StdRng::seed_from_u64(10);
+            let mut rand = StdRng::seed_from_u64(10);
 
-        let drive = &platform.drive;
+            let drive = &platform.drive;
 
-        let mut cache = drive.cache.write().unwrap();
-        let version_counter = &mut cache.protocol_versions_counter;
+            let mut cache = drive.cache.write().unwrap();
+            let version_counter = &mut cache.protocol_versions_counter;
 
-        let transaction = drive.grove.start_transaction();
+            let transaction = drive.grove.start_transaction();
 
-        version_counter
-            .load_if_needed(drive, Some(&transaction), &version.drive)
-            .expect("expected to load version counter");
+            version_counter
+                .load_if_needed(drive, Some(&transaction), &version.drive)
+                .expect("expected to load version counter");
 
-        let path = desired_version_for_validators_path();
-        let version_bytes = version.protocol_version.encode_var_vec();
-        let version_element = Element::new_item(version_bytes.clone());
+            let path = desired_version_for_validators_path();
+            let version_bytes = version.protocol_version.encode_var_vec();
+            let version_element = Element::new_item(version_bytes.clone());
 
-        let validator_pro_tx_hash: [u8; 32] = rand.gen();
+            let validator_pro_tx_hash: [u8; 32] = rand.gen();
 
-        let mut operations = vec![];
-        drive
-            .batch_insert_if_changed_value(
-                PathKeyElementInfo::PathFixedSizeKeyRefElement((
-                    path,
-                    validator_pro_tx_hash.as_slice(),
-                    version_element,
-                )),
-                BatchInsertApplyType::StatefulBatchInsert,
-                Some(&transaction),
-                &mut operations,
-                &version.drive,
+            let mut operations = vec![];
+            drive
+                .batch_insert_if_changed_value(
+                    PathKeyElementInfo::PathFixedSizeKeyRefElement((
+                        path,
+                        validator_pro_tx_hash.as_slice(),
+                        version_element,
+                    )),
+                    BatchInsertApplyType::StatefulBatchInsert,
+                    Some(&transaction),
+                    &mut operations,
+                    &version.drive,
+                )
+                .expect("expected batch to insert");
+
+            let mut version_count = version_counter
+                .get(&version.protocol_version)
+                .cloned()
+                .unwrap_or_default();
+
+            version_count += 1;
+
+            version_counter.set_block_cache_version_count(version.protocol_version, version_count); // push to block_cache
+
+            drive
+                .batch_insert(
+                    PathKeyElementInfo::PathFixedSizeKeyRefElement((
+                        versions_counter_path(),
+                        version_bytes.as_slice(),
+                        Element::new_item(version_count.encode_var_vec()),
+                    )),
+                    &mut operations,
+                    &version.drive,
+                )
+                .expect("expected batch to insert");
+
+            drive
+                .apply_batch_low_level_drive_operations(
+                    None,
+                    Some(&transaction),
+                    operations,
+                    &mut vec![],
+                    &version.drive,
+                )
+                .expect("expected to apply operations");
+
+            drive
+                .commit_transaction(transaction, &version.drive)
+                .expect("expected to commit");
+
+            cache.protocol_versions_counter.merge_block_cache();
+
+            drop(cache);
+
+            let request = GetVersionUpgradeVoteStatusRequest {
+                version: Some(Version::V0(GetVersionUpgradeVoteStatusRequestV0 {
+                    start_pro_tx_hash: validator_pro_tx_hash.to_vec(),
+                    count: 5,
+                    prove: true,
+                })),
+            }
+            .encode_to_vec();
+
+            let validation_result = platform
+                .query(PATH, &request, version)
+                .expect("expected query to succeed");
+            let response = GetVersionUpgradeVoteStatusResponse::decode(
+                validation_result.data.unwrap().as_slice(),
             )
-            .expect("expected batch to insert");
+            .unwrap();
 
-        let mut version_count = version_counter
-            .get(&version.protocol_version)
-            .cloned()
-            .unwrap_or_default();
-
-        version_count += 1;
-
-        version_counter.set_block_cache_version_count(version.protocol_version, version_count); // push to block_cache
-
-        drive
-            .batch_insert(
-                PathKeyElementInfo::PathFixedSizeKeyRefElement((
-                    versions_counter_path(),
-                    version_bytes.as_slice(),
-                    Element::new_item(version_count.encode_var_vec()),
-                )),
-                &mut operations,
-                &version.drive,
-            )
-            .expect("expected batch to insert");
-
-        drive
-            .apply_batch_low_level_drive_operations(
-                None,
-                Some(&transaction),
-                operations,
-                &mut vec![],
-                &version.drive,
-            )
-            .expect("expected to apply operations");
-
-        drive
-            .commit_transaction(transaction, &version.drive)
-            .expect("expected to commit");
-
-        cache.protocol_versions_counter.merge_block_cache();
-
-        drop(cache);
-
-        let request = GetVersionUpgradeVoteStatusRequest {
-            version: Some(Version::V0(GetVersionUpgradeVoteStatusRequestV0 {
-                start_pro_tx_hash: validator_pro_tx_hash.to_vec(),
-                count: 5,
-                prove: true,
-            })),
-        }.encode_to_vec();
-
-        let validation_result = platform
-            .query(PATH, &request, version)
-            .expect("expected query to succeed");
-        let response =
-            GetVersionUpgradeVoteStatusResponse::decode(validation_result.data.unwrap().as_slice())
-                .unwrap();
-
-        let result = extract_single_variant_or_panic!(
+            let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
                 get_version_upgrade_vote_status_response::Version::V0(inner),
                 inner
@@ -2541,43 +2552,92 @@ mod version_upgrade_vote_status {
             .result
             .expect("expected a result");
 
-        let proof = extract_variant_or_panic!(
+            let proof = extract_variant_or_panic!(
                 result,
                 get_version_upgrade_vote_status_response_v0::Result::Proof(inner),
                 inner
             );
 
-        let path = desired_version_for_validators_path_vec();
+            let path = desired_version_for_validators_path_vec();
 
-        let query_item = QueryItem::RangeFrom(validator_pro_tx_hash.to_vec()..);
+            let query_item = QueryItem::RangeFrom(validator_pro_tx_hash.to_vec()..);
 
-        let path_query = PathQuery::new(
-            path,
-            SizedQuery::new(Query::new_single_query_item(query_item), Some(5), None),
-        );
+            let path_query = PathQuery::new(
+                path,
+                SizedQuery::new(Query::new_single_query_item(query_item), Some(5), None),
+            );
 
-        let elements = GroveDb::verify_query(proof.grovedb_proof.as_slice(), &path_query)
-            .expect("expected to be able to verify query")
-            .1;
+            let elements = GroveDb::verify_query(proof.grovedb_proof.as_slice(), &path_query)
+                .expect("expected to be able to verify query")
+                .1;
 
-        // we just started chain, there should be no versions
+            // we just started chain, there should be no versions
 
-        assert_eq!(elements.len(), 1);
+            assert_eq!(elements.len(), 1);
 
-        let (_, _, element) = elements.first().unwrap();
+            let (_, _, element) = elements.first().unwrap();
 
-        assert!(element.is_some());
+            assert!(element.is_some());
 
-        let element = element.clone().unwrap();
+            let element = element.clone().unwrap();
 
-        let count_bytes = element.as_item_bytes().expect("expected item bytes");
+            let count_bytes = element.as_item_bytes().expect("expected item bytes");
 
-        let count = u16::decode_var(count_bytes)
-            .expect("expected to decode var int")
-            .0;
+            let count = u16::decode_var(count_bytes)
+                .expect("expected to decode var int")
+                .0;
 
-        assert_eq!(count, 1);
+            assert_eq!(count, 1);
+        }
+    }
+
+    mod epoch_infos {
+        use dapi_grpc::platform::v0::get_epochs_info_request::{GetEpochsInfoRequestV0, Version};
+        use dapi_grpc::platform::v0::{
+            get_epochs_info_response, GetEpochsInfoRequest, GetEpochsInfoResponse,
+        };
+        use prost::Message;
+
+        const PATH: &str = "/epochInfos";
+
+        #[test]
+        fn test_query_epoch_infos() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetEpochsInfoRequest {
+                version: Some(Version::V0(GetEpochsInfoRequestV0 {
+                    start_epoch: 0,
+                    count: 5,
+                    prove: false,
+                })),
+            }
+            .encode_to_vec();
+
+            let validation_result = platform
+                .query(PATH, &request, version)
+                .expect("expected query to succeed");
+            let response = GetEpochsInfoResponse::decode(
+                validation_result.data.expect("expected data").as_slice(),
+            )
+            .expect("expected to decode response");
+
+            let result = extract_single_variant_or_panic!(
+                response.version.expect("expected a versioned response"),
+                get_epochs_info_response::Version::V0(inner),
+                inner
+            )
+            .result
+            .expect("expected a result");
+
+            let epoch_infos = extract_variant_or_panic!(
+                result,
+                get_epochs_info_response::get_epochs_info_response_v0::Result::Epochs(inner),
+                inner
+            );
+
+            // we just started chain, there should be only 1 epoch info for the first epoch
+
+            assert!(epoch_infos.epoch_infos.is_empty())
+        }
     }
 }
-}
-

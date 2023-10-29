@@ -84,12 +84,12 @@ impl Drive {
                 let epoch_index_result: Result<EpochIndex, Error> = path
                     .last()
                     .ok_or(Error::Drive(DriveError::CorruptedSerialization(
-                        "path can not be empty",
+                        "extended epoch info: path can not be empty",
                     )))
                     .and_then(|epoch_index_vec| {
                         epoch_index_vec.as_slice().try_into().map_err(|_| {
                             Error::Drive(DriveError::CorruptedSerialization(
-                                "item have an invalid length",
+                                "extended epoch info: item has an invalid length",
                             ))
                         })
                     })
@@ -117,7 +117,7 @@ impl Drive {
                 let first_block_time_bytes: [u8; 8] =
                     match encoded_start_time.as_slice().try_into().map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
-                            "block time must be 8 bytes for a u64",
+                            "extended epoch info: block time must be 8 bytes for a u64",
                         ))
                     }) {
                         Ok(value) => value,
@@ -131,7 +131,7 @@ impl Drive {
                 let Element::Item(encoded_start_block_height, _) = first_block_height_element
                 else {
                     return Some(Err(Error::Drive(DriveError::UnexpectedElementType(
-                        "start time must be an item",
+                        "extended epoch info: start time must be an item",
                     ))));
                 };
 
@@ -140,7 +140,7 @@ impl Drive {
                     .try_into()
                     .map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
-                            "block height must be 8 bytes for a u64",
+                            "extended epoch info: block height must be 8 bytes for a u64",
                         ))
                     }) {
                     Ok(value) => value,

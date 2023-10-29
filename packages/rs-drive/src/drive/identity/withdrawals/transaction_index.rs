@@ -36,6 +36,7 @@ impl Drive {
             .query_raw(
                 &expired_index_query,
                 transaction.is_some(),
+                true,
                 QueryResultType::QueryKeyElementPairResultType,
                 transaction,
             )
