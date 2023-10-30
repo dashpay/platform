@@ -57,6 +57,12 @@ GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV0);
 GPBObjCClassDeclaration(GetDocumentsResponse);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV0);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV0_Documents);
+GPBObjCClassDeclaration(GetEpochsInfoRequest);
+GPBObjCClassDeclaration(GetEpochsInfoRequest_GetEpochsInfoRequestV0);
+GPBObjCClassDeclaration(GetEpochsInfoResponse);
+GPBObjCClassDeclaration(GetEpochsInfoResponse_GetEpochsInfoResponseV0);
+GPBObjCClassDeclaration(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo);
+GPBObjCClassDeclaration(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos);
 GPBObjCClassDeclaration(GetIdentitiesByPublicKeyHashesRequest);
 GPBObjCClassDeclaration(GetIdentitiesByPublicKeyHashesRequest_GetIdentitiesByPublicKeyHashesRequestV0);
 GPBObjCClassDeclaration(GetIdentitiesByPublicKeyHashesResponse);
@@ -99,6 +105,18 @@ GPBObjCClassDeclaration(GetProofsRequest_GetProofsRequestV0_DocumentRequest);
 GPBObjCClassDeclaration(GetProofsRequest_GetProofsRequestV0_IdentityRequest);
 GPBObjCClassDeclaration(GetProofsResponse);
 GPBObjCClassDeclaration(GetProofsResponse_GetProofsResponseV0);
+GPBObjCClassDeclaration(GetVersionUpgradeStateRequest);
+GPBObjCClassDeclaration(GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0);
+GPBObjCClassDeclaration(GetVersionUpgradeStateResponse);
+GPBObjCClassDeclaration(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0);
+GPBObjCClassDeclaration(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry);
+GPBObjCClassDeclaration(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions);
+GPBObjCClassDeclaration(GetVersionUpgradeVoteStatusRequest);
+GPBObjCClassDeclaration(GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0);
+GPBObjCClassDeclaration(GetVersionUpgradeVoteStatusResponse);
+GPBObjCClassDeclaration(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0);
+GPBObjCClassDeclaration(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal);
+GPBObjCClassDeclaration(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals);
 GPBObjCClassDeclaration(KeyRequestType);
 GPBObjCClassDeclaration(Proof);
 GPBObjCClassDeclaration(ResponseMetadata);
@@ -240,6 +258,7 @@ typedef struct Proof__storage_ {
 
 @dynamic height;
 @dynamic coreChainLockedHeight;
+@dynamic epoch;
 @dynamic timeMs;
 @dynamic protocolVersion;
 @dynamic chainId;
@@ -247,6 +266,7 @@ typedef struct Proof__storage_ {
 typedef struct ResponseMetadata__storage_ {
   uint32_t _has_storage_[1];
   uint32_t coreChainLockedHeight;
+  uint32_t epoch;
   uint32_t protocolVersion;
   NSString *chainId;
   uint64_t height;
@@ -278,10 +298,19 @@ typedef struct ResponseMetadata__storage_ {
         .dataType = GPBDataTypeUInt32,
       },
       {
+        .name = "epoch",
+        .dataTypeSpecific.clazz = Nil,
+        .number = ResponseMetadata_FieldNumber_Epoch,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(ResponseMetadata__storage_, epoch),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
         .name = "timeMs",
         .dataTypeSpecific.clazz = Nil,
         .number = ResponseMetadata_FieldNumber_TimeMs,
-        .hasIndex = 2,
+        .hasIndex = 3,
         .offset = (uint32_t)offsetof(ResponseMetadata__storage_, timeMs),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt64,
@@ -290,7 +319,7 @@ typedef struct ResponseMetadata__storage_ {
         .name = "protocolVersion",
         .dataTypeSpecific.clazz = Nil,
         .number = ResponseMetadata_FieldNumber_ProtocolVersion,
-        .hasIndex = 3,
+        .hasIndex = 4,
         .offset = (uint32_t)offsetof(ResponseMetadata__storage_, protocolVersion),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
@@ -299,7 +328,7 @@ typedef struct ResponseMetadata__storage_ {
         .name = "chainId",
         .dataTypeSpecific.clazz = Nil,
         .number = ResponseMetadata_FieldNumber_ChainId,
-        .hasIndex = 4,
+        .hasIndex = 5,
         .offset = (uint32_t)offsetof(ResponseMetadata__storage_, chainId),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeString,
@@ -5312,6 +5341,1119 @@ typedef struct GetConsensusParamsResponse_GetConsensusParamsResponseV0__storage_
                                    storageSize:sizeof(GetConsensusParamsResponse_GetConsensusParamsResponseV0__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetConsensusParamsResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetVersionUpgradeStateRequest
+
+@implementation GetVersionUpgradeStateRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetVersionUpgradeStateRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0 *v0;
+} GetVersionUpgradeStateRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0),
+        .number = GetVersionUpgradeStateRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeStateRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeStateRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVersionUpgradeStateRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetVersionUpgradeStateRequest_ClearVersionOneOfCase(GetVersionUpgradeStateRequest *message) {
+  GPBDescriptor *descriptor = [GetVersionUpgradeStateRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0
+
+@implementation GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0
+
+@dynamic prove;
+
+typedef struct GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+} GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0_FieldNumber_Prove,
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeStateRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetVersionUpgradeStateResponse
+
+@implementation GetVersionUpgradeStateResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetVersionUpgradeStateResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0 *v0;
+} GetVersionUpgradeStateResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0),
+        .number = GetVersionUpgradeStateResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeStateResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeStateResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVersionUpgradeStateResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetVersionUpgradeStateResponse_ClearVersionOneOfCase(GetVersionUpgradeStateResponse *message) {
+  GPBDescriptor *descriptor = [GetVersionUpgradeStateResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0
+
+@implementation GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic versions;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions *versions;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "versions",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions),
+        .number = GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_FieldNumber_Versions,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__storage_, versions),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeStateResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_ClearResultOneOfCase(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions
+
+@implementation GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions
+
+@dynamic versionsArray, versionsArray_Count;
+
+typedef struct GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *versionsArray;
+} GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "versionsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry),
+        .number = GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions_FieldNumber_VersionsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions__storage_, versionsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry
+
+@implementation GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry
+
+@dynamic versionNumber;
+@dynamic voteCount;
+
+typedef struct GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t versionNumber;
+  uint32_t voteCount;
+} GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "versionNumber",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry_FieldNumber_VersionNumber,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry__storage_, versionNumber),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "voteCount",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry_FieldNumber_VoteCount,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry__storage_, voteCount),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetVersionUpgradeVoteStatusRequest
+
+@implementation GetVersionUpgradeVoteStatusRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetVersionUpgradeVoteStatusRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0 *v0;
+} GetVersionUpgradeVoteStatusRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0),
+        .number = GetVersionUpgradeVoteStatusRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeVoteStatusRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVersionUpgradeVoteStatusRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetVersionUpgradeVoteStatusRequest_ClearVersionOneOfCase(GetVersionUpgradeVoteStatusRequest *message) {
+  GPBDescriptor *descriptor = [GetVersionUpgradeVoteStatusRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0
+
+@implementation GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0
+
+@dynamic startProTxHash;
+@dynamic count;
+@dynamic prove;
+
+typedef struct GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t count;
+  NSData *startProTxHash;
+} GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startProTxHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0_FieldNumber_StartProTxHash,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0__storage_, startProTxHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "count",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0_FieldNumber_Count,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0__storage_, count),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0_FieldNumber_Prove,
+        .hasIndex = 2,
+        .offset = 3,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeVoteStatusRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetVersionUpgradeVoteStatusResponse
+
+@implementation GetVersionUpgradeVoteStatusResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetVersionUpgradeVoteStatusResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0 *v0;
+} GetVersionUpgradeVoteStatusResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0),
+        .number = GetVersionUpgradeVoteStatusResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeVoteStatusResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVersionUpgradeVoteStatusResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetVersionUpgradeVoteStatusResponse_ClearVersionOneOfCase(GetVersionUpgradeVoteStatusResponse *message) {
+  GPBDescriptor *descriptor = [GetVersionUpgradeVoteStatusResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0
+
+@implementation GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic versions;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals *versions;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "versions",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals),
+        .number = GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_FieldNumber_Versions,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0__storage_, versions),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeVoteStatusResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_ClearResultOneOfCase(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals
+
+@implementation GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals
+
+@dynamic versionSignalsArray, versionSignalsArray_Count;
+
+typedef struct GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *versionSignalsArray;
+} GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "versionSignalsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal),
+        .number = GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals_FieldNumber_VersionSignalsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals__storage_, versionSignalsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal
+
+@implementation GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal
+
+@dynamic proTxHash;
+@dynamic version;
+
+typedef struct GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t version;
+  NSData *proTxHash;
+} GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "proTxHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal_FieldNumber_ProTxHash,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_, proTxHash),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "version",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal_FieldNumber_Version,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_, version),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetEpochsInfoRequest
+
+@implementation GetEpochsInfoRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetEpochsInfoRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetEpochsInfoRequest_GetEpochsInfoRequestV0 *v0;
+} GetEpochsInfoRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetEpochsInfoRequest_GetEpochsInfoRequestV0),
+        .number = GetEpochsInfoRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetEpochsInfoRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetEpochsInfoRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetEpochsInfoRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetEpochsInfoRequest_ClearVersionOneOfCase(GetEpochsInfoRequest *message) {
+  GPBDescriptor *descriptor = [GetEpochsInfoRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetEpochsInfoRequest_GetEpochsInfoRequestV0
+
+@implementation GetEpochsInfoRequest_GetEpochsInfoRequestV0
+
+@dynamic hasStartEpoch, startEpoch;
+@dynamic count;
+@dynamic ascending;
+@dynamic prove;
+
+typedef struct GetEpochsInfoRequest_GetEpochsInfoRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t count;
+  GPBUInt32Value *startEpoch;
+} GetEpochsInfoRequest_GetEpochsInfoRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "startEpoch",
+        .dataTypeSpecific.clazz = GPBObjCClass(GPBUInt32Value),
+        .number = GetEpochsInfoRequest_GetEpochsInfoRequestV0_FieldNumber_StartEpoch,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetEpochsInfoRequest_GetEpochsInfoRequestV0__storage_, startEpoch),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "count",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetEpochsInfoRequest_GetEpochsInfoRequestV0_FieldNumber_Count,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetEpochsInfoRequest_GetEpochsInfoRequestV0__storage_, count),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "ascending",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetEpochsInfoRequest_GetEpochsInfoRequestV0_FieldNumber_Ascending,
+        .hasIndex = 2,
+        .offset = 3,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetEpochsInfoRequest_GetEpochsInfoRequestV0_FieldNumber_Prove,
+        .hasIndex = 4,
+        .offset = 5,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetEpochsInfoRequest_GetEpochsInfoRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetEpochsInfoRequest_GetEpochsInfoRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetEpochsInfoRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetEpochsInfoResponse
+
+@implementation GetEpochsInfoResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetEpochsInfoResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetEpochsInfoResponse_GetEpochsInfoResponseV0 *v0;
+} GetEpochsInfoResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetEpochsInfoResponse_GetEpochsInfoResponseV0),
+        .number = GetEpochsInfoResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetEpochsInfoResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetEpochsInfoResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetEpochsInfoResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetEpochsInfoResponse_ClearVersionOneOfCase(GetEpochsInfoResponse *message) {
+  GPBDescriptor *descriptor = [GetEpochsInfoResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetEpochsInfoResponse_GetEpochsInfoResponseV0
+
+@implementation GetEpochsInfoResponse_GetEpochsInfoResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic epochs;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetEpochsInfoResponse_GetEpochsInfoResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos *epochs;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetEpochsInfoResponse_GetEpochsInfoResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "epochs",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos),
+        .number = GetEpochsInfoResponse_GetEpochsInfoResponseV0_FieldNumber_Epochs,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetEpochsInfoResponse_GetEpochsInfoResponseV0__storage_, epochs),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetEpochsInfoResponse_GetEpochsInfoResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetEpochsInfoResponse_GetEpochsInfoResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetEpochsInfoResponse_GetEpochsInfoResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetEpochsInfoResponse_GetEpochsInfoResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetEpochsInfoResponse_GetEpochsInfoResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetEpochsInfoResponse_GetEpochsInfoResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetEpochsInfoResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetEpochsInfoResponse_GetEpochsInfoResponseV0_ClearResultOneOfCase(GetEpochsInfoResponse_GetEpochsInfoResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetEpochsInfoResponse_GetEpochsInfoResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos
+
+@implementation GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos
+
+@dynamic epochInfosArray, epochInfosArray_Count;
+
+typedef struct GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *epochInfosArray;
+} GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "epochInfosArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo),
+        .number = GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos_FieldNumber_EpochInfosArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos__storage_, epochInfosArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfos__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetEpochsInfoResponse_GetEpochsInfoResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo
+
+@implementation GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo
+
+@dynamic number;
+@dynamic firstBlockHeight;
+@dynamic firstCoreBlockHeight;
+@dynamic startTime;
+@dynamic feeMultiplier;
+
+typedef struct GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo__storage_ {
+  uint32_t _has_storage_[1];
+  uint32_t number;
+  uint32_t firstCoreBlockHeight;
+  uint64_t firstBlockHeight;
+  uint64_t startTime;
+  double feeMultiplier;
+} GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "number",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNumber_Number,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo__storage_, number),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "firstBlockHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNumber_FirstBlockHeight,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo__storage_, firstBlockHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "firstCoreBlockHeight",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNumber_FirstCoreBlockHeight,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo__storage_, firstCoreBlockHeight),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "startTime",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNumber_StartTime,
+        .hasIndex = 3,
+        .offset = (uint32_t)offsetof(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo__storage_, startTime),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "feeMultiplier",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo_FieldNumber_FeeMultiplier,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo__storage_, feeMultiplier),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeDouble,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetEpochsInfoResponse_GetEpochsInfoResponseV0)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
