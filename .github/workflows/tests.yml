@@ -1,0 +1,84 @@
+name: Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - master
+      - v[0-9]+\.[0-9]+-dev
+  schedule:
+    - cron: '30 4 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Determine changed packages
+    runs-on: ubuntu-latest
+    outputs:
+      rs-drive: ${{ steps.changes.outputs.rs-drive }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - uses: dorny/paths-filter@v2
+        id: changes
+        with: # TODO: Move to seprate file and copy paths from packages
+          filters: |
+            rs-drive:
+              - .github/workflows/rs-drive.yml
+              - .github/workflows/rs-checks.yml
+              - packages/feature-flags-contract/**
+              - packages/dpns-contract/**
+              - packages/dashpay-contract/**
+              - packages/masternode-reward-shares-contract/**
+              - packages/rs-platform-serialization/**
+              - packages/rs-platform-serialization-derive/**
+              - packages/rs-platform-value/**
+              - packages/rs-platform-value-convertible/**
+              - packages/rs-platform-version/**
+              - packages/rs-platform-versioning/**
+              - packages/rs-dpp/**
+              - packages/rs-drive/**
+            infra:
+              - 'infra/**'
+
+  build-image-cache:
+    name: Build image layer cache
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - run: yarn build
+
+      - name: Build image cache
+        run: dashmate build
+#
+#  build-rust-cache:
+#    name: Warmup Rust build cache
+#    runs-on: ubuntu-latest
+#    steps:
+#      - name: Checkout
+#        uses: actions/checkout@v2
+#        with:
+#          fetch-depth: 0
+#
+#      - name: Build image cache
+#        run: |
+#          ...
+
+  rs-drive:
+    name: Rs Drive
+    needs: [changes]
+    uses: ./.github/workflows/rs-checks.yml
+    with:
+      package: "drive-abci"
+    if: ${{ needs.changes.outputs.rs-drive == 'true' }}

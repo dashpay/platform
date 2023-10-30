@@ -35,5 +35,4 @@ jobs:
     secrets: inherit
     with:
       package: '@dashevo/wallet-lib'
-
       install-browsers: true
