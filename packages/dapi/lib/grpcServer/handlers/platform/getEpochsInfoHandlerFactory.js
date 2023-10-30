@@ -7,26 +7,26 @@ const {
 /**
  * @param {DriveClient} driveClient
  *
- * @returns {getEpochInfosHandler}
+ * @returns {getEpochsInfoHandler}
  */
 function getEpochsInfoHandlerFactory(driveClient) {
   /**
-   * @typedef getEpochInfosHandler
+   * @typedef getEpochsInfoHandler
    *
    * @param {Object} call
    *
    * @return {Promise<GetEpochsInfoResponse>}
    */
-  async function getEpochInfosHandler(call) {
+  async function getEpochsInfoHandler(call) {
     const { request } = call;
 
-    const epochInfosBuffer = await driveClient
+    const epochsInfoBuffer = await driveClient
       .fetchEpochsInfo(request);
 
-    return GetEpochsInfoResponse.deserializeBinary(epochInfosBuffer);
+    return GetEpochsInfoResponse.deserializeBinary(epochsInfoBuffer);
   }
 
-  return getEpochInfosHandler;
+  return getEpochsInfoHandler;
 }
 
 module.exports = getEpochsInfoHandlerFactory;
