@@ -11,7 +11,6 @@ use crate::query::{Query, QueryItem};
 use dpp::block::epoch::{EpochIndex, EPOCH_KEY_OFFSET};
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
-use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use grovedb::{Element, GroveDb, PathQuery, SizedQuery};
 use std::collections::BTreeMap;

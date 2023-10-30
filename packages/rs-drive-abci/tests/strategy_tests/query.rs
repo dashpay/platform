@@ -342,6 +342,8 @@ mod tests {
     use dapi_grpc::platform::v0::{
         get_epochs_info_response, GetEpochsInfoRequest, GetEpochsInfoResponse,
     };
+    use dpp::block::epoch::EpochIndex;
+    use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::document_type::random_document::{
         DocumentFieldFillSize, DocumentFieldFillType,
@@ -727,6 +729,53 @@ mod tests {
 
         // we should have 5 epochs worth of infos
 
-        assert_eq!(epoch_infos.len(), 5)
+        assert_eq!(epoch_infos.len(), 5);
+
+        let request = GetEpochsInfoRequest {
+            version: Some(Version::V0(GetEpochsInfoRequestV0 {
+                start_epoch: None,
+                count: 1,
+                ascending: false,
+                prove: true,
+            })),
+        }
+        .encode_to_vec();
+
+        let validation_result = outcome
+            .abci_app
+            .platform
+            .query("/epochInfos", &request, platform_version)
+            .expect("expected query to succeed");
+        let response = GetEpochsInfoResponse::decode(
+            validation_result.data.expect("expected data").as_slice(),
+        )
+        .expect("expected to decode response");
+
+        let get_epochs_info_response::Version::V0(response_v0) =
+            response.version.expect("expected a versioned response");
+
+        let result = response_v0.result.expect("expected a result");
+
+        let metadata = response_v0.metadata.expect("expected metadata");
+
+        let epoch_infos_proof = extract_variant_or_panic!(
+            result,
+            get_epochs_info_response::get_epochs_info_response_v0::Result::Proof(inner),
+            inner
+        );
+
+        let epoch_infos = Drive::verify_epoch_infos(
+            epoch_infos_proof.grovedb_proof.as_slice(),
+            metadata.epoch as EpochIndex,
+            None,
+            1,
+            false,
+            platform_version,
+        )
+        .expect("expected to verify current epochs")
+        .1;
+
+        assert_eq!(epoch_infos.len(), 1);
+        assert_eq!(epoch_infos.first().unwrap().index(), 4);
     }
 }
