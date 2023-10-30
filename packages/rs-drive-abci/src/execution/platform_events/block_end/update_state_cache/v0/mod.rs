@@ -58,7 +58,7 @@ where
 
         state_cache.set_last_committed_block_info(Some(extended_block_info));
 
-        state_cache.set_initialization_information(None);
+        state_cache.set_genesis_block_info(None);
 
         //todo: verify this with an update
         PlatformVersion::set_current(PlatformVersion::get(platform_version.protocol_version)?);

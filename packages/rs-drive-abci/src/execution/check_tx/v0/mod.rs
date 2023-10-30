@@ -89,26 +89,11 @@ where
                 ))
             }
         };
+
         let state_read_guard = self.state.read().unwrap();
 
-        let genesis_block_info = if let Some(initialization_information) =
-            state_read_guard.initialization_information()
-        {
-            BlockInfo {
-                time_ms: initialization_information.time_ms,
-                height: 1,
-                core_height: initialization_information.core_initialization_height,
-                epoch: Epoch::new(GENESIS_EPOCH_INDEX)?,
-            }
-        } else {
-            BlockInfo::default()
-        };
-
-        let block_info = state_read_guard
-            .last_committed_block_info()
-            .as_ref()
-            .map(|extended_block_info| extended_block_info.basic_info())
-            .unwrap_or(&genesis_block_info);
+        // Latest committed or genesis block info
+        let block_info = state_read_guard.any_block_info();
 
         let platform_ref = PlatformRef {
             drive: &self.drive,
@@ -122,29 +107,10 @@ where
 
         let platform_version = platform_ref.state.current_platform_version()?;
 
-        // We should run the execution event in dry run to see if we would have enough fees for the transaction
-
-        // We need the approximate block info
-        if let Some(block_info) = state_read_guard.last_committed_block_info().as_ref() {
-            // We do not put the transaction, because this event happens outside of a block
-            execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(
-                    execution_event,
-                    block_info.basic_info(),
-                    None,
-                    platform_version,
-                )
-            })
-        } else {
-            execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(
-                    execution_event,
-                    &BlockInfo::default(),
-                    None,
-                    platform_version,
-                )
-            })
-        }
+        // We should run the execution event in dry run to see if we would have enough fees for the transition
+        execution_event.and_then_borrowed_validation(|execution_event| {
+            self.validate_fees_of_event(execution_event, block_info, None, platform_version)
+        })
     }
 }
 
