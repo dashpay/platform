@@ -25,6 +25,7 @@ const {
     GetConsensusParamsRequest,
     GetEpochsInfoRequest,
     GetVersionUpgradeVoteStatusRequest,
+    GetVersionUpgradeStateRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
@@ -46,6 +47,8 @@ const {
       GetEpochsInfoResponse: PBJSGetEpochsInfoResponse,
       GetVersionUpgradeVoteStatusRequest: PBJSGetVersionUpgradeVoteStatusRequest,
       GetVersionUpgradeVoteStatusResponse: PBJSGetVersionUpgradeVoteStatusResponse,
+      GetVersionUpgradeStateRequest: PBJSGetVersionUpgradeStateRequest,
+      GetVersionUpgradeStateResponse: PBJSGetVersionUpgradeStateResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -84,6 +87,10 @@ const getEpochsInfoHandlerFactory = require(
 
 const getVersionUpgradeVoteStatusHandlerFactory = require(
   './getVersionUpgradeVoteStatusHandlerFactory',
+);
+
+const getVersionUpgradeStateHandlerFactory = require(
+  './getVersionUpgradeStateHandlerFactory',
 );
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
@@ -284,6 +291,22 @@ function platformHandlersFactory(
     wrapInErrorHandler(getVersionUpgradeVoteStatusHandler),
   );
 
+  // getVersionUpgradeState
+  const getVersionUpgradeStateHandler = getVersionUpgradeStateHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetVersionUpgradeState = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetVersionUpgradeStateRequest,
+      PBJSGetVersionUpgradeStateRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetVersionUpgradeStateResponse,
+    ),
+    wrapInErrorHandler(getVersionUpgradeStateHandler),
+  );
+
   return {
     broadcastStateTransition: wrappedBroadcastStateTransition,
     getIdentity: wrappedGetIdentity,
@@ -295,6 +318,7 @@ function platformHandlersFactory(
     getConsensusParams: wrappedGetConsensusParams,
     getEpochsInfo: wrappedGetEpochsInfo,
     getVersionUpgradeVoteStatus: wrappedGetVersionUpgradeVoteStatus,
+    getVersionUpgradeState: wrappedGetVersionUpgradeState,
   };
 }
 
