@@ -339,7 +339,7 @@ describe('DriveClient', () => {
       );
 
       const { GetEpochsInfoResponseV0 } = GetEpochsInfoResponse;
-      const response = new GetDataContractResponse();
+      const response = new GetEpochsInfoResponse();
       const { EpochInfo, EpochInfos } = GetEpochsInfoResponseV0;
       response.setV0(
         new GetEpochsInfoResponseV0()
