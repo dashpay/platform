@@ -28,7 +28,7 @@ function getDataContractHandlerFactory(driveClient) {
   async function getDataContractHandler(call) {
     const { request } = call;
 
-    if (request.getId() === null) {
+    if (request.getV0().getId() === null) {
       throw new InvalidArgumentGrpcError('id is not specified');
     }
 

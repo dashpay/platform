@@ -1,13 +1,42 @@
-use crate::version::{FeatureVersion, OptionalFeatureVersion};
+use crate::version::{FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion};
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciVersion {
     pub structs: DriveAbciStructureVersions,
     pub methods: DriveAbciMethodVersions,
     pub validation_and_processing: DriveAbciValidationVersions,
+    pub query: DriveAbciQueryVersions,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryVersions {
+    pub response_metadata: FeatureVersion,
+    pub base_query_structure: FeatureVersion,
+    pub proofs_query: FeatureVersionBounds,
+    pub document_query: FeatureVersionBounds,
+    pub identity_based_queries: DriveAbciQueryIdentityVersions,
+    pub data_contract_based_queries: DriveAbciQueryDataContractVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryIdentityVersions {
+    pub identity: FeatureVersionBounds,
+    pub identities: FeatureVersionBounds,
+    pub keys: FeatureVersionBounds,
+    pub balance: FeatureVersionBounds,
+    pub balance_and_revision: FeatureVersionBounds,
+    pub identity_by_public_key_hash: FeatureVersionBounds,
+    pub identities_by_public_key_hashes: FeatureVersionBounds,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQueryDataContractVersions {
+    pub data_contract: FeatureVersionBounds,
+    pub data_contract_history: FeatureVersionBounds,
+    pub data_contracts: FeatureVersionBounds,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciStructureVersions {
     pub platform_state_structure: FeatureVersion,
     pub platform_state_for_saving_structure: FeatureVersion,
@@ -16,7 +45,7 @@ pub struct DriveAbciStructureVersions {
     pub masternode: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciMethodVersions {
     pub engine: DriveAbciEngineMethodVersions,
     pub initialization: DriveAbciInitializationMethodVersions,
@@ -34,13 +63,13 @@ pub struct DriveAbciMethodVersions {
     pub block_end: DriveAbciBlockEndMethodVersions,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciValidationVersions {
     pub state_transitions: DriveAbciStateTransitionValidationVersions,
     pub process_state_transition: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub structure: FeatureVersion,
     pub state: FeatureVersion,
@@ -54,13 +83,13 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub document_replace_transition_state_validation: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciValidationDataTriggerAndBindingVersions {
     pub bindings: FeatureVersion,
     pub triggers: DriveAbciValidationDataTriggerVersions,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciValidationDataTriggerVersions {
     pub create_contact_request_data_trigger: FeatureVersion,
     pub create_domain_data_trigger: FeatureVersion,
@@ -71,7 +100,7 @@ pub struct DriveAbciValidationDataTriggerVersions {
     pub reject_data_trigger: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciStateTransitionValidationVersion {
     pub structure: FeatureVersion,
     pub identity_signatures: OptionalFeatureVersion,
@@ -79,7 +108,7 @@ pub struct DriveAbciStateTransitionValidationVersion {
     pub transform_into_action: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciStateTransitionValidationVersions {
     pub common_validation_methods: DriveAbciStateTransitionCommonValidationVersions,
     pub identity_create_state_transition: DriveAbciStateTransitionValidationVersion,
@@ -92,7 +121,7 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub documents_batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciStateTransitionCommonValidationVersions {
     pub validate_identity_public_key_contract_bounds: FeatureVersion,
     pub validate_identity_public_key_ids_dont_exist_in_state: FeatureVersion,
@@ -101,7 +130,7 @@ pub struct DriveAbciStateTransitionCommonValidationVersions {
     pub validate_unique_identity_public_key_hashes_in_state: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciEngineMethodVersions {
     pub init_chain: FeatureVersion,
     pub check_tx: FeatureVersion,
@@ -109,7 +138,7 @@ pub struct DriveAbciEngineMethodVersions {
     pub finalize_block_proposal: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciCoreBasedUpdatesMethodVersions {
     pub update_core_info: FeatureVersion,
     pub update_masternode_list: FeatureVersion,
@@ -117,7 +146,7 @@ pub struct DriveAbciCoreBasedUpdatesMethodVersions {
     pub masternode_updates: DriveAbciMasternodeIdentitiesUpdatesMethodVersions,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
     pub get_voter_identity_key: FeatureVersion,
     pub get_operator_identity_keys: FeatureVersion,
@@ -135,30 +164,30 @@ pub struct DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
     pub update_voter_identity: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciInitializationMethodVersions {
     pub initial_core_height: FeatureVersion,
     pub create_genesis_state: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciBlockFeeProcessingMethodVersions {
     pub add_process_epoch_change_operations: FeatureVersion,
     pub process_block_fees: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciCoreSubsidyMethodVersions {
     pub epoch_core_reward_credits_for_distribution: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciFeePoolInwardsDistributionMethodVersions {
     pub add_distribute_block_fees_into_pools_operations: FeatureVersion,
     pub add_distribute_storage_fee_to_epochs_operations: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciFeePoolOutwardsDistributionMethodVersions {
     pub add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations: FeatureVersion,
     pub add_epoch_pool_to_proposers_payout_operations: FeatureVersion,
@@ -166,18 +195,18 @@ pub struct DriveAbciFeePoolOutwardsDistributionMethodVersions {
     pub fetch_reward_shares_list_for_masternode: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciEpochMethodVersions {
     pub gather_epoch_info: FeatureVersion,
     pub get_genesis_time: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciBlockStartMethodVersions {
     pub clear_drive_block_cache: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciBlockEndMethodVersions {
     pub store_ephemeral_state: FeatureVersion,
     pub update_state_cache: FeatureVersion,
@@ -185,7 +214,7 @@ pub struct DriveAbciBlockEndMethodVersions {
     pub validator_set_update: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
     pub build_withdrawal_transactions_from_documents: FeatureVersion,
     pub fetch_and_prepare_unsigned_withdrawal_transactions: FeatureVersion,
@@ -194,19 +223,19 @@ pub struct DriveAbciIdentityCreditWithdrawalMethodVersions {
     pub update_broadcasted_withdrawal_transaction_statuses: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciProtocolUpgradeMethodVersions {
     pub check_for_desired_protocol_upgrade: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciStateTransitionProcessingMethodVersions {
     pub execute_event: FeatureVersion,
     pub process_raw_state_transitions: FeatureVersion,
     pub validate_fees_of_event: FeatureVersion,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct DriveAbciWithdrawalsMethodVersions {
     pub check_withdrawals: FeatureVersion,
 }

@@ -62,7 +62,7 @@ impl Drive {
                     &mut vec![],
                     &platform_version.drive,
                 )?;
-                let (_, proof_returned_historical_contract) = Drive::verify_contract(
+                if let Ok(Some(_)) = Drive::verify_contract(
                     historical_contract_proof.as_slice(),
                     Some(true),
                     false,
@@ -70,9 +70,9 @@ impl Drive {
                     contract_id,
                     platform_version,
                 )
-                .expect("expected to get contract from proof");
-                // Only return the historical proof if an element was found
-                if proof_returned_historical_contract.is_some() {
+                .map(|(_, proof_returned_historical_contract)| proof_returned_historical_contract)
+                {
+                    // Only return the historical proof if an element was found
                     Ok(historical_contract_proof)
                 } else {
                     Ok(contract_proof)
