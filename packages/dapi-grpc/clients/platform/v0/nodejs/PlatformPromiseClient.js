@@ -40,6 +40,8 @@ const {
             WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
             GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
             GetConsensusParamsResponse: PBJSGetConsensusParamsResponse,
+            GetEpochsInfoRequest: PBJSGetEpochsInfoRequest,
+            GetEpochsInfoResponse: PBJSGetEpochsInfoResponse,
           },
         },
       },
@@ -56,6 +58,7 @@ const {
   GetIdentitiesByPublicKeyHashesResponse: ProtocGetIdentitiesByPublicKeyHashesResponse,
   WaitForStateTransitionResultResponse: ProtocWaitForStateTransitionResultResponse,
   GetConsensusParamsResponse: ProtocGetConsensusParamsResponse,
+  GetEpochsInfoResponse: ProtocGetEpochsInfoResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -112,6 +115,10 @@ class PlatformPromiseClient {
 
     this.client.getConsensusParams = promisify(
       this.client.getConsensusParams.bind(this.client),
+    );
+
+    this.client.getEpochInfos = promisify(
+      this.client.getEpochInfos.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -366,6 +373,37 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetConsensusParamsRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetEpochsInfoRequest} getEpochsInfoRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetEpochsInfoResponse>}
+   */
+  getIdentity(getEpochsInfoRequest, metadata = {}, options = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getEpochInfos(
+      getEpochsInfoRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetEpochsInfoResponse,
+              PBJSGetEpochsInfoResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetEpochsInfoRequest,
             ),
           ),
         ],

@@ -5,7 +5,7 @@ const cbor = require('cbor');
 const chaiAsPromised = require('chai-as-promised');
 const dirtyChai = require('dirty-chai');
 
-const { BytesValue } = require('google-protobuf/google/protobuf/wrappers_pb');
+const { BytesValue, UInt32Value } = require('google-protobuf/google/protobuf/wrappers_pb');
 
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
@@ -18,10 +18,16 @@ const {
     GetDataContractResponse,
     GetDocumentsRequest,
     GetDocumentsResponse,
+    GetEpochsInfoRequest,
+    GetEpochsInfoResponse,
     GetIdentityRequest,
     GetIdentityResponse,
     GetProofsRequest,
     GetProofsResponse,
+    GetVersionUpgradeStateRequest,
+    GetVersionUpgradeStateResponse,
+    GetVersionUpgradeVoteStatusRequest,
+    GetVersionUpgradeVoteStatusResponse,
     Proof,
     ResponseMetadata,
   },
@@ -311,6 +317,149 @@ describe('DriveClient', () => {
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/proofs',
+        data: Buffer.from(request.serializeBinary()).toString('hex'),
+      });
+
+      expect(result).to.be.deep.equal(
+        responseBytes,
+      );
+    });
+  });
+
+  describe('#fetchEpochInfos', () => {
+    it('should call \'fetchEpochInfos\' RPC with the given parameters', async () => {
+      const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
+
+      const { GetEpochsInfoRequestV0 } = GetEpochsInfoRequest;
+      const request = new GetEpochsInfoRequest();
+      request.setV0(
+        new GetEpochsInfoRequestV0()
+          .setStartEpoch(new UInt32Value([1]))
+          .setCount(1),
+      );
+
+      const { GetEpochsInfoResponseV0 } = GetEpochsInfoResponse;
+      const response = new GetDataContractResponse();
+      const { EpochInfo, EpochInfos } = GetEpochsInfoResponseV0;
+      response.setV0(
+        new GetEpochsInfoResponseV0()
+          .setEpochs(new EpochInfos()
+            .setEpochInfosList([new EpochInfo()
+              .setNumber(1)
+              .setFirstBlockHeight(1)
+              .setFirstCoreBlockHeight(1)
+              .setStartTime(Date.now())
+              .setFeeMultiplier(1.1)])),
+      );
+
+      const responseBytes = response.serializeBinary();
+
+      sinon.stub(drive.client, 'request')
+        .resolves({
+          result: {
+            response: { code: 0, value: responseBytes },
+          },
+        });
+
+      const result = await drive.fetchEpochInfos(request);
+
+      expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
+        path: '/epochInfos',
+        data: Buffer.from(request.serializeBinary()).toString('hex'),
+      });
+
+      expect(result).to.be.deep.equal(
+        responseBytes,
+      );
+    });
+  });
+
+  describe('#fetchVersionUpgradeVoteStatus', () => {
+    it('should call \'fetchEpochInfos\' RPC with the given parameters', async () => {
+      const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
+
+      const { GetVersionUpgradeVoteStatusRequestV0 } = GetVersionUpgradeVoteStatusRequest;
+      const request = new GetVersionUpgradeVoteStatusRequest();
+      request.setV0(
+        new GetVersionUpgradeVoteStatusRequestV0()
+          .setStartProTxHash(Buffer.alloc(32))
+          .setCount(1),
+      );
+
+      const { GetVersionUpgradeVoteStatusResponseV0 } = GetVersionUpgradeVoteStatusResponse;
+      const response = new GetVersionUpgradeVoteStatusResponse();
+      const { VersionSignal, VersionSignals } = GetVersionUpgradeVoteStatusResponseV0;
+      response.setV0(
+        new GetVersionUpgradeVoteStatusResponseV0()
+          .setVersions(
+            new VersionSignals()
+              .setVersionSignalsList([
+                new VersionSignal()
+                  .setProTxHash(Buffer.alloc(32))
+                  .setVersion(10),
+              ]),
+
+          ),
+      );
+
+      const responseBytes = response.serializeBinary();
+
+      sinon.stub(drive.client, 'request')
+        .resolves({
+          result: {
+            response: { code: 0, value: responseBytes },
+          },
+        });
+
+      const result = await drive.fetchVersionUpgradeVoteStatus(request);
+
+      expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
+        path: '/versionUpgrade/voteStatus',
+        data: Buffer.from(request.serializeBinary()).toString('hex'),
+      });
+
+      expect(result).to.be.deep.equal(
+        responseBytes,
+      );
+    });
+  });
+
+  describe('#fetchVersionUpgradeState', () => {
+    it('should call \'fetchEpochInfos\' RPC with the given parameters', async () => {
+      const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
+
+      const { GetVersionUpgradeStateRequestV0 } = GetVersionUpgradeStateRequest;
+      const request = new GetVersionUpgradeStateRequest();
+      request.setV0(new GetVersionUpgradeStateRequestV0());
+
+      const { GetVersionUpgradeStateResponseV0 } = GetVersionUpgradeStateResponse;
+      const response = new GetVersionUpgradeStateResponse();
+      const { Versions, VersionEntry } = GetVersionUpgradeStateResponseV0;
+      response.setV0(
+        new GetVersionUpgradeStateResponseV0()
+          .setVersions(
+            new Versions()
+              .setVersionsList([
+                new VersionEntry()
+                  .setVersionNumber(1)
+                  .setVoteCount(10),
+              ]),
+          ),
+      );
+
+      const responseBytes = response.serializeBinary();
+
+      sinon.stub(drive.client, 'request')
+        .resolves({
+          result: {
+            response: { code: 0, value: responseBytes },
+          },
+        });
+
+      const result = await drive.fetchVersionUpgradeState(request);
+
+      expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
+        path: '/versionUpgrade/state',
         data: Buffer.from(request.serializeBinary()).toString('hex'),
       });
 
