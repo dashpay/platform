@@ -270,6 +270,14 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
+      '1.0.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.tenderdash.log.level = 'info';
+          });
+
+        return configFile;
+      },
     };
   }
 
