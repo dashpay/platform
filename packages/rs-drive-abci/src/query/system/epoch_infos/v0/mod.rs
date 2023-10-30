@@ -29,8 +29,17 @@ impl<C> Platform<C> {
         let GetEpochsInfoRequestV0 {
             start_epoch,
             count,
+            ascending,
             prove,
         } = request;
+
+        let start_epoch = start_epoch.unwrap_or_else(|| {
+            if ascending {
+                0
+            } else {
+                state.epoch_ref().index as u32
+            }
+        });
 
         if start_epoch >= u16::MAX as u32 {
             return Ok(QueryValidationResult::new_with_error(
@@ -51,6 +60,7 @@ impl<C> Platform<C> {
             let proof = check_validation_result_with_data!(self.drive.prove_epochs_infos(
                 start_epoch as u16,
                 count as u16,
+                ascending,
                 None,
                 platform_version
             ));
@@ -79,6 +89,7 @@ impl<C> Platform<C> {
             let result = check_validation_result_with_data!(self.drive.get_epochs_infos(
                 start_epoch as u16,
                 count as u16,
+                ascending,
                 None,
                 platform_version
             ));
@@ -86,7 +97,7 @@ impl<C> Platform<C> {
                 .into_iter()
                 .map(|epoch_info| {
                     get_epochs_info_response::get_epochs_info_response_v0::EpochInfo {
-                        number: 0,
+                        number: epoch_info.index() as u32,
                         first_block_height: epoch_info.first_block_height(),
                         first_core_block_height: epoch_info.first_core_block_height(),
                         start_time: epoch_info.first_block_time(),

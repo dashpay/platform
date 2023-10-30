@@ -21,6 +21,7 @@ impl Drive {
         &self,
         start_epoch_index: u16,
         count: u16,
+        ascending: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -40,9 +41,16 @@ impl Drive {
             KEY_START_BLOCK_CORE_HEIGHT.to_vec(),
             KEY_FEE_MULTIPLIER.to_vec(),
         ]);
-        let mut query = Query::new_single_query_item(QueryItem::RangeFrom(
-            index_with_offset.to_be_bytes().to_vec()..,
-        ));
+        let mut query = if ascending {
+            Query::new_single_query_item(QueryItem::RangeFrom(
+                index_with_offset.to_be_bytes().to_vec()..,
+            ))
+        } else {
+            Query::new_single_query_item(QueryItem::RangeToInclusive(
+                ..=index_with_offset.to_be_bytes().to_vec(),
+            ))
+        };
+        query.left_to_right = ascending;
         query.set_subquery(subquery);
         let path_query = PathQuery::new(
             pools_vec_path(),

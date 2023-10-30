@@ -2601,13 +2601,55 @@ mod tests {
         const PATH: &str = "/epochInfos";
 
         #[test]
-        fn test_query_epoch_infos() {
+        fn test_query_empty_epoch_infos() {
             let (platform, version) = super::setup_platform();
 
             let request = GetEpochsInfoRequest {
                 version: Some(Version::V0(GetEpochsInfoRequestV0 {
-                    start_epoch: 0,
+                    start_epoch: None, // 0
                     count: 5,
+                    ascending: true,
+                    prove: false,
+                })),
+            }
+            .encode_to_vec();
+
+            let validation_result = platform
+                .query(PATH, &request, version)
+                .expect("expected query to succeed");
+            let response = GetEpochsInfoResponse::decode(
+                validation_result.data.expect("expected data").as_slice(),
+            )
+            .expect("expected to decode response");
+
+            let result = extract_single_variant_or_panic!(
+                response.version.expect("expected a versioned response"),
+                get_epochs_info_response::Version::V0(inner),
+                inner
+            )
+            .result
+            .expect("expected a result");
+
+            let epoch_infos = extract_variant_or_panic!(
+                result,
+                get_epochs_info_response::get_epochs_info_response_v0::Result::Epochs(inner),
+                inner
+            );
+
+            // we just started chain, there should be only 1 epoch info for the first epoch
+
+            assert!(epoch_infos.epoch_infos.is_empty())
+        }
+
+        #[test]
+        fn test_query_empty_epoch_infos_descending() {
+            let (platform, version) = super::setup_platform();
+
+            let request = GetEpochsInfoRequest {
+                version: Some(Version::V0(GetEpochsInfoRequestV0 {
+                    start_epoch: None, // 0
+                    count: 5,
+                    ascending: false,
                     prove: false,
                 })),
             }

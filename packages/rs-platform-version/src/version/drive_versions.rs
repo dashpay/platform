@@ -60,6 +60,7 @@ pub struct DriveVerifyMethodVersions {
     pub document: DriveVerifyDocumentMethodVersions,
     pub identity: DriveVerifyIdentityMethodVersions,
     pub single_document: DriveVerifySingleDocumentMethodVersions,
+    pub system: DriveVerifySystemMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -85,6 +86,11 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_identity_id_by_public_key_hash: FeatureVersion,
     pub verify_identity_ids_by_public_key_hashes: FeatureVersion,
     pub verify_identity_keys_by_identity_id: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifySystemMethodVersions {
+    pub verify_epoch_infos: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

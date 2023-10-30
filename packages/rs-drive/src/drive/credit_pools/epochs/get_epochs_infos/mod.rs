@@ -15,6 +15,7 @@ impl Drive {
         &self,
         start_epoch_index: u16,
         count: u16,
+        ascending: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<ExtendedEpochInfo>, Error> {
@@ -25,7 +26,13 @@ impl Drive {
             .epochs
             .get_epochs_infos
         {
-            0 => self.get_epochs_infos_v0(start_epoch_index, count, transaction, platform_version),
+            0 => self.get_epochs_infos_v0(
+                start_epoch_index,
+                count,
+                ascending,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "get_epochs_infos".to_string(),
                 known_versions: vec![0],

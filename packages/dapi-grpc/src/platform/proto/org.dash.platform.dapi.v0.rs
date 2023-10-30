@@ -1319,11 +1319,13 @@ pub mod get_epochs_info_request {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct GetEpochsInfoRequestV0 {
-        #[prost(uint32, tag = "1")]
-        pub start_epoch: u32,
+        #[prost(message, optional, tag = "1")]
+        pub start_epoch: ::core::option::Option<u32>,
         #[prost(uint32, tag = "2")]
         pub count: u32,
         #[prost(bool, tag = "3")]
+        pub ascending: bool,
+        #[prost(bool, tag = "4")]
         pub prove: bool,
     }
     #[allow(clippy::derive_partial_eq_without_eq)]

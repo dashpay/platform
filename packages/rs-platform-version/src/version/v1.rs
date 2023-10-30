@@ -55,7 +55,8 @@ use crate::version::drive_versions::{
     DriveStructureVersion, DriveSystemEstimationCostsMethodVersions,
     DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
     DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
-    DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions, DriveVersion,
+    DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions,
+    DriveVerifySystemMethodVersions, DriveVersion,
 };
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
 use crate::version::{AbciStructureVersion, PlatformArchitectureVersion};
@@ -245,6 +246,9 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
                 single_document: DriveVerifySingleDocumentMethodVersions {
                     verify_proof: 0,
                     verify_proof_keep_serialized: 0,
+                },
+                system: DriveVerifySystemMethodVersions {
+                    verify_epoch_infos: 0,
                 },
             },
             identity: DriveIdentityMethodVersions {

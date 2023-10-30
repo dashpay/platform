@@ -599,9 +599,10 @@ message GetVersionUpgradeVoteStatusResponse {
 
 message GetEpochsInfoRequest {
   message GetEpochsInfoRequestV0 {
-    uint32 start_epoch = 1;
+    google.protobuf.UInt32Value start_epoch = 1;
     uint32 count = 2;
-    bool prove = 3;
+    bool ascending = 3;
+    bool prove = 4;
   }
 
   oneof version {
