@@ -11,7 +11,7 @@ use bincode::{Decode, Encode};
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Insufficient identity ${identity_id} balance ${balance} required ${required_balance}")]
+#[error("Insufficient identity {identity_id} balance {balance} required {required_balance}")]
 #[platform_serialize(unversioned)]
 pub struct IdentityInsufficientBalanceError {
     /*

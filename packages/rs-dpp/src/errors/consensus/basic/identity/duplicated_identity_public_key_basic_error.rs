@@ -9,7 +9,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Duplicated public keys ${duplicated_ids:?} found")]
+#[error("Duplicated public keys {duplicated_ids:?} found")]
 #[platform_serialize(unversioned)]
 pub struct DuplicatedIdentityPublicKeyBasicError {
     /*
