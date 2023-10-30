@@ -23,14 +23,13 @@ const {
     IdentityPublicKey,
     InvalidInstantAssetLockProofSignatureError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
-    BalanceIsNotEnoughError,
     BasicECDSAError,
     IdentityPublicKeyWithWitness,
     IdentityInsufficientBalanceError,
   },
 } = Dash;
 
-describe('Platform',() => {
+describe('Platform', () => {
   describe('Identity', function describeIdentity() {
     this.bail(true); // bail on first failure
 
@@ -103,7 +102,7 @@ describe('Platform',() => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction(100000);
+      } = await client.platform.identities.utils.createAssetLockTransaction(150000);
 
       const account = await client.getWalletAccount();
 
@@ -248,7 +247,7 @@ describe('Platform',() => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(100000);
+        } = await client.platform.identities.utils.createAssetLockTransaction(150000);
 
         const account = await client.getWalletAccount();
 
@@ -325,9 +324,11 @@ describe('Platform',() => {
         });
       });
 
-      // TODO: there is a bug in identity create balance validation
-      it.skip('should fail to create more documents if there are no more credits', async () => {
-        const lowBalanceIdentity = await client.platform.identities.register(80000);
+      it('should fail to create more documents if there are no more credits', async () => {
+        const lowBalanceIdentity = await client.platform.identities.register(150000);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
 
         const document = await client.platform.documents.create(
           'customContracts.niceDocument',
@@ -350,7 +351,7 @@ describe('Platform',() => {
         expect(broadcastError).to.exist();
         expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
         expect(broadcastError.getCause()).to.be.an.instanceOf(
-          BalanceIsNotEnoughError,
+          IdentityInsufficientBalanceError,
         );
       });
 
@@ -458,7 +459,10 @@ describe('Platform',() => {
 
         // Creating ST that tries to spend the same output
 
-        const anotherIdentity = await client.platform.identities.register(100000);
+        const anotherIdentity = await client.platform.identities.register(150000);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
 
         const conflictingTopUpStateTransition = await client.platform.identities.utils
           .createIdentityTopUpTransition(assetLockProof, privateKey, anotherIdentity.getId());
@@ -490,6 +494,8 @@ describe('Platform',() => {
         let recipient;
         before(async () => {
           recipient = await client.platform.identities.register(400000);
+
+          // Additional wait time to mitigate testnet latency
           await waitForSTPropagated();
         });
 
@@ -510,6 +516,7 @@ describe('Platform',() => {
             transferAmount,
           );
 
+          // Additional wait time to mitigate testnet latency
           await waitForSTPropagated();
 
           const identityAfterTransfer = await client.platform.identities.get(
