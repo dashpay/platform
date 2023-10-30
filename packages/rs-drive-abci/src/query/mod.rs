@@ -1698,6 +1698,7 @@ mod tests {
         };
         use dapi_grpc::platform::v0::get_proofs_request::{GetProofsRequestV0, Version};
         use dapi_grpc::platform::v0::{get_proofs_response, GetProofsRequest, GetProofsResponse};
+        use dapi_grpc::platform::VersionedGrpcResponse;
         use prost::Message;
 
         const PATH: &str = "/proofs";
@@ -1844,14 +1845,11 @@ mod tests {
             let response =
                 GetProofsResponse::decode(validation_result.data.unwrap().as_slice()).unwrap();
 
-            let proof = extract_variant_or_panic!(
-                response.version.expect("expected a versioned response"),
-                get_proofs_response::Version::V0(inner),
-                inner
-            )
-            .proof;
+            let proof = response
+                .get_proof(version)
+                .expect("expected a proof in versioned response");
 
-            assert!(proof.is_some())
+            assert!(!proof.grovedb_proof.is_empty())
         }
     }
 }

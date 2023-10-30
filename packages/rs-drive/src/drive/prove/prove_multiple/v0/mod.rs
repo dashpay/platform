@@ -27,7 +27,7 @@ impl Drive {
     pub(super) fn prove_multiple_v0(
         &self,
         identity_queries: &Vec<IdentityDriveQuery>,
-        contract_ids: &[([u8; 32], bool)], //bool is history
+        contract_ids: &[([u8; 32], Option<bool>)], //bool is history
         document_queries: &Vec<SingleDocumentDriveQuery>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -57,7 +57,9 @@ impl Drive {
         let (contract_ids, historical_contract_ids): (Vec<_>, Vec<_>) = contract_ids
             .iter()
             .partition_map(|(contract_id, historical)| {
-                if !*historical {
+                // TODO: implement None
+                let history = historical.unwrap_or(false);
+                if !history {
                     Either::Left(*contract_id)
                 } else {
                     Either::Right(*contract_id)

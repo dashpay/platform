@@ -5,7 +5,10 @@ use prost::Message;
 fn main() {
     let request = platform::GetConsensusParamsRequest {
         version: Some(platform::get_consensus_params_request::Version::V0(
-            GetConsensusParamsRequestV0 { height: 123 },
+            GetConsensusParamsRequestV0 {
+                prove: true,
+                height: 123,
+            },
         )),
     };
 

@@ -109,7 +109,9 @@ impl Sdk {
         O::Request: MockRequest,
     {
         match self.inner {
-            SdkInstance::Dapi { .. } => O::maybe_from_proof(request, response, self),
+            SdkInstance::Dapi { .. } => {
+                O::maybe_from_proof(request, response, self.version(), self)
+            }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => mock.parse_proof(request, response),
         }

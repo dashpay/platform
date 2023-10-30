@@ -31,7 +31,7 @@ impl Drive {
     pub fn prove_multiple(
         &self,
         identity_queries: &Vec<IdentityDriveQuery>,
-        contract_ids: &[([u8; 32], bool)], //bool represents if it is historical
+        contract_ids: &[([u8; 32], Option<bool>)], //bool represents if it is historical
         document_queries: &Vec<SingleDocumentDriveQuery>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

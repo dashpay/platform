@@ -34,14 +34,14 @@ impl<C> Platform<C> {
             .into_iter()
             .map(|contract_request| {
                 Bytes32::from_vec(contract_request.contract_id)
-                    .map(|bytes| (bytes.0, contract_request.is_historical))
+                    .map(|bytes| (bytes.0, None))
                     .map_err(|_| {
                         QueryError::InvalidArgument(
                             "id must be a valid identifier (32 bytes long)".to_string(),
                         )
                     })
             })
-            .collect::<Result<Vec<([u8; 32], bool)>, QueryError>>());
+            .collect::<Result<Vec<([u8; 32], Option<bool>)>, QueryError>>());
 
         let identity_requests = check_validation_result_with_data!(identities
             .into_iter()
@@ -106,14 +106,16 @@ impl<C> Platform<C> {
 
         let response_data = GetProofsResponse {
             version: Some(get_proofs_response::Version::V0(GetProofsResponseV0 {
-                proof: Some(Proof {
-                    grovedb_proof: proof,
-                    quorum_hash: state.last_quorum_hash().to_vec(),
-                    quorum_type,
-                    block_id_hash: state.last_block_id_hash().to_vec(),
-                    signature: state.last_block_signature().to_vec(),
-                    round: state.last_block_round(),
-                }),
+                result: Some(get_proofs_response::get_proofs_response_v0::Result::Proof(
+                    Proof {
+                        grovedb_proof: proof,
+                        quorum_hash: state.last_quorum_hash().to_vec(),
+                        quorum_type,
+                        block_id_hash: state.last_block_id_hash().to_vec(),
+                        signature: state.last_block_signature().to_vec(),
+                        round: state.last_block_round(),
+                    },
+                )),
                 metadata: Some(metadata),
             })),
         }

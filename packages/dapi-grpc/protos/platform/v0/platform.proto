@@ -235,10 +235,7 @@ message GetProofsRequest {
       Type request_type = 2;
     }
 
-    message ContractRequest {
-      bytes contract_id = 1;
-      bool is_historical = 2;
-    }
+    message ContractRequest { bytes contract_id = 1; }
 
     repeated IdentityRequest identities = 1;
     repeated ContractRequest contracts = 2;
@@ -250,7 +247,8 @@ message GetProofsRequest {
 
 message GetProofsResponse {
   message GetProofsResponseV0 {
-    Proof proof = 1;
+    oneof result { Proof proof = 1; }
+
     ResponseMetadata metadata = 2;
   }
   oneof version { GetProofsResponseV0 v0 = 1; }
@@ -260,7 +258,6 @@ message GetDataContractRequest {
   message GetDataContractRequestV0 {
     bytes id = 1;
     bool prove = 2;
-    bool is_historical = 3;
   }
   oneof version { GetDataContractRequestV0 v0 = 1; }
 }

@@ -150,11 +150,11 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
-    platform_proto::GetIdentityByPublicKeyHashesRequest,
-    platform_proto::GetIdentityByPublicKeyHashesResponse,
+    platform_proto::GetIdentityByPublicKeyHashRequest,
+    platform_proto::GetIdentityByPublicKeyHashResponse,
     PlatformGrpcClient,
     RequestSettings::default(),
-    get_identity_by_public_key_hashes
+    get_identity_by_public_key_hash
 );
 
 impl_transport_request_grpc!(

@@ -68,4 +68,8 @@ pub enum Error {
     /// Callback error
     #[error("unexpected callback error: {error}, reason: {reason}")]
     UnexpectedCallbackError { error: String, reason: String },
+
+    /// Invalid version of object in response
+    #[error("invalid version of message")]
+    InvalidVersion(#[from] dpp::version::PlatformVersionError),
 }
