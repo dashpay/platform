@@ -270,9 +270,11 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
-      '0.25.8': (configFile) => {
+      '1.0.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
+            options.platform.tenderdash.log.level = 'info';
+
             if (options.network !== NETWORK_MAINNET) {
               options.core.docker.image = base.get('core.docker.image');
             }
