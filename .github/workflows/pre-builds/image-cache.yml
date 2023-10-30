@@ -1,0 +1,21 @@
+name: Build image layer cache
+
+on:
+  repository_dispatch:
+    types: [build-image-cache]
+
+
+jobs:
+  steps:
+    - trigger job right away and exit if build is already done
+    - record job
+    - mark build as "in progress" (we can use github action cache) if key wasn't created then we are in progress so we
+    - should exit
+    - yarn build
+    - yarn dashmate build
+    - mark build as "done"
+    - trigger all recorded jobs for this run (using run id) in parallel
+
+
+# Build should be identified with name and SHA
+# Jobs: rs-checks, js-checks
