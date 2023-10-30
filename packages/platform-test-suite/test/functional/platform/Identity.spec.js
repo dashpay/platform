@@ -53,9 +53,7 @@ describe('Platform', () => {
       expect(identity).to.exist();
     });
 
-    // TODO(rs-drive-abci): restore
-    //  logic for checking asset lock signature in rs-drive-abci is missing
-    it.skip('should fail to create an identity if instantLock is not valid', async () => {
+    it('should fail to create an identity if instantLock is not valid', async () => {
       await client.platform.initialize();
 
       const {
@@ -94,8 +92,7 @@ describe('Platform', () => {
       );
     });
 
-    // TODO(rs-drive-abci): generally test works, but sometimes fails with the deserialization error
-    it.skip('should fail to create an identity with already used asset lock output', async () => {
+    it('should fail to create an identity with already used asset lock output', async () => {
       // Create new identity
       const sourceIdentity = await client.platform.identities.register(400000);
 
@@ -235,9 +232,7 @@ describe('Platform', () => {
       expect(identity.toBuffer().includes(bytesToCheck)).to.be.true();
     });
 
-    // TODO(rs-drive-abci): fix,
-    //  It doesn't work. Something wrong with the serialization
-    describe.skip('chainLock', function describe() {
+    describe('chainLock', function describe() {
       let chainLockIdentity;
 
       this.timeout(850000);
@@ -261,16 +256,9 @@ describe('Platform', () => {
 
         const { height: transactionHeight } = await metadataPromise;
 
-        // Changing endianness of raw txId bytes in outPoint to match expectations of dashcore-rust
-        let outPointBuffer = transaction.getOutPointBuffer(outputIndex);
-        const txIdBuffer = outPointBuffer.slice(0, 32);
-        const outputIndexBuffer = outPointBuffer.slice(32);
-        txIdBuffer.reverse();
-        outPointBuffer = Buffer.concat([txIdBuffer, outputIndexBuffer]);
-
         const assetLockProof = await client.platform.dpp.identity.createChainAssetLockProof(
           transactionHeight,
-          outPointBuffer,
+          transaction.getOutPointBuffer(outputIndex),
         );
 
         // Wait for platform chain to sync core height up to transaction height
@@ -334,7 +322,7 @@ describe('Platform', () => {
         });
       });
 
-      it.skip('should fail to create more documents if there are no more credits', async () => {
+      it('should fail to create more documents if there are no more credits', async () => {
         const lowBalanceIdentity = await client.platform.identities.register(50000);
 
         const document = await client.platform.documents.create(
@@ -361,7 +349,7 @@ describe('Platform', () => {
         );
       });
 
-      it.skip('should fail top-up if instant lock is not valid', async () => {
+      it('should fail top-up if instant lock is not valid', async () => {
         const {
           transaction,
           privateKey,
@@ -424,7 +412,7 @@ describe('Platform', () => {
           .lessThan(balanceBeforeTopUp + topUpCredits);
       });
 
-      it.skip('should be able to create more documents after the top-up', async () => {
+      it('should be able to create more documents after the top-up', async () => {
         const document = await client.platform.documents.create(
           'customContracts.niceDocument',
           identity,
@@ -441,7 +429,7 @@ describe('Platform', () => {
         await waitForSTPropagated();
       });
 
-      it.skip('should fail to top up an identity with already used asset lock output', async () => {
+      it('should fail to top up an identity with already used asset lock output', async () => {
         const {
           transaction,
           privateKey,
