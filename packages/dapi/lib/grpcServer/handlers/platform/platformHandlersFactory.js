@@ -75,8 +75,8 @@ const waitForStateTransitionResultHandlerFactory = require(
 const getConsensusParamsHandlerFactory = require(
   './getConsensusParamsHandlerFactory',
 );
-const getEpochInfosHandlerFactory = require(
-  './getEpochInfosHandlerFactory',
+const getEpochsInfoHandlerFactory = require(
+  './getEpochsInfoHandlerFactory',
 );
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
@@ -245,12 +245,12 @@ function platformHandlersFactory(
     wrapInErrorHandler(getConsensusParamsHandler),
   );
 
-  // getEpochInfos
-  const getEpochInfosHandler = getEpochInfosHandlerFactory(
+  // getEpochsInfo
+  const getEpochsInfoHandler = getEpochsInfoHandlerFactory(
     driveClient,
   );
 
-  const wrappedGetEpochInfos = jsonToProtobufHandlerWrapper(
+  const wrappedGetEpochsInfo = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
       GetEpochsInfoRequest,
       PBJSGetEpochsInfoRequest,
@@ -258,7 +258,7 @@ function platformHandlersFactory(
     protobufToJsonFactory(
       PBJSGetEpochsInfoResponse,
     ),
-    wrapInErrorHandler(getEpochInfosHandler),
+    wrapInErrorHandler(getEpochsInfoHandler),
   );
 
   return {
@@ -270,7 +270,7 @@ function platformHandlersFactory(
     getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
     getConsensusParams: wrappedGetConsensusParams,
-    getEpochInfos: wrappedGetEpochInfos,
+    getEpochsInfo: wrappedGetEpochsInfo,
   };
 }
 

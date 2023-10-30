@@ -5,14 +5,14 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const getEpochInfosHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getEpochInfosHandlerFactory');
+const getEpochsInfoHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getEpochsInfoHandlerFactory');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
-describe('getEpochInfosHandlerFactory', () => {
+describe('getEpochsInfoHandlerFactory', () => {
   let call;
   let driveStateRepositoryMock;
-  let getEpochInfosHandler;
+  let getEpochsInfoHandler;
   let epochNumber;
   let proofFixture;
   let proofMock;
@@ -57,21 +57,21 @@ describe('getEpochInfosHandlerFactory', () => {
     );
 
     driveStateRepositoryMock = {
-      fetchEpochInfos: this.sinon.stub().resolves(response.serializeBinary()),
+      fetchEpochsInfo: this.sinon.stub().resolves(response.serializeBinary()),
     };
 
-    getEpochInfosHandler = getEpochInfosHandlerFactory(
+    getEpochsInfoHandler = getEpochsInfoHandlerFactory(
       driveStateRepositoryMock,
     );
   });
 
   it('should return valid result', async () => {
-    const result = await getEpochInfosHandler(call);
+    const result = await getEpochsInfoHandler(call);
 
     expect(result).to.be.an.instanceOf(GetEpochsInfoResponse);
     expect(result.getV0()
       .getEpochs().getEpochInfosList()[0].getNumber()).to.equal(epochNumber);
-    expect(driveStateRepositoryMock.fetchEpochInfos).to.be.calledOnceWith(call.request);
+    expect(driveStateRepositoryMock.fetchEpochsInfo).to.be.calledOnceWith(call.request);
 
     const proof = result.getV0().getProof();
     expect(proof).to.be.undefined();
@@ -80,9 +80,9 @@ describe('getEpochInfosHandlerFactory', () => {
   it('should return proof', async () => {
     request.getProve.returns(true);
 
-    driveStateRepositoryMock.fetchEpochInfos.resolves(proofResponse.serializeBinary());
+    driveStateRepositoryMock.fetchEpochsInfo.resolves(proofResponse.serializeBinary());
 
-    const result = await getEpochInfosHandler(call);
+    const result = await getEpochsInfoHandler(call);
 
     expect(result).to.be.an.instanceOf(GetEpochsInfoResponse);
 
@@ -93,21 +93,21 @@ describe('getEpochInfosHandlerFactory', () => {
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    expect(driveStateRepositoryMock.fetchEpochInfos).to.be.calledOnceWith(call.request);
+    expect(driveStateRepositoryMock.fetchEpochsInfo).to.be.calledOnceWith(call.request);
   });
 
-  it('should throw an error when fetchEpochInfos throws unknown error', async () => {
+  it('should throw an error when fetchEpochsInfo throws unknown error', async () => {
     const error = new Error('Unknown error');
 
-    driveStateRepositoryMock.fetchEpochInfos.throws(error);
+    driveStateRepositoryMock.fetchEpochsInfo.throws(error);
 
     try {
-      await getEpochInfosHandler(call);
+      await getEpochsInfoHandler(call);
 
       expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.equal(error);
-      expect(driveStateRepositoryMock.fetchEpochInfos).to.be.calledOnceWith(call.request);
+      expect(driveStateRepositoryMock.fetchEpochsInfo).to.be.calledOnceWith(call.request);
     }
   });
 });

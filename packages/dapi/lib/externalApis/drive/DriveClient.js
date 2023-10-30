@@ -140,7 +140,7 @@ class DriveClient {
    * @param {GetEpochsInfoRequest} request
    * @return {Promise<Buffer>}
    */
-  async fetchEpochInfos(request) {
+  async fetchEpochsInfo(request) {
     return this.request(
       '/epochInfos',
       request.serializeBinary(),

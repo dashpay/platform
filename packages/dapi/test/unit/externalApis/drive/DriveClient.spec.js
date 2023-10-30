@@ -326,8 +326,8 @@ describe('DriveClient', () => {
     });
   });
 
-  describe('#fetchEpochInfos', () => {
-    it('should call \'fetchEpochInfos\' RPC with the given parameters', async () => {
+  describe('#fetchEpochsInfo', () => {
+    it('should call \'fetchEpochsInfo\' RPC with the given parameters', async () => {
       const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
       const { GetEpochsInfoRequestV0 } = GetEpochsInfoRequest;
@@ -361,7 +361,7 @@ describe('DriveClient', () => {
           },
         });
 
-      const result = await drive.fetchEpochInfos(request);
+      const result = await drive.fetchEpochsInfo(request);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/epochInfos',
@@ -375,7 +375,7 @@ describe('DriveClient', () => {
   });
 
   describe('#fetchVersionUpgradeVoteStatus', () => {
-    it('should call \'fetchEpochInfos\' RPC with the given parameters', async () => {
+    it('should call \'fetchEpochsInfo\' RPC with the given parameters', async () => {
       const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
       const { GetVersionUpgradeVoteStatusRequestV0 } = GetVersionUpgradeVoteStatusRequest;
@@ -425,7 +425,7 @@ describe('DriveClient', () => {
   });
 
   describe('#fetchVersionUpgradeState', () => {
-    it('should call \'fetchEpochInfos\' RPC with the given parameters', async () => {
+    it('should call \'fetchEpochsInfo\' RPC with the given parameters', async () => {
       const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
       const { GetVersionUpgradeStateRequestV0 } = GetVersionUpgradeStateRequest;
