@@ -23,6 +23,7 @@ const {
     GetIdentitiesByPublicKeyHashesRequest,
     WaitForStateTransitionResultRequest,
     GetConsensusParamsRequest,
+    GetEpochsInfoRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
@@ -40,6 +41,8 @@ const {
       GetConsensusParamsResponse: PBJSGetConsensusParamsResponse,
       GetDataContractHistoryRequest: PBJSGetDataContractHistoryRequest,
       GetDataContractHistoryResponse: PBJSGetDataContractHistoryResponse,
+      GetEpochsInfoRequest: PBJSGetEpochsInfoRequest,
+      GetEpochsInfoResponse: PBJSGetEpochsInfoResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -71,6 +74,9 @@ const waitForStateTransitionResultHandlerFactory = require(
 );
 const getConsensusParamsHandlerFactory = require(
   './getConsensusParamsHandlerFactory',
+);
+const getEpochInfosHandlerFactory = require(
+  './getEpochInfosHandlerFactory',
 );
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
@@ -239,6 +245,22 @@ function platformHandlersFactory(
     wrapInErrorHandler(getConsensusParamsHandler),
   );
 
+  // getEpochInfos
+  const getEpochInfosHandler = getEpochInfosHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetEpochInfos = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetEpochsInfoRequest,
+      PBJSGetEpochsInfoRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetEpochsInfoResponse,
+    ),
+    wrapInErrorHandler(getEpochInfosHandler),
+  );
+
   return {
     broadcastStateTransition: wrappedBroadcastStateTransition,
     getIdentity: wrappedGetIdentity,
@@ -248,6 +270,7 @@ function platformHandlersFactory(
     getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
     getConsensusParams: wrappedGetConsensusParams,
+    getEpochInfos: wrappedGetEpochInfos,
   };
 }
 
