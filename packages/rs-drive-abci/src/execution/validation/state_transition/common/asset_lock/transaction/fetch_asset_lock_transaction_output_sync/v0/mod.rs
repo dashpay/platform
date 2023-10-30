@@ -25,13 +25,15 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
                 Ok(ValidationResult::new_with_data(output.clone()))
             } else {
                 Ok(ValidationResult::new_with_error(
-                    IdentityAssetLockTransactionOutputNotFoundError::new(proof.output_index())
-                        .into(),
+                    IdentityAssetLockTransactionOutputNotFoundError::new(
+                        proof.output_index() as usize
+                    )
+                    .into(),
                 ))
             }
         }
         AssetLockProof::Chain(proof) => {
-            let output_index = proof.out_point.vout as usize;
+            let output_index = proof.out_point.vout;
             let transaction_hash = proof.out_point.txid;
 
             // Fetch transaction
@@ -110,8 +112,8 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
                 transaction.special_transaction_payload
             {
                 // We are dealing with old Rust edition so we can't use optional remove
-                if payload.credit_outputs.get(output_index).is_some() {
-                    let output = payload.credit_outputs.remove(output_index);
+                if payload.credit_outputs.get(output_index as usize).is_some() {
+                    let output = payload.credit_outputs.remove(output_index as usize);
 
                     return Ok(ValidationResult::new_with_data(output));
                 }

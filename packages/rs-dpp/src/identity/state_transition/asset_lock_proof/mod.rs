@@ -177,17 +177,10 @@ impl AssetLockProof {
         }
     }
 
-    pub fn instant_lock_output(&self) -> Option<&TxOut> {
+    pub fn output_index(&self) -> u32 {
         match self {
-            AssetLockProof::Instant(proof) => proof.output(),
-            AssetLockProof::Chain(_) => None,
-        }
-    }
-
-    pub fn instant_lock_output_index(&self) -> Option<usize> {
-        match self {
-            AssetLockProof::Instant(proof) => Some(proof.output_index()),
-            AssetLockProof::Chain(_) => None,
+            AssetLockProof::Instant(proof) => proof.output_index(),
+            AssetLockProof::Chain(proof) => proof.out_point.vout,
         }
     }
 

@@ -20,16 +20,11 @@ impl IdentityTopUpTransitionActionV0 {
             ..
         } = value;
 
-        let asset_lock_outpoint =
-            asset_lock_proof
-                .out_point()
-                .ok_or(ConsensusError::BasicError(
-                    BasicError::IdentityAssetLockTransactionOutputNotFoundError(
-                        IdentityAssetLockTransactionOutputNotFoundError::new(
-                            asset_lock_proof.instant_lock_output_index().unwrap(),
-                        ),
-                    ),
-                ))?;
+        let asset_lock_outpoint = asset_lock_proof.out_point().ok_or_else(|| {
+            IdentityAssetLockTransactionOutputNotFoundError::new(
+                asset_lock_proof.output_index() as usize
+            )
+        })?;
 
         let outpoint_bytes = asset_lock_outpoint
             .try_into()
@@ -53,16 +48,11 @@ impl IdentityTopUpTransitionActionV0 {
             ..
         } = value;
 
-        let asset_lock_outpoint =
-            asset_lock_proof
-                .out_point()
-                .ok_or(ConsensusError::BasicError(
-                    BasicError::IdentityAssetLockTransactionOutputNotFoundError(
-                        IdentityAssetLockTransactionOutputNotFoundError::new(
-                            asset_lock_proof.instant_lock_output_index().unwrap(),
-                        ),
-                    ),
-                ))?;
+        let asset_lock_outpoint = asset_lock_proof.out_point().ok_or_else(|| {
+            IdentityAssetLockTransactionOutputNotFoundError::new(
+                asset_lock_proof.output_index() as usize
+            )
+        })?;
 
         let outpoint_bytes = asset_lock_outpoint
             .try_into()

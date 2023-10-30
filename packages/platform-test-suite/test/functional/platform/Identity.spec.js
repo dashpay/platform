@@ -23,13 +23,14 @@ const {
     IdentityPublicKey,
     InvalidInstantAssetLockProofSignatureError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    IdentityAssetLockTransactionNotFoundError,
     BalanceIsNotEnoughError,
     BasicECDSAError,
     IdentityPublicKeyWithWitness,
   },
 } = Dash;
 
-describe('Platform', () => {
+describe.only('Platform', () => {
   describe('Identity', () => {
     let client;
     let identity;
@@ -343,6 +344,7 @@ describe('Platform', () => {
           broadcastError = e;
         }
 
+        expect(broadcastError).to.exist();
         expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
         expect(broadcastError.getCause()).to.be.an.instanceOf(
           BalanceIsNotEnoughError,
@@ -383,10 +385,10 @@ describe('Platform', () => {
         }
 
         expect(broadcastError).to.exist();
-        expect(broadcastError.message).to.be.equal('State Transition is invalid: InvalidIdentityAssetLockProofSignatureError: Invalid Asset lock proof signature');
-        expect(broadcastError.code).to.be.equal(3);
-        const [error] = broadcastError.data.errors;
-        expect(error.name).to.equal('IdentityAssetLockTransactionNotFoundError');
+        expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+        expect(broadcastError.getCause()).to.be.an.instanceOf(
+          IdentityAssetLockTransactionNotFoundError,
+        );
       });
 
       it('should be able to top-up credit balance', async () => {

@@ -72,7 +72,7 @@ impl InstantAssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name=getOutputIndex)]
-    pub fn get_output_index(&self) -> usize {
+    pub fn get_output_index(&self) -> u32 {
         self.0.output_index()
     }
 

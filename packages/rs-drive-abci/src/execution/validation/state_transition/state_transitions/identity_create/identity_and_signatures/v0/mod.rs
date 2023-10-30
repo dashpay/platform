@@ -49,7 +49,7 @@ impl IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 for Identity
                     ConsensusError::BasicError(
                         BasicError::IdentityAssetLockTransactionOutputNotFoundError(
                             IdentityAssetLockTransactionOutputNotFoundError::new(
-                                self.asset_lock_proof().instant_lock_output_index().unwrap(),
+                                self.asset_lock_proof().output_index() as usize,
                             ),
                         ),
                     ),

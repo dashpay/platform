@@ -8,7 +8,7 @@ mod v0;
 /// Validates asset lock transaction structure
 pub fn validate_asset_lock_transaction_structure(
     transaction: &Transaction,
-    output_index: usize,
+    output_index: u32,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
     match platform_version

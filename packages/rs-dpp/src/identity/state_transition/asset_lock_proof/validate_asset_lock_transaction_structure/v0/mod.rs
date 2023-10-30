@@ -10,7 +10,7 @@ use dashcore::Transaction;
 /// Validates asset lock transaction structure
 pub fn validate_asset_lock_transaction_structure_v0(
     transaction: &Transaction,
-    output_index: usize,
+    output_index: u32,
 ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
     let mut result = SimpleConsensusValidationResult::default();
 
@@ -27,9 +27,9 @@ pub fn validate_asset_lock_transaction_structure_v0(
     };
 
     // Output index should point to existing funding output in payload
-    let Some(output) = payload.credit_outputs.get(output_index) else {
+    let Some(output) = payload.credit_outputs.get(output_index as usize) else {
         result.add_error(IdentityAssetLockTransactionOutputNotFoundError::new(
-            output_index,
+            output_index as usize,
         ));
 
         return Ok(result);
@@ -38,7 +38,7 @@ pub fn validate_asset_lock_transaction_structure_v0(
     // Output should be P2PKH
     if !output.script_pubkey.is_p2pkh() {
         result.add_error(InvalidIdentityAssetLockTransactionOutputError::new(
-            output_index,
+            output_index as usize,
         ));
 
         return Ok(result);

@@ -106,8 +106,8 @@ impl InstantAssetLockProof {
         &self.transaction
     }
 
-    pub fn output_index(&self) -> usize {
-        self.output_index as usize
+    pub fn output_index(&self) -> u32 {
+        self.output_index
     }
 
     pub fn out_point(&self) -> Option<OutPoint> {
@@ -119,7 +119,7 @@ impl InstantAssetLockProof {
         if let Some(TransactionPayload::AssetLockPayloadType(ref payload)) =
             self.transaction.special_transaction_payload
         {
-            payload.credit_outputs.get(self.output_index())
+            payload.credit_outputs.get(self.output_index() as usize)
         } else {
             None
         }
