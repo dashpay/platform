@@ -24,6 +24,7 @@ const {
     WaitForStateTransitionResultRequest,
     GetConsensusParamsRequest,
     GetEpochsInfoRequest,
+    GetVersionUpgradeVoteStatusRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
@@ -43,6 +44,8 @@ const {
       GetDataContractHistoryResponse: PBJSGetDataContractHistoryResponse,
       GetEpochsInfoRequest: PBJSGetEpochsInfoRequest,
       GetEpochsInfoResponse: PBJSGetEpochsInfoResponse,
+      GetVersionUpgradeVoteStatusRequest: PBJSGetVersionUpgradeVoteStatusRequest,
+      GetVersionUpgradeVoteStatusResponse: PBJSGetVersionUpgradeVoteStatusResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -77,6 +80,10 @@ const getConsensusParamsHandlerFactory = require(
 );
 const getEpochsInfoHandlerFactory = require(
   './getEpochsInfoHandlerFactory',
+);
+
+const getVersionUpgradeVoteStatusHandlerFactory = require(
+  './getVersionUpgradeVoteStatusHandlerFactory',
 );
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
@@ -261,6 +268,22 @@ function platformHandlersFactory(
     wrapInErrorHandler(getEpochsInfoHandler),
   );
 
+  // getVersionUpgradeVoteStatus
+  const getVersionUpgradeVoteStatusHandler = getVersionUpgradeVoteStatusHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetVersionUpgradeVoteStatus = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetVersionUpgradeVoteStatusRequest,
+      PBJSGetVersionUpgradeVoteStatusRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetVersionUpgradeVoteStatusResponse,
+    ),
+    wrapInErrorHandler(getVersionUpgradeVoteStatusHandler),
+  );
+
   return {
     broadcastStateTransition: wrappedBroadcastStateTransition,
     getIdentity: wrappedGetIdentity,
@@ -271,6 +294,7 @@ function platformHandlersFactory(
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
     getConsensusParams: wrappedGetConsensusParams,
     getEpochsInfo: wrappedGetEpochsInfo,
+    getVersionUpgradeVoteStatus: wrappedGetVersionUpgradeVoteStatus,
   };
 }
 
