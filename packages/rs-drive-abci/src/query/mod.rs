@@ -1883,6 +1883,7 @@ mod tests {
         use drive::drive::protocol_upgrade::{
             desired_version_for_validators_path, versions_counter_path, versions_counter_path_vec,
         };
+        use drive::drive::Drive;
         use drive::grovedb::{Element, PathQuery, Query, QueryItem};
         use drive::query::GroveDb;
         use integer_encoding::VarInt;
@@ -2211,6 +2212,13 @@ mod tests {
                 .0;
 
             assert_eq!(count, 1);
+
+            let upgrade = Drive::verify_upgrade_state(proof.grovedb_proof.as_slice(), version)
+                .expect("expected to verify the upgrade counts")
+                .1;
+
+            assert_eq!(upgrade.len(), 1);
+            assert_eq!(upgrade.get(&1), Some(1).as_ref());
         }
     }
 
@@ -2229,6 +2237,7 @@ mod tests {
             desired_version_for_validators_path, desired_version_for_validators_path_vec,
             versions_counter_path,
         };
+        use drive::drive::Drive;
         use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery};
         use drive::query::GroveDb;
         use integer_encoding::VarInt;
@@ -2588,6 +2597,18 @@ mod tests {
                 .0;
 
             assert_eq!(count, 1);
+
+            let upgrade = Drive::verify_upgrade_vote_status(
+                proof.grovedb_proof.as_slice(),
+                Some(validator_pro_tx_hash),
+                5,
+                version,
+            )
+            .expect("expected to verify the upgrade counts")
+            .1;
+
+            assert_eq!(upgrade.len(), 1);
+            assert_eq!(upgrade.get(&validator_pro_tx_hash), Some(1).as_ref());
         }
     }
 

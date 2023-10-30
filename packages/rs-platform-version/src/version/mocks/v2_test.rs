@@ -252,6 +252,8 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 },
                 system: DriveVerifySystemMethodVersions {
                     verify_epoch_infos: 0,
+                    verify_upgrade_state: 0,
+                    verify_upgrade_vote_status: 0,
                 },
             },
             identity: DriveIdentityMethodVersions {
