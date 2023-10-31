@@ -278,6 +278,8 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
             if (options.network !== NETWORK_MAINNET) {
               options.core.docker.image = base.get('core.docker.image');
             }
+
+            options.core.docker.commandArgs = [];
           });
 
         return configFile;
