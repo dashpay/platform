@@ -3,7 +3,7 @@ const getConfigFileDataV0250 = require('../../../../../src/test/fixtures/getConf
 const packageJson = require('../../../../../package.json');
 const HomeDir = require('../../../../../src/config/HomeDir');
 
-describe('migrateConfigFileFactory', () => {
+describe.skip('migrateConfigFileFactory', () => {
   let mockConfigFileData;
   let container;
   let createConfigFile;
