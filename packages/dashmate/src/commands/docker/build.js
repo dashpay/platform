@@ -53,7 +53,7 @@ class BuildCommand extends ConfigBaseCommand {
 }
 
 BuildCommand.description = `Build docker images
-Build docker images for services which configured to be built from source
+Build docker images for services configured to be built from source
 `;
 
 BuildCommand.flags = {
