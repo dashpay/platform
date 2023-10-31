@@ -199,18 +199,18 @@ jobs:
       - name: Build Rust packages
         run: cargo build
 
-  rust-package:
+  rs-package:
     name: Rust package
     needs: [ changes, build-rust ]
     secrets: inherit
     strategy:
       matrix:
         rs-package: ${{ fromJson(needs.changes.outputs.rs-packages) }}
-    uses: ./.github/workflows/calls/rust-package.yml
+    uses: ./.github/workflows/calls/rs-package.yml
     with:
       package: ${{ matrix.rs-package }}
 
-  rust-crates-security:
+  rs-crates-security:
     name: Rust crates security audit
     runs-on: ubuntu-22.04
     steps:
