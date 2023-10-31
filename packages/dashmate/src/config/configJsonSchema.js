@@ -126,7 +126,11 @@ module.exports = {
               minLength: 1,
             },
             commandArgs: {
-              type: 'string',
+              type: 'array',
+              items: {
+                type: 'string',
+                minLength: 1,
+              },
             },
           },
           required: ['image', 'commandArgs'],
