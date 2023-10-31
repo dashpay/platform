@@ -149,6 +149,20 @@ class PlatformPromiseClient {
   }
 
   /**
+   * @param {!GetVersionUpgradeVoteStatusRequest} getVersionUpgradeVoteStatusRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetVersionUpgradeVoteStatusResponse>}
+   */
+  getVersionUpgradeVoteStatus(getVersionUpgradeVoteStatusRequest, metadata = {}) {
+    return promisify(
+      this.client.getVersionUpgradeVoteStatus.bind(this.client),
+    )(
+      getVersionUpgradeVoteStatusRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {string} protocolVersion
    */
   setProtocolVersion(protocolVersion) {

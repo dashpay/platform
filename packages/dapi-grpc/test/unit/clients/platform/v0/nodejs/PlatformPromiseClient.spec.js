@@ -16,6 +16,7 @@ describe('PlatformPromiseClient', () => {
       getDataContract: this.sinon.stub().resolves(response),
       getDocuments: this.sinon.stub().resolves(response),
       getEpochsInfo: this.sinon.stub().resolves(response),
+      getVersionUpgradeVoteStatus: this.sinon.stub().resolves(response),
     };
   });
 
@@ -92,6 +93,15 @@ describe('PlatformPromiseClient', () => {
 
       expect(result).to.equal(response);
       expect(platformPromiseClient.client.getEpochsInfo).to.be.calledOnceWith(request);
+    });
+  });
+
+  describe('#getVersionUpgradeVoteStatus', () => {
+    it('should get version upgrade vote status', async () => {
+      const result = await platformPromiseClient.getVersionUpgradeVoteStatus(request);
+
+      expect(result).to.equal(response);
+      expect(platformPromiseClient.client.getVersionUpgradeVoteStatus).to.be.calledOnceWith(request);
     });
   });
 });
