@@ -1,4 +1,4 @@
-rs-dpp:
+dpp:
   - .github/workflows/rs-checks.yml
   - packages/feature-flags-contract/**
   - packages/dpns-contract/**
@@ -12,7 +12,7 @@ rs-dpp:
   - packages/rs-platform-versioning/**
   - packages/rs-dpp/**
 
-rs-drive-abci:
+drive-abci:
   - .github/workflows/rs-checks.yml
   - packages/feature-flags-contract/**
   - packages/dpns-contract/**
@@ -29,7 +29,7 @@ rs-drive-abci:
   - packages/rs-drive-abci/**
   - packages/rs-platform-value/**
 
-rs-drive:
+drive:
   - .github/workflows/rs-checks.yml
   - packages/feature-flags-contract/**
   - packages/dpns-contract/**
@@ -45,7 +45,6 @@ rs-drive:
   - packages/rs-drive/**
 
 wasm-dpp:
-  - .github/workflows/js-dpp.yml
   - .github/workflows/rs-checks.yml
   - packages/js-dpp/**
   - packages/feature-flags-contract/**

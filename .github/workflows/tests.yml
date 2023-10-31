@@ -72,7 +72,7 @@ jobs:
     with:
       package: ${{ matrix.js-package }}
       skip-tests: ${{ contains(matrix.js-package, 'platform-test-suite') }}
-      install-browsers: ${{ contains(matrix.js-package, 'js-dapi-client') || contains(matrix.js-package, 'js-dash-sdk') || contains(matrix.js-package, 'js-dpp') || contains(matrix.js-package, 'platform-test-suite') || contains(matrix.js-package, 'wallet-lib') }}
+      install-browsers: ${{ contains(matrix.js-package, '@dashevo/dapi-client') || contains(matrix.js-package, 'dash') || contains(matrix.js-package, '@dashevo/dpp') || contains(matrix.js-package, '@dashevo/platform-test-suite') || contains(matrix.js-package, '@dashevo/wallet-lib') }}
 
   rs-checks:
     name: RS Checks
@@ -88,7 +88,7 @@ jobs:
   wasm-dpp-errors:
     name: WASM compilation
     needs: [changes]
-    if: ${{ contains(fromJson(needs.changes.outputs.js-packages), 'wasm-dpp') }}
+    if: ${{ contains(fromJson(needs.changes.outputs.js-packages), '@dashevo/wasm-dpp') }}
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
     steps:

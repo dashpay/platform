@@ -1,9 +1,9 @@
-dapi-grpc:
+'@dashevo/dapi-grpc':
   - .github/workflows/js-checks.yml
   - packages/dapi-grpc/**
   - packages/js-grpc-common/**
 
-dapi:
+'@dashevo/dapi':
   - .github/workflows/js-checks.yml
   - packages/dapi/**
   - packages/dapi-grpc/**
@@ -18,7 +18,7 @@ dapi:
   - packages/masternode-reward-shares-contract/**
   - packages/dash-spv/**
 
-dash-spv:
+'@dashevo/dash-spv':
   - .github/workflows/js-checks.yml
   - packages/dash-spv/**
 
@@ -39,7 +39,7 @@ dashmate:
   - packages/dpns-contract/**
   - packages/dash-spv/**
 
-dashpay-contract:
+'@dashevo/dashpay-contract':
   - .github/workflows/js-checks.yml
   - packages/dashpay-contract/**
   - packages/js-dpp/**
@@ -48,7 +48,7 @@ dashpay-contract:
   - packages/feature-flags-contract/**
   - packages/dpns-contract/**
 
-js-dapi-client:
+'@dashevo/dapi-client':
   - .github/workflows/js-checks.yml
   - packages/js-dapi-client/**
   - packages/dapi-grpc/**
@@ -60,7 +60,7 @@ js-dapi-client:
   - packages/masternode-reward-shares-contract/**
   - packages/dash-spv/**
 
-js-dash-sdk:
+dash:
   - .github/workflows/js-checks.yml
   - packages/js-dash-sdk/**
   - packages/wallet-lib/**
@@ -74,7 +74,7 @@ js-dash-sdk:
   - packages/dpns-contract/**
   - packages/dash-spv/**
 
-js-dpp:
+'@dashevo/dpp':
   - .github/workflows/js-checks.yml
   - packages/js-dpp/**
   - packages/feature-flags-contract/**
@@ -82,11 +82,11 @@ js-dpp:
   - packages/dpns-contract/**
   - packages/dashpay-contract/**
 
-js-grpc-common:
+'@dashevo/grpc-common':
   - .github/workflows/js-checks.yml
   - packages/js-grpc-common/**
 
-platform-test-suite:
+'@dashevo/platform-test-suite':
   - .github/workflows/js-checks.yml
   - packages/platform-test-suite/**
   - packages/js-dash-sdk/**
@@ -101,7 +101,7 @@ platform-test-suite:
   - packages/dpns-contract/**
   - packages/dash-spv/**
 
-wallet-lib:
+'@dashevo/wallet-lib':
   - .github/workflows/js-checks.yml
   - packages/wallet-lib/**
   - packages/js-dapi-client/**
@@ -114,8 +114,7 @@ wallet-lib:
   - packages/masternode-reward-shares-contract/**
   - packages/dash-spv/**
 
-wasm-dpp:
-  - .github/workflows/js-dpp.yml
+'@dashevo/wasm-dpp':
   - .github/workflows/js-checks.yml
   - packages/js-dpp/**
   - packages/feature-flags-contract/**
