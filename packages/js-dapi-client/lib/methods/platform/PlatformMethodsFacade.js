@@ -8,6 +8,7 @@ const waitForStateTransitionResultFactory = require('./waitForStateTransitionRes
 const getConsensusParamsFactory = require('./getConsensusParams/getConsensusParamsFactory');
 const getEpochsInfoFactory = require('./getEpochsInfo/getEpochsInfoFactory');
 const getVersionUpgradeVoteStatusFactory = require('./getVersionUpgradeVoteStatus/getVersionUpgradeVoteStatusFactory');
+const getVersionUpgradeStateFactory = require('./getVersionUpgradeState/getVersionUpgradeStateFactory');
 
 class PlatformMethodsFacade {
   /**
@@ -24,6 +25,7 @@ class PlatformMethodsFacade {
     this.getConsensusParams = getConsensusParamsFactory(grpcTransport);
     this.getEpochsInfo = getEpochsInfoFactory(grpcTransport);
     this.getVersionUpgradeVoteStatus = getVersionUpgradeVoteStatusFactory(grpcTransport);
+    this.getVersionUpgradeState = getVersionUpgradeStateFactory(grpcTransport);
   }
 }
 

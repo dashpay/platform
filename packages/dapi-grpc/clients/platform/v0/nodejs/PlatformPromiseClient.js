@@ -44,6 +44,8 @@ const {
             GetEpochsInfoResponse: PBJSGetEpochsInfoResponse,
             GetVersionUpgradeVoteStatusRequest: PBJSGetVersionUpgradeVoteStatusRequest,
             GetVersionUpgradeVoteStatusResponse: PBJSGetVersionUpgradeVoteStatusResponse,
+            GetVersionUpgradeStateRequest: PBJSGetVersionUpgradeStateRequest,
+            GetVersionUpgradeStateResponse: PBJSGetVersionUpgradeStateResponse,
           },
         },
       },
@@ -62,6 +64,7 @@ const {
   GetConsensusParamsResponse: ProtocGetConsensusParamsResponse,
   GetEpochsInfoResponse: ProtocGetEpochsInfoResponse,
   GetVersionUpgradeVoteStatusResponse: ProtocGetVersionUpgradeVoteStatusResponse,
+  GetVersionUpgradeStateResponse: ProtocGetVersionUpgradeStateResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -126,6 +129,10 @@ class PlatformPromiseClient {
 
     this.client.getVersionUpgradeVoteStatus = promisify(
       this.client.getVersionUpgradeVoteStatus.bind(this.client),
+    );
+
+    this.client.getVersionUpgradeState = promisify(
+      this.client.getVersionUpgradeState.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -442,6 +449,37 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetVersionUpgradeVoteStatusRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetVersionUpgradeStateRequest} getVersionUpgradeStateRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetVersionUpgradeStateResponse>}
+   */
+  getVersionUpgradeState(getVersionUpgradeStateRequest, metadata = {}, options = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getVersionUpgradeState(
+      getVersionUpgradeStateRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetVersionUpgradeStateResponse,
+              PBJSGetVersionUpgradeStateResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetVersionUpgradeStateRequest,
             ),
           ),
         ],

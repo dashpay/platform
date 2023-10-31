@@ -1,34 +1,34 @@
 const {
   v0: {
-    GetVersionUpgradeVoteStatusResponse,
+    GetVersionUpgradeStateResponse,
     ResponseMetadata,
     Proof: ProofResponse,
   },
 } = require('@dashevo/dapi-grpc');
 
-const GetVersionUpgradeVoteStatusResponseClass = require('../../../../../lib/methods/platform/getVersionUpgradeVoteStatus/GetVersionUpgradeVoteStatusResponse');
-const VersionSignalClass = require('../../../../../lib/methods/platform/getVersionUpgradeVoteStatus/VersionSignal');
+const GetVersionUpgradeStateResponseClass = require('../../../../../lib/methods/platform/getVersionUpgradeState/GetVersionUpgradeStateResponse');
+const VersionEntryClass = require('../../../../../lib/methods/platform/getVersionUpgradeState/VersionEntry');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
 const Proof = require('../../../../../lib/methods/platform/response/Proof');
 const Metadata = require('../../../../../lib/methods/platform/response/Metadata');
 
-describe('GetVersionUpgradeVoteStatusResponse', () => {
-  let getVersionUpgradeVoteStatus;
+describe('GetVersionUpgradeStateResponse', () => {
+  let getVersionUpgradeState;
   let metadataFixture;
-  let versionSignalFixture;
+  let versionEntryFixture;
   let proto;
   let proofFixture;
 
   beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    versionSignalFixture = new VersionSignalClass(Buffer.alloc(32).toString('hex'), 1);
+    versionEntryFixture = new VersionEntryClass(1, 1);
     proofFixture = getProofFixture();
 
-    const { GetVersionUpgradeVoteStatusResponseV0 } = GetVersionUpgradeVoteStatusResponse;
-    const { VersionSignal, VersionSignals } = GetVersionUpgradeVoteStatusResponseV0;
-    proto = new GetVersionUpgradeVoteStatusResponse();
+    const { GetVersionUpgradeStateResponseV0 } = GetVersionUpgradeStateResponse;
+    const { Versions, VersionEntry } = GetVersionUpgradeStateResponseV0;
+    proto = new GetVersionUpgradeStateResponse();
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
@@ -37,40 +37,40 @@ describe('GetVersionUpgradeVoteStatusResponse', () => {
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     proto.setV0(
-      new GetVersionUpgradeVoteStatusResponseV0()
-        .setVersions(new VersionSignals()
-          .setVersionSignalsList([new VersionSignal()
-            .setProTxHash(versionSignalFixture.getProTxHash())
-            .setVersion(versionSignalFixture.getVersion()),
+      new GetVersionUpgradeStateResponseV0()
+        .setVersions(new Versions()
+          .setVersionsList([new VersionEntry()
+            .setVersionNumber(versionEntryFixture.getVersionNumber())
+            .setVoteCount(versionEntryFixture.getVoteCount()),
           ]))
         .setMetadata(metadata),
     );
 
-    getVersionUpgradeVoteStatus = new GetVersionUpgradeVoteStatusResponseClass(
-      [versionSignalFixture],
+    getVersionUpgradeState = new GetVersionUpgradeStateResponseClass(
+      [versionEntryFixture],
       new Metadata(metadataFixture),
     );
   });
 
-  it('should return vote statuses', () => {
-    const versionSignals = getVersionUpgradeVoteStatus.getVersionSignals();
-    const proof = getVersionUpgradeVoteStatus.getProof();
+  it('should return version upgrade state', () => {
+    const versions = getVersionUpgradeState.getVersionEntries();
+    const proof = getVersionUpgradeState.getProof();
 
-    expect(versionSignals).to.deep.equal([versionSignalFixture]);
+    expect(versions).to.deep.equal([versionEntryFixture]);
     expect(proof).to.equal(undefined);
   });
 
   it('should return proof', () => {
-    getVersionUpgradeVoteStatus = new GetVersionUpgradeVoteStatusResponseClass(
+    getVersionUpgradeState = new GetVersionUpgradeStateResponseClass(
       [],
       new Metadata(metadataFixture),
       new Proof(proofFixture),
     );
 
-    const versionSignals = getVersionUpgradeVoteStatus.getVersionSignals();
-    const proof = getVersionUpgradeVoteStatus.getProof();
+    const versions = getVersionUpgradeState.getVersionEntries();
+    const proof = getVersionUpgradeState.getProof();
 
-    expect(versionSignals).to.deep.equal([]);
+    expect(versions).to.deep.equal([]);
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
@@ -79,20 +79,20 @@ describe('GetVersionUpgradeVoteStatusResponse', () => {
   });
 
   it('should create an instance from proto', () => {
-    getVersionUpgradeVoteStatus = GetVersionUpgradeVoteStatusResponseClass
+    getVersionUpgradeState = GetVersionUpgradeStateResponseClass
       .createFromProto(proto);
-    expect(getVersionUpgradeVoteStatus)
-      .to.be.an.instanceOf(GetVersionUpgradeVoteStatusResponseClass);
-    expect(getVersionUpgradeVoteStatus.getVersionSignals()).to.deep.equal([versionSignalFixture]);
+    expect(getVersionUpgradeState)
+      .to.be.an.instanceOf(GetVersionUpgradeStateResponseClass);
+    expect(getVersionUpgradeState.getVersionEntries()).to.deep.equal([versionEntryFixture]);
 
-    expect(getVersionUpgradeVoteStatus.getMetadata())
+    expect(getVersionUpgradeState.getMetadata())
       .to.be.an.instanceOf(Metadata);
-    expect(getVersionUpgradeVoteStatus.getMetadata().getHeight())
+    expect(getVersionUpgradeState.getMetadata().getHeight())
       .to.equal(metadataFixture.height);
-    expect(getVersionUpgradeVoteStatus.getMetadata().getCoreChainLockedHeight())
+    expect(getVersionUpgradeState.getMetadata().getCoreChainLockedHeight())
       .to.equal(metadataFixture.coreChainLockedHeight);
 
-    expect(getVersionUpgradeVoteStatus.getProof()).to.equal(undefined);
+    expect(getVersionUpgradeState.getProof()).to.equal(undefined);
   });
 
   it('should create an instance with proof from proto', () => {
@@ -106,12 +106,12 @@ describe('GetVersionUpgradeVoteStatusResponse', () => {
     proto.getV0().setVersions(undefined);
     proto.getV0().setProof(proofProto);
 
-    getVersionUpgradeVoteStatus = GetVersionUpgradeVoteStatusResponseClass.createFromProto(proto);
+    getVersionUpgradeState = GetVersionUpgradeStateResponseClass.createFromProto(proto);
 
-    expect(getVersionUpgradeVoteStatus.getVersionSignals()).to.deep.equal([]);
-    expect(getVersionUpgradeVoteStatus.getMetadata()).to.deep.equal(metadataFixture);
+    expect(getVersionUpgradeState.getVersionEntries()).to.deep.equal([]);
+    expect(getVersionUpgradeState.getMetadata()).to.deep.equal(metadataFixture);
 
-    const proof = getVersionUpgradeVoteStatus.getProof();
+    const proof = getVersionUpgradeState.getProof();
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
@@ -123,7 +123,7 @@ describe('GetVersionUpgradeVoteStatusResponse', () => {
     proto.getV0().setMetadata(undefined);
 
     try {
-      getVersionUpgradeVoteStatus = GetVersionUpgradeVoteStatusResponseClass.createFromProto(proto);
+      getVersionUpgradeState = GetVersionUpgradeStateResponseClass.createFromProto(proto);
 
       expect.fail('should throw InvalidResponseError');
     } catch (e) {
@@ -131,11 +131,11 @@ describe('GetVersionUpgradeVoteStatusResponse', () => {
     }
   });
 
-  it('should throw InvalidResponseError if version statuses are not defined', () => {
+  it('should throw InvalidResponseError if version entries are not defined', () => {
     proto.getV0().setVersions(undefined);
 
     try {
-      getVersionUpgradeVoteStatus = GetVersionUpgradeVoteStatusResponseClass.createFromProto(proto);
+      getVersionUpgradeState = GetVersionUpgradeStateResponseClass.createFromProto(proto);
 
       expect.fail('should throw InvalidResponseError');
     } catch (e) {

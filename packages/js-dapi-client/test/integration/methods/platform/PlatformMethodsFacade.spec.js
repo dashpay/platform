@@ -6,6 +6,7 @@ const {
     GetIdentityResponse,
     GetEpochsInfoResponse,
     GetVersionUpgradeVoteStatusResponse,
+    GetVersionUpgradeStateResponse,
     BroadcastStateTransitionResponse,
     WaitForStateTransitionResultResponse,
   },
@@ -24,6 +25,7 @@ const { GetDocumentsResponseV0 } = GetDocumentsResponse;
 const { GetDataContractResponseV0 } = GetDataContractResponse;
 const { GetEpochsInfoResponseV0 } = GetEpochsInfoResponse;
 const { GetVersionUpgradeVoteStatusResponseV0 } = GetVersionUpgradeVoteStatusResponse;
+const { GetVersionUpgradeStateResponseV0 } = GetVersionUpgradeStateResponse;
 
 describe('PlatformMethodsFacade', () => {
   let grpcTransportMock;
@@ -170,6 +172,30 @@ describe('PlatformMethodsFacade', () => {
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getVersionUpgradeVoteStatus(startProTxHash, 1, {});
+
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#getVersionUpgradeState', () => {
+    it('should get version upgrade state', async () => {
+      const proTxHash = Buffer.alloc(32).fill('b').toString('hex');
+      const { VersionEntry, Versions } = GetVersionUpgradeStateResponseV0;
+
+      const response = new GetVersionUpgradeStateResponse();
+
+      response.setV0(
+        new GetVersionUpgradeStateResponseV0()
+          .setVersions(new Versions()
+            .setVersionsList([new VersionEntry()
+              .setVersionNumber(1)
+              .setVoteCount(1)]))
+          .setMetadata(new ResponseMetadata()),
+      );
+
+      grpcTransportMock.request.resolves(response);
+
+      await platformMethods.getVersionUpgradeState({});
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });

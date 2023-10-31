@@ -163,6 +163,20 @@ class PlatformPromiseClient {
   }
 
   /**
+   * @param {!GetVersionUpgradeStateRequest} getVersionUpgradeStateRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetVersionUpgradeStateResponse>}
+   */
+  getVersionUpgradeState(getVersionUpgradeStateRequest, metadata = {}) {
+    return promisify(
+      this.client.getVersionUpgradeState.bind(this.client),
+    )(
+      getVersionUpgradeStateRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {string} protocolVersion
    */
   setProtocolVersion(protocolVersion) {
