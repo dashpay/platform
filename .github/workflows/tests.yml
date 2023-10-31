@@ -71,14 +71,8 @@ jobs:
     uses: ./.github/workflows/js-checks.yml
     with:
       package: ${{ matrix.js-package }}
-      skip-tests: |
-        contains(matrix.js-package, 'platform-test-suite')
-      install-browsers: |
-        contains(matrix.js-package, 'js-dapi-client') ||
-        contains(matrix.js-package, 'js-dash-sdk') ||
-        contains(matrix.js-package, 'js-dpp') ||
-        contains(matrix.js-package, 'platform-test-suite') ||
-        contains(matrix.js-package, 'wallet-lib')
+      skip-tests: contains(matrix.js-package, 'platform-test-suite')
+      install-browsers: contains(matrix.js-package, 'js-dapi-client') || contains(matrix.js-package, 'js-dash-sdk') || contains(matrix.js-package, 'js-dpp') || contains(matrix.js-package, 'platform-test-suite') || contains(matrix.js-package, 'wallet-lib')
 
   rs-checks:
     name: RS Checks
