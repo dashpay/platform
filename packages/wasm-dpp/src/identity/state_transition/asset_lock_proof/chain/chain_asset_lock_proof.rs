@@ -42,14 +42,14 @@ impl From<ChainAssetLockProofWasm> for ChainAssetLockProof {
 #[wasm_bindgen(js_class = ChainAssetLockProof)]
 impl ChainAssetLockProofWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_parameters: JsValue) -> Result<ChainAssetLockProofWasm, JsValue> {
-        let parameters: ChainAssetLockProofParams =
-            with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
+    pub fn new(raw_parameters: JsValue) -> Result<ChainAssetLockProofWasm, JsError> {
+        let parameters: ChainAssetLockProofParams = serde_wasm_bindgen::from_value(raw_parameters)
+            .map_err(|_| JsError::new("invalid raw chain lock proof"))?;
 
-        let out_point: [u8; 36] = parameters.out_point.try_into().map_err(|_| {
-            RustConversionError::Error(String::from("outPoint must be a 36 byte array"))
-                .to_js_value()
-        })?;
+        let out_point: [u8; 36] = parameters
+            .out_point
+            .try_into()
+            .map_err(|_| JsError::new("outPoint must be a 36 byte array"))?;
 
         let chain_asset_lock_proof =
             ChainAssetLockProof::new(parameters.core_chain_locked_height, out_point);

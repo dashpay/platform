@@ -53,15 +53,13 @@ impl From<InstantAssetLockProofWasm> for InstantAssetLockProof {
 #[wasm_bindgen(js_class = InstantAssetLockProof)]
 impl InstantAssetLockProofWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_parameters: JsValue) -> Result<InstantAssetLockProofWasm, JsValue> {
-        let raw_instant_lock: RawInstantLockProof =
-            with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
+    pub fn new(raw_parameters: JsValue) -> Result<InstantAssetLockProofWasm, JsError> {
+        let raw_instant_lock: RawInstantLockProof = serde_wasm_bindgen::from_value(raw_parameters)
+            .map_err(|_| JsError::new("invalid raw instant lock proof"))?;
 
-        let instant_asset_lock_proof: InstantAssetLockProof =
-            raw_instant_lock.try_into().map_err(|_| {
-                RustConversionError::Error(String::from("object passed is not a raw Instant Lock"))
-                    .to_js_value()
-            })?;
+        let instant_asset_lock_proof: InstantAssetLockProof = raw_instant_lock
+            .try_into()
+            .map_err(|_| JsError::new("object passed is not a raw Instant Lock"))?;
 
         Ok(instant_asset_lock_proof.into())
     }
