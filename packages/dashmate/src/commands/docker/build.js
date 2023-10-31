@@ -1,9 +1,9 @@
 const { Listr } = require('listr2');
 
-const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
+const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 
-const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
-const isServiceBuildRequired = require('../util/isServiceBuildRequired');
+const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
+const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
 
 class BuildCommand extends ConfigBaseCommand {
   /**
