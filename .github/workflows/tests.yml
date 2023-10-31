@@ -64,7 +64,6 @@ jobs:
   js-checks:
     name: JS Checks
     needs: [changes]
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     secrets: inherit
     strategy:
       matrix:
@@ -76,7 +75,6 @@ jobs:
   rs-checks:
     name: RS Checks
     needs: [changes]
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     secrets: inherit
     strategy:
       matrix:
