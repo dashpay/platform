@@ -22,7 +22,7 @@ class BuildCommand extends ConfigBaseCommand {
     config,
   ) {
     if (!isServiceBuildRequired(config)) {
-      throw new Error('Non of the services are configured to be built from sources');
+      throw new Error('No services are configured to be built from sources');
     }
 
     const tasks = new Listr(
