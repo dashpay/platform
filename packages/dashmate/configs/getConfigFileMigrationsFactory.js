@@ -273,7 +273,7 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
       '1.0.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.tenderdash.log.level = 'info';
+            options.platform.drive.tenderdash.log.level = 'info';
             options.core.docker.commandArgs = [];
           });
 
