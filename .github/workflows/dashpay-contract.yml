@@ -12,7 +12,6 @@ on:
       - .github/workflows/dashpay-contract.yml
       - .github/workflows/checks.yml
       - packages/dashpay-contract/**
-      - packages/js-dpp/**
       - packages/wasm-dpp/**
       - packages/rs-dpp/**
       - packages/feature-flags-contract/**

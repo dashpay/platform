@@ -26,11 +26,17 @@ class GetIdentitiesByPublicKeyHashesResponse extends AbstractResponse {
   static createFromProto(proto) {
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
-    const identitiesList = proto.getIdentities();
+    const identitiesList = proto.getV0().getIdentities();
 
     return new GetIdentitiesByPublicKeyHashesResponse(
       identitiesList !== undefined
-        ? identitiesList.getIdentitiesList_asU8().map((identity) => Buffer.from(identity)) : [],
+        ? identitiesList.getIdentityEntriesList()
+          .map((identity) => {
+            const value = identity.getValue();
+            // TODO: rework to return whole `identity.getValue()` instead of inner getValue()
+            return value && Buffer.from(value.getValue());
+          })
+        : [],
       metadata,
       proof,
     );

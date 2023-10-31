@@ -200,7 +200,7 @@ function getBaseConfigFactory(homeDir) {
               createEmptyBlocksInterval: '3m',
             },
             log: {
-              level: 'debug',
+              level: 'info',
               format: 'plain',
               path: null,
             },

@@ -1,38 +1,39 @@
-const DashPlatformProtocol = require('@dashevo/dpp');
+const { DashPlatformProtocol, JsonSchemaError } = require('@dashevo/wasm-dpp');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
+const { expect } = require('chai');
+const crypto = require('crypto');
 const featureFlagsContractDocumentsSchema = require('../../schema/feature-flags-documents.json');
+
+const expectJsonSchemaError = (validationResult, errorCount = 1) => {
+  const errors = validationResult.getErrors();
+  expect(errors).to.have.length(errorCount);
+
+  const error = validationResult.getErrors()[0];
+  expect(error).to.be.instanceof(JsonSchemaError);
+
+  return error;
+};
 
 describe('Feature Flags contract', () => {
   let dpp;
   let dataContract;
   let identityId;
 
-  beforeEach(async function beforeEach() {
-    const fetchContractStub = this.sinon.stub();
+  beforeEach(async () => {
+    dpp = new DashPlatformProtocol(
+      { generate: () => crypto.randomBytes(32) },
+    );
 
-    dpp = new DashPlatformProtocol({
-      stateRepository: {
-        fetchDataContract: fetchContractStub,
-      },
-    });
-
-    await dpp.initialize();
-
-    identityId = generateRandomIdentifier();
+    identityId = await generateRandomIdentifier();
 
     dataContract = dpp.dataContract.create(identityId, featureFlagsContractDocumentsSchema);
-
-    fetchContractStub.resolves(dataContract);
   });
 
-  it('should have a valid contract definition', async function shouldHaveValidContract() {
-    this.timeout(5000);
-
-    const validationResult = await dpp.dataContract.validate(dataContract);
-
-    expect(validationResult.isValid()).to.be.true();
+  it('should have a valid contract definition', async () => {
+    expect(() => dpp.dataContract.create(identityId, featureFlagsContractDocumentsSchema))
+      .to.not.throw();
   });
 
   describe('documents', () => {
@@ -42,106 +43,85 @@ describe('Feature Flags contract', () => {
       beforeEach(() => {
         rawUpdateConsensusParamsDocument = {
           enableAtHeight: 42,
+          block: {
+            maxBytes: 42,
+            maxGas: 3,
+          },
+          version: {
+            appVersion: 1,
+          },
+          evidence: {
+            maxAgeNumBlocks: 1,
+            maxAgeDuration: {
+              seconds: 1,
+              nanos: 0,
+            },
+            maxBytes: 1,
+          },
         };
       });
 
       it('should have at least three properties', () => {
-        rawUpdateConsensusParamsDocument = {
-          $createdAt: (new Date()).getTime(),
-          $updatedAt: (new Date()).getTime(),
-        };
+        rawUpdateConsensusParamsDocument = {};
 
-        try {
-          dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+        const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+        const validationResult = document.validate(dpp.protocolVersion);
+        const error = expectJsonSchemaError(validationResult, 2);
 
-          expect.fail('should throw error');
-        } catch (e) {
-          expect(e.name).to.equal('InvalidDocumentError');
-          expect(e.getErrors()).to.have.a.lengthOf(1);
-
-          const [error] = e.getErrors();
-
-          expect(error.name).to.equal('JsonSchemaError');
-          expect(error.keyword).to.equal('required');
-          expect(error.params.missingProperty).to.equal('enableAtHeight');
-        }
+        expect(error.keyword).to.equal('minProperties');
+        expect(error.params.minProperties).to.equal(3);
       });
 
       it('should not have additional properties', async () => {
-        rawUpdateConsensusParamsDocument.someOtherProperty = 42;
+        rawUpdateConsensusParamsDocument = {
+          ...rawUpdateConsensusParamsDocument,
+          someOtherProperty: 42,
+          block: {
+            maxBytes: 1,
+            maxGas: 1,
+          },
+        };
 
-        try {
-          dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+        const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+        const validationResult = document.validate(dpp.protocolVersion);
+        const error = expectJsonSchemaError(validationResult);
 
-          expect.fail('should throw error');
-        } catch (e) {
-          expect(e.name).to.equal('InvalidDocumentError');
-          expect(e.getErrors()).to.have.a.lengthOf(1);
-
-          const [error] = e.getErrors();
-
-          expect(error.name).to.equal('JsonSchemaError');
-          expect(error.keyword).to.equal('additionalProperties');
-          expect(error.params.additionalProperty).to.equal('someOtherProperty');
-        }
+        expect(error.keyword).to.equal('additionalProperties');
+        expect(error.params.additionalProperties).to.deep.equal(['someOtherProperty']);
       });
 
       describe('enabledAtHeight', () => {
         it('should be present', async () => {
           delete rawUpdateConsensusParamsDocument.enableAtHeight;
 
-          try {
-            dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+          const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('enableAtHeight');
-          }
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('enableAtHeight');
         });
 
         it('should be integer', () => {
           rawUpdateConsensusParamsDocument.enableAtHeight = 'string';
 
-          try {
-            dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+          const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('type');
-            expect(error.params.type).to.equal('integer');
-          }
+          expect(error.keyword).to.equal('type');
+          expect(error.params.type).to.equal('integer');
         });
 
         it('should be at least 1', () => {
           rawUpdateConsensusParamsDocument.enableAtHeight = 0;
 
-          try {
-            dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+          const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minimum');
-            expect(error.params.limit).to.equal(1);
-          }
+          expect(error.keyword).to.equal('minimum');
+          expect(error.params.minimum).to.equal(1);
         });
       });
 
@@ -156,20 +136,12 @@ describe('Feature Flags contract', () => {
         it('should have at least on property', async () => {
           rawUpdateConsensusParamsDocument.block = {};
 
-          try {
-            dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+          const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minProperties');
-            expect(error.params.limit).to.equal(1);
-          }
+          expect(error.keyword).to.equal('minProperties');
+          expect(error.params.minProperties).to.equal(1);
         });
 
         describe('maxBytes', () => {
@@ -178,20 +150,12 @@ describe('Feature Flags contract', () => {
               maxBytes: 'string',
             };
 
-            try {
-              dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const validationResult = document.validate(dpp.protocolVersion);
+            const error = expectJsonSchemaError(validationResult);
 
-              expect.fail('should throw error');
-            } catch (e) {
-              expect(e.name).to.equal('InvalidDocumentError');
-              expect(e.getErrors()).to.have.a.lengthOf(1);
-
-              const [error] = e.getErrors();
-
-              expect(error.name).to.equal('JsonSchemaError');
-              expect(error.keyword).to.equal('type');
-              expect(error.params.type).to.equal('integer');
-            }
+            expect(error.keyword).to.equal('type');
+            expect(error.params.type).to.equal('integer');
           });
 
           it('should be at least 1', async () => {
@@ -199,20 +163,12 @@ describe('Feature Flags contract', () => {
               maxBytes: 0,
             };
 
-            try {
-              dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const validationResult = document.validate(dpp.protocolVersion);
+            const error = expectJsonSchemaError(validationResult);
 
-              expect.fail('should throw error');
-            } catch (e) {
-              expect(e.name).to.equal('InvalidDocumentError');
-              expect(e.getErrors()).to.have.a.lengthOf(1);
-
-              const [error] = e.getErrors();
-
-              expect(error.name).to.equal('JsonSchemaError');
-              expect(error.keyword).to.equal('minimum');
-              expect(error.params.limit).to.equal(1);
-            }
+            expect(error.keyword).to.equal('minimum');
+            expect(error.params.minimum).to.equal(1);
           });
         });
 
@@ -222,20 +178,12 @@ describe('Feature Flags contract', () => {
               maxGas: 'string',
             };
 
-            try {
-              dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const validationResult = document.validate(dpp.protocolVersion);
+            const error = expectJsonSchemaError(validationResult);
 
-              expect.fail('should throw error');
-            } catch (e) {
-              expect(e.name).to.equal('InvalidDocumentError');
-              expect(e.getErrors()).to.have.a.lengthOf(1);
-
-              const [error] = e.getErrors();
-
-              expect(error.name).to.equal('JsonSchemaError');
-              expect(error.keyword).to.equal('type');
-              expect(error.params.type).to.equal('integer');
-            }
+            expect(error.keyword).to.equal('type');
+            expect(error.params.type).to.equal('integer');
           });
 
           it('should be at least 1', async () => {
@@ -243,27 +191,19 @@ describe('Feature Flags contract', () => {
               maxGas: 0,
             };
 
-            try {
-              dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const validationResult = document.validate(dpp.protocolVersion);
+            const error = expectJsonSchemaError(validationResult);
 
-              expect.fail('should throw error');
-            } catch (e) {
-              expect(e.name).to.equal('InvalidDocumentError');
-              expect(e.getErrors()).to.have.a.lengthOf(1);
-
-              const [error] = e.getErrors();
-
-              expect(error.name).to.equal('JsonSchemaError');
-              expect(error.keyword).to.equal('minimum');
-              expect(error.params.limit).to.equal(1);
-            }
+            expect(error.keyword).to.equal('minimum');
+            expect(error.params.minimum).to.equal(1);
           });
         });
 
         it('should be valid', async () => {
           const updateConsensusParams = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
 
-          const result = await dpp.document.validate(updateConsensusParams);
+          const result = updateConsensusParams.validate(dpp.protocolVersion);
 
           expect(result.isValid()).to.be.true();
         });
@@ -284,20 +224,12 @@ describe('Feature Flags contract', () => {
         it('should have at least on property', async () => {
           rawUpdateConsensusParamsDocument.evidence = {};
 
-          try {
-            dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+          const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minProperties');
-            expect(error.params.limit).to.equal(1);
-          }
+          expect(error.keyword).to.equal('minProperties');
+          expect(error.params.minProperties).to.equal(1);
         });
 
         describe('maxBytes', () => {
@@ -306,20 +238,12 @@ describe('Feature Flags contract', () => {
               maxBytes: 'string',
             };
 
-            try {
-              dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const validationResult = document.validate(dpp.protocolVersion);
+            const error = expectJsonSchemaError(validationResult);
 
-              expect.fail('should throw error');
-            } catch (e) {
-              expect(e.name).to.equal('InvalidDocumentError');
-              expect(e.getErrors()).to.have.a.lengthOf(1);
-
-              const [error] = e.getErrors();
-
-              expect(error.name).to.equal('JsonSchemaError');
-              expect(error.keyword).to.equal('type');
-              expect(error.params.type).to.equal('integer');
-            }
+            expect(error.keyword).to.equal('type');
+            expect(error.params.type).to.equal('integer');
           });
 
           it('should be at least 1', async () => {
@@ -327,20 +251,12 @@ describe('Feature Flags contract', () => {
               maxBytes: 0,
             };
 
-            try {
-              dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const validationResult = document.validate(dpp.protocolVersion);
+            const error = expectJsonSchemaError(validationResult);
 
-              expect.fail('should throw error');
-            } catch (e) {
-              expect(e.name).to.equal('InvalidDocumentError');
-              expect(e.getErrors()).to.have.a.lengthOf(1);
-
-              const [error] = e.getErrors();
-
-              expect(error.name).to.equal('JsonSchemaError');
-              expect(error.keyword).to.equal('minimum');
-              expect(error.params.limit).to.equal(1);
-            }
+            expect(error.keyword).to.equal('minimum');
+            expect(error.params.minimum).to.equal(1);
           });
         });
 
@@ -350,20 +266,12 @@ describe('Feature Flags contract', () => {
               maxAgeNumBlocks: 'string',
             };
 
-            try {
-              dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const validationResult = document.validate(dpp.protocolVersion);
+            const error = expectJsonSchemaError(validationResult);
 
-              expect.fail('should throw error');
-            } catch (e) {
-              expect(e.name).to.equal('InvalidDocumentError');
-              expect(e.getErrors()).to.have.a.lengthOf(1);
-
-              const [error] = e.getErrors();
-
-              expect(error.name).to.equal('JsonSchemaError');
-              expect(error.keyword).to.equal('type');
-              expect(error.params.type).to.equal('integer');
-            }
+            expect(error.keyword).to.equal('type');
+            expect(error.params.type).to.equal('integer');
           });
 
           it('should be at least 1', async () => {
@@ -371,20 +279,12 @@ describe('Feature Flags contract', () => {
               maxAgeNumBlocks: 0,
             };
 
-            try {
-              dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const validationResult = document.validate(dpp.protocolVersion);
+            const error = expectJsonSchemaError(validationResult);
 
-              expect.fail('should throw error');
-            } catch (e) {
-              expect(e.name).to.equal('InvalidDocumentError');
-              expect(e.getErrors()).to.have.a.lengthOf(1);
-
-              const [error] = e.getErrors();
-
-              expect(error.name).to.equal('JsonSchemaError');
-              expect(error.keyword).to.equal('minimum');
-              expect(error.params.limit).to.equal(1);
-            }
+            expect(error.keyword).to.equal('minimum');
+            expect(error.params.minimum).to.equal(1);
           });
         });
 
@@ -393,58 +293,34 @@ describe('Feature Flags contract', () => {
             it('should be present', async () => {
               delete rawUpdateConsensusParamsDocument.evidence.maxAgeDuration.seconds;
 
-              try {
-                dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+              const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+              const validationResult = document.validate(dpp.protocolVersion);
+              const error = expectJsonSchemaError(validationResult);
 
-                expect.fail('should throw error');
-              } catch (e) {
-                expect(e.name).to.equal('InvalidDocumentError');
-                expect(e.getErrors()).to.have.a.lengthOf(1);
-
-                const [error] = e.getErrors();
-
-                expect(error.name).to.equal('JsonSchemaError');
-                expect(error.keyword).to.equal('required');
-                expect(error.params.missingProperty).to.equal('seconds');
-              }
+              expect(error.keyword).to.equal('required');
+              expect(error.params.missingProperty).to.equal('seconds');
             });
 
             it('should be integer', () => {
               rawUpdateConsensusParamsDocument.evidence.maxAgeDuration.seconds = 'string';
 
-              try {
-                dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+              const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+              const validationResult = document.validate(dpp.protocolVersion);
+              const error = expectJsonSchemaError(validationResult);
 
-                expect.fail('should throw error');
-              } catch (e) {
-                expect(e.name).to.equal('InvalidDocumentError');
-                expect(e.getErrors()).to.have.a.lengthOf(1);
-
-                const [error] = e.getErrors();
-
-                expect(error.name).to.equal('JsonSchemaError');
-                expect(error.keyword).to.equal('type');
-                expect(error.params.type).to.equal('integer');
-              }
+              expect(error.keyword).to.equal('type');
+              expect(error.params.type).to.equal('integer');
             });
 
             it('should be at least 1', () => {
               rawUpdateConsensusParamsDocument.evidence.maxAgeDuration.seconds = 0;
 
-              try {
-                dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+              const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+              const validationResult = document.validate(dpp.protocolVersion);
+              const error = expectJsonSchemaError(validationResult);
 
-                expect.fail('should throw error');
-              } catch (e) {
-                expect(e.name).to.equal('InvalidDocumentError');
-                expect(e.getErrors()).to.have.a.lengthOf(1);
-
-                const [error] = e.getErrors();
-
-                expect(error.name).to.equal('JsonSchemaError');
-                expect(error.keyword).to.equal('minimum');
-                expect(error.params.limit).to.equal(1);
-              }
+              expect(error.keyword).to.equal('minimum');
+              expect(error.params.minimum).to.equal(1);
             });
           });
 
@@ -452,58 +328,34 @@ describe('Feature Flags contract', () => {
             it('should be present', async () => {
               delete rawUpdateConsensusParamsDocument.evidence.maxAgeDuration.nanos;
 
-              try {
-                dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+              const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+              const validationResult = document.validate(dpp.protocolVersion);
+              const error = expectJsonSchemaError(validationResult);
 
-                expect.fail('should throw error');
-              } catch (e) {
-                expect(e.name).to.equal('InvalidDocumentError');
-                expect(e.getErrors()).to.have.a.lengthOf(1);
-
-                const [error] = e.getErrors();
-
-                expect(error.name).to.equal('JsonSchemaError');
-                expect(error.keyword).to.equal('required');
-                expect(error.params.missingProperty).to.equal('nanos');
-              }
+              expect(error.keyword).to.equal('required');
+              expect(error.params.missingProperty).to.equal('nanos');
             });
 
             it('should be integer', () => {
               rawUpdateConsensusParamsDocument.evidence.maxAgeDuration.nanos = 'string';
 
-              try {
-                dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+              const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+              const validationResult = document.validate(dpp.protocolVersion);
+              const error = expectJsonSchemaError(validationResult);
 
-                expect.fail('should throw error');
-              } catch (e) {
-                expect(e.name).to.equal('InvalidDocumentError');
-                expect(e.getErrors()).to.have.a.lengthOf(1);
-
-                const [error] = e.getErrors();
-
-                expect(error.name).to.equal('JsonSchemaError');
-                expect(error.keyword).to.equal('type');
-                expect(error.params.type).to.equal('integer');
-              }
+              expect(error.keyword).to.equal('type');
+              expect(error.params.type).to.equal('integer');
             });
 
             it('should be at least 0', () => {
               rawUpdateConsensusParamsDocument.evidence.maxAgeDuration.nanos = -1;
 
-              try {
-                dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+              const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+              const validationResult = document.validate(dpp.protocolVersion);
+              const error = expectJsonSchemaError(validationResult);
 
-                expect.fail('should throw error');
-              } catch (e) {
-                expect(e.name).to.equal('InvalidDocumentError');
-                expect(e.getErrors()).to.have.a.lengthOf(1);
-
-                const [error] = e.getErrors();
-
-                expect(error.name).to.equal('JsonSchemaError');
-                expect(error.keyword).to.equal('minimum');
-                expect(error.params.limit).to.equal(0);
-              }
+              expect(error.keyword).to.equal('minimum');
+              expect(error.params.minimum).to.equal(0);
             });
           });
         });
@@ -511,7 +363,7 @@ describe('Feature Flags contract', () => {
         it('should be valid', async () => {
           const updateConsensusParams = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
 
-          const result = await dpp.document.validate(updateConsensusParams);
+          const result = updateConsensusParams.validate(dpp.protocolVersion);
 
           expect(result.isValid()).to.be.true();
         });
@@ -527,20 +379,12 @@ describe('Feature Flags contract', () => {
         it('should have at least on property', async () => {
           rawUpdateConsensusParamsDocument.version = {};
 
-          try {
-            dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+          const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.getErrors()).to.have.a.lengthOf(1);
-
-            const [error] = e.getErrors();
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minProperties');
-            expect(error.params.limit).to.equal(1);
-          }
+          expect(error.keyword).to.equal('minProperties');
+          expect(error.params.minProperties).to.equal(1);
         });
 
         describe('appVersion', () => {
@@ -549,20 +393,12 @@ describe('Feature Flags contract', () => {
               appVersion: 'string',
             };
 
-            try {
-              dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const validationResult = document.validate(dpp.protocolVersion);
+            const error = expectJsonSchemaError(validationResult);
 
-              expect.fail('should throw error');
-            } catch (e) {
-              expect(e.name).to.equal('InvalidDocumentError');
-              expect(e.getErrors()).to.have.a.lengthOf(1);
-
-              const [error] = e.getErrors();
-
-              expect(error.name).to.equal('JsonSchemaError');
-              expect(error.keyword).to.equal('type');
-              expect(error.params.type).to.equal('integer');
-            }
+            expect(error.keyword).to.equal('type');
+            expect(error.params.type).to.equal('integer');
           });
 
           it('should be at least 1', async () => {
@@ -570,27 +406,19 @@ describe('Feature Flags contract', () => {
               appVersion: 0,
             };
 
-            try {
-              dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const document = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
+            const validationResult = document.validate(dpp.protocolVersion);
+            const error = expectJsonSchemaError(validationResult);
 
-              expect.fail('should throw error');
-            } catch (e) {
-              expect(e.name).to.equal('InvalidDocumentError');
-              expect(e.getErrors()).to.have.a.lengthOf(1);
-
-              const [error] = e.getErrors();
-
-              expect(error.name).to.equal('JsonSchemaError');
-              expect(error.keyword).to.equal('minimum');
-              expect(error.params.limit).to.equal(1);
-            }
+            expect(error.keyword).to.equal('minimum');
+            expect(error.params.minimum).to.equal(1);
           });
         });
 
         it('should be valid', async () => {
           const updateConsensusParams = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
 
-          const result = await dpp.document.validate(updateConsensusParams);
+          const result = updateConsensusParams.validate(dpp.protocolVersion);
 
           expect(result.isValid()).to.be.true();
         });
@@ -599,7 +427,7 @@ describe('Feature Flags contract', () => {
       it('should be valid', async () => {
         const updateConsensusParams = dpp.document.create(dataContract, identityId, 'updateConsensusParams', rawUpdateConsensusParamsDocument);
 
-        const result = await dpp.document.validate(updateConsensusParams);
+        const result = updateConsensusParams.validate(dpp.protocolVersion);
 
         expect(result.isValid()).to.be.true();
       });

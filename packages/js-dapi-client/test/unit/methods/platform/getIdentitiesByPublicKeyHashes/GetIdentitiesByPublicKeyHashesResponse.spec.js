@@ -1,4 +1,6 @@
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const { BytesValue } = require('google-protobuf/google/protobuf/wrappers_pb');
+
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const {
   v0: {
     GetIdentitiesByPublicKeyHashesResponse,
@@ -21,25 +23,35 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
   let proto;
   let proofFixture;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    identityFixture = getIdentityFixture();
+    identityFixture = await getIdentityFixture();
     proofFixture = getProofFixture();
 
-    proto = new GetIdentitiesByPublicKeyHashesResponse();
-    const identitiesList = new GetIdentitiesByPublicKeyHashesResponse.Identities();
-    identitiesList.setIdentitiesList([identityFixture.toBuffer()]);
+    const {
+      IdentitiesByPublicKeyHashes,
+      PublicKeyHashIdentityEntry,
+      GetIdentitiesByPublicKeyHashesResponseV0,
+    } = GetIdentitiesByPublicKeyHashesResponse;
 
-    proto.setIdentities(
-      identitiesList,
-    );
+    proto = new GetIdentitiesByPublicKeyHashesResponse();
+
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
     metadata.setTimeMs(metadataFixture.timeMs);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
-    proto.setMetadata(metadata);
+    proto.setV0(
+      new GetIdentitiesByPublicKeyHashesResponseV0().setIdentities(
+        new IdentitiesByPublicKeyHashes()
+          .setIdentityEntriesList([
+            new PublicKeyHashIdentityEntry()
+              .setPublicKeyHash(Buffer.alloc(20))
+              .setValue(new BytesValue().setValue(identityFixture.toBuffer())),
+          ]),
+      ).setMetadata(metadata),
+    );
 
     getIdentitiesResponse = new GetIdentitiesByPublicKeyHashesResponseClass(
       [identityFixture.toBuffer()],
@@ -97,7 +109,7 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
     proofProto.setGrovedbProof(proofFixture.merkleProof);
     proofProto.setRound(proofFixture.round);
 
-    proto.setProof(proofProto);
+    proto.getV0().setProof(proofProto);
 
     getIdentitiesResponse = GetIdentitiesByPublicKeyHashesResponseClass.createFromProto(proto);
     expect(getIdentitiesResponse).to.be.an.instanceOf(
@@ -119,7 +131,7 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
   });
 
   it('should throw InvalidResponseError if Metadata is not defined', () => {
-    proto.setMetadata(undefined);
+    proto.getV0().setMetadata(undefined);
 
     try {
       getIdentitiesResponse = GetIdentitiesByPublicKeyHashesResponseClass.createFromProto(proto);

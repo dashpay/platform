@@ -37,10 +37,15 @@
       "name": "Konstantin Shuplenkov",
       "email": "konstantin.shuplenkov@dash.org",
       "url": "https://github.com/shuplenkov"
+    },
+    {
+      "name": "Mikhail Pshenichnikov",
+      "email": "pshenmic@gmail.com",
+      "url": "https://github.com/pshenmic"
     }
   ],
   "engines": {
-    "node": ">=12"
+    "node": ">=18"
   },
   "license": "MIT",
   "bugs": {
@@ -54,10 +59,10 @@
     "@dashevo/dashpay-contract": "workspace:*",
     "@dashevo/docker-compose": "^0.24.4",
     "@dashevo/dpns-contract": "workspace:*",
-    "@dashevo/dpp": "workspace:*",
     "@dashevo/feature-flags-contract": "workspace:*",
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
+    "@dashevo/wasm-dpp": "workspace:*",
     "@dashevo/withdrawals-contract": "workspace:*",
     "@oclif/core": "^1.25.0",
     "@oclif/plugin-help": "^5.1.20",

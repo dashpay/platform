@@ -1,4 +1,6 @@
 /* eslint-disable no-param-reassign */
+const fs = require('fs');
+const path = require('path');
 
 const { NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_MAINNET } = require('../src/constants');
 
@@ -242,10 +244,37 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
-      '0.25.9': (configFile) => {
+      '0.25.7': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (options.network !== NETWORK_MAINNET) {
+              const filenames = ['private.key', 'bundle.crt', 'bundle.csr', 'csr.pem'];
+
+              for (const filename of filenames) {
+                const oldFilePath = homeDir.joinPath('ssl', name, filename);
+                const newFilePath = homeDir.joinPath(name,
+                  'platform', 'dapi', 'envoy', 'ssl', filename);
+
+                if (fs.existsSync(oldFilePath)) {
+                  fs.mkdirSync(path.dirname(newFilePath), { recursive: true });
+                  fs.copyFileSync(oldFilePath, newFilePath);
+                  fs.rmSync(oldFilePath, { recursive: true });
+                }
+              }
+            }
+          });
+
+        if (fs.existsSync(homeDir.joinPath('ssl'))) {
+          fs.rmSync(homeDir.joinPath('ssl'), { recursive: true });
+        }
+
+        return configFile;
+      },
+      '1.0.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.core.docker.commandArgs = '';
+            options.platform.tenderdash.log.level = 'info';
+            options.core.docker.commandArgs = [];
           });
 
         return configFile;

@@ -12,6 +12,9 @@ const wait = require('../../util/wait');
  * @param {ConfigFile} configFile
  * @param {HomeDir} homeDir
  * @param {generateEnvs} generateEnvs
+ * @param {ConfigFileJsonRepository} configFileRepository
+ * @param {renderServiceTemplates} renderServiceTemplates
+ * @param {writeServiceConfigs} writeServiceConfigs
  * @return {resetNodeTask}
  */
 function resetNodeTaskFactory(
@@ -23,6 +26,9 @@ function resetNodeTaskFactory(
   configFile,
   homeDir,
   generateEnvs,
+  configFileRepository,
+  renderServiceTemplates,
+  writeServiceConfigs,
 ) {
   /**
    * @typedef {resetNodeTask}
@@ -105,49 +111,82 @@ function resetNodeTaskFactory(
       },
       {
         title: 'Reset dashmate\'s ephemeral data',
-        task: (ctx) => {
-          if (!ctx.isPlatformOnlyReset) {
-            // TODO: We should remove it from config
-            config.set('core.miner.mediantime', null);
-          }
+        enabled: (ctx) => !ctx.removeConfig && !ctx.isHardReset && !ctx.isPlatformOnlyReset,
+        task: () => {
+          // TODO: We should remove it from config
+          config.set('core.miner.mediantime', null);
+
+          configFileRepository.write(configFile);
+
+          // Render updated service configs
+          const serviceConfigs = renderServiceTemplates(config);
+          writeServiceConfigs(config.getName(), serviceConfigs);
         },
       },
       {
-        title: `Reset config ${config.getName()}`,
-        enabled: (ctx) => ctx.isHardReset,
-        task: (ctx) => {
-          const baseConfigName = config.get('group') || config.getName();
+        title: `Remove config ${config.getName()}`,
+        enabled: (ctx) => ctx.removeConfig,
+        task: () => {
+          configFile.removeConfig(config.getName());
+          configFileRepository.write(configFile);
 
-          if (defaultConfigs.has(baseConfigName)) {
-            // Reset config if the corresponding base config exists
-            if (ctx.isPlatformOnlyReset) {
-              const defaultPlatformConfig = defaultConfigs.get(baseConfigName).get('platform');
-              config.set('platform', defaultPlatformConfig);
-            } else {
-              config.setOptions(defaultConfigs.get(baseConfigName).getOptions());
-            }
-          } else {
-            // Delete config if no base config
-            configFile.removeConfig(config.getName());
-          }
-
-          // Remove service configs
-          let serviceConfigsPath = homeDir.joinPath(baseConfigName);
-
-          if (ctx.isPlatformOnlyReset) {
-            serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
-          }
+          const serviceConfigsPath = homeDir.joinPath(config.getName());
 
           fs.rmSync(serviceConfigsPath, {
             recursive: true,
             force: true,
           });
+        },
+      },
+      {
+        title: `Reset config ${config.getName()}`,
+        enabled: (ctx) => !ctx.removeConfig && ctx.isHardReset,
+        task: (ctx) => {
+          const groupName = config.get('group');
+          const defaultConfigName = groupName || config.getName();
 
-          // Remove SSL files
-          fs.rmSync(homeDir.joinPath('ssl', baseConfigName), {
-            recursive: true,
-            force: true,
-          });
+          if (defaultConfigs.has(defaultConfigName)) {
+            // Reset config if the corresponding default config exists
+            if (ctx.isPlatformOnlyReset) {
+              const defaultPlatformConfig = defaultConfigs.get(defaultConfigName).get('platform');
+              config.set('platform', defaultPlatformConfig);
+            } else {
+              const defaultConfigOptions = defaultConfigs.get(defaultConfigName).getOptions();
+
+              config.setOptions(defaultConfigOptions);
+            }
+
+            config.set('group', groupName);
+
+            // Remove service configs
+            let serviceConfigsPath = homeDir.joinPath(defaultConfigName);
+
+            if (ctx.isPlatformOnlyReset) {
+              serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
+            }
+
+            fs.rmSync(serviceConfigsPath, {
+              recursive: true,
+              force: true,
+            });
+
+            // Render updated service configs
+            const serviceConfigs = renderServiceTemplates(config);
+            writeServiceConfigs(config.getName(), serviceConfigs);
+          } else {
+            // Delete config if no base config
+            configFile.removeConfig(config.getName());
+
+            // Remove service configs
+            const serviceConfigsPath = homeDir.joinPath(defaultConfigName);
+
+            fs.rmSync(serviceConfigsPath, {
+              recursive: true,
+              force: true,
+            });
+          }
+
+          configFileRepository.write(configFile);
         },
       },
     ]);

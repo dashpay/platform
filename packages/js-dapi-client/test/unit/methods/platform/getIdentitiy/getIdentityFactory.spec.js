@@ -8,7 +8,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const getIdentityFactory = require('../../../../../lib/methods/platform/getIdentity/getIdentityFactory');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
@@ -26,8 +26,8 @@ describe('getIdentityFactory', () => {
   let proofFixture;
   let proofResponse;
 
-  beforeEach(function beforeEach() {
-    identityFixture = getIdentityFixture();
+  beforeEach(async function beforeEach() {
+    identityFixture = await getIdentityFixture();
     identityId = identityFixture.getId();
 
     metadataFixture = getMetadataFixture();
@@ -39,9 +39,13 @@ describe('getIdentityFactory', () => {
     metadata.setTimeMs(metadataFixture.timeMs);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
+    const { GetIdentityResponseV0 } = GetIdentityResponse;
     response = new GetIdentityResponse();
-    response.setIdentity(identityFixture.toBuffer());
-    response.setMetadata(metadata);
+    response.setV0(
+      new GetIdentityResponseV0()
+        .setIdentity(identityFixture.toBuffer())
+        .setMetadata(metadata),
+    );
 
     proofResponse = new ProofResponse();
 
@@ -64,9 +68,13 @@ describe('getIdentityFactory', () => {
   it('should return identity', async () => {
     const result = await getIdentity(identityId, options);
 
+    const { GetIdentityRequestV0 } = GetIdentityRequest;
     const request = new GetIdentityRequest();
-    request.setId(identityId.toBuffer());
-    request.setProve(false);
+    request.setV0(
+      new GetIdentityRequestV0()
+        .setId(identityId.toBuffer())
+        .setProve(false),
+    );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
@@ -81,14 +89,18 @@ describe('getIdentityFactory', () => {
 
   it('should return proof', async () => {
     options.prove = true;
-    response.setIdentity(undefined);
-    response.setProof(proofResponse);
+    response.getV0().setIdentity(undefined);
+    response.getV0().setProof(proofResponse);
 
     const result = await getIdentity(identityId, options);
 
+    const { GetIdentityRequestV0 } = GetIdentityRequest;
     const request = new GetIdentityRequest();
-    request.setId(identityId.toBuffer());
-    request.setProve(true);
+    request.setV0(
+      new GetIdentityRequestV0()
+        .setId(identityId.toBuffer())
+        .setProve(true),
+    );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
@@ -118,9 +130,13 @@ describe('getIdentityFactory', () => {
 
     grpcTransportMock.request.throws(error);
 
+    const { GetIdentityRequestV0 } = GetIdentityRequest;
     const request = new GetIdentityRequest();
-    request.setId(identityId.toBuffer());
-    request.setProve(false);
+    request.setV0(
+      new GetIdentityRequestV0()
+        .setId(identityId.toBuffer())
+        .setProve(false),
+    );
 
     try {
       await getIdentity(identityId, options);

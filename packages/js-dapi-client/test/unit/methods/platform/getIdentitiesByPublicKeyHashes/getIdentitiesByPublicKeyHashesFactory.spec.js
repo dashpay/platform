@@ -1,3 +1,4 @@
+const { BytesValue } = require('google-protobuf/google/protobuf/wrappers_pb');
 const {
   v0: {
     PlatformPromiseClient,
@@ -8,7 +9,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
 
@@ -28,8 +29,8 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
   let proofFixture;
   let proofResponse;
 
-  beforeEach(function beforeEach() {
-    identityFixture = getIdentityFixture();
+  beforeEach(async function beforeEach() {
+    identityFixture = await getIdentityFixture();
     metadataFixture = getMetadataFixture();
     proofFixture = getProofFixture();
 
@@ -39,13 +40,23 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
     metadata.setTimeMs(metadataFixture.timeMs);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
+    const {
+      IdentitiesByPublicKeyHashes,
+      PublicKeyHashIdentityEntry,
+      GetIdentitiesByPublicKeyHashesResponseV0,
+    } = GetIdentitiesByPublicKeyHashesResponse;
+
     response = new GetIdentitiesByPublicKeyHashesResponse();
-    const identitiesList = new GetIdentitiesByPublicKeyHashesResponse.Identities();
-    identitiesList.setIdentitiesList([identityFixture.toBuffer()]);
-    response.setIdentities(
-      identitiesList,
+    response.setV0(
+      new GetIdentitiesByPublicKeyHashesResponseV0().setIdentities(
+        new IdentitiesByPublicKeyHashes()
+          .setIdentityEntriesList([
+            new PublicKeyHashIdentityEntry()
+              .setPublicKeyHash(publicKeyHash)
+              .setValue(new BytesValue().setValue(identityFixture.toBuffer())),
+          ]),
+      ).setMetadata(metadata),
     );
-    response.setMetadata(metadata);
 
     proofResponse = new ProofResponse();
 
@@ -70,9 +81,13 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
   it('should return public key hashes to identity map', async () => {
     const result = await getIdentitiesByPublicKeyHashes([publicKeyHash], options);
 
+    const { GetIdentitiesByPublicKeyHashesRequestV0 } = GetIdentitiesByPublicKeyHashesRequest;
     const request = new GetIdentitiesByPublicKeyHashesRequest();
-    request.setPublicKeyHashesList([publicKeyHash]);
-    request.setProve(false);
+    request.setV0(
+      new GetIdentitiesByPublicKeyHashesRequestV0()
+        .setPublicKeyHashesList([publicKeyHash])
+        .setProve(false),
+    );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
@@ -87,13 +102,17 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
 
   it('should return proof', async () => {
     options.prove = true;
-    response.setProof(proofResponse);
+    response.getV0().setProof(proofResponse);
 
     const result = await getIdentitiesByPublicKeyHashes([publicKeyHash], options);
 
+    const { GetIdentitiesByPublicKeyHashesRequestV0 } = GetIdentitiesByPublicKeyHashesRequest;
     const request = new GetIdentitiesByPublicKeyHashesRequest();
-    request.setPublicKeyHashesList([publicKeyHash]);
-    request.setProve(true);
+    request.setV0(
+      new GetIdentitiesByPublicKeyHashesRequestV0()
+        .setPublicKeyHashesList([publicKeyHash])
+        .setProve(true),
+    );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
@@ -122,9 +141,13 @@ describe('getIdentitiesByPublicKeyHashesFactory', () => {
 
     grpcTransportMock.request.throws(error);
 
+    const { GetIdentitiesByPublicKeyHashesRequestV0 } = GetIdentitiesByPublicKeyHashesRequest;
     const request = new GetIdentitiesByPublicKeyHashesRequest();
-    request.setPublicKeyHashesList([publicKeyHash]);
-    request.setProve(false);
+    request.setV0(
+      new GetIdentitiesByPublicKeyHashesRequestV0()
+        .setPublicKeyHashesList([publicKeyHash])
+        .setProve(false),
+    );
 
     try {
       await getIdentitiesByPublicKeyHashes([publicKeyHash], options);

@@ -2,7 +2,7 @@ const Dash = require('dash');
 
 const { createFakeInstantLock } = require('dash/build/utils/createFakeIntantLock');
 
-const { hash } = require('@dashevo/dpp/lib/util/hash');
+const { hash } = require('@dashevo/wasm-dpp/lib/utils/hash');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const getDAPISeeds = require('../../../lib/test/getDAPISeeds');

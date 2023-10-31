@@ -1,9 +1,9 @@
 import { Identifier } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
+import convertToHomographSafeChars from '../../../../../utils/convertToHomographSafeChars';
 
 const crypto = require('crypto');
-const { hash } = require('@dashevo/dpp/lib/util/hash');
-const convertToHomographSafeChars = require('@dashevo/dpp/lib/util/convertToHomographSafeChars');
+const { hash } = require('@dashevo/wasm-dpp/lib/utils/hash');
 
 /**
  * Register names to the platform
@@ -47,8 +47,6 @@ export async function register(this: Platform,
 
   const [label] = nameLabels;
   const normalizedLabel = convertToHomographSafeChars(label);
-
-  console.log('Label', label, 'normalized', normalizedLabel);
 
   const preorderSalt = crypto.randomBytes(32);
 

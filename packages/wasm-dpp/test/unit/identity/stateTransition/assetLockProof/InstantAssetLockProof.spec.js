@@ -1,90 +1,78 @@
-const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
-
-const { default: loadWasmDpp } = require('../../../../../dist');
+const getInstantAssetLockProofFixture = require('../../../../../lib/test/fixtures/getInstantAssetLockProofFixture');
+const { InstantAssetLockProof } = require('../../../../../dist');
 
 describe('InstantAssetLockProof', () => {
-  let InstantAssetLockProof;
   let instantAssetLockProof;
-  let instantAssetLockProofJS;
+  let rawInstantAssetLockProof;
 
   before(async () => {
-    ({ InstantAssetLockProof } = await loadWasmDpp());
-
-    instantAssetLockProofJS = getInstantAssetLockProofFixture();
+    rawInstantAssetLockProof = (await getInstantAssetLockProofFixture()).toObject();
     instantAssetLockProof = new InstantAssetLockProof(
-      instantAssetLockProofJS.toObject(),
+      rawInstantAssetLockProof,
     );
   });
 
   describe('#getType', () => {
     it('should return correct type', () => {
       expect(instantAssetLockProof.getType())
-        .to.equal(instantAssetLockProofJS.getType());
+        .to.equal(rawInstantAssetLockProof.type);
     });
   });
 
   describe('#getOutputIndex', () => {
     it('should return correct type', () => {
       expect(instantAssetLockProof.getOutputIndex())
-        .to.equal(instantAssetLockProofJS.getOutputIndex());
+        .to.equal(rawInstantAssetLockProof.outputIndex);
     });
   });
 
   describe('#getOutPoint', () => {
     it('should return correct outPoint', () => {
       expect(instantAssetLockProof.getOutPoint())
-        .to.deep.equal(instantAssetLockProofJS.getOutPoint());
+        .to.have.length(36);
     });
   });
 
   describe('#getOutput', () => {
     it('should return correct output', () => {
       expect(instantAssetLockProof.getOutput())
-        .to.deep.equal(instantAssetLockProofJS.getOutput().toObject());
+        .to.have.property('script');
+      expect(instantAssetLockProof.getOutput())
+        .to.have.property('satoshis');
     });
   });
 
   describe('#createIdentifier', () => {
     it('should return correct identifier', () => {
       const identifier = instantAssetLockProof.createIdentifier();
-      const identifierJS = instantAssetLockProofJS.createIdentifier();
 
       expect(identifier.toBuffer())
-        .to.deep.equal(identifierJS.toBuffer());
+        .to.have.length(32);
     });
   });
 
   describe('#getInstantLock', () => {
     it('should return correct instant lock', () => {
       const instantLock = instantAssetLockProof.getInstantLock();
-      const instantLockJS = instantAssetLockProofJS.getInstantLock();
 
       expect(instantLock)
-        .to.deep.equal(instantLockJS.toBuffer());
+        .to.deep.equal(rawInstantAssetLockProof.instantLock);
     });
   });
 
   describe('#getTransaction', () => {
     it('should return correct transaction', () => {
       const transaction = instantAssetLockProof.getTransaction();
-      const transactionJS = instantAssetLockProofJS.getTransaction();
 
       expect(transaction)
-        .to.deep.equal(transactionJS.toBuffer());
+        .to.deep.equal(rawInstantAssetLockProof.transaction);
     });
   });
 
   describe('#toObject', () => {
     it('should return correct object', () => {
       expect(instantAssetLockProof.toObject())
-        .to.deep.equal(instantAssetLockProofJS.toObject());
-    });
-  });
-
-  describe('#toJSON', () => {
-    it('should return correct JSON', () => {
-      expect(instantAssetLockProof.toJSON())
-        .to.deep.equal(instantAssetLockProofJS.toJSON());
+        .to.deep.equal(rawInstantAssetLockProof);
     });
   });
 });
