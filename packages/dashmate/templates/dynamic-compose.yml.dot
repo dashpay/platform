@@ -1,18 +1,14 @@
 version: '3.7'
 
-{{ driveLogs = Object.entries(it.platform.drive.abci.logs).filter(([, settings]) => settings.destination !== 'stderr' && settings.destination !== 'stdout'); }}
-
-{{? it.core.docker.commandArgs.length > 0 || driveLogs.length > 0 }}
 services:
-  {{? it.core.docker.commandArgs.length > 0 }}
   core:
     command:
       - dashd
       {{~ it.core.docker.commandArgs :arg }}
       - {{=arg}}
       {{~}}
-  {{?}}
 
+  {{ driveLogs = Object.entries(it.platform.drive.abci.logs).filter(([, settings]) => settings.destination !== 'stderr' && settings.destination !== 'stdout'); }}
   {{? driveLogs.length > 0 }}
   drive_abci:
     volumes:
@@ -21,4 +17,3 @@ services:
       - {{=settings.destination}}:/var/log/dash/drive/{{=name}}/{{=settings.destination.split('/').reverse()[0]}}
       {{~}}
   {{?}}
-{{?}}
