@@ -72,7 +72,12 @@ jobs:
     with:
       package: ${{ matrix.js-package }}
       skip-tests: ${{ contains(matrix.js-package, 'platform-test-suite') }}
-      install-browsers: ${{ contains(matrix.js-package, '@dashevo/dapi-client') || contains(matrix.js-package, 'dash') || contains(matrix.js-package, '@dashevo/dpp') || contains(matrix.js-package, '@dashevo/platform-test-suite') || contains(matrix.js-package, '@dashevo/wallet-lib') }}
+      install-browsers: |
+        ${{ contains(matrix.js-package, '@dashevo/dapi-client') ||
+        contains(matrix.js-package, 'dash') ||
+        contains(matrix.js-package, '@dashevo/dpp') ||
+        contains(matrix.js-package, '@dashevo/platform-test-suite') ||
+        contains(matrix.js-package, '@dashevo/wallet-lib') }}
 
   rs-checks:
     name: RS Checks
