@@ -37,7 +37,7 @@ describe('MigrateConfigFileCommand', () => {
       const myConfig = migratedConfigFileData.configs[configName];
       const isValid = ajv.validate(configJsonSchema, myConfig);
 
-      expect(isValid).to.equal(true);
+      expect(isValid).to.equal(true, `${configName} config is invalid: ${ajv.errorsText()}`);
 
       let targetConfig;
 
