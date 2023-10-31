@@ -19,11 +19,7 @@ use crate::version::drive_abci_versions::{
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
     DriveAbciProtocolUpgradeMethodVersions, DriveAbciQueryDataContractVersions,
-<<<<<<< HEAD
     DriveAbciQueryIdentityVersions, DriveAbciQuerySystemVersions, DriveAbciQueryVersions,
-=======
-    DriveAbciQueryIdentityVersions, DriveAbciQueryVersions,
->>>>>>> v1.0-dev
     DriveAbciStateTransitionCommonValidationVersions,
     DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion,
     DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
