@@ -1,5 +1,3 @@
-name: Package RS Tests
-
 on:
   workflow_call:
     inputs:

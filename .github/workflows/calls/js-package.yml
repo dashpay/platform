@@ -1,5 +1,3 @@
-name: Package JS Tests
-
 on:
   workflow_call:
     inputs:
