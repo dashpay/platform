@@ -1,0 +1,55 @@
+rs-dpp:
+  - .github/workflows/rs-checks.yml
+  - packages/feature-flags-contract/**
+  - packages/dpns-contract/**
+  - packages/dashpay-contract/**
+  - packages/masternode-reward-shares-contract/**
+  - packages/rs-platform-serialization/**
+  - packages/rs-platform-serialization-derive/**
+  - packages/rs-platform-value/**
+  - packages/rs-platform-value-convertible/**
+  - packages/rs-platform-version/**
+  - packages/rs-platform-versioning/**
+  - packages/rs-dpp/**
+
+rs-drive-abci:
+  - .github/workflows/rs-checks.yml
+  - packages/feature-flags-contract/**
+  - packages/dpns-contract/**
+  - packages/dashpay-contract/**
+  - packages/masternode-reward-shares-contract/**
+  - packages/rs-platform-serialization/**
+  - packages/rs-platform-serialization-derive/**
+  - packages/rs-platform-value/**
+  - packages/rs-platform-value-convertible/**
+  - packages/rs-platform-version/**
+  - packages/rs-platform-versioning/**
+  - packages/rs-dpp/**
+  - packages/rs-drive/**
+  - packages/rs-drive-abci/**
+  - packages/rs-platform-value/**
+
+rs-drive:
+  - .github/workflows/rs-checks.yml
+  - packages/feature-flags-contract/**
+  - packages/dpns-contract/**
+  - packages/dashpay-contract/**
+  - packages/masternode-reward-shares-contract/**
+  - packages/rs-platform-serialization/**
+  - packages/rs-platform-serialization-derive/**
+  - packages/rs-platform-value/**
+  - packages/rs-platform-value-convertible/**
+  - packages/rs-platform-version/**
+  - packages/rs-platform-versioning/**
+  - packages/rs-dpp/**
+  - packages/rs-drive/**
+
+wasm-dpp:
+  - .github/workflows/js-dpp.yml
+  - .github/workflows/rs-checks.yml
+  - packages/js-dpp/**
+  - packages/feature-flags-contract/**
+  - packages/masternode-reward-shares-contract/**
+  - packages/dpns-contract/**
+  - packages/dashpay-contract/**
+  - packages/wasm-dpp/**

@@ -19,7 +19,8 @@ jobs:
     name: Determine changed packages
     runs-on: ubuntu-latest
     outputs:
-      rs-drive: ${{ steps.changes.outputs.rs-drive }}
+      js-packages: ${{ steps.filter-js.outputs.changes }}
+      rs-packages: ${{ steps.filter-rs.outputs.rs-packages }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -27,181 +28,28 @@ jobs:
           fetch-depth: 0
 
       - uses: dorny/paths-filter@v2
-        id: changes
-        with: # TODO: Move to separate file and copy paths from packages
-          filters: |
-            dapi-grpc:
-              - .github/workflows/js-checks.yml
-              - packages/dapi-grpc/**
-              - packages/js-grpc-common/**
-            dapi:
-              - .github/workflows/js-checks.yml
-              - packages/dapi/**
-              - packages/dapi-grpc/**
-              - packages/js-dpp/**
-              - packages/rs-dpp/**
-              - packages/wasm-dpp/**
-              - packages/js-grpc-common/**
-              - packages/js-dapi-client/**
-              - packages/dashpay-contract/**
-              - packages/feature-flags-contract/**
-              - packages/dpns-contract/**
-              - packages/masternode-reward-shares-contract/**
-              - packages/dash-spv/**
-            dash-spv:
-              - .github/workflows/js-checks.yml
-              - packages/dash-spv/**
-            dashmate:
-              - .github/workflows/js-checks.yml
-              - packages/dashmate/**
-              - packages/js-dash-sdk/**
-              - packages/wallet-lib/**
-              - packages/js-dapi-client/**
-              - packages/dapi-grpc/**
-              - packages/js-dpp/**
-              - packages/wasm-dpp/**
-              - packages/rs-dpp/**
-              - packages/js-grpc-common/**
-              - packages/dashpay-contract/**
-              - packages/feature-flags-contract/**
-              - packages/masternode-reward-shares-contract/**
-              - packages/dpns-contract/**
-              - packages/dash-spv/**
-            dashpay-contract:
-              - .github/workflows/js-checks.yml
-              - packages/dashpay-contract/**
-              - packages/js-dpp/**
-              - packages/wasm-dpp/**
-              - packages/rs-dpp/**
-              - packages/feature-flags-contract/**
-              - packages/dpns-contract/**
-            js-dapi-client:
-              - .github/workflows/js-checks.yml
-              - packages/js-dapi-client/**
-              - packages/dapi-grpc/**
-              - packages/js-dpp/**
-              - packages/js-grpc-common/**
-              - packages/dashpay-contract/**
-              - packages/feature-flags-contract/**
-              - packages/dpns-contract/**
-              - packages/masternode-reward-shares-contract/**
-              - packages/dash-spv/**
-            js-dash-sdk:
-              - .github/workflows/js-checks.yml
-              - packages/js-dash-sdk/**
-              - packages/wallet-lib/**
-              - packages/js-dapi-client/**
-              - packages/dapi-grpc/**
-              - packages/js-dpp/**
-              - packages/js-grpc-common/**
-              - packages/dashpay-contract/**
-              - packages/feature-flags-contract/**
-              - packages/masternode-reward-shares-contract/**
-              - packages/dpns-contract/**
-              - packages/dash-spv/**
-            js-dpp:
-              - .github/workflows/js-checks.yml
-              - packages/js-dpp/**
-              - packages/feature-flags-contract/**
-              - packages/masternode-reward-shares-contract/**
-              - packages/dpns-contract/**
-              - packages/dashpay-contract/**
-            js-grpc-common:
-              - .github/workflows/js-checks.yml
-              - packages/js-grpc-common/**
-            platform-test-suite:
-              - .github/workflows/js-checks.yml
-              - packages/platform-test-suite/**
-              - packages/js-dash-sdk/**
-              - packages/wallet-lib/**
-              - packages/js-dapi-client/**
-              - packages/dapi-grpc/**
-              - packages/js-dpp/**
-              - packages/js-grpc-common/**
-              - packages/dashpay-contract/**
-              - packages/feature-flags-contract/**
-              - packages/masternode-reward-shares-contract/**
-              - packages/dpns-contract/**
-              - packages/dash-spv/**
-            rs-dpp:
-              - .github/workflows/rs-checks.yml
-              - packages/feature-flags-contract/**
-              - packages/dpns-contract/**
-              - packages/dashpay-contract/**
-              - packages/masternode-reward-shares-contract/**
-              - packages/rs-platform-serialization/**
-              - packages/rs-platform-serialization-derive/**
-              - packages/rs-platform-value/**
-              - packages/rs-platform-value-convertible/**
-              - packages/rs-platform-version/**
-              - packages/rs-platform-versioning/**
-              - packages/rs-dpp/**
-            rs-drive-abci:
-              - .github/workflows/rs-checks.yml
-              - packages/feature-flags-contract/**
-              - packages/dpns-contract/**
-              - packages/dashpay-contract/**
-              - packages/masternode-reward-shares-contract/**
-              - packages/rs-platform-serialization/**
-              - packages/rs-platform-serialization-derive/**
-              - packages/rs-platform-value/**
-              - packages/rs-platform-value-convertible/**
-              - packages/rs-platform-version/**
-              - packages/rs-platform-versioning/**
-              - packages/rs-dpp/**
-              - packages/rs-drive/**
-              - packages/rs-drive-abci/**
-              - packages/rs-platform-value/**
-            rs-drive:
-              - .github/workflows/rs-checks.yml
-              - packages/feature-flags-contract/**
-              - packages/dpns-contract/**
-              - packages/dashpay-contract/**
-              - packages/masternode-reward-shares-contract/**
-              - packages/rs-platform-serialization/**
-              - packages/rs-platform-serialization-derive/**
-              - packages/rs-platform-value/**
-              - packages/rs-platform-value-convertible/**
-              - packages/rs-platform-version/**
-              - packages/rs-platform-versioning/**
-              - packages/rs-dpp/**
-              - packages/rs-drive/**
-            wallet-lib:
-              - .github/workflows/js-checks.yml
-              - packages/wallet-lib/**
-              - packages/js-dapi-client/**
-              - packages/dapi-grpc/**
-              - packages/js-dpp/**
-              - packages/js-grpc-common/**
-              - packages/dashpay-contract/**
-              - packages/feature-flags-contract/**
-              - packages/dpns-contract/**
-              - packages/masternode-reward-shares-contract/**
-              - packages/dash-spv/**
-            wasm-dpp:
-              - .github/workflows/js-dpp.yml
-              - .github/workflows/js-checks.yml
-              - .github/workflows/rs-checks.yml
-              - packages/js-dpp/**
-              - packages/feature-flags-contract/**
-              - packages/masternode-reward-shares-contract/**
-              - packages/dpns-contract/**
-              - packages/dashpay-contract/**
-              - packages/wasm-dpp/**
-
-  build-image-cache:
-    name: Build image layer cache
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+        id: filter-js
         with:
-          fetch-depth: 0
+          filters: .github/filters-js.yml
 
-      - run: yarn build
+      - uses: dorny/paths-filter@v2
+        id: filter-rs
+        with:
+          filters: .github/filters-rs.yml
 
-      - name: Build image cache
-        run: dashmate build
+  # build-image-cache:
+  #   name: Build image layer cache
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v2
+  #       with:
+  #         fetch-depth: 0
+
+  #     - run: yarn build
+
+  #     - name: Build image cache
+  #       run: dashmate build
 #
 #  build-rust-cache:
 #    name: Warmup Rust build cache
@@ -216,172 +64,34 @@ jobs:
 #        run: |
 #          ...
 
-  dapi-grpc:
-    name: DAPI gRPC
+  js-checks:
+    name: JS Checks
     needs: [changes]
-    if: ${{ needs.changes.outputs.dapi-grpc == 'true' }}
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     secrets: inherit
+    strategy:
+      matrix:
+        js-package: ${{ fromJson(needs.changes.outputs.js-packages) }}
     uses: ./.github/workflows/js-checks.yml
     with:
-      package: "@dashevo/dapi-grpc"
+      package: ${{ matrix.js-package }}
 
-  dapi:
-    name: DAPI
+  rs-checks:
+    name: RS Checks
     needs: [changes]
-    if: ${{ needs.changes.outputs.dapi == 'true' }}
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     secrets: inherit
-    uses: ./.github/workflows/js-checks.yml
-    with:
-      package: "@dashevo/dapi"
-
-  dash-spv:
-    name: Dash SPV
-    needs: [changes]
-    if: ${{ needs.changes.outputs.dash-spv == 'true' }}
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    secrets: inherit
-    uses: ./.github/workflows/js-checks.yml
-    with:
-      package: "@dashevo/dash-spv"
-
-  dashmate:
-    name: Dashmate
-    needs: [changes]
-    if: ${{ needs.changes.outputs.dashmate == 'true' }}
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    secrets: inherit
-    uses: ./.github/workflows/js-checks.yml
-    with:
-      package: "dashmate"
-
-  dashpay-contract:
-    name: DashPay Contract
-    needs: [changes]
-    if: ${{ needs.changes.outputs.dashpay-contract == 'true' }}
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    secrets: inherit
-    uses: ./.github/workflows/js-checks.yml
-    with:
-      package: "@dashevo/dashpay-contract"
-
-  js-dapi-client:
-    name: JS DAPI Client
-    needs: [changes]
-    if: ${{ needs.changes.outputs.js-dapi-client == 'true' }}
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    secrets: inherit
-    uses: ./.github/workflows/js-checks.yml
-    with:
-      package: "@dashevo/dapi-client"
-
-  js-dash-sdk:
-    name: JS Dash SDK
-    needs: [changes]
-    if: ${{ needs.changes.outputs.js-dash-sdk == 'true' }}
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    secrets: inherit
-    uses: ./.github/workflows/js-checks.yml
-    with:
-      package: "dash"
-
-  js-dpp:
-    name: JS DPP
-    needs: [changes]
-    if: ${{ needs.changes.outputs.js-dpp == 'true' }}
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    secrets: inherit
-    uses: ./.github/workflows/js-dpp.yml
-    with:
-      package: "@dashevo/dpp"
-
-  js-grpc-common:
-    name: gRPC Common
-    needs: [changes]
-    if: ${{ needs.changes.outputs.js-grpc-common == 'true' }}
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    secrets: inherit
-    uses: ./.github/workflows/js-checks.yml
-    with:
-      package: "@dashevo/grpc-common"
-
-  platform-test-suite:
-    name: gRPC Common
-    needs: [changes]
-    if: ${{ needs.changes.outputs.platform-test-suite == 'true' }}
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    secrets: inherit
-    uses: ./.github/workflows/js-checks.yml
-    with:
-      package: "@dashevo/platform-test-suite"
-      skip-tests: true
-      install-browsers: true
-
-  rs-dpp:
-    name: RS DPP
-    needs: [changes]
-    if: ${{ needs.changes.outputs.rs-dpp == 'true' }}
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    secrets: inherit
+    strategy:
+      matrix:
+        rs-package: ${{ fromJson(needs.changes.outputs.rs-packages) }}
     uses: ./.github/workflows/rs-checks.yml
     with:
-      package: "dpp"
-
-  rs-drive-abci:
-    name: RS Drive ABCI
-    needs: [changes]
-    if: ${{ needs.changes.outputs.rs-drive-abci == 'true' }}
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    secrets: inherit
-    uses: ./.github/workflows/rs-checks.yml
-    with:
-      package: "drive-abci"
-
-  rs-drive:
-    name: RS Drive
-    needs: [changes]
-    uses: ./.github/workflows/rs-checks.yml
-    with:
-      package: "drive-abci"
-    if: ${{ needs.changes.outputs.rs-drive == 'true' }}
-
-  wallet-lib:
-    name: Wallet Lib
-    needs: [changes]
-    if: ${{ needs.changes.outputs.wallet-lib == 'true' }}
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    secrets: inherit
-    uses: ./.github/workflows/js-checks.yml
-    with:
-      package: "@dashevo/wallet-lib"
-      install-browsers: true
-
-  js-wasm-dpp:
-    name: JS WASM DPP
-    needs: [changes]
-    if: ${{ needs.changes.outputs.wasm-dpp == 'true' }}
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    secrets: inherit
-    uses: ./.github/workflows/js-dpp.yml
-    with:
-      package: "@dashevo/wasm-dpp"
-      install-browsers: true
-
-  rs-wasm-dpp:
-    name: RS WASM DPP
-    needs: [changes]
-    if: ${{ needs.changes.outputs.wasm-dpp == 'true' }}
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    secrets: inherit
-    uses: ./.github/workflows/rs-checks.yml
-    with:
-      package: "wasm-dpp"
+      package: ${{ matrix.rs-package }}
 
   wasm-dpp-errors:
     name: WASM compilation
     needs: [changes]
-    if: ${{ needs.changes.outputs.wasm-dpp == 'true' }}
+    if: ${{ contains(fromJson(needs.changes.outputs.js-packages), 'wasm-dpp') }}
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
     steps:
