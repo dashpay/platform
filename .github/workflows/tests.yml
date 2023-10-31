@@ -37,9 +37,10 @@ jobs:
         with:
           filters: .github/filters-rs.yml
 
-  image-cache:
-    name: Build image layer cache
-    runs-on: ubuntu-latest
+  build-js:
+    # TODO: Store build artifacts so they are available in later runs
+    name: Build JS
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -61,7 +62,36 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
-          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Build SDK
+        run: yarn workspace @dashevo/wasm-dpp build
+
+  build-images:
+    name: Build images
+    needs: [build-js]
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore timestamps
+        uses: chetan/git-restore-mtime-action@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Node.JS
+        uses: ./.github/actions/nodejs
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+        with:
           target: wasm32-unknown-unknown
 
       - name: Build SDK
@@ -93,9 +123,6 @@ jobs:
             target_wasm
             unplugged_amd64
 
-      - name: Setup local network
-        run: yarn configure
-
       - name: Configure Drive ABCI layer cache
         uses: ./.github/actions/s3-layer-cache-settings
         id: drive_abci_layer_cache_settings
@@ -120,8 +147,8 @@ jobs:
         with:
           name: dashpay/base
 
-      - name: Start local network
-        run: yarn start
+      - name: Build docker images
+        run: yarn dashmate docker build --config local
         env:
           CACHE_DRIVE_ABCI_FROM: ${{ steps.drive_abci_layer_cache_settings.outputs.cache_from }}
           CACHE_DRIVE_ABCI_TO: ${{ steps.drive_abci_layer_cache_settings.outputs.cache_to }}
@@ -144,19 +171,35 @@ jobs:
             target_wasm
             unplugged_amd64
 
-  rust-cache:
-    name: Warm up Rust build cache
-    runs-on: ubuntu-latest
+  build-rust:
+    name: Build Rust
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      - name: Check out repo
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Restore timestamps
+        uses: chetan/git-restore-mtime-action@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+
+      - name: Build Rust packages
+        run: cargo build
+
   js-checks:
     name: JS Checks
-    needs: [changes, image-cache]
+    needs: [changes, build-js]
     secrets: inherit
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     strategy:
       matrix:
         js-package: ${{ fromJson(needs.changes.outputs.js-packages) }}
@@ -164,39 +207,15 @@ jobs:
     with:
       package: ${{ matrix.js-package }}
       skip-tests: ${{ contains(matrix.js-package, 'platform-test-suite') }}
-      install-browsers: |
-        ${{ contains(matrix.js-package, '@dashevo/dapi-client') ||
-        contains(matrix.js-package, 'dash') ||
-        contains(matrix.js-package, '@dashevo/dpp') ||
-        contains(matrix.js-package, '@dashevo/platform-test-suite') ||
-        contains(matrix.js-package, '@dashevo/wallet-lib') }}
 
   rs-checks:
-    name: RS Checks
-    needs: [changes, image-cache, rust-cache]
+    name: Rust Checks
+    needs: [changes, build-rust]
     secrets: inherit
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     strategy:
       matrix:
         rs-package: ${{ fromJson(needs.changes.outputs.rs-packages) }}
     uses: ./.github/workflows/rs-checks.yml
     with:
       package: ${{ matrix.rs-package }}
-
-  wasm-dpp-errors:
-    name: WASM compilation
-    needs: [changes, image-cache]
-    if: ${{ contains(fromJson(needs.changes.outputs.js-packages), '@dashevo/wasm-dpp') }}
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    timeout-minutes: 15
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: ./.github/actions/rust
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-
-      - name: Compile WASM
-        run: cargo check --lib --target wasm32-unknown-unknown --package=wasm-dpp

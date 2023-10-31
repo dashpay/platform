@@ -8,7 +8,6 @@ inputs:
   target:
     description: Target Rust platform
     required: false
-
   components:
     description: List of additional Rust toolchain components to install
     required: false
@@ -44,13 +43,28 @@ runs:
       with:
         bucket: multi-runner-linux-x64-platform-cache-ui535z23
         root: actions-cache
+        path: target
+        key: ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.ref_name }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.ref_name }}-${{ github.sha }}
+          ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.ref_name }}-
+          ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-
+          ${{ runner.os }}-cargo-build-${{ inputs.target }}-
+
+    - name: Cache cargo registry (S3 bucket cache)
+      uses: everpcpc/actions-cache@v1
+      if: contains(runner.name, 'ubuntu-platform')
+      with:
+        bucket: multi-runner-linux-x64-platform-cache-ui535z23
+        root: actions-cache
         path: |
           /home/ubuntu/.cargo/registry/index
           /home/ubuntu/.cargo/registry/cache
           /home/ubuntu/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          ${{ runner.os }}-cargo-registry-
 
     - name: Cache Rust build artifacts (GitHub Actions cache)
       uses: actions/cache@v3
@@ -61,8 +75,25 @@ runs:
           /home/ubuntu/.cargo/registry/cache
           /home/ubuntu/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: ${{ runner.os }}-cargo-
+        key: ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.ref_name }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.ref_name }}-${{ github.sha }}
+          ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ github.ref_name }}-
+          ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-
+          ${{ runner.os }}-cargo-build-${{ inputs.target }}-
+
+    - name: Cache cargo registry (GitHub Actions cache)
+      uses: actions/cache@v3
+      if: ${{ !contains(runner.name, 'ubuntu-platform') }}
+      with:
+        path: |
+          /home/ubuntu/.cargo/registry/index
+          /home/ubuntu/.cargo/registry/cache
+          /home/ubuntu/.cargo/git
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          ${{ runner.os }}-cargo-registry-
 
     - name: Install clang
       id: deps-clang
