@@ -29,7 +29,7 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
     "rand",
     "signer",
     "serde",
-], default-features = false, branch = "instant-fix" }
+], default-features = false, branch = "master" }
 env_logger = { version = "0.9" }
 enum-map = { version = "2.5.0" }
 futures = { version = "0.3" }
