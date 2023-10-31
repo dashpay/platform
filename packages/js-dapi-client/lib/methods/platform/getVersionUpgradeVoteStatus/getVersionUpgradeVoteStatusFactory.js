@@ -14,7 +14,7 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
  */
 function getVersionUpgradeVoteStatusFactory(grpcTransport) {
   /**
-   * Fetch the identity by id
+   * Fetch the version upgrade vote status
    *
    * @typedef {getVersionUpgradeVoteStatus}
    * @param {string} startProTxHash
@@ -24,8 +24,8 @@ function getVersionUpgradeVoteStatusFactory(grpcTransport) {
    */
   async function getVersionUpgradeVoteStatus(startProTxHash, count, options = {}) {
     const { GetVersionUpgradeVoteStatusRequestV0 } = GetVersionUpgradeVoteStatusRequest;
-    const getEpochInfosRequest = new GetVersionUpgradeVoteStatusRequest();
-    getEpochInfosRequest.setV0(
+    const getVersionUpgradeVoteStatusRequest = new GetVersionUpgradeVoteStatusRequest();
+    getVersionUpgradeVoteStatusRequest.setV0(
       new GetVersionUpgradeVoteStatusRequestV0()
         .setStartProTxHash(Buffer.from(startProTxHash, 'hex'))
         .setCount(count)
@@ -41,7 +41,7 @@ function getVersionUpgradeVoteStatusFactory(grpcTransport) {
         const getVersionUpgradeVoteStatusResponse = await grpcTransport.request(
           PlatformPromiseClient,
           'getVersionUpgradeVoteStatus',
-          getEpochInfosRequest,
+          getVersionUpgradeVoteStatusRequest,
           options,
         );
 

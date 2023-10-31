@@ -32,7 +32,7 @@ class GetVersionUpgradeVoteStatusResponse extends AbstractResponse {
     );
 
     if (!versions && !proof) {
-      throw new InvalidResponseError('Epochs are not defined');
+      throw new InvalidResponseError('Version upgrade vote status is not defined');
     }
 
     let versionSignals = [];

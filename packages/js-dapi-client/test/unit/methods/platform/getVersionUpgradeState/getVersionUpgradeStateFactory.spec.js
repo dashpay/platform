@@ -23,10 +23,8 @@ describe('getVersionUpgradeStateFactory', () => {
   let metadataFixture;
   let proofFixture;
   let proofResponse;
-  let startProTxHash;
 
   beforeEach(async function beforeEach() {
-    startProTxHash = Buffer.alloc(32).fill('a').toString('hex');
     versionEntryFixture = new VersionEntry(1, 1);
 
     metadataFixture = getMetadataFixture();

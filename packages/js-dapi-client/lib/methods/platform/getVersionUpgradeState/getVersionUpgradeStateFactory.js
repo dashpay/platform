@@ -14,7 +14,7 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
  */
 function getVersionUpgradeStateFactory(grpcTransport) {
   /**
-   * Fetch the identity by id
+   * Fetch the version upgrade state
    *
    * @typedef {getVersionUpgradeState}
    * @param {DAPIClientOptions & {prove: boolean}} [options]
@@ -22,8 +22,8 @@ function getVersionUpgradeStateFactory(grpcTransport) {
    */
   async function getVersionUpgradeState(options = {}) {
     const { GetVersionUpgradeStateRequestV0 } = GetVersionUpgradeStateRequest;
-    const getEpochInfosRequest = new GetVersionUpgradeStateRequest();
-    getEpochInfosRequest.setV0(
+    const getVersionUpgradeStateRequest = new GetVersionUpgradeStateRequest();
+    getVersionUpgradeStateRequest.setV0(
       new GetVersionUpgradeStateRequestV0()
         .setProve(!!options.prove),
     );
@@ -37,7 +37,7 @@ function getVersionUpgradeStateFactory(grpcTransport) {
         const getVersionUpgradeStateResponse = await grpcTransport.request(
           PlatformPromiseClient,
           'getVersionUpgradeState',
-          getEpochInfosRequest,
+          getVersionUpgradeStateRequest,
           options,
         );
 

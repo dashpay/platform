@@ -179,7 +179,6 @@ describe('PlatformMethodsFacade', () => {
 
   describe('#getVersionUpgradeState', () => {
     it('should get version upgrade state', async () => {
-      const proTxHash = Buffer.alloc(32).fill('b').toString('hex');
       const { VersionEntry, Versions } = GetVersionUpgradeStateResponseV0;
 
       const response = new GetVersionUpgradeStateResponse();

@@ -32,7 +32,7 @@ class GetVersionUpgradeStateResponse extends AbstractResponse {
     );
 
     if (!versions && !proof) {
-      throw new InvalidResponseError('Epochs are not defined');
+      throw new InvalidResponseError('Version upgrade state is not defined');
     }
 
     let versionEntries = [];
