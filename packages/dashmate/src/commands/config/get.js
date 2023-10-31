@@ -15,8 +15,9 @@ class ConfigGetCommand extends ConfigBaseCommand {
     config,
   ) {
     // eslint-disable-next-line no-console
-    console.log(
+    console.dir(
       config.get(optionPath),
+      { depth: Infinity },
     );
   }
 }

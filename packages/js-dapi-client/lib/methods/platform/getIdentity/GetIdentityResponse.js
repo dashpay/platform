@@ -25,7 +25,7 @@ class GetIdentityResponse extends AbstractResponse {
    * @returns {GetIdentityResponse}
    */
   static createFromProto(proto) {
-    const identity = proto.getIdentity();
+    const identity = proto.getV0().getIdentity();
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
     if (!identity && !proof) {
@@ -33,7 +33,7 @@ class GetIdentityResponse extends AbstractResponse {
     }
 
     return new GetIdentityResponse(
-      Buffer.from(proto.getIdentity()),
+      Buffer.from(proto.getV0().getIdentity()),
       metadata,
       proof,
     );

@@ -38,6 +38,7 @@ pub struct DriveAbciQueryDataContractVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+<<<<<<< HEAD
 pub struct DriveAbciQuerySystemVersions {
     pub version_upgrade_state: FeatureVersionBounds,
     pub version_upgrade_vote_status: FeatureVersionBounds,
@@ -45,6 +46,8 @@ pub struct DriveAbciQuerySystemVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+=======
+>>>>>>> v1.0-dev
 pub struct DriveAbciStructureVersions {
     pub platform_state_structure: FeatureVersion,
     pub platform_state_for_saving_structure: FeatureVersion,

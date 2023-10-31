@@ -32,25 +32,26 @@ class WaitForStateTransitionResultResponse extends AbstractResponse {
     let error;
     let proof;
 
-    if (proto.getProof()) {
-      proof = Proof.createFromProto(proto.getProof());
+    if (proto.getV0().getProof()) {
+      proof = Proof.createFromProto(proto.getV0().getProof());
     }
 
-    if (proto.getError()) {
+    if (proto.getV0().getError()) {
       let data;
-      const rawData = proto.getError().getData();
+      const rawData = proto.getV0().getError().getData();
       if (rawData) {
         data = cbor.decode(Buffer.from(rawData));
       }
 
       error = new ErrorResult(
-        proto.getError().getCode(),
-        proto.getError().getMessage(),
+        proto.getV0().getError().getCode(),
+        proto.getV0().getError().getMessage(),
         data,
       );
     }
 
-    const metadata = proto.getMetadata() ? new Metadata(proto.getMetadata().toObject()) : null;
+    const metadata = proto.getV0().getMetadata()
+      ? new Metadata(proto.getV0().getMetadata().toObject()) : null;
 
     return new WaitForStateTransitionResultResponse(
       metadata,
