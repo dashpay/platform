@@ -135,6 +135,20 @@ class PlatformPromiseClient {
   }
 
   /**
+   * @param {!GetEpochsInfoRequest} getEpochsInfoRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetEpochsInfoResponse>}
+   */
+  getEpochsInfo(getEpochsInfoRequest, metadata = {}) {
+    return promisify(
+      this.client.getEpochsInfo.bind(this.client),
+    )(
+      getEpochsInfoRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {string} protocolVersion
    */
   setProtocolVersion(protocolVersion) {

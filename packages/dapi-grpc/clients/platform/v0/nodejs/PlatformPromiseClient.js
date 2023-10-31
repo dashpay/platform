@@ -117,8 +117,8 @@ class PlatformPromiseClient {
       this.client.getConsensusParams.bind(this.client),
     );
 
-    this.client.getEpochInfos = promisify(
-      this.client.getEpochInfos.bind(this.client),
+    this.client.getEpochsInfo = promisify(
+      this.client.getEpochsInfo.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -387,12 +387,12 @@ class PlatformPromiseClient {
    * @param {CallOptions} [options={}]
    * @return {Promise<!GetEpochsInfoResponse>}
    */
-  getIdentity(getEpochsInfoRequest, metadata = {}, options = {}) {
+  getEpochsInfo(getEpochsInfoRequest, metadata = {}, options = {}) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
 
-    return this.client.getEpochInfos(
+    return this.client.getEpochsInfo(
       getEpochsInfoRequest,
       convertObjectToMetadata(metadata),
       {

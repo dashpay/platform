@@ -4,6 +4,7 @@ const {
     GetDataContractResponse,
     GetDocumentsResponse,
     GetIdentityResponse,
+    GetEpochsInfoResponse,
     BroadcastStateTransitionResponse,
     WaitForStateTransitionResultResponse,
   },
@@ -20,6 +21,7 @@ const { WaitForStateTransitionResultResponseV0 } = WaitForStateTransitionResultR
 const { GetIdentityResponseV0 } = GetIdentityResponse;
 const { GetDocumentsResponseV0 } = GetDocumentsResponse;
 const { GetDataContractResponseV0 } = GetDataContractResponse;
+const { GetEpochsInfoResponseV0 } = GetEpochsInfoResponse;
 
 describe('PlatformMethodsFacade', () => {
   let grpcTransportMock;
@@ -114,6 +116,32 @@ describe('PlatformMethodsFacade', () => {
         Buffer.from('6f49655a2906852a38e473dd47574fb70b8b7c4e5cee9ea8e7da3f07b970c421', 'hex'),
         false,
       );
+
+      expect(grpcTransportMock.request).to.be.calledOnce();
+    });
+  });
+
+  describe('#getEpochsInfo', () => {
+    it('should get epochs info', async () => {
+      const { EpochInfo, EpochInfos } = GetEpochsInfoResponseV0;
+
+      const response = new GetEpochsInfoResponse();
+
+      response.setV0(
+        new GetEpochsInfoResponseV0()
+          .setEpochs(new EpochInfos()
+            .setEpochInfosList([new EpochInfo()
+              .setNumber(1)
+              .setFirstBlockHeight(1)
+              .setFirstCoreBlockHeight(1)
+              .setStartTime(Date.now())
+              .setFeeMultiplier(1)]))
+          .setMetadata(new ResponseMetadata()),
+      );
+
+      grpcTransportMock.request.resolves(response);
+
+      await platformMethods.getEpochsInfo(1, 1, {});
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });
