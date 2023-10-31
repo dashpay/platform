@@ -102,7 +102,8 @@ describe('PlatformPromiseClient', () => {
       const result = await platformPromiseClient.getVersionUpgradeVoteStatus(request);
 
       expect(result).to.equal(response);
-      expect(platformPromiseClient.client.getVersionUpgradeVoteStatus).to.be.calledOnceWith(request);
+      expect(platformPromiseClient.client.getVersionUpgradeVoteStatus)
+        .to.be.calledOnceWith(request);
     });
   });
 

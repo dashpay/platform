@@ -48,7 +48,7 @@ describe('getVersionUpgradeVoteStatusFactory', () => {
       new GetVersionUpgradeVoteStatusResponseV0()
         .setVersions(new VersionSignals()
           .setVersionSignalsList([new VersionSignalProto()
-            .setProTxHash(versionSignalFixture.getProTxHash())
+            .setProTxHash(Buffer.from(versionSignalFixture.getProTxHash(), 'hex'))
             .setVersion(versionSignalFixture.getVersion())]))
         .setMetadata(metadata),
     );

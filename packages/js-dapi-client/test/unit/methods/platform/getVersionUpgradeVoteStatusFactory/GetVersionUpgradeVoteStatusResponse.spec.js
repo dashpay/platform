@@ -40,7 +40,7 @@ describe('GetVersionUpgradeVoteStatusResponse', () => {
       new GetVersionUpgradeVoteStatusResponseV0()
         .setVersions(new VersionSignals()
           .setVersionSignalsList([new VersionSignal()
-            .setProTxHash(versionSignalFixture.getProTxHash())
+            .setProTxHash(Buffer.from(versionSignalFixture.getProTxHash(), 'hex'))
             .setVersion(versionSignalFixture.getVersion()),
           ]))
         .setMetadata(metadata),
