@@ -1899,11 +1899,14 @@ void GetConsensusParamsRequest_ClearVersionOneOfCase(GetConsensusParamsRequest *
 
 typedef GPB_ENUM(GetConsensusParamsRequest_GetConsensusParamsRequestV0_FieldNumber) {
   GetConsensusParamsRequest_GetConsensusParamsRequestV0_FieldNumber_Height = 1,
+  GetConsensusParamsRequest_GetConsensusParamsRequestV0_FieldNumber_Prove = 2,
 };
 
 GPB_FINAL @interface GetConsensusParamsRequest_GetConsensusParamsRequestV0 : GPBMessage
 
 @property(nonatomic, readwrite) int32_t height;
+
+@property(nonatomic, readwrite) BOOL prove;
 
 @end
 

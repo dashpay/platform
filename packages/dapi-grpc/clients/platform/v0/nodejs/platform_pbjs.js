@@ -18877,6 +18877,7 @@ $root.org = (function() {
                              * @memberof org.dash.platform.dapi.v0.GetConsensusParamsRequest
                              * @interface IGetConsensusParamsRequestV0
                              * @property {number|null} [height] GetConsensusParamsRequestV0 height
+                             * @property {boolean|null} [prove] GetConsensusParamsRequestV0 prove
                              */
 
                             /**
@@ -18901,6 +18902,14 @@ $root.org = (function() {
                              * @instance
                              */
                             GetConsensusParamsRequestV0.prototype.height = 0;
+
+                            /**
+                             * GetConsensusParamsRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetConsensusParamsRequest.GetConsensusParamsRequestV0
+                             * @instance
+                             */
+                            GetConsensusParamsRequestV0.prototype.prove = false;
 
                             /**
                              * Creates a new GetConsensusParamsRequestV0 instance using the specified properties.
@@ -18928,6 +18937,8 @@ $root.org = (function() {
                                     writer = $Writer.create();
                                 if (message.height != null && Object.hasOwnProperty.call(message, "height"))
                                     writer.uint32(/* id 1, wireType 0 =*/8).int32(message.height);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
                                 return writer;
                             };
 
@@ -18964,6 +18975,9 @@ $root.org = (function() {
                                     switch (tag >>> 3) {
                                     case 1:
                                         message.height = reader.int32();
+                                        break;
+                                    case 2:
+                                        message.prove = reader.bool();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -19003,6 +19017,9 @@ $root.org = (function() {
                                 if (message.height != null && message.hasOwnProperty("height"))
                                     if (!$util.isInteger(message.height))
                                         return "height: integer expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
                                 return null;
                             };
 
@@ -19020,6 +19037,8 @@ $root.org = (function() {
                                 var message = new $root.org.dash.platform.dapi.v0.GetConsensusParamsRequest.GetConsensusParamsRequestV0();
                                 if (object.height != null)
                                     message.height = object.height | 0;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
                                 return message;
                             };
 
@@ -19036,10 +19055,14 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.defaults)
+                                if (options.defaults) {
                                     object.height = 0;
+                                    object.prove = false;
+                                }
                                 if (message.height != null && message.hasOwnProperty("height"))
                                     object.height = message.height;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
                                 return object;
                             };
 

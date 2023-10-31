@@ -18494,7 +18494,8 @@ proto.org.dash.platform.dapi.v0.GetConsensusParamsRequest.GetConsensusParamsRequ
  */
 proto.org.dash.platform.dapi.v0.GetConsensusParamsRequest.GetConsensusParamsRequestV0.toObject = function(includeInstance, msg) {
   var f, obj = {
-    height: jspb.Message.getFieldWithDefault(msg, 1, 0)
+    height: jspb.Message.getFieldWithDefault(msg, 1, 0),
+    prove: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
   };
 
   if (includeInstance) {
@@ -18535,6 +18536,10 @@ proto.org.dash.platform.dapi.v0.GetConsensusParamsRequest.GetConsensusParamsRequ
       var value = /** @type {number} */ (reader.readInt32());
       msg.setHeight(value);
       break;
+    case 2:
+      var value = /** @type {boolean} */ (reader.readBool());
+      msg.setProve(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -18571,6 +18576,13 @@ proto.org.dash.platform.dapi.v0.GetConsensusParamsRequest.GetConsensusParamsRequ
       f
     );
   }
+  f = message.getProve();
+  if (f) {
+    writer.writeBool(
+      2,
+      f
+    );
+  }
 };
 
 
@@ -18589,6 +18601,24 @@ proto.org.dash.platform.dapi.v0.GetConsensusParamsRequest.GetConsensusParamsRequ
  */
 proto.org.dash.platform.dapi.v0.GetConsensusParamsRequest.GetConsensusParamsRequestV0.prototype.setHeight = function(value) {
   return jspb.Message.setProto3IntField(this, 1, value);
+};
+
+
+/**
+ * optional bool prove = 2;
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetConsensusParamsRequest.GetConsensusParamsRequestV0.prototype.getProve = function() {
+  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 2, false));
+};
+
+
+/**
+ * @param {boolean} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetConsensusParamsRequest.GetConsensusParamsRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetConsensusParamsRequest.GetConsensusParamsRequestV0.prototype.setProve = function(value) {
+  return jspb.Message.setProto3BooleanField(this, 2, value);
 };
 
 

@@ -1104,6 +1104,8 @@ pub mod get_consensus_params_request {
     pub struct GetConsensusParamsRequestV0 {
         #[prost(int32, tag = "1")]
         pub height: i32,
+        #[prost(bool, tag = "2")]
+        pub prove: bool,
     }
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
