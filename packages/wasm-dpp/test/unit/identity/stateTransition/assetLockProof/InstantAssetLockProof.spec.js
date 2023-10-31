@@ -73,10 +73,10 @@ describe('InstantAssetLockProof', () => {
     it('should return correct JSON', () => {
       expect(instantAssetLockProof.toJSON())
         .to.deep.equal({
-        instantLock: instantAssetLockProof.getInstantLock().toString('base64'),
-        outputIndex: instantAssetLockProof.getOutputIndex(),
-        transaction: instantAssetLockProof.getTransaction().toString('hex'),
-      });
+          instantLock: instantAssetLockProof.getInstantLock().toString('base64'),
+          outputIndex: instantAssetLockProof.getOutputIndex(),
+          transaction: instantAssetLockProof.getTransaction().toString('hex'),
+        });
     });
   });
 });
