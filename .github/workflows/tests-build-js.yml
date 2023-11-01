@@ -26,11 +26,6 @@ jobs:
         with:
           aws-region: eu-west-1
 
-      - name: Dump GitHub context
-        env:
-          GITHUB_CONTEXT: ${{ toJSON(github) }}
-        run: echo "$GITHUB_CONTEXT"
-
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
