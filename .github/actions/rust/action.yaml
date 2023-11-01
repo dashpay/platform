@@ -34,7 +34,7 @@ runs:
     - name: Hash ref_name
       id: hashed-ref-name
       shell: bash
-      run: echo "::set-output name=key::$(echo '${{ github.ref_name }}' | sha256sum | cut -d ' ' -f1)"
+      run: echo "key=$(echo '${{ github.ref_name }}' | sha256sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
 
     - name: Cache Rust build artifacts (S3 bucket cache)
       uses: everpcpc/actions-cache@v1
