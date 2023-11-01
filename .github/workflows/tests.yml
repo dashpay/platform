@@ -42,19 +42,19 @@ jobs:
     name: Build JS packages
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     secrets: inherit
-    uses: ./.github/workflows/call-build-js.yml
+    uses: ./.github/workflows/tests-build-js.yml
 
   build-images:
     name: Build Platform Docker images
     needs: build-js
     secrets: inherit
-    uses: ./.github/workflows/call-build-images.yml
+    uses: ./.github/workflows/tests-build-images.yml
 
   build-rust:
     name: Build Rust packages
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     secrets: inherit
-    uses: ./.github/workflows/call-build-rust.yml
+    uses: ./.github/workflows/tests-build-rust.yml
 
   rs-package:
     name: Rust package
@@ -65,7 +65,7 @@ jobs:
     strategy:
       matrix:
         rs-package: ${{ fromJson(needs.changes.outputs.rs-packages) }}
-    uses: ./.github/workflows/call-rs-package.yml
+    uses: ./.github/workflows/tests-rs-package.yml
     with:
       package: ${{ matrix.rs-package }}
 
@@ -91,7 +91,7 @@ jobs:
     strategy:
       matrix:
         js-package: ${{ fromJson(needs.changes.outputs.js-packages) }}
-    uses: ./.github/workflows/call-js-package.yml
+    uses: ./.github/workflows/tests-js-package.yml
     with:
       package: ${{ matrix.js-package }}
       skip-tests: ${{ contains(matrix.js-package, 'platform-test-suite') }}
@@ -133,7 +133,7 @@ jobs:
     name: JS code security audit
     needs: build-js
     secrets: inherit
-    uses: ./.github/workflows/call-codeql.yml
+    uses: ./.github/workflows/tests-codeql.yml
 
   test-suite:
     name: Test Suite
@@ -141,7 +141,7 @@ jobs:
       - build-js
       - build-images
     secrets: inherit
-    uses: ./.github/workflows/call-test-suite.yml
+    uses: ./.github/workflows/tests-test-suite.yml
     with:
       command: test
 
@@ -151,6 +151,6 @@ jobs:
       - build-js
       - build-images
     secrets: inherit
-    uses: ./.github/workflows/call-test-suite.yml
+    uses: ./.github/workflows/tests-test-suite.yml
     with:
       command: test:browsers

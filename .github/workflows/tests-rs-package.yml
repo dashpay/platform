@@ -54,7 +54,8 @@ jobs:
 
       - run: cargo check --package=${{ inputs.package }}
 
-  check_structure_changes:
+  detect_structure_changes:
+    name: Detect immutable structure changes
     runs-on: ubuntu-latest
     steps:
       - name: Checkout base commit
