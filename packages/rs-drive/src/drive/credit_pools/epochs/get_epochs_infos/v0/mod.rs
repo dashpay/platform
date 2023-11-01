@@ -92,12 +92,12 @@ impl Drive {
                 let epoch_index_result: Result<EpochIndex, Error> = path
                     .last()
                     .ok_or(Error::Drive(DriveError::CorruptedSerialization(
-                        "extended epoch info: path can not be empty",
+                        "extended epoch info: path can not be empty".to_string(),
                     )))
                     .and_then(|epoch_index_vec| {
                         epoch_index_vec.as_slice().try_into().map_err(|_| {
                             Error::Drive(DriveError::CorruptedSerialization(
-                                "extended epoch info: item has an invalid length",
+                                "extended epoch info: item has an invalid length".to_string(),
                             ))
                         })
                     })
@@ -105,7 +105,8 @@ impl Drive {
                         EpochIndex::from_be_bytes(epoch_index_bytes)
                             .checked_sub(EPOCH_KEY_OFFSET)
                             .ok_or(Error::Drive(DriveError::CorruptedSerialization(
-                                "epoch bytes on disk too small, should be over epoch key offset",
+                                "epoch bytes on disk too small, should be over epoch key offset"
+                                    .to_string(),
                             )))
                     });
 
@@ -125,7 +126,7 @@ impl Drive {
                 let first_block_time_bytes: [u8; 8] =
                     match encoded_start_time.as_slice().try_into().map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
-                            "extended epoch info: block time must be 8 bytes for a u64",
+                            "extended epoch info: block time must be 8 bytes for a u64".to_string(),
                         ))
                     }) {
                         Ok(value) => value,
@@ -148,7 +149,8 @@ impl Drive {
                     .try_into()
                     .map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
-                            "extended epoch info: block height must be 8 bytes for a u64",
+                            "extended epoch info: block height must be 8 bytes for a u64"
+                                .to_string(),
                         ))
                     }) {
                     Ok(value) => value,
@@ -173,7 +175,7 @@ impl Drive {
                     .try_into()
                     .map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
-                            "core block height must be 4 bytes for a u32",
+                            "core block height must be 4 bytes for a u32".to_string(),
                         ))
                     }) {
                     Ok(value) => value,
@@ -193,7 +195,7 @@ impl Drive {
                 let fee_multiplier_bytes: [u8; 8] =
                     match encoded_multiplier.as_slice().try_into().map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
-                            "fee multiplier must be 8 bytes for a f64",
+                            "fee multiplier must be 8 bytes for a f64".to_string(),
                         ))
                     }) {
                         Ok(value) => value,

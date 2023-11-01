@@ -135,7 +135,7 @@ impl Drive {
                 let first_block_time_bytes: [u8; 8] =
                     match encoded_start_time.as_slice().try_into().map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
-                            "extended epoch info: block time must be 8 bytes for a u64",
+                            "extended epoch info: block time must be 8 bytes for a u64".to_string(),
                         ))
                     }) {
                         Ok(value) => value,
@@ -158,7 +158,8 @@ impl Drive {
                     .try_into()
                     .map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
-                            "extended epoch info: block height must be 8 bytes for a u64",
+                            "extended epoch info: block height must be 8 bytes for a u64"
+                                .to_string(),
                         ))
                     }) {
                     Ok(value) => value,
@@ -183,7 +184,7 @@ impl Drive {
                     .try_into()
                     .map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
-                            "core block height must be 4 bytes for a u32",
+                            "core block height must be 4 bytes for a u32".to_string(),
                         ))
                     }) {
                     Ok(value) => value,
@@ -203,7 +204,7 @@ impl Drive {
                 let fee_multiplier_bytes: [u8; 8] =
                     match encoded_multiplier.as_slice().try_into().map_err(|_| {
                         Error::Drive(DriveError::CorruptedSerialization(
-                            "fee multiplier must be 8 bytes for a f64",
+                            "fee multiplier must be 8 bytes for a f64".to_string(),
                         ))
                     }) {
                         Ok(value) => value,
