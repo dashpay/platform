@@ -825,6 +825,7 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
             identities: IdentityTransitionVersions {
                 asset_locks: IdentityTransitionAssetLockVersions {
                     validate_asset_lock_transaction_structure: 0,
+                    validate_instant_asset_lock_proof_structure: 0,
                 },
             },
         },
