@@ -26,6 +26,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        if: contains(runner.name, 'ubuntu-platform')
+        with:
+          aws-region: eu-west-1
+
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
@@ -59,6 +65,12 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        if: contains(runner.name, 'ubuntu-platform')
+        with:
+          aws-region: eu-west-1
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
