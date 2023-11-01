@@ -20,8 +20,6 @@ runs:
     - name: Configure AWS credentials and bucket region
       uses: aws-actions/configure-aws-credentials@v4
       if: contains(runner.name, 'ubuntu-platform')
-      with:
-        aws-region: eu-west-1
 
     - name: Cache NPM build artifacts (S3 bucket cache)
       uses: everpcpc/actions-cache@v1
