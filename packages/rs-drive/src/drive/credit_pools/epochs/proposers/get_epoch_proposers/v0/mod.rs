@@ -27,6 +27,7 @@ impl Drive {
             .query_raw(
                 &path_query,
                 transaction.is_some(),
+                true,
                 QueryKeyElementPairResultType,
                 transaction,
             )

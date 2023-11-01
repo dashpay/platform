@@ -59,9 +59,9 @@ impl Drive {
 
         let epoch_index =
             EpochIndex::from_be_bytes(encoded_epoch_index.as_slice().try_into().map_err(|_| {
-                Error::Drive(DriveError::CorruptedSerialization(String::from(
-                    "item have an invalid length",
-                )))
+                Error::Drive(DriveError::CorruptedSerialization(
+                    "item has an invalid length".to_string(),
+                ))
             })?);
 
         Ok(epoch_index)

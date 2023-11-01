@@ -16,6 +16,7 @@ pub struct DriveAbciQueryVersions {
     pub document_query: FeatureVersionBounds,
     pub identity_based_queries: DriveAbciQueryIdentityVersions,
     pub data_contract_based_queries: DriveAbciQueryDataContractVersions,
+    pub system: DriveAbciQuerySystemVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -34,6 +35,13 @@ pub struct DriveAbciQueryDataContractVersions {
     pub data_contract: FeatureVersionBounds,
     pub data_contract_history: FeatureVersionBounds,
     pub data_contracts: FeatureVersionBounds,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciQuerySystemVersions {
+    pub version_upgrade_state: FeatureVersionBounds,
+    pub version_upgrade_vote_status: FeatureVersionBounds,
+    pub epoch_infos: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

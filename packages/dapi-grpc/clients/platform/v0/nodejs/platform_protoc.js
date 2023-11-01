@@ -66,6 +66,15 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocum
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.Documents', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.ResultCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsResponse.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.ResultCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.VersionCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesRequest', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesRequest.GetIdentitiesByPublicKeyHashesRequestV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesRequest.VersionCase', null, { proto });
@@ -132,6 +141,24 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsRequest.VersionCase'
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsResponse', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsResponse.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.ResultCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.VersionCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.ResultCase', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.VersionCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.KeyRequestType', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.KeyRequestType.RequestCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.Proof', null, { proto });
@@ -1891,6 +1918,384 @@ if (goog.DEBUG && !COMPILED) {
    */
   proto.org.dash.platform.dapi.v0.GetConsensusParamsResponse.GetConsensusParamsResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetConsensusParamsResponse.GetConsensusParamsResponseV0';
 }
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.repeatedFields_, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.repeatedFields_, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.displayName = 'proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.displayName = 'proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.displayName = 'proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.displayName = 'proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0 = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.oneofGroups_);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.displayName = 'proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.repeatedFields_, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.displayName = 'proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos';
+}
+/**
+ * Generated by JsPbCodeGenerator.
+ * @param {Array=} opt_data Optional initial data array, typically from a
+ * server response, or constructed directly in Javascript. The array is used
+ * in place and becomes part of the constructed object. It is not cloned.
+ * If no data is provided, the constructed object will be empty, but still
+ * valid.
+ * @extends {jspb.Message}
+ * @constructor
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo = function(opt_data) {
+  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+};
+goog.inherits(proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo, jspb.Message);
+if (goog.DEBUG && !COMPILED) {
+  /**
+   * @public
+   * @override
+   */
+  proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.displayName = 'proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo';
+}
 
 
 
@@ -2301,9 +2706,10 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject = function(includeInst
   var f, obj = {
     height: jspb.Message.getFieldWithDefault(msg, 1, 0),
     coreChainLockedHeight: jspb.Message.getFieldWithDefault(msg, 2, 0),
-    timeMs: jspb.Message.getFieldWithDefault(msg, 3, 0),
-    protocolVersion: jspb.Message.getFieldWithDefault(msg, 4, 0),
-    chainId: jspb.Message.getFieldWithDefault(msg, 5, "")
+    epoch: jspb.Message.getFieldWithDefault(msg, 3, 0),
+    timeMs: jspb.Message.getFieldWithDefault(msg, 4, 0),
+    protocolVersion: jspb.Message.getFieldWithDefault(msg, 5, 0),
+    chainId: jspb.Message.getFieldWithDefault(msg, 6, "")
   };
 
   if (includeInstance) {
@@ -2349,14 +2755,18 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader = f
       msg.setCoreChainLockedHeight(value);
       break;
     case 3:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setEpoch(value);
+      break;
+    case 4:
       var value = /** @type {number} */ (reader.readUint64());
       msg.setTimeMs(value);
       break;
-    case 4:
+    case 5:
       var value = /** @type {number} */ (reader.readUint32());
       msg.setProtocolVersion(value);
       break;
-    case 5:
+    case 6:
       var value = /** @type {string} */ (reader.readString());
       msg.setChainId(value);
       break;
@@ -2403,24 +2813,31 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter = funct
       f
     );
   }
+  f = message.getEpoch();
+  if (f !== 0) {
+    writer.writeUint32(
+      3,
+      f
+    );
+  }
   f = message.getTimeMs();
   if (f !== 0) {
     writer.writeUint64(
-      3,
+      4,
       f
     );
   }
   f = message.getProtocolVersion();
   if (f !== 0) {
     writer.writeUint32(
-      4,
+      5,
       f
     );
   }
   f = message.getChainId();
   if (f.length > 0) {
     writer.writeString(
-      5,
+      6,
       f
     );
   }
@@ -2464,10 +2881,10 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setCoreChainLockedHei
 
 
 /**
- * optional uint64 time_ms = 3;
+ * optional uint32 epoch = 3;
  * @return {number}
  */
-proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getTimeMs = function() {
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getEpoch = function() {
   return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 3, 0));
 };
 
@@ -2476,16 +2893,16 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getTimeMs = function(
  * @param {number} value
  * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
  */
-proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setTimeMs = function(value) {
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setEpoch = function(value) {
   return jspb.Message.setProto3IntField(this, 3, value);
 };
 
 
 /**
- * optional uint32 protocol_version = 4;
+ * optional uint64 time_ms = 4;
  * @return {number}
  */
-proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getProtocolVersion = function() {
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getTimeMs = function() {
   return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
 };
 
@@ -2494,17 +2911,35 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getProtocolVersion = 
  * @param {number} value
  * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
  */
-proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setProtocolVersion = function(value) {
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setTimeMs = function(value) {
   return jspb.Message.setProto3IntField(this, 4, value);
 };
 
 
 /**
- * optional string chain_id = 5;
+ * optional uint32 protocol_version = 5;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getProtocolVersion = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 5, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
+ */
+proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setProtocolVersion = function(value) {
+  return jspb.Message.setProto3IntField(this, 5, value);
+};
+
+
+/**
+ * optional string chain_id = 6;
  * @return {string}
  */
 proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getChainId = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 5, ""));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 6, ""));
 };
 
 
@@ -2513,7 +2948,7 @@ proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.getChainId = function
  * @return {!proto.org.dash.platform.dapi.v0.ResponseMetadata} returns this
  */
 proto.org.dash.platform.dapi.v0.ResponseMetadata.prototype.setChainId = function(value) {
-  return jspb.Message.setProto3StringField(this, 5, value);
+  return jspb.Message.setProto3StringField(this, 6, value);
 };
 
 
@@ -18978,6 +19413,3558 @@ proto.org.dash.platform.dapi.v0.GetConsensusParamsResponse.prototype.clearV0 = f
  * @return {boolean}
  */
 proto.org.dash.platform.dapi.v0.GetConsensusParamsResponse.prototype.hasV0 = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.oneofGroups_ = [[1]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.VersionCase = {
+  VERSION_NOT_SET: 0,
+  V0: 1
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.VersionCase}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest;
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.deserializeBinaryFromReader);
+      msg.setV0(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getV0();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    prove: jspb.Message.getBooleanFieldWithDefault(msg, 1, false)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0;
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = /** @type {boolean} */ (reader.readBool());
+      msg.setProve(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getProve();
+  if (f) {
+    writer.writeBool(
+      1,
+      f
+    );
+  }
+};
+
+
+/**
+ * optional bool prove = 1;
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.prototype.getProve = function() {
+  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 1, false));
+};
+
+
+/**
+ * @param {boolean} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.prototype.setProve = function(value) {
+  return jspb.Message.setProto3BooleanField(this, 1, value);
+};
+
+
+/**
+ * optional GetVersionUpgradeStateRequestV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.clearV0 = function() {
+  return this.setV0(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateRequest.prototype.hasV0 = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.oneofGroups_ = [[1]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.VersionCase = {
+  VERSION_NOT_SET: 0,
+  V0: 1
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.VersionCase}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse;
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.deserializeBinaryFromReader);
+      msg.setV0(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getV0();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.oneofGroups_ = [[1,2]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.ResultCase = {
+  RESULT_NOT_SET: 0,
+  VERSIONS: 1,
+  PROOF: 2
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.ResultCase}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.getResultCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    versions: (f = msg.getVersions()) && proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.toObject(includeInstance, f),
+    proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
+    metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0;
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.deserializeBinaryFromReader);
+      msg.setVersions(value);
+      break;
+    case 2:
+      var value = new proto.org.dash.platform.dapi.v0.Proof;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader);
+      msg.setProof(value);
+      break;
+    case 3:
+      var value = new proto.org.dash.platform.dapi.v0.ResponseMetadata;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader);
+      msg.setMetadata(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getVersions();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.serializeBinaryToWriter
+    );
+  }
+  f = message.getProof();
+  if (f != null) {
+    writer.writeMessage(
+      2,
+      f,
+      proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter
+    );
+  }
+  f = message.getMetadata();
+  if (f != null) {
+    writer.writeMessage(
+      3,
+      f,
+      proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+/**
+ * List of repeated fields within this message type.
+ * @private {!Array<number>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.repeatedFields_ = [1];
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    versionsList: jspb.Message.toObjectList(msg.getVersionsList(),
+    proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.toObject, includeInstance)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions;
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.deserializeBinaryFromReader);
+      msg.addVersions(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getVersionsList();
+  if (f.length > 0) {
+    writer.writeRepeatedMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.serializeBinaryToWriter
+    );
+  }
+};
+
+
+/**
+ * repeated VersionEntry versions = 1;
+ * @return {!Array<!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry>}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.prototype.getVersionsList = function() {
+  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry>} */ (
+    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry, 1));
+};
+
+
+/**
+ * @param {!Array<!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry>} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.prototype.setVersionsList = function(value) {
+  return jspb.Message.setRepeatedWrapperField(this, 1, value);
+};
+
+
+/**
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry=} opt_value
+ * @param {number=} opt_index
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.prototype.addVersions = function(opt_value, opt_index) {
+  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry, opt_index);
+};
+
+
+/**
+ * Clears the list making it empty but non-null.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.prototype.clearVersionsList = function() {
+  return this.setVersionsList([]);
+};
+
+
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    versionNumber: jspb.Message.getFieldWithDefault(msg, 1, 0),
+    voteCount: jspb.Message.getFieldWithDefault(msg, 2, 0)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry;
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setVersionNumber(value);
+      break;
+    case 2:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setVoteCount(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getVersionNumber();
+  if (f !== 0) {
+    writer.writeUint32(
+      1,
+      f
+    );
+  }
+  f = message.getVoteCount();
+  if (f !== 0) {
+    writer.writeUint32(
+      2,
+      f
+    );
+  }
+};
+
+
+/**
+ * optional uint32 version_number = 1;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.prototype.getVersionNumber = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.prototype.setVersionNumber = function(value) {
+  return jspb.Message.setProto3IntField(this, 1, value);
+};
+
+
+/**
+ * optional uint32 vote_count = 2;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.prototype.getVoteCount = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.prototype.setVoteCount = function(value) {
+  return jspb.Message.setProto3IntField(this, 2, value);
+};
+
+
+/**
+ * optional Versions versions = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.getVersions = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.setVersions = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.clearVersions = function() {
+  return this.setVersions(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.hasVersions = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+/**
+ * optional Proof proof = 2;
+ * @return {?proto.org.dash.platform.dapi.v0.Proof}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.getProof = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.setProof = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.clearProof = function() {
+  return this.setProof(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.hasProof = function() {
+  return jspb.Message.getField(this, 2) != null;
+};
+
+
+/**
+ * optional ResponseMetadata metadata = 3;
+ * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.getMetadata = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.setMetadata = function(value) {
+  return jspb.Message.setWrapperField(this, 3, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.clearMetadata = function() {
+  return this.setMetadata(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.prototype.hasMetadata = function() {
+  return jspb.Message.getField(this, 3) != null;
+};
+
+
+/**
+ * optional GetVersionUpgradeStateResponseV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.clearV0 = function() {
+  return this.setV0(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeStateResponse.prototype.hasV0 = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.oneofGroups_ = [[1]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.VersionCase = {
+  VERSION_NOT_SET: 0,
+  V0: 1
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.VersionCase}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest;
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.deserializeBinaryFromReader);
+      msg.setV0(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getV0();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    startProTxHash: msg.getStartProTxHash_asB64(),
+    count: jspb.Message.getFieldWithDefault(msg, 2, 0),
+    prove: jspb.Message.getBooleanFieldWithDefault(msg, 3, false)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0;
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setStartProTxHash(value);
+      break;
+    case 2:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setCount(value);
+      break;
+    case 3:
+      var value = /** @type {boolean} */ (reader.readBool());
+      msg.setProve(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getStartProTxHash_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      1,
+      f
+    );
+  }
+  f = message.getCount();
+  if (f !== 0) {
+    writer.writeUint32(
+      2,
+      f
+    );
+  }
+  f = message.getProve();
+  if (f) {
+    writer.writeBool(
+      3,
+      f
+    );
+  }
+};
+
+
+/**
+ * optional bytes start_pro_tx_hash = 1;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.getStartProTxHash = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
+};
+
+
+/**
+ * optional bytes start_pro_tx_hash = 1;
+ * This is a type-conversion wrapper around `getStartProTxHash()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.getStartProTxHash_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getStartProTxHash()));
+};
+
+
+/**
+ * optional bytes start_pro_tx_hash = 1;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getStartProTxHash()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.getStartProTxHash_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getStartProTxHash()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.setStartProTxHash = function(value) {
+  return jspb.Message.setProto3BytesField(this, 1, value);
+};
+
+
+/**
+ * optional uint32 count = 2;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.getCount = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.setCount = function(value) {
+  return jspb.Message.setProto3IntField(this, 2, value);
+};
+
+
+/**
+ * optional bool prove = 3;
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.getProve = function() {
+  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 3, false));
+};
+
+
+/**
+ * @param {boolean} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.prototype.setProve = function(value) {
+  return jspb.Message.setProto3BooleanField(this, 3, value);
+};
+
+
+/**
+ * optional GetVersionUpgradeVoteStatusRequestV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.clearV0 = function() {
+  return this.setV0(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusRequest.prototype.hasV0 = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.oneofGroups_ = [[1]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.VersionCase = {
+  VERSION_NOT_SET: 0,
+  V0: 1
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.VersionCase}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse;
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.deserializeBinaryFromReader);
+      msg.setV0(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getV0();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.oneofGroups_ = [[1,2]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.ResultCase = {
+  RESULT_NOT_SET: 0,
+  VERSIONS: 1,
+  PROOF: 2
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.ResultCase}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.getResultCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    versions: (f = msg.getVersions()) && proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.toObject(includeInstance, f),
+    proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
+    metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0;
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.deserializeBinaryFromReader);
+      msg.setVersions(value);
+      break;
+    case 2:
+      var value = new proto.org.dash.platform.dapi.v0.Proof;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader);
+      msg.setProof(value);
+      break;
+    case 3:
+      var value = new proto.org.dash.platform.dapi.v0.ResponseMetadata;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader);
+      msg.setMetadata(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getVersions();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.serializeBinaryToWriter
+    );
+  }
+  f = message.getProof();
+  if (f != null) {
+    writer.writeMessage(
+      2,
+      f,
+      proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter
+    );
+  }
+  f = message.getMetadata();
+  if (f != null) {
+    writer.writeMessage(
+      3,
+      f,
+      proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+/**
+ * List of repeated fields within this message type.
+ * @private {!Array<number>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.repeatedFields_ = [1];
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    versionSignalsList: jspb.Message.toObjectList(msg.getVersionSignalsList(),
+    proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.toObject, includeInstance)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals;
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.deserializeBinaryFromReader);
+      msg.addVersionSignals(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getVersionSignalsList();
+  if (f.length > 0) {
+    writer.writeRepeatedMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.serializeBinaryToWriter
+    );
+  }
+};
+
+
+/**
+ * repeated VersionSignal version_signals = 1;
+ * @return {!Array<!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal>}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.getVersionSignalsList = function() {
+  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal>} */ (
+    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal, 1));
+};
+
+
+/**
+ * @param {!Array<!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal>} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.setVersionSignalsList = function(value) {
+  return jspb.Message.setRepeatedWrapperField(this, 1, value);
+};
+
+
+/**
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal=} opt_value
+ * @param {number=} opt_index
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.addVersionSignals = function(opt_value, opt_index) {
+  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal, opt_index);
+};
+
+
+/**
+ * Clears the list making it empty but non-null.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.prototype.clearVersionSignalsList = function() {
+  return this.setVersionSignalsList([]);
+};
+
+
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    proTxHash: msg.getProTxHash_asB64(),
+    version: jspb.Message.getFieldWithDefault(msg, 2, 0)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal;
+  return proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = /** @type {!Uint8Array} */ (reader.readBytes());
+      msg.setProTxHash(value);
+      break;
+    case 2:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setVersion(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getProTxHash_asU8();
+  if (f.length > 0) {
+    writer.writeBytes(
+      1,
+      f
+    );
+  }
+  f = message.getVersion();
+  if (f !== 0) {
+    writer.writeUint32(
+      2,
+      f
+    );
+  }
+};
+
+
+/**
+ * optional bytes pro_tx_hash = 1;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.getProTxHash = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
+};
+
+
+/**
+ * optional bytes pro_tx_hash = 1;
+ * This is a type-conversion wrapper around `getProTxHash()`
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.getProTxHash_asB64 = function() {
+  return /** @type {string} */ (jspb.Message.bytesAsB64(
+      this.getProTxHash()));
+};
+
+
+/**
+ * optional bytes pro_tx_hash = 1;
+ * Note that Uint8Array is not supported on all browsers.
+ * @see http://caniuse.com/Uint8Array
+ * This is a type-conversion wrapper around `getProTxHash()`
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.getProTxHash_asU8 = function() {
+  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
+      this.getProTxHash()));
+};
+
+
+/**
+ * @param {!(string|Uint8Array)} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.setProTxHash = function(value) {
+  return jspb.Message.setProto3BytesField(this, 1, value);
+};
+
+
+/**
+ * optional uint32 version = 2;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.getVersion = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.prototype.setVersion = function(value) {
+  return jspb.Message.setProto3IntField(this, 2, value);
+};
+
+
+/**
+ * optional VersionSignals versions = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.getVersions = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.setVersions = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.clearVersions = function() {
+  return this.setVersions(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.hasVersions = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+/**
+ * optional Proof proof = 2;
+ * @return {?proto.org.dash.platform.dapi.v0.Proof}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.getProof = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.setProof = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.clearProof = function() {
+  return this.setProof(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.hasProof = function() {
+  return jspb.Message.getField(this, 2) != null;
+};
+
+
+/**
+ * optional ResponseMetadata metadata = 3;
+ * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.getMetadata = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.setMetadata = function(value) {
+  return jspb.Message.setWrapperField(this, 3, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.clearMetadata = function() {
+  return this.setMetadata(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.prototype.hasMetadata = function() {
+  return jspb.Message.getField(this, 3) != null;
+};
+
+
+/**
+ * optional GetVersionUpgradeVoteStatusResponseV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.clearV0 = function() {
+  return this.setV0(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetVersionUpgradeVoteStatusResponse.prototype.hasV0 = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.oneofGroups_ = [[1]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.VersionCase = {
+  VERSION_NOT_SET: 0,
+  V0: 1
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.VersionCase}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest;
+  return proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.deserializeBinaryFromReader);
+      msg.setV0(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getV0();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    startEpoch: (f = msg.getStartEpoch()) && google_protobuf_wrappers_pb.UInt32Value.toObject(includeInstance, f),
+    count: jspb.Message.getFieldWithDefault(msg, 2, 0),
+    ascending: jspb.Message.getBooleanFieldWithDefault(msg, 3, false),
+    prove: jspb.Message.getBooleanFieldWithDefault(msg, 4, false)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0;
+  return proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new google_protobuf_wrappers_pb.UInt32Value;
+      reader.readMessage(value,google_protobuf_wrappers_pb.UInt32Value.deserializeBinaryFromReader);
+      msg.setStartEpoch(value);
+      break;
+    case 2:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setCount(value);
+      break;
+    case 3:
+      var value = /** @type {boolean} */ (reader.readBool());
+      msg.setAscending(value);
+      break;
+    case 4:
+      var value = /** @type {boolean} */ (reader.readBool());
+      msg.setProve(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getStartEpoch();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      google_protobuf_wrappers_pb.UInt32Value.serializeBinaryToWriter
+    );
+  }
+  f = message.getCount();
+  if (f !== 0) {
+    writer.writeUint32(
+      2,
+      f
+    );
+  }
+  f = message.getAscending();
+  if (f) {
+    writer.writeBool(
+      3,
+      f
+    );
+  }
+  f = message.getProve();
+  if (f) {
+    writer.writeBool(
+      4,
+      f
+    );
+  }
+};
+
+
+/**
+ * optional google.protobuf.UInt32Value start_epoch = 1;
+ * @return {?proto.google.protobuf.UInt32Value}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.prototype.getStartEpoch = function() {
+  return /** @type{?proto.google.protobuf.UInt32Value} */ (
+    jspb.Message.getWrapperField(this, google_protobuf_wrappers_pb.UInt32Value, 1));
+};
+
+
+/**
+ * @param {?proto.google.protobuf.UInt32Value|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.prototype.setStartEpoch = function(value) {
+  return jspb.Message.setWrapperField(this, 1, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.prototype.clearStartEpoch = function() {
+  return this.setStartEpoch(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.prototype.hasStartEpoch = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+/**
+ * optional uint32 count = 2;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.prototype.getCount = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.prototype.setCount = function(value) {
+  return jspb.Message.setProto3IntField(this, 2, value);
+};
+
+
+/**
+ * optional bool ascending = 3;
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.prototype.getAscending = function() {
+  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 3, false));
+};
+
+
+/**
+ * @param {boolean} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.prototype.setAscending = function(value) {
+  return jspb.Message.setProto3BooleanField(this, 3, value);
+};
+
+
+/**
+ * optional bool prove = 4;
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.prototype.getProve = function() {
+  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 4, false));
+};
+
+
+/**
+ * @param {boolean} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0.prototype.setProve = function(value) {
+  return jspb.Message.setProto3BooleanField(this, 4, value);
+};
+
+
+/**
+ * optional GetEpochsInfoRequestV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.prototype.clearV0 = function() {
+  return this.setV0(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoRequest.prototype.hasV0 = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.oneofGroups_ = [[1]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.VersionCase = {
+  VERSION_NOT_SET: 0,
+  V0: 1
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.VersionCase}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.prototype.getVersionCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.VersionCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    v0: (f = msg.getV0()) && proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse;
+  return proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.deserializeBinaryFromReader);
+      msg.setV0(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getV0();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.oneofGroups_ = [[1,2]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.ResultCase = {
+  RESULT_NOT_SET: 0,
+  EPOCHS: 1,
+  PROOF: 2
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.ResultCase}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.getResultCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.oneofGroups_[0]));
+};
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    epochs: (f = msg.getEpochs()) && proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.toObject(includeInstance, f),
+    proof: (f = msg.getProof()) && proto.org.dash.platform.dapi.v0.Proof.toObject(includeInstance, f),
+    metadata: (f = msg.getMetadata()) && proto.org.dash.platform.dapi.v0.ResponseMetadata.toObject(includeInstance, f)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0;
+  return proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.deserializeBinaryFromReader);
+      msg.setEpochs(value);
+      break;
+    case 2:
+      var value = new proto.org.dash.platform.dapi.v0.Proof;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.Proof.deserializeBinaryFromReader);
+      msg.setProof(value);
+      break;
+    case 3:
+      var value = new proto.org.dash.platform.dapi.v0.ResponseMetadata;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.ResponseMetadata.deserializeBinaryFromReader);
+      msg.setMetadata(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getEpochs();
+  if (f != null) {
+    writer.writeMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.serializeBinaryToWriter
+    );
+  }
+  f = message.getProof();
+  if (f != null) {
+    writer.writeMessage(
+      2,
+      f,
+      proto.org.dash.platform.dapi.v0.Proof.serializeBinaryToWriter
+    );
+  }
+  f = message.getMetadata();
+  if (f != null) {
+    writer.writeMessage(
+      3,
+      f,
+      proto.org.dash.platform.dapi.v0.ResponseMetadata.serializeBinaryToWriter
+    );
+  }
+};
+
+
+
+/**
+ * List of repeated fields within this message type.
+ * @private {!Array<number>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.repeatedFields_ = [1];
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    epochInfosList: jspb.Message.toObjectList(msg.getEpochInfosList(),
+    proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.toObject, includeInstance)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos;
+  return proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = new proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.deserializeBinaryFromReader);
+      msg.addEpochInfos(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getEpochInfosList();
+  if (f.length > 0) {
+    writer.writeRepeatedMessage(
+      1,
+      f,
+      proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.serializeBinaryToWriter
+    );
+  }
+};
+
+
+/**
+ * repeated EpochInfo epoch_infos = 1;
+ * @return {!Array<!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo>}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.prototype.getEpochInfosList = function() {
+  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo>} */ (
+    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo, 1));
+};
+
+
+/**
+ * @param {!Array<!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo>} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.prototype.setEpochInfosList = function(value) {
+  return jspb.Message.setRepeatedWrapperField(this, 1, value);
+};
+
+
+/**
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo=} opt_value
+ * @param {number=} opt_index
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.prototype.addEpochInfos = function(opt_value, opt_index) {
+  return jspb.Message.addToRepeatedWrapperField(this, 1, opt_value, proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo, opt_index);
+};
+
+
+/**
+ * Clears the list making it empty but non-null.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos.prototype.clearEpochInfosList = function() {
+  return this.setEpochInfosList([]);
+};
+
+
+
+
+
+if (jspb.Message.GENERATE_TO_OBJECT) {
+/**
+ * Creates an object representation of this proto.
+ * Field names that are reserved in JavaScript and will be renamed to pb_name.
+ * Optional fields that are not set will be set to undefined.
+ * To access a reserved field use, foo.pb_<name>, eg, foo.pb_default.
+ * For the list of reserved names please see:
+ *     net/proto2/compiler/js/internal/generator.cc#kKeyword.
+ * @param {boolean=} opt_includeInstance Deprecated. whether to include the
+ *     JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @return {!Object}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.toObject = function(opt_includeInstance) {
+  return proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.toObject(opt_includeInstance, this);
+};
+
+
+/**
+ * Static version of the {@see toObject} method.
+ * @param {boolean|undefined} includeInstance Deprecated. Whether to include
+ *     the JSPB instance for transitional soy proto support:
+ *     http://goto/soy-param-migration
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo} msg The msg instance to transform.
+ * @return {!Object}
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.toObject = function(includeInstance, msg) {
+  var f, obj = {
+    number: jspb.Message.getFieldWithDefault(msg, 1, 0),
+    firstBlockHeight: jspb.Message.getFieldWithDefault(msg, 2, 0),
+    firstCoreBlockHeight: jspb.Message.getFieldWithDefault(msg, 3, 0),
+    startTime: jspb.Message.getFieldWithDefault(msg, 4, 0),
+    feeMultiplier: jspb.Message.getFloatingPointFieldWithDefault(msg, 5, 0.0)
+  };
+
+  if (includeInstance) {
+    obj.$jspbMessageInstance = msg;
+  }
+  return obj;
+};
+}
+
+
+/**
+ * Deserializes binary data (in protobuf wire format).
+ * @param {jspb.ByteSource} bytes The bytes to deserialize.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.deserializeBinary = function(bytes) {
+  var reader = new jspb.BinaryReader(bytes);
+  var msg = new proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo;
+  return proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.deserializeBinaryFromReader(msg, reader);
+};
+
+
+/**
+ * Deserializes binary data (in protobuf wire format) from the
+ * given reader into the given message object.
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo} msg The message object to deserialize into.
+ * @param {!jspb.BinaryReader} reader The BinaryReader to use.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.deserializeBinaryFromReader = function(msg, reader) {
+  while (reader.nextField()) {
+    if (reader.isEndGroup()) {
+      break;
+    }
+    var field = reader.getFieldNumber();
+    switch (field) {
+    case 1:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setNumber(value);
+      break;
+    case 2:
+      var value = /** @type {number} */ (reader.readUint64());
+      msg.setFirstBlockHeight(value);
+      break;
+    case 3:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setFirstCoreBlockHeight(value);
+      break;
+    case 4:
+      var value = /** @type {number} */ (reader.readUint64());
+      msg.setStartTime(value);
+      break;
+    case 5:
+      var value = /** @type {number} */ (reader.readDouble());
+      msg.setFeeMultiplier(value);
+      break;
+    default:
+      reader.skipField();
+      break;
+    }
+  }
+  return msg;
+};
+
+
+/**
+ * Serializes the message to binary data (in protobuf wire format).
+ * @return {!Uint8Array}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.serializeBinary = function() {
+  var writer = new jspb.BinaryWriter();
+  proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.serializeBinaryToWriter(this, writer);
+  return writer.getResultBuffer();
+};
+
+
+/**
+ * Serializes the given message to binary data (in protobuf wire
+ * format), writing to the given BinaryWriter.
+ * @param {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo} message
+ * @param {!jspb.BinaryWriter} writer
+ * @suppress {unusedLocalVariables} f is only used for nested messages
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.serializeBinaryToWriter = function(message, writer) {
+  var f = undefined;
+  f = message.getNumber();
+  if (f !== 0) {
+    writer.writeUint32(
+      1,
+      f
+    );
+  }
+  f = message.getFirstBlockHeight();
+  if (f !== 0) {
+    writer.writeUint64(
+      2,
+      f
+    );
+  }
+  f = message.getFirstCoreBlockHeight();
+  if (f !== 0) {
+    writer.writeUint32(
+      3,
+      f
+    );
+  }
+  f = message.getStartTime();
+  if (f !== 0) {
+    writer.writeUint64(
+      4,
+      f
+    );
+  }
+  f = message.getFeeMultiplier();
+  if (f !== 0.0) {
+    writer.writeDouble(
+      5,
+      f
+    );
+  }
+};
+
+
+/**
+ * optional uint32 number = 1;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.getNumber = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.setNumber = function(value) {
+  return jspb.Message.setProto3IntField(this, 1, value);
+};
+
+
+/**
+ * optional uint64 first_block_height = 2;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.getFirstBlockHeight = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.setFirstBlockHeight = function(value) {
+  return jspb.Message.setProto3IntField(this, 2, value);
+};
+
+
+/**
+ * optional uint32 first_core_block_height = 3;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.getFirstCoreBlockHeight = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 3, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.setFirstCoreBlockHeight = function(value) {
+  return jspb.Message.setProto3IntField(this, 3, value);
+};
+
+
+/**
+ * optional uint64 start_time = 4;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.getStartTime = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 4, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.setStartTime = function(value) {
+  return jspb.Message.setProto3IntField(this, 4, value);
+};
+
+
+/**
+ * optional double fee_multiplier = 5;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.getFeeMultiplier = function() {
+  return /** @type {number} */ (jspb.Message.getFloatingPointFieldWithDefault(this, 5, 0.0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo.prototype.setFeeMultiplier = function(value) {
+  return jspb.Message.setProto3FloatField(this, 5, value);
+};
+
+
+/**
+ * optional EpochInfos epochs = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.getEpochs = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfos|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.setEpochs = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.clearEpochs = function() {
+  return this.setEpochs(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.hasEpochs = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+/**
+ * optional Proof proof = 2;
+ * @return {?proto.org.dash.platform.dapi.v0.Proof}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.getProof = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.Proof} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.Proof, 2));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.Proof|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.setProof = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 2, proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.clearProof = function() {
+  return this.setProof(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.hasProof = function() {
+  return jspb.Message.getField(this, 2) != null;
+};
+
+
+/**
+ * optional ResponseMetadata metadata = 3;
+ * @return {?proto.org.dash.platform.dapi.v0.ResponseMetadata}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.getMetadata = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.ResponseMetadata} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.ResponseMetadata, 3));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.ResponseMetadata|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.setMetadata = function(value) {
+  return jspb.Message.setWrapperField(this, 3, value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.clearMetadata = function() {
+  return this.setMetadata(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.prototype.hasMetadata = function() {
+  return jspb.Message.getField(this, 3) != null;
+};
+
+
+/**
+ * optional GetEpochsInfoResponseV0 v0 = 1;
+ * @return {?proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.prototype.getV0 = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0, 1));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.prototype.setV0 = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.prototype.clearV0 = function() {
+  return this.setV0(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetEpochsInfoResponse.prototype.hasV0 = function() {
   return jspb.Message.getField(this, 1) != null;
 };
 

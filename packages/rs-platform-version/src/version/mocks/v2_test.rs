@@ -19,7 +19,7 @@ use crate::version::drive_abci_versions::{
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
     DriveAbciProtocolUpgradeMethodVersions, DriveAbciQueryDataContractVersions,
-    DriveAbciQueryIdentityVersions, DriveAbciQueryVersions,
+    DriveAbciQueryIdentityVersions, DriveAbciQuerySystemVersions, DriveAbciQueryVersions,
     DriveAbciStateTransitionCommonValidationVersions,
     DriveAbciStateTransitionProcessingMethodVersions, DriveAbciStateTransitionValidationVersion,
     DriveAbciStateTransitionValidationVersions, DriveAbciStructureVersions,
@@ -55,7 +55,8 @@ use crate::version::drive_versions::{
     DriveStructureVersion, DriveSystemEstimationCostsMethodVersions,
     DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
     DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
-    DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions, DriveVersion,
+    DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions,
+    DriveVerifySystemMethodVersions, DriveVersion,
 };
 use crate::version::mocks::TEST_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
@@ -99,6 +100,8 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             },
             credit_pools: DriveCreditPoolMethodVersions {
                 epochs: DriveCreditPoolEpochsMethodVersions {
+                    get_epochs_infos: 0,
+                    prove_epochs_infos: 0,
                     get_epoch_fee_multiplier: 0,
                     get_epoch_processing_credits_for_distribution: 0,
                     get_epoch_storage_credits_for_distribution: 0,
@@ -128,6 +131,9 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 clear_version_information: 0,
                 change_to_new_version_and_clear_version_information: 0,
                 fetch_versions_with_counter: 0,
+                fetch_proved_versions_with_counter: 0,
+                fetch_validator_version_votes: 0,
+                fetch_proved_validator_version_votes: 0,
                 remove_validators_proposed_app_versions: 0,
                 update_validator_proposed_app_version: 0,
             },
@@ -243,6 +249,11 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 single_document: DriveVerifySingleDocumentMethodVersions {
                     verify_proof: 0,
                     verify_proof_keep_serialized: 0,
+                },
+                system: DriveVerifySystemMethodVersions {
+                    verify_epoch_infos: 0,
+                    verify_upgrade_state: 0,
+                    verify_upgrade_vote_status: 0,
                 },
             },
             identity: DriveIdentityMethodVersions {
@@ -671,6 +682,23 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
                 data_contracts: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+            },
+            system: DriveAbciQuerySystemVersions {
+                version_upgrade_state: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                version_upgrade_vote_status: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                epoch_infos: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,
                     default_current_version: 0,

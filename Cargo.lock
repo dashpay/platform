@@ -1191,7 +1191,7 @@ dependencies = [
  "futures",
  "getrandom",
  "hex",
- "integer-encoding",
+ "integer-encoding 4.0.0",
  "itertools",
  "json-patch",
  "jsonptr",
@@ -1244,7 +1244,7 @@ dependencies = [
  "grovedb-storage",
  "hex",
  "indexmap 1.9.3",
- "integer-encoding",
+ "integer-encoding 4.0.0",
  "intmap",
  "itertools",
  "lazy_static",
@@ -1287,6 +1287,7 @@ dependencies = [
  "file-rotate",
  "hex",
  "indexmap 1.9.3",
+ "integer-encoding 4.0.0",
  "itertools",
  "lazy_static",
  "metrics",
@@ -1758,7 +1759,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=11198471542442de286348d0936475c8e602f953#11198471542442de286348d0936475c8e602f953"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
  "bincode 1.3.3",
  "grovedb-costs",
@@ -1768,7 +1769,7 @@ dependencies = [
  "grovedb-visualize",
  "hex",
  "indexmap 1.9.3",
- "integer-encoding",
+ "integer-encoding 3.0.4",
  "intmap",
  "itertools",
  "nohash-hasher",
@@ -1780,9 +1781,9 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=11198471542442de286348d0936475c8e602f953#11198471542442de286348d0936475c8e602f953"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
- "integer-encoding",
+ "integer-encoding 3.0.4",
  "intmap",
  "thiserror",
 ]
@@ -1790,7 +1791,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=11198471542442de286348d0936475c8e602f953#11198471542442de286348d0936475c8e602f953"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
  "blake3",
  "byteorder",
@@ -1803,7 +1804,7 @@ dependencies = [
  "grovedb-visualize",
  "hex",
  "indexmap 1.9.3",
- "integer-encoding",
+ "integer-encoding 3.0.4",
  "jemallocator",
  "num_cpus",
  "rand",
@@ -1814,19 +1815,19 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=11198471542442de286348d0936475c8e602f953#11198471542442de286348d0936475c8e602f953"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=11198471542442de286348d0936475c8e602f953#11198471542442de286348d0936475c8e602f953"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
  "blake3",
  "grovedb-costs",
  "grovedb-path",
  "grovedb-visualize",
  "hex",
- "integer-encoding",
+ "integer-encoding 3.0.4",
  "lazy_static",
  "num_cpus",
  "rocksdb",
@@ -1838,7 +1839,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=11198471542442de286348d0936475c8e602f953#11198471542442de286348d0936475c8e602f953"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
  "hex",
  "itertools",
@@ -2090,6 +2091,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bb03732005da905c88227371639bf1ad885cc712789c011c31c5fb3ab3ccf02"
 
 [[package]]
+name = "integer-encoding"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "924df4f0e24e2e7f9cdd90babb0b96f93b20f3ecfa949ea9e6613756b8c8e1bf"
+
+[[package]]
 name = "intmap"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2229,7 +2236,7 @@ source = "git+https://github.com/fominok/jsonschema-rs?branch=feat-unevaluated-p
 dependencies = [
  "ahash 0.7.6",
  "anyhow",
- "base64 0.13.1",
+ "base64 0.21.4",
  "bytecount",
  "fancy-regex",
  "fraction",
