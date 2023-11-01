@@ -31,12 +31,12 @@ jobs:
       - uses: dorny/paths-filter@v2
         id: filter-js
         with:
-          filters: .github/js-package-filters.yml
+          filters: .github/package-filters/js-packages.yml
 
       - uses: dorny/paths-filter@v2
         id: filter-rs
         with:
-          filters: .github/rs-package-filters.yml
+          filters: .github/package-filters/rs-packages.yml
 
   build-js:
     name: Build JS packages
