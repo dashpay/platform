@@ -38,7 +38,7 @@ runs:
         aws-region: eu-west-1
 
     - name: Cache Rust build artifacts (S3 bucket cache)
-      uses: everpcpc/actions-cache@v1
+      uses: strophy/actions-cache@opendal-update
       if: contains(runner.name, 'ubuntu-platform')
       with:
         bucket: multi-runner-linux-x64-platform-cache-ui535z23
@@ -53,7 +53,7 @@ runs:
           ${{ runner.os }}-cargo-build-${{ inputs.target }}-
 
     - name: Cache cargo registry (S3 bucket cache)
-      uses: everpcpc/actions-cache@v1
+      uses: strophy/actions-cache@opendal-update
       if: contains(runner.name, 'ubuntu-platform')
       with:
         bucket: multi-runner-linux-x64-platform-cache-ui535z23
