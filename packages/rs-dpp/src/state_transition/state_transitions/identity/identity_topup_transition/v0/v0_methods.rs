@@ -39,16 +39,6 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
 }
 
 impl IdentityTopUpTransitionAccessorsV0 for IdentityTopUpTransitionV0 {
-    /// Set asset lock
-    fn set_asset_lock_proof(&mut self, asset_lock_proof: AssetLockProof) {
-        self.asset_lock_proof = asset_lock_proof;
-    }
-
-    /// Get asset lock proof
-    fn asset_lock_proof(&self) -> &AssetLockProof {
-        &self.asset_lock_proof
-    }
-
     /// Set identity id
     fn set_identity_id(&mut self, identity_id: Identifier) {
         self.identity_id = identity_id;

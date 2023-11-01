@@ -1,6 +1,6 @@
 use std::convert::{TryFrom, TryInto};
 
-use dashcore::{Transaction, TxOut};
+use dashcore::{OutPoint, Transaction, TxOut};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -8,26 +8,30 @@ pub use bincode::{Decode, Encode};
 pub use chain::*;
 pub use instant::*;
 use platform_value::Value;
+use platform_version::version::PlatformVersion;
 use serde::de::Error;
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::Identifier;
-use crate::{NonConsensusError, ProtocolError, SerdeParsingError};
+use crate::validation::SimpleConsensusValidationResult;
+use crate::{ProtocolError, SerdeParsingError};
 
 pub mod chain;
 pub mod instant;
+pub mod validate_asset_lock_transaction_structure;
 
+// TODO: Serialization with bincode
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
 #[serde(untagged)]
 pub enum AssetLockProof {
     Instant(#[bincode(with_serde)] InstantAssetLockProof),
-    Chain(ChainAssetLockProof),
+    Chain(#[bincode(with_serde)] ChainAssetLockProof),
 }
 
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum RawAssetLockProof {
-    Instant(RawInstantLock),
+    Instant(RawInstantLockProof),
     Chain(ChainAssetLockProof),
 }
 
@@ -71,64 +75,6 @@ impl<'de> Deserialize<'de> for AssetLockProof {
             .map_err(|e: ProtocolError| D::Error::custom(e.to_string()))
     }
 }
-//
-// impl AssetLockProof {
-//     /// This fetches the asset lock transaction output from core
-//     pub async fn fetch_asset_lock_transaction_output(
-//         &self,
-//         state_repository: &impl StateRepositoryLike,
-//         execution_context: &StateTransitionExecutionContext,
-//     ) -> Result<TxOut, DPPError> {
-//         match self {
-//             AssetLockProof::Instant(asset_lock_proof) => asset_lock_proof
-//                 .output()
-//                 .ok_or_else(|| DPPError::from(AssetLockOutputNotFoundError::new()))
-//                 .cloned(),
-//             AssetLockProof::Chain(asset_lock_proof) => {
-//                 let out_point = OutPoint::from(asset_lock_proof.out_point.to_buffer());
-//
-//                 let output_index = out_point.vout as usize;
-//                 let transaction_hash = out_point.txid;
-//
-//                 let transaction_data = state_repository
-//                     .fetch_transaction(&transaction_hash.to_hex(), Some(execution_context))
-//                     .await
-//                     .map_err(|_| DPPError::InvalidAssetLockTransaction)?;
-//
-//                 if execution_context.is_dry_run() {
-//                     return Ok(TxOut {
-//                         value: 1000,
-//                         ..Default::default()
-//                     });
-//                 }
-//
-//                 let transaction_data = transaction_data
-//                     .try_into()
-//                     .map_err(|e| DPPError::CoreMessageCorruption(format!("{:?}", e.into())))?;
-//
-//                 if let Some(raw_transaction) = transaction_data.data {
-//                     let transaction = Transaction::consensus_decode(raw_transaction.as_slice())
-//                         .map_err(|e| {
-//                             DPPError::CoreMessageCorruption(format!(
-//                                 "could not decode transaction {:?}",
-//                                 e
-//                             ))
-//                         })?;
-//
-//                     transaction
-//                         .output
-//                         .get(output_index)
-//                         .cloned()
-//                         .ok_or_else(|| AssetLockOutputNotFoundError::new().into())
-//                 } else {
-//                     Err(DPPError::from(AssetLockTransactionIsNotFoundError::new(
-//                         transaction_hash,
-//                     )))
-//                 }
-//             }
-//         }
-//     }
-// }
 
 impl Default for AssetLockProof {
     fn default() -> Self {
@@ -207,6 +153,7 @@ impl TryFrom<u64> for AssetLockProofType {
     }
 }
 
+// TODO: Versioning
 impl AssetLockProof {
     pub fn type_from_raw_value(value: &Value) -> Option<AssetLockProofType> {
         let proof_type_res = value.get_integer::<u8>("type");
@@ -223,31 +170,24 @@ impl AssetLockProof {
         }
     }
 
-    pub fn create_identifier(&self) -> Result<Identifier, NonConsensusError> {
+    pub fn create_identifier(&self) -> Result<Identifier, ProtocolError> {
         match self {
             AssetLockProof::Instant(instant_proof) => instant_proof.create_identifier(),
             AssetLockProof::Chain(chain_proof) => chain_proof.create_identifier(),
         }
     }
 
-    pub fn instant_lock_output(&self) -> Option<&TxOut> {
+    pub fn output_index(&self) -> u32 {
         match self {
-            AssetLockProof::Instant(proof) => proof.output(),
-            AssetLockProof::Chain(_) => None,
+            AssetLockProof::Instant(proof) => proof.output_index(),
+            AssetLockProof::Chain(proof) => proof.out_point.vout,
         }
     }
 
-    pub fn instant_lock_output_index(&self) -> Option<usize> {
-        match self {
-            AssetLockProof::Instant(proof) => Some(proof.output_index()),
-            AssetLockProof::Chain(_) => None,
-        }
-    }
-
-    pub fn out_point(&self) -> Option<[u8; 36]> {
+    pub fn out_point(&self) -> Option<OutPoint> {
         match self {
             AssetLockProof::Instant(proof) => proof.out_point(),
-            AssetLockProof::Chain(proof) => Some(proof.out_point.to_buffer()),
+            AssetLockProof::Chain(proof) => Some(proof.out_point),
         }
     }
 
@@ -266,6 +206,18 @@ impl AssetLockProof {
             AssetLockProof::Chain(cl) => {
                 platform_value::to_value(cl).map_err(ProtocolError::ValueError)
             }
+        }
+    }
+
+    /// Validate the structure of the asset lock proof
+    #[cfg(feature = "validation")]
+    pub fn validate_structure(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        match self {
+            AssetLockProof::Instant(proof) => proof.validate_structure(platform_version),
+            AssetLockProof::Chain(_) => Ok(SimpleConsensusValidationResult::default()),
         }
     }
 }

@@ -1003,7 +1003,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.30.0"
-source = "git+https://github.com/dashpay/rust-dashcore?branch=master#db8794eef7b0b03ee718cf07bb5a07e9b2b0e7c7"
+source = "git+https://github.com/dashpay/rust-dashcore?branch=master#43ffb72915ae55574ac44fcdbd47589e0c815b59"
 dependencies = [
  "anyhow",
  "bech32",
@@ -1019,16 +1019,17 @@ dependencies = [
 [[package]]
 name = "dashcore-private"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/rust-dashcore?branch=master#db8794eef7b0b03ee718cf07bb5a07e9b2b0e7c7"
+source = "git+https://github.com/dashpay/rust-dashcore?branch=master#43ffb72915ae55574ac44fcdbd47589e0c815b59"
 
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.1#fafdd807d24dec8147df4ea91654679d9f6ce2d3"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#d6eb09d3cb4f11f57901bed5f3ab2f9657848e2e"
 dependencies = [
  "dashcore-private",
  "dashcore-rpc-json",
  "env_logger 0.10.0",
+ "hex",
  "jsonrpc",
  "log",
  "serde",
@@ -1038,7 +1039,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?tag=v0.15.1#fafdd807d24dec8147df4ea91654679d9f6ce2d3"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#d6eb09d3cb4f11f57901bed5f3ab2f9657848e2e"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dashcore",
@@ -1052,7 +1053,7 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.12.0"
-source = "git+https://github.com/dashpay/rust-dashcore?branch=master#db8794eef7b0b03ee718cf07bb5a07e9b2b0e7c7"
+source = "git+https://github.com/dashpay/rust-dashcore?branch=master#43ffb72915ae55574ac44fcdbd47589e0c815b59"
 dependencies = [
  "dashcore-private",
  "rs-x11-hash",

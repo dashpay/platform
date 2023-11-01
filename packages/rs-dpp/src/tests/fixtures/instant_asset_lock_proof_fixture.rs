@@ -2,8 +2,11 @@ use std::str::FromStr;
 
 use dashcore::bls_sig_utils::BLSSignature;
 use dashcore::hash_types::CycleHash;
+use dashcore::hashes::Hash;
 use dashcore::secp256k1::rand::thread_rng;
 use dashcore::secp256k1::Secp256k1;
+use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::{
     secp256k1::SecretKey, InstantLock, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxIn,
     TxOut, Txid,
@@ -53,34 +56,50 @@ pub fn instant_asset_lock_proof_transaction_fixture(
         one_time_private_key.unwrap_or_else(|| PrivateKey::new(secret_key, Network::Testnet));
     let one_time_public_key = one_time_private_key.public_key(&secp);
 
-    let txid =
+    // We are going to fund 1 Dash and
+    // assume that input has 100005000
+    // 5000 will be returned back
+
+    let input_txid =
         Txid::from_str("a477af6b2667c29670467e4e0728b685ee07b240235771862318e29ddbe58458").unwrap();
-    let outpoint = OutPoint::new(txid, 0);
+
+    let input_outpoint = OutPoint::new(input_txid, 0);
+
     let input = TxIn {
-        previous_output: outpoint,
+        previous_output: input_outpoint,
         script_sig: ScriptBuf::new_p2pkh(&public_key_hash),
         sequence: 0,
         witness: Default::default(),
     };
+
     let one_time_key_hash = one_time_public_key.pubkey_hash();
+
+    let funding_output = TxOut {
+        value: 100000000, // 1 Dash
+        script_pubkey: ScriptBuf::new_p2pkh(&one_time_key_hash),
+    };
+
     let burn_output = TxOut {
         value: 100000000, // 1 Dash
-        script_pubkey: ScriptBuf::new_op_return(&one_time_key_hash),
+        script_pubkey: ScriptBuf::new_op_return(&[]),
     };
+
     let change_output = TxOut {
         value: 5000,
         script_pubkey: ScriptBuf::new_p2pkh(&public_key_hash),
     };
-    let unrelated_burn_output = TxOut {
-        value: 5000,
-        script_pubkey: ScriptBuf::new_op_return(&[1, 2, 3]),
-    };
+
+    let payload = TransactionPayload::AssetLockPayloadType(AssetLockPayload {
+        version: 0,
+        credit_outputs: vec![funding_output],
+    });
+
     Transaction {
         version: 0,
         lock_time: 0,
         input: vec![input],
-        output: vec![burn_output, change_output, unrelated_burn_output],
-        special_transaction_payload: None,
+        output: vec![burn_output, change_output],
+        special_transaction_payload: Some(payload),
     }
 }
 

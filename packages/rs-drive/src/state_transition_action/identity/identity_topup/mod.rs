@@ -33,7 +33,7 @@ impl IdentityTopUpTransitionAction {
     /// Asset Lock Outpoint
     pub fn asset_lock_outpoint(&self) -> Bytes36 {
         match self {
-            IdentityTopUpTransitionAction::V0(transition) => transition.asset_lock_outpoint,
+            IdentityTopUpTransitionAction::V0(action) => action.asset_lock_outpoint,
         }
     }
 }

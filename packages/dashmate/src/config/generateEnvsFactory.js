@@ -24,7 +24,12 @@ function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
    * }}
    */
   function generateEnvs(config) {
-    const dockerComposeFiles = ['docker-compose.yml'];
+    const dynamicComposePath = homeDir.joinPath(
+      config.getName(),
+      'dynamic-compose.yml',
+    );
+
+    const dockerComposeFiles = ['docker-compose.yml', dynamicComposePath];
 
     const profiles = getConfigProfiles(config);
 
@@ -40,22 +45,6 @@ function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
       if (config.get('platform.dapi.api.docker.build.enabled')) {
         dockerComposeFiles.push('docker-compose.build.dapi_api.yml');
         dockerComposeFiles.push('docker-compose.build.dapi_tx_filter_stream.yml');
-      }
-
-      const fileLogs = Object.entries(config.get('platform.drive.abci.logs')).filter(([, settings]) => (
-        settings.destination !== 'stdout' && settings.destination !== 'stderr'
-      ));
-
-      if (fileLogs.length > 0) {
-        const composeVolumesPath = homeDir.joinPath(
-          config.getName(),
-          'platform',
-          'drive',
-          'abci',
-          'compose-volumes.yml',
-        );
-
-        dockerComposeFiles.push(composeVolumesPath);
       }
     }
 

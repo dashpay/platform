@@ -36,9 +36,9 @@ impl Drive {
             .map(|(epoch_index_key, element)| {
                 let epoch_index =
                     u16::from_be_bytes(epoch_index_key.as_slice().try_into().map_err(|_| {
-                        Error::Drive(DriveError::CorruptedSerialization(
+                        Error::Drive(DriveError::CorruptedSerialization(String::from(
                             "epoch index for pending pool updates must be i64",
-                        ))
+                        )))
                     })?);
 
                 if let Element::SumItem(credits, _) = element {
