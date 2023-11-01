@@ -45,9 +45,9 @@ impl Drive {
         for (epoch_index_key, element) in query_result.to_key_elements() {
             let epoch_index =
                 u16::from_be_bytes(epoch_index_key.as_slice().try_into().map_err(|_| {
-                    Error::Drive(DriveError::CorruptedSerialization(
+                    Error::Drive(DriveError::CorruptedSerialization(String::from(
                         "epoch index for pending epoch refunds must be u16",
-                    ))
+                    )))
                 })?);
 
             let existing_credits = refunds_per_epoch.get_mut(&epoch_index).ok_or(Error::Drive(

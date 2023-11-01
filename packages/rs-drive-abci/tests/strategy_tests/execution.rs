@@ -260,6 +260,11 @@ pub(crate) fn run_chain_for_strategy(
 
     platform
         .core_rpc
+        .expect_verify_instant_lock()
+        .returning(|_, _| Ok(true));
+
+    platform
+        .core_rpc
         .expect_get_quorum_listextended()
         .returning(move |core_height: Option<u32>| {
             let extended_info = if !strategy.rotate_quorums {
@@ -790,6 +795,7 @@ pub(crate) fn continue_chain_for_strategy(
                 &abci_app,
                 &root_app_hash,
                 &state_transaction_results,
+                &block_info,
                 platform_version,
             );
         }

@@ -6,6 +6,7 @@ use crate::{
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use crate::identity::signer::Signer;
+use crate::identity::state_transition::AssetLockProved;
 use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::AssetLockProof;
@@ -72,23 +73,6 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
 }
 
 impl IdentityCreateTransitionAccessorsV0 for IdentityCreateTransitionV0 {
-    /// Set asset lock
-    fn set_asset_lock_proof(
-        &mut self,
-        asset_lock_proof: AssetLockProof,
-    ) -> Result<(), NonConsensusError> {
-        self.identity_id = asset_lock_proof.create_identifier()?;
-
-        self.asset_lock_proof = asset_lock_proof;
-
-        Ok(())
-    }
-
-    /// Get asset lock proof
-    fn asset_lock_proof(&self) -> &AssetLockProof {
-        &self.asset_lock_proof
-    }
-
     /// Get identity public keys
     fn public_keys(&self) -> &[IdentityPublicKeyInCreation] {
         &self.public_keys

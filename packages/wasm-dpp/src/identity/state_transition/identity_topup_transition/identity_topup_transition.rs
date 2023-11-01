@@ -4,6 +4,7 @@ use std::default::Default;
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
+use dpp::identity::state_transition::AssetLockProved;
 use dpp::identity::KeyType;
 use dpp::platform_value::BinaryData;
 use dpp::serialization::ValueConvertible;

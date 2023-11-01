@@ -35,7 +35,7 @@ export default async function register(
   const { identity, identityCreateTransition, identityIndex } = await this.identities.utils
     .createIdentityCreateTransition(assetLockProof, assetLockPrivateKey);
 
-  this.logger.silly(`[Identity#register] Created IdentityCreateTransition with asset lock tx "${assetLockTransaction.hash}"`);
+  this.logger.silly(`[Identity#register] Created IdentityCreateTransition with identity id "${identity.getId()}" using asset lock tx "${assetLockTransaction.hash}" `);
 
   // Skipping validation because it's already done in createIdentityCreateTransition
   await broadcastStateTransition(this, identityCreateTransition, {

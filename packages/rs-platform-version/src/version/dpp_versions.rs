@@ -17,6 +17,17 @@ pub struct DPPVersion {
 #[derive(Clone, Debug, Default)]
 pub struct StateTransitionVersions {
     pub documents: DocumentTransitionVersions,
+    pub identities: IdentityTransitionVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct IdentityTransitionVersions {
+    pub asset_locks: IdentityTransitionAssetLockVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct IdentityTransitionAssetLockVersions {
+    pub validate_asset_lock_transaction_structure: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

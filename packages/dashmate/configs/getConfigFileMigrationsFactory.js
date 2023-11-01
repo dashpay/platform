@@ -274,6 +274,11 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             options.platform.drive.tenderdash.log.level = 'info';
+
+            if (options.network !== NETWORK_MAINNET) {
+              options.core.docker.image = base.get('core.docker.image');
+            }
+
             options.core.docker.commandArgs = [];
           });
 

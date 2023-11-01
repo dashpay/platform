@@ -236,6 +236,7 @@ mod tests {
                 state: &platform.state.read().unwrap(),
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
+                block_info: &BlockInfo::default(),
             };
 
             let result = DataContractUpdateTransition::V0(state_transition)
@@ -307,6 +308,7 @@ mod tests {
                 state: &platform.state.read().unwrap(),
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
+                block_info: &BlockInfo::default(),
             };
 
             let result = DataContractUpdateTransition::V0(state_transition)
@@ -447,6 +449,7 @@ mod tests {
                 state: &platform.state.read().unwrap(),
                 config: &platform.config,
                 core_rpc: &platform.core_rpc,
+                block_info: &BlockInfo::default(),
             };
 
             let result = state_transition
