@@ -2908,7 +2908,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["chai", "npm:4.3.9"],\
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["crypto-browserify", "npm:3.12.0"],\
-            ["crypto-js", "npm:4.1.1"],\
+            ["crypto-js", "npm:4.2.0"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["dotenv-safe", "npm:8.2.0"],\
             ["eslint", "npm:7.32.0"],\
@@ -6661,10 +6661,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["browserify-sign", [\
-        ["npm:4.2.1", {\
-          "packageLocation": "./.yarn/cache/browserify-sign-npm-4.2.1-9a8530ca87-0221f190e3.zip/node_modules/browserify-sign/",\
+        ["npm:4.2.2", {\
+          "packageLocation": "./.yarn/cache/browserify-sign-npm-4.2.2-92f50c6d35-b622730c0f.zip/node_modules/browserify-sign/",\
           "packageDependencies": [\
-            ["browserify-sign", "npm:4.2.1"],\
+            ["browserify-sign", "npm:4.2.2"],\
             ["bn.js", "npm:4.12.0"],\
             ["browserify-rsa", "npm:4.1.0"],\
             ["create-hash", "npm:1.2.0"],\
@@ -6672,7 +6672,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["elliptic", "npm:6.5.4"],\
             ["inherits", "npm:2.0.4"],\
             ["parse-asn1", "npm:5.1.6"],\
-            ["readable-stream", "npm:3.6.0"],\
+            ["readable-stream", "npm:3.6.2"],\
             ["safe-buffer", "npm:5.2.1"]\
           ],\
           "linkType": "HARD"\
@@ -8115,7 +8115,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["crypto-browserify", "npm:3.12.0"],\
             ["browserify-cipher", "npm:1.0.1"],\
-            ["browserify-sign", "npm:4.2.1"],\
+            ["browserify-sign", "npm:4.2.2"],\
             ["create-ecdh", "npm:4.0.4"],\
             ["create-hash", "npm:1.2.0"],\
             ["create-hmac", "npm:1.1.7"],\
@@ -8130,10 +8130,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["crypto-js", [\
-        ["npm:4.1.1", {\
-          "packageLocation": "./.yarn/cache/crypto-js-npm-4.1.1-38a3b8c19d-b3747c12ee.zip/node_modules/crypto-js/",\
+        ["npm:4.2.0", {\
+          "packageLocation": "./.yarn/cache/crypto-js-npm-4.2.0-d6f7744e63-f051666dbc.zip/node_modules/crypto-js/",\
           "packageDependencies": [\
-            ["crypto-js", "npm:4.1.1"]\
+            ["crypto-js", "npm:4.2.0"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -15801,6 +15801,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/readable-stream-npm-3.6.0-23a4a5eb56-d4ea81502d.zip/node_modules/readable-stream/",\
           "packageDependencies": [\
             ["readable-stream", "npm:3.6.0"],\
+            ["inherits", "npm:2.0.4"],\
+            ["string_decoder", "npm:1.3.0"],\
+            ["util-deprecate", "npm:1.0.2"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["npm:3.6.2", {\
+          "packageLocation": "./.yarn/cache/readable-stream-npm-3.6.2-d2a6069158-bdcbe6c22e.zip/node_modules/readable-stream/",\
+          "packageDependencies": [\
+            ["readable-stream", "npm:3.6.2"],\
             ["inherits", "npm:2.0.4"],\
             ["string_decoder", "npm:1.3.0"],\
             ["util-deprecate", "npm:1.0.2"]\
