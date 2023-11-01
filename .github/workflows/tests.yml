@@ -39,19 +39,16 @@ jobs:
           filters: .github/rs-package-filters.yml
 
   build-js:
-    name: Build JS
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     secrets: inherit
     uses: ./.github/workflows/call-build-js.yml
 
   build-images:
-    name: Build images
     needs: build-js
     secrets: inherit
     uses: ./.github/workflows/call-build-images.yml
 
   build-rust:
-    name: Build Rust
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     secrets: inherit
     uses: ./.github/workflows/call-build-rust.yml

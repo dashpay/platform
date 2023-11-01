@@ -81,6 +81,12 @@ jobs:
         with:
           name: dashpay/base
 
+      - name: Configure services to be built
+        run: |
+          yarn dashmate config set --config=local platform.drive.abci.docker.build.enabled true
+          yarn dashmate config set --config=local platform.dapi.api.docker.build.enabled true
+          yarn dashmate config set --config=local dashmate.helper.docker.build.enabled true
+
       - name: Build docker images
         run: yarn dashmate docker build --config local
         env:

@@ -3,6 +3,7 @@ on:
 
 jobs:
   build-rust:
+    name: Build Rust
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     steps:
       - name: Check out repo
