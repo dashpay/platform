@@ -38,7 +38,6 @@ describe('getVersionUpgradeStateHandlerFactory', () => {
 
     versionNumber = 1;
     voteCount = 1;
-    proTxHash = Buffer.alloc(32).fill(1);
     const { GetVersionUpgradeStateResponseV0 } = GetVersionUpgradeStateResponse;
     const { Versions, VersionEntry } = GetVersionUpgradeStateResponseV0;
     response = new GetVersionUpgradeStateResponse();

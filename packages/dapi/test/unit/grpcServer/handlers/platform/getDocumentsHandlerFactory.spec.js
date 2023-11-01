@@ -82,8 +82,6 @@ describe('getDocumentsHandlerFactory', () => {
 
     const { GetDocumentsResponseV0 } = GetDocumentsResponse;
     response = new GetDocumentsResponse();
-    // const documentsList = new GetDocumentsResponse.Documents();
-    // documentsList.setDocumentsList(documentsSerialized);
     response.setV0(
       new GetDocumentsResponseV0()
         .setDocuments(
