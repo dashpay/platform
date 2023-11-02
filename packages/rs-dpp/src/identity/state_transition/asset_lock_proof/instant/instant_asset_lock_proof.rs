@@ -10,7 +10,8 @@ use crate::consensus::basic::identity::IdentityAssetLockProofLockedTransactionMi
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use platform_version::version::PlatformVersion;
+use platform_version::version::{FeatureVersion, PlatformVersion};
+use crate::identity::state_transition::asset_lock_proof::instant::methods;
 use crate::identity::state_transition::asset_lock_proof::validate_asset_lock_transaction_structure::validate_asset_lock_transaction_structure;
 
 use crate::prelude::Identifier;
@@ -159,36 +160,29 @@ impl InstantAssetLockProof {
             .map_err(|e| ProtocolError::EncodingError(e.to_string()))
     }
 
-    // TODO: Versioning
     /// Validate Instant Asset Lock Proof structure
     #[cfg(feature = "validation")]
     pub fn validate_structure(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        let mut result = SimpleConsensusValidationResult::default();
-
-        let transaction_id = self.transaction().txid();
-        if self.instant_lock().txid != transaction_id {
-            result.add_error(IdentityAssetLockProofLockedTransactionMismatchError::new(
-                self.instant_lock().txid,
-                transaction_id,
-            ));
-
-            return Ok(result);
+        match platform_version
+            .dpp
+            .state_transitions
+            .identities
+            .asset_locks
+            .validate_instant_asset_lock_proof_structure
+        {
+            0 => methods::validate_structure::validate_instant_asset_lock_proof_structure_v0(
+                self,
+                platform_version,
+            ),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_instant_asset_lock_proof_structure".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
-
-        let validate_transaction_result = validate_asset_lock_transaction_structure(
-            self.transaction(),
-            self.output_index(),
-            platform_version,
-        )?;
-
-        if !validate_transaction_result.is_valid() {
-            result.merge(validate_transaction_result);
-        }
-
-        Ok(result)
     }
 }
 
