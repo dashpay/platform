@@ -2,7 +2,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const { NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_MAINNET } = require('../src/constants');
+const { NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_MAINNET,
+  SSL_PROVIDERS
+} = require('../src/constants');
 
 /**
  * @param {HomeDir} homeDir
@@ -224,12 +226,12 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
       },
       '0.25.3': (configFile) => {
         Object.entries(configFile.configs)
-          .forEach(([, options]) => {
-            if (options.network === NETWORK_TESTNET) {
+          .forEach(([name, options]) => {
+            if (options.network === NETWORK_TESTNET && name !== 'base') {
               options.platform.drive.abci.epochTime = testnet.get('platform.drive.abci.epochTime');
             }
             options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
-            options.platform.dapi.api.docker.image = base.get('platform.drive.abci.docker.image');
+            options.platform.dapi.api.docker.image = base.get('platform.dapi.api.docker.image');
           });
 
         return configFile;
@@ -270,12 +272,23 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
-      '1.0.0-dev.1': (configFile) => {
+      '0.25.11': (configFile) => {
+        if (configFile.configs.base) {
+          configFile.configs.base.core.docker.image = base.get('core.docker.image');
+        }
+        if (configFile.configs.local) {
+          configFile.configs.local.platform.dapi.envoy.ssl.provider = SSL_PROVIDERS.SELF_SIGNED;
+        }
+
         Object.entries(configFile.configs)
-          .forEach(([, options]) => {
+          .forEach(([name, options]) => {
             options.platform.drive.tenderdash.log.level = 'info';
 
-            if (options.network !== NETWORK_MAINNET) {
+            if (defaultConfigs.has(name) && options.group === 'local') {
+              options.core.docker.image = defaultConfigs.get(name).get('core.docker.image');
+            }
+
+            if (options.network !== NETWORK_MAINNET && options.network !== NETWORK_TESTNET) {
               options.core.docker.image = base.get('core.docker.image');
             }
 
