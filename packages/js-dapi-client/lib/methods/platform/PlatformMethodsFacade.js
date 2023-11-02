@@ -24,7 +24,9 @@ class PlatformMethodsFacade {
     this.waitForStateTransitionResult = waitForStateTransitionResultFactory(grpcTransport);
     this.getConsensusParams = getConsensusParamsFactory(grpcTransport);
     this.getEpochsInfo = getEpochsInfoFactory(grpcTransport);
-    this.getProtocolVersionUpgradeVoteStatus = getProtocolVersionUpgradeVoteStatusFactory(grpcTransport);
+    this.getProtocolVersionUpgradeVoteStatus = getProtocolVersionUpgradeVoteStatusFactory(
+      grpcTransport,
+    );
     this.getProtocolVersionUpgradeState = getProtocolVersionUpgradeStateFactory(grpcTransport);
   }
 }

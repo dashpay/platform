@@ -26,7 +26,9 @@ describe('GetProtocolVersionUpgradeVoteStatusResponse', () => {
     versionSignalFixture = new VersionSignalClass(Buffer.alloc(32).toString('hex'), 1);
     proofFixture = getProofFixture();
 
-    const { GetProtocolVersionUpgradeVoteStatusResponseV0 } = GetProtocolVersionUpgradeVoteStatusResponse;
+    const {
+      GetProtocolVersionUpgradeVoteStatusResponseV0,
+    } = GetProtocolVersionUpgradeVoteStatusResponse;
     const { VersionSignal, VersionSignals } = GetProtocolVersionUpgradeVoteStatusResponseV0;
     proto = new GetProtocolVersionUpgradeVoteStatusResponse();
 

@@ -38,7 +38,9 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
     metadata.setTimeMs(metadataFixture.timeMs);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
-    const { GetProtocolVersionUpgradeVoteStatusResponseV0 } = GetProtocolVersionUpgradeVoteStatusResponse;
+    const {
+      GetProtocolVersionUpgradeVoteStatusResponseV0,
+    } = GetProtocolVersionUpgradeVoteStatusResponse;
     const {
       VersionSignal: VersionSignalProto,
       VersionSignals,
@@ -76,7 +78,9 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
   it('should return vote statuses', async () => {
     const result = await getProtocolVersionUpgradeVoteStatus(startProTxHash, 1, options);
 
-    const { GetProtocolVersionUpgradeVoteStatusRequestV0 } = GetProtocolVersionUpgradeVoteStatusRequest;
+    const {
+      GetProtocolVersionUpgradeVoteStatusRequestV0,
+    } = GetProtocolVersionUpgradeVoteStatusRequest;
     const request = new GetProtocolVersionUpgradeVoteStatusRequest();
     request.setV0(
       new GetProtocolVersionUpgradeVoteStatusRequestV0()
@@ -105,7 +109,9 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
 
     const result = await getProtocolVersionUpgradeVoteStatus(startProTxHash, 1, options);
 
-    const { GetProtocolVersionUpgradeVoteStatusRequestV0 } = GetProtocolVersionUpgradeVoteStatusRequest;
+    const {
+      GetProtocolVersionUpgradeVoteStatusRequestV0,
+    } = GetProtocolVersionUpgradeVoteStatusRequest;
     const request = new GetProtocolVersionUpgradeVoteStatusRequest();
     request.setV0(
       new GetProtocolVersionUpgradeVoteStatusRequestV0()
@@ -142,7 +148,9 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
 
     grpcTransportMock.request.throws(error);
 
-    const { GetProtocolVersionUpgradeVoteStatusRequestV0 } = GetProtocolVersionUpgradeVoteStatusRequest;
+    const {
+      GetProtocolVersionUpgradeVoteStatusRequestV0,
+    } = GetProtocolVersionUpgradeVoteStatusRequest;
     const request = new GetProtocolVersionUpgradeVoteStatusRequest();
     request.setV0(
       new GetProtocolVersionUpgradeVoteStatusRequestV0()

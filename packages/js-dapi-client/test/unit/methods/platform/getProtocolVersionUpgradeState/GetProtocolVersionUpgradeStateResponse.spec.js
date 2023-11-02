@@ -106,7 +106,8 @@ describe('GetProtocolVersionUpgradeStateResponse', () => {
     proto.getV0().setVersions(undefined);
     proto.getV0().setProof(proofProto);
 
-    getProtocolVersionUpgradeState = GetProtocolVersionUpgradeStateResponseClass.createFromProto(proto);
+    getProtocolVersionUpgradeState = GetProtocolVersionUpgradeStateResponseClass
+      .createFromProto(proto);
 
     expect(getProtocolVersionUpgradeState.getVersionEntries()).to.deep.equal([]);
     expect(getProtocolVersionUpgradeState.getMetadata()).to.deep.equal(metadataFixture);
@@ -123,7 +124,8 @@ describe('GetProtocolVersionUpgradeStateResponse', () => {
     proto.getV0().setMetadata(undefined);
 
     try {
-      getProtocolVersionUpgradeState = GetProtocolVersionUpgradeStateResponseClass.createFromProto(proto);
+      getProtocolVersionUpgradeState = GetProtocolVersionUpgradeStateResponseClass
+        .createFromProto(proto);
 
       expect.fail('should throw InvalidResponseError');
     } catch (e) {
@@ -135,7 +137,8 @@ describe('GetProtocolVersionUpgradeStateResponse', () => {
     proto.getV0().setVersions(undefined);
 
     try {
-      getProtocolVersionUpgradeState = GetProtocolVersionUpgradeStateResponseClass.createFromProto(proto);
+      getProtocolVersionUpgradeState = GetProtocolVersionUpgradeStateResponseClass
+        .createFromProto(proto);
 
       expect.fail('should throw InvalidResponseError');
     } catch (e) {

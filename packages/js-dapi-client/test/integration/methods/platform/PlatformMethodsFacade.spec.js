@@ -24,7 +24,9 @@ const { GetIdentityResponseV0 } = GetIdentityResponse;
 const { GetDocumentsResponseV0 } = GetDocumentsResponse;
 const { GetDataContractResponseV0 } = GetDataContractResponse;
 const { GetEpochsInfoResponseV0 } = GetEpochsInfoResponse;
-const { GetProtocolVersionUpgradeVoteStatusResponseV0 } = GetProtocolVersionUpgradeVoteStatusResponse;
+const {
+  GetProtocolVersionUpgradeVoteStatusResponseV0,
+} = GetProtocolVersionUpgradeVoteStatusResponse;
 const { GetProtocolVersionUpgradeStateResponseV0 } = GetProtocolVersionUpgradeStateResponse;
 
 describe('PlatformMethodsFacade', () => {

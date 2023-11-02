@@ -23,8 +23,10 @@ function getProtocolVersionUpgradeVoteStatusFactory(grpcTransport) {
    * @returns {Promise<GetProtocolVersionUpgradeVoteStatusResponse>}
    */
   async function getProtocolVersionUpgradeVoteStatus(startProTxHash, count, options = {}) {
-    // eslint-disable-next-line max-len
-    const { GetProtocolVersionUpgradeVoteStatusRequestV0 } = GetProtocolVersionUpgradeVoteStatusRequest;
+    const {
+      GetProtocolVersionUpgradeVoteStatusRequestV0,
+    } = GetProtocolVersionUpgradeVoteStatusRequest;
+
     // eslint-disable-next-line max-len
     const getProtocolVersionUpgradeVoteStatusRequest = new GetProtocolVersionUpgradeVoteStatusRequest();
 
