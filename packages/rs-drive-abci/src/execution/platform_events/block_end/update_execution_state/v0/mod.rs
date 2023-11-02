@@ -12,7 +12,7 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Updates the state cache at the end of finalize block. This is done by overriding the current
+    /// Updates the execution state at the end of finalize block. This is done by overriding the current
     /// platform state cache with the block execution state cache.
     ///
     /// This function takes an `ExtendedBlockInfo` and a `Transaction` as input and updates the
@@ -34,7 +34,7 @@ where
     /// This function may return an `Error` variant if there is a problem with updating the state cache
     /// and quorums or storing the ephemeral data.
     ///
-    pub(super) fn update_state_cache_v0(
+    pub(super) fn update_execution_state_v0(
         &self,
         extended_block_info: ExtendedBlockInfo,
         transaction: &Transaction,
@@ -46,25 +46,25 @@ where
             ExecutionError::CorruptedCodeExecution("there should be a block execution context"),
         ))?;
 
-        let mut state_cache = self.state.write().unwrap();
+        let mut state = self.state.write().unwrap();
 
-        *state_cache = block_execution_context.block_platform_state_owned();
+        *state = block_execution_context.block_platform_state_owned();
 
-        if let Some(next_validator_set_quorum_hash) =
-            state_cache.take_next_validator_set_quorum_hash()
-        {
-            state_cache.set_current_validator_set_quorum_hash(next_validator_set_quorum_hash);
+        if let Some(next_validator_set_quorum_hash) = state.take_next_validator_set_quorum_hash() {
+            state.set_current_validator_set_quorum_hash(next_validator_set_quorum_hash);
         }
 
-        state_cache.set_last_committed_block_info(Some(extended_block_info));
+        state.set_last_committed_block_info(Some(extended_block_info));
 
-        state_cache.set_genesis_block_info(None);
+        state.set_genesis_block_info(None);
 
         //todo: verify this with an update
-        PlatformVersion::set_current(PlatformVersion::get(platform_version.protocol_version)?);
+        let version = PlatformVersion::get(platform_version.protocol_version)?;
 
-        // Persist ephemeral data
-        self.store_ephemeral_state(&state_cache, transaction, platform_version)?;
+        PlatformVersion::set_current(version);
+
+        // Persist execution state
+        self.store_execution_state(&state, transaction, platform_version)?;
 
         Ok(())
     }

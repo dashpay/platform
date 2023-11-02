@@ -51,6 +51,7 @@ pub struct PlatformStateV0 {
 impl Debug for PlatformStateV0 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PlatformStateV0")
+            .field("genesis_block_info", &self.genesis_block_info)
             .field("last_committed_block_info", &self.last_committed_block_info)
             .field(
                 "current_protocol_version_in_consensus",

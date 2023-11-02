@@ -1,7 +1,5 @@
-/// Storage of the ephemeral state
-pub(in crate::execution) mod store_ephemeral_state;
-/// Updating the state cache happens as the final part of block finalization
-pub(in crate::execution) mod update_state_cache;
+/// Updating the execution state happens as the final part of block finalization
+pub(in crate::execution) mod update_execution_state;
 /// Validator set update
 pub(in crate::execution) mod validator_set_update;
 

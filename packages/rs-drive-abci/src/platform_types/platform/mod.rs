@@ -146,13 +146,8 @@ impl Platform<MockCoreRPCLike> {
     }
 
     /// Recreate the state from the backing store
-    pub fn recreate_state(&self, _platform_version: &PlatformVersion) -> Result<bool, Error> {
-        let Some(serialized_platform_state) = self
-            .drive
-            .grove
-            .get_aux(b"saved_state", None)
-            .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))?
+    pub fn recreate_state(&self, platform_version: &PlatformVersion) -> Result<bool, Error> {
+        let Some(serialized_platform_state) = self.fetch_execution_state(None, platform_version)
         else {
             return Ok(false);
         };

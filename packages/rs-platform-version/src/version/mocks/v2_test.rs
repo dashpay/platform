@@ -531,8 +531,8 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 clear_drive_block_cache: 0,
             },
             block_end: DriveAbciBlockEndMethodVersions {
-                store_ephemeral_state: 0,
-                update_state_cache: 0,
+                store_execution_state: 0,
+                update_execution_state: 0,
                 update_drive_cache: 0,
                 validator_set_update: 0,
             },

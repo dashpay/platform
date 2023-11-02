@@ -4,6 +4,7 @@ mod check_tx;
 pub mod engine;
 /// platform execution events
 pub(in crate::execution) mod platform_events;
+mod storage;
 /// Types needed in execution
 pub mod types;
 /// Validation module

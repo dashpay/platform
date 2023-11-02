@@ -69,12 +69,19 @@ pub struct DriveAbciMethodVersions {
     pub epoch: DriveAbciEpochMethodVersions,
     pub block_start: DriveAbciBlockStartMethodVersions,
     pub block_end: DriveAbciBlockEndMethodVersions,
+    pub execution_state_storage: DriveAbciExecutionStateStorageMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciValidationVersions {
     pub state_transitions: DriveAbciStateTransitionValidationVersions,
     pub process_state_transition: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+struct DriveAbciExecutionStateStorageMethodVersions {
+    pub fetch_execution_state: FeatureVersion,
+    pub store_execution_state: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -222,8 +229,7 @@ pub struct DriveAbciBlockStartMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciBlockEndMethodVersions {
-    pub store_ephemeral_state: FeatureVersion,
-    pub update_state_cache: FeatureVersion,
+    pub update_execution_state: FeatureVersion,
     pub update_drive_cache: FeatureVersion,
     pub validator_set_update: FeatureVersion,
 }

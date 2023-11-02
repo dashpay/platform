@@ -14,7 +14,7 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Updates the state cache at the end of finalize block. This is done by overriding the current
+    /// Updates the execution state at the end of finalize block. This is done by overriding the current
     /// platform state cache with the block execution state cache.
     ///
     /// This function is a version handler that directs to specific version implementations
@@ -32,7 +32,7 @@ where
     /// * `Result<(), Error>` - If the state cache and quorums are successfully updated, it returns `Ok(())`.
     ///   If there is a problem with the update, it returns an `Error`.
     ///
-    pub fn update_state_cache(
+    pub fn update_execution_state(
         &self,
         extended_block_info: ExtendedBlockInfo,
         transaction: &Transaction,
@@ -42,9 +42,9 @@ where
             .drive_abci
             .methods
             .block_end
-            .update_state_cache
+            .update_execution_state
         {
-            0 => self.update_state_cache_v0(extended_block_info, transaction, platform_version),
+            0 => self.update_execution_state_v0(extended_block_info, transaction, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "update_state_cache".to_string(),
                 known_versions: vec![0],
