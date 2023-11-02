@@ -128,12 +128,14 @@ impl IdentityFacadeWasm {
         instant_lock: Vec<u8>,
         asset_lock_transaction: Vec<u8>,
         output_index: u32,
-    ) -> Result<InstantAssetLockProofWasm, JsValue> {
-        let instant_lock: InstantLock =
-            consensus::deserialize(&instant_lock).map_err(|e| e.to_string())?;
+    ) -> Result<InstantAssetLockProofWasm, JsError> {
+        let instant_lock: InstantLock = consensus::deserialize(&instant_lock)
+            .map_err(|e| JsError::new(format!("can't deserialize instant lock: {e}").as_str()))?;
 
-        let asset_lock_transaction: Transaction =
-            consensus::deserialize(&asset_lock_transaction).map_err(|e| e.to_string())?;
+        let asset_lock_transaction: Transaction = consensus::deserialize(&asset_lock_transaction)
+            .map_err(|e| {
+            JsError::new(format!("can't deserialize transaction: {e}").as_str())
+        })?;
 
         Ok(IdentityFacade::create_instant_lock_proof(
             instant_lock,

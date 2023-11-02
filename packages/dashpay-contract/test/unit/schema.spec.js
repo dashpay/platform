@@ -1,42 +1,39 @@
 const { expect } = require('chai');
-const DashPlatformProtocol = require('@dashevo/dpp');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const crypto = require('crypto');
+const { DashPlatformProtocol, JsonSchemaError } = require('@dashevo/wasm-dpp');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const schema = require('../../schema/dashpay.schema.json');
 
 const whitepaperMasternodeText = 'Full nodes are servers running on a P2P network that allow peers to use them to receive updates about the events on the network. These nodes utilize significant amounts of traffic and other resources that incur a substantial cost. As a result, a steady decrease in the amount of these nodes has been observed for some time on the Bitcoin network and as a result, block propagation times have been upwards of 40 seconds. Many solutions have been proposed such as a new reward scheme by Microsoft Research and the Bitnodes incentive program';
 const encoded32Chars = '4fafc98bbfe597f7ba2c9f767d52036d';
 const encoded64Chars = '4fafc98bbfe597f7ba2c9f767d52036d2226175960a908e355e5c575711eb166';
 
-// TODO: consider restoring with wasm-dpp
-describe.skip('Dashpay Contract', () => {
+const expectJsonSchemaError = (validationResult) => {
+  const errors = validationResult.getErrors();
+  expect(errors).to.have.length(1);
+
+  const error = validationResult.getErrors()[0];
+  expect(error).to.be.instanceof(JsonSchemaError);
+
+  return error;
+};
+
+describe('Dashpay Contract', () => {
   let dpp;
   let contract;
   let identityId;
 
-  beforeEach(async function beforeEach() {
-    const fetchContractStub = this.sinon.stub();
+  beforeEach(async () => {
+    dpp = new DashPlatformProtocol(
+      { generate: () => crypto.randomBytes(32) },
+    );
 
-    dpp = new DashPlatformProtocol({
-      stateRepository: {
-        fetchDataContract: fetchContractStub,
-      },
-    });
-
-    await dpp.initialize();
-
-    identityId = generateRandomIdentifier();
-
+    identityId = await generateRandomIdentifier();
     contract = dpp.dataContract.create(identityId, schema);
-
-    fetchContractStub.resolves(contract);
   });
 
-  it('should have a valid contract definition', async function shouldHaveValidContract() {
-    this.timeout(5000);
-
-    const validationResult = await dpp.dataContract.validate(contract);
-
-    expect(validationResult.isValid()).to.be.true();
+  it('should have a valid contract definition', async () => {
+    expect(() => dpp.dataContract.create(identityId, schema)).to.not.throw();
   });
 
   describe('Documents', () => {
@@ -54,20 +51,12 @@ describe.skip('Dashpay Contract', () => {
         it('should have less than 25 chars length', async () => {
           profileData.displayName = 'AliceAndBobAndCarolAndDanAndEveAndFrankAndIvanAndMikeAndWalterAndWendy';
 
-          try {
-            dpp.document.create(contract, identityId, 'profile', profileData);
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxLength');
-            expect(error.instancePath).to.equal('/displayName');
-          }
+          expect(error.keyword).to.equal('maxLength');
+          expect(error.instancePath).to.deep.equal('/displayName');
         });
       });
 
@@ -75,20 +64,12 @@ describe.skip('Dashpay Contract', () => {
         it('should have less than 256 chars length', async () => {
           profileData.publicMessage = whitepaperMasternodeText;
 
-          try {
-            dpp.document.create(contract, identityId, 'profile', profileData);
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxLength');
-            expect(error.instancePath).to.equal('/publicMessage');
-          }
+          expect(error.keyword).to.equal('maxLength');
+          expect(error.instancePath).to.deep.equal('/publicMessage');
         });
       });
 
@@ -96,58 +77,34 @@ describe.skip('Dashpay Contract', () => {
         it('should not be empty', async () => {
           profileData.avatarUrl = '';
 
-          try {
-            dpp.document.create(contract, identityId, 'profile', profileData);
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('format');
-            expect(error.instancePath).to.equal('/avatarUrl');
-          }
+          expect(error.keyword).to.equal('format');
+          expect(error.instancePath).to.deep.equal('/avatarUrl');
         });
 
         it('should have less than 2048 chars length', async () => {
           profileData.avatarUrl = `https://github.com/dashpay/dash/wiki/Whitepaper?text=${encodeURI(whitepaperMasternodeText)}${encodeURI(whitepaperMasternodeText)}${encodeURI(whitepaperMasternodeText)}${encodeURI(whitepaperMasternodeText)}${encodeURI(whitepaperMasternodeText)}`;
 
-          try {
-            dpp.document.create(contract, identityId, 'profile', profileData);
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxLength');
-            expect(error.instancePath).to.equal('/avatarUrl');
-          }
+          expect(error.keyword).to.equal('maxLength');
+          expect(error.instancePath).to.deep.equal('/avatarUrl');
         });
 
         it('should be of type URL', async () => {
           profileData.avatarUrl = 'notAUrl';
 
-          try {
-            dpp.document.create(contract, identityId, 'profile', profileData);
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('format');
-            expect(error.instancePath).to.equal('/avatarUrl');
-          }
+          expect(error.keyword).to.equal('format');
+          expect(error.instancePath).to.deep.equal('/avatarUrl');
         });
       });
 
@@ -155,52 +112,34 @@ describe.skip('Dashpay Contract', () => {
         it('should have minimum length of 32', async () => {
           profileData.avatarHash = Buffer.alloc(0);
 
-          try {
-            dpp.document.create(contract, identityId, 'profile', profileData);
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minItems');
-            expect(error.instancePath).to.equal('/avatarHash');
-          }
+          expect(error.keyword).to.equal('minItems');
+          expect(error.instancePath).to.deep.equal('/avatarHash');
         });
 
         it('should have maximum length of 32', async () => {
           profileData.avatarHash = Buffer.alloc(33);
 
-          try {
-            dpp.document.create(contract, identityId, 'profile', profileData);
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxItems');
-            expect(error.instancePath).to.equal('/avatarHash');
-          }
+          expect(error.keyword).to.equal('maxItems');
+          expect(error.instancePath).to.deep.equal('/avatarHash');
         });
 
         it('should be of type array', async () => {
           profileData.avatarHash = 'notAnArray';
 
-          try {
-            dpp.document.create(contract, identityId, 'profile', profileData);
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('type');
-            expect(error.instancePath).to.equal('/avatarHash');
-          }
+          expect(error.keyword).to.equal('type');
+          expect(error.instancePath).to.deep.equal('/avatarHash');
         });
       });
 
@@ -208,78 +147,52 @@ describe.skip('Dashpay Contract', () => {
         it('should have minimum length of 8', async () => {
           profileData.avatarFingerprint = Buffer.alloc(0);
 
-          try {
-            dpp.document.create(contract, identityId, 'profile', profileData);
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minItems');
-            expect(error.instancePath).to.equal('/avatarFingerprint');
-          }
+          expect(error.keyword).to.equal('minItems');
+          expect(error.instancePath).to.deep.equal('/avatarFingerprint');
         });
 
         it('should have maximum length of 8', async () => {
           profileData.avatarFingerprint = Buffer.alloc(33);
 
-          try {
-            dpp.document.create(contract, identityId, 'profile', profileData);
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxItems');
-            expect(error.instancePath).to.equal('/avatarFingerprint');
-          }
+          expect(error.keyword).to.equal('maxItems');
+          expect(error.instancePath).to.deep.equal('/avatarFingerprint');
         });
 
         it('should be of type array', async () => {
           profileData.avatarFingerprint = 'notAnArray';
 
-          try {
-            dpp.document.create(contract, identityId, 'profile', profileData);
+          const document = dpp.document.create(contract, identityId, 'profile', profileData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('type');
-            expect(error.instancePath).to.equal('/avatarFingerprint');
-          }
+          expect(error.keyword).to.equal('type');
+          expect(error.instancePath).to.deep.equal('/avatarFingerprint');
         });
       });
 
       it('should not have additional properties', async () => {
         profileData.someOtherProperty = 42;
 
-        try {
-          dpp.document.create(contract, identityId, 'profile', profileData);
+        const document = dpp.document.create(contract, identityId, 'profile', profileData);
+        const validationResult = document.validate(dpp.protocolVersion);
+        const error = expectJsonSchemaError(validationResult);
 
-          expect.fail('should throw error');
-        } catch (e) {
-          expect(e.name).to.equal('InvalidDocumentError');
-          expect(e.errors).to.have.a.lengthOf(1);
-
-          const [error] = e.errors;
-
-          expect(error.name).to.equal('JsonSchemaError');
-          expect(error.keyword).to.equal('additionalProperties');
-          expect(error.params.additionalProperty).to.equal('someOtherProperty');
-        }
+        expect(error.keyword).to.equal('additionalProperties');
+        expect(error.params.additionalProperties).to.deep.equal(['someOtherProperty']);
       });
 
       it('should be valid', async () => {
         const profile = dpp.document.create(contract, identityId, 'profile', profileData);
 
-        const result = await dpp.document.validate(profile);
+        const result = profile.validate(dpp.protocolVersion);
 
         expect(result.isValid()).to.be.true();
       });
@@ -301,58 +214,34 @@ describe.skip('Dashpay Contract', () => {
         it('should be defined', async () => {
           delete contactInfoData.encToUserId;
 
-          try {
-            dpp.document.create(contract, identityId, 'contactInfo', contactInfoData);
+          const document = dpp.document.create(contract, identityId, 'contactInfo', contactInfoData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('encToUserId');
-          }
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('encToUserId');
         });
 
         it('should have exactly 32 chars length', async () => {
           contactInfoData.encToUserId = Buffer.from(`${encoded64Chars}11`, 'hex');
 
-          try {
-            dpp.document.create(contract, identityId, 'contactInfo', contactInfoData);
+          const document = dpp.document.create(contract, identityId, 'contactInfo', contactInfoData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxItems');
-            expect(error.instancePath).to.equal('/encToUserId');
-          }
+          expect(error.keyword).to.equal('maxItems');
+          expect(error.instancePath).to.equal('/encToUserId');
         });
 
         it('should have more or 32 chars length', async () => {
           contactInfoData.encToUserId = Buffer.from(encoded32Chars, 'hex');
 
-          try {
-            dpp.document.create(contract, identityId, 'contactInfo', contactInfoData);
+          const document = dpp.document.create(contract, identityId, 'contactInfo', contactInfoData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minItems');
-            expect(error.instancePath).to.equal('/encToUserId');
-          }
+          expect(error.keyword).to.equal('minItems');
+          expect(error.instancePath).to.equal('/encToUserId');
         });
       });
 
@@ -360,39 +249,23 @@ describe.skip('Dashpay Contract', () => {
         it('should be defined', async () => {
           delete contactInfoData.rootEncryptionKeyIndex;
 
-          try {
-            dpp.document.create(contract, identityId, 'contactInfo', contactInfoData);
+          const document = dpp.document.create(contract, identityId, 'contactInfo', contactInfoData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('rootEncryptionKeyIndex');
-          }
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('rootEncryptionKeyIndex');
         });
 
         it('should not be less than 0', async () => {
           contactInfoData.rootEncryptionKeyIndex = -1;
 
-          try {
-            dpp.document.create(contract, identityId, 'contactInfo', contactInfoData);
+          const document = dpp.document.create(contract, identityId, 'contactInfo', contactInfoData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minimum');
-            expect(error.instancePath).to.equal('/rootEncryptionKeyIndex');
-          }
+          expect(error.keyword).to.equal('minimum');
+          expect(error.instancePath).to.equal('/rootEncryptionKeyIndex');
         });
       });
 
@@ -400,40 +273,24 @@ describe.skip('Dashpay Contract', () => {
         it('should be defined', async () => {
           delete contactInfoData.privateData;
 
-          try {
-            dpp.document.create(contract, identityId, 'contactInfo', contactInfoData);
+          const document = dpp.document.create(contract, identityId, 'contactInfo', contactInfoData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('privateData');
-          }
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('privateData');
         });
       });
 
       it('should not have additional properties', async () => {
         contactInfoData.someOtherProperty = 42;
 
-        try {
-          dpp.document.create(contract, identityId, 'contactInfo', contactInfoData);
+        const document = dpp.document.create(contract, identityId, 'contactInfo', contactInfoData);
+        const validationResult = document.validate(dpp.protocolVersion);
+        const error = expectJsonSchemaError(validationResult);
 
-          expect.fail('should throw error');
-        } catch (e) {
-          expect(e.name).to.equal('InvalidDocumentError');
-          expect(e.errors).to.have.a.lengthOf(1);
-
-          const [error] = e.errors;
-
-          expect(error.name).to.equal('JsonSchemaError');
-          expect(error.keyword).to.equal('additionalProperties');
-          expect(error.params.additionalProperty).to.equal('someOtherProperty');
-        }
+        expect(error.keyword).to.equal('additionalProperties');
+        expect(error.params.additionalProperties).to.deep.equal(['someOtherProperty']);
       });
     });
 
@@ -454,20 +311,12 @@ describe.skip('Dashpay Contract', () => {
         it('should be defined', async () => {
           delete contactRequestData.toUserId;
 
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('toUserId');
-          }
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('toUserId');
         });
       });
 
@@ -475,20 +324,12 @@ describe.skip('Dashpay Contract', () => {
         it('should be defined', async () => {
           delete contactRequestData.encryptedPublicKey;
 
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('encryptedPublicKey');
-          }
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('encryptedPublicKey');
         });
       });
 
@@ -496,39 +337,23 @@ describe.skip('Dashpay Contract', () => {
         it('should be defined', async () => {
           delete contactRequestData.senderKeyIndex;
 
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('senderKeyIndex');
-          }
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('senderKeyIndex');
         });
 
         it('should not be less than 0', async () => {
           contactRequestData.senderKeyIndex = -1;
 
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minimum');
-            expect(error.instancePath).to.equal('/senderKeyIndex');
-          }
+          expect(error.keyword).to.equal('minimum');
+          expect(error.instancePath).to.equal('/senderKeyIndex');
         });
       });
 
@@ -536,39 +361,23 @@ describe.skip('Dashpay Contract', () => {
         it('should be defined', async () => {
           delete contactRequestData.recipientKeyIndex;
 
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('recipientKeyIndex');
-          }
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('recipientKeyIndex');
         });
 
         it('should not be less than 0', async () => {
           contactRequestData.recipientKeyIndex = -1;
 
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-
-            const [error] = e.errors;
-
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minimum');
-            expect(error.instancePath).to.equal('/recipientKeyIndex');
-          }
+          expect(error.keyword).to.equal('minimum');
+          expect(error.instancePath).to.equal('/recipientKeyIndex');
         });
       });
 
@@ -576,51 +385,34 @@ describe.skip('Dashpay Contract', () => {
         it('should have minimum length of 48', async () => {
           contactRequestData.encryptedAccountLabel = Buffer.alloc(0);
 
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minItems');
-            expect(error.instancePath).to.equal('/encryptedAccountLabel');
-          }
+          expect(error.keyword).to.equal('minItems');
+          expect(error.instancePath).to.deep.equal('/encryptedAccountLabel');
         });
 
         it('should have maximum length of 80', async () => {
           contactRequestData.encryptedAccountLabel = Buffer.alloc(82);
 
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxItems');
-            expect(error.instancePath).to.equal('/encryptedAccountLabel');
-          }
+          expect(error.keyword).to.equal('maxItems');
+          expect(error.instancePath).to.deep.equal('/encryptedAccountLabel');
         });
 
         it('should be of type array', async () => {
           contactRequestData.encryptedAccountLabel = 'notAnArray';
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('type');
-            expect(error.instancePath).to.equal('/encryptedAccountLabel');
-          }
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
+
+          expect(error.keyword).to.equal('type');
+          expect(error.instancePath).to.deep.equal('/encryptedAccountLabel');
         });
       });
 
@@ -628,52 +420,34 @@ describe.skip('Dashpay Contract', () => {
         it('should have minimum length of 38', async () => {
           contactRequestData.autoAcceptProof = Buffer.alloc(0);
 
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minItems');
-            expect(error.instancePath).to.equal('/autoAcceptProof');
-          }
+          expect(error.keyword).to.equal('minItems');
+          expect(error.instancePath).to.deep.equal('/autoAcceptProof');
         });
 
         it('should have maximum length of 102', async () => {
           contactRequestData.autoAcceptProof = Buffer.alloc(104);
 
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('maxItems');
-            expect(error.instancePath).to.equal('/autoAcceptProof');
-          }
+          expect(error.keyword).to.equal('maxItems');
+          expect(error.instancePath).to.deep.equal('/autoAcceptProof');
         });
 
         it('should be of type array', async () => {
           contactRequestData.autoAcceptProof = 'notAnArray';
 
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('type');
-            expect(error.instancePath).to.equal('/autoAcceptProof');
-          }
+          expect(error.keyword).to.equal('type');
+          expect(error.instancePath).to.deep.equal('/autoAcceptProof');
         });
       });
 
@@ -681,35 +455,23 @@ describe.skip('Dashpay Contract', () => {
         it('should be defined', async () => {
           delete contactRequestData.accountReference;
 
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('required');
-            expect(error.params.missingProperty).to.equal('accountReference');
-          }
+          expect(error.keyword).to.equal('required');
+          expect(error.params.missingProperty).to.equal('accountReference');
         });
 
         it('should not be less than 0', async () => {
           contactRequestData.accountReference = -1;
 
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minimum');
-            expect(error.instancePath).to.equal('/accountReference');
-          }
+          expect(error.keyword).to.equal('minimum');
+          expect(error.instancePath).to.equal('/accountReference');
         });
       });
 
@@ -717,38 +479,24 @@ describe.skip('Dashpay Contract', () => {
         it('should not be less than 1', async () => {
           contactRequestData.coreHeightCreatedAt = -1;
 
-          try {
-            dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
 
-            expect.fail('should throw error');
-          } catch (e) {
-            expect(e.name).to.equal('InvalidDocumentError');
-            expect(e.errors).to.have.a.lengthOf(1);
-            const [error] = e.errors;
-            expect(error.name).to.equal('JsonSchemaError');
-            expect(error.keyword).to.equal('minimum');
-            expect(error.instancePath).to.equal('/coreHeightCreatedAt');
-          }
+          expect(error.keyword).to.equal('minimum');
+          expect(error.instancePath).to.equal('/coreHeightCreatedAt');
         });
       });
 
       it('should not have additional properties', async () => {
         contactRequestData.someOtherProperty = 42;
 
-        try {
-          dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+        const document = dpp.document.create(contract, identityId, 'contactRequest', contactRequestData);
+        const validationResult = document.validate(dpp.protocolVersion);
+        const error = expectJsonSchemaError(validationResult);
 
-          expect.fail('should throw error');
-        } catch (e) {
-          expect(e.name).to.equal('InvalidDocumentError');
-          expect(e.errors).to.have.a.lengthOf(1);
-
-          const [error] = e.errors;
-
-          expect(error.name).to.equal('JsonSchemaError');
-          expect(error.keyword).to.equal('additionalProperties');
-          expect(error.params.additionalProperty).to.equal('someOtherProperty');
-        }
+        expect(error.keyword).to.equal('additionalProperties');
+        expect(error.params.additionalProperties).to.deep.equal(['someOtherProperty']);
       });
     });
   });

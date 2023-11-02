@@ -1,4 +1,4 @@
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const {
   v0: {
     GetIdentityResponse,
@@ -21,13 +21,13 @@ describe('GetIdentityResponse', () => {
   let proto;
   let proofFixture;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    identityFixture = getIdentityFixture();
+    identityFixture = await getIdentityFixture();
     proofFixture = getProofFixture();
 
+    const { GetIdentityResponseV0 } = GetIdentityResponse;
     proto = new GetIdentityResponse();
-    proto.setIdentity(identityFixture.toBuffer());
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
@@ -35,7 +35,12 @@ describe('GetIdentityResponse', () => {
     metadata.setTimeMs(metadataFixture.timeMs);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
-    proto.setMetadata(metadata);
+    proto.setV0(
+      new GetIdentityResponseV0()
+        .setIdentity(identityFixture.toBuffer())
+        .setMetadata(metadata),
+
+    );
 
     getIdentityResponse = new GetIdentityResponseClass(
       identityFixture.toBuffer(),
@@ -92,8 +97,8 @@ describe('GetIdentityResponse', () => {
     proofProto.setGrovedbProof(proofFixture.merkleProof);
     proofProto.setRound(proofFixture.round);
 
-    proto.setIdentity(undefined);
-    proto.setProof(proofProto);
+    proto.getV0().setIdentity(undefined);
+    proto.getV0().setProof(proofProto);
 
     getIdentityResponse = GetIdentityResponseClass.createFromProto(proto);
 
@@ -109,7 +114,7 @@ describe('GetIdentityResponse', () => {
   });
 
   it('should throw InvalidResponseError if Metadata is not defined', () => {
-    proto.setMetadata(undefined);
+    proto.getV0().setMetadata(undefined);
 
     try {
       getIdentityResponse = GetIdentityResponseClass.createFromProto(proto);
@@ -121,7 +126,7 @@ describe('GetIdentityResponse', () => {
   });
 
   it('should throw InvalidResponseError if Identity is not defined', () => {
-    proto.setIdentity(undefined);
+    proto.getV0().setIdentity(undefined);
 
     try {
       getIdentityResponse = GetIdentityResponseClass.createFromProto(proto);

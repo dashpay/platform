@@ -135,6 +135,48 @@ class PlatformPromiseClient {
   }
 
   /**
+   * @param {!GetEpochsInfoRequest} getEpochsInfoRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetEpochsInfoResponse>}
+   */
+  getEpochsInfo(getEpochsInfoRequest, metadata = {}) {
+    return promisify(
+      this.client.getEpochsInfo.bind(this.client),
+    )(
+      getEpochsInfoRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetVersionUpgradeVoteStatusRequest} getVersionUpgradeVoteStatusRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetVersionUpgradeVoteStatusResponse>}
+   */
+  getVersionUpgradeVoteStatus(getVersionUpgradeVoteStatusRequest, metadata = {}) {
+    return promisify(
+      this.client.getVersionUpgradeVoteStatus.bind(this.client),
+    )(
+      getVersionUpgradeVoteStatusRequest,
+      metadata,
+    );
+  }
+
+  /**
+   * @param {!GetVersionUpgradeStateRequest} getVersionUpgradeStateRequest
+   * @param {?Object<string, string>} metadata
+   * @return {Promise<!GetVersionUpgradeStateResponse>}
+   */
+  getVersionUpgradeState(getVersionUpgradeStateRequest, metadata = {}) {
+    return promisify(
+      this.client.getVersionUpgradeState.bind(this.client),
+    )(
+      getVersionUpgradeStateRequest,
+      metadata,
+    );
+  }
+
+  /**
    * @param {string} protocolVersion
    */
   setProtocolVersion(protocolVersion) {

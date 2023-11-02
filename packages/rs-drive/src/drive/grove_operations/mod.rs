@@ -180,11 +180,14 @@ pub type IsSumTree = bool;
 pub enum BatchDeleteApplyType {
     /// Stateless batch delete
     StatelessBatchDelete {
+        /// Are we deleting in a sum tree
         is_sum_tree: bool,
+        /// What is the estimatated value size
         estimated_value_size: u32,
     },
     /// Stateful batch delete
     StatefulBatchDelete {
+        /// Are we known to be in a subtree and does this subtree have sums
         is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
     },
 }
@@ -193,10 +196,12 @@ pub enum BatchDeleteApplyType {
 pub enum BatchDeleteUpTreeApplyType {
     /// Stateless batch delete
     StatelessBatchDelete {
+        /// The estimated layer info
         estimated_layer_info: IntMap<EstimatedLayerInformation>,
     },
     /// Stateful batch delete
     StatefulBatchDelete {
+        /// Are we known to be in a subtree and does this subtree have sums
         is_known_to_be_subtree_with_sum: Option<(IsSubTree, IsSumSubTree)>,
     },
 }
@@ -207,8 +212,11 @@ pub enum BatchDeleteUpTreeApplyType {
 pub enum BatchInsertTreeApplyType {
     /// Stateless batch insert tree
     StatelessBatchInsertTree {
+        /// Does this tree use sums?
         in_tree_using_sums: bool,
+        /// Are we inserting in a sum tree
         is_sum_tree: bool,
+        /// The flags length
         flags_len: FlagsLen,
     },
     /// Stateful batch insert tree
@@ -245,7 +253,9 @@ impl BatchInsertTreeApplyType {
 pub enum BatchInsertApplyType {
     /// Stateless batch insert
     StatelessBatchInsert {
+        /// Does this tree use sums?
         in_tree_using_sums: bool,
+        /// the type of Target (Tree or Value)
         target: QueryTarget,
     },
     /// Stateful batch insert
@@ -306,7 +316,9 @@ impl QueryTarget {
 pub enum DirectQueryType {
     /// Stateless direct query
     StatelessDirectQuery {
+        /// Does this tree use sums?
         in_tree_using_sums: bool,
+        /// the type of Target (Tree or Value)
         query_target: QueryTarget,
     },
     /// Stateful direct query
@@ -376,8 +388,11 @@ impl DirectQueryType {
 pub enum QueryType {
     /// Stateless query
     StatelessQuery {
+        /// Does this tree use sums?
         in_tree_using_sums: bool,
+        /// the type of Target (Tree or Value)
         query_target: QueryTarget,
+        /// The estimated sizes of references
         estimated_reference_sizes: Vec<u32>,
     },
     /// Stateful query
