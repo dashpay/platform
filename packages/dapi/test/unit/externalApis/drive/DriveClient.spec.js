@@ -378,7 +378,9 @@ describe('DriveClient', () => {
     it('should call \'fetchEpochsInfo\' RPC with the given parameters', async () => {
       const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
-      const { GetProtocolVersionUpgradeVoteStatusRequestV0 } = GetProtocolVersionUpgradeVoteStatusRequest;
+      const {
+        GetProtocolVersionUpgradeVoteStatusRequestV0,
+      } = GetProtocolVersionUpgradeVoteStatusRequest;
       const request = new GetProtocolVersionUpgradeVoteStatusRequest();
       request.setV0(
         new GetProtocolVersionUpgradeVoteStatusRequestV0()
@@ -386,7 +388,9 @@ describe('DriveClient', () => {
           .setCount(1),
       );
 
-      const { GetProtocolVersionUpgradeVoteStatusResponseV0 } = GetProtocolVersionUpgradeVoteStatusResponse;
+      const {
+        GetProtocolVersionUpgradeVoteStatusResponseV0,
+      } = GetProtocolVersionUpgradeVoteStatusResponse;
       const response = new GetProtocolVersionUpgradeVoteStatusResponse();
       const { VersionSignal, VersionSignals } = GetProtocolVersionUpgradeVoteStatusResponseV0;
       response.setV0(

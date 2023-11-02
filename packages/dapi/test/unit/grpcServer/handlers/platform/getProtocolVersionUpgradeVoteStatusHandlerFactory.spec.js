@@ -38,7 +38,9 @@ describe('getProtocolVersionUpgradeVoteStatusHandlerFactory', () => {
 
     version = 1;
     proTxHash = Buffer.alloc(32).fill(1);
-    const { GetProtocolVersionUpgradeVoteStatusResponseV0 } = GetProtocolVersionUpgradeVoteStatusResponse;
+    const {
+      GetProtocolVersionUpgradeVoteStatusResponseV0,
+    } = GetProtocolVersionUpgradeVoteStatusResponse;
     const { VersionSignals, VersionSignal } = GetProtocolVersionUpgradeVoteStatusResponseV0;
     response = new GetProtocolVersionUpgradeVoteStatusResponse();
     response.setV0(

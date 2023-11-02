@@ -276,6 +276,7 @@ function platformHandlersFactory(
   );
 
   // getProtocolVersionUpgradeVoteStatus
+  // eslint-disable-next-line max-len
   const getProtocolVersionUpgradeVoteStatusHandler = getProtocolVersionUpgradeVoteStatusHandlerFactory(
     driveClient,
   );
