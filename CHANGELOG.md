@@ -1,3 +1,10 @@
+### [0.25.11](https://github.com/dashpay/platform/compare/v0.25.10...v0.25.11) (2023-11-02)
+
+
+### Bug Fixes
+
+* **dashmate:** config commands output ([#1556](https://github.com/dashpay/platform/issues/1556))
+
 ### [0.25.10](https://github.com/dashpay/platform/compare/v0.25.9...v0.25.10) (2023-11-02)
 
 ### Bug Fixes
