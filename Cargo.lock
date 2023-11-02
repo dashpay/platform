@@ -429,7 +429,7 @@ dependencies = [
 [[package]]
 name = "bls-dash-sys"
 version = "1.2.5"
-source = "git+https://github.com/dashpay/bls-signatures?branch=develop#795660db76636c92bea3bfccfee621f1aba371a3"
+source = "git+https://github.com/dashpay/bls-signatures?branch=develop#3540b8bbed47e04ed6f02eea2141bd62dae0c411"
 dependencies = [
  "bindgen",
  "cc",
@@ -439,9 +439,10 @@ dependencies = [
 [[package]]
 name = "bls-signatures"
 version = "1.2.5"
-source = "git+https://github.com/dashpay/bls-signatures?branch=develop#795660db76636c92bea3bfccfee621f1aba371a3"
+source = "git+https://github.com/dashpay/bls-signatures?branch=develop#3540b8bbed47e04ed6f02eea2141bd62dae0c411"
 dependencies = [
  "bls-dash-sys",
+ "hex",
  "rand",
  "serde",
 ]
