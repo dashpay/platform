@@ -5,7 +5,7 @@ use crate::identity::state_transition::asset_lock_proof::validate_asset_lock_tra
 use crate::ProtocolError;
 use crate::validation::SimpleConsensusValidationResult;
 
-pub(in crate::identity::state_transition::asset_lock_proof::instant) fn validate_instant_asset_lock_proof_structure_v0(
+pub fn validate_instant_asset_lock_proof_structure_v0(
     proof: &InstantAssetLockProof,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
