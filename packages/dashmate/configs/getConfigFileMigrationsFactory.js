@@ -2,8 +2,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const { NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_MAINNET,
-  SSL_PROVIDERS
+const {
+  NETWORK_LOCAL,
+  NETWORK_TESTNET,
+  NETWORK_MAINNET,
+  SSL_PROVIDERS,
 } = require('../src/constants');
 
 /**
