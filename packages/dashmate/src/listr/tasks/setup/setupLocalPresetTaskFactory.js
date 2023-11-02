@@ -85,7 +85,7 @@ function setupLocalPresetTaskFactory(
           ctx.minerInterval = await task.prompt({
             type: 'input',
             message: 'Enter the interval between core blocks',
-            initial: configFile.getConfig('base').options.core.miner.interval,
+            initial: configFile.getConfig('base').get('core.miner.interval'),
             validate: (state) => {
               if (state.match(/\d+(\.\d+)?(m|s)/)) {
                 return true;
@@ -239,6 +239,7 @@ function setupLocalPresetTaskFactory(
                       config.set('platform.drive.abci.logs.stdout.format', 'full');
                     }
 
+                    // TODO: Shall we use trace?
                     config.set('platform.drive.tenderdash.log.level', 'debug');
                   }
 

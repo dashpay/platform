@@ -6,8 +6,8 @@ use crate::drive::object_size_info::PathKeyElementInfo::PathFixedSizeKeyRefEleme
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::platform_value::Bytes36;
 
+use dpp::platform_value::Bytes36;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::Element::Item;
@@ -41,6 +41,7 @@ impl Drive {
                 &platform_version.drive,
             )?;
         }
+
         self.batch_insert(
             PathFixedSizeKeyRefElement((
                 asset_lock_storage_path(),

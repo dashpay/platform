@@ -72,9 +72,9 @@ impl Drive {
 
         let next_start_block_core_height =
             u32::from_be_bytes(item.as_slice().try_into().map_err(|_| {
-                Error::Drive(DriveError::CorruptedSerialization(
+                Error::Drive(DriveError::CorruptedSerialization(String::from(
                     "start block core height must be u32",
-                ))
+                )))
             })?);
 
         let (path, key, element) = path_key_elements.next().unwrap();
@@ -93,9 +93,9 @@ impl Drive {
 
         let next_start_block_height =
             u64::from_be_bytes(item.as_slice().try_into().map_err(|_| {
-                Error::Drive(DriveError::CorruptedSerialization(
+                Error::Drive(DriveError::CorruptedSerialization(String::from(
                     "start block height must be u64",
-                ))
+                )))
             })?);
 
         let epoch_key = path

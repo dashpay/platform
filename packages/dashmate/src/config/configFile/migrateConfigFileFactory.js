@@ -9,21 +9,26 @@ function migrateConfigFileFactory(getConfigFileMigrations) {
    * @returns {Object}
    */
   function migrateConfigFile(rawConfigFile, fromVersion, toVersion) {
-    // TODO: We just need to migrate up to the latest version in migrations
-    //  to handle properly development process when you work on non-released version
     if (fromVersion === toVersion) {
       return rawConfigFile;
     }
 
     const configFileMigrations = getConfigFileMigrations();
 
-    return Object.keys(configFileMigrations)
-      .filter((version) => (semver.gt(version, fromVersion) && semver.lte(version, toVersion)))
+    /**
+     * @type {Object}
+     */
+    const migratedConfigFile = Object.keys(configFileMigrations)
+      .filter((version) => semver.gt(version, fromVersion))
       .sort(semver.compare)
       .reduce((migratedOptions, version) => {
         const migrationFunction = configFileMigrations[version];
         return migrationFunction(rawConfigFile);
       }, rawConfigFile);
+
+    migratedConfigFile.configFormatVersion = toVersion;
+
+    return migratedConfigFile;
   }
 
   return migrateConfigFile;

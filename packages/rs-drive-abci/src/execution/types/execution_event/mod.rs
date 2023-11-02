@@ -85,12 +85,11 @@ impl<'a> ExecutionEvent<'a> {
         match &action {
             StateTransitionAction::IdentityCreateAction(identity_create_action) => {
                 let identity = identity_create_action.into();
-                let added_balance = identity_create_action.initial_balance_amount();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(PaidFromAssetLockDriveEvent {
                     identity,
-                    added_balance,
+                    added_balance: 0,
                     operations,
                 })
             }

@@ -45,7 +45,7 @@ impl IdentityCreateTransitionAction {
     /// Asset Lock Outpoint
     pub fn asset_lock_outpoint(&self) -> Bytes36 {
         match self {
-            IdentityCreateTransitionAction::V0(transition) => transition.asset_lock_outpoint,
+            IdentityCreateTransitionAction::V0(action) => action.asset_lock_outpoint,
         }
     }
 }
