@@ -89,15 +89,15 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetConsensusParamsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetConsensusParamsResponse.FromString,
                 )
-        self.getVersionUpgradeState = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getVersionUpgradeState',
-                request_serializer=platform__pb2.GetVersionUpgradeStateRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetVersionUpgradeStateResponse.FromString,
+        self.getProtocolVersionUpgradeState = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getProtocolVersionUpgradeState',
+                request_serializer=platform__pb2.GetProtocolVersionUpgradeStateRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetProtocolVersionUpgradeStateResponse.FromString,
                 )
-        self.getVersionUpgradeVoteStatus = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getVersionUpgradeVoteStatus',
-                request_serializer=platform__pb2.GetVersionUpgradeVoteStatusRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetVersionUpgradeVoteStatusResponse.FromString,
+        self.getProtocolVersionUpgradeVoteStatus = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getProtocolVersionUpgradeVoteStatus',
+                request_serializer=platform__pb2.GetProtocolVersionUpgradeVoteStatusRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetProtocolVersionUpgradeVoteStatusResponse.FromString,
                 )
         self.getEpochsInfo = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getEpochsInfo',
@@ -199,13 +199,13 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def getVersionUpgradeState(self, request, context):
+    def getProtocolVersionUpgradeState(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def getVersionUpgradeVoteStatus(self, request, context):
+    def getProtocolVersionUpgradeVoteStatus(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -295,15 +295,15 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.GetConsensusParamsRequest.FromString,
                     response_serializer=platform__pb2.GetConsensusParamsResponse.SerializeToString,
             ),
-            'getVersionUpgradeState': grpc.unary_unary_rpc_method_handler(
-                    servicer.getVersionUpgradeState,
-                    request_deserializer=platform__pb2.GetVersionUpgradeStateRequest.FromString,
-                    response_serializer=platform__pb2.GetVersionUpgradeStateResponse.SerializeToString,
+            'getProtocolVersionUpgradeState': grpc.unary_unary_rpc_method_handler(
+                    servicer.getProtocolVersionUpgradeState,
+                    request_deserializer=platform__pb2.GetProtocolVersionUpgradeStateRequest.FromString,
+                    response_serializer=platform__pb2.GetProtocolVersionUpgradeStateResponse.SerializeToString,
             ),
-            'getVersionUpgradeVoteStatus': grpc.unary_unary_rpc_method_handler(
-                    servicer.getVersionUpgradeVoteStatus,
-                    request_deserializer=platform__pb2.GetVersionUpgradeVoteStatusRequest.FromString,
-                    response_serializer=platform__pb2.GetVersionUpgradeVoteStatusResponse.SerializeToString,
+            'getProtocolVersionUpgradeVoteStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.getProtocolVersionUpgradeVoteStatus,
+                    request_deserializer=platform__pb2.GetProtocolVersionUpgradeVoteStatusRequest.FromString,
+                    response_serializer=platform__pb2.GetProtocolVersionUpgradeVoteStatusResponse.SerializeToString,
             ),
             'getEpochsInfo': grpc.unary_unary_rpc_method_handler(
                     servicer.getEpochsInfo,
@@ -576,7 +576,7 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def getVersionUpgradeState(request,
+    def getProtocolVersionUpgradeState(request,
             target,
             options=(),
             channel_credentials=None,
@@ -586,14 +586,14 @@ class Platform(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getVersionUpgradeState',
-            platform__pb2.GetVersionUpgradeStateRequest.SerializeToString,
-            platform__pb2.GetVersionUpgradeStateResponse.FromString,
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getProtocolVersionUpgradeState',
+            platform__pb2.GetProtocolVersionUpgradeStateRequest.SerializeToString,
+            platform__pb2.GetProtocolVersionUpgradeStateResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def getVersionUpgradeVoteStatus(request,
+    def getProtocolVersionUpgradeVoteStatus(request,
             target,
             options=(),
             channel_credentials=None,
@@ -603,9 +603,9 @@ class Platform(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getVersionUpgradeVoteStatus',
-            platform__pb2.GetVersionUpgradeVoteStatusRequest.SerializeToString,
-            platform__pb2.GetVersionUpgradeVoteStatusResponse.FromString,
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getProtocolVersionUpgradeVoteStatus',
+            platform__pb2.GetProtocolVersionUpgradeVoteStatusRequest.SerializeToString,
+            platform__pb2.GetProtocolVersionUpgradeVoteStatusResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

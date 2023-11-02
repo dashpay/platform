@@ -24,8 +24,8 @@ const {
     WaitForStateTransitionResultRequest,
     GetConsensusParamsRequest,
     GetEpochsInfoRequest,
-    GetVersionUpgradeVoteStatusRequest,
-    GetVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeStateRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
@@ -45,10 +45,10 @@ const {
       GetDataContractHistoryResponse: PBJSGetDataContractHistoryResponse,
       GetEpochsInfoRequest: PBJSGetEpochsInfoRequest,
       GetEpochsInfoResponse: PBJSGetEpochsInfoResponse,
-      GetVersionUpgradeVoteStatusRequest: PBJSGetVersionUpgradeVoteStatusRequest,
-      GetVersionUpgradeVoteStatusResponse: PBJSGetVersionUpgradeVoteStatusResponse,
-      GetVersionUpgradeStateRequest: PBJSGetVersionUpgradeStateRequest,
-      GetVersionUpgradeStateResponse: PBJSGetVersionUpgradeStateResponse,
+      GetProtocolVersionUpgradeVoteStatusRequest: PBJSGetProtocolVersionUpgradeVoteStatusRequest,
+      GetProtocolVersionUpgradeVoteStatusResponse: PBJSGetProtocolVersionUpgradeVoteStatusResponse,
+      GetProtocolVersionUpgradeStateRequest: PBJSGetProtocolVersionUpgradeStateRequest,
+      GetProtocolVersionUpgradeStateResponse: PBJSGetProtocolVersionUpgradeStateResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -85,12 +85,12 @@ const getEpochsInfoHandlerFactory = require(
   './getEpochsInfoHandlerFactory',
 );
 
-const getVersionUpgradeVoteStatusHandlerFactory = require(
-  './getVersionUpgradeVoteStatusHandlerFactory',
+const getProtocolVersionUpgradeVoteStatusHandlerFactory = require(
+  './getProtocolVersionUpgradeVoteStatusHandlerFactory',
 );
 
-const getVersionUpgradeStateHandlerFactory = require(
-  './getVersionUpgradeStateHandlerFactory',
+const getProtocolVersionUpgradeStateHandlerFactory = require(
+  './getProtocolVersionUpgradeStateHandlerFactory',
 );
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
@@ -275,36 +275,36 @@ function platformHandlersFactory(
     wrapInErrorHandler(getEpochsInfoHandler),
   );
 
-  // getVersionUpgradeVoteStatus
-  const getVersionUpgradeVoteStatusHandler = getVersionUpgradeVoteStatusHandlerFactory(
+  // getProtocolVersionUpgradeVoteStatus
+  const getProtocolVersionUpgradeVoteStatusHandler = getProtocolVersionUpgradeVoteStatusHandlerFactory(
     driveClient,
   );
 
-  const wrappedGetVersionUpgradeVoteStatus = jsonToProtobufHandlerWrapper(
+  const wrappedGetProtocolVersionUpgradeVoteStatus = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
-      GetVersionUpgradeVoteStatusRequest,
-      PBJSGetVersionUpgradeVoteStatusRequest,
+      GetProtocolVersionUpgradeVoteStatusRequest,
+      PBJSGetProtocolVersionUpgradeVoteStatusRequest,
     ),
     protobufToJsonFactory(
-      PBJSGetVersionUpgradeVoteStatusResponse,
+      PBJSGetProtocolVersionUpgradeVoteStatusResponse,
     ),
-    wrapInErrorHandler(getVersionUpgradeVoteStatusHandler),
+    wrapInErrorHandler(getProtocolVersionUpgradeVoteStatusHandler),
   );
 
-  // getVersionUpgradeState
-  const getVersionUpgradeStateHandler = getVersionUpgradeStateHandlerFactory(
+  // getProtocolVersionUpgradeState
+  const getProtocolVersionUpgradeStateHandler = getProtocolVersionUpgradeStateHandlerFactory(
     driveClient,
   );
 
-  const wrappedGetVersionUpgradeState = jsonToProtobufHandlerWrapper(
+  const wrappedGetProtocolVersionUpgradeState = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
-      GetVersionUpgradeStateRequest,
-      PBJSGetVersionUpgradeStateRequest,
+      GetProtocolVersionUpgradeStateRequest,
+      PBJSGetProtocolVersionUpgradeStateRequest,
     ),
     protobufToJsonFactory(
-      PBJSGetVersionUpgradeStateResponse,
+      PBJSGetProtocolVersionUpgradeStateResponse,
     ),
-    wrapInErrorHandler(getVersionUpgradeStateHandler),
+    wrapInErrorHandler(getProtocolVersionUpgradeStateHandler),
   );
 
   return {
@@ -317,8 +317,8 @@ function platformHandlersFactory(
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
     getConsensusParams: wrappedGetConsensusParams,
     getEpochsInfo: wrappedGetEpochsInfo,
-    getVersionUpgradeVoteStatus: wrappedGetVersionUpgradeVoteStatus,
-    getVersionUpgradeState: wrappedGetVersionUpgradeState,
+    getProtocolVersionUpgradeVoteStatus: wrappedGetProtocolVersionUpgradeVoteStatus,
+    getProtocolVersionUpgradeState: wrappedGetProtocolVersionUpgradeState,
   };
 }
 

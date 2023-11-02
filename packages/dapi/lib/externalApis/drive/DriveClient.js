@@ -150,7 +150,7 @@ class DriveClient {
   /**
    *  Fetch version upgrade vote status
    *
-   * @param {GetVersionUpgradeVoteStatusRequest} request
+   * @param {GetProtocolVersionUpgradeVoteStatusRequest} request
    * @return {Promise<Buffer>}
    */
   async fetchVersionUpgradeVoteStatus(request) {
@@ -163,7 +163,7 @@ class DriveClient {
   /**
    *  Fetch version upgrade state
    *
-   * @param {GetVersionUpgradeStateRequest} request
+   * @param {GetProtocolVersionUpgradeStateRequest} request
    * @return {Promise<Buffer>}
    */
   async fetchVersionUpgradeState(request) {

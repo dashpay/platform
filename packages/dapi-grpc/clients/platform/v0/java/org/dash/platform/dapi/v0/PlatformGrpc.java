@@ -480,66 +480,66 @@ public final class PlatformGrpc {
     return getGetConsensusParamsMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateResponse> getGetVersionUpgradeStateMethod;
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateResponse> getGetProtocolVersionUpgradeStateMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "getVersionUpgradeState",
-      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateRequest.class,
-      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "getProtocolVersionUpgradeState",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateResponse> getGetVersionUpgradeStateMethod() {
-    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateResponse> getGetVersionUpgradeStateMethod;
-    if ((getGetVersionUpgradeStateMethod = PlatformGrpc.getGetVersionUpgradeStateMethod) == null) {
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateResponse> getGetProtocolVersionUpgradeStateMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateResponse> getGetProtocolVersionUpgradeStateMethod;
+    if ((getGetProtocolVersionUpgradeStateMethod = PlatformGrpc.getGetProtocolVersionUpgradeStateMethod) == null) {
       synchronized (PlatformGrpc.class) {
-        if ((getGetVersionUpgradeStateMethod = PlatformGrpc.getGetVersionUpgradeStateMethod) == null) {
-          PlatformGrpc.getGetVersionUpgradeStateMethod = getGetVersionUpgradeStateMethod =
-              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateResponse>newBuilder()
+        if ((getGetProtocolVersionUpgradeStateMethod = PlatformGrpc.getGetProtocolVersionUpgradeStateMethod) == null) {
+          PlatformGrpc.getGetProtocolVersionUpgradeStateMethod = getGetProtocolVersionUpgradeStateMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getVersionUpgradeState"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getProtocolVersionUpgradeState"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateRequest.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getVersionUpgradeState"))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getProtocolVersionUpgradeState"))
               .build();
         }
       }
     }
-    return getGetVersionUpgradeStateMethod;
+    return getGetProtocolVersionUpgradeStateMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusResponse> getGetVersionUpgradeVoteStatusMethod;
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusResponse> getGetProtocolVersionUpgradeVoteStatusMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "getVersionUpgradeVoteStatus",
-      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusRequest.class,
-      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusResponse.class,
+      fullMethodName = SERVICE_NAME + '/' + "getProtocolVersionUpgradeVoteStatus",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusResponse> getGetVersionUpgradeVoteStatusMethod() {
-    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusResponse> getGetVersionUpgradeVoteStatusMethod;
-    if ((getGetVersionUpgradeVoteStatusMethod = PlatformGrpc.getGetVersionUpgradeVoteStatusMethod) == null) {
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusResponse> getGetProtocolVersionUpgradeVoteStatusMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusResponse> getGetProtocolVersionUpgradeVoteStatusMethod;
+    if ((getGetProtocolVersionUpgradeVoteStatusMethod = PlatformGrpc.getGetProtocolVersionUpgradeVoteStatusMethod) == null) {
       synchronized (PlatformGrpc.class) {
-        if ((getGetVersionUpgradeVoteStatusMethod = PlatformGrpc.getGetVersionUpgradeVoteStatusMethod) == null) {
-          PlatformGrpc.getGetVersionUpgradeVoteStatusMethod = getGetVersionUpgradeVoteStatusMethod =
-              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusResponse>newBuilder()
+        if ((getGetProtocolVersionUpgradeVoteStatusMethod = PlatformGrpc.getGetProtocolVersionUpgradeVoteStatusMethod) == null) {
+          PlatformGrpc.getGetProtocolVersionUpgradeVoteStatusMethod = getGetProtocolVersionUpgradeVoteStatusMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getVersionUpgradeVoteStatus"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getProtocolVersionUpgradeVoteStatus"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusRequest.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getVersionUpgradeVoteStatus"))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getProtocolVersionUpgradeVoteStatus"))
               .build();
         }
       }
     }
-    return getGetVersionUpgradeVoteStatusMethod;
+    return getGetProtocolVersionUpgradeVoteStatusMethod;
   }
 
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetEpochsInfoRequest,
@@ -728,16 +728,16 @@ public final class PlatformGrpc {
 
     /**
      */
-    public void getVersionUpgradeState(org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetVersionUpgradeStateMethod(), responseObserver);
+    public void getProtocolVersionUpgradeState(org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetProtocolVersionUpgradeStateMethod(), responseObserver);
     }
 
     /**
      */
-    public void getVersionUpgradeVoteStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetVersionUpgradeVoteStatusMethod(), responseObserver);
+    public void getProtocolVersionUpgradeVoteStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetProtocolVersionUpgradeVoteStatusMethod(), responseObserver);
     }
 
     /**
@@ -855,19 +855,19 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsResponse>(
                   this, METHODID_GET_CONSENSUS_PARAMS)))
           .addMethod(
-            getGetVersionUpgradeStateMethod(),
+            getGetProtocolVersionUpgradeStateMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateRequest,
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateResponse>(
-                  this, METHODID_GET_VERSION_UPGRADE_STATE)))
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateResponse>(
+                  this, METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE)))
           .addMethod(
-            getGetVersionUpgradeVoteStatusMethod(),
+            getGetProtocolVersionUpgradeVoteStatusMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusRequest,
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusResponse>(
-                  this, METHODID_GET_VERSION_UPGRADE_VOTE_STATUS)))
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusResponse>(
+                  this, METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS)))
           .addMethod(
             getGetEpochsInfoMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -1015,18 +1015,18 @@ public final class PlatformGrpc {
 
     /**
      */
-    public void getVersionUpgradeState(org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateResponse> responseObserver) {
+    public void getProtocolVersionUpgradeState(org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getGetVersionUpgradeStateMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getGetProtocolVersionUpgradeStateMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void getVersionUpgradeVoteStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusResponse> responseObserver) {
+    public void getProtocolVersionUpgradeVoteStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getGetVersionUpgradeVoteStatusMethod(), getCallOptions()), request, responseObserver);
+          getChannel().newCall(getGetProtocolVersionUpgradeVoteStatusMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -1159,16 +1159,16 @@ public final class PlatformGrpc {
 
     /**
      */
-    public org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateResponse getVersionUpgradeState(org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateRequest request) {
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateResponse getProtocolVersionUpgradeState(org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getGetVersionUpgradeStateMethod(), getCallOptions(), request);
+          getChannel(), getGetProtocolVersionUpgradeStateMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusResponse getVersionUpgradeVoteStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusRequest request) {
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusResponse getProtocolVersionUpgradeVoteStatus(org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getGetVersionUpgradeVoteStatusMethod(), getCallOptions(), request);
+          getChannel(), getGetProtocolVersionUpgradeVoteStatusMethod(), getCallOptions(), request);
     }
 
     /**
@@ -1315,18 +1315,18 @@ public final class PlatformGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateResponse> getVersionUpgradeState(
-        org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateResponse> getProtocolVersionUpgradeState(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getGetVersionUpgradeStateMethod(), getCallOptions()), request);
+          getChannel().newCall(getGetProtocolVersionUpgradeStateMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusResponse> getVersionUpgradeVoteStatus(
-        org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusResponse> getProtocolVersionUpgradeVoteStatus(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getGetVersionUpgradeVoteStatusMethod(), getCallOptions()), request);
+          getChannel().newCall(getGetProtocolVersionUpgradeVoteStatusMethod(), getCallOptions()), request);
     }
 
     /**
@@ -1353,8 +1353,8 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 12;
   private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 13;
   private static final int METHODID_GET_CONSENSUS_PARAMS = 14;
-  private static final int METHODID_GET_VERSION_UPGRADE_STATE = 15;
-  private static final int METHODID_GET_VERSION_UPGRADE_VOTE_STATUS = 16;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 15;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 16;
   private static final int METHODID_GET_EPOCHS_INFO = 17;
 
   private static final class MethodHandlers<Req, Resp> implements
@@ -1434,13 +1434,13 @@ public final class PlatformGrpc {
           serviceImpl.getConsensusParams((org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetConsensusParamsResponse>) responseObserver);
           break;
-        case METHODID_GET_VERSION_UPGRADE_STATE:
-          serviceImpl.getVersionUpgradeState((org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeStateResponse>) responseObserver);
+        case METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE:
+          serviceImpl.getProtocolVersionUpgradeState((org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeStateResponse>) responseObserver);
           break;
-        case METHODID_GET_VERSION_UPGRADE_VOTE_STATUS:
-          serviceImpl.getVersionUpgradeVoteStatus((org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetVersionUpgradeVoteStatusResponse>) responseObserver);
+        case METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS:
+          serviceImpl.getProtocolVersionUpgradeVoteStatus((org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetProtocolVersionUpgradeVoteStatusResponse>) responseObserver);
           break;
         case METHODID_GET_EPOCHS_INFO:
           serviceImpl.getEpochsInfo((org.dash.platform.dapi.v0.PlatformOuterClass.GetEpochsInfoRequest) request,
@@ -1522,8 +1522,8 @@ public final class PlatformGrpc {
               .addMethod(getGetIdentityByPublicKeyHashMethod())
               .addMethod(getWaitForStateTransitionResultMethod())
               .addMethod(getGetConsensusParamsMethod())
-              .addMethod(getGetVersionUpgradeStateMethod())
-              .addMethod(getGetVersionUpgradeVoteStatusMethod())
+              .addMethod(getGetProtocolVersionUpgradeStateMethod())
+              .addMethod(getGetProtocolVersionUpgradeVoteStatusMethod())
               .addMethod(getGetEpochsInfoMethod())
               .build();
         }
