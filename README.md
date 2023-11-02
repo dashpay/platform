@@ -60,7 +60,7 @@ this repository may be used on the following networks:
       - LLVM installed from brew is keg only, and path to it must be provided in the profile file,
         in terminal run `echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc` or `echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.bash_profile` depending on your default shell.
         You can find your default shell with `echo $SHELL`
-      - Reload Shell with `source ~/.zshrc` or `source ~/.bash_profile` 
+      - Reload your shell with `source ~/.zshrc` or `source ~/.bash_profile` 
     - install `protoc` - protobuf compiler:
       - on debian/ubuntu: `apt install -y protobuf-compiler`
       - on Mac: `brew install protobuf`
