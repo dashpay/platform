@@ -1,3 +1,73 @@
+### [0.25.9](https://github.com/dashpay/platform/compare/v0.25.8...v0.25.9) (2023-11-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* DAPI proto messages are changed (#1542)
+* Consensus rules for Identity Create and TopUp are changed. (#1510)
+* Asset Lock Proof structure is changed  (#1510)
+* Identity Create Transition balance validation requires correct amount (twice more) (#1510)
+* **dashmate:** `enabledCount` is replaced with `masternodeEnabled` in the masternode status output (#1505)
+* **dashmate:** SSL keys are now stored in the node's config subdirectory (#1502)
+
+### Features
+
+* **dashmate:** add cli command for core service ([#1501](https://github.com/dashpay/platform/issues/1501))
+* **dashmate:** configure dashd command arguments ([#1520](https://github.com/dashpay/platform/issues/1520))
+* **dashmate:** docker build command ([#1546](https://github.com/dashpay/platform/issues/1546))
+* **dashmate:** docker build command ([#1546](https://github.com/dashpay/platform/issues/1546))
+* **dashmate:** move ssl dir ([#1502](https://github.com/dashpay/platform/issues/1502))
+* identity funding with asset lock special transactions ([#1510](https://github.com/dashpay/platform/issues/1510))
+* **platform:** proto message and query versioning ([#1522](https://github.com/dashpay/platform/issues/1522))
+* **platform:** query version upgrade (both votes and status) and epoch info ([#1542](https://github.com/dashpay/platform/issues/1542))
+
+
+### Bug Fixes
+
+* **dashmate:** payment queue and extend enabled count ([#1505](https://github.com/dashpay/platform/issues/1505))
+* **dashmate:** reset command doesn't reset configs ([#1541](https://github.com/dashpay/platform/issues/1541))
+* **drive:** mishandling internal errors as validation ones ([#1492](https://github.com/dashpay/platform/issues/1492))
+* security advisories in browserify-sign and crypto-js ([#1548](https://github.com/dashpay/platform/issues/1548))
+
+
+### Performance Improvements
+
+* **dashmate:** disable config auto render ([#1499](https://github.com/dashpay/platform/issues/1499))
+* **dashmate:** speedup container cleanup ([#1518](https://github.com/dashpay/platform/issues/1518))
+
+
+### Continuous Integration
+
+* fix s3 layer cache access forbidden on 8x runners ([#1521](https://github.com/dashpay/platform/issues/1521))
+
+
+### Tests
+
+* **dashmate:** successful migration test ([#1500](https://github.com/dashpay/platform/issues/1500))
+* **test-suite:** add optional bail ([#1488](https://github.com/dashpay/platform/issues/1488))
+
+
+### Build System
+
+* update rust to 1.73 ([#1529](https://github.com/dashpay/platform/issues/1529))
+
+
+### Code Refactoring
+
+* remove js-dpp ([#1517](https://github.com/dashpay/platform/issues/1517))
+
+
+### Documentation
+
+* Update README.md to give information about correctly adding to correct Shell $PATH ([#1550](https://github.com/dashpay/platform/issues/1550))
+
+
+### Miscellaneous Chores
+
+* adds missing crypto js ([#1538](https://github.com/dashpay/platform/issues/1538))
+* **dashmate:** set tenderdash logging level to info ([#1540](https://github.com/dashpay/platform/issues/1540))
+* **dpp:** version `InstantAssetLockProof.validate_structure` ([#1549](https://github.com/dashpay/platform/issues/1549))
+
 ### [0.25.8](https://github.com/dashpay/platform/compare/v0.25.7...v0.25.8) (2023-10-20)
 
 
