@@ -116,3 +116,7 @@ jobs:
             target_amd64
             target_wasm
             unplugged_amd64
+
+      - name: Debug images
+        shell: bash
+        run: docker image ls
