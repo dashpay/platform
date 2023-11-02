@@ -37,12 +37,12 @@ pub struct Config<D> {
 }
 
 impl<D: for<'de1> Deserialize<'de1>> Config<D> {
-    /// Prefix of configuration options in the enviroment variables and `.env` file.
+    /// Prefix of configuration options in the environment variables and `.env` file.
     pub const CONFIG_PREFIX: &str = "RS_SDK_";
-    /// Load configuration from operating system enviroment variables and `.env` file.
+    /// Load configuration from operating system environment variables and `.env` file.
     ///
-    /// Create new [Config] with data from enviroment variables and `${CARGO_MANIFEST_DIR}/.env` file.
-    /// Variable names in the enviroment and `.env` file must be converted to SCREAMING_SNAKE_CASE and
+    /// Create new [Config] with data from environment variables and `${CARGO_MANIFEST_DIR}/.env` file.
+    /// Variable names in the environment and `.env` file must be converted to SCREAMING_SNAKE_CASE and
     /// prefixed with [RS_SDK_](Config::CONFIG_PREFIX).
     pub fn new() -> Self {
         // load config from .env file, ignore errors
