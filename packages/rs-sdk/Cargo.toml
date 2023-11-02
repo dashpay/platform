@@ -47,7 +47,7 @@ dpp = { path = "../rs-dpp", features = [
 
 
 [features]
-default = ["mocks", "offline-testing"]
+default = ["mocks"]
 mocks = [
     "dep:serde_json",
     "rs-dapi-client/mocks",

@@ -2700,11 +2700,12 @@ void GetProofsResponse_ClearVersionOneOfCase(GetProofsResponse *message) {
 
 @implementation GetProofsResponse_GetProofsResponseV0
 
-@dynamic hasProof, proof;
+@dynamic resultOneOfCase;
+@dynamic proof;
 @dynamic hasMetadata, metadata;
 
 typedef struct GetProofsResponse_GetProofsResponseV0__storage_ {
-  uint32_t _has_storage_[1];
+  uint32_t _has_storage_[2];
   Proof *proof;
   ResponseMetadata *metadata;
 } GetProofsResponse_GetProofsResponseV0__storage_;
@@ -2719,7 +2720,7 @@ typedef struct GetProofsResponse_GetProofsResponseV0__storage_ {
         .name = "proof",
         .dataTypeSpecific.clazz = GPBObjCClass(Proof),
         .number = GetProofsResponse_GetProofsResponseV0_FieldNumber_Proof,
-        .hasIndex = 0,
+        .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetProofsResponse_GetProofsResponseV0__storage_, proof),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
@@ -2728,7 +2729,7 @@ typedef struct GetProofsResponse_GetProofsResponseV0__storage_ {
         .name = "metadata",
         .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
         .number = GetProofsResponse_GetProofsResponseV0_FieldNumber_Metadata,
-        .hasIndex = 1,
+        .hasIndex = 0,
         .offset = (uint32_t)offsetof(GetProofsResponse_GetProofsResponseV0__storage_, metadata),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
@@ -2742,6 +2743,12 @@ typedef struct GetProofsResponse_GetProofsResponseV0__storage_ {
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetProofsResponse_GetProofsResponseV0__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProofsResponse)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
@@ -2753,6 +2760,11 @@ typedef struct GetProofsResponse_GetProofsResponseV0__storage_ {
 
 @end
 
+void GetProofsResponse_GetProofsResponseV0_ClearResultOneOfCase(GetProofsResponse_GetProofsResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetProofsResponse_GetProofsResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
 #pragma mark - GetDataContractRequest
 
 @implementation GetDataContractRequest
