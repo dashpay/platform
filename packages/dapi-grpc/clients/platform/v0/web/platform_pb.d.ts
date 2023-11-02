@@ -2518,43 +2518,43 @@ export namespace GetConsensusParamsResponse {
   }
 }
 
-export class GetVersionUpgradeStateRequest extends jspb.Message {
+export class GetProtocolVersionUpgradeStateRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
-  getV0(): GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0 | undefined;
-  setV0(value?: GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0): void;
+  getV0(): GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0 | undefined;
+  setV0(value?: GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0): void;
 
-  getVersionCase(): GetVersionUpgradeStateRequest.VersionCase;
+  getVersionCase(): GetProtocolVersionUpgradeStateRequest.VersionCase;
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetVersionUpgradeStateRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: GetVersionUpgradeStateRequest): GetVersionUpgradeStateRequest.AsObject;
+  toObject(includeInstance?: boolean): GetProtocolVersionUpgradeStateRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetProtocolVersionUpgradeStateRequest): GetProtocolVersionUpgradeStateRequest.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetVersionUpgradeStateRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetVersionUpgradeStateRequest;
-  static deserializeBinaryFromReader(message: GetVersionUpgradeStateRequest, reader: jspb.BinaryReader): GetVersionUpgradeStateRequest;
+  static serializeBinaryToWriter(message: GetProtocolVersionUpgradeStateRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetProtocolVersionUpgradeStateRequest;
+  static deserializeBinaryFromReader(message: GetProtocolVersionUpgradeStateRequest, reader: jspb.BinaryReader): GetProtocolVersionUpgradeStateRequest;
 }
 
-export namespace GetVersionUpgradeStateRequest {
+export namespace GetProtocolVersionUpgradeStateRequest {
   export type AsObject = {
-    v0?: GetVersionUpgradeStateRequest.GetVersionUpgradeStateRequestV0.AsObject,
+    v0?: GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0.AsObject,
   }
 
-  export class GetVersionUpgradeStateRequestV0 extends jspb.Message {
+  export class GetProtocolVersionUpgradeStateRequestV0 extends jspb.Message {
     getProve(): boolean;
     setProve(value: boolean): void;
 
     serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): GetVersionUpgradeStateRequestV0.AsObject;
-    static toObject(includeInstance: boolean, msg: GetVersionUpgradeStateRequestV0): GetVersionUpgradeStateRequestV0.AsObject;
+    toObject(includeInstance?: boolean): GetProtocolVersionUpgradeStateRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetProtocolVersionUpgradeStateRequestV0): GetProtocolVersionUpgradeStateRequestV0.AsObject;
     static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
     static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: GetVersionUpgradeStateRequestV0, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): GetVersionUpgradeStateRequestV0;
-    static deserializeBinaryFromReader(message: GetVersionUpgradeStateRequestV0, reader: jspb.BinaryReader): GetVersionUpgradeStateRequestV0;
+    static serializeBinaryToWriter(message: GetProtocolVersionUpgradeStateRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetProtocolVersionUpgradeStateRequestV0;
+    static deserializeBinaryFromReader(message: GetProtocolVersionUpgradeStateRequestV0, reader: jspb.BinaryReader): GetProtocolVersionUpgradeStateRequestV0;
   }
 
-  export namespace GetVersionUpgradeStateRequestV0 {
+  export namespace GetProtocolVersionUpgradeStateRequestV0 {
     export type AsObject = {
       prove: boolean,
     }
@@ -2566,33 +2566,33 @@ export namespace GetVersionUpgradeStateRequest {
   }
 }
 
-export class GetVersionUpgradeStateResponse extends jspb.Message {
+export class GetProtocolVersionUpgradeStateResponse extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
-  getV0(): GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0 | undefined;
-  setV0(value?: GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0): void;
+  getV0(): GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0 | undefined;
+  setV0(value?: GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0): void;
 
-  getVersionCase(): GetVersionUpgradeStateResponse.VersionCase;
+  getVersionCase(): GetProtocolVersionUpgradeStateResponse.VersionCase;
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetVersionUpgradeStateResponse.AsObject;
-  static toObject(includeInstance: boolean, msg: GetVersionUpgradeStateResponse): GetVersionUpgradeStateResponse.AsObject;
+  toObject(includeInstance?: boolean): GetProtocolVersionUpgradeStateResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetProtocolVersionUpgradeStateResponse): GetProtocolVersionUpgradeStateResponse.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetVersionUpgradeStateResponse, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetVersionUpgradeStateResponse;
-  static deserializeBinaryFromReader(message: GetVersionUpgradeStateResponse, reader: jspb.BinaryReader): GetVersionUpgradeStateResponse;
+  static serializeBinaryToWriter(message: GetProtocolVersionUpgradeStateResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetProtocolVersionUpgradeStateResponse;
+  static deserializeBinaryFromReader(message: GetProtocolVersionUpgradeStateResponse, reader: jspb.BinaryReader): GetProtocolVersionUpgradeStateResponse;
 }
 
-export namespace GetVersionUpgradeStateResponse {
+export namespace GetProtocolVersionUpgradeStateResponse {
   export type AsObject = {
-    v0?: GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.AsObject,
+    v0?: GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.AsObject,
   }
 
-  export class GetVersionUpgradeStateResponseV0 extends jspb.Message {
+  export class GetProtocolVersionUpgradeStateResponseV0 extends jspb.Message {
     hasVersions(): boolean;
     clearVersions(): void;
-    getVersions(): GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions | undefined;
-    setVersions(value?: GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions): void;
+    getVersions(): GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions | undefined;
+    setVersions(value?: GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions): void;
 
     hasProof(): boolean;
     clearProof(): void;
@@ -2604,29 +2604,29 @@ export namespace GetVersionUpgradeStateResponse {
     getMetadata(): ResponseMetadata | undefined;
     setMetadata(value?: ResponseMetadata): void;
 
-    getResultCase(): GetVersionUpgradeStateResponseV0.ResultCase;
+    getResultCase(): GetProtocolVersionUpgradeStateResponseV0.ResultCase;
     serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): GetVersionUpgradeStateResponseV0.AsObject;
-    static toObject(includeInstance: boolean, msg: GetVersionUpgradeStateResponseV0): GetVersionUpgradeStateResponseV0.AsObject;
+    toObject(includeInstance?: boolean): GetProtocolVersionUpgradeStateResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetProtocolVersionUpgradeStateResponseV0): GetProtocolVersionUpgradeStateResponseV0.AsObject;
     static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
     static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: GetVersionUpgradeStateResponseV0, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): GetVersionUpgradeStateResponseV0;
-    static deserializeBinaryFromReader(message: GetVersionUpgradeStateResponseV0, reader: jspb.BinaryReader): GetVersionUpgradeStateResponseV0;
+    static serializeBinaryToWriter(message: GetProtocolVersionUpgradeStateResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetProtocolVersionUpgradeStateResponseV0;
+    static deserializeBinaryFromReader(message: GetProtocolVersionUpgradeStateResponseV0, reader: jspb.BinaryReader): GetProtocolVersionUpgradeStateResponseV0;
   }
 
-  export namespace GetVersionUpgradeStateResponseV0 {
+  export namespace GetProtocolVersionUpgradeStateResponseV0 {
     export type AsObject = {
-      versions?: GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.Versions.AsObject,
+      versions?: GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.Versions.AsObject,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
     }
 
     export class Versions extends jspb.Message {
       clearVersionsList(): void;
-      getVersionsList(): Array<GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry>;
-      setVersionsList(value: Array<GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry>): void;
-      addVersions(value?: GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry, index?: number): GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry;
+      getVersionsList(): Array<GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry>;
+      setVersionsList(value: Array<GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry>): void;
+      addVersions(value?: GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry, index?: number): GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry;
 
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): Versions.AsObject;
@@ -2640,7 +2640,7 @@ export namespace GetVersionUpgradeStateResponse {
 
     export namespace Versions {
       export type AsObject = {
-        versionsList: Array<GetVersionUpgradeStateResponse.GetVersionUpgradeStateResponseV0.VersionEntry.AsObject>,
+        versionsList: Array<GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry.AsObject>,
       }
     }
 
@@ -2681,29 +2681,29 @@ export namespace GetVersionUpgradeStateResponse {
   }
 }
 
-export class GetVersionUpgradeVoteStatusRequest extends jspb.Message {
+export class GetProtocolVersionUpgradeVoteStatusRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
-  getV0(): GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0 | undefined;
-  setV0(value?: GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0): void;
+  getV0(): GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0 | undefined;
+  setV0(value?: GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0): void;
 
-  getVersionCase(): GetVersionUpgradeVoteStatusRequest.VersionCase;
+  getVersionCase(): GetProtocolVersionUpgradeVoteStatusRequest.VersionCase;
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetVersionUpgradeVoteStatusRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: GetVersionUpgradeVoteStatusRequest): GetVersionUpgradeVoteStatusRequest.AsObject;
+  toObject(includeInstance?: boolean): GetProtocolVersionUpgradeVoteStatusRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetProtocolVersionUpgradeVoteStatusRequest): GetProtocolVersionUpgradeVoteStatusRequest.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetVersionUpgradeVoteStatusRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetVersionUpgradeVoteStatusRequest;
-  static deserializeBinaryFromReader(message: GetVersionUpgradeVoteStatusRequest, reader: jspb.BinaryReader): GetVersionUpgradeVoteStatusRequest;
+  static serializeBinaryToWriter(message: GetProtocolVersionUpgradeVoteStatusRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetProtocolVersionUpgradeVoteStatusRequest;
+  static deserializeBinaryFromReader(message: GetProtocolVersionUpgradeVoteStatusRequest, reader: jspb.BinaryReader): GetProtocolVersionUpgradeVoteStatusRequest;
 }
 
-export namespace GetVersionUpgradeVoteStatusRequest {
+export namespace GetProtocolVersionUpgradeVoteStatusRequest {
   export type AsObject = {
-    v0?: GetVersionUpgradeVoteStatusRequest.GetVersionUpgradeVoteStatusRequestV0.AsObject,
+    v0?: GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0.AsObject,
   }
 
-  export class GetVersionUpgradeVoteStatusRequestV0 extends jspb.Message {
+  export class GetProtocolVersionUpgradeVoteStatusRequestV0 extends jspb.Message {
     getStartProTxHash(): Uint8Array | string;
     getStartProTxHash_asU8(): Uint8Array;
     getStartProTxHash_asB64(): string;
@@ -2716,16 +2716,16 @@ export namespace GetVersionUpgradeVoteStatusRequest {
     setProve(value: boolean): void;
 
     serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): GetVersionUpgradeVoteStatusRequestV0.AsObject;
-    static toObject(includeInstance: boolean, msg: GetVersionUpgradeVoteStatusRequestV0): GetVersionUpgradeVoteStatusRequestV0.AsObject;
+    toObject(includeInstance?: boolean): GetProtocolVersionUpgradeVoteStatusRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetProtocolVersionUpgradeVoteStatusRequestV0): GetProtocolVersionUpgradeVoteStatusRequestV0.AsObject;
     static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
     static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: GetVersionUpgradeVoteStatusRequestV0, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): GetVersionUpgradeVoteStatusRequestV0;
-    static deserializeBinaryFromReader(message: GetVersionUpgradeVoteStatusRequestV0, reader: jspb.BinaryReader): GetVersionUpgradeVoteStatusRequestV0;
+    static serializeBinaryToWriter(message: GetProtocolVersionUpgradeVoteStatusRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetProtocolVersionUpgradeVoteStatusRequestV0;
+    static deserializeBinaryFromReader(message: GetProtocolVersionUpgradeVoteStatusRequestV0, reader: jspb.BinaryReader): GetProtocolVersionUpgradeVoteStatusRequestV0;
   }
 
-  export namespace GetVersionUpgradeVoteStatusRequestV0 {
+  export namespace GetProtocolVersionUpgradeVoteStatusRequestV0 {
     export type AsObject = {
       startProTxHash: Uint8Array | string,
       count: number,
@@ -2739,33 +2739,33 @@ export namespace GetVersionUpgradeVoteStatusRequest {
   }
 }
 
-export class GetVersionUpgradeVoteStatusResponse extends jspb.Message {
+export class GetProtocolVersionUpgradeVoteStatusResponse extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
-  getV0(): GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0 | undefined;
-  setV0(value?: GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0): void;
+  getV0(): GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0 | undefined;
+  setV0(value?: GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0): void;
 
-  getVersionCase(): GetVersionUpgradeVoteStatusResponse.VersionCase;
+  getVersionCase(): GetProtocolVersionUpgradeVoteStatusResponse.VersionCase;
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetVersionUpgradeVoteStatusResponse.AsObject;
-  static toObject(includeInstance: boolean, msg: GetVersionUpgradeVoteStatusResponse): GetVersionUpgradeVoteStatusResponse.AsObject;
+  toObject(includeInstance?: boolean): GetProtocolVersionUpgradeVoteStatusResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetProtocolVersionUpgradeVoteStatusResponse): GetProtocolVersionUpgradeVoteStatusResponse.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetVersionUpgradeVoteStatusResponse, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetVersionUpgradeVoteStatusResponse;
-  static deserializeBinaryFromReader(message: GetVersionUpgradeVoteStatusResponse, reader: jspb.BinaryReader): GetVersionUpgradeVoteStatusResponse;
+  static serializeBinaryToWriter(message: GetProtocolVersionUpgradeVoteStatusResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetProtocolVersionUpgradeVoteStatusResponse;
+  static deserializeBinaryFromReader(message: GetProtocolVersionUpgradeVoteStatusResponse, reader: jspb.BinaryReader): GetProtocolVersionUpgradeVoteStatusResponse;
 }
 
-export namespace GetVersionUpgradeVoteStatusResponse {
+export namespace GetProtocolVersionUpgradeVoteStatusResponse {
   export type AsObject = {
-    v0?: GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.AsObject,
+    v0?: GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.AsObject,
   }
 
-  export class GetVersionUpgradeVoteStatusResponseV0 extends jspb.Message {
+  export class GetProtocolVersionUpgradeVoteStatusResponseV0 extends jspb.Message {
     hasVersions(): boolean;
     clearVersions(): void;
-    getVersions(): GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals | undefined;
-    setVersions(value?: GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals): void;
+    getVersions(): GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals | undefined;
+    setVersions(value?: GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals): void;
 
     hasProof(): boolean;
     clearProof(): void;
@@ -2777,29 +2777,29 @@ export namespace GetVersionUpgradeVoteStatusResponse {
     getMetadata(): ResponseMetadata | undefined;
     setMetadata(value?: ResponseMetadata): void;
 
-    getResultCase(): GetVersionUpgradeVoteStatusResponseV0.ResultCase;
+    getResultCase(): GetProtocolVersionUpgradeVoteStatusResponseV0.ResultCase;
     serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): GetVersionUpgradeVoteStatusResponseV0.AsObject;
-    static toObject(includeInstance: boolean, msg: GetVersionUpgradeVoteStatusResponseV0): GetVersionUpgradeVoteStatusResponseV0.AsObject;
+    toObject(includeInstance?: boolean): GetProtocolVersionUpgradeVoteStatusResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetProtocolVersionUpgradeVoteStatusResponseV0): GetProtocolVersionUpgradeVoteStatusResponseV0.AsObject;
     static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
     static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: GetVersionUpgradeVoteStatusResponseV0, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): GetVersionUpgradeVoteStatusResponseV0;
-    static deserializeBinaryFromReader(message: GetVersionUpgradeVoteStatusResponseV0, reader: jspb.BinaryReader): GetVersionUpgradeVoteStatusResponseV0;
+    static serializeBinaryToWriter(message: GetProtocolVersionUpgradeVoteStatusResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetProtocolVersionUpgradeVoteStatusResponseV0;
+    static deserializeBinaryFromReader(message: GetProtocolVersionUpgradeVoteStatusResponseV0, reader: jspb.BinaryReader): GetProtocolVersionUpgradeVoteStatusResponseV0;
   }
 
-  export namespace GetVersionUpgradeVoteStatusResponseV0 {
+  export namespace GetProtocolVersionUpgradeVoteStatusResponseV0 {
     export type AsObject = {
-      versions?: GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignals.AsObject,
+      versions?: GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignals.AsObject,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
     }
 
     export class VersionSignals extends jspb.Message {
       clearVersionSignalsList(): void;
-      getVersionSignalsList(): Array<GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal>;
-      setVersionSignalsList(value: Array<GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal>): void;
-      addVersionSignals(value?: GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal, index?: number): GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal;
+      getVersionSignalsList(): Array<GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal>;
+      setVersionSignalsList(value: Array<GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal>): void;
+      addVersionSignals(value?: GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal, index?: number): GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal;
 
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): VersionSignals.AsObject;
@@ -2813,7 +2813,7 @@ export namespace GetVersionUpgradeVoteStatusResponse {
 
     export namespace VersionSignals {
       export type AsObject = {
-        versionSignalsList: Array<GetVersionUpgradeVoteStatusResponse.GetVersionUpgradeVoteStatusResponseV0.VersionSignal.AsObject>,
+        versionSignalsList: Array<GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal.AsObject>,
       }
     }
 

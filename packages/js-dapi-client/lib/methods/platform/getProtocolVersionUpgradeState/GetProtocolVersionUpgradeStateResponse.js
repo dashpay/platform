@@ -2,7 +2,7 @@ const AbstractResponse = require('../response/AbstractResponse');
 const VersionEntry = require('./VersionEntry');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
-class GetVersionUpgradeStateResponse extends AbstractResponse {
+class GetProtocolVersionUpgradeStateResponse extends AbstractResponse {
   /**
    * @param {VersionEntry[]} versionEntries
    * @param {Metadata} metadata
@@ -23,7 +23,7 @@ class GetVersionUpgradeStateResponse extends AbstractResponse {
 
   /**
    * @param proto
-   * @returns {GetVersionUpgradeStateResponse}
+   * @returns {GetProtocolVersionUpgradeStateResponse}
    */
   static createFromProto(proto) {
     const versions = proto.getV0().getVersions();
@@ -45,7 +45,7 @@ class GetVersionUpgradeStateResponse extends AbstractResponse {
       ));
     }
 
-    return new GetVersionUpgradeStateResponse(
+    return new GetProtocolVersionUpgradeStateResponse(
       versionEntries,
       metadata,
       proof,
@@ -53,4 +53,4 @@ class GetVersionUpgradeStateResponse extends AbstractResponse {
   }
 }
 
-module.exports = GetVersionUpgradeStateResponse;
+module.exports = GetProtocolVersionUpgradeStateResponse;

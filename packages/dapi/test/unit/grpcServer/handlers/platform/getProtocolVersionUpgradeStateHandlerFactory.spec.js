@@ -1,18 +1,18 @@
 const {
   v0: {
-    GetVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeStateResponse,
     Proof,
   },
 } = require('@dashevo/dapi-grpc');
 
-const getVersionUpgradeStateHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getVersionUpgradeStateHandlerFactory');
+const getProtocolVersionUpgradeStateHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getProtocolVersionUpgradeStateHandlerFactory');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
-describe('getVersionUpgradeStateHandlerFactory', () => {
+describe('getProtocolVersionUpgradeStateHandlerFactory', () => {
   let call;
   let driveStateRepositoryMock;
-  let getVersionUpgradeStateHandler;
+  let getProtocolVersionUpgradeStateHandler;
   let versionNumber;
   let voteCount;
   let proofFixture;
@@ -38,20 +38,20 @@ describe('getVersionUpgradeStateHandlerFactory', () => {
 
     versionNumber = 1;
     voteCount = 1;
-    const { GetVersionUpgradeStateResponseV0 } = GetVersionUpgradeStateResponse;
-    const { Versions, VersionEntry } = GetVersionUpgradeStateResponseV0;
-    response = new GetVersionUpgradeStateResponse();
+    const { GetProtocolVersionUpgradeStateResponseV0 } = GetProtocolVersionUpgradeStateResponse;
+    const { Versions, VersionEntry } = GetProtocolVersionUpgradeStateResponseV0;
+    response = new GetProtocolVersionUpgradeStateResponse();
     response.setV0(
-      new GetVersionUpgradeStateResponseV0()
+      new GetProtocolVersionUpgradeStateResponseV0()
         .setVersions(new Versions()
           .setVersionsList([new VersionEntry()
             .setVersionNumber(versionNumber)
             .setVoteCount(voteCount)])),
     );
 
-    proofResponse = new GetVersionUpgradeStateResponse();
+    proofResponse = new GetProtocolVersionUpgradeStateResponse();
     proofResponse.setV0(
-      new GetVersionUpgradeStateResponseV0()
+      new GetProtocolVersionUpgradeStateResponseV0()
         .setProof(proofMock),
     );
 
@@ -59,15 +59,15 @@ describe('getVersionUpgradeStateHandlerFactory', () => {
       fetchVersionUpgradeState: this.sinon.stub().resolves(response.serializeBinary()),
     };
 
-    getVersionUpgradeStateHandler = getVersionUpgradeStateHandlerFactory(
+    getProtocolVersionUpgradeStateHandler = getProtocolVersionUpgradeStateHandlerFactory(
       driveStateRepositoryMock,
     );
   });
 
   it('should return valid result', async () => {
-    const result = await getVersionUpgradeStateHandler(call);
+    const result = await getProtocolVersionUpgradeStateHandler(call);
 
-    expect(result).to.be.an.instanceOf(GetVersionUpgradeStateResponse);
+    expect(result).to.be.an.instanceOf(GetProtocolVersionUpgradeStateResponse);
     expect(result.getV0()
       .getVersions().getVersionsList()[0].getVersionNumber()).to.deep.equal(versionNumber);
     expect(driveStateRepositoryMock.fetchVersionUpgradeState)
@@ -83,9 +83,9 @@ describe('getVersionUpgradeStateHandlerFactory', () => {
     driveStateRepositoryMock.fetchVersionUpgradeState
       .resolves(proofResponse.serializeBinary());
 
-    const result = await getVersionUpgradeStateHandler(call);
+    const result = await getProtocolVersionUpgradeStateHandler(call);
 
-    expect(result).to.be.an.instanceOf(GetVersionUpgradeStateResponse);
+    expect(result).to.be.an.instanceOf(GetProtocolVersionUpgradeStateResponse);
 
     const proof = result.getV0().getProof();
 
@@ -104,7 +104,7 @@ describe('getVersionUpgradeStateHandlerFactory', () => {
     driveStateRepositoryMock.fetchVersionUpgradeState.throws(error);
 
     try {
-      await getVersionUpgradeStateHandler(call);
+      await getProtocolVersionUpgradeStateHandler(call);
 
       expect.fail('should throw an error');
     } catch (e) {

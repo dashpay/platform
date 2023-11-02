@@ -2,7 +2,7 @@ const AbstractResponse = require('../response/AbstractResponse');
 const VersionSignal = require('./VersionSignal');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
-class GetVersionUpgradeVoteStatusResponse extends AbstractResponse {
+class GetProtocolVersionUpgradeVoteStatusResponse extends AbstractResponse {
   /**
    * @param {VersionSignal[]} versionSignals
    * @param {Metadata} metadata
@@ -23,7 +23,7 @@ class GetVersionUpgradeVoteStatusResponse extends AbstractResponse {
 
   /**
    * @param proto
-   * @returns {GetVersionUpgradeVoteStatusResponse}
+   * @returns {GetProtocolVersionUpgradeVoteStatusResponse}
    */
   static createFromProto(proto) {
     const versions = proto.getV0().getVersions();
@@ -45,7 +45,7 @@ class GetVersionUpgradeVoteStatusResponse extends AbstractResponse {
       ));
     }
 
-    return new GetVersionUpgradeVoteStatusResponse(
+    return new GetProtocolVersionUpgradeVoteStatusResponse(
       versionSignals,
       metadata,
       proof,
@@ -53,4 +53,4 @@ class GetVersionUpgradeVoteStatusResponse extends AbstractResponse {
   }
 }
 
-module.exports = GetVersionUpgradeVoteStatusResponse;
+module.exports = GetProtocolVersionUpgradeVoteStatusResponse;
