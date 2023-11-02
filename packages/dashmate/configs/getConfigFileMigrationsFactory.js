@@ -281,12 +281,8 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
         }
 
         Object.entries(configFile.configs)
-          .forEach(([name, options]) => {
+          .forEach(([, options]) => {
             options.platform.drive.tenderdash.log.level = 'info';
-
-            if (defaultConfigs.has(name) && options.group === 'local') {
-              options.core.docker.image = defaultConfigs.get(name).get('core.docker.image');
-            }
 
             if (options.network !== NETWORK_MAINNET && options.network !== NETWORK_TESTNET) {
               options.core.docker.image = base.get('core.docker.image');
