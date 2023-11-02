@@ -236,7 +236,7 @@ impl Dapi for Sdk {
 
 /// Dash Platform SDK Builder, used to configure and [`SdkBuilder::build()`] the [Sdk].
 ///
-/// [SdkBuilder] implemenents a "builder" design pattern to allow configuration of the Sdk before it is instantiated.
+/// [SdkBuilder] implements a "builder" design pattern to allow configuration of the Sdk before it is instantiated.
 /// It allows creation of Sdk in two modes:
 /// - `Normal`: Connects to a remote Dash Platform node.
 /// - `Mock`: Uses a mock implementation of Dash Platform.

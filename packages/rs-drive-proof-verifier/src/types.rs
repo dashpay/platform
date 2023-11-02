@@ -19,7 +19,7 @@ use dpp::{
 pub type DataContractHistory = BTreeMap<u64, DataContract>;
 /// Multiple data contracts.
 ///
-/// Mapping betweeen data contract IDs and data contracts.
+/// Mapping between data contract IDs and data contracts.
 /// If data contract is not found, it is represented as `None`.
 pub type DataContracts = BTreeMap<[u8; 32], Option<DataContract>>;
 
