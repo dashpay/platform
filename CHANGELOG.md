@@ -3,11 +3,12 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **platform:** query version upgrade (both votes and status) and epoch info (#1542)
-* identity funding with asset lock special transactions (#1510)
-* **dashmate:** disable config auto render (#1499)
-* **dashmate:** payment queue and extend enabled count (#1505)
-* **dashmate:** move ssl dir (#1502)
+* DAPI proto messages are changed (#1542)
+* Consensus rules for Identity Create and TopUp are changed. (#1510)
+* Asset Lock Proof structure is changed  (#1510)
+* Identity Create Transition balance validation requires correct amount (twice more) (#1510)
+* **dashmate:** `enabledCount` is replaced with `masternodeEnabled` in the masternode status output (#1505)
+* **dashmate:** SSL keys are now stored in the node's config subdirectory (#1502)
 
 ### Features
 
