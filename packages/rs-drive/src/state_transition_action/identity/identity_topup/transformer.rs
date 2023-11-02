@@ -1,13 +1,14 @@
 use crate::state_transition_action::identity::identity_topup::v0::IdentityTopUpTransitionActionV0;
 use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use dpp::consensus::ConsensusError;
+use dpp::fee::Credits;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 
 impl IdentityTopUpTransitionAction {
     /// try from
     pub fn try_from(
         value: IdentityTopUpTransition,
-        top_up_balance_amount: u64,
+        top_up_balance_amount: Credits,
     ) -> Result<Self, ConsensusError> {
         match value {
             IdentityTopUpTransition::V0(v0) => {
@@ -19,7 +20,7 @@ impl IdentityTopUpTransitionAction {
     /// try from borrowed
     pub fn try_from_borrowed(
         value: &IdentityTopUpTransition,
-        top_up_balance_amount: u64,
+        top_up_balance_amount: Credits,
     ) -> Result<Self, ConsensusError> {
         match value {
             IdentityTopUpTransition::V0(v0) => Ok(

@@ -40,7 +40,9 @@ function obtainZeroSSLCertificateTaskFactory(
     const apiKey = config.get('platform.dapi.envoy.ssl.providerConfigs.zerossl.apiKey', true);
     const externalIp = config.get('externalIp', true);
 
-    const sslConfigDir = homeDir.joinPath('ssl', config.getName());
+    const sslConfigDir = homeDir.joinPath(
+      config.getName(), 'platform', 'dapi', 'envoy', 'ssl',
+    );
     const csrFilePath = path.join(sslConfigDir, 'csr.pem');
     const privateKeyFilePath = path.join(sslConfigDir, 'private.key');
     const bundleFilePath = path.join(sslConfigDir, 'bundle.crt');

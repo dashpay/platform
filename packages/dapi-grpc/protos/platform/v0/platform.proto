@@ -23,6 +23,9 @@ service Platform {
   rpc getIdentityByPublicKeyHash (GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse);
   rpc waitForStateTransitionResult (WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse);
   rpc getConsensusParams (GetConsensusParamsRequest) returns (GetConsensusParamsResponse);
+  rpc getVersionUpgradeState(GetVersionUpgradeStateRequest) returns (GetVersionUpgradeStateResponse);
+  rpc getVersionUpgradeVoteStatus(GetVersionUpgradeVoteStatusRequest) returns (GetVersionUpgradeVoteStatusResponse);
+  rpc getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse);
 }
 
 message Proof {
@@ -37,9 +40,10 @@ message Proof {
 message ResponseMetadata {
   uint64 height = 1;
   uint32 core_chain_locked_height = 2;
-  uint64 time_ms = 3;
-  uint32 protocol_version = 4;
-  string chain_id = 5;
+  uint32 epoch = 3;
+  uint64 time_ms = 4;
+  uint32 protocol_version = 5;
+  string chain_id = 6;
 }
 
 message StateTransitionBroadcastError {
@@ -522,5 +526,113 @@ message GetConsensusParamsResponse {
   }
   oneof version {
     GetConsensusParamsResponseV0 v0 = 1;
+  }
+}
+
+
+message GetVersionUpgradeStateRequest {
+  message GetVersionUpgradeStateRequestV0 {
+    bool prove = 1;
+  }
+
+  oneof version {
+    GetVersionUpgradeStateRequestV0 v0 = 1;
+  }
+}
+
+message GetVersionUpgradeStateResponse {
+  message GetVersionUpgradeStateResponseV0 {
+    message Versions {
+      repeated VersionEntry versions = 1;
+    }
+
+    message VersionEntry {
+      uint32 version_number = 1;
+      uint32 vote_count = 2;
+    }
+
+    oneof result {
+      Versions versions = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetVersionUpgradeStateResponseV0 v0 = 1;
+  }
+}
+
+message GetVersionUpgradeVoteStatusRequest {
+  message GetVersionUpgradeVoteStatusRequestV0 {
+    bytes start_pro_tx_hash = 1;
+    uint32 count = 2;
+    bool prove = 3;
+  }
+
+  oneof version {
+    GetVersionUpgradeVoteStatusRequestV0 v0 = 1;
+  }
+}
+
+message GetVersionUpgradeVoteStatusResponse {
+  message GetVersionUpgradeVoteStatusResponseV0 {
+    message VersionSignals {
+      repeated VersionSignal version_signals = 1;
+    }
+
+    message VersionSignal {
+      bytes pro_tx_hash = 1;
+      uint32 version = 2;
+    }
+
+    oneof result {
+      VersionSignals versions = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetVersionUpgradeVoteStatusResponseV0 v0 = 1;
+  }
+}
+
+message GetEpochsInfoRequest {
+  message GetEpochsInfoRequestV0 {
+    google.protobuf.UInt32Value start_epoch = 1;
+    uint32 count = 2;
+    bool ascending = 3;
+    bool prove = 4;
+  }
+
+  oneof version {
+    GetEpochsInfoRequestV0 v0 = 1;
+  }
+}
+
+message GetEpochsInfoResponse {
+  message GetEpochsInfoResponseV0 {
+    message EpochInfos {
+      repeated EpochInfo epoch_infos = 1;
+    }
+
+    message EpochInfo {
+      uint32 number = 1;
+      uint64 first_block_height = 2;
+      uint32 first_core_block_height = 3;
+      uint64 start_time = 4;
+      double fee_multiplier = 5;
+    }
+
+    oneof result {
+      EpochInfos epochs = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetEpochsInfoResponseV0 v0 = 1;
   }
 }

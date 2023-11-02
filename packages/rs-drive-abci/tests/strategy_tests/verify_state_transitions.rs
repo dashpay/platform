@@ -4,7 +4,7 @@ use dapi_grpc::platform::v0::{
 
 use dpp::document::Document;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use drive::query::SingleDocumentDriveQuery;
 use drive_abci::abci::AbciApplication;
@@ -13,6 +13,7 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 
 use dapi_grpc::platform::v0::get_proofs_request::{get_proofs_request_v0, GetProofsRequestV0};
 use dapi_grpc::platform::v0::get_proofs_response::GetProofsResponseV0;
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
@@ -24,11 +25,7 @@ use tenderdash_abci::proto::abci::ExecTxResult;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::platform_value::string_encoding::Encoding;
 use dpp::state_transition::documents_batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
-use dpp::state_transition::documents_batch_transition::document_transition::action_type::TransitionActionTypeGetter;
-use dpp::state_transition::documents_batch_transition::document_transition::DocumentTransitionV0Methods;
 use drive::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransition;
 use drive::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransition;
@@ -36,7 +33,8 @@ use drive::state_transition_action::document::documents_batch::document_transiti
 pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     abci_app: &AbciApplication<MockCoreRPCLike>,
     expected_root_hash: &[u8; 32],
-    state_transitions: &Vec<(StateTransition, ExecTxResult)>,
+    state_transitions: &[(StateTransition, ExecTxResult)],
+    block_info: &BlockInfo,
     platform_version: &PlatformVersion,
 ) -> bool {
     let state = abci_app.platform.state.read().unwrap();
@@ -45,6 +43,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
         state: &state,
         config: &abci_app.platform.config,
         core_rpc: &abci_app.platform.core_rpc,
+        block_info,
     };
 
     //actions are easier to transform to queries

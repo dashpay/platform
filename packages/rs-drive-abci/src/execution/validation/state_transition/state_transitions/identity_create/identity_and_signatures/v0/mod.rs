@@ -3,6 +3,7 @@ use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundE
 use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
+use dpp::identity::state_transition::AssetLockProved;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::PlatformMessageSignable;
@@ -35,6 +36,10 @@ impl IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 for Identity
             }
         }
 
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
         // We should validate that the identity id is created from the asset lock proof
 
         let identifier_from_outpoint = match self.asset_lock_proof().create_identifier() {
@@ -44,7 +49,7 @@ impl IdentityCreateStateTransitionIdentityAndSignaturesValidationV0 for Identity
                     ConsensusError::BasicError(
                         BasicError::IdentityAssetLockTransactionOutputNotFoundError(
                             IdentityAssetLockTransactionOutputNotFoundError::new(
-                                self.asset_lock_proof().instant_lock_output_index().unwrap(),
+                                self.asset_lock_proof().output_index() as usize,
                             ),
                         ),
                     ),

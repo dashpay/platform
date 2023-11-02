@@ -9,7 +9,7 @@ use thiserror::Error;
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[error(
-    "Asset Lock output ${output_index} has invalid public key hash. Must be 20 length bytes hash"
+    "Asset Lock output {output_index} has invalid public key hash. Must be 20 length bytes hash"
 )]
 #[platform_serialize(unversioned)]
 pub struct InvalidAssetLockTransactionOutputReturnSizeError {

@@ -9,7 +9,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Identity ${identity_id:?} already exists")]
+#[error("Identity {identity_id:?} already exists")]
 #[platform_serialize(unversioned)]
 pub struct IdentityAlreadyExistsError {
     /*

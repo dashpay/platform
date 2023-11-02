@@ -26,6 +26,8 @@
 @class GetDataContractsResponse;
 @class GetDocumentsRequest;
 @class GetDocumentsResponse;
+@class GetEpochsInfoRequest;
+@class GetEpochsInfoResponse;
 @class GetIdentitiesByPublicKeyHashesRequest;
 @class GetIdentitiesByPublicKeyHashesResponse;
 @class GetIdentitiesRequest;
@@ -42,6 +44,10 @@
 @class GetIdentityResponse;
 @class GetProofsRequest;
 @class GetProofsResponse;
+@class GetVersionUpgradeStateRequest;
+@class GetVersionUpgradeStateResponse;
+@class GetVersionUpgradeVoteStatusRequest;
+@class GetVersionUpgradeVoteStatusResponse;
 @class WaitForStateTransitionResultRequest;
 @class WaitForStateTransitionResultResponse;
 
@@ -133,6 +139,18 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getConsensusParams(GetConsensusParamsRequest) returns (GetConsensusParamsResponse)
 
 - (GRPCUnaryProtoCall *)getConsensusParamsWithMessage:(GetConsensusParamsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getVersionUpgradeState(GetVersionUpgradeStateRequest) returns (GetVersionUpgradeStateResponse)
+
+- (GRPCUnaryProtoCall *)getVersionUpgradeStateWithMessage:(GetVersionUpgradeStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getVersionUpgradeVoteStatus(GetVersionUpgradeVoteStatusRequest) returns (GetVersionUpgradeVoteStatusResponse)
+
+- (GRPCUnaryProtoCall *)getVersionUpgradeVoteStatusWithMessage:(GetVersionUpgradeVoteStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse)
+
+- (GRPCUnaryProtoCall *)getEpochsInfoWithMessage:(GetEpochsInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -245,6 +263,27 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getConsensusParamsWithRequest:(GetConsensusParamsRequest *)request handler:(void(^)(GetConsensusParamsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetConsensusParamsWithRequest:(GetConsensusParamsRequest *)request handler:(void(^)(GetConsensusParamsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getVersionUpgradeState(GetVersionUpgradeStateRequest) returns (GetVersionUpgradeStateResponse)
+
+- (void)getVersionUpgradeStateWithRequest:(GetVersionUpgradeStateRequest *)request handler:(void(^)(GetVersionUpgradeStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetVersionUpgradeStateWithRequest:(GetVersionUpgradeStateRequest *)request handler:(void(^)(GetVersionUpgradeStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getVersionUpgradeVoteStatus(GetVersionUpgradeVoteStatusRequest) returns (GetVersionUpgradeVoteStatusResponse)
+
+- (void)getVersionUpgradeVoteStatusWithRequest:(GetVersionUpgradeVoteStatusRequest *)request handler:(void(^)(GetVersionUpgradeVoteStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetVersionUpgradeVoteStatusWithRequest:(GetVersionUpgradeVoteStatusRequest *)request handler:(void(^)(GetVersionUpgradeVoteStatusResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse)
+
+- (void)getEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 @end
