@@ -120,3 +120,6 @@ jobs:
       - name: Debug images
         shell: bash
         run: docker image ls
+
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
