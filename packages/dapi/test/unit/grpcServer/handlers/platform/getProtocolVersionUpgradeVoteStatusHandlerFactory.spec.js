@@ -67,7 +67,7 @@ describe('getProtocolVersionUpgradeVoteStatusHandlerFactory', () => {
   it('should return valid result', async () => {
     const result = await getProtocolVersionUpgradeVoteStatusHandler(call);
 
-    expect(result).to.be.an.instanceOf(GetVersionUpgradeVoteStatusResponse);
+    expect(result).to.be.an.instanceOf(GetProtocolVersionUpgradeVoteStatusResponse);
     expect(result.getV0()
       .getVersions().getVersionSignalsList()[0].getProTxHash()).to.deep.equal(proTxHash);
     expect(driveStateRepositoryMock.fetchVersionUpgradeVoteStatus)
@@ -85,7 +85,7 @@ describe('getProtocolVersionUpgradeVoteStatusHandlerFactory', () => {
 
     const result = await getProtocolVersionUpgradeVoteStatusHandler(call);
 
-    expect(result).to.be.an.instanceOf(GetVersionUpgradeVoteStatusResponse);
+    expect(result).to.be.an.instanceOf(GetProtocolVersionUpgradeVoteStatusResponse);
 
     const proof = result.getV0().getProof();
 

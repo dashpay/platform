@@ -112,7 +112,8 @@ describe('PlatformPromiseClient', () => {
       const result = await platformPromiseClient.getProtocolVersionUpgradeState(request);
 
       expect(result).to.equal(response);
-      expect(platformPromiseClient.client.getProtocolVersionUpgradeState).to.be.calledOnceWith(request);
+      expect(platformPromiseClient.client.getProtocolVersionUpgradeState)
+        .to.be.calledOnceWith(request);
     });
   });
 });

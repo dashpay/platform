@@ -1,12 +1,12 @@
 const {
   v0: {
-    GetVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeStateResponse,
     ResponseMetadata,
     Proof: ProofResponse,
   },
 } = require('@dashevo/dapi-grpc');
 
-const GetVersionUpgradeStateResponseClass = require('../../../../../lib/methods/platform/getProtocolVersionUpgradeState/GetProtocolVersionUpgradeStateResponse');
+const GetProtocolVersionUpgradeStateResponseClass = require('../../../../../lib/methods/platform/getProtocolVersionUpgradeState/GetProtocolVersionUpgradeStateResponse');
 const VersionEntryClass = require('../../../../../lib/methods/platform/getProtocolVersionUpgradeState/VersionEntry');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
@@ -14,7 +14,7 @@ const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixtur
 const Proof = require('../../../../../lib/methods/platform/response/Proof');
 const Metadata = require('../../../../../lib/methods/platform/response/Metadata');
 
-describe('GetVersionUpgradeStateResponse', () => {
+describe('GetProtocolVersionUpgradeStateResponse', () => {
   let getProtocolVersionUpgradeState;
   let metadataFixture;
   let versionEntryFixture;
@@ -26,9 +26,9 @@ describe('GetVersionUpgradeStateResponse', () => {
     versionEntryFixture = new VersionEntryClass(1, 1);
     proofFixture = getProofFixture();
 
-    const { GetVersionUpgradeStateResponseV0 } = GetVersionUpgradeStateResponse;
-    const { Versions, VersionEntry } = GetVersionUpgradeStateResponseV0;
-    proto = new GetVersionUpgradeStateResponse();
+    const { GetProtocolVersionUpgradeStateResponseV0 } = GetProtocolVersionUpgradeStateResponse;
+    const { Versions, VersionEntry } = GetProtocolVersionUpgradeStateResponseV0;
+    proto = new GetProtocolVersionUpgradeStateResponse();
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
@@ -37,7 +37,7 @@ describe('GetVersionUpgradeStateResponse', () => {
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     proto.setV0(
-      new GetVersionUpgradeStateResponseV0()
+      new GetProtocolVersionUpgradeStateResponseV0()
         .setVersions(new Versions()
           .setVersionsList([new VersionEntry()
             .setVersionNumber(versionEntryFixture.getVersionNumber())
@@ -46,7 +46,7 @@ describe('GetVersionUpgradeStateResponse', () => {
         .setMetadata(metadata),
     );
 
-    getProtocolVersionUpgradeState = new GetVersionUpgradeStateResponseClass(
+    getProtocolVersionUpgradeState = new GetProtocolVersionUpgradeStateResponseClass(
       [versionEntryFixture],
       new Metadata(metadataFixture),
     );
@@ -61,7 +61,7 @@ describe('GetVersionUpgradeStateResponse', () => {
   });
 
   it('should return proof', () => {
-    getProtocolVersionUpgradeState = new GetVersionUpgradeStateResponseClass(
+    getProtocolVersionUpgradeState = new GetProtocolVersionUpgradeStateResponseClass(
       [],
       new Metadata(metadataFixture),
       new Proof(proofFixture),
@@ -79,10 +79,10 @@ describe('GetVersionUpgradeStateResponse', () => {
   });
 
   it('should create an instance from proto', () => {
-    getProtocolVersionUpgradeState = GetVersionUpgradeStateResponseClass
+    getProtocolVersionUpgradeState = GetProtocolVersionUpgradeStateResponseClass
       .createFromProto(proto);
     expect(getProtocolVersionUpgradeState)
-      .to.be.an.instanceOf(GetVersionUpgradeStateResponseClass);
+      .to.be.an.instanceOf(GetProtocolVersionUpgradeStateResponseClass);
     expect(getProtocolVersionUpgradeState.getVersionEntries()).to.deep.equal([versionEntryFixture]);
 
     expect(getProtocolVersionUpgradeState.getMetadata())
@@ -106,7 +106,7 @@ describe('GetVersionUpgradeStateResponse', () => {
     proto.getV0().setVersions(undefined);
     proto.getV0().setProof(proofProto);
 
-    getProtocolVersionUpgradeState = GetVersionUpgradeStateResponseClass.createFromProto(proto);
+    getProtocolVersionUpgradeState = GetProtocolVersionUpgradeStateResponseClass.createFromProto(proto);
 
     expect(getProtocolVersionUpgradeState.getVersionEntries()).to.deep.equal([]);
     expect(getProtocolVersionUpgradeState.getMetadata()).to.deep.equal(metadataFixture);
@@ -123,7 +123,7 @@ describe('GetVersionUpgradeStateResponse', () => {
     proto.getV0().setMetadata(undefined);
 
     try {
-      getProtocolVersionUpgradeState = GetVersionUpgradeStateResponseClass.createFromProto(proto);
+      getProtocolVersionUpgradeState = GetProtocolVersionUpgradeStateResponseClass.createFromProto(proto);
 
       expect.fail('should throw InvalidResponseError');
     } catch (e) {
@@ -135,7 +135,7 @@ describe('GetVersionUpgradeStateResponse', () => {
     proto.getV0().setVersions(undefined);
 
     try {
-      getProtocolVersionUpgradeState = GetVersionUpgradeStateResponseClass.createFromProto(proto);
+      getProtocolVersionUpgradeState = GetProtocolVersionUpgradeStateResponseClass.createFromProto(proto);
 
       expect.fail('should throw InvalidResponseError');
     } catch (e) {

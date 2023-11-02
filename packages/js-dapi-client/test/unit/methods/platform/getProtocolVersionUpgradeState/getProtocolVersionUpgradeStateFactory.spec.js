@@ -1,8 +1,8 @@
 const {
   v0: {
     PlatformPromiseClient,
-    GetVersionUpgradeStateRequest,
-    GetVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse,
     ResponseMetadata,
     Proof: ProofResponse,
   },
@@ -36,14 +36,14 @@ describe('getProtocolVersionUpgradeStateFactory', () => {
     metadata.setTimeMs(metadataFixture.timeMs);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
-    const { GetVersionUpgradeStateResponseV0 } = GetVersionUpgradeStateResponse;
+    const { GetProtocolVersionUpgradeStateResponseV0 } = GetProtocolVersionUpgradeStateResponse;
     const {
       VersionEntry: VersionEntryProto,
       Versions,
-    } = GetVersionUpgradeStateResponseV0;
-    response = new GetVersionUpgradeStateResponse();
+    } = GetProtocolVersionUpgradeStateResponseV0;
+    response = new GetProtocolVersionUpgradeStateResponse();
     response.setV0(
-      new GetVersionUpgradeStateResponseV0()
+      new GetProtocolVersionUpgradeStateResponseV0()
         .setVersions(new Versions()
           .setVersionsList([new VersionEntryProto()
             .setVersionNumber(versionEntryFixture.getVersionNumber())
@@ -72,10 +72,10 @@ describe('getProtocolVersionUpgradeStateFactory', () => {
   it('should return version upgrade state', async () => {
     const result = await getProtocolVersionUpgradeState(options);
 
-    const { GetVersionUpgradeStateRequestV0 } = GetVersionUpgradeStateRequest;
-    const request = new GetVersionUpgradeStateRequest();
+    const { GetProtocolVersionUpgradeStateRequestV0 } = GetProtocolVersionUpgradeStateRequest;
+    const request = new GetProtocolVersionUpgradeStateRequest();
     request.setV0(
-      new GetVersionUpgradeStateRequestV0()
+      new GetProtocolVersionUpgradeStateRequestV0()
         .setProve(!!options.prove),
     );
 
@@ -99,10 +99,10 @@ describe('getProtocolVersionUpgradeStateFactory', () => {
 
     const result = await getProtocolVersionUpgradeState(options);
 
-    const { GetVersionUpgradeStateRequestV0 } = GetVersionUpgradeStateRequest;
-    const request = new GetVersionUpgradeStateRequest();
+    const { GetProtocolVersionUpgradeStateRequestV0 } = GetProtocolVersionUpgradeStateRequest;
+    const request = new GetProtocolVersionUpgradeStateRequest();
     request.setV0(
-      new GetVersionUpgradeStateRequestV0()
+      new GetProtocolVersionUpgradeStateRequestV0()
         .setProve(!!options.ascending),
     );
 
@@ -134,10 +134,10 @@ describe('getProtocolVersionUpgradeStateFactory', () => {
 
     grpcTransportMock.request.throws(error);
 
-    const { GetVersionUpgradeStateRequestV0 } = GetVersionUpgradeStateRequest;
-    const request = new GetVersionUpgradeStateRequest();
+    const { GetProtocolVersionUpgradeStateRequestV0 } = GetProtocolVersionUpgradeStateRequest;
+    const request = new GetProtocolVersionUpgradeStateRequest();
     request.setV0(
-      new GetVersionUpgradeStateRequestV0()
+      new GetProtocolVersionUpgradeStateRequestV0()
         .setProve(!!options.ascending),
     );
 

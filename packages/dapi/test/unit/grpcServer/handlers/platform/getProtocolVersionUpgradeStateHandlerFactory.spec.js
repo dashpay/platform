@@ -38,20 +38,20 @@ describe('getProtocolVersionUpgradeStateHandlerFactory', () => {
 
     versionNumber = 1;
     voteCount = 1;
-    const { GetProtocolVersionUpgradeStateResponseV0 } = GetVersionUpgradeStateResponse;
-    const { Versions, VersionEntry } = GetVersionUpgradeStateResponseV0;
-    response = new GetVersionUpgradeStateResponse();
+    const { GetProtocolVersionUpgradeStateResponseV0 } = GetProtocolVersionUpgradeStateResponse;
+    const { Versions, VersionEntry } = GetProtocolVersionUpgradeStateResponseV0;
+    response = new GetProtocolVersionUpgradeStateResponse();
     response.setV0(
-      new GetVersionUpgradeStateResponseV0()
+      new GetProtocolVersionUpgradeStateResponseV0()
         .setVersions(new Versions()
           .setVersionsList([new VersionEntry()
             .setVersionNumber(versionNumber)
             .setVoteCount(voteCount)])),
     );
 
-    proofResponse = new GetVersionUpgradeStateResponse();
+    proofResponse = new GetProtocolVersionUpgradeStateResponse();
     proofResponse.setV0(
-      new GetVersionUpgradeStateResponseV0()
+      new GetProtocolVersionUpgradeStateResponseV0()
         .setProof(proofMock),
     );
 
@@ -67,7 +67,7 @@ describe('getProtocolVersionUpgradeStateHandlerFactory', () => {
   it('should return valid result', async () => {
     const result = await getProtocolVersionUpgradeStateHandler(call);
 
-    expect(result).to.be.an.instanceOf(GetVersionUpgradeStateResponse);
+    expect(result).to.be.an.instanceOf(GetProtocolVersionUpgradeStateResponse);
     expect(result.getV0()
       .getVersions().getVersionsList()[0].getVersionNumber()).to.deep.equal(versionNumber);
     expect(driveStateRepositoryMock.fetchVersionUpgradeState)
@@ -85,7 +85,7 @@ describe('getProtocolVersionUpgradeStateHandlerFactory', () => {
 
     const result = await getProtocolVersionUpgradeStateHandler(call);
 
-    expect(result).to.be.an.instanceOf(GetVersionUpgradeStateResponse);
+    expect(result).to.be.an.instanceOf(GetProtocolVersionUpgradeStateResponse);
 
     const proof = result.getV0().getProof();
 

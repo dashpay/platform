@@ -1,8 +1,8 @@
 const {
   v0: {
     PlatformPromiseClient,
-    GetVersionUpgradeVoteStatusRequest,
-    GetVersionUpgradeVoteStatusResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse,
     ResponseMetadata,
     Proof: ProofResponse,
   },
@@ -38,14 +38,14 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
     metadata.setTimeMs(metadataFixture.timeMs);
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
-    const { GetVersionUpgradeVoteStatusResponseV0 } = GetVersionUpgradeVoteStatusResponse;
+    const { GetProtocolVersionUpgradeVoteStatusResponseV0 } = GetProtocolVersionUpgradeVoteStatusResponse;
     const {
       VersionSignal: VersionSignalProto,
       VersionSignals,
-    } = GetVersionUpgradeVoteStatusResponseV0;
-    response = new GetVersionUpgradeVoteStatusResponse();
+    } = GetProtocolVersionUpgradeVoteStatusResponseV0;
+    response = new GetProtocolVersionUpgradeVoteStatusResponse();
     response.setV0(
-      new GetVersionUpgradeVoteStatusResponseV0()
+      new GetProtocolVersionUpgradeVoteStatusResponseV0()
         .setVersions(new VersionSignals()
           .setVersionSignalsList([new VersionSignalProto()
             .setProTxHash(Buffer.from(versionSignalFixture.getProTxHash(), 'hex'))
@@ -64,7 +64,9 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
       request: this.sinon.stub().resolves(response),
     };
 
-    getProtocolVersionUpgradeVoteStatus = getProtocolVersionUpgradeVoteStatusFactory(grpcTransportMock);
+    getProtocolVersionUpgradeVoteStatus = getProtocolVersionUpgradeVoteStatusFactory(
+      grpcTransportMock,
+    );
 
     options = {
       timeout: 1000,
@@ -74,10 +76,10 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
   it('should return vote statuses', async () => {
     const result = await getProtocolVersionUpgradeVoteStatus(startProTxHash, 1, options);
 
-    const { GetVersionUpgradeVoteStatusRequestV0 } = GetVersionUpgradeVoteStatusRequest;
-    const request = new GetVersionUpgradeVoteStatusRequest();
+    const { GetProtocolVersionUpgradeVoteStatusRequestV0 } = GetProtocolVersionUpgradeVoteStatusRequest;
+    const request = new GetProtocolVersionUpgradeVoteStatusRequest();
     request.setV0(
-      new GetVersionUpgradeVoteStatusRequestV0()
+      new GetProtocolVersionUpgradeVoteStatusRequestV0()
         .setStartProTxHash(Buffer.from(startProTxHash, 'hex'))
         .setCount(1)
         .setProve(!!options.prove),
@@ -103,10 +105,10 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
 
     const result = await getProtocolVersionUpgradeVoteStatus(startProTxHash, 1, options);
 
-    const { GetVersionUpgradeVoteStatusRequestV0 } = GetVersionUpgradeVoteStatusRequest;
-    const request = new GetVersionUpgradeVoteStatusRequest();
+    const { GetProtocolVersionUpgradeVoteStatusRequestV0 } = GetProtocolVersionUpgradeVoteStatusRequest;
+    const request = new GetProtocolVersionUpgradeVoteStatusRequest();
     request.setV0(
-      new GetVersionUpgradeVoteStatusRequestV0()
+      new GetProtocolVersionUpgradeVoteStatusRequestV0()
         .setStartProTxHash(Buffer.from(startProTxHash, 'hex'))
         .setCount(1)
         .setProve(!!options.ascending),
@@ -140,10 +142,10 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
 
     grpcTransportMock.request.throws(error);
 
-    const { GetVersionUpgradeVoteStatusRequestV0 } = GetVersionUpgradeVoteStatusRequest;
-    const request = new GetVersionUpgradeVoteStatusRequest();
+    const { GetProtocolVersionUpgradeVoteStatusRequestV0 } = GetProtocolVersionUpgradeVoteStatusRequest;
+    const request = new GetProtocolVersionUpgradeVoteStatusRequest();
     request.setV0(
-      new GetVersionUpgradeVoteStatusRequestV0()
+      new GetProtocolVersionUpgradeVoteStatusRequestV0()
         .setStartProTxHash(Buffer.from(startProTxHash, 'hex'))
         .setCount(1)
         .setProve(!!options.ascending),

@@ -42,8 +42,10 @@ const {
             GetConsensusParamsResponse: PBJSGetConsensusParamsResponse,
             GetEpochsInfoRequest: PBJSGetEpochsInfoRequest,
             GetEpochsInfoResponse: PBJSGetEpochsInfoResponse,
-            GetProtocolVersionUpgradeVoteStatusRequest: PBJSGetProtocolVersionUpgradeVoteStatusRequest,
-            GetProtocolVersionUpgradeVoteStatusResponse: PBJSGetProtocolVersionUpgradeVoteStatusResponse,
+            GetProtocolVersionUpgradeVoteStatusRequest:
+              PBJSGetProtocolVersionUpgradeVoteStatusRequest,
+            GetProtocolVersionUpgradeVoteStatusResponse:
+              PBJSGetProtocolVersionUpgradeVoteStatusResponse,
             GetProtocolVersionUpgradeStateRequest: PBJSGetProtocolVersionUpgradeStateRequest,
             GetProtocolVersionUpgradeStateResponse: PBJSGetProtocolVersionUpgradeStateResponse,
           },
@@ -432,7 +434,11 @@ class PlatformPromiseClient {
    * @param {CallOptions} [options={}]
    * @return {Promise<!GetProtocolVersionUpgradeVoteStatusResponse>}
    */
-  getProtocolVersionUpgradeVoteStatus(getProtocolVersionUpgradeVoteStatusRequest, metadata = {}, options = {}) {
+  getProtocolVersionUpgradeVoteStatus(
+    getProtocolVersionUpgradeVoteStatusRequest,
+    metadata = {},
+    options = {},
+  ) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
@@ -463,7 +469,11 @@ class PlatformPromiseClient {
    * @param {CallOptions} [options={}]
    * @return {Promise<!GetProtocolVersionUpgradeStateResponse>}
    */
-  getProtocolVersionUpgradeState(getProtocolVersionUpgradeStateRequest, metadata = {}, options = {}) {
+  getProtocolVersionUpgradeState(
+    getProtocolVersionUpgradeStateRequest,
+    metadata = {},
+    options = {},
+  ) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
