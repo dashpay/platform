@@ -1908,9 +1908,10 @@ mod tests {
             let validation_result = platform
                 .query(PATH, &request, version)
                 .expect("expected query to succeed");
-            let response =
-                GetProtocolVersionUpgradeStateResponse::decode(validation_result.data.unwrap().as_slice())
-                    .unwrap();
+            let response = GetProtocolVersionUpgradeStateResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .unwrap();
 
             let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
@@ -2018,9 +2019,10 @@ mod tests {
             let validation_result = platform
                 .query(PATH, &request, version)
                 .expect("expected query to succeed");
-            let response =
-                GetProtocolVersionUpgradeStateResponse::decode(validation_result.data.unwrap().as_slice())
-                    .unwrap();
+            let response = GetProtocolVersionUpgradeStateResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .unwrap();
 
             let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
@@ -2044,16 +2046,19 @@ mod tests {
             let (platform, version) = super::setup_platform();
 
             let request = GetProtocolVersionUpgradeStateRequest {
-                version: Some(Version::V0(GetProtocolVersionUpgradeStateRequestV0 { prove: true })),
+                version: Some(Version::V0(GetProtocolVersionUpgradeStateRequestV0 {
+                    prove: true,
+                })),
             }
             .encode_to_vec();
 
             let validation_result = platform
                 .query(PATH, &request, version)
                 .expect("expected query to succeed");
-            let response =
-                GetProtocolVersionUpgradeStateResponse::decode(validation_result.data.unwrap().as_slice())
-                    .unwrap();
+            let response = GetProtocolVersionUpgradeStateResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .unwrap();
 
             let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
@@ -2161,16 +2166,19 @@ mod tests {
             drop(cache);
 
             let request = GetProtocolVersionUpgradeStateRequest {
-                version: Some(Version::V0(GetProtocolVersionUpgradeStateRequestV0 { prove: true })),
+                version: Some(Version::V0(GetProtocolVersionUpgradeStateRequestV0 {
+                    prove: true,
+                })),
             }
             .encode_to_vec();
 
             let validation_result = platform
                 .query(PATH, &request, version)
                 .expect("expected query to succeed");
-            let response =
-                GetProtocolVersionUpgradeStateResponse::decode(validation_result.data.unwrap().as_slice())
-                    .unwrap();
+            let response = GetProtocolVersionUpgradeStateResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .unwrap();
 
             let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
@@ -2228,7 +2236,8 @@ mod tests {
         use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::GetProtocolVersionUpgradeVoteStatusRequestV0;
         use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_response::get_protocol_version_upgrade_vote_status_response_v0;
         use dapi_grpc::platform::v0::{
-            get_protocol_version_upgrade_vote_status_response, GetProtocolVersionUpgradeVoteStatusRequest,
+            get_protocol_version_upgrade_vote_status_response,
+            GetProtocolVersionUpgradeVoteStatusRequest,
             GetProtocolVersionUpgradeVoteStatusResponse,
         };
         use drive::drive::grove_operations::BatchInsertApplyType;

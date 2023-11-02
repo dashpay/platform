@@ -20,11 +20,11 @@ impl<C> Platform<C> {
         query_data: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let GetProtocolVersionUpgradeStateRequest { version } =
-            check_validation_result_with_data!(GetProtocolVersionUpgradeStateRequest::decode(query_data)
-                .map_err(|e| {
-                    QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
-                }));
+        let GetProtocolVersionUpgradeStateRequest { version } = check_validation_result_with_data!(
+            GetProtocolVersionUpgradeStateRequest::decode(query_data).map_err(|e| {
+                QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
+            })
+        );
 
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
@@ -53,11 +53,12 @@ impl<C> Platform<C> {
             ));
         }
         match version {
-            Version::V0(get_protocol_version_upgrade_state_request) => self.query_version_upgrade_state_v0(
-                state,
-                get_protocol_version_upgrade_state_request,
-                platform_version,
-            ),
+            Version::V0(get_protocol_version_upgrade_state_request) => self
+                .query_version_upgrade_state_v0(
+                    state,
+                    get_protocol_version_upgrade_state_request,
+                    platform_version,
+                ),
         }
     }
 }
