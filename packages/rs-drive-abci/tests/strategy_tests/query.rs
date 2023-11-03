@@ -322,3 +322,460 @@ impl QueryStrategy {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
+    use crate::query::QueryStrategy;
+    use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy, NetworkStrategy};
+    use dashcore_rpc::dashcore::hashes::Hash;
+    use dashcore_rpc::dashcore::BlockHash;
+    use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
+    use strategy_tests::operations::DocumentAction::DocumentActionReplace;
+    use strategy_tests::operations::{
+        DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
+    };
+
+    use dapi_grpc::platform::v0::get_epochs_info_request::{GetEpochsInfoRequestV0, Version};
+    use dapi_grpc::platform::v0::{
+        get_epochs_info_response, GetEpochsInfoRequest, GetEpochsInfoResponse,
+    };
+    use dpp::block::epoch::EpochIndex;
+    use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::document_type::random_document::{
+        DocumentFieldFillSize, DocumentFieldFillType,
+    };
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::serialization::PlatformDeserializable;
+    use dpp::tests::json_document::json_document_to_created_contract;
+    use dpp::util::hash::hash_to_hex_string;
+    use dpp::version::PlatformVersion;
+    use drive_abci::config::{ExecutionConfig, PlatformConfig, PlatformTestConfig};
+    use drive_abci::logging::LogLevel;
+    use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use drive_abci::rpc::core::QuorumListExtendedInfo;
+    use drive_abci::test::helpers::setup::TestPlatformBuilder;
+    use itertools::Itertools;
+    use strategy_tests::Strategy;
+    use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
+    use tenderdash_abci::proto::types::CoreChainLock;
+    use tenderdash_abci::Application;
+
+    macro_rules! extract_single_variant_or_panic {
+        ($expression:expr, $pattern:pat, $binding:ident) => {
+            match $expression {
+                $pattern => $binding,
+                // _ => panic!(
+                //     "Expected pattern {} but got another variant",
+                //     stringify!($pattern)
+                // ),
+            }
+        };
+    }
+
+    macro_rules! extract_variant_or_panic {
+        ($expression:expr, $pattern:pat, $binding:ident) => {
+            match $expression {
+                $pattern => $binding,
+                _ => panic!(
+                    "Expected pattern {} but got another variant",
+                    stringify!($pattern)
+                ),
+            }
+        };
+    }
+
+    #[test]
+    fn run_chain_query_epoch_info() {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..3,
+                chance_per_block: Some(0.5),
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+        };
+        let hour_in_ms = 1000 * 60 * 60;
+        let config = PlatformConfig {
+            quorum_size: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
+            block_spacing_ms: hour_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let all_have_balances = outcome
+            .masternode_identity_balances
+            .iter()
+            .all(|(_, balance)| *balance != 0);
+        assert!(all_have_balances, "all masternodes should have a balance");
+
+        let request = GetEpochsInfoRequest {
+            version: Some(Version::V0(GetEpochsInfoRequestV0 {
+                start_epoch: None,
+                count: 8,
+                ascending: true,
+                prove: false,
+            })),
+        }
+        .encode_to_vec();
+
+        let platform_state = outcome
+            .abci_app
+            .platform
+            .state
+            .read()
+            .expect("expected to read state");
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
+        drop(platform_state);
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected to get current platform version");
+        let validation_result = outcome
+            .abci_app
+            .platform
+            .query("/epochInfos", &request, platform_version)
+            .expect("expected query to succeed");
+        let response = GetEpochsInfoResponse::decode(
+            validation_result.data.expect("expected data").as_slice(),
+        )
+        .expect("expected to decode response");
+
+        let result = extract_single_variant_or_panic!(
+            response.version.expect("expected a versioned response"),
+            get_epochs_info_response::Version::V0(inner),
+            inner
+        )
+        .result
+        .expect("expected a result");
+
+        let epoch_infos = extract_variant_or_panic!(
+            result,
+            get_epochs_info_response::get_epochs_info_response_v0::Result::Epochs(inner),
+            inner
+        );
+
+        // we should have 5 epochs worth of infos
+
+        assert_eq!(epoch_infos.epoch_infos.len(), 5)
+    }
+
+    #[test]
+    fn run_chain_query_epoch_info_latest() {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..3,
+                chance_per_block: Some(0.5),
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+        };
+        let hour_in_ms = 1000 * 60 * 60;
+        let config = PlatformConfig {
+            quorum_size: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
+            block_spacing_ms: hour_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let all_have_balances = outcome
+            .masternode_identity_balances
+            .iter()
+            .all(|(_, balance)| *balance != 0);
+        assert!(all_have_balances, "all masternodes should have a balance");
+
+        let request = GetEpochsInfoRequest {
+            version: Some(Version::V0(GetEpochsInfoRequestV0 {
+                start_epoch: None,
+                count: 1,
+                ascending: false,
+                prove: false,
+            })),
+        }
+        .encode_to_vec();
+
+        let platform_state = outcome
+            .abci_app
+            .platform
+            .state
+            .read()
+            .expect("expected to read state");
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
+        drop(platform_state);
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected to get current platform version");
+        let validation_result = outcome
+            .abci_app
+            .platform
+            .query("/epochInfos", &request, platform_version)
+            .expect("expected query to succeed");
+        let response = GetEpochsInfoResponse::decode(
+            validation_result.data.expect("expected data").as_slice(),
+        )
+        .expect("expected to decode response");
+
+        let result = extract_single_variant_or_panic!(
+            response.version.expect("expected a versioned response"),
+            get_epochs_info_response::Version::V0(inner),
+            inner
+        )
+        .result
+        .expect("expected a result");
+
+        let epoch_infos = extract_variant_or_panic!(
+            result,
+            get_epochs_info_response::get_epochs_info_response_v0::Result::Epochs(inner),
+            inner
+        );
+
+        // we should have 5 epochs worth of infos
+
+        assert_eq!(epoch_infos.epoch_infos.len(), 1);
+        assert_eq!(epoch_infos.epoch_infos.first().unwrap().number, 4);
+    }
+
+    #[test]
+    fn run_chain_prove_epoch_info() {
+        let strategy = NetworkStrategy {
+            strategy: Strategy {
+                contracts_with_updates: vec![],
+                operations: vec![],
+                start_identities: vec![],
+                identities_inserts: Frequency {
+                    times_per_block_range: Default::default(),
+                    chance_per_block: None,
+                },
+                signer: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..3,
+                chance_per_block: Some(0.5),
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: true,
+        };
+        let hour_in_ms = 1000 * 60 * 60;
+        let config = PlatformConfig {
+            quorum_size: 100,
+            execution: ExecutionConfig {
+                verify_sum_trees: true,
+                validator_set_quorum_rotation_block_count: 100,
+                ..Default::default()
+            },
+            block_spacing_ms: hour_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let all_have_balances = outcome
+            .masternode_identity_balances
+            .iter()
+            .all(|(_, balance)| *balance != 0);
+        assert!(all_have_balances, "all masternodes should have a balance");
+
+        let request = GetEpochsInfoRequest {
+            version: Some(Version::V0(GetEpochsInfoRequestV0 {
+                start_epoch: None,
+                count: 8,
+                ascending: true,
+                prove: true,
+            })),
+        }
+        .encode_to_vec();
+
+        let platform_state = outcome
+            .abci_app
+            .platform
+            .state
+            .read()
+            .expect("expected to read state");
+        let protocol_version = platform_state.current_protocol_version_in_consensus();
+        let current_epoch = platform_state.epoch_ref().index;
+        drop(platform_state);
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected to get current platform version");
+        let validation_result = outcome
+            .abci_app
+            .platform
+            .query("/epochInfos", &request, platform_version)
+            .expect("expected query to succeed");
+        let response = GetEpochsInfoResponse::decode(
+            validation_result.data.expect("expected data").as_slice(),
+        )
+        .expect("expected to decode response");
+
+        let result = extract_single_variant_or_panic!(
+            response.version.expect("expected a versioned response"),
+            get_epochs_info_response::Version::V0(inner),
+            inner
+        )
+        .result
+        .expect("expected a result");
+
+        let epoch_infos_proof = extract_variant_or_panic!(
+            result,
+            get_epochs_info_response::get_epochs_info_response_v0::Result::Proof(inner),
+            inner
+        );
+
+        let epoch_infos = Drive::verify_epoch_infos(
+            epoch_infos_proof.grovedb_proof.as_slice(),
+            current_epoch,
+            None,
+            8,
+            true,
+            platform_version,
+        )
+        .expect("expected to verify current epochs")
+        .1;
+
+        // we should have 5 epochs worth of infos
+
+        assert_eq!(epoch_infos.len(), 5);
+
+        let request = GetEpochsInfoRequest {
+            version: Some(Version::V0(GetEpochsInfoRequestV0 {
+                start_epoch: None,
+                count: 1,
+                ascending: false,
+                prove: true,
+            })),
+        }
+        .encode_to_vec();
+
+        let validation_result = outcome
+            .abci_app
+            .platform
+            .query("/epochInfos", &request, platform_version)
+            .expect("expected query to succeed");
+        let response = GetEpochsInfoResponse::decode(
+            validation_result.data.expect("expected data").as_slice(),
+        )
+        .expect("expected to decode response");
+
+        let get_epochs_info_response::Version::V0(response_v0) =
+            response.version.expect("expected a versioned response");
+
+        let result = response_v0.result.expect("expected a result");
+
+        let metadata = response_v0.metadata.expect("expected metadata");
+
+        let epoch_infos_proof = extract_variant_or_panic!(
+            result,
+            get_epochs_info_response::get_epochs_info_response_v0::Result::Proof(inner),
+            inner
+        );
+
+        let epoch_infos = Drive::verify_epoch_infos(
+            epoch_infos_proof.grovedb_proof.as_slice(),
+            metadata.epoch as EpochIndex,
+            None,
+            1,
+            false,
+            platform_version,
+        )
+        .expect("expected to verify current epochs")
+        .1;
+
+        assert_eq!(epoch_infos.len(), 1);
+        assert_eq!(epoch_infos.first().unwrap().index(), 4);
+    }
+}

@@ -370,5 +370,65 @@
              responseClass:[GetConsensusParamsResponse class]];
 }
 
+#pragma mark getVersionUpgradeState(GetVersionUpgradeStateRequest) returns (GetVersionUpgradeStateResponse)
+
+- (void)getVersionUpgradeStateWithRequest:(GetVersionUpgradeStateRequest *)request handler:(void(^)(GetVersionUpgradeStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetVersionUpgradeStateWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetVersionUpgradeStateWithRequest:(GetVersionUpgradeStateRequest *)request handler:(void(^)(GetVersionUpgradeStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getVersionUpgradeState"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetVersionUpgradeStateResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getVersionUpgradeStateWithMessage:(GetVersionUpgradeStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getVersionUpgradeState"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetVersionUpgradeStateResponse class]];
+}
+
+#pragma mark getVersionUpgradeVoteStatus(GetVersionUpgradeVoteStatusRequest) returns (GetVersionUpgradeVoteStatusResponse)
+
+- (void)getVersionUpgradeVoteStatusWithRequest:(GetVersionUpgradeVoteStatusRequest *)request handler:(void(^)(GetVersionUpgradeVoteStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetVersionUpgradeVoteStatusWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetVersionUpgradeVoteStatusWithRequest:(GetVersionUpgradeVoteStatusRequest *)request handler:(void(^)(GetVersionUpgradeVoteStatusResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getVersionUpgradeVoteStatus"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetVersionUpgradeVoteStatusResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getVersionUpgradeVoteStatusWithMessage:(GetVersionUpgradeVoteStatusRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getVersionUpgradeVoteStatus"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetVersionUpgradeVoteStatusResponse class]];
+}
+
+#pragma mark getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse)
+
+- (void)getEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetEpochsInfoWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetEpochsInfoWithRequest:(GetEpochsInfoRequest *)request handler:(void(^)(GetEpochsInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getEpochsInfo"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetEpochsInfoResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getEpochsInfoWithMessage:(GetEpochsInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getEpochsInfo"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetEpochsInfoResponse class]];
+}
+
 @end
 #endif

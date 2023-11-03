@@ -81,6 +81,7 @@ mod tests {
             .query_raw(
                 &path_query,
                 true,
+                true,
                 QueryResultType::QueryPathKeyElementTrioResultType,
                 None,
             )
@@ -247,6 +248,7 @@ mod tests {
             .grove
             .query_raw(
                 &path_query,
+                true,
                 true,
                 QueryResultType::QueryPathKeyElementTrioResultType,
                 None,

@@ -442,7 +442,7 @@ dependencies = [
 [[package]]
 name = "bls-dash-sys"
 version = "1.2.5"
-source = "git+https://github.com/dashpay/bls-signatures?branch=develop#795660db76636c92bea3bfccfee621f1aba371a3"
+source = "git+https://github.com/dashpay/bls-signatures?branch=develop#3540b8bbed47e04ed6f02eea2141bd62dae0c411"
 dependencies = [
  "bindgen",
  "cc",
@@ -452,9 +452,10 @@ dependencies = [
 [[package]]
 name = "bls-signatures"
 version = "1.2.5"
-source = "git+https://github.com/dashpay/bls-signatures?branch=develop#795660db76636c92bea3bfccfee621f1aba371a3"
+source = "git+https://github.com/dashpay/bls-signatures?branch=develop#3540b8bbed47e04ed6f02eea2141bd62dae0c411"
 dependencies = [
  "bls-dash-sys",
+ "hex",
  "rand",
  "serde",
 ]
@@ -1219,7 +1220,7 @@ dependencies = [
  "futures",
  "getrandom",
  "hex",
- "integer-encoding",
+ "integer-encoding 4.0.0",
  "itertools 0.10.5",
  "json-patch",
  "jsonptr",
@@ -1272,7 +1273,7 @@ dependencies = [
  "grovedb-storage",
  "hex",
  "indexmap 1.9.3",
- "integer-encoding",
+ "integer-encoding 4.0.0",
  "intmap",
  "itertools 0.10.5",
  "lazy_static",
@@ -1315,6 +1316,7 @@ dependencies = [
  "file-rotate",
  "hex",
  "indexmap 1.9.3",
+ "integer-encoding 4.0.0",
  "itertools 0.10.5",
  "lazy_static",
  "metrics",
@@ -1791,7 +1793,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 [[package]]
 name = "grovedb"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=11198471542442de286348d0936475c8e602f953#11198471542442de286348d0936475c8e602f953"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
  "bincode 1.3.3",
  "grovedb-costs",
@@ -1801,7 +1803,7 @@ dependencies = [
  "grovedb-visualize",
  "hex",
  "indexmap 1.9.3",
- "integer-encoding",
+ "integer-encoding 3.0.4",
  "intmap",
  "itertools 0.10.5",
  "nohash-hasher",
@@ -1813,9 +1815,9 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=11198471542442de286348d0936475c8e602f953#11198471542442de286348d0936475c8e602f953"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
- "integer-encoding",
+ "integer-encoding 3.0.4",
  "intmap",
  "thiserror",
 ]
@@ -1823,7 +1825,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=11198471542442de286348d0936475c8e602f953#11198471542442de286348d0936475c8e602f953"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
  "blake3",
  "byteorder",
@@ -1836,7 +1838,7 @@ dependencies = [
  "grovedb-visualize",
  "hex",
  "indexmap 1.9.3",
- "integer-encoding",
+ "integer-encoding 3.0.4",
  "jemallocator",
  "num_cpus",
  "rand",
@@ -1847,19 +1849,19 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=11198471542442de286348d0936475c8e602f953#11198471542442de286348d0936475c8e602f953"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 
 [[package]]
 name = "grovedb-storage"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=11198471542442de286348d0936475c8e602f953#11198471542442de286348d0936475c8e602f953"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
  "blake3",
  "grovedb-costs",
  "grovedb-path",
  "grovedb-visualize",
  "hex",
- "integer-encoding",
+ "integer-encoding 3.0.4",
  "lazy_static",
  "num_cpus",
  "rocksdb",
@@ -1871,7 +1873,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "1.0.0-rc.2"
-source = "git+https://github.com/dashpay/grovedb?rev=11198471542442de286348d0936475c8e602f953#11198471542442de286348d0936475c8e602f953"
+source = "git+https://github.com/dashpay/grovedb?rev=67896ea00e697922dd8db29fccbdfddce97a4fe2#67896ea00e697922dd8db29fccbdfddce97a4fe2"
 dependencies = [
  "hex",
  "itertools 0.10.5",
@@ -2121,6 +2123,12 @@ name = "integer-encoding"
 version = "3.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bb03732005da905c88227371639bf1ad885cc712789c011c31c5fb3ab3ccf02"
+
+[[package]]
+name = "integer-encoding"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "924df4f0e24e2e7f9cdd90babb0b96f93b20f3ecfa949ea9e6613756b8c8e1bf"
 
 [[package]]
 name = "intmap"
@@ -5111,18 +5119,18 @@ checksum = "09041cd90cf85f7f8b2df60c646f853b7f535ce68f85244eb6731cf89fa498ec"
 
 [[package]]
 name = "zerocopy"
-version = "0.7.21"
+version = "0.7.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "686b7e407015242119c33dab17b8f61ba6843534de936d94368856528eae4dcc"
+checksum = "e50cbb27c30666a6108abd6bc7577556265b44f243e2be89a8bc4e07a528c107"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.7.21"
+version = "0.7.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "020f3dfe25dfc38dfea49ce62d5d45ecdd7f0d8a724fa63eb36b6eba4ec76806"
+checksum = "a25f293fe55f0a48e7010d65552bb63704f6ceb55a1a385da10d41d8f78e4a3d"
 dependencies = [
  "proc-macro2",
  "quote",

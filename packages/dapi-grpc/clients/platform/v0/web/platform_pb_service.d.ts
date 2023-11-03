@@ -139,6 +139,33 @@ type PlatformgetConsensusParams = {
   readonly responseType: typeof platform_pb.GetConsensusParamsResponse;
 };
 
+type PlatformgetVersionUpgradeState = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetVersionUpgradeStateRequest;
+  readonly responseType: typeof platform_pb.GetVersionUpgradeStateResponse;
+};
+
+type PlatformgetVersionUpgradeVoteStatus = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetVersionUpgradeVoteStatusRequest;
+  readonly responseType: typeof platform_pb.GetVersionUpgradeVoteStatusResponse;
+};
+
+type PlatformgetEpochsInfo = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetEpochsInfoRequest;
+  readonly responseType: typeof platform_pb.GetEpochsInfoResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -156,6 +183,9 @@ export class Platform {
   static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
   static readonly waitForStateTransitionResult: PlatformwaitForStateTransitionResult;
   static readonly getConsensusParams: PlatformgetConsensusParams;
+  static readonly getVersionUpgradeState: PlatformgetVersionUpgradeState;
+  static readonly getVersionUpgradeVoteStatus: PlatformgetVersionUpgradeVoteStatus;
+  static readonly getEpochsInfo: PlatformgetEpochsInfo;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -324,6 +354,33 @@ export class PlatformClient {
   getConsensusParams(
     requestMessage: platform_pb.GetConsensusParamsRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetConsensusParamsResponse|null) => void
+  ): UnaryResponse;
+  getVersionUpgradeState(
+    requestMessage: platform_pb.GetVersionUpgradeStateRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetVersionUpgradeStateResponse|null) => void
+  ): UnaryResponse;
+  getVersionUpgradeState(
+    requestMessage: platform_pb.GetVersionUpgradeStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetVersionUpgradeStateResponse|null) => void
+  ): UnaryResponse;
+  getVersionUpgradeVoteStatus(
+    requestMessage: platform_pb.GetVersionUpgradeVoteStatusRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetVersionUpgradeVoteStatusResponse|null) => void
+  ): UnaryResponse;
+  getVersionUpgradeVoteStatus(
+    requestMessage: platform_pb.GetVersionUpgradeVoteStatusRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetVersionUpgradeVoteStatusResponse|null) => void
+  ): UnaryResponse;
+  getEpochsInfo(
+    requestMessage: platform_pb.GetEpochsInfoRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetEpochsInfoResponse|null) => void
+  ): UnaryResponse;
+  getEpochsInfo(
+    requestMessage: platform_pb.GetEpochsInfoRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetEpochsInfoResponse|null) => void
   ): UnaryResponse;
 }
 

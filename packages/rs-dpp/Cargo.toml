@@ -35,7 +35,7 @@ enum-map = { version = "2.5.0" }
 futures = { version = "0.3" }
 getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
-integer-encoding = { version = "3.0.4" }
+integer-encoding = { version = "4.0.0" }
 itertools = { version = "0.10" }
 json-patch = "0.2.6"
 jsonptr = "0.1.5"
