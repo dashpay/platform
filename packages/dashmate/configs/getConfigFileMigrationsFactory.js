@@ -296,14 +296,14 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
-      '0.25.12': (configFile) => {о
+      '0.25.12': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             if (options.network === NETWORK_TESTNET) {
               options.core.docker.image = base.get('core.docker.image');
 
               options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
-              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+              options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
               options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
             }
           });
