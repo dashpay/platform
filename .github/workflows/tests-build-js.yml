@@ -56,8 +56,7 @@ jobs:
 
       - name: Ignore only already cached artifacts
         run: |
-          ls **/.gitignore
-          rm **/.gitignore
+          find . -name '.gitignore' -exec rm -f {} +
           echo ".yarn/unplugged" >> .gitignore
           echo "target" >> .gitignore
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
