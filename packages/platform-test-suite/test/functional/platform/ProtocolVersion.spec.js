@@ -1,6 +1,6 @@
 const createClientWithoutWallet = require('../../../lib/test/createClientWithoutWallet');
 
-describe.only('Platform', () => {
+describe('Platform', () => {
   describe('ProtocolVersion', () => {
     let client;
 
