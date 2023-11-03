@@ -299,6 +299,8 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
       '0.25.12': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+
             if (options.network === NETWORK_TESTNET) {
               options.core.docker.image = base.get('core.docker.image');
 
