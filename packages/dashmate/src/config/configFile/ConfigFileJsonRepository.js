@@ -42,6 +42,8 @@ class ConfigFileJsonRepository {
       throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
 
+    const currentConfigVersion = configFileData.configFormatVersion
+
     const migratedConfigFileData = this.migrateConfigFile(
       configFileData,
       configFileData.configFormatVersion,
@@ -73,7 +75,7 @@ class ConfigFileJsonRepository {
     );
 
     // Persist config if it was actually migrated
-    if (migratedConfigFileData.configFormatVersion !== configFileData.configFormatVersion) {
+    if (migratedConfigFileData.configFormatVersion !== currentConfigVersion) {
       this.write(configFile);
     }
 
