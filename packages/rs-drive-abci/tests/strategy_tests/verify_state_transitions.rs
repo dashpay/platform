@@ -1,9 +1,8 @@
-use dapi_grpc::platform::v0::{
-    get_proofs_request, GetProofsRequest, GetProofsResponse,
-};
+use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
 use dapi_grpc::platform::VersionedGrpcResponse;
 
 use dapi_grpc::platform::v0::get_proofs_request::{get_proofs_request_v0, GetProofsRequestV0};
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::Document;
 use dpp::identity::PartialIdentity;
@@ -21,7 +20,6 @@ use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use prost::Message;
 use tenderdash_abci::proto::abci::ExecTxResult;
-use dpp::block::block_info::BlockInfo;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;

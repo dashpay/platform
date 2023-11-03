@@ -20,14 +20,20 @@ pub fn versioned_grpc_response_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     // Extract attributes to find the number of versions
-    let versions: usize = input.attrs.iter().find_map(|attr| {
-        if attr.path().is_ident("grpc_versions") {
-            // Parse the attribute into a literal integer
-            attr.parse_args::<syn::LitInt>().ok().and_then(|lit| lit.base10_parse().ok())
-        } else {
-            None
-        }
-    }).expect("Expected a grpc_versions attribute with an integer");
+    let versions: usize = input
+        .attrs
+        .iter()
+        .find_map(|attr| {
+            if attr.path().is_ident("grpc_versions") {
+                // Parse the attribute into a literal integer
+                attr.parse_args::<syn::LitInt>()
+                    .ok()
+                    .and_then(|lit| lit.base10_parse().ok())
+            } else {
+                None
+            }
+        })
+        .expect("Expected a grpc_versions attribute with an integer");
 
     let name = input.ident;
     // Generate the names of the nested message and enum types

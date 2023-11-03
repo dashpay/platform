@@ -21,6 +21,10 @@ pub enum Error {
     #[error("empty response metadata")]
     EmptyResponseMetadata,
 
+    /// Empty version
+    #[error("empty version")]
+    EmptyVersion,
+
     /// No proof in response
     #[error("no proof in result")]
     NoProofInResult,
