@@ -35,8 +35,18 @@ jobs:
         with:
           target: wasm32-unknown-unknown
 
-      - name: Build SDK
-        run: yarn build --filter "+dash"
+      - name: Restore JS build artifacts
+        uses: everpcpc/actions-cache@v1
+        with:
+          bucket: multi-runner-linux-x64-platform-cache-ui535z23
+          root: actions-cache
+          path: build-js-artifacts-${{ github.sha }}.tar
+          key: ${{ runner.os }}-build-js-artifacts-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-build-js-artifacts-${{ github.sha }}
+
+      - name: Unpack JS build artifacts archive
+        run: tar -xf build-js-artifacts-${{ github.sha }}.tar
 
       - name: Set up Docker BuildX
         uses: docker/setup-buildx-action@v3
