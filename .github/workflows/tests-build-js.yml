@@ -59,11 +59,16 @@ jobs:
           find . -name '.gitignore' -exec rm -f {} +
           echo ".yarn/unplugged" >> .gitignore
           echo "target" >> .gitignore
+          echo "node_modules" >> .gitignore
+          echo ".nyc_output" >> .gitignore
+          echo ".idea" >> .gitignore
+          echo ".ultra.cache.json" >> .gitignore
+          echo "db/*" >> .gitignore
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
 
       - name: Get modified files
         id: diff
-        run: git diff --name-only
+        run: git ls-files --others --exclude-standard
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
 
       - name: Create an archive of built files
