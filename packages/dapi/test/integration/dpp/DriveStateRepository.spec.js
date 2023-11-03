@@ -39,7 +39,10 @@ describe('DriveStateRepository', () => {
     dpp = new DashPlatformProtocol(null, 1);
 
     proto = new GetDataContractResponse();
-    proto.setDataContract(dataContractFixture.toBuffer());
+    proto.setV0(
+      new GetDataContractResponse.GetDataContractResponseV0()
+        .setDataContract(dataContractFixture.toBuffer()),
+    );
 
     driveClientMock = sinon.stub();
     driveClientMock.fetchDataContract = this.sinon.stub().resolves(

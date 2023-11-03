@@ -32,7 +32,10 @@ describe('waitForStateTransitionResultFactory', () => {
     metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     response = new WaitForStateTransitionResultResponse();
-    response.setMetadata(metadata);
+    response.setV0(
+      new WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0()
+        .setMetadata(metadata),
+    );
 
     grpcTransportMock = {
       request: this.sinon.stub().resolves(response),
@@ -56,9 +59,13 @@ describe('waitForStateTransitionResultFactory', () => {
     expect(result.getError()).to.equal(undefined);
     expect(result.getProof()).to.equal(undefined);
 
+    const { WaitForStateTransitionResultRequestV0 } = WaitForStateTransitionResultRequest;
     const request = new WaitForStateTransitionResultRequest();
-    request.setStateTransitionHash(hash);
-    request.setProve(false);
+    request.setV0(
+      new WaitForStateTransitionResultRequestV0()
+        .setStateTransitionHash(hash)
+        .setProve(false),
+    );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
@@ -76,7 +83,7 @@ describe('waitForStateTransitionResultFactory', () => {
     proof.setSignature(Buffer.from('signature'));
     proof.setRound(42);
 
-    response.setProof(proof);
+    response.getV0().setProof(proof);
 
     options.prove = true;
 
@@ -95,9 +102,13 @@ describe('waitForStateTransitionResultFactory', () => {
     expect(result.getProof().getQuorumHash()).to.deep.equal(Buffer.from('quorumHash'));
     expect(result.getProof().getRound()).to.deep.equal(42);
 
+    const { WaitForStateTransitionResultRequestV0 } = WaitForStateTransitionResultRequest;
     const request = new WaitForStateTransitionResultRequest();
-    request.setStateTransitionHash(hash);
-    request.setProve(true);
+    request.setV0(
+      new WaitForStateTransitionResultRequestV0()
+        .setStateTransitionHash(hash)
+        .setProve(true),
+    );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,
@@ -113,7 +124,7 @@ describe('waitForStateTransitionResultFactory', () => {
     error.setMessage('Some error');
     error.setData(cbor.encode({ data: 'error data' }));
 
-    response.setError(error);
+    response.getV0().setError(error);
 
     options.prove = true;
 
@@ -127,9 +138,13 @@ describe('waitForStateTransitionResultFactory', () => {
       data: { data: 'error data' },
     });
 
+    const { WaitForStateTransitionResultRequestV0 } = WaitForStateTransitionResultRequest;
     const request = new WaitForStateTransitionResultRequest();
-    request.setStateTransitionHash(hash);
-    request.setProve(true);
+    request.setV0(
+      new WaitForStateTransitionResultRequestV0()
+        .setStateTransitionHash(hash)
+        .setProve(true),
+    );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       PlatformPromiseClient,

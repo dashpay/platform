@@ -1,4 +1,6 @@
 use dpp::platform_value::Error as ValueError;
+use dpp::util::deserializer::ProtocolVersion;
+use dpp::version::FeatureVersion;
 use dpp::ProtocolError;
 use drive::error::proof::ProofError;
 use drive::error::query::QuerySyntaxError as SyntaxError;
@@ -13,6 +15,7 @@ pub enum QueryError {
     /// Proof Error
     #[error("proof error: {0}")]
     Proof(#[from] ProofError),
+
     /// Syntax Error
     #[error("query syntax error: {0}")]
     Query(#[from] SyntaxError),
@@ -40,6 +43,20 @@ pub enum QueryError {
     /// Not found Error
     #[error("not found error: {0}")]
     NotFound(String),
+
+    /// Decoding Error
+    #[error("decoding error: {0}")]
+    DecodingError(String),
+
+    /// Not found Error
+    #[error("unsupported version for query: {0}, currently supporting versions {1} to {2} on platform protocol {3}, given {4}")]
+    UnsupportedQueryVersion(
+        String,
+        FeatureVersion,
+        FeatureVersion,
+        ProtocolVersion,
+        FeatureVersion,
+    ),
 }
 
 impl From<QueryError> for ResponseException {

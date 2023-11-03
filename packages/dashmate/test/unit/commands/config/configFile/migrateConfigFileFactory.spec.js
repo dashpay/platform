@@ -1,79 +1,45 @@
-const _ = require('lodash');
-const Ajv = require('ajv');
-const addFormats = require('ajv-formats');
-
 const createDIContainer = require('../../../../../src/createDIContainer');
-const mockConfig = require('./mock_config_v0.25.0.json');
-const configJsonSchema = require('../../../../../src/config/configJsonSchema');
+const getConfigFileDataV0250 = require('../../../../../src/test/fixtures/getConfigFileDataV0250');
 const packageJson = require('../../../../../package.json');
+const HomeDir = require('../../../../../src/config/HomeDir');
 
-describe('MigrateConfigFileCommand', () => {
-  let config;
+describe('migrateConfigFileFactory', () => {
+  let mockConfigFileData;
   let container;
-  let ajv;
+  let createConfigFile;
+  let migrateConfigFile;
 
   beforeEach(async () => {
-    ajv = new Ajv();
-    addFormats(ajv, { mode: 'fast', formats: ['ipv4'] });
-
     container = await createDIContainer();
-    config = _.cloneDeep(mockConfig);
+    migrateConfigFile = container.resolve('migrateConfigFile');
+    createConfigFile = container.resolve('createConfigFile');
+
+    const homeDir = container.resolve('homeDir');
+    homeDir.change(new HomeDir('/Users/dashmate/.dashmate', true));
+
+    mockConfigFileData = getConfigFileDataV0250();
   });
 
-  it('should gracefully migrate', async () => {
-    const migrateConfigFile = container.resolve('migrateConfigFile');
-    const getBaseConfig = container.resolve('getBaseConfig');
-    const getMainnetConfig = container.resolve('getMainnetConfig');
-    const getTestnetConfig = container.resolve('getTestnetConfig');
+  it('should migrate v0.25.0 config file to the latest one', async () => {
+    const currentConfigFile = createConfigFile();
+    const currentConfigFileData = currentConfigFile.toObject();
 
     const migratedConfigFileData = migrateConfigFile(
-      config,
-      config.configFormatVersion,
+      mockConfigFileData,
+      mockConfigFileData.configFormatVersion,
       packageJson.version,
     );
 
-    // check config is valid after migration
-    for (const configName of Object.keys(migratedConfigFileData.configs)) {
-      const myConfig = migratedConfigFileData.configs[configName];
-      const isValid = ajv.validate(configJsonSchema, myConfig);
-
-      expect(isValid).to.equal(true);
-
-      let targetConfig;
-
-      switch (myConfig.network) {
-        case 'local':
-          targetConfig = getBaseConfig();
-          break;
-        case 'testnet':
-          targetConfig = configName === 'base' ? getBaseConfig() : getTestnetConfig();
-          break;
-        case 'mainnet':
-          targetConfig = getMainnetConfig();
-          break;
-        default:
-          throw new Error('Unknown network type');
-      }
-
-      // check image version
-      expect(myConfig.core.docker.image)
-        .to.equal(targetConfig.options.core.docker.image);
-      expect(myConfig.platform.drive.abci.docker.image)
-        .to.equal(targetConfig.options.platform.drive.abci.docker.image);
-      expect(myConfig.platform.drive.tenderdash.docker.image)
-        .to.equal(targetConfig.options.platform.drive.tenderdash.docker.image);
-
-      // check genesis
-      if (configName !== 'base') {
-        expect(myConfig.platform.drive.tenderdash.genesis.chain_id)
-          .to.equal(targetConfig.options.platform.drive.tenderdash.genesis.chain_id);
-        expect(myConfig.platform.drive.tenderdash.genesis.genesis_time)
-          .to.equal(targetConfig.options.platform.drive.tenderdash.genesis.genesis_time);
-
-        expect(myConfig.platform.drive.tenderdash.genesis.initial_core_chain_locked_height)
-          .to.equal(targetConfig.options
-            .platform.drive.tenderdash.genesis.initial_core_chain_locked_height);
-      }
+    for (const [name, defaultConfig] of Object.entries(currentConfigFileData.configs)) {
+      expect(defaultConfig).to.be.deep.equal(
+        migratedConfigFileData.configs[name],
+        `Migrated and default ${name} config do not match`,
+      );
     }
+
+    delete currentConfigFileData.configs;
+    delete migratedConfigFileData.configs;
+
+    expect(migratedConfigFileData).to.be.deep.equal(currentConfigFileData);
   });
 });

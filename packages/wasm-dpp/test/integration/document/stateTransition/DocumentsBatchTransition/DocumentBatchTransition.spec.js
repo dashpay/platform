@@ -1,12 +1,10 @@
 const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
-const getDataContractFixture = require('../../../../../lib/test/fixtures/js/getDataContractFixture');
-const getDocumentsFixture = require('../../../../../lib/test/fixtures/js/getDocumentsFixture');
+const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('../../../../../lib/test/fixtures/getDocumentsFixture');
 
 const { default: loadWasmDpp } = require('../../../../..');
 const { IdentityPublicKey } = require('../../../../..');
 
-let ExtendedDocument;
-let DataContract;
 let ProtocolVersionValidator;
 let DocumentValidator;
 let DocumentFactory;
@@ -23,30 +21,22 @@ describe('DocumentBatchTransition', () => {
 
   beforeEach(async function beforeEach() {
     ({
-      ExtendedDocument,
-      DataContract,
       ProtocolVersionValidator,
       DocumentFactory,
       DocumentValidator,
     } = await loadWasmDpp());
 
-    const dataContractFixtureJs = getDataContractFixture();
-
-    dataContractFixtureJs.documents.niceDocument
-      .signatureSecurityLevelRequirement = IdentityPublicKey.SECURITY_LEVELS.MEDIUM;
-    dataContractFixtureJs.documents.prettyDocument
-      .signatureSecurityLevelRequirement = IdentityPublicKey.SECURITY_LEVELS.MASTER;
-
-    dataContractFixture = new DataContract(dataContractFixtureJs.toObject());
+    dataContractFixture = await getDataContractFixture();
+    //
+    // dataContractFixtureJs.documents.niceDocument
+    //   .signatureSecurityLevelRequirement = IdentityPublicKey.SECURITY_LEVELS.MEDIUM;
+    // dataContractFixtureJs.documents.prettyDocument
+    //   .signatureSecurityLevelRequirement = IdentityPublicKey.SECURITY_LEVELS.MASTER;
 
     // 0 is niceDocument,
     // 1 and 2 are pretty documents,
     // 3 and 4 are indexed documents that do not have security level specified
-    documentsFixture = getDocumentsFixture(dataContractFixtureJs).map((doc) => {
-      const document = new ExtendedDocument(doc.toObject(), dataContractFixture.clone());
-      document.setEntropy(doc.entropy);
-      return document;
-    });
+    documentsFixture = await getDocumentsFixture(dataContractFixture);
 
     [
       mediumSecurityDocumentFixture, ,

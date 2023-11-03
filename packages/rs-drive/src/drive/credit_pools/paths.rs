@@ -1,9 +1,23 @@
 use crate::drive::RootTree;
+use crate::error::Error;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
+use dpp::block::epoch::{EpochIndex, EPOCH_KEY_OFFSET};
+use dpp::ProtocolError;
 
 /// Returns the path to the Pools subtree.
 pub fn pools_path() -> [&'static [u8]; 1] {
     [Into::<&[u8; 1]>::into(RootTree::Pools)]
+}
+
+/// Returns the path of an epoch.
+pub fn epoch_path_vec(epoch: EpochIndex) -> Result<Vec<Vec<u8>>, Error> {
+    let index_with_offset = epoch
+        .checked_add(EPOCH_KEY_OFFSET)
+        .ok_or(ProtocolError::Overflow("stored epoch index too high"))?;
+    Ok(vec![
+        vec![RootTree::Pools as u8],
+        index_with_offset.to_be_bytes().to_vec(),
+    ])
 }
 
 /// Returns the path to the Pools subtree as a mutable vector.

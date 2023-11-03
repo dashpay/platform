@@ -23,6 +23,9 @@ const {
     GetIdentitiesByPublicKeyHashesRequest,
     WaitForStateTransitionResultRequest,
     GetConsensusParamsRequest,
+    GetEpochsInfoRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeStateRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
@@ -40,6 +43,12 @@ const {
       GetConsensusParamsResponse: PBJSGetConsensusParamsResponse,
       GetDataContractHistoryRequest: PBJSGetDataContractHistoryRequest,
       GetDataContractHistoryResponse: PBJSGetDataContractHistoryResponse,
+      GetEpochsInfoRequest: PBJSGetEpochsInfoRequest,
+      GetEpochsInfoResponse: PBJSGetEpochsInfoResponse,
+      GetProtocolVersionUpgradeVoteStatusRequest: PBJSGetProtocolVersionUpgradeVoteStatusRequest,
+      GetProtocolVersionUpgradeVoteStatusResponse: PBJSGetProtocolVersionUpgradeVoteStatusResponse,
+      GetProtocolVersionUpgradeStateRequest: PBJSGetProtocolVersionUpgradeStateRequest,
+      GetProtocolVersionUpgradeStateResponse: PBJSGetProtocolVersionUpgradeStateResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -71,6 +80,17 @@ const waitForStateTransitionResultHandlerFactory = require(
 );
 const getConsensusParamsHandlerFactory = require(
   './getConsensusParamsHandlerFactory',
+);
+const getEpochsInfoHandlerFactory = require(
+  './getEpochsInfoHandlerFactory',
+);
+
+const getProtocolVersionUpgradeVoteStatusHandlerFactory = require(
+  './getProtocolVersionUpgradeVoteStatusHandlerFactory',
+);
+
+const getProtocolVersionUpgradeStateHandlerFactory = require(
+  './getProtocolVersionUpgradeStateHandlerFactory',
 );
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
@@ -239,6 +259,55 @@ function platformHandlersFactory(
     wrapInErrorHandler(getConsensusParamsHandler),
   );
 
+  // getEpochsInfo
+  const getEpochsInfoHandler = getEpochsInfoHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetEpochsInfo = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetEpochsInfoRequest,
+      PBJSGetEpochsInfoRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetEpochsInfoResponse,
+    ),
+    wrapInErrorHandler(getEpochsInfoHandler),
+  );
+
+  // getProtocolVersionUpgradeVoteStatus
+  // eslint-disable-next-line max-len
+  const getProtocolVersionUpgradeVoteStatusHandler = getProtocolVersionUpgradeVoteStatusHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetProtocolVersionUpgradeVoteStatus = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetProtocolVersionUpgradeVoteStatusRequest,
+      PBJSGetProtocolVersionUpgradeVoteStatusRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetProtocolVersionUpgradeVoteStatusResponse,
+    ),
+    wrapInErrorHandler(getProtocolVersionUpgradeVoteStatusHandler),
+  );
+
+  // getProtocolVersionUpgradeState
+  const getProtocolVersionUpgradeStateHandler = getProtocolVersionUpgradeStateHandlerFactory(
+    driveClient,
+  );
+
+  const wrappedGetProtocolVersionUpgradeState = jsonToProtobufHandlerWrapper(
+    jsonToProtobufFactory(
+      GetProtocolVersionUpgradeStateRequest,
+      PBJSGetProtocolVersionUpgradeStateRequest,
+    ),
+    protobufToJsonFactory(
+      PBJSGetProtocolVersionUpgradeStateResponse,
+    ),
+    wrapInErrorHandler(getProtocolVersionUpgradeStateHandler),
+  );
+
   return {
     broadcastStateTransition: wrappedBroadcastStateTransition,
     getIdentity: wrappedGetIdentity,
@@ -248,6 +317,9 @@ function platformHandlersFactory(
     getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
     getConsensusParams: wrappedGetConsensusParams,
+    getEpochsInfo: wrappedGetEpochsInfo,
+    getProtocolVersionUpgradeVoteStatus: wrappedGetProtocolVersionUpgradeVoteStatus,
+    getProtocolVersionUpgradeState: wrappedGetProtocolVersionUpgradeState,
   };
 }
 

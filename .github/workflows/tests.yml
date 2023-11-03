@@ -143,7 +143,7 @@ jobs:
     secrets: inherit
     uses: ./.github/workflows/tests-test-suite.yml
     with:
-      command: test
+      command: test:suite -b
 
   test-suite-browser:
     name: Test Suite in browser

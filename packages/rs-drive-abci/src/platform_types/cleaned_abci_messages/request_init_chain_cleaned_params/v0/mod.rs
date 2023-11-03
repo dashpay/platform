@@ -46,6 +46,9 @@ pub struct RequestInitChainCleanedParams {
     /// The genesis time in milliseconds
     pub genesis_time: TimestampMillis,
 
+    /// Initial height
+    pub initial_height: u64,
+
     /// Initial core chain lock height.
     pub initial_core_height: Option<u32>,
 }
@@ -66,6 +69,7 @@ impl TryFrom<RequestInitChain> for RequestInitChainCleanedParams {
 
         Ok(Self {
             genesis_time,
+            initial_height: request.initial_height as u64,
             initial_core_height,
         })
     }

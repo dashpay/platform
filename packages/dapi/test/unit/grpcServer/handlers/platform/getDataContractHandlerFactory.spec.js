@@ -42,7 +42,9 @@ describe('getDataContractHandlerFactory', () => {
       getProve: this.sinon.stub().returns(true),
     };
 
-    call = new GrpcCallMock(this.sinon, request);
+    call = new GrpcCallMock(this.sinon, {
+      getV0: () => request,
+    });
 
     dataContractFixture = await getDataContractFixture();
     proofFixture = {
@@ -53,10 +55,16 @@ describe('getDataContractHandlerFactory', () => {
     proofMock.setGrovedbProof(proofFixture.merkleProof);
 
     response = new GetDataContractResponse();
-    response.setDataContract(dataContractFixture.toBuffer());
+    response.setV0(
+      new GetDataContractResponse.GetDataContractResponseV0()
+        .setDataContract(dataContractFixture.toBuffer()),
+    );
 
     proofResponse = new GetDataContractResponse();
-    proofResponse.setProof(proofMock);
+    proofResponse.setV0(
+      new GetDataContractResponse.GetDataContractResponseV0()
+        .setProof(proofMock),
+    );
 
     driveClientMock = {
       fetchDataContract: this.sinon.stub().resolves(response.serializeBinary()),
@@ -72,12 +80,12 @@ describe('getDataContractHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(GetDataContractResponse);
 
-    const contractBinary = result.getDataContract();
+    const contractBinary = result.getV0().getDataContract();
     expect(contractBinary).to.be.an.instanceOf(Uint8Array);
 
     expect(contractBinary).to.deep.equal(dataContractFixture.toBuffer());
 
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.undefined();
   });
@@ -95,10 +103,10 @@ describe('getDataContractHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(GetDataContractResponse);
 
-    const contractBinary = result.getDataContract();
+    const contractBinary = result.getV0().getDataContract();
     expect(contractBinary).to.be.equal('');
 
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
     const merkleProof = proof.getGrovedbProof();
@@ -110,13 +118,13 @@ describe('getDataContractHandlerFactory', () => {
 
   it('should not include proof', async () => {
     request.getProve.returns(false);
-    response.setProof(null);
+    response.getV0().setProof(null);
     driveClientMock.fetchDataContract.resolves(response.serializeBinary());
 
     const result = await getDataContractHandler(call);
 
     expect(result).to.be.an.instanceOf(GetDataContractResponse);
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.undefined();
 

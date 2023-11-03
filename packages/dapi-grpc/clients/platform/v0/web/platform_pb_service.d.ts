@@ -45,7 +45,7 @@ type PlatformgetIdentityBalance = {
   readonly service: typeof Platform;
   readonly requestStream: false;
   readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetIdentityRequest;
+  readonly requestType: typeof platform_pb.GetIdentityBalanceRequest;
   readonly responseType: typeof platform_pb.GetIdentityBalanceResponse;
 };
 
@@ -54,7 +54,7 @@ type PlatformgetIdentityBalanceAndRevision = {
   readonly service: typeof Platform;
   readonly requestStream: false;
   readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetIdentityRequest;
+  readonly requestType: typeof platform_pb.GetIdentityBalanceAndRevisionRequest;
   readonly responseType: typeof platform_pb.GetIdentityBalanceAndRevisionResponse;
 };
 
@@ -112,13 +112,13 @@ type PlatformgetIdentitiesByPublicKeyHashes = {
   readonly responseType: typeof platform_pb.GetIdentitiesByPublicKeyHashesResponse;
 };
 
-type PlatformgetIdentityByPublicKeyHashes = {
+type PlatformgetIdentityByPublicKeyHash = {
   readonly methodName: string;
   readonly service: typeof Platform;
   readonly requestStream: false;
   readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetIdentityByPublicKeyHashesRequest;
-  readonly responseType: typeof platform_pb.GetIdentityByPublicKeyHashesResponse;
+  readonly requestType: typeof platform_pb.GetIdentityByPublicKeyHashRequest;
+  readonly responseType: typeof platform_pb.GetIdentityByPublicKeyHashResponse;
 };
 
 type PlatformwaitForStateTransitionResult = {
@@ -139,6 +139,33 @@ type PlatformgetConsensusParams = {
   readonly responseType: typeof platform_pb.GetConsensusParamsResponse;
 };
 
+type PlatformgetProtocolVersionUpgradeState = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetProtocolVersionUpgradeStateRequest;
+  readonly responseType: typeof platform_pb.GetProtocolVersionUpgradeStateResponse;
+};
+
+type PlatformgetProtocolVersionUpgradeVoteStatus = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetProtocolVersionUpgradeVoteStatusRequest;
+  readonly responseType: typeof platform_pb.GetProtocolVersionUpgradeVoteStatusResponse;
+};
+
+type PlatformgetEpochsInfo = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetEpochsInfoRequest;
+  readonly responseType: typeof platform_pb.GetEpochsInfoResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -153,9 +180,12 @@ export class Platform {
   static readonly getDataContracts: PlatformgetDataContracts;
   static readonly getDocuments: PlatformgetDocuments;
   static readonly getIdentitiesByPublicKeyHashes: PlatformgetIdentitiesByPublicKeyHashes;
-  static readonly getIdentityByPublicKeyHashes: PlatformgetIdentityByPublicKeyHashes;
+  static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
   static readonly waitForStateTransitionResult: PlatformwaitForStateTransitionResult;
   static readonly getConsensusParams: PlatformgetConsensusParams;
+  static readonly getProtocolVersionUpgradeState: PlatformgetProtocolVersionUpgradeState;
+  static readonly getProtocolVersionUpgradeVoteStatus: PlatformgetProtocolVersionUpgradeVoteStatus;
+  static readonly getEpochsInfo: PlatformgetEpochsInfo;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -227,21 +257,21 @@ export class PlatformClient {
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityKeysResponse|null) => void
   ): UnaryResponse;
   getIdentityBalance(
-    requestMessage: platform_pb.GetIdentityRequest,
+    requestMessage: platform_pb.GetIdentityBalanceRequest,
     metadata: grpc.Metadata,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityBalanceResponse|null) => void
   ): UnaryResponse;
   getIdentityBalance(
-    requestMessage: platform_pb.GetIdentityRequest,
+    requestMessage: platform_pb.GetIdentityBalanceRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityBalanceResponse|null) => void
   ): UnaryResponse;
   getIdentityBalanceAndRevision(
-    requestMessage: platform_pb.GetIdentityRequest,
+    requestMessage: platform_pb.GetIdentityBalanceAndRevisionRequest,
     metadata: grpc.Metadata,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityBalanceAndRevisionResponse|null) => void
   ): UnaryResponse;
   getIdentityBalanceAndRevision(
-    requestMessage: platform_pb.GetIdentityRequest,
+    requestMessage: platform_pb.GetIdentityBalanceAndRevisionRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityBalanceAndRevisionResponse|null) => void
   ): UnaryResponse;
   getProofs(
@@ -298,14 +328,14 @@ export class PlatformClient {
     requestMessage: platform_pb.GetIdentitiesByPublicKeyHashesRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesByPublicKeyHashesResponse|null) => void
   ): UnaryResponse;
-  getIdentityByPublicKeyHashes(
-    requestMessage: platform_pb.GetIdentityByPublicKeyHashesRequest,
+  getIdentityByPublicKeyHash(
+    requestMessage: platform_pb.GetIdentityByPublicKeyHashRequest,
     metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityByPublicKeyHashesResponse|null) => void
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityByPublicKeyHashResponse|null) => void
   ): UnaryResponse;
-  getIdentityByPublicKeyHashes(
-    requestMessage: platform_pb.GetIdentityByPublicKeyHashesRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityByPublicKeyHashesResponse|null) => void
+  getIdentityByPublicKeyHash(
+    requestMessage: platform_pb.GetIdentityByPublicKeyHashRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityByPublicKeyHashResponse|null) => void
   ): UnaryResponse;
   waitForStateTransitionResult(
     requestMessage: platform_pb.WaitForStateTransitionResultRequest,
@@ -324,6 +354,33 @@ export class PlatformClient {
   getConsensusParams(
     requestMessage: platform_pb.GetConsensusParamsRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetConsensusParamsResponse|null) => void
+  ): UnaryResponse;
+  getProtocolVersionUpgradeState(
+    requestMessage: platform_pb.GetProtocolVersionUpgradeStateRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetProtocolVersionUpgradeStateResponse|null) => void
+  ): UnaryResponse;
+  getProtocolVersionUpgradeState(
+    requestMessage: platform_pb.GetProtocolVersionUpgradeStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetProtocolVersionUpgradeStateResponse|null) => void
+  ): UnaryResponse;
+  getProtocolVersionUpgradeVoteStatus(
+    requestMessage: platform_pb.GetProtocolVersionUpgradeVoteStatusRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetProtocolVersionUpgradeVoteStatusResponse|null) => void
+  ): UnaryResponse;
+  getProtocolVersionUpgradeVoteStatus(
+    requestMessage: platform_pb.GetProtocolVersionUpgradeVoteStatusRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetProtocolVersionUpgradeVoteStatusResponse|null) => void
+  ): UnaryResponse;
+  getEpochsInfo(
+    requestMessage: platform_pb.GetEpochsInfoRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetEpochsInfoResponse|null) => void
+  ): UnaryResponse;
+  getEpochsInfo(
+    requestMessage: platform_pb.GetEpochsInfoRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetEpochsInfoResponse|null) => void
   ): UnaryResponse;
 }
 

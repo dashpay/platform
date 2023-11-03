@@ -9,7 +9,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Asset lock transaction ${transaction_id:?} output ${output_index:?} already used")]
+#[error("Asset lock transaction {transaction_id} output {output_index} already used")]
 #[platform_serialize(unversioned)]
 pub struct IdentityAssetLockTransactionOutPointAlreadyExistsError {
     /*

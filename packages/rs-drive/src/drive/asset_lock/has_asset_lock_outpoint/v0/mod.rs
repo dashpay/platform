@@ -7,9 +7,9 @@ use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use dpp::platform_value::Bytes36;
 use dpp::version::drive_versions::DriveVersion;
 
+use dpp::platform_value::Bytes36;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -69,6 +69,7 @@ impl Drive {
                 query_target: QueryTargetValue(36),
             }
         };
+
         self.grove_has_raw(
             (&asset_lock_storage_path).into(),
             outpoint.as_slice(),

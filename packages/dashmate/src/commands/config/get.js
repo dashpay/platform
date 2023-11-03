@@ -1,4 +1,9 @@
+const { Flags } = require('@oclif/core');
+const lodash = require('lodash');
+const chalk = require('chalk');
+const { inspect } = require('util');
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
+const { OUTPUT_FORMATS } = require('../../constants');
 
 class ConfigGetCommand extends ConfigBaseCommand {
   /**
@@ -11,13 +16,25 @@ class ConfigGetCommand extends ConfigBaseCommand {
     {
       option: optionPath,
     },
-    flags,
+    {
+      format,
+    },
     config,
   ) {
+    const value = config.get(optionPath);
+
+    let output = value;
+
+    if (format === OUTPUT_FORMATS.JSON) {
+      output = JSON.stringify(value, null, 2);
+    } else if (Array.isArray(value) || lodash.isPlainObject(value)) {
+      output = inspect(value, { depth: Infinity, colors: chalk.supportsColor });
+    }
+
     // eslint-disable-next-line no-console
-    console.log(
-      config.get(optionPath),
-    );
+    console.log(output);
+
+    return value;
   }
 }
 
@@ -33,6 +50,11 @@ ConfigGetCommand.args = [{
 }];
 
 ConfigGetCommand.flags = {
+  format: Flags.string({
+    description: 'display output format',
+    default: OUTPUT_FORMATS.PLAIN,
+    options: Object.values(OUTPUT_FORMATS),
+  }),
   ...ConfigBaseCommand.flags,
 };
 

@@ -1,5 +1,5 @@
 const { Listr } = require('listr2');
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const { getLatestProtocolVersion } = require('@dashevo/wasm-dpp');
 
 /**
  * @param {renderServiceTemplates} renderServiceTemplates
@@ -61,7 +61,7 @@ function configureTenderdashTaskFactory(
 
                 config.set(
                   'platform.drive.tenderdash.genesis.consensus_params.version.app_version',
-                  protocolVersion.latestVersion.toString(),
+                  getLatestProtocolVersion().toString(),
                 );
 
                 const configFiles = renderServiceTemplates(config);

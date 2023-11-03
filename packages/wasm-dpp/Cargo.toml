@@ -2,6 +2,7 @@
 name = "wasm-dpp"
 version = "0.25.0"
 edition = "2021"
+rust-version = "1.73"
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
 
 [lib]
@@ -38,8 +39,8 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transition-json-conversion",
     "extended-document",
     "document-value-conversion",
-    "document-json-conversion"
-]}
+    "document-json-conversion",
+] }
 itertools = { version = "0.10.5" }
 console_error_panic_hook = { version = "0.1.7" }
 log = { version = "0.4.6" }

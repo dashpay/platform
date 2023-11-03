@@ -116,7 +116,6 @@ impl Drive {
                 )?;
             }
 
-            // Assuming `self` is an instance of ProtocolVersionsCache
             let mut version_count = version_counter.get(&version).cloned().unwrap_or_default();
 
             version_count += 1;

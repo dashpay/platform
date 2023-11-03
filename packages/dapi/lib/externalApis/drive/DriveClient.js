@@ -133,6 +133,45 @@ class DriveClient {
       request.serializeBinary(),
     );
   }
+
+  /**
+   *  Fetch epoch infos
+   *
+   * @param {GetEpochsInfoRequest} request
+   * @return {Promise<Buffer>}
+   */
+  async fetchEpochsInfo(request) {
+    return this.request(
+      '/epochInfos',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
+   *  Fetch version upgrade vote status
+   *
+   * @param {GetProtocolVersionUpgradeVoteStatusRequest} request
+   * @return {Promise<Buffer>}
+   */
+  async fetchVersionUpgradeVoteStatus(request) {
+    return this.request(
+      '/versionUpgrade/voteStatus',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
+   *  Fetch version upgrade state
+   *
+   * @param {GetProtocolVersionUpgradeStateRequest} request
+   * @return {Promise<Buffer>}
+   */
+  async fetchVersionUpgradeState(request) {
+    return this.request(
+      '/versionUpgrade/state',
+      request.serializeBinary(),
+    );
+  }
 }
 
 module.exports = DriveClient;

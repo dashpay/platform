@@ -51,7 +51,7 @@ Platform.getIdentityBalance = {
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetIdentityRequest,
+  requestType: platform_pb.GetIdentityBalanceRequest,
   responseType: platform_pb.GetIdentityBalanceResponse
 };
 
@@ -60,7 +60,7 @@ Platform.getIdentityBalanceAndRevision = {
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetIdentityRequest,
+  requestType: platform_pb.GetIdentityBalanceAndRevisionRequest,
   responseType: platform_pb.GetIdentityBalanceAndRevisionResponse
 };
 
@@ -118,13 +118,13 @@ Platform.getIdentitiesByPublicKeyHashes = {
   responseType: platform_pb.GetIdentitiesByPublicKeyHashesResponse
 };
 
-Platform.getIdentityByPublicKeyHashes = {
-  methodName: "getIdentityByPublicKeyHashes",
+Platform.getIdentityByPublicKeyHash = {
+  methodName: "getIdentityByPublicKeyHash",
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetIdentityByPublicKeyHashesRequest,
-  responseType: platform_pb.GetIdentityByPublicKeyHashesResponse
+  requestType: platform_pb.GetIdentityByPublicKeyHashRequest,
+  responseType: platform_pb.GetIdentityByPublicKeyHashResponse
 };
 
 Platform.waitForStateTransitionResult = {
@@ -143,6 +143,33 @@ Platform.getConsensusParams = {
   responseStream: false,
   requestType: platform_pb.GetConsensusParamsRequest,
   responseType: platform_pb.GetConsensusParamsResponse
+};
+
+Platform.getProtocolVersionUpgradeState = {
+  methodName: "getProtocolVersionUpgradeState",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetProtocolVersionUpgradeStateRequest,
+  responseType: platform_pb.GetProtocolVersionUpgradeStateResponse
+};
+
+Platform.getProtocolVersionUpgradeVoteStatus = {
+  methodName: "getProtocolVersionUpgradeVoteStatus",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetProtocolVersionUpgradeVoteStatusRequest,
+  responseType: platform_pb.GetProtocolVersionUpgradeVoteStatusResponse
+};
+
+Platform.getEpochsInfo = {
+  methodName: "getEpochsInfo",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetEpochsInfoRequest,
+  responseType: platform_pb.GetEpochsInfoResponse
 };
 
 exports.Platform = Platform;
@@ -524,11 +551,11 @@ PlatformClient.prototype.getIdentitiesByPublicKeyHashes = function getIdentities
   };
 };
 
-PlatformClient.prototype.getIdentityByPublicKeyHashes = function getIdentityByPublicKeyHashes(requestMessage, metadata, callback) {
+PlatformClient.prototype.getIdentityByPublicKeyHash = function getIdentityByPublicKeyHash(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
   }
-  var client = grpc.unary(Platform.getIdentityByPublicKeyHashes, {
+  var client = grpc.unary(Platform.getIdentityByPublicKeyHash, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
@@ -591,6 +618,99 @@ PlatformClient.prototype.getConsensusParams = function getConsensusParams(reques
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getConsensusParams, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getProtocolVersionUpgradeState = function getProtocolVersionUpgradeState(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getProtocolVersionUpgradeState, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getProtocolVersionUpgradeVoteStatus = function getProtocolVersionUpgradeVoteStatus(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getProtocolVersionUpgradeVoteStatus, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getEpochsInfo = function getEpochsInfo(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getEpochsInfo, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

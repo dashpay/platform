@@ -6,10 +6,15 @@ const sinon = require('sinon');
 const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
+const { default: loadDpp } = require('@dashevo/wasm-dpp');
 
 use(sinonChai);
 use(chaiAsPromised);
 use(dirtyChai);
+
+before(async () => {
+  await loadDpp();
+});
 
 beforeEach(function beforeEach() {
   if (!this.sinon) {

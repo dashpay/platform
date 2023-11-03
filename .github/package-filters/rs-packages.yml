@@ -46,7 +46,6 @@ drive:
 
 wasm-dpp:
   - .github/workflows/rs-checks.yml
-  - packages/js-dpp/**
   - packages/feature-flags-contract/**
   - packages/masternode-reward-shares-contract/**
   - packages/dpns-contract/**

@@ -8,7 +8,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Asset Lock Transaction Output with index ${output_index} not found")]
+#[error("Asset Lock Transaction Output with index {output_index} not found")]
 #[platform_serialize(unversioned)]
 pub struct IdentityAssetLockTransactionOutputNotFoundError {
     /*

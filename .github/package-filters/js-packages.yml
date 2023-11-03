@@ -7,7 +7,6 @@
   - .github/workflows/js-checks.yml
   - packages/dapi/**
   - packages/dapi-grpc/**
-  - packages/js-dpp/**
   - packages/rs-dpp/**
   - packages/wasm-dpp/**
   - packages/js-grpc-common/**
@@ -29,7 +28,6 @@ dashmate:
   - packages/wallet-lib/**
   - packages/js-dapi-client/**
   - packages/dapi-grpc/**
-  - packages/js-dpp/**
   - packages/wasm-dpp/**
   - packages/rs-dpp/**
   - packages/js-grpc-common/**
@@ -42,7 +40,6 @@ dashmate:
 '@dashevo/dashpay-contract':
   - .github/workflows/js-checks.yml
   - packages/dashpay-contract/**
-  - packages/js-dpp/**
   - packages/wasm-dpp/**
   - packages/rs-dpp/**
   - packages/feature-flags-contract/**
@@ -52,7 +49,6 @@ dashmate:
   - .github/workflows/js-checks.yml
   - packages/js-dapi-client/**
   - packages/dapi-grpc/**
-  - packages/js-dpp/**
   - packages/js-grpc-common/**
   - packages/dashpay-contract/**
   - packages/feature-flags-contract/**
@@ -66,7 +62,6 @@ dash:
   - packages/wallet-lib/**
   - packages/js-dapi-client/**
   - packages/dapi-grpc/**
-  - packages/js-dpp/**
   - packages/js-grpc-common/**
   - packages/dashpay-contract/**
   - packages/feature-flags-contract/**
@@ -93,7 +88,6 @@ dash:
   - packages/wallet-lib/**
   - packages/js-dapi-client/**
   - packages/dapi-grpc/**
-  - packages/js-dpp/**
   - packages/js-grpc-common/**
   - packages/dashpay-contract/**
   - packages/feature-flags-contract/**
@@ -106,7 +100,6 @@ dash:
   - packages/wallet-lib/**
   - packages/js-dapi-client/**
   - packages/dapi-grpc/**
-  - packages/js-dpp/**
   - packages/js-grpc-common/**
   - packages/dashpay-contract/**
   - packages/feature-flags-contract/**

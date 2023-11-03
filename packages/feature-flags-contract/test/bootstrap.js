@@ -4,9 +4,14 @@ const sinonChai = require('sinon-chai');
 const { expect, use } = require('chai');
 const dirtyChai = require('dirty-chai');
 
+const {
+  default: loadWasmDpp,
+} = require('@dashevo/wasm-dpp');
+
 use(dirtyChai);
 use(sinonChai);
 
+before(loadWasmDpp);
 beforeEach(function beforeEach() {
   if (!this.sinon) {
     this.sinon = sinon.createSandbox();

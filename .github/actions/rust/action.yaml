@@ -3,8 +3,9 @@ name: "Rust Dependencies"
 description: "Install dependencies"
 inputs:
   toolchain:
-    description: Rust toolchain to use, stable / nightly / beta
-    default: stable
+    description: Rust toolchain to use, stable / nightly / beta, or exact version
+    # The same as in /README.md
+    default: "1.73"
   target:
     description: Target Rust platform
     required: false
