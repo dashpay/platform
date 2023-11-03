@@ -1,3 +1,21 @@
+### [0.25.12](https://github.com/dashpay/platform/compare/v0.25.11...v0.25.12) (2023-11-03)
+
+
+### Code Refactoring
+
+* rename protocol version endpoints ([#1552](https://github.com/dashpay/platform/issues/1552))
+
+
+### Tests
+
+* **dashmate:** fix migrations test ([#1547](https://github.com/dashpay/platform/issues/1547))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** testnet-35 support ([#1559](https://github.com/dashpay/platform/issues/1559))
+* **dashmate:** update tenderdash to v0.13.3
+
 ### [0.25.11](https://github.com/dashpay/platform/compare/v0.25.10...v0.25.11) (2023-11-02)
 
 
