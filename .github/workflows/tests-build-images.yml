@@ -127,10 +127,6 @@ jobs:
             target_wasm
             unplugged_amd64
 
-      - name: Debug images
-        shell: bash
-        run: docker image ls
-
       - name: Tag and push images
         shell: bash
         run: |
@@ -143,10 +139,6 @@ jobs:
             docker tag "$image" "$new_image_tag"
             docker push "$new_image_tag"
           done
-
-      - name: Debug images
-        shell: bash
-        run: docker image ls
 
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
