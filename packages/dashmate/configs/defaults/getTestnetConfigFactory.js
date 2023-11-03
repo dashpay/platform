@@ -25,9 +25,6 @@ function getTestnetConfigFactory(homeDir, getBaseConfig) {
         },
       },
       core: {
-        docker: {
-          image: 'dashpay/dashd:20.0.0-rc.2',
-        },
         p2p: {
           port: 19999,
         },
