@@ -73,7 +73,7 @@ class ConfigFileJsonRepository {
     );
 
     // Persist config if it was actually migrated
-    if (migratedConfigFileData.configFormatVersion !== configFile.configFormatVersion) {
+    if (migratedConfigFileData.configFormatVersion !== configFileData.configFormatVersion) {
       this.write(configFile);
     }
 
