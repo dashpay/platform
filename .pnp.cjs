@@ -119,6 +119,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "SOFT"\
         }]\
       ]],\
+      ["@aminya/node-gyp-build", [\
+        ["npm:4.5.0-aminya.4", {\
+          "packageLocation": "./.yarn/cache/@aminya-node-gyp-build-npm-4.5.0-aminya.4-966989134b-436e1e2aa0.zip/node_modules/@aminya/node-gyp-build/",\
+          "packageDependencies": [\
+            ["@aminya/node-gyp-build", "npm:4.5.0-aminya.4"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
       ["@apidevtools/json-schema-ref-parser", [\
         ["npm:8.0.0", {\
           "packageLocation": "./.yarn/cache/@apidevtools-json-schema-ref-parser-npm-8.0.0-3f5ddbd534-3875f3c2fc.zip/node_modules/@apidevtools/json-schema-ref-parser/",\
@@ -2385,7 +2394,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
             ["swagger-jsdoc", "npm:3.7.0"],\
             ["ws", "virtual:2fd01a647a5c8b340dd0adae82833428da22baa88327826cc44910efed2d9ad403a63cf3d639ef91449c9c952ea1afcdd4379371f5022db3053206940836b879#npm:7.5.5"],\
-            ["zeromq", "npm:5.2.8"]\
+            ["zeromq", "npm:6.0.0-beta.17"]\
           ],\
           "linkType": "SOFT"\
         }]\
@@ -2455,7 +2464,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
-            ["@dashevo/protobufjs", "npm:6.10.5"],\
+            ["@dashevo/protobufjs", "https://github.com/pshenmic/protobuf.js.git#commit=0d24a59226556c34fb8c249df8f4295ca3a9a447"],\
             ["@grpc/grpc-js", "npm:1.4.4"],\
             ["@improbable-eng/grpc-web", "virtual:c60802fb91064892a66eac238372b1f92273bed401eb316b63f9eae73923158c5dcd2982eb1e735f7e36e089d74b3ee3773666256e3b50594593c762aa939877#npm:0.15.0"],\
             ["chai", "npm:4.3.9"],\
@@ -2640,7 +2649,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-grpc-common/",\
           "packageDependencies": [\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
-            ["@dashevo/protobufjs", "npm:6.10.5"],\
+            ["@dashevo/protobufjs", "https://github.com/pshenmic/protobuf.js.git#commit=0d24a59226556c34fb8c249df8f4295ca3a9a447"],\
             ["@grpc/grpc-js", "npm:1.4.4"],\
             ["@grpc/proto-loader", "npm:0.5.6"],\
             ["cbor", "npm:8.1.0"],\
@@ -2787,10 +2796,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/protobufjs", [\
-        ["npm:6.10.5", {\
-          "packageLocation": "./.yarn/unplugged/@dashevo-protobufjs-npm-6.10.5-9ffa190993/node_modules/@dashevo/protobufjs/",\
+        ["https://github.com/pshenmic/protobuf.js.git#commit=0d24a59226556c34fb8c249df8f4295ca3a9a447", {\
+          "packageLocation": "./.yarn/unplugged/@dashevo-protobufjs-https-ccc42db175/node_modules/@dashevo/protobufjs/",\
           "packageDependencies": [\
-            ["@dashevo/protobufjs", "npm:6.10.5"],\
+            ["@dashevo/protobufjs", "https://github.com/pshenmic/protobuf.js.git#commit=0d24a59226556c34fb8c249df8f4295ca3a9a447"],\
             ["@protobufjs/aspromise", "npm:1.1.2"],\
             ["@protobufjs/base64", "npm:1.1.2"],\
             ["@protobufjs/codegen", "npm:2.0.4"],\
@@ -2801,14 +2810,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@protobufjs/path", "npm:1.1.2"],\
             ["@protobufjs/pool", "npm:1.1.0"],\
             ["@protobufjs/utf8", "npm:1.1.0"],\
-            ["@types/long", "npm:4.0.1"],\
-            ["@types/node", "npm:13.13.52"],\
+            ["@types/node", "npm:17.0.21"],\
             ["chalk", "npm:3.0.0"],\
             ["escodegen", "npm:2.0.0"],\
             ["espree", "npm:9.1.0"],\
             ["estraverse", "npm:5.3.0"],\
             ["glob", "npm:7.2.0"],\
-            ["long", "npm:4.0.0"],\
+            ["long", "npm:5.2.3"],\
             ["minimist", "npm:1.2.6"],\
             ["semver", "npm:7.5.3"],\
             ["uglify-js", "npm:3.14.4"]\
@@ -3054,7 +3062,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@grpc/proto-loader", "npm:0.5.6"],\
             ["lodash.camelcase", "npm:4.3.0"],\
-            ["protobufjs", "npm:6.11.4"]\
+            ["protobufjs", "https://github.com/pshenmic/protobuf.js.git#commit=0d24a59226556c34fb8c249df8f4295ca3a9a447"]\
           ],\
           "linkType": "HARD"\
         }],\
@@ -3065,7 +3073,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@types/long", "npm:4.0.1"],\
             ["lodash.camelcase", "npm:4.3.0"],\
             ["long", "npm:4.0.0"],\
-            ["protobufjs", "npm:6.11.4"],\
+            ["protobufjs", "https://github.com/pshenmic/protobuf.js.git#commit=0d24a59226556c34fb8c249df8f4295ca3a9a447"],\
             ["yargs", "npm:16.2.0"]\
           ],\
           "linkType": "HARD"\
@@ -4400,13 +4408,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@types-node-npm-12.20.37-9ce6eac5c0-8c8b12f802.zip/node_modules/@types/node/",\
           "packageDependencies": [\
             ["@types/node", "npm:12.20.37"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
-        ["npm:13.13.52", {\
-          "packageLocation": "./.yarn/cache/@types-node-npm-13.13.52-95159539bb-8f1afff497.zip/node_modules/@types/node/",\
-          "packageDependencies": [\
-            ["@types/node", "npm:13.13.52"]\
           ],\
           "linkType": "HARD"\
         }],\
@@ -7918,6 +7919,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["cron", "npm:2.1.0"],\
             ["luxon", "npm:1.28.1"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
+      ["cross-env", [\
+        ["npm:7.0.3", {\
+          "packageLocation": "./.yarn/cache/cross-env-npm-7.0.3-96d81820f4-26f2f3ea2a.zip/node_modules/cross-env/",\
+          "packageDependencies": [\
+            ["cross-env", "npm:7.0.3"],\
+            ["cross-spawn", "npm:7.0.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -12962,6 +12973,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["long", "npm:5.2.0"]\
           ],\
           "linkType": "HARD"\
+        }],\
+        ["npm:5.2.3", {\
+          "packageLocation": "./.yarn/cache/long-npm-5.2.3-61dddb7586-885ede7c3d.zip/node_modules/long/",\
+          "packageDependencies": [\
+            ["long", "npm:5.2.3"]\
+          ],\
+          "linkType": "HARD"\
         }]\
       ]],\
       ["loupe", [\
@@ -13843,14 +13861,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["nan", [\
-        ["npm:2.14.2", {\
-          "packageLocation": "./.yarn/unplugged/nan-npm-2.14.2-e3ede8ce5d/node_modules/nan/",\
-          "packageDependencies": [\
-            ["nan", "npm:2.14.2"],\
-            ["node-gyp", "npm:8.4.0"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
         ["npm:2.17.0", {\
           "packageLocation": "./.yarn/unplugged/nan-npm-2.17.0-bf36a21d6f/node_modules/nan/",\
           "packageDependencies": [\
@@ -13964,6 +13974,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD"\
         }]\
       ]],\
+      ["node-addon-api", [\
+        ["npm:6.1.0", {\
+          "packageLocation": "./.yarn/unplugged/node-addon-api-npm-6.1.0-634c545b39/node_modules/node-addon-api/",\
+          "packageDependencies": [\
+            ["node-addon-api", "npm:6.1.0"],\
+            ["node-gyp", "npm:8.4.0"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
       ["node-fetch", [\
         ["npm:2.6.7", {\
           "packageLocation": "./.yarn/cache/node-fetch-npm-2.6.7-777aa2a6df-8d816ffd1e.zip/node_modules/node-fetch/",\
@@ -14063,13 +14083,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/node-gyp-build-npm-4.3.0-87bdf5216f-1ecab16d9f.zip/node_modules/node-gyp-build/",\
           "packageDependencies": [\
             ["node-gyp-build", "npm:4.3.0"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
-        ["npm:4.6.0", {\
-          "packageLocation": "./.yarn/cache/node-gyp-build-npm-4.6.0-5434aac3e5-25d78c5ef1.zip/node_modules/node-gyp-build/",\
-          "packageDependencies": [\
-            ["node-gyp-build", "npm:4.6.0"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -15304,10 +15317,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["protobufjs", [\
-        ["npm:6.11.4", {\
-          "packageLocation": "./.yarn/unplugged/protobufjs-npm-6.11.4-af11968b80/node_modules/protobufjs/",\
+        ["https://github.com/pshenmic/protobuf.js.git#commit=0d24a59226556c34fb8c249df8f4295ca3a9a447", {\
+          "packageLocation": "./.yarn/unplugged/protobufjs-https-e1d6788142/node_modules/protobufjs/",\
           "packageDependencies": [\
-            ["protobufjs", "npm:6.11.4"],\
+            ["protobufjs", "https://github.com/pshenmic/protobuf.js.git#commit=0d24a59226556c34fb8c249df8f4295ca3a9a447"],\
             ["@protobufjs/aspromise", "npm:1.1.2"],\
             ["@protobufjs/base64", "npm:1.1.2"],\
             ["@protobufjs/codegen", "npm:2.0.4"],\
@@ -15318,9 +15331,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@protobufjs/path", "npm:1.1.2"],\
             ["@protobufjs/pool", "npm:1.1.0"],\
             ["@protobufjs/utf8", "npm:1.1.0"],\
-            ["@types/long", "npm:4.0.1"],\
             ["@types/node", "npm:17.0.21"],\
-            ["long", "npm:4.0.0"]\
+            ["long", "npm:5.2.3"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -16365,6 +16377,17 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/should-util-npm-1.0.1-f3701a5e03-c3be15e0fd.zip/node_modules/should-util/",\
           "packageDependencies": [\
             ["should-util", "npm:1.0.1"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
+      ["shx", [\
+        ["npm:0.3.4", {\
+          "packageLocation": "./.yarn/cache/shx-npm-0.3.4-49f9c5924a-0aa168bfdd.zip/node_modules/shx/",\
+          "packageDependencies": [\
+            ["shx", "npm:0.3.4"],\
+            ["minimist", "npm:1.2.6"],\
+            ["shelljs", "npm:0.8.5"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -19601,13 +19624,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["zeromq", [\
-        ["npm:5.2.8", {\
-          "packageLocation": "./.yarn/unplugged/zeromq-npm-5.2.8-213a0f74bc/node_modules/zeromq/",\
+        ["npm:6.0.0-beta.17", {\
+          "packageLocation": "./.yarn/unplugged/zeromq-npm-6.0.0-beta.17-8f82236e6c/node_modules/zeromq/",\
           "packageDependencies": [\
-            ["zeromq", "npm:5.2.8"],\
-            ["nan", "npm:2.14.2"],\
+            ["zeromq", "npm:6.0.0-beta.17"],\
+            ["@aminya/node-gyp-build", "npm:4.5.0-aminya.4"],\
+            ["cross-env", "npm:7.0.3"],\
+            ["node-addon-api", "npm:6.1.0"],\
             ["node-gyp", "npm:8.4.0"],\
-            ["node-gyp-build", "npm:4.6.0"]\
+            ["shelljs", "npm:0.8.5"],\
+            ["shx", "npm:0.3.4"]\
           ],\
           "linkType": "HARD"\
         }]\

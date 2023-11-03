@@ -79,7 +79,7 @@
     "socket.io-parser": "^4.2.3",
     "semver": "^7.5.3",
     "word-wrap": "^1.2.4",
-    "protobufjs": "^6.11.4",
+    "protobufjs": "github:pshenmic/protobuf.js",
     "browserify-sign": "4.2.2"
   },
   "dependencies": {

@@ -5,6 +5,17 @@ __metadata:
   version: 6
   cacheKey: 8
 
+"@aminya/node-gyp-build@npm:4.5.0-aminya.4":
+  version: 4.5.0-aminya.4
+  resolution: "@aminya/node-gyp-build@npm:4.5.0-aminya.4"
+  bin:
+    node-gyp-build: bin.js
+    node-gyp-build-optional: optional.js
+    node-gyp-build-test: build-test.js
+  checksum: 436e1e2aa079eb3b773e9103d2bcc2ed78c9f6923064893b6f3ebc177bdbc5096eec508dbeeee3545aeb72085c1d9321a478b8149a72fee0cf1029c2369eb4d6
+  languageName: node
+  linkType: hard
+
 "@apidevtools/json-schema-ref-parser@npm:^8.0.0":
   version: 8.0.0
   resolution: "@apidevtools/json-schema-ref-parser@npm:8.0.0"
@@ -1416,7 +1427,7 @@ __metadata:
   resolution: "@dashevo/dapi-grpc@workspace:packages/dapi-grpc"
   dependencies:
     "@dashevo/grpc-common": "workspace:*"
-    "@dashevo/protobufjs": 6.10.5
+    "@dashevo/protobufjs": "github:pshenmic/protobuf.js"
     "@grpc/grpc-js": ^1.3.7
     "@improbable-eng/grpc-web": ^0.15.0
     chai: ^4.3.9
@@ -1471,7 +1482,7 @@ __metadata:
     sinon-chai: ^3.7.0
     swagger-jsdoc: ^3.5.0
     ws: ^7.5.3
-    zeromq: ~5.2.8
+    zeromq: ^6.0.0-beta.17
   languageName: unknown
   linkType: soft
 
@@ -1626,7 +1637,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/grpc-common@workspace:packages/js-grpc-common"
   dependencies:
-    "@dashevo/protobufjs": 6.10.5
+    "@dashevo/protobufjs": "github:pshenmic/protobuf.js"
     "@grpc/grpc-js": ^1.3.7
     "@grpc/proto-loader": ^0.5.2
     cbor: ^8.0.0
@@ -1768,9 +1779,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/protobufjs@npm:6.10.5":
-  version: 6.10.5
-  resolution: "@dashevo/protobufjs@npm:6.10.5"
+"@dashevo/protobufjs@github:pshenmic/protobuf.js":
+  version: 7.2.5
+  resolution: "@dashevo/protobufjs@https://github.com/pshenmic/protobuf.js.git#commit=0d24a59226556c34fb8c249df8f4295ca3a9a447"
   dependencies:
     "@protobufjs/aspromise": ^1.1.2
     "@protobufjs/base64": ^1.1.2
@@ -1782,13 +1793,9 @@ __metadata:
     "@protobufjs/path": ^1.1.2
     "@protobufjs/pool": ^1.1.0
     "@protobufjs/utf8": ^1.1.0
-    "@types/long": ^4.0.1
-    "@types/node": ^13.7.0
-    long: ^4.0.0
-  bin:
-    pbjs: bin/pbjs
-    pbts: bin/pbts
-  checksum: 212838566371568ecdabb71e4f5395bf7dcf10703335e827d8bc30d9b2d1c901f5b2963b126550fe83ec70377b9f2065c1e1b943cda32ef19442978eebb50805
+    "@types/node": ">=13.7.0"
+    long: ^5.0.0
+  checksum: 1ae61e844528092056681a8c05a285bc6dc1d2ad1e3d9e0c92f0c598bacbd545c74df0c81bfd2122f7bd861ddfa8b212f3a15bb0a98370f8c9e840839567f9cb
   languageName: node
   linkType: hard
 
@@ -3157,13 +3164,6 @@ __metadata:
   version: 12.20.37
   resolution: "@types/node@npm:12.20.37"
   checksum: 8c8b12f802678b3b87c5344b6c84082be08561dda81dc161d42be8cd327330d1a5227cef039c45a5e63a6d4a01ef5ef215dccc42d06100f59f6a8814b4f91cdd
-  languageName: node
-  linkType: hard
-
-"@types/node@npm:^13.7.0":
-  version: 13.13.52
-  resolution: "@types/node@npm:13.13.52"
-  checksum: 8f1afff497ebeba209e2dc340d823284e087a47632afe99a7daa30eaff80893e520f222ad400cd1f2d3b8288e93cf3eaded52a8e64eaefb8aacfe6c35de98f42
   languageName: node
   linkType: hard
 
@@ -5940,7 +5940,19 @@ __metadata:
   languageName: node
   linkType: hard
 
-"cross-spawn@npm:7.0.3, cross-spawn@npm:^7.0.0, cross-spawn@npm:^7.0.2, cross-spawn@npm:^7.0.3":
+"cross-env@npm:^7.0.3":
+  version: 7.0.3
+  resolution: "cross-env@npm:7.0.3"
+  dependencies:
+    cross-spawn: ^7.0.1
+  bin:
+    cross-env: src/bin/cross-env.js
+    cross-env-shell: src/bin/cross-env-shell.js
+  checksum: 26f2f3ea2ab32617f57effb70d329c2070d2f5630adc800985d8b30b56e8bf7f5f439dd3a0358b79cee6f930afc23cf8e23515f17ccfb30092c6b62c6b630a79
+  languageName: node
+  linkType: hard
+
+"cross-spawn@npm:7.0.3, cross-spawn@npm:^7.0.0, cross-spawn@npm:^7.0.1, cross-spawn@npm:^7.0.2, cross-spawn@npm:^7.0.3":
   version: 7.0.3
   resolution: "cross-spawn@npm:7.0.3"
   dependencies:
@@ -10147,6 +10159,13 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"long@npm:^5.0.0":
+  version: 5.2.3
+  resolution: "long@npm:5.2.3"
+  checksum: 885ede7c3de4facccbd2cacc6168bae3a02c3e836159ea4252c87b6e34d40af819824b2d4edce330bfb5c4d6e8ce3ec5864bdcf9473fa1f53a4f8225860e5897
+  languageName: node
+  linkType: hard
+
 "long@npm:^5.2.0":
   version: 5.2.0
   resolution: "long@npm:5.2.0"
@@ -10945,15 +10964,6 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"nan@npm:2.14.2":
-  version: 2.14.2
-  resolution: "nan@npm:2.14.2"
-  dependencies:
-    node-gyp: latest
-  checksum: 7a269139b66a7d37470effb7fb36a8de8cc3b5ffba6e40bb8e0545307911fe5ebf94797ec62f655ecde79c237d169899f8bd28256c66a32cbc8284faaf94c3f4
-  languageName: node
-  linkType: hard
-
 "nan@npm:^2.16.0":
   version: 2.17.0
   resolution: "nan@npm:2.17.0"
@@ -11051,6 +11061,15 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"node-addon-api@npm:^6.0.0":
+  version: 6.1.0
+  resolution: "node-addon-api@npm:6.1.0"
+  dependencies:
+    node-gyp: latest
+  checksum: 3a539510e677cfa3a833aca5397300e36141aca064cdc487554f2017110709a03a95da937e98c2a14ec3c626af7b2d1b6dabe629a481f9883143d0d5bff07bf2
+  languageName: node
+  linkType: hard
+
 "node-fetch@npm:^2.6.7":
   version: 2.6.7
   resolution: "node-fetch@npm:2.6.7"
@@ -11076,17 +11095,6 @@ fsevents@~2.3.2:
   version: 3.1.0
   resolution: "node-graceful@npm:3.1.0"
   checksum: 159d06ca29e09b3d97fc3ce0976a53a6a259b965c23ca90be0ff4fcc92b922ad2d5e62909d1f575c5480923471561060952dcd3ae94809f1b29812e5c2a33ecc
-  languageName: node
-  linkType: hard
-
-"node-gyp-build@npm:^4.2.3":
-  version: 4.6.0
-  resolution: "node-gyp-build@npm:4.6.0"
-  bin:
-    node-gyp-build: bin.js
-    node-gyp-build-optional: optional.js
-    node-gyp-build-test: build-test.js
-  checksum: 25d78c5ef1f8c24291f4a370c47ba52fcea14f39272041a90a7894cd50d766f7c8cb8fb06c0f42bf6f69b204b49d9be3c8fc344aac09714d5bdb95965499eb15
   languageName: node
   linkType: hard
 
@@ -12268,9 +12276,9 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"protobufjs@npm:^6.11.4":
-  version: 6.11.4
-  resolution: "protobufjs@npm:6.11.4"
+"protobufjs@github:pshenmic/protobuf.js":
+  version: 7.2.5
+  resolution: "protobufjs@https://github.com/pshenmic/protobuf.js.git#commit=0d24a59226556c34fb8c249df8f4295ca3a9a447"
   dependencies:
     "@protobufjs/aspromise": ^1.1.2
     "@protobufjs/base64": ^1.1.2
@@ -12282,13 +12290,9 @@ fsevents@~2.3.2:
     "@protobufjs/path": ^1.1.2
     "@protobufjs/pool": ^1.1.0
     "@protobufjs/utf8": ^1.1.0
-    "@types/long": ^4.0.1
     "@types/node": ">=13.7.0"
-    long: ^4.0.0
-  bin:
-    pbjs: bin/pbjs
-    pbts: bin/pbts
-  checksum: b2fc6a01897b016c2a7e43a854ab4a3c57080f61be41e552235436e7a730711b8e89e47cb4ae52f0f065b5ab5d5989fc932f390337ce3a8ccf07203415700850
+    long: ^5.0.0
+  checksum: fdedd7e0cf55f3cf07b4eb40344cbdd673e23e2659212a64ac98fde77338dae8fe9db9cb00e3d49861b10746e5bad1e817764ac7c11c12df3f7736630768bec8
   languageName: node
   linkType: hard
 
@@ -13239,6 +13243,18 @@ fsevents@~2.3.2:
     should-type-adaptors: ^1.0.1
     should-util: ^1.0.0
   checksum: 74bcc0eb85e0a63a88e501ff9ca3b53dbc6d1ee47823c029a18a4b14b3ef4e2561733e161033df720599d2153283470e9647fdcb1bbc78903960ffb0363239c4
+  languageName: node
+  linkType: hard
+
+"shx@npm:^0.3.4":
+  version: 0.3.4
+  resolution: "shx@npm:0.3.4"
+  dependencies:
+    minimist: ^1.2.3
+    shelljs: ^0.8.5
+  bin:
+    shx: lib/cli.js
+  checksum: 0aa168bfddc11e3fe8943cce2e0d2d8514a560bd58cf2b835b4351ba03f46068f7d88286c2627f4b85604e81952154c43746369fb3f0d60df0e3b511f465e5b8
   languageName: node
   linkType: hard
 
@@ -15687,13 +15703,16 @@ typescript@^3.9.5:
   languageName: node
   linkType: hard
 
-"zeromq@npm:~5.2.8":
-  version: 5.2.8
-  resolution: "zeromq@npm:5.2.8"
+"zeromq@npm:^6.0.0-beta.17":
+  version: 6.0.0-beta.17
+  resolution: "zeromq@npm:6.0.0-beta.17"
   dependencies:
-    nan: 2.14.2
+    "@aminya/node-gyp-build": 4.5.0-aminya.4
+    cross-env: ^7.0.3
+    node-addon-api: ^6.0.0
     node-gyp: latest
-    node-gyp-build: ^4.2.3
-  checksum: 0fada0fe60a4227d4ced3db6fe5fec308db8b973c63f4b5cb9e4354e8d467cbea949b626df512f77a73771161d018d83cb8f6bafbb75ca146cca565d433c72d4
+    shelljs: ^0.8.5
+    shx: ^0.3.4
+  checksum: 9511c4e8cb9b12f0bcf346889c6e9efc4d2fd7078a015fc4e240bd93e95495fcc622c8a5522891eeab545498b4b3e1d53d146976279a04c93015e45d89dd36d1
   languageName: node
   linkType: hard
