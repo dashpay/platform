@@ -132,7 +132,6 @@ jobs:
         run: |
           aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
           GIT_SHA=$(git rev-parse --short HEAD)
-          echo "GIT_SHA=$GIT_SHA" >> $GITHUB_ENV
           images=("dapi:local" "drive:local" "dashmate_helper:local")
           for image in "${images[@]}"; do
             new_image_tag="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${image%:local}:$GIT_SHA"
