@@ -26,6 +26,8 @@ function createConfigFileFactory(defaultConfigs, homeDir) {
 
     configFile.markAsChanged();
     configFile.getAllConfigs().forEach((config) => config.markAsChanged());
+
+    return configFile;
   }
 
   return createConfigFile;

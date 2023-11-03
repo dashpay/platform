@@ -6,18 +6,13 @@ describe('Config set command', () => {
   const flags = {};
 
   let config;
-  let mockRenderServiceTemplates;
-  let mockWriteServiceConfigs;
-  let mockConfigFileRepository;
+  let mockConfigFile;
 
   beforeEach(async () => {
     const getBaseConfig = getBaseConfigFactory(HomeDir.createTemp());
 
     config = getBaseConfig();
-
-    mockRenderServiceTemplates = () => {};
-    mockWriteServiceConfigs = () => {};
-    mockConfigFileRepository = { write: () => {} };
+    mockConfigFile = { markAsChanged: () => {} };
   });
 
   describe('#platform', () => {
@@ -26,9 +21,7 @@ describe('Config set command', () => {
 
       await command.runWithDependencies({
         option: 'core.docker.image', value: 'fake_image',
-      }, flags, config,
-      mockRenderServiceTemplates, mockWriteServiceConfigs,
-      mockConfigFileRepository);
+      }, flags, config, mockConfigFile);
     });
 
     it('should allow setting null', async () => {
@@ -36,17 +29,13 @@ describe('Config set command', () => {
 
       await command.runWithDependencies({
         option: 'description', value: null,
-      }, flags, config,
-      mockRenderServiceTemplates, mockWriteServiceConfigs,
-      mockConfigFileRepository);
+      }, flags, config, mockConfigFile);
 
       expect(config.get('description')).to.equal(null);
 
       await command.runWithDependencies({
         option: 'description', value: 'null',
-      }, flags, config,
-      mockRenderServiceTemplates, mockWriteServiceConfigs,
-      mockConfigFileRepository);
+      }, flags, config, mockConfigFile);
 
       expect(config.get('description')).to.equal(null);
     });
@@ -57,18 +46,14 @@ describe('Config set command', () => {
       await command.runWithDependencies({
         option: 'platform.drive.abci.validatorSet.llmqType',
         value: 107,
-      }, flags, config,
-      mockRenderServiceTemplates, mockWriteServiceConfigs,
-      mockConfigFileRepository);
+      }, flags, config, mockConfigFile);
 
       expect(config.get('platform.drive.abci.validatorSet.llmqType')).to.equal(107);
 
       await command.runWithDependencies({
         option: 'platform.drive.abci.validatorSet.llmqType',
         value: '107',
-      }, flags, config,
-      mockRenderServiceTemplates, mockWriteServiceConfigs,
-      mockConfigFileRepository);
+      }, flags, config, mockConfigFile);
 
       expect(config.get('platform.drive.abci.validatorSet.llmqType')).to.equal(107);
     });
@@ -78,17 +63,13 @@ describe('Config set command', () => {
 
       await command.runWithDependencies({
         option: 'dashmate.helper.api.enable', value: 'true',
-      }, flags, config,
-      mockRenderServiceTemplates, mockWriteServiceConfigs,
-      mockConfigFileRepository);
+      }, flags, config, mockConfigFile);
 
       expect(config.get('dashmate.helper.api.enable')).to.equal(true);
 
       await command.runWithDependencies({
         option: 'dashmate.helper.api.enable', value: true,
-      }, flags, config,
-      mockRenderServiceTemplates, mockWriteServiceConfigs,
-      mockConfigFileRepository);
+      }, flags, config, mockConfigFile);
 
       expect(config.get('dashmate.helper.api.enable')).to.equal(true);
     });
@@ -98,9 +79,7 @@ describe('Config set command', () => {
 
       await command.runWithDependencies({
         option: 'core.rpc.allowIps', value: '["1337", "36484"]',
-      }, flags, config,
-      mockRenderServiceTemplates, mockWriteServiceConfigs,
-      mockConfigFileRepository);
+      }, flags, config, mockConfigFile);
 
       expect(config.get('core.rpc.allowIps')).to.deep.equal(['1337', '36484']);
     });
@@ -111,9 +90,7 @@ describe('Config set command', () => {
       await command.runWithDependencies({
         option: 'docker.network',
         value: '{"subnet":"127.0.0.1/24", "bindIp": "0.0.0.0"}',
-      }, flags, config,
-      mockRenderServiceTemplates, mockWriteServiceConfigs,
-      mockConfigFileRepository);
+      }, flags, config, mockConfigFile);
     });
 
     it('should throw on unknown path', async () => {
@@ -123,9 +100,7 @@ describe('Config set command', () => {
       try {
         await command.runWithDependencies({
           option: 'fakePath', value: 'fake',
-        }, flags, config,
-        mockRenderServiceTemplates, mockWriteServiceConfigs,
-        mockConfigFileRepository);
+        }, flags, config, mockConfigFile);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -140,9 +115,7 @@ describe('Config set command', () => {
       try {
         await command.runWithDependencies({
           option: 'core.rpc.allowIps', value: 'fake_image',
-        }, flags, config,
-        mockRenderServiceTemplates, mockWriteServiceConfigs,
-        mockConfigFileRepository);
+        }, flags, config, mockConfigFile);
 
         expect.fail('should throw error');
       } catch (e) {
@@ -157,9 +130,7 @@ describe('Config set command', () => {
       try {
         await command.runWithDependencies({
           option: 'dashmate.helper.api.enable', value: 120,
-        }, flags, config,
-        mockRenderServiceTemplates, mockWriteServiceConfigs,
-        mockConfigFileRepository);
+        }, flags, config, mockConfigFile);
 
         expect.fail('should throw error');
       } catch (e) {
