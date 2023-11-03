@@ -298,13 +298,15 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
       },
       '0.25.12': (configFile) => {
         Object.entries(configFile.configs)
-          .forEach(([, options]) => {
+          .forEach(([name, options]) => {
             if (options.network === 'testnet') {
               options.core.docker.image = testnet.get('core.docker.image');
 
-              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
-              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
-              options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+              if (name !== base.getName()) {
+                options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+                options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+                options.platform.drive.tenderdash.genesis.genesis_time = testnet.get('platform.drive.tenderdash.genesis.genesis_time');
+              }
             }
           });
 
