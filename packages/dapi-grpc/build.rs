@@ -65,16 +65,14 @@ pub fn generate() -> Result<(), std::io::Error> {
         "GetProofsResponse",
         "WaitForStateTransitionResultResponse",
     ];
-    for msg in [VERSIONED_REQUESTS, VERSIONED_RESPONSES].concat() {
-        platform =
-            platform.message_attribute(msg, r#"#[derive(::dapi_grpc_macros::GrpcMessageV0)]"#);
-    }
 
     for msg in VERSIONED_RESPONSES {
-        platform = platform.message_attribute(
-            msg,
-            r#"#[derive(::dapi_grpc_macros::VersionedGrpcResponse)]"#,
-        );
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dapi_grpc_macros::VersionedGrpcResponse)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
     }
 
     #[cfg(feature = "serde")]
@@ -154,6 +152,12 @@ impl MappingConfig {
     #[allow(unused)]
     fn field_attribute(mut self, path: &str, attribute: &str) -> Self {
         self.builder = self.builder.field_attribute(path, attribute);
+        self
+    }
+
+    #[allow(unused)]
+    fn enum_attribute(mut self, path: &str, attribute: &str) -> Self {
+        self.builder = self.builder.enum_attribute(path, attribute);
         self
     }
 

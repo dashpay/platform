@@ -121,11 +121,11 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
 
         // Parse response to read proof and metadata
         let proof = response
-            .get_proof(platform_version)
+            .proof(platform_version)
             .or(Err(Error::NoProofInResult))?;
 
         let mtd = response
-            .get_metadata(platform_version)
+            .metadata()
             .or(Err(Error::EmptyResponseMetadata))?;
 
         // Load some info from request
@@ -171,11 +171,11 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
         let response = response.into();
         // Parse response to read proof and metadata
         let proof = response
-            .get_proof(platform_version)
+            .proof(platform_version)
             .or(Err(Error::NoProofInResult))?;
 
         let mtd = response
-            .get_metadata(platform_version)
+            .metadata()
             .or(Err(Error::EmptyResponseMetadata))?;
 
         // Load some info from request
@@ -224,11 +224,11 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
 
         // Parse response to read proof and metadata
         let proof = response
-            .get_proof(platform_version)
+            .proof(platform_version)
             .or(Err(Error::NoProofInResult))?;
 
         let mtd = response
-            .get_metadata(platform_version)
+            .metadata()
             .or(Err(Error::EmptyResponseMetadata))?;
 
         // Load some info from request
@@ -389,11 +389,11 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
 
         // Parse response to read proof and metadata
         let proof = response
-            .get_proof(platform_version)
+            .proof(platform_version)
             .or(Err(Error::NoProofInResult))?;
 
         let mtd = response
-            .get_metadata(platform_version)
+            .metadata()
             .or(Err(Error::EmptyResponseMetadata))?;
 
         // Load some info from request
@@ -439,11 +439,11 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
 
         // Parse response to read proof and metadata
         let proof = response
-            .get_proof(platform_version)
+            .proof(platform_version)
             .or(Err(Error::NoProofInResult))?;
 
         let mtd = response
-            .get_metadata(platform_version)
+            .metadata()
             .or(Err(Error::EmptyResponseMetadata))?;
 
         // Load some info from request
@@ -489,11 +489,11 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
 
         // Parse response to read proof and metadata
         let proof = response
-            .get_proof(platform_version)
+            .proof(platform_version)
             .or(Err(Error::NoProofInResult))?;
 
         let mtd = response
-            .get_metadata(platform_version)
+            .metadata()
             .or(Err(Error::EmptyResponseMetadata))?;
 
         // Load some info from request
@@ -541,11 +541,11 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
 
         // Parse response to read proof and metadata
         let proof = response
-            .get_proof(platform_version)
+            .proof(platform_version)
             .or(Err(Error::NoProofInResult))?;
 
         let mtd = response
-            .get_metadata(platform_version)
+            .metadata()
             .or(Err(Error::EmptyResponseMetadata))?;
 
         // Load some info from request
@@ -605,11 +605,11 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
 
         // Parse response to read proof and metadata
         let proof = response
-            .get_proof(platform_version)
+            .proof(platform_version)
             .or(Err(Error::NoProofInResult))?;
 
         let mtd = response
-            .get_metadata(platform_version)
+            .metadata()
             .or(Err(Error::EmptyResponseMetadata))?;
 
         // Load some info from request
@@ -673,11 +673,11 @@ where
 
         // Parse response to read proof and metadata
         let proof = response
-            .get_proof(platform_version)
+            .proof(platform_version)
             .or(Err(Error::NoProofInResult))?;
 
         let mtd = response
-            .get_metadata(platform_version)
+            .metadata()
             .or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, documents) = request
