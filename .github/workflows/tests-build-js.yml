@@ -57,7 +57,7 @@ jobs:
       - name: Ignore only already cached artifacts
         run: |
           find . -name '.gitignore' -exec rm -f {} +
-          echo ".yarn/unplugged" >> .gitignore
+          echo ".yarn" >> .gitignore
           echo "target" >> .gitignore
           echo "node_modules" >> .gitignore
           echo ".nyc_output" >> .gitignore
@@ -68,10 +68,10 @@ jobs:
 
       - name: Get modified files
         id: diff
-        run: git ls-files --others --exclude-standard
+        run: git ls-files --others --exclude-standard >> artifacts_list.txt
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
 
       - name: Create an archive of built files
         run: |
-          echo "${{ steps.diff.outputs.stdout }}" | xargs tar -cf build-js-artifacts-${{ github.sha }}.tar
+          xargs -a artifacts_list.txt tar cvf build-js-artifacts-${{ github.sha }}.tar
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
