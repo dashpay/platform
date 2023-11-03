@@ -55,6 +55,21 @@ pub fn versioned_grpc_response_derive(input: TokenStream) -> TokenStream {
         }
     });
 
+    // Generate match arms for proof and metadata methods
+    let proof_owned_arms = (0..=versions).map(|version| {
+        let version_ident = format_ident!("V{}", version);
+        // Construct the identifier string for the module
+        let version_mod_str = format!("{}_v{}", mod_ident, version);
+        // Now create an identifier from the constructed string
+        let version_mod_ident = format_ident!("{}", version_mod_str);
+        quote! {
+            #mod_ident::Version::#version_ident(inner) => match inner.result {
+                Some(#mod_ident::#version_mod_ident::Result::Proof(proof)) => Ok(proof),
+                _ => return Err(::platform_version::error::PlatformVersionError::UnknownVersionError("unknown proof version not known".to_string())),
+            },
+        }
+    });
+
     let metadata_arms = (0..=versions).map(|version| {
         let version_ident = format_ident!("V{}", version);
         quote! {
@@ -72,6 +87,15 @@ pub fn versioned_grpc_response_derive(input: TokenStream) -> TokenStream {
                 match &self.version {
                     Some(version) => match version {
                         #( #proof_arms )*
+                    },
+                    _ => Err(::platform_version::error::PlatformVersionError::UnknownVersionError("result did not have a version".to_string())),
+                }
+            }
+
+            fn proof_owned(self) -> Result<Proof, Self::Error> {
+                match self.version {
+                    Some(version) => match version {
+                        #( #proof_owned_arms )*
                     },
                     _ => Err(::platform_version::error::PlatformVersionError::UnknownVersionError("result did not have a version".to_string())),
                 }

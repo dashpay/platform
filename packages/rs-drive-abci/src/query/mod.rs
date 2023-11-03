@@ -1860,7 +1860,7 @@ mod tests {
                 GetProofsResponse::decode(validation_result.data.unwrap().as_slice()).unwrap();
 
             let proof = response
-                .proof(version)
+                .proof()
                 .expect("expected a proof in versioned response");
 
             assert!(!proof.grovedb_proof.is_empty())
