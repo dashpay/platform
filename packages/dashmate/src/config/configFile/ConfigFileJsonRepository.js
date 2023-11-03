@@ -64,13 +64,20 @@ class ConfigFileJsonRepository {
       throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
 
-    return new ConfigFile(
+    const configFile = new ConfigFile(
       configs,
-      packageJson.version,
+      migratedConfigFileData.configFormatVersion,
       migratedConfigFileData.projectId,
       migratedConfigFileData.defaultConfigName,
       migratedConfigFileData.defaultGroupName,
     );
+
+    // Persist config if it was actually migrated
+    if (migratedConfigFileData.configFormatVersion !== configFile.configFormatVersion) {
+      this.write(configFile);
+    }
+
+    return configFile;
   }
 
   /**
