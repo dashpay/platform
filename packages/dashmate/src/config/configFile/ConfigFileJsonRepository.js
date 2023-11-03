@@ -42,7 +42,7 @@ class ConfigFileJsonRepository {
       throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
 
-    const currentConfigVersion = configFileData.configFormatVersion
+    const originConfigVersion = configFileData.configFormatVersion;
 
     const migratedConfigFileData = this.migrateConfigFile(
       configFileData,
@@ -74,9 +74,10 @@ class ConfigFileJsonRepository {
       migratedConfigFileData.defaultGroupName,
     );
 
-    // Persist config if it was actually migrated
-    if (migratedConfigFileData.configFormatVersion !== currentConfigVersion) {
-      this.write(configFile);
+    // Mark configs as changed if they were migrated
+    if (migratedConfigFileData.configFormatVersion !== originConfigVersion) {
+      configFile.markAsChanged();
+      configFile.getAllConfigs().forEach((config) => config.markAsChanged());
     }
 
     return configFile;
@@ -90,6 +91,8 @@ class ConfigFileJsonRepository {
    */
   write(configFile) {
     const configFileJSON = JSON.stringify(configFile.toObject(), undefined, 2);
+
+    configFile.markAsSaved();
 
     fs.writeFileSync(this.configFilePath, `${configFileJSON}\n`, 'utf8');
   }

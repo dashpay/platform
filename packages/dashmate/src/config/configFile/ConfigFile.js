@@ -12,12 +12,19 @@ class ConfigFile {
    * @param {string|null} defaultConfigName
    * @param {string|null} defaultGroupName
    */
-  constructor(configs, configFormatVersion, projectId, defaultConfigName, defaultGroupName) {
+  constructor(
+    configs,
+    configFormatVersion,
+    projectId,
+    defaultConfigName,
+    defaultGroupName,
+  ) {
     this.setConfigs(configs);
     this.configFormatVersion = configFormatVersion;
     this.defaultConfigName = defaultConfigName;
     this.defaultGroupName = defaultGroupName;
     this.projectId = projectId || null;
+    this.changed = false;
   }
 
   /**
@@ -41,6 +48,8 @@ class ConfigFile {
     }
 
     this.defaultConfigName = name;
+
+    this.changed = true;
 
     return this;
   }
@@ -111,6 +120,8 @@ class ConfigFile {
       throw new GroupIsNotPresentError(defaultGroupName);
     }
 
+    this.changed = true;
+
     this.defaultGroupName = defaultGroupName;
   }
 
@@ -177,6 +188,9 @@ class ConfigFile {
     const fromConfig = this.getConfig(fromConfigName);
 
     this.configsMap[name] = new Config(name, fromConfig.getOptions());
+    this.configsMap[name].markAsChanged();
+
+    this.changed = true;
 
     return this.configsMap[name];
   }
@@ -198,6 +212,8 @@ class ConfigFile {
 
     delete this.configsMap[name];
 
+    this.changed = true;
+
     return this;
   }
 
@@ -208,6 +224,8 @@ class ConfigFile {
    */
   setConfig(config) {
     this.configsMap[config.getName()] = config;
+
+    this.changed = true;
   }
 
   /**
@@ -221,6 +239,8 @@ class ConfigFile {
 
       return configsMap;
     }, {});
+
+    this.changed = true;
   }
 
   /**
@@ -232,6 +252,8 @@ class ConfigFile {
   setProjectId(projectId) {
     this.projectId = projectId;
 
+    this.changed = true;
+
     return this;
   }
 
@@ -242,6 +264,31 @@ class ConfigFile {
    */
   getProjectId() {
     return this.projectId;
+  }
+
+  /**
+   * Is config file changed
+   *
+   * @return {boolean}
+   */
+  isChanged() {
+    return this.changed
+      || Object.values(this.configsMap)
+        .find((config) => config.isChanged()) !== undefined;
+  }
+
+  /**
+   * Mark config file as changed
+   */
+  markAsChanged() {
+    this.changed = true;
+  }
+
+  /**
+   * Mark config file as saved
+   */
+  markAsSaved() {
+    this.changed = false;
   }
 
   /**

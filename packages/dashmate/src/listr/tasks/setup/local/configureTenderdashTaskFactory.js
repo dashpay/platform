@@ -2,13 +2,11 @@ const { Listr } = require('listr2');
 const { getLatestProtocolVersion } = require('@dashevo/wasm-dpp');
 
 /**
- * @param {renderServiceTemplates} renderServiceTemplates
- * @param {writeServiceConfigs} writeServiceConfigs
+ * @param {ConfigFile} configFile
  * @return {configureTenderdashTask}
  */
 function configureTenderdashTaskFactory(
-  renderServiceTemplates,
-  writeServiceConfigs,
+  configFile,
 ) {
   /**
    * @typedef {configureTenderdashTask}
@@ -30,6 +28,8 @@ function configureTenderdashTaskFactory(
               const chainId = `dashmate_local_${randomChainIdPart}`;
 
               const genesisTime = new Date().toISOString();
+
+              configFile.markAsChanged();
 
               platformConfigs.forEach((config, index) => {
                 config.set('platform.drive.tenderdash.genesis.genesis_time', genesisTime);
@@ -63,9 +63,6 @@ function configureTenderdashTaskFactory(
                   'platform.drive.tenderdash.genesis.consensus_params.version.app_version',
                   getLatestProtocolVersion().toString(),
                 );
-
-                const configFiles = renderServiceTemplates(config);
-                writeServiceConfigs(config.getName(), configFiles);
               });
             },
           });

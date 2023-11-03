@@ -12,9 +12,6 @@ const wait = require('../../util/wait');
  * @param {ConfigFile} configFile
  * @param {HomeDir} homeDir
  * @param {generateEnvs} generateEnvs
- * @param {ConfigFileJsonRepository} configFileRepository
- * @param {renderServiceTemplates} renderServiceTemplates
- * @param {writeServiceConfigs} writeServiceConfigs
  * @return {resetNodeTask}
  */
 function resetNodeTaskFactory(
@@ -26,9 +23,6 @@ function resetNodeTaskFactory(
   configFile,
   homeDir,
   generateEnvs,
-  configFileRepository,
-  renderServiceTemplates,
-  writeServiceConfigs,
 ) {
   /**
    * @typedef {resetNodeTask}
@@ -115,12 +109,7 @@ function resetNodeTaskFactory(
         task: () => {
           // TODO: We should remove it from config
           config.set('core.miner.mediantime', null);
-
-          configFileRepository.write(configFile);
-
-          // Render updated service configs
-          const serviceConfigs = renderServiceTemplates(config);
-          writeServiceConfigs(config.getName(), serviceConfigs);
+          configFile.markAsChanged();
         },
       },
       {
@@ -128,7 +117,6 @@ function resetNodeTaskFactory(
         enabled: (ctx) => ctx.removeConfig,
         task: () => {
           configFile.removeConfig(config.getName());
-          configFileRepository.write(configFile);
 
           const serviceConfigsPath = homeDir.joinPath(config.getName());
 
@@ -157,6 +145,7 @@ function resetNodeTaskFactory(
             }
 
             config.set('group', groupName);
+            configFile.markAsChanged();
 
             // Remove service configs
             let serviceConfigsPath = homeDir.joinPath(defaultConfigName);
@@ -169,10 +158,6 @@ function resetNodeTaskFactory(
               recursive: true,
               force: true,
             });
-
-            // Render updated service configs
-            const serviceConfigs = renderServiceTemplates(config);
-            writeServiceConfigs(config.getName(), serviceConfigs);
           } else {
             // Delete config if no base config
             configFile.removeConfig(config.getName());
@@ -185,8 +170,6 @@ function resetNodeTaskFactory(
               force: true,
             });
           }
-
-          configFileRepository.write(configFile);
         },
       },
     ]);

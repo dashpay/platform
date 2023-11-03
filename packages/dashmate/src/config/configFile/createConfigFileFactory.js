@@ -16,13 +16,16 @@ function createConfigFileFactory(defaultConfigs, homeDir) {
   function createConfigFile() {
     const projectId = getShortHash(homeDir.getPath());
 
-    return new ConfigFile(
+    const configFile = new ConfigFile(
       defaultConfigs.getAll(),
       packageJson.version,
       projectId,
       null,
       null,
     );
+
+    configFile.markAsChanged();
+    configFile.getAllConfigs().forEach((config) => config.markAsChanged());
   }
 
   return createConfigFile;

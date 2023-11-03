@@ -17,8 +17,7 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {configFileRepository} configFileRepository
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
  * @param {HomeDir} homeDir
- * @param {writeServiceConfigs} writeServiceConfigs
- * @param {renderServiceTemplates} renderServiceTemplates
+ * @param {writeConfigTemplates} writeConfigTemplates
  */
 function setupLocalPresetTaskFactory(
   configFile,
@@ -29,8 +28,7 @@ function setupLocalPresetTaskFactory(
   configFileRepository,
   generateHDPrivateKeys,
   homeDir,
-  writeServiceConfigs,
-  renderServiceTemplates,
+  writeConfigTemplates,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -87,7 +85,7 @@ function setupLocalPresetTaskFactory(
             message: 'Enter the interval between core blocks',
             initial: configFile.getConfig('base').get('core.miner.interval'),
             validate: (state) => {
-              if (state.match(/\d+(\.\d+)?(m|s)/)) {
+              if (state.match(/\d+(\.\d+)?([ms])/)) {
                 return true;
               }
 
@@ -291,10 +289,7 @@ function setupLocalPresetTaskFactory(
         task: (ctx) => {
           configFile.setDefaultGroupName(PRESET_LOCAL);
 
-          for (const config of ctx.configGroup) {
-            const serviceConfigFiles = renderServiceTemplates(config);
-            writeServiceConfigs(config.getName(), serviceConfigFiles);
-          }
+          ctx.configGroup.forEach(writeConfigTemplates);
 
           configFileRepository.write(configFile);
         },

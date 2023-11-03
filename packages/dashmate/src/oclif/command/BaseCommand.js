@@ -96,6 +96,31 @@ class BaseCommand extends Command {
   async finally(err) {
     // Save configs collection
     if (this.container) {
+      /**
+       * @var {ConfigFileJsonRepository} configFileRepository
+       */
+      const configFileRepository = this.container.resolve('configFileRepository');
+
+      if (this.container.has('configFile')) {
+        /**
+         * @var {ConfigFile} configFile
+         */
+        const configFile = this.container.resolve('configFile');
+
+        if (configFile.isChanged()) {
+          configFileRepository.write(configFile);
+
+          /**
+           * @var {writeConfigTemplates} writeConfigTemplates
+           */
+          const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
+
+          configFile.getAllConfigs()
+            .filter((config) => config.isChanged())
+            .forEach(writeConfigTemplates);
+        }
+      }
+
       // Stop all running containers
       const stopAllContainers = this.container.resolve('stopAllContainers');
       const startedContainers = this.container.resolve('startedContainers');
