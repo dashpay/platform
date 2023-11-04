@@ -9,7 +9,7 @@ use std::{
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
 use crate::mock::{MockRequest, MockResponse};
-use crate::{core::CoreClient, error::Error};
+use crate::{core_client::CoreClient, error::Error};
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 #[cfg(feature = "mocks")]
 use drive_proof_verifier::MockQuorumInfoProvider;

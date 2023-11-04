@@ -1,5 +1,5 @@
 [package]
-name = "dash-platform-sdk"
+name = "rs-sdk"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,6 +8,7 @@ dpp = { path = "../rs-dpp", features = [
     "client",
     "validation",
     "identity-value-conversion",
+    "state-transition-signing",
 ] }
 dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
 rs-dapi-client = { path = "../rs-dapi-client" }

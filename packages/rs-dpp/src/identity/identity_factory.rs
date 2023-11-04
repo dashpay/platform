@@ -149,7 +149,7 @@ impl IdentityFactory {
     #[cfg(all(feature = "state-transitions", feature = "client"))]
     pub fn create_identity_create_transition(
         &self,
-        identity: Identity,
+        identity: &Identity,
         asset_lock_proof: AssetLockProof,
     ) -> Result<IdentityCreateTransition, ProtocolError> {
         let transition =
@@ -173,7 +173,7 @@ impl IdentityFactory {
         });
 
         let mut identity_create_transition = IdentityCreateTransition::V0(
-            IdentityCreateTransitionV0::try_from_identity_v0(identity.clone(), asset_lock_proof)?,
+            IdentityCreateTransitionV0::try_from_identity_v0(&identity, asset_lock_proof)?,
         );
         Ok((identity, identity_create_transition))
     }

@@ -82,7 +82,7 @@ impl IdentityFacade {
     #[cfg(feature = "state-transitions")]
     pub fn create_identity_create_transition(
         &self,
-        identity: Identity,
+        identity: &Identity,
         asset_lock_proof: AssetLockProof,
     ) -> Result<IdentityCreateTransition, ProtocolError> {
         self.factory

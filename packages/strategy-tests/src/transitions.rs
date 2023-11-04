@@ -662,7 +662,7 @@ pub fn create_state_transitions_for_identities(
                 instant_asset_lock_proof_fixture(PrivateKey::new(secret_key, Network::Dash));
             let identity_create_transition =
                 IdentityCreateTransition::try_from_identity_with_signer(
-                    identity.clone(),
+                    identity,
                     asset_lock_proof,
                     pk.as_slice(),
                     signer,

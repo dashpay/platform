@@ -1029,35 +1029,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dash-platform-sdk"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.21.5",
- "bincode 2.0.0-rc.3",
- "ciborium",
- "dapi-grpc",
- "dashcore-rpc",
- "derive_more",
- "dotenvy",
- "dpp",
- "drive",
- "drive-abci",
- "drive-proof-verifier",
- "envy",
- "futures",
- "hex",
- "http",
- "rs-dapi-client",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "dashcore"
 version = "0.30.0"
 source = "git+https://github.com/dashpay/rust-dashcore?branch=master#43ffb72915ae55574ac44fcdbd47589e0c815b59"
@@ -3529,6 +3500,35 @@ dependencies = [
  "tokio",
  "tonic",
  "tracing",
+]
+
+[[package]]
+name = "rs-sdk"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.5",
+ "bincode 2.0.0-rc.3",
+ "ciborium",
+ "dapi-grpc",
+ "dashcore-rpc",
+ "derive_more",
+ "dotenvy",
+ "dpp",
+ "drive",
+ "drive-abci",
+ "drive-proof-verifier",
+ "envy",
+ "futures",
+ "hex",
+ "http",
+ "rs-dapi-client",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
