@@ -5,7 +5,6 @@ class ConfigSetCommand extends ConfigBaseCommand {
    * @param args
    * @param flags
    * @param {Config} config
-   * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -15,7 +14,6 @@ class ConfigSetCommand extends ConfigBaseCommand {
     },
     flags,
     config,
-    configFile,
   ) {
     // check for existence
     config.get(optionPath);
@@ -29,7 +27,6 @@ class ConfigSetCommand extends ConfigBaseCommand {
     }
 
     config.set(optionPath, value);
-    configFile.markAsChanged();
 
     // eslint-disable-next-line no-console
     console.log(`${optionPath} set to ${optionValue}`);

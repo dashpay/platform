@@ -78,8 +78,6 @@ function configureCoreTaskFactory(
               sporkPrivKey.toWIF(),
             );
 
-            configFile.markAsChanged();
-
             // Write configs
             writeConfigTemplates(config);
           });

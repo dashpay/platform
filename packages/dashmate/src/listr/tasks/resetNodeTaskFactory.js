@@ -109,7 +109,6 @@ function resetNodeTaskFactory(
         task: () => {
           // TODO: We should remove it from config
           config.set('core.miner.mediantime', null);
-          configFile.markAsChanged();
         },
       },
       {
@@ -145,7 +144,6 @@ function resetNodeTaskFactory(
             }
 
             config.set('group', groupName);
-            configFile.markAsChanged();
 
             // Remove service configs
             let serviceConfigsPath = homeDir.joinPath(defaultConfigName);
