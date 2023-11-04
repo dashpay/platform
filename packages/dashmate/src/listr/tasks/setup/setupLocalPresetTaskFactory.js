@@ -104,7 +104,7 @@ function setupLocalPresetTaskFactory(
                 : configFile.createConfig(configName, PRESET_LOCAL)
             ));
 
-          configFile.setDefaultGroupName(PRESET_LOCAL);
+          // configFile.setDefaultGroupName(PRESET_LOCAL); disable for test
 
           const hostDockerInternalIp = await resolveDockerHostIp();
 
