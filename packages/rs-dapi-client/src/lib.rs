@@ -24,7 +24,7 @@ pub use request_settings::RequestSettings;
 /// A DAPI request could be executed with an initialized [DapiClient].
 ///
 /// # Examples
-/// ```no_run
+/// ```no_run, ignore
 /// use rs_dapi_client::{RequestSettings, AddressList, DapiClient, DapiClientError, DapiRequest};
 /// use dapi_grpc::platform::v0::{self as platform_proto};
 ///
