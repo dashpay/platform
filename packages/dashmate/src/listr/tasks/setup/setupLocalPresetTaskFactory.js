@@ -14,10 +14,8 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {configureTenderdashTask} configureTenderdashTask
  * @param {obtainSelfSignedCertificateTask} obtainSelfSignedCertificateTask
  * @param {resolveDockerHostIp} resolveDockerHostIp
- * @param {configFileRepository} configFileRepository
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
  * @param {HomeDir} homeDir
- * @param {writeConfigTemplates} writeConfigTemplates
  */
 function setupLocalPresetTaskFactory(
   configFile,
@@ -25,10 +23,8 @@ function setupLocalPresetTaskFactory(
   obtainSelfSignedCertificateTask,
   configureTenderdashTask,
   resolveDockerHostIp,
-  configFileRepository,
   generateHDPrivateKeys,
   homeDir,
-  writeConfigTemplates,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -107,6 +103,8 @@ function setupLocalPresetTaskFactory(
                 ? configFile.getConfig(configName)
                 : configFile.createConfig(configName, PRESET_LOCAL)
             ));
+
+          configFile.setDefaultGroupName(PRESET_LOCAL);
 
           const hostDockerInternalIp = await resolveDockerHostIp();
 
@@ -283,16 +281,6 @@ function setupLocalPresetTaskFactory(
       {
         title: 'Configure Tenderdash nodes',
         task: (ctx) => configureTenderdashTask(ctx.configGroup),
-      },
-      {
-        title: 'Persist configs',
-        task: (ctx) => {
-          configFile.setDefaultGroupName(PRESET_LOCAL);
-
-          ctx.configGroup.forEach(writeConfigTemplates);
-
-          configFileRepository.write(configFile);
-        },
       },
       {
         title: 'Configure SSL certificates',

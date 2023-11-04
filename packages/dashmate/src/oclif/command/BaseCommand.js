@@ -101,7 +101,7 @@ class BaseCommand extends Command {
        */
       const configFileRepository = this.container.resolve('configFileRepository');
 
-      if (this.container.has('configFile')) {
+      if (this.container.has('configFile') && err === undefined) {
         /**
          * @var {ConfigFile} configFile
          */
