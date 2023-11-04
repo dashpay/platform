@@ -33,7 +33,7 @@
     "release": "yarn exec ./scripts/release/release.sh",
     "bench": "yarn workspace @dashevo/bench-suite bench"
   },
-  "packageManager": "yarn@3.6.1",
+  "packageManager": "yarn@4.0.1",
   "ultra": {
     "concurrent": [
       "clean"
