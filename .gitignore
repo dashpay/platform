@@ -33,3 +33,6 @@ node_modules
 
 # Rust build artifacts
 /target
+
+# Test vectors
+/packages/rs-sdk/tests/vectors/*
