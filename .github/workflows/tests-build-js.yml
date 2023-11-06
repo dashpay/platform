@@ -6,17 +6,6 @@ jobs:
     name: Build JS
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     steps:
-      - name: Cache build artifacts
-        uses: everpcpc/actions-cache@v1
-        id: cache
-        with:
-          bucket: multi-runner-linux-x64-platform-cache-ui535z23
-          root: actions-cache
-          path: build-js-artifacts-${{ github.sha }}.tar
-          key: ${{ runner.os }}-build-js-artifacts-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-build-js-artifacts-${{ github.sha }}
-
       - name: Check out repo
         uses: actions/checkout@v4
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
@@ -39,6 +28,17 @@ jobs:
         if: contains(runner.name, 'ubuntu-platform') && steps.cache.outputs.cache-hit != 'true'
         with:
           aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Cache build artifacts
+        uses: everpcpc/actions-cache@v1
+        id: cache
+        with:
+          bucket: multi-runner-linux-x64-platform-cache-ui535z23
+          root: actions-cache
+          path: build-js-artifacts-${{ github.sha }}.tar
+          key: ${{ runner.os }}-build-js-artifacts-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-build-js-artifacts-${{ github.sha }}
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
