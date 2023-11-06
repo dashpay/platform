@@ -1,53 +1,44 @@
-dpp:
-  - .github/workflows/rs-checks.yml
-  - packages/feature-flags-contract/**
-  - packages/dpns-contract/**
+dashpay-contract: &dashpay-contract
+  - .github/workflows/tests*
   - packages/dashpay-contract/**
-  - packages/masternode-reward-shares-contract/**
-  - packages/rs-platform-serialization/**
-  - packages/rs-platform-serialization-derive/**
-  - packages/rs-platform-value/**
-  - packages/rs-platform-value-convertible/**
-  - packages/rs-platform-version/**
-  - packages/rs-platform-versioning/**
-  - packages/rs-dpp/**
 
-drive-abci:
-  - .github/workflows/rs-checks.yml
-  - packages/feature-flags-contract/**
-  - packages/dpns-contract/**
-  - packages/dashpay-contract/**
+masternode-reward-shares-contract: &masternode-reward-shares-contract
+  - .github/workflows/tests*
   - packages/masternode-reward-shares-contract/**
-  - packages/rs-platform-serialization/**
-  - packages/rs-platform-serialization-derive/**
-  - packages/rs-platform-value/**
-  - packages/rs-platform-value-convertible/**
-  - packages/rs-platform-version/**
-  - packages/rs-platform-versioning/**
-  - packages/rs-dpp/**
-  - packages/rs-drive/**
-  - packages/rs-drive-abci/**
-  - packages/rs-platform-value/**
 
-drive:
-  - .github/workflows/rs-checks.yml
-  - packages/feature-flags-contract/**
+withdrawals-contract: &withdrawals-contract
+  - .github/workflows/tests*
+  - packages/withdrawals-contract/**
+
+dpns-contract: &dpns-contract
+  - .github/workflows/tests*
   - packages/dpns-contract/**
-  - packages/dashpay-contract/**
-  - packages/masternode-reward-shares-contract/**
+
+dpp: &dpp
+  - .github/workflows/tests*
+  - packages/rs-dpp/**
+  - *dashpay-contract
+  - *masternode-reward-shares-contract
+  - *dpns-contract
+  - *withdrawals-contract
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**
   - packages/rs-platform-value/**
   - packages/rs-platform-value-convertible/**
   - packages/rs-platform-version/**
   - packages/rs-platform-versioning/**
-  - packages/rs-dpp/**
-  - packages/rs-drive/**
 
 wasm-dpp:
-  - .github/workflows/rs-checks.yml
-  - packages/feature-flags-contract/**
-  - packages/masternode-reward-shares-contract/**
-  - packages/dpns-contract/**
-  - packages/dashpay-contract/**
+  - .github/workflows/tests*
   - packages/wasm-dpp/**
+  - *dpp
+
+drive: &drive
+  - .github/workflows/tests*
+  - packages/rs-drive/**
+  - *dpp
+
+drive-abci:
+  - .github/workflows/tests*
+  - packages/rs-drive-abci/**
+  - *drive
