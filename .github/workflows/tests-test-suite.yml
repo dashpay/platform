@@ -66,11 +66,11 @@ jobs:
           # DAPI
           yarn dashmate config set --config=local platform.dapi.api.docker.image dapi:${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/dapi:$GIT_SHA
 
-          # Dashmate helper
+          # Dashmate helper image is hardcoded so we replace it with the built one
           DASHMATE_HELPER_IMAGE=${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/dashmate_helper:$GIT_SHA
           VERSION=$(cat package.json | jq -r '.version')
-          docker pull $IMAGE
-          docker tag $IMAGE dashpay/dashmate-helper:${VERSION}
+          docker pull $DASHMATE_HELPER_IMAGE
+          docker tag $DASHMATE_HELPER_IMAGE dashpay/dashmate-helper:${VERSION}
 
           source ./scripts/setup_local_network.sh
           source ./scripts/configure_test_suite.sh
