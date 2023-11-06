@@ -94,6 +94,8 @@ jobs:
 
       - name: Configure services to be built
         run: |
+          yarn dashmate config set --config=local docker.baseImage.build.enabled true
+          yarn dashmate config set --config=local docker.baseImage.build.target deps
           yarn dashmate config set --config=local platform.drive.abci.docker.build.enabled true
           yarn dashmate config set --config=local platform.dapi.api.docker.build.enabled true
           yarn dashmate config set --config=local dashmate.helper.docker.build.enabled true
