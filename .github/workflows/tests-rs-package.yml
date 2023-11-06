@@ -47,6 +47,7 @@ jobs:
         uses: ./.github/actions/rust
         with:
           components: rustfmt
+          cache: false
 
       - name: Check formatting
         run: exit `cargo fmt --check --package=${{ inputs.package }} | wc -l`

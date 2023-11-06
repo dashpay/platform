@@ -13,6 +13,11 @@ inputs:
   components:
     description: List of additional Rust toolchain components to install
     required: false
+  cache:
+    description: Enable Rust cache
+    required: false
+    default: 'true'
+
 runs:
   using: composite
   steps:
@@ -40,7 +45,7 @@ runs:
 
     - name: Cache Rust build artifacts (S3 bucket cache)
       uses: everpcpc/actions-cache@v1
-      if: contains(runner.name, 'ubuntu-platform')
+      if: contains(runner.name, 'ubuntu-platform') && inputs.cache == 'true'
       with:
         bucket: multi-runner-linux-x64-platform-cache-ui535z23
         root: actions-cache
@@ -54,7 +59,7 @@ runs:
 
     - name: Cache cargo registry (S3 bucket cache)
       uses: everpcpc/actions-cache@v1
-      if: contains(runner.name, 'ubuntu-platform')
+      if: contains(runner.name, 'ubuntu-platform') && inputs.cache == 'true'
       with:
         bucket: multi-runner-linux-x64-platform-cache-ui535z23
         root: actions-cache
@@ -69,7 +74,7 @@ runs:
 
     - name: Cache Rust build artifacts (GitHub Actions cache)
       uses: actions/cache@v3
-      if: ${{ !contains(runner.name, 'ubuntu-platform') }}
+      if: ${{ !contains(runner.name, 'ubuntu-platform') && inputs.cache == 'true' }}
       with:
         path: |
           /home/ubuntu/.cargo/registry/index
@@ -85,7 +90,7 @@ runs:
 
     - name: Cache cargo registry (GitHub Actions cache)
       uses: actions/cache@v3
-      if: ${{ !contains(runner.name, 'ubuntu-platform') }}
+      if: ${{ !contains(runner.name, 'ubuntu-platform') && inputs.cache == 'true' }}
       with:
         path: |
           /home/ubuntu/.cargo/registry/index
