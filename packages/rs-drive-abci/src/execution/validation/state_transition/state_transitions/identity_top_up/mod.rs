@@ -2,6 +2,7 @@ pub(crate) mod identity_retrieval;
 mod state;
 mod structure;
 
+use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -40,7 +41,7 @@ impl StateTransitionActionTransformerV0 for IdentityTopUpTransition {
             .identity_top_up_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(platform),
+            0 => self.transform_into_action_v0(platform, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity top up transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -65,7 +66,7 @@ impl StateTransitionStructureValidationV0 for IdentityTopUpTransition {
             .identity_top_up_state_transition
             .structure
         {
-            0 => self.validate_base_structure_v0(),
+            0 => self.validate_base_structure_v0(platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity top up transition: validate_structure".to_string(),
                 known_versions: vec![0],

@@ -1,7 +1,7 @@
 /// The block execution context
 pub mod block_execution_context;
 /// A structure representing block fees
-pub(in crate::execution) mod block_fees;
+pub(crate) mod block_fees;
 /// Block state info
 pub mod block_state_info;
 /// An execution event

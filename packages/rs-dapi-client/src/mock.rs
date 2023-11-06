@@ -106,14 +106,14 @@ impl Dapi for MockDapiClient {
             "mock execute"
         );
 
-        if let Some(response) = response {
-            return Ok(response);
+        return if let Some(response) = response {
+            Ok(response)
         } else {
-            return Err(DapiClientError::MockExpectationNotFound(format!(
+            Err(DapiClientError::MockExpectationNotFound(format!(
                 "unexpected mock request with key {}, use MockDapiClient::expect(): {:?}",
                 key, request
-            )));
-        }
+            )))
+        };
     }
 }
 

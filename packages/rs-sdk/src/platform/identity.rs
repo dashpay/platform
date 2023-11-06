@@ -1,6 +1,15 @@
 //! Identity related types and functions
 
-use dapi_grpc::platform::v0::{GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceRequest};
+use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0;
+use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
+use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
+use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
+use dapi_grpc::platform::v0::{
+    get_identity_balance_and_revision_request, get_identity_balance_request,
+    get_identity_by_public_key_hash_request, get_identity_request,
+    GetIdentityBalanceAndRevisionRequest, GetIdentityBalanceRequest,
+    GetIdentityByPublicKeyHashRequest, GetIdentityRequest,
+};
 use dpp::prelude::Identity;
 
 use crate::delegate_enum;
@@ -16,7 +25,7 @@ delegate_enum! {
     IdentityResponse,
     Identity,
     (GetIdentity,proto::GetIdentityRequest,proto::GetIdentityResponse),
-    (GetIdentityByPublicKeyHash, proto::GetIdentityByPublicKeyHashesRequest, proto::GetIdentityByPublicKeyHashesResponse)
+    (GetIdentityByPublicKeyHash, proto::GetIdentityByPublicKeyHashRequest, proto::GetIdentityByPublicKeyHashResponse)
 }
 
 impl Query<IdentityRequest> for dpp::prelude::Identifier {
@@ -25,9 +34,11 @@ impl Query<IdentityRequest> for dpp::prelude::Identifier {
             unimplemented!("queries without proofs are not supported yet");
         }
         let id = self.to_vec();
-        Ok(IdentityRequest::GetIdentity(proto::GetIdentityRequest {
-            id,
-            prove: true,
+        Ok(IdentityRequest::GetIdentity(GetIdentityRequest {
+            version: Some(get_identity_request::Version::V0(GetIdentityRequestV0 {
+                id,
+                prove: true,
+            })),
         }))
     }
 }
@@ -44,9 +55,13 @@ impl Query<IdentityRequest> for PublicKeyHash {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
-        let request = proto::GetIdentityByPublicKeyHashesRequest {
-            prove,
-            public_key_hash: self.0.to_vec(),
+        let request: GetIdentityByPublicKeyHashRequest = GetIdentityByPublicKeyHashRequest {
+            version: Some(get_identity_by_public_key_hash_request::Version::V0(
+                GetIdentityByPublicKeyHashRequestV0 {
+                    prove,
+                    public_key_hash: self.0.to_vec(),
+                },
+            )),
         };
 
         Ok(request.into())
@@ -59,10 +74,14 @@ impl Query<GetIdentityBalanceRequest> for dpp::prelude::Identifier {
             unimplemented!("queries without proofs are not supported yet");
         }
         let id = self.to_vec();
-        Ok(GetIdentityBalanceRequest(proto::GetIdentityRequest {
-            id,
-            prove,
-        }))
+
+        let request: GetIdentityBalanceRequest = GetIdentityBalanceRequest {
+            version: Some(get_identity_balance_request::Version::V0(
+                GetIdentityBalanceRequestV0 { id, prove },
+            )),
+        };
+
+        Ok(request)
     }
 }
 
@@ -72,8 +91,12 @@ impl Query<GetIdentityBalanceAndRevisionRequest> for dpp::prelude::Identifier {
             unimplemented!("queries without proofs are not supported yet");
         }
         let id = self.to_vec();
-        Ok(GetIdentityBalanceAndRevisionRequest(
-            proto::GetIdentityRequest { id, prove },
-        ))
+        let request: GetIdentityBalanceAndRevisionRequest = GetIdentityBalanceAndRevisionRequest {
+            version: Some(get_identity_balance_and_revision_request::Version::V0(
+                GetIdentityBalanceAndRevisionRequestV0 { id, prove },
+            )),
+        };
+
+        Ok(request)
     }
 }

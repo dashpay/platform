@@ -3,6 +3,7 @@ pub mod fields;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 pub mod methods;
+pub mod proved;
 mod state_transition_like;
 pub mod v0;
 #[cfg(feature = "state-transition-value-conversion")]

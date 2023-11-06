@@ -142,7 +142,7 @@ pub enum DriveError {
 
     /// Error
     #[error("corrupted serialization error: {0}")]
-    CorruptedSerialization(&'static str),
+    CorruptedSerialization(String),
 
     /// Error
     #[error("corrupted genesis time not an item error")]

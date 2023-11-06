@@ -7,23 +7,33 @@ package org.dash.platform.dapi.v0;
 import "google/protobuf/timestamp.proto";
 
 service Platform {
-  rpc broadcastStateTransition (BroadcastStateTransitionRequest) returns (BroadcastStateTransitionResponse);
-  rpc getIdentity (GetIdentityRequest) returns (GetIdentityResponse);
-  rpc getIdentities (GetIdentitiesRequest) returns (GetIdentitiesResponse);
-  rpc getIdentityKeys (GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
-//  rpc getIdentitiesKeys (GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
-  rpc getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse);
-  rpc getIdentityBalanceAndRevision(GetIdentityRequest)
-          returns (GetIdentityBalanceAndRevisionResponse);
-  rpc getProofs (GetProofsRequest) returns (GetProofsResponse);
-  rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
-  rpc getDataContractHistory (GetDataContractHistoryRequest) returns (GetDataContractHistoryResponse);
-  rpc getDataContracts (GetDataContractsRequest) returns (GetDataContractsResponse);
-  rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
-  rpc getIdentitiesByPublicKeyHashes (GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse);
-  rpc getIdentityByPublicKeyHashes (GetIdentityByPublicKeyHashesRequest) returns (GetIdentityByPublicKeyHashesResponse);
-  rpc waitForStateTransitionResult (WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse);
-  rpc getConsensusParams (GetConsensusParamsRequest) returns (GetConsensusParamsResponse);
+  rpc broadcastStateTransition(BroadcastStateTransitionRequest)
+      returns (BroadcastStateTransitionResponse);
+  rpc getIdentity(GetIdentityRequest) returns (GetIdentityResponse);
+  rpc getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse);
+  rpc getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
+  rpc getIdentityBalance(GetIdentityBalanceRequest)
+      returns (GetIdentityBalanceResponse);
+  rpc getIdentityBalanceAndRevision(GetIdentityBalanceAndRevisionRequest)
+      returns (GetIdentityBalanceAndRevisionResponse);
+  rpc getProofs(GetProofsRequest) returns (GetProofsResponse);
+  rpc getDataContract(GetDataContractRequest) returns (GetDataContractResponse);
+  rpc getDataContractHistory(GetDataContractHistoryRequest)
+      returns (GetDataContractHistoryResponse);
+  rpc getDataContracts(GetDataContractsRequest)
+      returns (GetDataContractsResponse);
+  rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
+  rpc getIdentitiesByPublicKeyHashes(GetIdentitiesByPublicKeyHashesRequest)
+      returns (GetIdentitiesByPublicKeyHashesResponse);
+  rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
+      returns (GetIdentityByPublicKeyHashResponse);
+  rpc waitForStateTransitionResult(WaitForStateTransitionResultRequest)
+      returns (WaitForStateTransitionResultResponse);
+  rpc getConsensusParams(GetConsensusParamsRequest)
+      returns (GetConsensusParamsResponse);
+  rpc getVersionUpgradeState(GetVersionUpgradeStateRequest) returns (GetVersionUpgradeStateResponse);
+  rpc getVersionUpgradeVoteStatus(GetVersionUpgradeVoteStatusRequest) returns (GetVersionUpgradeVoteStatusResponse);
+  rpc getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse);
 }
 
 message Proof {
@@ -32,15 +42,16 @@ message Proof {
   bytes signature = 3;
   uint32 round = 4;
   bytes block_id_hash = 5;
-  uint32 quorum_type = 6;    
+  uint32 quorum_type = 6;
 }
 
 message ResponseMetadata {
   uint64 height = 1;
   uint32 core_chain_locked_height = 2;
-  uint64 time_ms = 3;
-  uint32 protocol_version = 4;
-  string chain_id = 5;
+  uint32 epoch = 3;
+  uint64 time_ms = 4;
+  uint32 protocol_version = 5;
+  string chain_id = 6;
 }
 
 message StateTransitionBroadcastError {
@@ -49,72 +60,114 @@ message StateTransitionBroadcastError {
   bytes data = 3;
 }
 
-message BroadcastStateTransitionRequest {
-  bytes state_transition = 1;
-}
+message BroadcastStateTransitionRequest { bytes state_transition = 1; }
 
-message BroadcastStateTransitionResponse {
-
-}
+message BroadcastStateTransitionResponse {}
 
 message GetIdentityRequest {
-  bytes id = 1;
-  bool prove = 2;
+
+  message GetIdentityRequestV0 {
+    bytes id = 1;
+    bool prove = 2;
+  }
+
+  oneof version { GetIdentityRequestV0 v0 = 1; }
+}
+
+message GetIdentityBalanceRequest {
+
+  message GetIdentityBalanceRequestV0 {
+    bytes id = 1;
+    bool prove = 2;
+  }
+
+  oneof version { GetIdentityBalanceRequestV0 v0 = 1; }
+}
+
+message GetIdentityBalanceAndRevisionRequest {
+
+  message GetIdentityBalanceAndRevisionRequestV0 {
+    bytes id = 1;
+    bool prove = 2;
+  }
+
+  oneof version { GetIdentityBalanceAndRevisionRequestV0 v0 = 1; }
 }
 
 message GetIdentityResponse {
-  oneof result {
-    bytes identity = 1;
-    Proof proof = 2;
+
+  message GetIdentityResponseV0 {
+    oneof result {
+      bytes identity = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
   }
-  ResponseMetadata metadata = 3;
+
+  oneof version { GetIdentityResponseV0 v0 = 1; }
 }
 
 message GetIdentitiesRequest {
-  repeated bytes ids = 1;
-  bool prove = 2;
+
+  message GetIdentitiesRequestV0 {
+    repeated bytes ids = 1;
+    bool prove = 2;
+  }
+
+  oneof version { GetIdentitiesRequestV0 v0 = 1; }
 }
 
 message GetIdentitiesResponse {
-  message IdentityValue {
-    bytes value = 1;
-  }
+
+  message IdentityValue { bytes value = 1; }
 
   message IdentityEntry {
     bytes key = 1;
     IdentityValue value = 2;
   }
 
-  message Identities {
-    repeated IdentityEntry identity_entries = 1;
+  message Identities { repeated IdentityEntry identity_entries = 1; }
+
+  message GetIdentitiesResponseV0 {
+    oneof result {
+      Identities identities = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
   }
 
-  oneof result {
-    Identities identities = 1;
-    Proof proof = 2;
-  }
-  ResponseMetadata metadata = 3;
+  oneof version { GetIdentitiesResponseV0 v0 = 1; }
 }
 
 message GetIdentityBalanceResponse {
-  oneof result {
-    google.protobuf.UInt64Value balance = 1;
-    Proof proof = 2;
+
+  message GetIdentityBalanceResponseV0 {
+    oneof result {
+      uint64 balance = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
   }
-  ResponseMetadata metadata = 3;
+
+  oneof version { GetIdentityBalanceResponseV0 v0 = 1; }
 }
 
 message GetIdentityBalanceAndRevisionResponse {
-  message BalanceAndRevision {
-    google.protobuf.UInt64Value balance = 1;
-    google.protobuf.UInt64Value revision = 2;
+
+  message GetIdentityBalanceAndRevisionResponseV0 {
+    message BalanceAndRevision {
+      uint64 balance = 1;
+      uint64 revision = 2;
+    }
+
+    oneof result {
+      BalanceAndRevision balance_and_revision = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
   }
 
-  oneof result {
-    BalanceAndRevision balance_and_revision = 1;
-    Proof proof = 2;
-  }
-  ResponseMetadata metadata = 3;
+  oneof version { GetIdentityBalanceAndRevisionResponseV0 v0 = 1; }
 }
 
 message KeyRequestType {
@@ -125,16 +178,11 @@ message KeyRequestType {
   }
 }
 
-message AllKeys {
-}
+message AllKeys {}
 
-message SpecificKeys {
-  repeated uint32 key_ids = 1;
-}
+message SpecificKeys { repeated uint32 key_ids = 1; }
 
-message SearchKey {
-  map<uint32, SecurityLevelMap> purpose_map = 1;
-}
+message SearchKey { map<uint32, SecurityLevelMap> purpose_map = 1; }
 
 message SecurityLevelMap {
   enum KeyKindRequestType {
@@ -145,249 +193,378 @@ message SecurityLevelMap {
 }
 
 message GetIdentityKeysRequest {
-  bytes identity_id = 1;
-  KeyRequestType request_type = 2;
-  google.protobuf.UInt32Value limit = 3;
-  google.protobuf.UInt32Value offset = 4;
-  bool prove = 5;
+
+  message GetIdentityKeysRequestV0 {
+    bytes identity_id = 1;
+    KeyRequestType request_type = 2;
+    google.protobuf.UInt32Value limit = 3;
+    google.protobuf.UInt32Value offset = 4;
+    bool prove = 5;
+  }
+
+  oneof version { GetIdentityKeysRequestV0 v0 = 1; }
 }
 
 message GetIdentityKeysResponse {
-  message Keys {
-    repeated bytes keys_bytes = 1;
-  }
-  oneof result {
-    Keys keys = 1;
-    Proof proof = 2;
-  }
-  ResponseMetadata metadata = 3;
-}
 
+  message GetIdentityKeysResponseV0 {
+    message Keys { repeated bytes keys_bytes = 1; }
 
-message GetIdentitiesKeysRequest {
-  repeated bytes identity_ids = 1;
-  KeyRequestType request_type = 2;
-  google.protobuf.UInt32Value limit = 3;
-  google.protobuf.UInt32Value offset = 4;
-  bool prove = 5;
-
-  message SecurityLevelMap {
-    enum KeyKindRequestType {
-      CURRENT_KEY_OF_KIND_REQUEST = 0;
+    oneof result {
+      Keys keys = 1;
+      Proof proof = 2;
     }
-    map<uint32, KeyKindRequestType> security_level_map = 1;
-  }
-}
-
-message GetIdentitiesKeysResponse {
-  message PublicKey {
-    bytes value = 1;
+    ResponseMetadata metadata = 3;
   }
 
-  message PublicKeyEntry {
-    bytes key = 1;
-    PublicKey value = 2;
-  }
-
-  message PublicKeyEntries {
-    repeated PublicKeyEntry public_key_entries = 1;
-  }
-
-  oneof result {
-    PublicKeyEntries public_keys = 1;
-    Proof proof = 2;
-  }
-  ResponseMetadata metadata = 3;
+  oneof version { GetIdentityKeysResponseV0 v0 = 1; }
 }
 
 message GetProofsRequest {
-  message DocumentRequest {
-    bytes contract_id = 1;
-    string document_type = 2;
-    bool document_type_keeps_history = 3;
-    bytes document_id = 4;
-  }
-
-  message IdentityRequest {
-    enum Type {
-      FULL_IDENTITY = 0;
-      BALANCE = 1;
-      KEYS = 2;
+  message GetProofsRequestV0 {
+    message DocumentRequest {
+      bytes contract_id = 1;
+      string document_type = 2;
+      bool document_type_keeps_history = 3;
+      bytes document_id = 4;
     }
-    bytes identity_id = 1;
-    Type request_type = 2;
+
+    message IdentityRequest {
+      enum Type {
+        FULL_IDENTITY = 0;
+        BALANCE = 1;
+        KEYS = 2;
+      }
+      bytes identity_id = 1;
+      Type request_type = 2;
+    }
+
+    message ContractRequest { bytes contract_id = 1; }
+
+    repeated IdentityRequest identities = 1;
+    repeated ContractRequest contracts = 2;
+    repeated DocumentRequest documents = 3;
   }
 
-  message ContractRequest {
-    bytes contract_id = 1;
-    bool is_historical = 2;
-  }
-
-  repeated IdentityRequest identities = 1;
-  repeated ContractRequest contracts = 2;
-  repeated DocumentRequest documents = 3;
+  oneof version { GetProofsRequestV0 v0 = 1; }
 }
 
 message GetProofsResponse {
-  Proof proof = 1;
-  ResponseMetadata metadata = 2;
+  message GetProofsResponseV0 {
+    oneof result { Proof proof = 1; }
+
+    ResponseMetadata metadata = 2;
+  }
+  oneof version { GetProofsResponseV0 v0 = 1; }
 }
 
 message GetDataContractRequest {
-  bytes id = 1;
-  bool prove = 2;
+  message GetDataContractRequestV0 {
+    bytes id = 1;
+    bool prove = 2;
+  }
+  oneof version { GetDataContractRequestV0 v0 = 1; }
 }
 
 message GetDataContractResponse {
-  oneof result {
-    bytes data_contract = 1;
-    Proof proof = 2;
+  message GetDataContractResponseV0 {
+    oneof result {
+      bytes data_contract = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
   }
-  ResponseMetadata metadata = 3;
+  oneof version { GetDataContractResponseV0 v0 = 1; }
 }
 
 message GetDataContractsRequest {
-  repeated bytes ids = 1;
-  bool prove = 2;
+  message GetDataContractsRequestV0 {
+    repeated bytes ids = 1;
+    bool prove = 2;
+  }
+  oneof version { GetDataContractsRequestV0 v0 = 1; }
 }
 
 message GetDataContractsResponse {
-  message DataContractValue {
-    bytes value = 1;
-  }
-
   message DataContractEntry {
-    bytes key = 1;
-    DataContractValue value = 2;
+    bytes identifier = 1;
+    google.protobuf.BytesValue data_contract = 2;
   }
-
   message DataContracts {
     repeated DataContractEntry data_contract_entries = 1;
   }
 
-  oneof result {
-    DataContracts data_contracts = 1;
-    Proof proof = 2;
+  message GetDataContractsResponseV0 {
+    oneof result {
+      DataContracts data_contracts = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
   }
-  ResponseMetadata metadata = 3;
+  oneof version { GetDataContractsResponseV0 v0 = 1; }
 }
 
 message GetDataContractHistoryRequest {
-  bytes id = 1;
-  google.protobuf.UInt32Value limit = 2;
-  google.protobuf.UInt32Value offset = 3;
-  uint64 start_at_ms = 4;
-  bool prove = 5;
+  message GetDataContractHistoryRequestV0 {
+    bytes id = 1;
+    google.protobuf.UInt32Value limit = 2;
+    google.protobuf.UInt32Value offset = 3;
+    uint64 start_at_ms = 4;
+    bool prove = 5;
+  }
+  oneof version { GetDataContractHistoryRequestV0 v0 = 1; }
 }
 
 message GetDataContractHistoryResponse {
-  message DataContractHistoryEntry {
-    uint64 date = 1;
-    bytes value = 2;
-  }
+  message GetDataContractHistoryResponseV0 {
+    message DataContractHistoryEntry {
+      uint64 date = 1;
+      bytes value = 2;
+    }
 
-  message DataContractHistory {
-    repeated DataContractHistoryEntry data_contract_entries = 1;
-  }
+    message DataContractHistory {
+      repeated DataContractHistoryEntry data_contract_entries = 1;
+    }
 
-  oneof result {
-    DataContractHistory data_contract_history = 1;
-    Proof proof = 2;
-  }
+    oneof result {
+      DataContractHistory data_contract_history = 1;
+      Proof proof = 2;
+    }
 
-  ResponseMetadata metadata = 3;
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetDataContractHistoryResponseV0 v0 = 1; }
 }
 
 message GetDocumentsRequest {
-  bytes data_contract_id = 1;
-  string document_type = 2;
-
-  bytes where = 3;
-  bytes order_by = 4;
-
-  uint32 limit = 5;
-
-  oneof start {
-    bytes start_after = 6;
-    bytes start_at = 7;
+  message GetDocumentsRequestV0 {
+    bytes data_contract_id = 1;
+    string document_type = 2;
+    bytes where = 3;
+    bytes order_by = 4;
+    uint32 limit = 5;
+    oneof start {
+      bytes start_after = 6;
+      bytes start_at = 7;
+    }
+    bool prove = 8;
   }
-
-  bool prove = 8;
+  oneof version { GetDocumentsRequestV0 v0 = 1; }
 }
 
 message GetDocumentsResponse {
-  message Documents {
-    repeated bytes documents = 1;
-  }
+  message GetDocumentsResponseV0 {
+    message Documents { repeated bytes documents = 1; }
 
-  oneof result {
-    Documents documents = 1;
-    Proof proof = 2;
+    oneof result {
+      Documents documents = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
   }
-  ResponseMetadata metadata = 3;
+  oneof version { GetDocumentsResponseV0 v0 = 1; }
 }
 
 message GetIdentitiesByPublicKeyHashesRequest {
-  repeated bytes public_key_hashes = 1;
-  bool prove = 2;
+  message GetIdentitiesByPublicKeyHashesRequestV0 {
+    repeated bytes public_key_hashes = 1;
+    bool prove = 2;
+  }
+  oneof version { GetIdentitiesByPublicKeyHashesRequestV0 v0 = 1; }
 }
 
 message GetIdentitiesByPublicKeyHashesResponse {
-  message Identities {
-    repeated bytes identities = 1;
+  message PublicKeyHashIdentityEntry {
+    bytes public_key_hash = 1;
+    google.protobuf.BytesValue value = 2;
   }
 
-  oneof result {
-    Identities identities = 1;
-    Proof proof = 2;
+  message IdentitiesByPublicKeyHashes {
+    repeated PublicKeyHashIdentityEntry identity_entries = 1;
   }
-  ResponseMetadata metadata = 3;
+
+  message GetIdentitiesByPublicKeyHashesResponseV0 {
+    oneof result {
+      IdentitiesByPublicKeyHashes identities = 1;
+      Proof proof = 2;
+    }
+
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetIdentitiesByPublicKeyHashesResponseV0 v0 = 1; }
 }
 
-message GetIdentityByPublicKeyHashesRequest {
-  bytes public_key_hash = 1;
-  bool prove = 2;
+message GetIdentityByPublicKeyHashRequest {
+  message GetIdentityByPublicKeyHashRequestV0 {
+    bytes public_key_hash = 1;
+    bool prove = 2;
+  }
+  oneof version { GetIdentityByPublicKeyHashRequestV0 v0 = 1; }
 }
 
-message GetIdentityByPublicKeyHashesResponse {
-  oneof result {
-    bytes identity = 1;
-    Proof proof = 2;
+message GetIdentityByPublicKeyHashResponse {
+  message GetIdentityByPublicKeyHashResponseV0 {
+    oneof result {
+      bytes identity = 1;
+      Proof proof = 2;
+    }
+
+    ResponseMetadata metadata = 3;
   }
-  ResponseMetadata metadata = 3;
+  oneof version { GetIdentityByPublicKeyHashResponseV0 v0 = 1; }
 }
 
 message WaitForStateTransitionResultRequest {
-  bytes state_transition_hash = 1;
-  bool prove = 2;
+  message WaitForStateTransitionResultRequestV0 {
+    bytes state_transition_hash = 1;
+    bool prove = 2;
+  }
+  oneof version { WaitForStateTransitionResultRequestV0 v0 = 1; }
 }
 
 message WaitForStateTransitionResultResponse {
-  oneof result {
-    StateTransitionBroadcastError error = 1;
-    Proof proof = 2;
+  message WaitForStateTransitionResultResponseV0 {
+    oneof result {
+      StateTransitionBroadcastError error = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
   }
-  ResponseMetadata metadata = 3;
-}
-
-message ConsensusParamsBlock {
-  string max_bytes = 1;
-  string max_gas = 2;
-  string time_iota_ms = 3;
-}
-
-message ConsensusParamsEvidence {
-  string max_age_num_blocks = 1;
-  string max_age_duration = 2;
-  string max_bytes = 3;
+  oneof version { WaitForStateTransitionResultResponseV0 v0 = 1; }
 }
 
 message GetConsensusParamsRequest {
-  int64 height = 1;
-  bool prove = 2;
+  message GetConsensusParamsRequestV0 {
+    int32 height = 1;
+    bool prove = 2;
+  }
+  oneof version { GetConsensusParamsRequestV0 v0 = 1; }
 }
 
 message GetConsensusParamsResponse {
-  ConsensusParamsBlock block = 1;
-  ConsensusParamsEvidence evidence = 2;
+  message ConsensusParamsBlock {
+    string max_bytes = 1;
+    string max_gas = 2;
+    string time_iota_ms = 3;
+  }
+
+  message ConsensusParamsEvidence {
+    string max_age_num_blocks = 1;
+    string max_age_duration = 2;
+    string max_bytes = 3;
+  }
+
+  message GetConsensusParamsResponseV0 {
+    ConsensusParamsBlock block = 1;
+    ConsensusParamsEvidence evidence = 2;
+  }
+  oneof version { GetConsensusParamsResponseV0 v0 = 1; }
+}
+
+
+message GetVersionUpgradeStateRequest {
+  message GetVersionUpgradeStateRequestV0 {
+    bool prove = 1;
+  }
+
+  oneof version {
+    GetVersionUpgradeStateRequestV0 v0 = 1;
+  }
+}
+
+message GetVersionUpgradeStateResponse {
+  message GetVersionUpgradeStateResponseV0 {
+    message Versions {
+      repeated VersionEntry versions = 1;
+    }
+
+    message VersionEntry {
+      uint32 version_number = 1;
+      uint32 vote_count = 2;
+    }
+
+    oneof result {
+      Versions versions = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetVersionUpgradeStateResponseV0 v0 = 1;
+  }
+}
+
+message GetVersionUpgradeVoteStatusRequest {
+  message GetVersionUpgradeVoteStatusRequestV0 {
+    bytes start_pro_tx_hash = 1;
+    uint32 count = 2;
+    bool prove = 3;
+  }
+
+  oneof version {
+    GetVersionUpgradeVoteStatusRequestV0 v0 = 1;
+  }
+}
+
+message GetVersionUpgradeVoteStatusResponse {
+  message GetVersionUpgradeVoteStatusResponseV0 {
+    message VersionSignals {
+      repeated VersionSignal version_signals = 1;
+    }
+
+    message VersionSignal {
+      bytes pro_tx_hash = 1;
+      uint32 version = 2;
+    }
+
+    oneof result {
+      VersionSignals versions = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetVersionUpgradeVoteStatusResponseV0 v0 = 1;
+  }
+}
+
+message GetEpochsInfoRequest {
+  message GetEpochsInfoRequestV0 {
+    google.protobuf.UInt32Value start_epoch = 1;
+    uint32 count = 2;
+    bool ascending = 3;
+    bool prove = 4;
+  }
+
+  oneof version {
+    GetEpochsInfoRequestV0 v0 = 1;
+  }
+}
+
+message GetEpochsInfoResponse {
+  message GetEpochsInfoResponseV0 {
+    message EpochInfos {
+      repeated EpochInfo epoch_infos = 1;
+    }
+
+    message EpochInfo {
+      uint32 number = 1;
+      uint64 first_block_height = 2;
+      uint32 first_core_block_height = 3;
+      uint64 start_time = 4;
+      double fee_multiplier = 5;
+    }
+
+    oneof result {
+      EpochInfos epochs = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+
+  oneof version {
+    GetEpochsInfoResponseV0 v0 = 1;
+  }
 }

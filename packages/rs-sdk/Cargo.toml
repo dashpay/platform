@@ -33,7 +33,7 @@ envy = { version = "0.4.2", optional = true }
 futures = { version = "0.3.28" }
 derive_more = { version = "0.99.16" }
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.1" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "master" }
 
 [dev-dependencies]
 rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks", "dump"] }
@@ -47,7 +47,7 @@ dpp = { path = "../rs-dpp", features = [
 
 
 [features]
-default = ["mocks", "offline-testing"]
+default = ["mocks"]
 mocks = [
     "dep:serde_json",
     "rs-dapi-client/mocks",

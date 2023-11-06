@@ -309,7 +309,7 @@ impl MockDashPlatformSdk {
                     .ok_or(drive_proof_verifier::Error::InvalidQuorum{
                         error:"expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
                     })?;
-                O::maybe_from_proof(request, response, provider)?
+                O::maybe_from_proof(request, response, self.version(), provider)?
             }
         };
 

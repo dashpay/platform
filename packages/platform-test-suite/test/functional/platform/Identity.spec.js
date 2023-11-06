@@ -23,20 +23,22 @@ const {
     IdentityPublicKey,
     InvalidInstantAssetLockProofSignatureError,
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
-    BalanceIsNotEnoughError,
     BasicECDSAError,
     IdentityPublicKeyWithWitness,
+    IdentityInsufficientBalanceError,
   },
 } = Dash;
 
 describe('Platform', () => {
-  describe('Identity', () => {
+  describe('Identity', function describeIdentity() {
+    this.bail(true); // bail on first failure
+
     let client;
     let identity;
     let walletAccount;
 
     before(async () => {
-      client = await createClientWithFundedWallet(1100000);
+      client = await createClientWithFundedWallet(20000000);
 
       walletAccount = await client.getWalletAccount();
     });
@@ -53,9 +55,7 @@ describe('Platform', () => {
       expect(identity).to.exist();
     });
 
-    // TODO(rs-drive-abci): restore
-    //  logic for checking asset lock signature in rs-drive-abci is missing
-    it.skip('should fail to create an identity if instantLock is not valid', async () => {
+    it('should fail to create an identity if instantLock is not valid', async () => {
       await client.platform.initialize();
 
       const {
@@ -94,8 +94,7 @@ describe('Platform', () => {
       );
     });
 
-    // TODO(rs-drive-abci): generally test works, but sometimes fails with the deserialization error
-    it.skip('should fail to create an identity with already used asset lock output', async () => {
+    it('should fail to create an identity with already used asset lock output', async () => {
       // Create new identity
       const sourceIdentity = await client.platform.identities.register(400000);
 
@@ -103,7 +102,7 @@ describe('Platform', () => {
         transaction,
         privateKey,
         outputIndex,
-      } = await client.platform.identities.utils.createAssetLockTransaction(100000);
+      } = await client.platform.identities.utils.createAssetLockTransaction(150000);
 
       const account = await client.getWalletAccount();
 
@@ -235,9 +234,7 @@ describe('Platform', () => {
       expect(identity.toBuffer().includes(bytesToCheck)).to.be.true();
     });
 
-    // TODO(rs-drive-abci): fix,
-    //  It doesn't work. Something wrong with the serialization
-    describe.skip('chainLock', function describe() {
+    describe('chainLock', function describe() {
       let chainLockIdentity;
 
       this.timeout(850000);
@@ -250,7 +247,7 @@ describe('Platform', () => {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identities.utils.createAssetLockTransaction(100000);
+        } = await client.platform.identities.utils.createAssetLockTransaction(150000);
 
         const account = await client.getWalletAccount();
 
@@ -261,16 +258,9 @@ describe('Platform', () => {
 
         const { height: transactionHeight } = await metadataPromise;
 
-        // Changing endianness of raw txId bytes in outPoint to match expectations of dashcore-rust
-        let outPointBuffer = transaction.getOutPointBuffer(outputIndex);
-        const txIdBuffer = outPointBuffer.slice(0, 32);
-        const outputIndexBuffer = outPointBuffer.slice(32);
-        txIdBuffer.reverse();
-        outPointBuffer = Buffer.concat([txIdBuffer, outputIndexBuffer]);
-
         const assetLockProof = await client.platform.dpp.identity.createChainAssetLockProof(
           transactionHeight,
-          outPointBuffer,
+          transaction.getOutPointBuffer(outputIndex),
         );
 
         // Wait for platform chain to sync core height up to transaction height
@@ -334,8 +324,11 @@ describe('Platform', () => {
         });
       });
 
-      it.skip('should fail to create more documents if there are no more credits', async () => {
-        const lowBalanceIdentity = await client.platform.identities.register(50000);
+      it('should fail to create more documents if there are no more credits', async () => {
+        const lowBalanceIdentity = await client.platform.identities.register(150000);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
 
         const document = await client.platform.documents.create(
           'customContracts.niceDocument',
@@ -355,32 +348,35 @@ describe('Platform', () => {
           broadcastError = e;
         }
 
+        expect(broadcastError).to.exist();
         expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
         expect(broadcastError.getCause()).to.be.an.instanceOf(
-          BalanceIsNotEnoughError,
+          IdentityInsufficientBalanceError,
         );
       });
 
-      it.skip('should fail top-up if instant lock is not valid', async () => {
+      it('should fail top-up if instant lock is not valid', async () => {
         const {
           transaction,
           privateKey,
           outputIndex,
-        } = await client.platform.identity.utils.createAssetLockTransaction(15);
+        } = await client.platform.identities.utils.createAssetLockTransaction(15);
 
         const instantLock = createFakeInstantLock(transaction.hash);
         const assetLockProof = await client.platform.dpp.identity
-          .createInstantAssetLockProof(instantLock);
+          .createInstantAssetLockProof(
+            instantLock.toBuffer(),
+            transaction.toBuffer(),
+            outputIndex,
+          );
 
         const identityTopUpTransition = client.platform.dpp.identity
           .createIdentityTopUpTransition(
             identity.getId(),
-            transaction,
-            outputIndex,
             assetLockProof,
           );
         await identityTopUpTransition.signByPrivateKey(
-          privateKey,
+          privateKey.toBuffer(),
           IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         );
 
@@ -395,10 +391,10 @@ describe('Platform', () => {
         }
 
         expect(broadcastError).to.exist();
-        expect(broadcastError.message).to.be.equal('State Transition is invalid: InvalidIdentityAssetLockProofSignatureError: Invalid Asset lock proof signature');
-        expect(broadcastError.code).to.be.equal(3);
-        const [error] = broadcastError.data.errors;
-        expect(error.name).to.equal('IdentityAssetLockTransactionNotFoundError');
+        expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+        expect(broadcastError.getCause()).to.be.an.instanceOf(
+          InvalidInstantAssetLockProofSignatureError,
+        );
       });
 
       it('should be able to top-up credit balance', async () => {
@@ -406,7 +402,7 @@ describe('Platform', () => {
           identity.getId(),
         );
         const balanceBeforeTopUp = identityBeforeTopUp.getBalance();
-        const topUpAmount = 20000;
+        const topUpAmount = 1000000;
         const topUpCredits = topUpAmount * 1000;
 
         await client.platform.identities.topUp(identity.getId(), topUpAmount);
@@ -424,7 +420,7 @@ describe('Platform', () => {
           .lessThan(balanceBeforeTopUp + topUpCredits);
       });
 
-      it.skip('should be able to create more documents after the top-up', async () => {
+      it('should be able to create more documents after the top-up', async () => {
         const document = await client.platform.documents.create(
           'customContracts.niceDocument',
           identity,
@@ -441,7 +437,7 @@ describe('Platform', () => {
         await waitForSTPropagated();
       });
 
-      it.skip('should fail to top up an identity with already used asset lock output', async () => {
+      it('should fail to top up an identity with already used asset lock output', async () => {
         const {
           transaction,
           privateKey,
@@ -460,9 +456,16 @@ describe('Platform', () => {
 
         const identityTopUpTransitionOne = await client.platform.identities.utils
           .createIdentityTopUpTransition(assetLockProof, privateKey, identity.getId());
+
         // Creating ST that tries to spend the same output
+
+        const anotherIdentity = await client.platform.identities.register(150000);
+
+        // Additional wait time to mitigate testnet latency
+        await waitForSTPropagated();
+
         const conflictingTopUpStateTransition = await client.platform.identities.utils
-          .createIdentityTopUpTransition(assetLockProof, privateKey, identity.getId());
+          .createIdentityTopUpTransition(assetLockProof, privateKey, anotherIdentity.getId());
 
         await client.platform.broadcastStateTransition(
           identityTopUpTransitionOne,
@@ -491,6 +494,8 @@ describe('Platform', () => {
         let recipient;
         before(async () => {
           recipient = await client.platform.identities.register(400000);
+
+          // Additional wait time to mitigate testnet latency
           await waitForSTPropagated();
         });
 
@@ -511,6 +516,7 @@ describe('Platform', () => {
             transferAmount,
           );
 
+          // Additional wait time to mitigate testnet latency
           await waitForSTPropagated();
 
           const identityAfterTransfer = await client.platform.identities.get(
@@ -538,19 +544,22 @@ describe('Platform', () => {
             identity.getId(),
           );
 
+          let transferError;
+
           try {
             await client.platform.identities.creditTransfer(
               identity,
               recipient.getId(),
               identity.getBalance() + 1,
             );
-
-            expect.fail('should throw an error');
           } catch (e) {
-            expect(e).to.be.an.instanceOf(StateTransitionBroadcastError);
-
-            expect(e.message.startsWith(`Insufficient identity $${identity.getId()} balance`)).to.be.true();
+            transferError = e;
           }
+
+          expect(transferError).to.exist();
+          expect(transferError).to.be.an.instanceOf(StateTransitionBroadcastError);
+          expect(transferError.getCause()).to.be.an.instanceOf(IdentityInsufficientBalanceError);
+          expect(transferError.getCause().getIdentityId()).to.deep.equal(identity.getId());
         });
       });
     });

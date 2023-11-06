@@ -21,6 +21,10 @@ pub enum Error {
     #[error("empty response metadata")]
     EmptyResponseMetadata,
 
+    /// Empty version
+    #[error("empty version")]
+    EmptyVersion,
+
     /// No proof in response
     #[error("no proof in result")]
     NoProofInResult,
@@ -68,4 +72,8 @@ pub enum Error {
     /// Callback error
     #[error("unexpected callback error: {error}, reason: {reason}")]
     UnexpectedCallbackError { error: String, reason: String },
+
+    /// Invalid version of object in response
+    #[error("invalid version of message")]
+    InvalidVersion(#[from] dpp::version::PlatformVersionError),
 }

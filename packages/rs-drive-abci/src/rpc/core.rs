@@ -5,7 +5,7 @@ use dashcore_rpc::dashcore_rpc_json::{
     GetTransactionLockedResult, MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType,
     SoftforkInfo,
 };
-use dashcore_rpc::json::GetTransactionResult;
+use dashcore_rpc::json::GetRawTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dpp::dashcore::{hashes::Hash, InstantLock};
 use serde_json::Value;
@@ -37,7 +37,27 @@ pub trait CoreRPCLike {
     ) -> Result<Vec<GetTransactionLockedResult>, Error>;
 
     /// Get transaction
-    fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error>;
+    fn get_transaction_extended_info(&self, tx_id: &Txid)
+        -> Result<GetRawTransactionResult, Error>;
+
+    /// Get optional transaction extended info
+    /// Returns None if transaction doesn't exists
+    fn get_optional_transaction_extended_info(
+        &self,
+        transaction_id: &Txid,
+    ) -> Result<Option<GetRawTransactionResult>, Error> {
+        match self.get_transaction_extended_info(transaction_id) {
+            Ok(transaction_info) => Ok(Some(transaction_info)),
+            // Return None if transaction with specified tx id is not present
+            Err(Error::JsonRpc(dashcore_rpc::jsonrpc::error::Error::Rpc(
+                dashcore_rpc::jsonrpc::error::RpcError {
+                    code: CORE_RPC_INVALID_ADDRESS_OR_KEY,
+                    ..
+                },
+            ))) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
 
     /// Get block by hash
     fn get_fork_info(&self, name: &str) -> Result<Option<SoftforkInfo>, Error>;
@@ -107,18 +127,25 @@ pub struct DefaultCoreRPC {
     inner: Client,
 }
 
+/// Client still warming up
+pub const CORE_RPC_ERROR_IN_WARMUP: i32 = -28;
+/// Dash is not connected
+pub const CORE_RPC_CLIENT_NOT_CONNECTED: i32 = -9;
+/// Still downloading initial blocks
+pub const CORE_RPC_CLIENT_IN_INITIAL_DOWNLOAD: i32 = -10;
+/// Parse error
+pub const CORE_RPC_PARSE_ERROR: i32 = -32700;
+/// Invalid address or key
+pub const CORE_RPC_INVALID_ADDRESS_OR_KEY: i32 = -5;
+/// Invalid, missing or duplicate parameter
+pub const CORE_RPC_INVALID_PARAMETER: i32 = -8;
+
 macro_rules! retry {
     ($action:expr) => {{
         /// Maximum number of retry attempts
         const MAX_RETRIES: u32 = 4;
         /// // Multiplier for Fibonacci sequence
         const FIB_MULTIPLIER: u64 = 1;
-        /// Client still warming up
-        const CORE_RPC_ERROR_IN_WARMUP: i32 = -28;
-        /// Dash is not connected
-        const CORE_RPC_CLIENT_NOT_CONNECTED: i32 = -9;
-        /// Still downloading initial blocks
-        const CORE_RPC_CLIENT_IN_INITIAL_DOWNLOAD: i32 = -10;
 
         fn fibonacci(n: u32) -> u64 {
             match n {
@@ -201,8 +228,11 @@ impl CoreRPCLike for DefaultCoreRPC {
         retry!(self.inner.get_transaction_are_locked(&tx_ids))
     }
 
-    fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error> {
-        retry!(self.inner.get_transaction(tx_id, None))
+    fn get_transaction_extended_info(
+        &self,
+        tx_id: &Txid,
+    ) -> Result<GetRawTransactionResult, Error> {
+        retry!(self.inner.get_raw_transaction_info(tx_id, None))
     }
 
     fn get_fork_info(&self, name: &str) -> Result<Option<SoftforkInfo>, Error> {
@@ -247,12 +277,6 @@ impl CoreRPCLike for DefaultCoreRPC {
         base_block: Option<u32>,
         block: u32,
     ) -> Result<MasternodeListDiff, Error> {
-        tracing::debug!(
-            method = "get_protx_diff_with_masternodes",
-            "base block {:?} block {}",
-            base_block,
-            block
-        );
         retry!(self
             .inner
             .get_protx_listdiff(base_block.unwrap_or(1), block))
@@ -266,21 +290,13 @@ impl CoreRPCLike for DefaultCoreRPC {
         instant_lock: &InstantLock,
         max_height: Option<u32>,
     ) -> Result<bool, Error> {
-        tracing::debug!(
-            method = "verify_instant_lock",
-            "instant_lock {:?} max_height {:?}",
-            instant_lock,
-            max_height
-        );
+        let request_id = instant_lock.request_id()?.to_string();
+        let transaction_id = instant_lock.txid.to_string();
+        let signature = hex::encode(instant_lock.signature);
 
-        let request_id = hex::encode(instant_lock.request_id()?);
-
-        retry!(self.inner.get_verifyislock(
-            request_id.as_str(),
-            &instant_lock.txid.to_hex(),
-            hex::encode(instant_lock.signature).as_str(),
-            max_height,
-        ))
+        retry!(self
+            .inner
+            .get_verifyislock(&request_id, &transaction_id, &signature, max_height))
     }
 
     /// Verify a chain lock signature
@@ -291,18 +307,12 @@ impl CoreRPCLike for DefaultCoreRPC {
         chain_lock: &ChainLock,
         max_height: Option<u32>,
     ) -> Result<bool, Error> {
-        tracing::debug!(
-            method = "verify_chain_lock",
-            "chain lock {:?} max height {:?}",
-            chain_lock,
-            max_height,
-        );
+        let block_hash = chain_lock.block_hash.to_string();
+        let signature = hex::encode(chain_lock.signature);
 
-        retry!(self.inner.get_verifychainlock(
-            hex::encode(chain_lock.block_hash).as_str(),
-            hex::encode(chain_lock.signature).as_str(),
-            max_height
-        ))
+        retry!(self
+            .inner
+            .get_verifychainlock(block_hash.as_str(), &signature, max_height))
     }
 
     /// Returns masternode sync status

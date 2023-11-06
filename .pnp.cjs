@@ -2319,7 +2319,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/bench-suite/",\
           "packageDependencies": [\
             ["@dashevo/bench-suite", "workspace:packages/bench-suite"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
+            ["@dashevo/dashcore-lib", "npm:0.21.0"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
@@ -2355,7 +2355,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
+            ["@dashevo/dashcore-lib", "npm:0.21.0"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
@@ -2398,7 +2398,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
+            ["@dashevo/dashcore-lib", "npm:0.21.0"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["assert-browserify", "npm:2.0.0"],\
@@ -2490,7 +2490,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
             ["@dashevo/dark-gravity-wave", "npm:1.1.1"],\
             ["@dashevo/dash-util", "npm:2.0.3"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
+            ["@dashevo/dashcore-lib", "npm:0.21.0"],\
             ["chai", "npm:4.3.9"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:14.2.1"],\
@@ -2517,10 +2517,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/dashcore-lib", [\
-        ["npm:0.20.9", {\
-          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.20.9-2b8a961230-a92adaf441.zip/node_modules/@dashevo/dashcore-lib/",\
+        ["npm:0.21.0", {\
+          "packageLocation": "./.yarn/cache/@dashevo-dashcore-lib-npm-0.21.0-1997e852e6-eb255e4118.zip/node_modules/@dashevo/dashcore-lib/",\
           "packageDependencies": [\
-            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
+            ["@dashevo/dashcore-lib", "npm:0.21.0"],\
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/x11-hash-js", "npm:1.0.2"],\
             ["@types/node", "npm:12.20.37"],\
@@ -2729,7 +2729,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/platform-test-suite", "workspace:packages/platform-test-suite"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
+            ["@dashevo/dashcore-lib", "npm:0.21.0"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
@@ -2823,7 +2823,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
+            ["@dashevo/dashcore-lib", "npm:0.21.0"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
             ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["@yarnpkg/pnpify", "npm:4.0.0-rc.42"],\
@@ -2884,7 +2884,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/core", "npm:7.16.0"],\
             ["@babel/preset-env", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.16.4"],\
             ["@dashevo/bls", "npm:1.2.9"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
+            ["@dashevo/dashcore-lib", "npm:0.21.0"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@types/bs58", "npm:4.0.1"],\
             ["@types/node", "npm:14.17.34"],\
@@ -6498,10 +6498,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["browserify-sign", [\
-        ["npm:4.2.1", {\
-          "packageLocation": "./.yarn/cache/browserify-sign-npm-4.2.1-9a8530ca87-0221f190e3.zip/node_modules/browserify-sign/",\
+        ["npm:4.2.2", {\
+          "packageLocation": "./.yarn/cache/browserify-sign-npm-4.2.2-92f50c6d35-b622730c0f.zip/node_modules/browserify-sign/",\
           "packageDependencies": [\
-            ["browserify-sign", "npm:4.2.1"],\
+            ["browserify-sign", "npm:4.2.2"],\
             ["bn.js", "npm:4.12.0"],\
             ["browserify-rsa", "npm:4.1.0"],\
             ["create-hash", "npm:1.2.0"],\
@@ -6509,7 +6509,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["elliptic", "npm:6.5.4"],\
             ["inherits", "npm:2.0.4"],\
             ["parse-asn1", "npm:5.1.6"],\
-            ["readable-stream", "npm:3.6.0"],\
+            ["readable-stream", "npm:3.6.2"],\
             ["safe-buffer", "npm:5.2.1"]\
           ],\
           "linkType": "HARD"\
@@ -7952,7 +7952,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["crypto-browserify", "npm:3.12.0"],\
             ["browserify-cipher", "npm:1.0.1"],\
-            ["browserify-sign", "npm:4.2.1"],\
+            ["browserify-sign", "npm:4.2.2"],\
             ["create-ecdh", "npm:4.0.4"],\
             ["create-hash", "npm:1.2.0"],\
             ["create-hmac", "npm:1.1.7"],\
@@ -8001,7 +8001,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
+            ["@dashevo/dashcore-lib", "npm:0.21.0"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
@@ -8076,7 +8076,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["dashmate", "workspace:packages/dashmate"],\
             ["@dashevo/bls", "npm:1.2.9"],\
-            ["@dashevo/dashcore-lib", "npm:0.20.9"],\
+            ["@dashevo/dashcore-lib", "npm:0.21.0"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
             ["@dashevo/docker-compose", "npm:0.24.4"],\
@@ -15621,6 +15621,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/readable-stream-npm-3.6.0-23a4a5eb56-d4ea81502d.zip/node_modules/readable-stream/",\
           "packageDependencies": [\
             ["readable-stream", "npm:3.6.0"],\
+            ["inherits", "npm:2.0.4"],\
+            ["string_decoder", "npm:1.3.0"],\
+            ["util-deprecate", "npm:1.0.2"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["npm:3.6.2", {\
+          "packageLocation": "./.yarn/cache/readable-stream-npm-3.6.2-d2a6069158-bdcbe6c22e.zip/node_modules/readable-stream/",\
+          "packageDependencies": [\
+            ["readable-stream", "npm:3.6.2"],\
             ["inherits", "npm:2.0.4"],\
             ["string_decoder", "npm:1.3.0"],\
             ["util-deprecate", "npm:1.0.2"]\

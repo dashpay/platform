@@ -76,6 +76,7 @@ macro_rules! delegate_from_proof_variant {
             fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
                 request: I,
                 response: O,
+                version: &dpp::version::PlatformVersion,
                 provider: &'a dyn drive_proof_verifier::QuorumInfoProvider,
             ) -> Result<Option<Self>, drive_proof_verifier::Error>
             where
@@ -91,7 +92,7 @@ macro_rules! delegate_from_proof_variant {
                     req::$variant(request) => {
                         if let resp::$variant(response) = response {
                             <Self as drive_proof_verifier::FromProof<$req>>::maybe_from_proof(
-                                request, response, provider,
+                                request, response, version, provider,
                             )
                         } else {
                             Err(drive_proof_verifier::Error::ResponseDecodeError {

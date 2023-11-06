@@ -3,11 +3,11 @@ pub mod v0;
 
 use crate::error::Error;
 use crate::platform_types::platform_state::v0::{
-    PlatformInitializationState, PlatformStateForSavingV0, PlatformStateV0, PlatformStateV0Methods,
+    PlatformStateForSavingV0, PlatformStateV0, PlatformStateV0Methods,
 };
 
 use crate::platform_types::validator_set::ValidatorSet;
-use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, MasternodeListItem, QuorumType};
+use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use derive_more::From;
 use dpp::bincode::{config, Decode, Encode};
 use dpp::block::epoch::Epoch;
@@ -24,6 +24,7 @@ use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationErro
 use indexmap::IndexMap;
 
 use crate::error::execution::ExecutionError;
+use dpp::block::block_info::BlockInfo;
 use dpp::util::hash::hash;
 use std::collections::BTreeMap;
 
@@ -341,9 +342,9 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn initialization_information(&self) -> &Option<PlatformInitializationState> {
+    fn genesis_block_info(&self) -> Option<&BlockInfo> {
         match self {
-            PlatformState::V0(v0) => &v0.initialization_information,
+            PlatformState::V0(v0) => v0.genesis_block_info.as_ref(),
         }
     }
 
@@ -395,9 +396,9 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn set_initialization_information(&mut self, info: Option<PlatformInitializationState>) {
+    fn set_genesis_block_info(&mut self, info: Option<BlockInfo>) {
         match self {
-            PlatformState::V0(v0) => v0.set_initialization_information(info),
+            PlatformState::V0(v0) => v0.set_genesis_block_info(info),
         }
     }
 
@@ -449,12 +450,6 @@ impl PlatformStateV0Methods for PlatformState {
         }
     }
 
-    fn initialization_information_mut(&mut self) -> &mut Option<PlatformInitializationState> {
-        match self {
-            PlatformState::V0(v0) => v0.initialization_information_mut(),
-        }
-    }
-
     fn take_next_validator_set_quorum_hash(&mut self) -> Option<QuorumHash> {
         match self {
             PlatformState::V0(v0) => v0.take_next_validator_set_quorum_hash(),
@@ -464,6 +459,12 @@ impl PlatformStateV0Methods for PlatformState {
     fn last_block_id_hash(&self) -> [u8; 32] {
         match self {
             PlatformState::V0(v0) => v0.last_block_id_hash(),
+        }
+    }
+
+    fn any_block_info(&self) -> &BlockInfo {
+        match self {
+            PlatformState::V0(v0) => v0.any_block_info(),
         }
     }
 }

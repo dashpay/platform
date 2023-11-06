@@ -295,12 +295,16 @@ impl StateTransitionSignatureValidationV0 for StateTransition {
                     Some(0) => {
                         let mut validation_result =
                             ConsensusValidationResult::<Option<PartialIdentity>>::default();
+
                         let signable_bytes: Vec<u8> = self.signable_bytes()?;
+
                         let result = st.validate_identity_create_state_transition_signatures_v0(
                             signable_bytes,
                         )?;
+
                         validation_result.merge(result);
                         validation_result.set_data(None);
+
                         Ok(validation_result)
                     }
                     None => Err(Error::Execution(ExecutionError::VersionNotActive {

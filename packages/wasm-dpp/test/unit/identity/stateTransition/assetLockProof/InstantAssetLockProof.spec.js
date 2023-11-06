@@ -12,13 +12,6 @@ describe('InstantAssetLockProof', () => {
     );
   });
 
-  describe('#getType', () => {
-    it('should return correct type', () => {
-      expect(instantAssetLockProof.getType())
-        .to.equal(rawInstantAssetLockProof.type);
-    });
-  });
-
   describe('#getOutputIndex', () => {
     it('should return correct type', () => {
       expect(instantAssetLockProof.getOutputIndex())
@@ -73,6 +66,17 @@ describe('InstantAssetLockProof', () => {
     it('should return correct object', () => {
       expect(instantAssetLockProof.toObject())
         .to.deep.equal(rawInstantAssetLockProof);
+    });
+  });
+
+  describe('#toJSON', () => {
+    it('should return correct JSON', () => {
+      expect(instantAssetLockProof.toJSON())
+        .to.deep.equal({
+          instantLock: instantAssetLockProof.getInstantLock().toString('base64'),
+          outputIndex: instantAssetLockProof.getOutputIndex(),
+          transaction: instantAssetLockProof.getTransaction().toString('hex'),
+        });
     });
   });
 });

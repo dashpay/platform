@@ -26,10 +26,54 @@ pub fn generate() -> Result<(), std::io::Error> {
     );
     core.generate().unwrap();
 
-    let platform = MappingConfig::new(
+    let mut platform = MappingConfig::new(
         PathBuf::from("protos/platform/v0/platform.proto"),
         PathBuf::from("src/platform/proto"),
     );
+    // Derive features for versioned messages
+    //
+    // "GetConsensusParamsRequest" is excluded as this message does not support proofs
+    const VERSIONED_REQUESTS: [&str; 13] = [
+        "GetDataContractHistoryRequest",
+        "GetDataContractRequest",
+        "GetDataContractsRequest",
+        "GetDocumentsRequest",
+        "GetIdentitiesByPublicKeyHashesRequest",
+        "GetIdentitiesRequest",
+        "GetIdentityBalanceAndRevisionRequest",
+        "GetIdentityBalanceRequest",
+        "GetIdentityByPublicKeyHashRequest",
+        "GetIdentityKeysRequest",
+        "GetIdentityRequest",
+        "GetProofsRequest",
+        "WaitForStateTransitionResultRequest",
+    ];
+
+    //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
+    const VERSIONED_RESPONSES: [&str; 13] = [
+        "GetDataContractHistoryResponse",
+        "GetDataContractResponse",
+        "GetDataContractsResponse",
+        "GetDocumentsResponse",
+        "GetIdentitiesByPublicKeyHashesResponse",
+        "GetIdentitiesResponse",
+        "GetIdentityBalanceAndRevisionResponse",
+        "GetIdentityBalanceResponse",
+        "GetIdentityByPublicKeyHashResponse",
+        "GetIdentityKeysResponse",
+        "GetIdentityResponse",
+        "GetProofsResponse",
+        "WaitForStateTransitionResultResponse",
+    ];
+
+    for msg in VERSIONED_RESPONSES {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dapi_grpc_macros::VersionedGrpcResponse)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
 
     #[cfg(feature = "serde")]
     let platform = platform
@@ -108,6 +152,18 @@ impl MappingConfig {
     #[allow(unused)]
     fn field_attribute(mut self, path: &str, attribute: &str) -> Self {
         self.builder = self.builder.field_attribute(path, attribute);
+        self
+    }
+
+    #[allow(unused)]
+    fn enum_attribute(mut self, path: &str, attribute: &str) -> Self {
+        self.builder = self.builder.enum_attribute(path, attribute);
+        self
+    }
+
+    #[allow(unused)]
+    fn message_attribute(mut self, path: &str, attribute: &str) -> Self {
+        self.builder = self.builder.message_attribute(path, attribute);
         self
     }
 

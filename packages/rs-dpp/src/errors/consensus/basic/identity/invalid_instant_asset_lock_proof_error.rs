@@ -8,7 +8,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Invalid instant lock proof: ${message}")]
+#[error("Invalid instant lock proof: {message}")]
 #[platform_serialize(unversioned)]
 pub struct InvalidInstantAssetLockProofError {
     /*

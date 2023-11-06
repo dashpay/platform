@@ -18,12 +18,13 @@ use crate::consensus::basic::decode::{
     ProtocolVersionParsingError, SerializedObjectParsingError, VersionError,
 };
 use crate::consensus::basic::document::{
-    DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, MaxDocumentsTransitionsExceededError,
-    MissingDataContractIdBasicError, MissingDocumentTransitionActionError,
-    MissingDocumentTransitionTypeError, MissingDocumentTypeError,
+    DataContractNotPresentError, DocumentTransitionsAreAbsentError,
+    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
+    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
+    MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
+    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
+    MissingDocumentTypeError,
 };
 use crate::consensus::basic::identity::{
     DataContractBoundsNotPresentError, DuplicatedIdentityPublicKeyBasicError,
@@ -294,6 +295,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     StateTransitionMaxSizeExceededError(StateTransitionMaxSizeExceededError),
+
+    #[error(transparent)]
+    DocumentTransitionsAreAbsentError(DocumentTransitionsAreAbsentError),
 }
 
 impl From<BasicError> for ConsensusError {

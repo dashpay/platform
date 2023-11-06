@@ -35,7 +35,7 @@ bs58 = "0.4.0"
 hex = "0.4.3"
 indexmap = { version = "1.9.3", features = ["serde"] }
 sha2 = "0.10.6"
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", tag = "v0.15.1" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "master" }
 dpp = { path = "../rs-dpp", features = ["abci"] }
 simple-signer = { path = "../simple-signer" }
 rust_decimal = "1.2.5"
@@ -81,6 +81,7 @@ tokio = { version = "1", features = [
 ] }
 tokio-util = { version = "0.7.8" }
 derive_more = "0.99.17"
+paste = "1.0.14"
 
 [dev-dependencies]
 base64 = "0.20.0"
@@ -104,6 +105,7 @@ strategy-tests = { path = "../strategy-tests" }
 
 # For tests of grovedb verify
 rocksdb = { version = "0.21.0" }
+integer-encoding = { version = "4.0.0" }
 
 [features]
 default = ["server", "mocks"]

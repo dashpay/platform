@@ -47,12 +47,9 @@ where
     ) -> Result<StateTransitionExecutionResult, Error> {
         //todo: we need to split out errors
         //  between failed execution and internal errors
-        let validation_result = self.validate_fees_of_event_v0(
-            &event,
-            block_info,
-            Some(transaction),
-            platform_version,
-        )?;
+        let validation_result =
+            self.validate_fees_of_event(&event, block_info, Some(transaction), platform_version)?;
+
         match event {
             ExecutionEvent::PaidFromAssetLockDriveEvent {
                 identity,

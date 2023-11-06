@@ -72,6 +72,8 @@ async fn document_read_no_contract() {
     )
     .await;
 
+    dbg!(&query);
+
     assert!(matches!(
         query,
         Err(rs_sdk::error::Error::MissingDependency(_, _))

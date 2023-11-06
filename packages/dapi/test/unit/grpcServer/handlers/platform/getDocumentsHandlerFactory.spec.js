@@ -64,7 +64,9 @@ describe('getDocumentsHandlerFactory', () => {
       getProve: this.sinon.stub().returns(false),
     };
 
-    call = new GrpcCallMock(this.sinon, request);
+    call = new GrpcCallMock(this.sinon, {
+      getV0: () => request,
+    });
 
     const [document] = await getDocumentsFixture();
 
@@ -78,13 +80,20 @@ describe('getDocumentsHandlerFactory', () => {
     proofMock = new Proof();
     proofMock.setGrovedbProof(proofFixture.merkleProof);
 
+    const { GetDocumentsResponseV0 } = GetDocumentsResponse;
     response = new GetDocumentsResponse();
-    const documentsList = new GetDocumentsResponse.Documents();
-    documentsList.setDocumentsList(documentsSerialized);
-    response.setDocuments(documentsList);
+    response.setV0(
+      new GetDocumentsResponseV0()
+        .setDocuments(
+          new GetDocumentsResponseV0.Documents()
+            .setDocumentsList(documentsSerialized),
+        ),
+    );
 
     proofResponse = new GetDocumentsResponse();
-    proofResponse.setProof(proofMock);
+    proofResponse.setV0(
+      new GetDocumentsResponseV0().setProof(proofMock),
+    );
 
     driveStateRepositoryMock = {
       fetchDocuments: this.sinon.stub().resolves(response.serializeBinary()),
@@ -96,12 +105,12 @@ describe('getDocumentsHandlerFactory', () => {
   });
 
   it('should return valid result', async () => {
-    response.setProof(null);
+    response.getV0().setProof(null);
 
     const result = await getDocumentsHandler(call);
 
     expect(result).to.be.an.instanceOf(GetDocumentsResponse);
-    const documents = result.getDocuments();
+    const documents = result.getV0().getDocuments();
 
     const documentsBinary = documents.getDocumentsList();
     expect(documentsBinary).to.be.an('array');
@@ -113,7 +122,7 @@ describe('getDocumentsHandlerFactory', () => {
 
     expect(documentsBinary[0]).to.deep.equal(documentsSerialized[0]);
 
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.undefined();
   });
@@ -130,7 +139,7 @@ describe('getDocumentsHandlerFactory', () => {
       call.request,
     );
 
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
     const merkleProof = proof.getGrovedbProof();

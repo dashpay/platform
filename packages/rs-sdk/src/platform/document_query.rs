@@ -4,8 +4,11 @@ use std::sync::Arc;
 
 use crate::{error::Error, sdk::Sdk};
 use ciborium::Value as CborValue;
+use dapi_grpc::platform::v0::get_documents_request::Version::V0;
 use dapi_grpc::platform::v0::{
-    self as platform_proto, get_documents_request::Start, GetDocumentsRequest,
+    self as platform_proto,
+    get_documents_request::{get_documents_request_v0::Start, GetDocumentsRequestV0},
+    GetDocumentsRequest,
 };
 use dpp::{
     data_contract::{
@@ -143,6 +146,7 @@ impl FromProof<DocumentQuery> for Document {
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        version: &dpp::version::PlatformVersion,
         provider: &'a dyn drive_proof_verifier::QuorumInfoProvider,
     ) -> Result<Option<Self>, drive_proof_verifier::Error>
     where
@@ -151,7 +155,9 @@ impl FromProof<DocumentQuery> for Document {
         let request: Self::Request = request.into();
 
         let documents: Option<Documents> =
-            <Documents as FromProof<Self::Request>>::maybe_from_proof(request, response, provider)?;
+            <Documents as FromProof<Self::Request>>::maybe_from_proof(
+                request, response, version, provider,
+            )?;
 
         match documents {
             None => Ok(None),
@@ -171,6 +177,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
+        version: &dpp::version::PlatformVersion,
         provider: &'a dyn drive_proof_verifier::QuorumInfoProvider,
     ) -> Result<Option<Self>, drive_proof_verifier::Error>
     where
@@ -187,6 +194,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
         <drive_proof_verifier::types::Documents as FromProof<DriveQuery>>::maybe_from_proof(
             drive_query,
             response,
+            version,
             provider,
         )
     }
@@ -202,14 +210,17 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
         let order_by = serialize_vec_to_cbor(dapi_request.order_by_clauses.clone())?;
         // Order clause
 
-        Ok(platform_proto::GetDocumentsRequest {
-            data_contract_id: dapi_request.data_contract.id().to_vec(),
-            document_type: dapi_request.document_type_name.clone(),
-            r#where: where_clauses,
-            order_by,
-            limit: dapi_request.limit,
-            prove: true,
-            start: dapi_request.start.clone(),
+        //todo: transform this into PlatformVersionedTryFrom
+        Ok(GetDocumentsRequest {
+            version: Some(V0(GetDocumentsRequestV0 {
+                data_contract_id: dapi_request.data_contract.id().to_vec(),
+                document_type: dapi_request.document_type_name.clone(),
+                r#where: where_clauses,
+                order_by,
+                limit: dapi_request.limit,
+                prove: true,
+                start: dapi_request.start.clone(),
+            })),
         })
     }
 }
