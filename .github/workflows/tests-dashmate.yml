@@ -45,24 +45,26 @@ jobs:
 
       - name: Pull pre-built images
         run: |
-          # set docker image names
+          # Login to ECR
+          DOCKER_HUB_ORG="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
+          aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
+
           GIT_SHA=$(git rev-parse --short HEAD)
 
           # Drive
           DRIVE_IMAGE_AND_VERSION = $(yarn dashmate config get --config=local platform.drive.abci.docker.image)
-          docker pull ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/drive:$GIT_SHA
-          docker tage ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/drive:$GIT_SHA DRIVE_IMAGE_AND_VERSION
+          docker pull $DOCKER_HUB_ORG/drive:$GIT_SHA
+          docker tage $DOCKER_HUB_ORG/drive:$GIT_SHA $DRIVE_IMAGE_AND_VERSION
 
           # DAPI
           DAPI_IMAGE_AND_VERSION = $(yarn dashmate config get --config=local platform.dapi.api.docker.image)
-          docker pull ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/dapi:$GIT_SHA
-          docker tage ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/dapi:$GIT_SHA DAPI_IMAGE_AND_VERSION
+          docker pull $DOCKER_HUB_ORG/dapi:$GIT_SHA
+          docker tage $DOCKER_HUB_ORG/dapi:$GIT_SHA $DAPI_IMAGE_AND_VERSION
 
           # Dashmate helper image is hardcoded so we replace it with the built one
-          DASHMATE_HELPER_IMAGE=${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/dashmate_helper:$GIT_SHA
           VERSION=$(cat package.json | jq -r '.version')
-          docker pull $DASHMATE_HELPER_IMAGE
-          docker tag $DASHMATE_HELPER_IMAGE dashpay/dashmate-helper:${VERSION}
+          docker pull $DOCKER_HUB_ORG/dashmate_helper:$GIT_SHA
+          docker tag $DOCKER_HUB_ORG/dashmate_helper:$GIT_SHA dashpay/dashmate-helper:${VERSION}
         shell: bash
 
       - name: Run tests
