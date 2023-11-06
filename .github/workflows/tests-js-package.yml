@@ -10,6 +10,11 @@ on:
         type: boolean
         default: false
         required: false
+      test-command:
+        description: Test command to run
+        type: string
+        default: test
+        required: false
 
 jobs:
   lint:
@@ -86,4 +91,4 @@ jobs:
           cp packages/dapi/.env.example packages/dapi/.env
 
       - name: Run tests
-        run: yarn test --filter "${{ inputs.package }}"
+        run: yarn workspace "${{ inputs.package }}" ${{ inputs.test-command }}
