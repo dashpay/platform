@@ -27,14 +27,14 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Setup Node.JS
+        uses: ./.github/actions/nodejs
+
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
         if: contains(runner.name, 'ubuntu-platform')
         with:
           aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Setup Node.JS
-        uses: ./.github/actions/nodejs
 
       - name: Restore JS build artifacts
         uses: everpcpc/actions-cache@v1
@@ -53,13 +53,24 @@ jobs:
         run: |
           # create tenderdash blocks every 10s to speed up test suite
           yarn dashmate config set --config=local platform.drive.tenderdash.consensus.createEmptyBlocksInterval "10s"
+
           # collect drive logs for bench suite
           yarn dashmate config set --config=local platform.drive.abci.logs.stdout.level "trace"
+
           # set docker image names
           GIT_SHA=$(git rev-parse --short HEAD)
+
+          # Drive
           yarn dashmate config set --config=local platform.drive.abci.docker.image ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/drive:$GIT_SHA
+
+          # DAPI
           yarn dashmate config set --config=local platform.dapi.api.docker.image dapi:${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/dapi:$GIT_SHA
-          yarn dashmate config set --config=local dashmate.helper.docker.image dashmate_helper:${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/dashmate_helper:$GIT_SHA
+
+          # Dashmate helper
+          DASHMATE_HELPER_IMAGE=${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/dashmate_helper:$GIT_SHA
+          VERSION=$(cat package.json | jq -r '.version')
+          docker pull $IMAGE
+          docker tag $IMAGE dashpay/dashmate-helper:${VERSION}
 
           source ./scripts/setup_local_network.sh
           source ./scripts/configure_test_suite.sh
