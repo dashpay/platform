@@ -27,7 +27,7 @@ impl<T: TransportRequest> DumpData<T> {
         let resp = T::Response::mock_deserialize(&self.serialized_response).unwrap_or_else(|| {
             panic!(
                 "unable to deserialize mock data of type {}",
-                type_name::<T>()
+                type_name::<T::Response>()
             )
         });
 
@@ -69,7 +69,7 @@ where
             panic!("invalid mock data format, expected exactly two items separated by null byte");
         }
 
-        let request = buf.first().expect("missing requestin mock data");
+        let request = buf.first().expect("missing request in mock data");
         let response = buf.last().expect("missing response in mock data");
 
         Some(Self {
