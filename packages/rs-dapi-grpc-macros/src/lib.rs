@@ -121,12 +121,12 @@ pub fn versioned_grpc_response_derive(input: TokenStream) -> TokenStream {
 /// Implement mocking on gRPC messages
 ///
 /// This adds implementation of [dapi_grpc::mock::Mockable] to the message.
-/// If the `mock` feature is enabled, the implementation uses serde_json to serialize/deserialize the message.
+/// If the `mocks` feature is enabled, the implementation uses serde_json to serialize/deserialize the message.
 /// Otherwise, it returns None.
 ///
 /// ## Requirements
 ///
-/// When `mock` feature is enabled:
+/// When `mocks` feature is enabled:
 ///
 /// * The message must implement [serde::Serialize] and [serde::Deserialize].
 /// * The crate must depend on `serde` and `serde_json` crates.
@@ -141,12 +141,12 @@ pub fn mockable_derive(input: TokenStream) -> TokenStream {
     // Generate the implementation
     let expanded = quote! {
         impl crate::mock::Mockable for #name {
-            #[cfg(feature = "mock")]
+            #[cfg(feature = "mocks")]
             fn mock_serialize(&self) -> Option<Vec<u8>> {
                 Some(serde_json::to_vec_pretty(self).expect("unable to serialize"))
             }
 
-            #[cfg(feature = "mock")]
+            #[cfg(feature = "mocks")]
             fn mock_deserialize(data: &[u8]) -> Option<Self> {
                 Some(serde_json::from_slice(data).expect("unable to deserialize"))
             }

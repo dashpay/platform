@@ -11,7 +11,7 @@ dpp = { path = "../rs-dpp", features = [
     "identity-value-conversion",
     "state-transition-signing",
 ] }
-dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
+dapi-grpc = { path = "../dapi-grpc", features = ["client", "mocks"] }
 rs-dapi-client = { path = "../rs-dapi-client" }
 drive = { path = "../rs-drive", default-features = false, features = [
     "verify",

@@ -14,7 +14,7 @@ rust-version = "1.73"
 license = "MIT"
 
 [features]
-default = ["core", "platform", "client", "serde", "mock"]
+default = ["core", "platform", "client", "serde", "mocks"]
 core = ["core_v0"]
 platform = ["platform_v0"]
 # Re-export Dash Platform protobuf types as `dapi_grpc::platform::proto`
@@ -24,7 +24,7 @@ serde = ["dep:serde", "dep:serde_bytes"]
 core_v0 = []
 platform_v0 = []
 
-mock = ["serde", "serde_json"]
+mocks = ["serde", "serde_json"]
 
 
 [dependencies]

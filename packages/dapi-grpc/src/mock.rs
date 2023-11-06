@@ -2,7 +2,7 @@
 //!
 //! Contains [Mockable] trait that should be implemented by any object that can be used in the DAPI.
 //!
-//! Note that this trait is defined even if `mock` feature is disabled, but it should always return `None` on serialization.
+//! Note that this trait is defined even if `mocks` feature is disabled, but it should always return `None` on serialization.
 use tonic::Streaming;
 
 /// Mocking support for messages.
