@@ -63,6 +63,7 @@ jobs:
       - build-rust
     secrets: inherit
     strategy:
+      fail-fast: false
       matrix:
         rs-package: ${{ fromJson(needs.changes.outputs.rs-packages) }}
     uses: ./.github/workflows/tests-rs-package.yml
@@ -89,6 +90,7 @@ jobs:
       - build-js
     secrets: inherit
     strategy:
+      fail-fast: false
       matrix:
         js-package: ${{ fromJson(needs.changes.outputs.js-packages) }}
     uses: ./.github/workflows/tests-js-package.yml
