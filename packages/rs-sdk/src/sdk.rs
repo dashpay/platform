@@ -347,7 +347,7 @@ impl SdkBuilder {
 
     /// Configure connection to Dash Core
     ///
-    /// TODO: This is temporary implementation, effective until we integrate SPV into rs-sdk.
+    /// TODO: This is temporary implementation, effective until we integrate SPV into dash-platform-sdk.
     pub fn with_core(mut self, ip: &str, port: u16, user: &str, password: &str) -> Self {
         self.core_ip = ip.to_string();
         self.core_port = port;

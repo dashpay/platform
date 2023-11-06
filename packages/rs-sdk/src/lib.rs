@@ -44,7 +44,7 @@
 //!
 //! ## Error handling
 //!
-//! Errors of type [Error] are returned by the rs-sdk. Note that missing objects ("not found") are not
+//! Errors of type [Error] are returned by the dash-platform-sdk. Note that missing objects ("not found") are not
 //! treated as errors; `Ok(None)` is returned instead.
 //!
 //! Mocking functions often panic instead of returning an error.

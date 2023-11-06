@@ -1,13 +1,13 @@
-//! Configuration helpers for mocking of rs-sdk.
+//! Configuration helpers for mocking of dash-platform-sdk.
 //!
-//! This module contains [Config] struct that can be used to configure rs-sdk.
+//! This module contains [Config] struct that can be used to configure dash-platform-sdk.
 //! It's mainly used for testing.
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
 use std::{path::PathBuf, str::FromStr};
 
 #[derive(Debug, Deserialize)]
-/// Configuration for rs-sdk.
+/// Configuration for dash-platform-sdk.
 ///
 /// Content of this configuration is loaded from environment variables or `${CARGO_MANIFEST_DIR}/.env` file
 /// when the [Config::new()] is called.

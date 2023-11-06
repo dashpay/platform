@@ -6,8 +6,8 @@ mod address_list;
 mod dapi_client;
 #[cfg(feature = "dump")]
 pub mod dump;
-//#[cfg(feature = "mocks")]
-//pub mod mock;
+#[cfg(feature = "mocks")]
+pub mod mock;
 mod request_settings;
 pub mod transport;
 
@@ -20,6 +20,7 @@ pub use dapi_client::{DapiClient, DapiClientError};
 #[cfg(feature = "dump")]
 pub use dump::DumpData;
 pub use request_settings::RequestSettings;
+pub use tonic;
 
 /// A DAPI request could be executed with an initialized [DapiClient].
 ///

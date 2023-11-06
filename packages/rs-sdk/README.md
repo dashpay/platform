@@ -20,31 +20,31 @@ Online testing requires connectivity to the Dash Platform and Dash Core. This mo
 
 Follow these steps to conduct online testing:
 
-1. Configure the environment variables in `packages/rs-sdk/.env`. Refer to the "Test Configuration" section below.
+1. Configure the environment variables in `packages/dash-platform-sdk/.env`. Refer to the "Test Configuration" section below.
 2. Optionally, you can remove existing test vectors.
 3. Run the test without default features, but with `mocks` feature enabled.
 
 Use the following commands for the above steps:
 
 ```bash
-cd packages/rs-sdk
+cd packages/dash-platform-sdk
 rm tests/vectors/*
-cargo test -p rs-sdk --no-default-features --features mocks
+cargo test -p dash-platform-sdk --no-default-features --features mocks
 ```
 
 ## Offline Testing
 
-Offline testing uses the vectors generated in online mode. These vectors must be saved in `packages/rs-sdk/tests/vectors`.
+Offline testing uses the vectors generated in online mode. These vectors must be saved in `packages/dash-platform-sdk/tests/vectors`.
 
 Run the offline test using the following command:
 
 ```bash
-cargo test -p rs-sdk
+cargo test -p dash-platform-sdk
 ```
 
 ## Test Configuration
 
-For the `offline-testing` feature, you need to set the configuration in the environment variables or in `packages/rs-sdk/.env` file. You can refer to `packages/rs-sdk/.env.example` for the format.
+For the `offline-testing` feature, you need to set the configuration in the environment variables or in `packages/dash-platform-sdk/.env` file. You can refer to `packages/dash-platform-sdk/.env.example` for the format.
 
 The identifiers are generated with the platform test suite. To display them, apply the following diff:
 
@@ -73,4 +73,4 @@ cd packages/platform-test-suite/
 yarn mocha -b test/functional/platform/Document.spec.js
 ```
 
-Find the values in the output and copy them to `packages/rs-sdk/.env`.
+Find the values in the output and copy them to `packages/dash-platform-sdk/.env`.

@@ -1,6 +1,7 @@
 //! [DapiClient] definition.
 
 use backon::{ExponentialBuilder, Retryable};
+use serde::Serialize;
 use tonic::async_trait;
 use tracing::Instrument;
 
@@ -46,7 +47,8 @@ pub trait Dapi {
         settings: RequestSettings,
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
     where
-        R: TransportRequest;
+        R: TransportRequest + Serialize,
+        R::Response: Serialize + Clone;
 }
 
 #[async_trait]
@@ -57,7 +59,8 @@ impl<D: Dapi + Send> Dapi for &mut D {
         settings: RequestSettings,
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
     where
-        R: TransportRequest,
+        R: TransportRequest + Serialize,
+        R::Response: Serialize + Clone,
     {
         (**self).execute(request, settings).await
     }
@@ -93,7 +96,8 @@ impl Dapi for DapiClient {
         settings: RequestSettings,
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
     where
-        R: TransportRequest,
+        R: TransportRequest + Serialize,
+        R::Response: Serialize + Clone,
     {
         // Join settings of different sources to get final version of the settings for this execution:
         let applied_settings = self
@@ -149,7 +153,7 @@ impl Dapi for DapiClient {
 
         // Dump request and response to disk if dump_dir is set:
         #[cfg(feature = "dump")]
-        if let Ok(ref result) = &result {
+        if let Ok(result) = &result {
             Self::dump_request_response(dump_request, result.clone(), dump_dir);
         }
 

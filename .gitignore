@@ -35,4 +35,4 @@ node_modules
 /target
 
 # Test vectors
-/packages/rs-sdk/tests/vectors/*
+/packages/dash-platform-sdk/tests/vectors/*
