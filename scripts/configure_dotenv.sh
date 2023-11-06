@@ -12,6 +12,7 @@ CONFIG=local
 DAPI_PATH="${PACKAGES_PATH}"/dapi
 DRIVE_PATH="${PACKAGES_PATH}"/rs-drive-abci
 SDK_PATH="${PACKAGES_PATH}"/js-dash-sdk
+RS_SDK_PATH="${PACKAGES_PATH}"/rs-sdk
 WALLET_LIB_PATH="${PACKAGES_PATH}"/wallet-lib
 
 touch "${LOGS_PATH}"/mint.log
@@ -49,3 +50,16 @@ echo "DAPI_SEED=127.0.0.1:2443:self-signed
 FAUCET_PRIVATE_KEY=${FAUCET_PRIVATE_KEY}
 NETWORK=regtest" >>"${WALLET_LIB_ENV_FILE_PATH}"
 #EOF
+
+# RS_SDK tests config:
+# TODO: set variables using dashmate config get
+cat <<EOF >"${RS_SDK_PATH}"/tests/.env
+
+RS_SDK_PLATFORM_HOST="127.0.0.1"
+RS_SDK_PLATFORM_PORT=2443
+
+RS_SDK_CORE_PORT=20002
+RS_SDK_CORE_USER="someuser"
+RS_SDK_CORE_PASSWORD="verysecretpassword"
+
+EOF

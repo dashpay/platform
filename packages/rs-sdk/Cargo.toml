@@ -10,7 +10,7 @@ dpp = { path = "../rs-dpp", features = [
     "identity-value-conversion",
 ] }
 dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
-rs-dapi-client = { path = "../rs-dapi-client" }
+rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
     "verify",
 ] }
@@ -36,7 +36,7 @@ derive_more = { version = "0.99.16" }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "master" }
 
 [dev-dependencies]
-rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks", "dump"] }
+rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks"] }
 base64 = { version = "0.21.0" }
 tracing-subscriber = { version = "0.3.16" }
 dpp = { path = "../rs-dpp", features = [
@@ -44,10 +44,11 @@ dpp = { path = "../rs-dpp", features = [
     "validation",
     "random-documents",
 ] }
+data-contracts = { path = "../data-contracts" }
 
 
 [features]
-default = ["mocks"]
+default = ["mocks", "offline-testing"]
 mocks = [
     "dep:serde_json",
     "rs-dapi-client/mocks",
@@ -62,10 +63,25 @@ mocks = [
     "dep:envy",
 ]
 
-# Disable this feature to run integration tests against a local Dash Platform
-# and dump all traffic to generate test vectors.
+# Run integration tests using test vectors from `tests/vectors/` instead of connecting to live Dash Platform.
 #
-# This feature is enabled by default because disabling it requires a local Dash Platform
-# node to be running. Configuration of the node is done via environment variables
-# and/or `${CARGO_MAINFEST_DIR}/.env` file; see also `.env.example`.
+# This feature is enabled by default to allow testing without connecting to the Dash Platform as
+# part of CI/CD workflows.
+#
+# `offline-testing` and `network-testing` are mutually exclusive.
 offline-testing = ["mocks"]
+
+# Run integration tests using a live Dash Platform network.
+#
+# Requires configuration of Dash Platform connectivity. 
+# See [README.md] for more details.
+#
+# `offline-testing` and `network-testing` are mutually exclusive.
+network-testing = ["mocks"]
+
+# Generate test vectors for offline tests.
+#
+# This will run tests in `network-testing` mode and 
+# dump all requests and responses to `tests/vectors/`,
+# so that they can be used later for `offline-testing`.
+generate-test-vectors = ["network-testing"]

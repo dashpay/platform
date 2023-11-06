@@ -14,7 +14,7 @@ use std::{path::PathBuf, str::FromStr};
 /// when the [Config::new()] is called.
 /// Variable names in the enviroment and `.env` file must be prefixed with [RS_SDK_](Config::CONFIG_PREFIX)
 /// and written as SCREAMING_SNAKE_CASE (e.g. `RS_SDK_PLATFORM_HOST`).
-pub struct Config<D> {
+pub struct Config<D: Default> {
     /// Hostname of the Dash Platform node to connect to
     pub platform_host: String,
     /// Port of the Dash Platform node grpc interface
@@ -34,10 +34,11 @@ pub struct Config<D> {
 
     /// Custom settings, used as needed by the test
     #[serde(flatten)]
+    #[serde(default)]
     pub settings: D,
 }
 
-impl<D: for<'de1> Deserialize<'de1>> Config<D> {
+impl<D: Default + for<'de1> Deserialize<'de1>> Config<D> {
     /// Prefix of configuration options in the environment variables and `.env` file.
     pub const CONFIG_PREFIX: &str = "RS_SDK_";
     /// Load configuration from operating system environment variables and `.env` file.
@@ -74,22 +75,25 @@ impl<D: for<'de1> Deserialize<'de1>> Config<D> {
     /// * `offline-testing` is set - use mock implementation and
     /// load existing test vectors from disk
     pub async fn setup_api(&self) -> rs_sdk::Sdk {
-        #[cfg(not(feature = "offline-testing"))]
-        // Dump all traffic to disk
-        let sdk = rs_sdk::SdkBuilder::new(self.address_list())
-            .with_core(
+        #[cfg(feature = "network-testing")]
+        let sdk = {
+            // Dump all traffic to disk
+            let builder = rs_sdk::SdkBuilder::new(self.address_list()).with_core(
                 &self.platform_host,
                 self.core_port,
                 &self.core_user,
                 &self.core_password,
-            )
-            .with_dump_dir(&self.dump_dir)
-            .build()
-            .expect("cannot initialize api");
+            );
+
+            #[cfg(feature = "generate-test-vectors")]
+            let builder = builder.with_dump_dir(&self.dump_dir);
+
+            builder.build().expect("cannot initialize api")
+        };
 
         #[cfg(feature = "offline-testing")]
         let sdk = {
-            let mut mock_sdk = crate::SdkBuilder::new_mock()
+            let mut mock_sdk = rs_sdk::SdkBuilder::new_mock()
                 .build()
                 .expect("initialize api");
 
@@ -107,7 +111,7 @@ impl<D: for<'de1> Deserialize<'de1>> Config<D> {
     }
 }
 
-impl<D: for<'de1> Deserialize<'de1>> Default for Config<D> {
+impl<D: Default + for<'de1> Deserialize<'de1>> Default for Config<D> {
     fn default() -> Self {
         Self::new()
     }
