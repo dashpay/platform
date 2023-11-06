@@ -69,14 +69,6 @@ dash:
   - packages/dpns-contract/**
   - packages/dash-spv/**
 
-'@dashevo/dpp':
-  - .github/workflows/js-checks.yml
-  - packages/js-dpp/**
-  - packages/feature-flags-contract/**
-  - packages/masternode-reward-shares-contract/**
-  - packages/dpns-contract/**
-  - packages/dashpay-contract/**
-
 '@dashevo/grpc-common':
   - .github/workflows/js-checks.yml
   - packages/js-grpc-common/**
