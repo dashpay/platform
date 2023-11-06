@@ -138,6 +138,3 @@ jobs:
             docker tag "$image" "$new_image_tag"
             docker push "$new_image_tag"
           done
-
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
