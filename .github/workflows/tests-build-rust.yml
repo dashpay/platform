@@ -24,4 +24,4 @@ jobs:
         uses: ./.github/actions/rust
 
       - name: Build Rust packages
-        run: cargo build
+        run: cargo build --all-features

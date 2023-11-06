@@ -35,11 +35,6 @@ jobs:
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
-      - name: Setup Rust
-        uses: ./.github/actions/rust
-        with:
-          target: wasm32-unknown-unknown
-
       - name: Restore JS build artifacts
         uses: everpcpc/actions-cache@v1
         with:
@@ -85,43 +80,22 @@ jobs:
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
-      - name: Setup Rust
-        uses: ./.github/actions/rust
+      - name: Restore JS build artifacts
+        uses: everpcpc/actions-cache@v1
         with:
-          target: wasm32-unknown-unknown
+          bucket: multi-runner-linux-x64-platform-cache-ui535z23
+          root: actions-cache
+          path: build-js-artifacts-${{ github.sha }}.tar
+          key: ${{ runner.os }}-build-js-artifacts-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-build-js-artifacts-${{ github.sha }}
 
-      - name: Build package and dependencies
-        run: yarn build --filter "+${{ inputs.package }}"
-        env:
-          NODE_ENV: test
+      - name: Unpack JS build artifacts archive
+        run: tar -xf build-js-artifacts-${{ github.sha }}.tar
 
       - name: Create necessary dotenv files
         run: |
           cp packages/dapi/.env.example packages/dapi/.env
-
-      - name: Configure Drive ABCI layer cache
-        uses: ./.github/actions/s3-layer-cache-settings
-        id: drive_abci_layer_cache_settings
-        with:
-          name: dashpay/drive
-
-      - name: Configure DAPI layer cache
-        uses: ./.github/actions/s3-layer-cache-settings
-        id: dapi_layer_cache_settings
-        with:
-          name: dashpay/dapi
-
-      - name: Configure Dashmate Helper layer cache
-        uses: ./.github/actions/s3-layer-cache-settings
-        id: dashmate_helper_layer_cache_settings
-        with:
-          name: dashpay/dashmate-helper
-
-      - name: Configure Base image layer cache
-        uses: ./.github/actions/s3-layer-cache-settings
-        id: base_layer_cache_settings
-        with:
-          name: dashpay/base
 
       - name: Run tests
         run: yarn test --filter "${{ inputs.package }}"

@@ -36,11 +36,6 @@ jobs:
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
-      - name: Setup Rust
-        uses: ./.github/actions/rust
-        with:
-          target: wasm32-unknown-unknown
-
       - name: Restore JS build artifacts
         uses: everpcpc/actions-cache@v1
         with:
