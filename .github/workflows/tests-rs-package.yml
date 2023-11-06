@@ -28,7 +28,7 @@ jobs:
 
       - uses: clechasseur/rs-clippy-check@v3
         with:
-          args: --all-features
+          args: --package ${{ inputs.package }} --all-features -- --no-deps
 
   formatting:
     name: Formatting
