@@ -40,7 +40,7 @@ To generate test vectors for offline testing:
 
 1. Configure platform address and credentials in `packages/rs-sdk/tests/.env`.
    Note that the `.env` file might already be configured during platform setup.
-3. Run  `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
+2. Run  `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
 
 ### Running tests in offline mode
 
