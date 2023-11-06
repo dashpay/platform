@@ -9,6 +9,7 @@ inputs:
   target:
     description: Target Rust platform
     required: false
+    default: x86_64-unknown-linux-gnu
   components:
     description: List of additional Rust toolchain components to install
     required: false
@@ -44,12 +45,12 @@ runs:
         bucket: multi-runner-linux-x64-platform-cache-ui535z23
         root: actions-cache
         path: target
-        key: ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-${{ github.sha }}
+        key: ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/${{ steps.hashed-ref-name.outputs.key }}/${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-${{ github.sha }}
-          ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-
-          ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-
-          ${{ runner.os }}-cargo-build-${{ inputs.target }}-
+          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/${{ steps.hashed-ref-name.outputs.key }}/${{ github.sha }}
+          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/${{ steps.hashed-ref-name.outputs.key }}/
+          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/
+          ${{ runner.os }}/cargo/build/${{ inputs.target }}/
 
     - name: Cache cargo registry (S3 bucket cache)
       uses: everpcpc/actions-cache@v1
@@ -61,10 +62,10 @@ runs:
           /home/ubuntu/.cargo/registry/index
           /home/ubuntu/.cargo/registry/cache
           /home/ubuntu/.cargo/git
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          ${{ runner.os }}-cargo-registry-
+          ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
+          ${{ runner.os }}/cargo/registry/
 
     - name: Cache Rust build artifacts (GitHub Actions cache)
       uses: actions/cache@v3
@@ -77,10 +78,10 @@ runs:
           target
         key: ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-${{ github.sha }}
-          ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-
-          ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-
-          ${{ runner.os }}-cargo-build-${{ inputs.target }}-
+          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-${{ github.sha }}
+          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-
+          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}-
+          ${{ runner.os }}/cargo/build/${{ inputs.target }}/
 
     - name: Cache cargo registry (GitHub Actions cache)
       uses: actions/cache@v3
