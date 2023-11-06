@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::{error::Error, sdk::Sdk};
 use ciborium::Value as CborValue;
+use dapi_grpc::platform::v0::get_documents_request::Version::V0;
 use dapi_grpc::platform::v0::{
     self as platform_proto,
     get_documents_request::{get_documents_request_v0::Start, GetDocumentsRequestV0},
@@ -209,16 +210,18 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
         let order_by = serialize_vec_to_cbor(dapi_request.order_by_clauses.clone())?;
         // Order clause
 
-        Ok(GetDocumentsRequestV0 {
-            data_contract_id: dapi_request.data_contract.id().to_vec(),
-            document_type: dapi_request.document_type_name.clone(),
-            r#where: where_clauses,
-            order_by,
-            limit: dapi_request.limit,
-            prove: true,
-            start: dapi_request.start.clone(),
-        }
-        .into())
+        //todo: transform this into PlatformVersionedTryFrom
+        Ok(GetDocumentsRequest {
+            version: Some(V0(GetDocumentsRequestV0 {
+                data_contract_id: dapi_request.data_contract.id().to_vec(),
+                document_type: dapi_request.document_type_name.clone(),
+                r#where: where_clauses,
+                order_by,
+                limit: dapi_request.limit,
+                prove: true,
+                start: dapi_request.start.clone(),
+            })),
+        })
     }
 }
 

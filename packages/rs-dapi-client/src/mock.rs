@@ -113,7 +113,7 @@ impl Dapi for MockDapiClient {
                 "unexpected mock request with key {}, use MockDapiClient::expect(): {:?}",
                 key, request
             )))
-        }
+        };
     }
 }
 

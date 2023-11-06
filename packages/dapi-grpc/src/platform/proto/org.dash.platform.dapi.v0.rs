@@ -30,12 +30,14 @@ pub struct ResponseMetadata {
     pub height: u64,
     #[prost(uint32, tag = "2")]
     pub core_chain_locked_height: u32,
-    #[prost(uint64, tag = "3")]
+    #[prost(uint32, tag = "3")]
+    pub epoch: u32,
+    #[prost(uint64, tag = "4")]
     #[serde(with = "crate::deserialization::from_to_string")]
     pub time_ms: u64,
-    #[prost(uint32, tag = "4")]
+    #[prost(uint32, tag = "5")]
     pub protocol_version: u32,
-    #[prost(string, tag = "5")]
+    #[prost(string, tag = "6")]
     pub chain_id: ::prost::alloc::string::String,
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
@@ -65,7 +67,6 @@ pub struct BroadcastStateTransitionRequest {
 pub struct BroadcastStateTransitionResponse {}
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityRequest {
@@ -96,7 +97,6 @@ pub mod get_identity_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityBalanceRequest {
@@ -127,7 +127,6 @@ pub mod get_identity_balance_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityBalanceAndRevisionRequest {
@@ -160,8 +159,8 @@ pub mod get_identity_balance_and_revision_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[derive(::dapi_grpc_macros::VersionedGrpcResponse)]
+#[grpc_versions(0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityResponse {
@@ -204,7 +203,6 @@ pub mod get_identity_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesRequest {
@@ -235,8 +233,8 @@ pub mod get_identities_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[derive(::dapi_grpc_macros::VersionedGrpcResponse)]
+#[grpc_versions(0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesResponse {
@@ -305,8 +303,8 @@ pub mod get_identities_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[derive(::dapi_grpc_macros::VersionedGrpcResponse)]
+#[grpc_versions(0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityBalanceResponse {
@@ -349,8 +347,8 @@ pub mod get_identity_balance_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[derive(::dapi_grpc_macros::VersionedGrpcResponse)]
+#[grpc_versions(0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityBalanceAndRevisionResponse {
@@ -508,7 +506,6 @@ pub mod security_level_map {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityKeysRequest {
@@ -545,8 +542,8 @@ pub mod get_identity_keys_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[derive(::dapi_grpc_macros::VersionedGrpcResponse)]
+#[grpc_versions(0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityKeysResponse {
@@ -597,7 +594,6 @@ pub mod get_identity_keys_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetProofsRequest {
@@ -709,8 +705,8 @@ pub mod get_proofs_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[derive(::dapi_grpc_macros::VersionedGrpcResponse)]
+#[grpc_versions(0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetProofsResponse {
@@ -751,7 +747,6 @@ pub mod get_proofs_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractRequest {
@@ -782,8 +777,8 @@ pub mod get_data_contract_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[derive(::dapi_grpc_macros::VersionedGrpcResponse)]
+#[grpc_versions(0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractResponse {
@@ -826,7 +821,6 @@ pub mod get_data_contract_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractsRequest {
@@ -857,8 +851,8 @@ pub mod get_data_contracts_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[derive(::dapi_grpc_macros::VersionedGrpcResponse)]
+#[grpc_versions(0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractsResponse {
@@ -919,7 +913,6 @@ pub mod get_data_contracts_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractHistoryRequest {
@@ -957,8 +950,8 @@ pub mod get_data_contract_history_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[derive(::dapi_grpc_macros::VersionedGrpcResponse)]
+#[grpc_versions(0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDataContractHistoryResponse {
@@ -1023,7 +1016,6 @@ pub mod get_data_contract_history_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDocumentsRequest {
@@ -1079,8 +1071,8 @@ pub mod get_documents_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[derive(::dapi_grpc_macros::VersionedGrpcResponse)]
+#[grpc_versions(0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetDocumentsResponse {
@@ -1131,7 +1123,6 @@ pub mod get_documents_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesByPublicKeyHashesRequest {
@@ -1164,8 +1155,8 @@ pub mod get_identities_by_public_key_hashes_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[derive(::dapi_grpc_macros::VersionedGrpcResponse)]
+#[grpc_versions(0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentitiesByPublicKeyHashesResponse {
@@ -1234,7 +1225,6 @@ pub mod get_identities_by_public_key_hashes_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityByPublicKeyHashRequest {
@@ -1267,8 +1257,8 @@ pub mod get_identity_by_public_key_hash_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[derive(::dapi_grpc_macros::VersionedGrpcResponse)]
+#[grpc_versions(0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetIdentityByPublicKeyHashResponse {
@@ -1318,7 +1308,6 @@ pub mod get_identity_by_public_key_hash_response {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WaitForStateTransitionResultRequest {
@@ -1350,8 +1339,8 @@ pub mod wait_for_state_transition_result_request {
 }
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[derive(::dapi_grpc_macros::GrpcMessageV0)]
 #[derive(::dapi_grpc_macros::VersionedGrpcResponse)]
+#[grpc_versions(0)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct WaitForStateTransitionResultResponse {
@@ -1479,6 +1468,294 @@ pub mod get_consensus_params_response {
     pub enum Version {
         #[prost(message, tag = "1")]
         V0(GetConsensusParamsResponseV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetVersionUpgradeStateRequest {
+    #[prost(oneof = "get_version_upgrade_state_request::Version", tags = "1")]
+    pub version: ::core::option::Option<get_version_upgrade_state_request::Version>,
+}
+/// Nested message and enum types in `GetVersionUpgradeStateRequest`.
+pub mod get_version_upgrade_state_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetVersionUpgradeStateRequestV0 {
+        #[prost(bool, tag = "1")]
+        pub prove: bool,
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetVersionUpgradeStateRequestV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetVersionUpgradeStateResponse {
+    #[prost(oneof = "get_version_upgrade_state_response::Version", tags = "1")]
+    pub version: ::core::option::Option<get_version_upgrade_state_response::Version>,
+}
+/// Nested message and enum types in `GetVersionUpgradeStateResponse`.
+pub mod get_version_upgrade_state_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetVersionUpgradeStateResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(oneof = "get_version_upgrade_state_response_v0::Result", tags = "1, 2")]
+        pub result: ::core::option::Option<
+            get_version_upgrade_state_response_v0::Result,
+        >,
+    }
+    /// Nested message and enum types in `GetVersionUpgradeStateResponseV0`.
+    pub mod get_version_upgrade_state_response_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct Versions {
+            #[prost(message, repeated, tag = "1")]
+            pub versions: ::prost::alloc::vec::Vec<VersionEntry>,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct VersionEntry {
+            #[prost(uint32, tag = "1")]
+            pub version_number: u32,
+            #[prost(uint32, tag = "2")]
+            pub vote_count: u32,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(message, tag = "1")]
+            Versions(Versions),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetVersionUpgradeStateResponseV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetVersionUpgradeVoteStatusRequest {
+    #[prost(oneof = "get_version_upgrade_vote_status_request::Version", tags = "1")]
+    pub version: ::core::option::Option<
+        get_version_upgrade_vote_status_request::Version,
+    >,
+}
+/// Nested message and enum types in `GetVersionUpgradeVoteStatusRequest`.
+pub mod get_version_upgrade_vote_status_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetVersionUpgradeVoteStatusRequestV0 {
+        #[prost(bytes = "vec", tag = "1")]
+        pub start_pro_tx_hash: ::prost::alloc::vec::Vec<u8>,
+        #[prost(uint32, tag = "2")]
+        pub count: u32,
+        #[prost(bool, tag = "3")]
+        pub prove: bool,
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetVersionUpgradeVoteStatusRequestV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetVersionUpgradeVoteStatusResponse {
+    #[prost(oneof = "get_version_upgrade_vote_status_response::Version", tags = "1")]
+    pub version: ::core::option::Option<
+        get_version_upgrade_vote_status_response::Version,
+    >,
+}
+/// Nested message and enum types in `GetVersionUpgradeVoteStatusResponse`.
+pub mod get_version_upgrade_vote_status_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetVersionUpgradeVoteStatusResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(
+            oneof = "get_version_upgrade_vote_status_response_v0::Result",
+            tags = "1, 2"
+        )]
+        pub result: ::core::option::Option<
+            get_version_upgrade_vote_status_response_v0::Result,
+        >,
+    }
+    /// Nested message and enum types in `GetVersionUpgradeVoteStatusResponseV0`.
+    pub mod get_version_upgrade_vote_status_response_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct VersionSignals {
+            #[prost(message, repeated, tag = "1")]
+            pub version_signals: ::prost::alloc::vec::Vec<VersionSignal>,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct VersionSignal {
+            #[prost(bytes = "vec", tag = "1")]
+            pub pro_tx_hash: ::prost::alloc::vec::Vec<u8>,
+            #[prost(uint32, tag = "2")]
+            pub version: u32,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(message, tag = "1")]
+            Versions(VersionSignals),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetVersionUpgradeVoteStatusResponseV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetEpochsInfoRequest {
+    #[prost(oneof = "get_epochs_info_request::Version", tags = "1")]
+    pub version: ::core::option::Option<get_epochs_info_request::Version>,
+}
+/// Nested message and enum types in `GetEpochsInfoRequest`.
+pub mod get_epochs_info_request {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetEpochsInfoRequestV0 {
+        #[prost(message, optional, tag = "1")]
+        pub start_epoch: ::core::option::Option<u32>,
+        #[prost(uint32, tag = "2")]
+        pub count: u32,
+        #[prost(bool, tag = "3")]
+        pub ascending: bool,
+        #[prost(bool, tag = "4")]
+        pub prove: bool,
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetEpochsInfoRequestV0),
+    }
+}
+#[derive(::serde::Serialize, ::serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetEpochsInfoResponse {
+    #[prost(oneof = "get_epochs_info_response::Version", tags = "1")]
+    pub version: ::core::option::Option<get_epochs_info_response::Version>,
+}
+/// Nested message and enum types in `GetEpochsInfoResponse`.
+pub mod get_epochs_info_response {
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct GetEpochsInfoResponseV0 {
+        #[prost(message, optional, tag = "3")]
+        pub metadata: ::core::option::Option<super::ResponseMetadata>,
+        #[prost(oneof = "get_epochs_info_response_v0::Result", tags = "1, 2")]
+        pub result: ::core::option::Option<get_epochs_info_response_v0::Result>,
+    }
+    /// Nested message and enum types in `GetEpochsInfoResponseV0`.
+    pub mod get_epochs_info_response_v0 {
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct EpochInfos {
+            #[prost(message, repeated, tag = "1")]
+            pub epoch_infos: ::prost::alloc::vec::Vec<EpochInfo>,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Message)]
+        pub struct EpochInfo {
+            #[prost(uint32, tag = "1")]
+            pub number: u32,
+            #[prost(uint64, tag = "2")]
+            pub first_block_height: u64,
+            #[prost(uint32, tag = "3")]
+            pub first_core_block_height: u32,
+            #[prost(uint64, tag = "4")]
+            pub start_time: u64,
+            #[prost(double, tag = "5")]
+            pub fee_multiplier: f64,
+        }
+        #[derive(::serde::Serialize, ::serde::Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Result {
+            #[prost(message, tag = "1")]
+            Epochs(EpochInfos),
+            #[prost(message, tag = "2")]
+            Proof(super::super::Proof),
+        }
+    }
+    #[derive(::serde::Serialize, ::serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Version {
+        #[prost(message, tag = "1")]
+        V0(GetEpochsInfoResponseV0),
     }
 }
 /// Generated client implementations.
@@ -2005,6 +2282,96 @@ pub mod platform_client {
                     GrpcMethod::new(
                         "org.dash.platform.dapi.v0.Platform",
                         "getConsensusParams",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_version_upgrade_state(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetVersionUpgradeStateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetVersionUpgradeStateResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getVersionUpgradeState",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getVersionUpgradeState",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_version_upgrade_vote_status(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetVersionUpgradeVoteStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetVersionUpgradeVoteStatusResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getVersionUpgradeVoteStatus",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getVersionUpgradeVoteStatus",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn get_epochs_info(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetEpochsInfoRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetEpochsInfoResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/org.dash.platform.dapi.v0.Platform/getEpochsInfo",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "org.dash.platform.dapi.v0.Platform",
+                        "getEpochsInfo",
                     ),
                 );
             self.inner.unary(req, path, codec).await

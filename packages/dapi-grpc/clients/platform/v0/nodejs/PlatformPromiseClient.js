@@ -40,6 +40,12 @@ const {
             WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
             GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
             GetConsensusParamsResponse: PBJSGetConsensusParamsResponse,
+            GetEpochsInfoRequest: PBJSGetEpochsInfoRequest,
+            GetEpochsInfoResponse: PBJSGetEpochsInfoResponse,
+            GetVersionUpgradeVoteStatusRequest: PBJSGetVersionUpgradeVoteStatusRequest,
+            GetVersionUpgradeVoteStatusResponse: PBJSGetVersionUpgradeVoteStatusResponse,
+            GetVersionUpgradeStateRequest: PBJSGetVersionUpgradeStateRequest,
+            GetVersionUpgradeStateResponse: PBJSGetVersionUpgradeStateResponse,
           },
         },
       },
@@ -56,6 +62,9 @@ const {
   GetIdentitiesByPublicKeyHashesResponse: ProtocGetIdentitiesByPublicKeyHashesResponse,
   WaitForStateTransitionResultResponse: ProtocWaitForStateTransitionResultResponse,
   GetConsensusParamsResponse: ProtocGetConsensusParamsResponse,
+  GetEpochsInfoResponse: ProtocGetEpochsInfoResponse,
+  GetVersionUpgradeVoteStatusResponse: ProtocGetVersionUpgradeVoteStatusResponse,
+  GetVersionUpgradeStateResponse: ProtocGetVersionUpgradeStateResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -112,6 +121,18 @@ class PlatformPromiseClient {
 
     this.client.getConsensusParams = promisify(
       this.client.getConsensusParams.bind(this.client),
+    );
+
+    this.client.getEpochsInfo = promisify(
+      this.client.getEpochsInfo.bind(this.client),
+    );
+
+    this.client.getVersionUpgradeVoteStatus = promisify(
+      this.client.getVersionUpgradeVoteStatus.bind(this.client),
+    );
+
+    this.client.getVersionUpgradeState = promisify(
+      this.client.getVersionUpgradeState.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -366,6 +387,99 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetConsensusParamsRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetEpochsInfoRequest} getEpochsInfoRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetEpochsInfoResponse>}
+   */
+  getEpochsInfo(getEpochsInfoRequest, metadata = {}, options = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getEpochsInfo(
+      getEpochsInfoRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetEpochsInfoResponse,
+              PBJSGetEpochsInfoResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetEpochsInfoRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetVersionUpgradeVoteStatusRequest} getVersionUpgradeVoteStatusRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetVersionUpgradeVoteStatusResponse>}
+   */
+  getVersionUpgradeVoteStatus(getVersionUpgradeVoteStatusRequest, metadata = {}, options = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getVersionUpgradeVoteStatus(
+      getVersionUpgradeVoteStatusRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetVersionUpgradeVoteStatusResponse,
+              PBJSGetVersionUpgradeVoteStatusResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetVersionUpgradeVoteStatusRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetVersionUpgradeStateRequest} getVersionUpgradeStateRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetVersionUpgradeStateResponse>}
+   */
+  getVersionUpgradeState(getVersionUpgradeStateRequest, metadata = {}, options = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getVersionUpgradeState(
+      getVersionUpgradeStateRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetVersionUpgradeStateResponse,
+              PBJSGetVersionUpgradeStateResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetVersionUpgradeStateRequest,
             ),
           ),
         ],

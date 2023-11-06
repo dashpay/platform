@@ -89,6 +89,21 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetConsensusParamsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetConsensusParamsResponse.FromString,
                 )
+        self.getVersionUpgradeState = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getVersionUpgradeState',
+                request_serializer=platform__pb2.GetVersionUpgradeStateRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetVersionUpgradeStateResponse.FromString,
+                )
+        self.getVersionUpgradeVoteStatus = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getVersionUpgradeVoteStatus',
+                request_serializer=platform__pb2.GetVersionUpgradeVoteStatusRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetVersionUpgradeVoteStatusResponse.FromString,
+                )
+        self.getEpochsInfo = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getEpochsInfo',
+                request_serializer=platform__pb2.GetEpochsInfoRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetEpochsInfoResponse.FromString,
+                )
 
 
 class PlatformServicer(object):
@@ -184,6 +199,24 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getVersionUpgradeState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getVersionUpgradeVoteStatus(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getEpochsInfo(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -261,6 +294,21 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getConsensusParams,
                     request_deserializer=platform__pb2.GetConsensusParamsRequest.FromString,
                     response_serializer=platform__pb2.GetConsensusParamsResponse.SerializeToString,
+            ),
+            'getVersionUpgradeState': grpc.unary_unary_rpc_method_handler(
+                    servicer.getVersionUpgradeState,
+                    request_deserializer=platform__pb2.GetVersionUpgradeStateRequest.FromString,
+                    response_serializer=platform__pb2.GetVersionUpgradeStateResponse.SerializeToString,
+            ),
+            'getVersionUpgradeVoteStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.getVersionUpgradeVoteStatus,
+                    request_deserializer=platform__pb2.GetVersionUpgradeVoteStatusRequest.FromString,
+                    response_serializer=platform__pb2.GetVersionUpgradeVoteStatusResponse.SerializeToString,
+            ),
+            'getEpochsInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.getEpochsInfo,
+                    request_deserializer=platform__pb2.GetEpochsInfoRequest.FromString,
+                    response_serializer=platform__pb2.GetEpochsInfoResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -524,5 +572,56 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getConsensusParams',
             platform__pb2.GetConsensusParamsRequest.SerializeToString,
             platform__pb2.GetConsensusParamsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getVersionUpgradeState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getVersionUpgradeState',
+            platform__pb2.GetVersionUpgradeStateRequest.SerializeToString,
+            platform__pb2.GetVersionUpgradeStateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getVersionUpgradeVoteStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getVersionUpgradeVoteStatus',
+            platform__pb2.GetVersionUpgradeVoteStatusRequest.SerializeToString,
+            platform__pb2.GetVersionUpgradeVoteStatusResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getEpochsInfo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getEpochsInfo',
+            platform__pb2.GetEpochsInfoRequest.SerializeToString,
+            platform__pb2.GetEpochsInfoResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

@@ -4,7 +4,8 @@
 use std::fmt::Debug;
 
 use dapi_grpc::platform::v0::{
-    self as proto, get_identity_keys_request::GetIdentityKeysRequestV0, AllKeys, KeyRequestType,
+    self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
+    AllKeys, GetIdentityKeysRequest, KeyRequestType,
 };
 use dpp::prelude::Identifier;
 use drive::query::DriveQuery;
@@ -97,16 +98,19 @@ impl Query<proto::GetIdentityKeysRequest> for Identifier {
             unimplemented!("queries without proofs are not supported yet");
         }
         let identity_id = self.to_vec();
-        Ok(GetIdentityKeysRequestV0 {
-            identity_id,
-            prove,
-            limit: None,
-            offset: None,
-            request_type: Some(KeyRequestType {
-                request: Some(proto::key_request_type::Request::AllKeys(AllKeys {})),
-            }),
-        }
-        .into())
+        Ok(GetIdentityKeysRequest {
+            version: Some(get_identity_keys_request::Version::V0(
+                GetIdentityKeysRequestV0 {
+                    identity_id,
+                    prove,
+                    limit: None,
+                    offset: None,
+                    request_type: Some(KeyRequestType {
+                        request: Some(proto::key_request_type::Request::AllKeys(AllKeys {})),
+                    }),
+                },
+            )),
+        })
     }
 }
 

@@ -62,8 +62,10 @@ pub mod defaults;
 pub mod document;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod flags;
+
+/// Low level GroveDB operations
 #[cfg(feature = "full")]
-pub(crate) mod grove_operations;
+pub mod grove_operations;
 /// Identity module
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod identity;
@@ -71,8 +73,10 @@ pub mod identity;
 pub mod initialization;
 #[cfg(feature = "full")]
 pub mod object_size_info;
+
+/// Protocol upgrade module
 #[cfg(feature = "full")]
-mod protocol_upgrade;
+pub mod protocol_upgrade;
 #[cfg(feature = "full")]
 mod shared_estimation_costs;
 #[cfg(feature = "full")]

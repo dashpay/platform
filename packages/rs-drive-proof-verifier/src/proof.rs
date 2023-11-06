@@ -1,15 +1,18 @@
 use std::collections::BTreeMap;
 
 use crate::{types::*, Error, QuorumInfoProvider};
-use dapi_grpc::platform::v0::get_data_contract_history_request::GetDataContractHistoryRequestV0;
 use dapi_grpc::platform::v0::get_data_contract_request::GetDataContractRequestV0;
 use dapi_grpc::platform::v0::get_data_contracts_request::GetDataContractsRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
 use dapi_grpc::platform::v0::get_identity_keys_request::GetIdentityKeysRequestV0;
-use dapi_grpc::platform::v0::get_identity_request::GetIdentityRequestV0;
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
+use dapi_grpc::platform::v0::{
+    get_data_contract_history_request, get_data_contract_request, get_data_contracts_request,
+    get_identity_balance_and_revision_request, get_identity_balance_request,
+    get_identity_by_public_key_hash_request, get_identity_keys_request, get_identity_request,
+};
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
@@ -120,20 +123,17 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
         let response: Self::Response = response.into();
 
         // Parse response to read proof and metadata
-        let proof = response
-            .get_proof(platform_version)
-            .or(Err(Error::NoProofInResult))?;
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
 
-        let mtd = response
-            .get_metadata(platform_version)
-            .or(Err(Error::EmptyResponseMetadata))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        // Load some info from request
-        let request_v0: GetIdentityRequestV0 =
-            request.try_into_platform_versioned(platform_version)?;
-        let id = Identifier::from_bytes(&request_v0.id).map_err(|e| Error::ProtocolError {
-            error: e.to_string(),
-        })?;
+        let id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_identity_request::Version::V0(v0) => {
+                Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                })?
+            }
+        };
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_full_identity_by_identity_id(
@@ -170,24 +170,21 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
         let request = request.into();
         let response = response.into();
         // Parse response to read proof and metadata
-        let proof = response
-            .get_proof(platform_version)
-            .or(Err(Error::NoProofInResult))?;
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
 
-        let mtd = response
-            .get_metadata(platform_version)
-            .or(Err(Error::EmptyResponseMetadata))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        // Load some info from request
-        let request_v0: GetIdentityByPublicKeyHashRequestV0 =
-            request.try_into_platform_versioned(platform_version)?;
-        let public_key_hash: [u8; 20] =
-            request_v0
-                .public_key_hash
-                .try_into()
-                .map_err(|_| Error::DriveError {
-                    error: "Ivalid public key hash length".to_string(),
-                })?;
+        let public_key_hash = match request.version.ok_or(Error::EmptyVersion)? {
+            get_identity_by_public_key_hash_request::Version::V0(v0) => {
+                let public_key_hash: [u8; 20] =
+                    v0.public_key_hash
+                        .try_into()
+                        .map_err(|_| Error::DriveError {
+                            error: "Ivalid public key hash length".to_string(),
+                        })?;
+                public_key_hash
+            }
+        };
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_full_identity_by_public_key_hash(
@@ -223,25 +220,26 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
         let response: Self::Response = response.into();
 
         // Parse response to read proof and metadata
-        let proof = response
-            .get_proof(platform_version)
-            .or(Err(Error::NoProofInResult))?;
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
 
-        let mtd = response
-            .get_metadata(platform_version)
-            .or(Err(Error::EmptyResponseMetadata))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        // Load some info from request
-        let request_v0: GetIdentityKeysRequestV0 =
-            request.try_into_platform_versioned(platform_version)?;
+        let (request_type, identity_id, limit, offset) =
+            match request.version.ok_or(Error::EmptyVersion)? {
+                get_identity_keys_request::Version::V0(v0) => {
+                    let request_type = v0.request_type;
+                    let identity_id = Identifier::from_bytes(&v0.identity_id)
+                        .map_err(|e| Error::ProtocolError {
+                            error: e.to_string(),
+                        })?
+                        .into_buffer();
+                    let limit = v0.limit.map(|i| i as u16);
+                    let offset = v0.offset.map(|i| i as u16);
+                    (request_type, identity_id, limit, offset)
+                }
+            };
 
-        let identity_id = Identifier::from_bytes(&request_v0.identity_id)
-            .map_err(|e| Error::ProtocolError {
-                error: e.to_string(),
-            })?
-            .into_buffer();
-
-        let key_request = match parse_key_request_type(&request_v0.request_type)? {
+        let key_request = match parse_key_request_type(&request_type)? {
             KeyRequestType::SpecificKeys(specific_keys) => {
                 IdentityKeysRequest::new_specific_keys_query(&identity_id, specific_keys)
             }
@@ -249,14 +247,14 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
             KeyRequestType::SearchKey(criteria) => IdentityKeysRequest {
                 identity_id,
                 request_type: KeyRequestType::SearchKey(criteria),
-                limit: Some(1),
-                offset: None,
+                limit,
+                offset,
             },
             KeyRequestType::ContractBoundKey(id, purpose, kind) => IdentityKeysRequest {
                 identity_id,
                 request_type: KeyRequestType::ContractBoundKey(id, purpose, kind),
-                limit: Some(1),
-                offset: None,
+                limit,
+                offset,
             },
             KeyRequestType::ContractDocumentTypeBoundKey(id, s, purpose, kind) => {
                 IdentityKeysRequest {
@@ -264,8 +262,8 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
                     request_type: KeyRequestType::ContractDocumentTypeBoundKey(
                         id, s, purpose, kind,
                     ),
-                    limit: Some(1),
-                    offset: None,
+                    limit,
+                    offset,
                 }
             }
         };
@@ -388,20 +386,16 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
         let response: Self::Response = response.into();
 
         // Parse response to read proof and metadata
-        let proof = response
-            .get_proof(platform_version)
-            .or(Err(Error::NoProofInResult))?;
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
 
-        let mtd = response
-            .get_metadata(platform_version)
-            .or(Err(Error::EmptyResponseMetadata))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        // Load some info from request
-        let request_v0: GetIdentityBalanceRequestV0 =
-            request.try_into_platform_versioned(platform_version)?;
-        let id = Identifier::from_bytes(&request_v0.id).map_err(|e| Error::ProtocolError {
-            error: e.to_string(),
-        })?;
+        let id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_identity_balance_request::Version::V0(v0) => Identifier::from_bytes(&v0.id)
+                .map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                }),
+        }?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) = Drive::verify_identity_balance_for_identity_id(
@@ -438,20 +432,17 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
         let response: Self::Response = response.into();
 
         // Parse response to read proof and metadata
-        let proof = response
-            .get_proof(platform_version)
-            .or(Err(Error::NoProofInResult))?;
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
 
-        let mtd = response
-            .get_metadata(platform_version)
-            .or(Err(Error::EmptyResponseMetadata))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        // Load some info from request
-        let request_v0: GetIdentityBalanceAndRevisionRequestV0 =
-            request.try_into_platform_versioned(platform_version)?;
-        let id = Identifier::from_bytes(&request_v0.id).map_err(|e| Error::ProtocolError {
-            error: e.to_string(),
-        })?;
+        let id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_identity_balance_and_revision_request::Version::V0(v0) => {
+                Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                })
+            }
+        }?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_identity) =
@@ -488,20 +479,17 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
         let response: Self::Response = response.into();
 
         // Parse response to read proof and metadata
-        let proof = response
-            .get_proof(platform_version)
-            .or(Err(Error::NoProofInResult))?;
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
 
-        let mtd = response
-            .get_metadata(platform_version)
-            .or(Err(Error::EmptyResponseMetadata))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        // Load some info from request
-        let request_v0: GetDataContractRequestV0 =
-            request.try_into_platform_versioned(platform_version)?;
-        let id = Identifier::from_bytes(&request_v0.id).map_err(|e| Error::ProtocolError {
-            error: e.to_string(),
-        })?;
+        let id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_data_contract_request::Version::V0(v0) => {
+                Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                })
+            }
+        }?;
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_contract) = Drive::verify_contract(
@@ -540,19 +528,15 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
         let response: Self::Response = response.into();
 
         // Parse response to read proof and metadata
-        let proof = response
-            .get_proof(platform_version)
-            .or(Err(Error::NoProofInResult))?;
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
 
-        let mtd = response
-            .get_metadata(platform_version)
-            .or(Err(Error::EmptyResponseMetadata))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        // Load some info from request
-        let request_v0: GetDataContractsRequestV0 =
-            request.try_into_platform_versioned(platform_version)?;
-        let ids = request_v0
-            .ids
+        let ids = match request.version.ok_or(Error::EmptyVersion)? {
+            get_data_contracts_request::Version::V0(v0) => v0.ids,
+        };
+
+        let ids = ids
             .iter()
             .map(|id| {
                 id.clone()
@@ -604,29 +588,27 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
         let response: Self::Response = response.into();
 
         // Parse response to read proof and metadata
-        let proof = response
-            .get_proof(platform_version)
-            .or(Err(Error::NoProofInResult))?;
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
 
-        let mtd = response
-            .get_metadata(platform_version)
-            .or(Err(Error::EmptyResponseMetadata))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        // Load some info from request
-        let request_v0: GetDataContractHistoryRequestV0 =
-            request.try_into_platform_versioned(platform_version)?;
-        let id = Identifier::from_bytes(&request_v0.id).map_err(|e| Error::ProtocolError {
-            error: e.to_string(),
-        })?;
-
-        let limit = u32_to_u16_opt(request_v0.limit.unwrap_or_default())?;
-        let offset = u32_to_u16_opt(request_v0.offset.unwrap_or_default())?;
+        let (id, limit, offset, start_at_ms) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_data_contract_history_request::Version::V0(v0) => {
+                let id = Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                })?;
+                let limit = u32_to_u16_opt(v0.limit.unwrap_or_default())?;
+                let offset = u32_to_u16_opt(v0.offset.unwrap_or_default())?;
+                let start_at_ms = v0.start_at_ms;
+                (id, limit, offset, start_at_ms)
+            }
+        };
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_history) = Drive::verify_contract_history(
             &proof.grovedb_proof,
             id.into_buffer(),
-            request_v0.start_at_ms,
+            start_at_ms,
             limit,
             offset,
             &PLATFORM_VERSION,
@@ -672,13 +654,9 @@ where
                 })?;
 
         // Parse response to read proof and metadata
-        let proof = response
-            .get_proof(platform_version)
-            .or(Err(Error::NoProofInResult))?;
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
 
-        let mtd = response
-            .get_metadata(platform_version)
-            .or(Err(Error::EmptyResponseMetadata))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let (root_hash, documents) = request
             .verify_proof(&proof.grovedb_proof, &PLATFORM_VERSION)

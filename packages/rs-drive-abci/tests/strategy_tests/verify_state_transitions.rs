@@ -1,9 +1,8 @@
-use dapi_grpc::platform::v0::{
-    get_proofs_request, GetProofsRequest, GetProofsResponse,
-};
+use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
 use dapi_grpc::platform::VersionedGrpcResponse;
 
 use dapi_grpc::platform::v0::get_proofs_request::{get_proofs_request_v0, GetProofsRequestV0};
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::Document;
 use dpp::identity::PartialIdentity;
@@ -21,7 +20,6 @@ use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use prost::Message;
 use tenderdash_abci::proto::abci::ExecTxResult;
-use dpp::block::block_info::BlockInfo;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -108,7 +106,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let response_proof =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response")
-                        .get_proof(platform_version)
+                        .proof_owned()
                         .expect("proof should be present");
 
                 // let fetched_contract = abci_app
@@ -165,7 +163,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     .expect("expected to decode proof response");
 
                 let response_proof = response
-                    .get_proof(platform_version)
+                    .proof_owned()
                     .expect("expected to get proof");
 
                 // we expect to get an identity that matches the state transition
@@ -238,7 +236,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     .expect("expected to decode proof response");
 
                 let response_proof = response
-                    .get_proof(platform_version)
+                    .proof_owned()
                     .expect("proof should be present");
 
                 for document_transition_action in documents_batch_transition.transitions().iter() {
@@ -384,7 +382,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     .expect("expected to decode proof response");
 
                 let response_proof = response
-                    .get_proof(platform_version)
+                    .proof_owned()
                     .expect("proof should be present");
 
                 // we expect to get an identity that matches the state transition
@@ -448,7 +446,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let response_proof =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response")
-                        .get_proof(platform_version)
+                        .proof_owned()
                         .expect("proof should be present");
 
                 // we expect to get an identity that matches the state transition
@@ -509,7 +507,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let response_proof =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response")
-                        .get_proof(platform_version)
+                        .proof_owned()
                         .expect("proof should be present");
 
                 // we expect to get an identity that matches the state transition
@@ -556,7 +554,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let response_proof =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response")
-                        .get_proof(platform_version)
+                        .proof_owned()
                         .expect("proof should be present");
 
                 // we expect to get an identity that matches the state transition
@@ -624,7 +622,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let response_proof =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response")
-                        .get_proof(platform_version)
+                        .proof_owned()
                         .expect("proof should be present");
 
                 // we expect to get an identity that matches the state transition
