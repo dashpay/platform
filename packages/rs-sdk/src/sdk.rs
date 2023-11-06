@@ -8,8 +8,9 @@ use std::{
 
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
-use crate::mock::{MockRequest, MockResponse};
+use crate::mock::MockResponse;
 use crate::{core_client::CoreClient, error::Error};
+use dapi_grpc::mock::Mockable;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 #[cfg(feature = "mocks")]
 use drive_proof_verifier::MockQuorumInfoProvider;
@@ -106,7 +107,7 @@ impl Sdk {
         response: O::Response,
     ) -> Result<Option<O>, drive_proof_verifier::Error>
     where
-        O::Request: MockRequest,
+        O::Request: Mockable,
     {
         match self.inner {
             SdkInstance::Dapi { .. } => {

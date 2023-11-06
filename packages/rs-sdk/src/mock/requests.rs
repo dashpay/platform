@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use dapi_grpc::mock::Mockable;
 use dpp::{
     document::serialization_traits::DocumentCborMethodsV0,
     document::Document,
@@ -14,27 +13,9 @@ use dpp::{
         PlatformSerializableWithPlatformVersion,
     },
 };
-
-use rs_dapi_client::mock::Key;
 use serde::{Deserialize, Serialize};
 
 use super::MockDashPlatformSdk;
-
-/// Trait implemented by objects that can be used as requests in mock expectations.
-pub trait MockRequest {
-    /// Format the object as a key that will be used to match the request with the expectation.
-    ///
-    /// ## Panics
-    ///
-    /// Can panic on errors.
-    fn mock_key(&self) -> Key;
-}
-
-impl<T: Mockable> MockRequest for T {
-    fn mock_key(&self) -> Key {
-        Key::new(self)
-    }
-}
 
 /// Trait implemented by objects that can be used in mock expectation responses.
 ///

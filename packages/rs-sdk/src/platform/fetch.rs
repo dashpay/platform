@@ -8,7 +8,7 @@
 //!   It requires the implementing type to also implement [Debug] and [FromProof]
 //!   traits. The associated [Fetch::Request]` type needs to implement [TransportRequest].
 
-use crate::mock::{MockRequest, MockResponse};
+use crate::mock::MockResponse;
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto};
 use dpp::{document::Document, prelude::Identity};
@@ -37,9 +37,7 @@ where
     /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
     /// This type must implement [`TransportRequest`] and [`MockRequest`].
-    type Request: TransportRequest
-        + MockRequest
-        + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>;
+    type Request: TransportRequest + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>;
 
     /// Fetch single object from the Platfom.
     ///
