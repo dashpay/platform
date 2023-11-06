@@ -63,14 +63,14 @@ where
     fn mock_deserialize(buf: &[u8]) -> Option<Self> {
         // we panic as we expect this to be called only with data serialized by mock_serialize()
 
-        // Split data into request and response using DELIMITER
+        // Split data into request and response
         let buf = buf.split(|&b| b == 0).collect::<Vec<_>>();
         if buf.len() != 2 {
             panic!("invalid mock data format, expected exactly two items separated by null byte");
         }
 
-        let request = buf.first().expect("missing response in mock data");
-        let response = buf.last().expect("missing request in mock data");
+        let request = buf.first().expect("missing requestin mock data");
+        let response = buf.last().expect("missing response in mock data");
 
         Some(Self {
             serialized_request: request.to_vec(),
