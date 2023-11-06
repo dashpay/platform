@@ -51,6 +51,8 @@ jobs:
 
       - name: Setup local network
         run: |
+          set -ex
+
           # create tenderdash blocks every 10s to speed up test suite
           yarn dashmate config set --config=local platform.drive.tenderdash.consensus.createEmptyBlocksInterval "10s"
 
