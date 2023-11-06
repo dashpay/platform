@@ -40,20 +40,41 @@ where
     T: Mockable,
     T::Response: Mockable,
 {
+    // We use null-delimited JSON as a format for dump data to make it readable.
     fn mock_serialize(&self) -> Option<Vec<u8>> {
-        let data: [&[u8]; 2] = [&self.serialized_request, &self.serialized_response];
+        // nulls are not allowed in serialized data as we use it as a delimiter
+        if self.serialized_request.contains(&0) {
+            panic!("null byte in serialized request");
+        }
+        if self.serialized_response.contains(&0) {
+            panic!("null byte in serialized response");
+        }
 
-        Some(serde_json::to_vec_pretty(&data).expect("unable to serialize json"))
+        let data = [
+            &self.serialized_request,
+            "\n\0\n".as_bytes(),
+            &self.serialized_response,
+        ]
+        .concat();
+
+        Some(data)
     }
 
     fn mock_deserialize(buf: &[u8]) -> Option<Self> {
         // we panic as we expect this to be called only with data serialized by mock_serialize()
-        let data: [&[u8]; 2] = serde_json::from_slice(buf)
-            .unwrap_or_else(|_| panic!("cannot mock deserialize DumpData<{}>", type_name::<T>()));
+
+        // Split data into request and response using DELIMITER
+        let buf = buf.split(|&b| b == 0).collect::<Vec<_>>();
+        if buf.len() != 2 {
+            panic!("invalid mock data format, expected exactly two items separated by null byte");
+        }
+
+        let request = buf.first().expect("missing response in mock data");
+        let response = buf.last().expect("missing request in mock data");
 
         Some(Self {
-            serialized_request: data[0].to_vec(),
-            serialized_response: data[1].to_vec(),
+            serialized_request: request.to_vec(),
+            serialized_response: response.to_vec(),
             phantom: std::marker::PhantomData,
         })
     }
@@ -112,8 +133,9 @@ impl<T: TransportRequest> DumpData<T> {
         T: Mockable,
         T::Response: Mockable,
     {
-        let f = std::fs::read(file)?;
-        Self::mock_deserialize(&f).ok_or(std::io::Error::new(
+        let data = std::fs::read(file)?;
+
+        Self::mock_deserialize(&data).ok_or(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!(
                 "unable to deserialize mock data of type {}",
