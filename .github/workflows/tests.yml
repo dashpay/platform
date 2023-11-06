@@ -137,6 +137,15 @@ jobs:
     secrets: inherit
     uses: ./.github/workflows/tests-codeql.yml
 
+  dashmate:
+    name: Dashmate E2E tests
+    secrets: inherit
+    needs:
+      - changes
+      - build-images
+    uses: ./.github/workflows/tests-dashmate.yml
+    if: contains(needs.changes.outputs.js-packages, 'dashmate')
+
   test-suite:
     name: Test Suite
     needs:

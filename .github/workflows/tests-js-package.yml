@@ -90,5 +90,17 @@ jobs:
         run: |
           cp packages/dapi/.env.example packages/dapi/.env
 
+      # TODO: Use test-command input
+      - name: Set test-command
+        id: test-command
+        uses: actions/github-script@v6
+        with:
+          script: |
+            if (${{ inputs.package }} === '@dashevo/dashmate') {
+              return 'test:unit';
+            }
+            return 'test';
+          result-encoding: string
+
       - name: Run tests
-        run: yarn workspace "${{ inputs.package }}" ${{ inputs.test-command }}
+        run: yarn workspace "${{ inputs.package }}" ${{ steps.test-command.outputs.result }}

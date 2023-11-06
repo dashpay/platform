@@ -1,0 +1,75 @@
+on:
+  workflow_call:
+
+jobs:
+  dashmate-e2e-tests:
+    name: Run Dashmate E2E tests
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    timeout-minutes: 120
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore timestamps
+        uses: chetan/git-restore-mtime-action@v2
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        if: contains(runner.name, 'ubuntu-platform')
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Node.JS
+        uses: ./.github/actions/nodejs
+
+      - name: Restore JS build artifacts
+        uses: everpcpc/actions-cache@v1
+        with:
+          bucket: multi-runner-linux-x64-platform-cache-ui535z23
+          root: actions-cache
+          path: build-js-artifacts-${{ github.sha }}.tar
+          key: ${{ runner.os }}/build-js-artifacts/${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}/build-js-artifacts/${{ github.sha }}
+
+      - name: Unpack JS build artifacts archive
+        run: tar -xf build-js-artifacts-${{ github.sha }}.tar
+
+      - name: Pull pre-built images
+        run: |
+          # set docker image names
+          GIT_SHA=$(git rev-parse --short HEAD)
+
+          # Drive
+          DRIVE_IMAGE_AND_VERSION = $(yarn dashmate config get --config=local platform.drive.abci.docker.image)
+          docker pull ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/drive:$GIT_SHA
+          docker tage ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/drive:$GIT_SHA DRIVE_IMAGE_AND_VERSION
+
+          # DAPI
+          DAPI_IMAGE_AND_VERSION = $(yarn dashmate config get --config=local platform.dapi.api.docker.image)
+          docker pull ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/dapi:$GIT_SHA
+          docker tage ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/dapi:$GIT_SHA DAPI_IMAGE_AND_VERSION
+
+          # Dashmate helper image is hardcoded so we replace it with the built one
+          DASHMATE_HELPER_IMAGE=${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/dashmate_helper:$GIT_SHA
+          VERSION=$(cat package.json | jq -r '.version')
+          docker pull $DASHMATE_HELPER_IMAGE
+          docker tag $DASHMATE_HELPER_IMAGE dashpay/dashmate-helper:${VERSION}
+        shell: bash
+
+      - name: Run tests
+        run: yarn workspace dashmate test:e2e
+        env:
+          DASHMATE_E2E_TESTS_SKIP_BUILD: true
+
+      - name: Show Docker logs
+        if: ${{ failure() }}
+        uses: jwalton/gh-docker-logs@v2
