@@ -15,6 +15,12 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        if: contains(runner.name, 'ubuntu-platform')
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
@@ -30,6 +36,12 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
+
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        if: contains(runner.name, 'ubuntu-platform')
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Setup Rust
         uses: ./.github/actions/rust
@@ -47,10 +59,14 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        if: contains(runner.name, 'ubuntu-platform')
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+
       - name: Setup Rust
         uses: ./.github/actions/rust
-        with:
-          target: wasm32-unknown-unknown
 
       - run: cargo check --package=${{ inputs.package }}
 
@@ -119,10 +135,14 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        if: contains(runner.name, 'ubuntu-platform')
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+
       - name: Setup Rust
         uses: ./.github/actions/rust
-        with:
-          target: wasm32-unknown-unknown
 
       - name: Run tests
         run: cargo test --package=${{ inputs.package }} --all-features
