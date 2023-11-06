@@ -1,5 +1,6 @@
 [package]
-name = "dash-platform-sdk"
+# name = "dash-platform-sdk"
+name = "rs-sdk"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,7 +11,7 @@ dpp = { path = "../rs-dpp", features = [
     "identity-value-conversion",
     "state-transition-signing",
 ] }
-dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
+dapi-grpc = { path = "../dapi-grpc", features = ["client", "mocks"] }
 rs-dapi-client = { path = "../rs-dapi-client" }
 drive = { path = "../rs-drive", default-features = false, features = [
     "verify",
@@ -18,6 +19,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 # drive-abci is only needed for core rpc; TODO remove once we have correct core rpc impl
 drive-abci = { path = "../rs-drive-abci", default-features = false }
+dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 
 bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
 thiserror = "1.0.47"
@@ -48,7 +50,7 @@ dpp = { path = "../rs-dpp", features = [
 
 
 [features]
-default = ["mocks"]
+default = ["mocks", "offline-testing"]
 mocks = [
     "dep:serde_json",
     "rs-dapi-client/mocks",

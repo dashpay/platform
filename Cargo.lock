@@ -353,7 +353,7 @@ dependencies = [
  "lazycell",
  "log",
  "peeking_take_while",
- "prettyplease 0.2.15",
+ "prettyplease",
  "proc-macro2",
  "quote",
  "regex",
@@ -975,11 +975,12 @@ version = "0.25.0"
 dependencies = [
  "dapi-grpc-macros",
  "platform-version",
- "prost 0.11.9",
+ "prost",
  "serde",
  "serde_bytes",
+ "serde_json",
  "tenderdash-proto",
- "tonic 0.9.2",
+ "tonic",
  "tonic-build",
 ]
 
@@ -1026,35 +1027,6 @@ dependencies = [
  "darling_core",
  "quote",
  "syn 2.0.38",
-]
-
-[[package]]
-name = "dash-platform-sdk"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.21.5",
- "bincode 2.0.0-rc.3",
- "ciborium",
- "dapi-grpc",
- "dashcore-rpc",
- "derive_more",
- "dotenvy",
- "dpp",
- "drive",
- "drive-abci",
- "drive-proof-verifier",
- "envy",
- "futures",
- "hex",
- "http",
- "rs-dapi-client",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1355,7 +1327,7 @@ dependencies = [
  "platform-serialization",
  "platform-serialization-derive",
  "platform-version",
- "prost 0.11.9",
+ "prost",
  "rand",
  "regex",
  "reopen",
@@ -3089,16 +3061,6 @@ dependencies = [
 
 [[package]]
 name = "prettyplease"
-version = "0.1.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c8646e95016a7a6c4adea95bafa8a16baab64b583356217f2c85db4a39d9a86"
-dependencies = [
- "proc-macro2",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "prettyplease"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae005bd773ab59b4725093fd7df83fd7892f7d8eafb48dbd7de6e024e4215f9d"
@@ -3161,44 +3123,12 @@ dependencies = [
 
 [[package]]
 name = "prost"
-version = "0.11.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b82eaa1d779e9a4bc1c3217db8ffbeabaae1dca241bf70183242128d48681cd"
-dependencies = [
- "bytes",
- "prost-derive 0.11.9",
-]
-
-[[package]]
-name = "prost"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4fdd22f3b9c31b53c060df4a0613a1c7f062d4115a2b984dd15b1858f7e340d"
 dependencies = [
  "bytes",
- "prost-derive 0.12.1",
-]
-
-[[package]]
-name = "prost-build"
-version = "0.11.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "119533552c9a7ffacc21e099c24a0ac8bb19c2a2a3f363de84cd9b844feab270"
-dependencies = [
- "bytes",
- "heck",
- "itertools 0.10.5",
- "lazy_static",
- "log",
- "multimap",
- "petgraph",
- "prettyplease 0.1.25",
- "prost 0.11.9",
- "prost-types 0.11.9",
- "regex",
- "syn 1.0.109",
- "tempfile",
- "which",
+ "prost-derive",
 ]
 
 [[package]]
@@ -3214,26 +3144,13 @@ dependencies = [
  "multimap",
  "once_cell",
  "petgraph",
- "prettyplease 0.2.15",
- "prost 0.12.1",
- "prost-types 0.12.1",
+ "prettyplease",
+ "prost",
+ "prost-types",
  "regex",
  "syn 2.0.38",
  "tempfile",
  "which",
-]
-
-[[package]]
-name = "prost-derive"
-version = "0.11.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5d2d8d10f3c6ded6da8b05b5fb3b8a5082514344d56c9f871412d29b4e075b4"
-dependencies = [
- "anyhow",
- "itertools 0.10.5",
- "proc-macro2",
- "quote",
- "syn 1.0.109",
 ]
 
 [[package]]
@@ -3251,20 +3168,11 @@ dependencies = [
 
 [[package]]
 name = "prost-types"
-version = "0.11.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "213622a1460818959ac1181aaeb2dc9c7f63df720db7d788b3e24eacd1983e13"
-dependencies = [
- "prost 0.11.9",
-]
-
-[[package]]
-name = "prost-types"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e081b29f63d83a4bc75cfc9f3fe424f9156cf92d8a4f0c9407cce9a1b67327cf"
 dependencies = [
- "prost 0.12.1",
+ "prost",
 ]
 
 [[package]]
@@ -3522,13 +3430,41 @@ dependencies = [
  "hex",
  "http",
  "rand",
- "serde",
  "serde_json",
  "sha2",
  "thiserror",
  "tokio",
- "tonic 0.10.2",
  "tracing",
+]
+
+[[package]]
+name = "rs-sdk"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.5",
+ "bincode 2.0.0-rc.3",
+ "ciborium",
+ "dapi-grpc",
+ "dapi-grpc-macros",
+ "dashcore-rpc",
+ "derive_more",
+ "dotenvy",
+ "dpp",
+ "drive",
+ "drive-abci",
+ "drive-proof-verifier",
+ "envy",
+ "futures",
+ "hex",
+ "http",
+ "rs-dapi-client",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -4079,7 +4015,7 @@ dependencies = [
  "platform-serialization",
  "platform-serialization-derive",
  "platform-version",
- "prost 0.11.9",
+ "prost",
  "rand",
  "regex",
  "reopen",
@@ -4219,7 +4155,7 @@ dependencies = [
  "futures",
  "hex",
  "lhash",
- "prost 0.12.1",
+ "prost",
  "semver",
  "tenderdash-proto",
  "thiserror",
@@ -4242,7 +4178,7 @@ dependencies = [
  "flex-error",
  "num-derive",
  "num-traits",
- "prost 0.12.1",
+ "prost",
  "serde",
  "subtle-encoding",
  "tenderdash-proto-compiler",
@@ -4255,7 +4191,7 @@ version = "0.1.0"
 source = "git+https://github.com/dashpay/rs-tenderdash-abci#f413119a5c7f4b519ba3eec5746cd013a73e45db"
 dependencies = [
  "fs_extra",
- "prost-build 0.12.1",
+ "prost-build",
  "regex",
  "tempfile",
  "ureq",
@@ -4496,38 +4432,6 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3082666a3a6433f7f511c7192923fa1fe07c69332d3c6a2e6bb040b569199d5a"
-dependencies = [
- "async-stream",
- "async-trait",
- "axum",
- "base64 0.21.5",
- "bytes",
- "futures-core",
- "futures-util",
- "h2",
- "http",
- "http-body",
- "hyper",
- "hyper-timeout",
- "percent-encoding",
- "pin-project",
- "prost 0.11.9",
- "rustls-native-certs",
- "rustls-pemfile",
- "tokio",
- "tokio-rustls",
- "tokio-stream",
- "tower",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
-name = "tonic"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d560933a0de61cf715926b9cac824d4c883c2c43142f787595e48280c40a1d0e"
@@ -4544,8 +4448,12 @@ dependencies = [
  "hyper-timeout",
  "percent-encoding",
  "pin-project",
- "prost 0.12.1",
+ "prost",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pemfile",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
  "tower",
  "tower-layer",
@@ -4555,15 +4463,15 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.9.2"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6fdaae4c2c638bb70fe42803a26fbd6fc6ac8c72f5c59f67ecc2a2dcabf4b07"
+checksum = "9d021fc044c18582b9a2408cd0dd05b1596e3ecdb5c4df822bb0183545683889"
 dependencies = [
- "prettyplease 0.1.25",
+ "prettyplease",
  "proc-macro2",
- "prost-build 0.11.9",
+ "prost-build",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.38",
 ]
 
 [[package]]

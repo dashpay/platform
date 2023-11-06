@@ -29,6 +29,9 @@ pub mod sdk;
 mod noop;
 
 #[cfg(feature = "mocks")]
+// TODO: move Mockable to some crate that can be shared between dapi-grpc, rs-dapi-client, and rs-sdk
+pub use dapi_grpc::mock::Mockable;
+#[cfg(feature = "mocks")]
 pub use requests::*;
 #[cfg(feature = "mocks")]
 pub use sdk::MockDashPlatformSdk;

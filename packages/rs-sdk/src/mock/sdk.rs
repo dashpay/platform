@@ -1,7 +1,10 @@
 //! Mocking mechanisms for Dash Platform SDK.
 //!
 //! See [MockDashPlatformSdk] for more details.
-use dapi_grpc::platform::v0::{self as proto};
+use dapi_grpc::{
+    mock::Mockable,
+    platform::v0::{self as proto},
+};
 use dpp::version::PlatformVersion;
 use drive_proof_verifier::{FromProof, MockQuorumInfoProvider};
 use rs_dapi_client::{
@@ -9,7 +12,6 @@ use rs_dapi_client::{
     transport::TransportRequest,
     DapiClient, DumpData,
 };
-use serde::Deserialize;
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -18,7 +20,7 @@ use crate::{
     Error,
 };
 
-use super::{MockRequest, MockResponse};
+use super::MockResponse;
 
 /// Mechanisms to mock Dash Platform SDK.
 ///
@@ -133,19 +135,18 @@ impl MockDashPlatformSdk {
         Ok(self)
     }
 
-    async fn load_expectation<T: TransportRequest + for<'de> Deserialize<'de> + MockRequest>(
-        &mut self,
-        path: &PathBuf,
-    ) -> Result<(), Error> {
-        let data = DumpData::<T>::load(path).map_err(|e| {
-            Error::Config(format!(
-                "cannot load mock expectations from {}: {}",
-                path.display(),
-                e
-            ))
-        })?;
+    async fn load_expectation<T: TransportRequest>(&mut self, path: &PathBuf) -> Result<(), Error> {
+        let data = DumpData::<T>::load(path)
+            .map_err(|e| {
+                Error::Config(format!(
+                    "cannot load mock expectations from {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?
+            .deserialize();
 
-        self.dapi.lock().await.expect(&data.request, &data.response);
+        self.dapi.lock().await.expect(&data.0, &data.1);
         Ok(())
     }
 
@@ -156,7 +157,7 @@ impl MockDashPlatformSdk {
     /// ## Generic Parameters
     ///
     /// - `O`: Type of the object that will be returned in response to the query. Must implement [Fetch] and [MockResponse].
-    /// - `Q`: Type of the query that will be sent to the platform. Must implement [Query] and [MockRequest].
+    /// - `Q`: Type of the query that will be sent to the platform. Must implement [Query] and [Mockable].
     ///
     /// ## Arguments
     ///
@@ -199,16 +200,12 @@ impl MockDashPlatformSdk {
     ///     assert_eq!(retrieved, expected);
     /// # });
     /// ```
-    pub async fn expect_fetch<
-        O: Fetch + MockResponse,
-        Q: Query<<O as Fetch>::Request> + MockRequest,
-    >(
+    pub async fn expect_fetch<O: Fetch + MockResponse, Q: Query<<O as Fetch>::Request>>(
         &mut self,
         query: Q,
         object: Option<O>,
     ) -> &mut Self
     where
-        <O as Fetch>::Request: MockRequest,
         <<O as Fetch>::Request as TransportRequest>::Response: Default,
     {
         let grpc_request = query.query(self.prove).expect("query must be correct");
@@ -225,7 +222,7 @@ impl MockDashPlatformSdk {
     ///
     /// - `O`: Type of the object that will be returned in response to the query.
     /// Must implement [FetchMany]. `Vec<O>` must implement [MockResponse].
-    /// - `Q`: Type of the query that will be sent to the platform. Must implement [Query] and [MockRequest].
+    /// - `Q`: Type of the query that will be sent to the platform. Must implement [Query] and [Mockable].
     ///
     /// ## Arguments
     ///
@@ -249,7 +246,7 @@ impl MockDashPlatformSdk {
     pub async fn expect_fetch_many<
         K: Ord,
         O: FetchMany<K>,
-        Q: Query<<O as FetchMany<K>>::Request> + MockRequest,
+        Q: Query<<O as FetchMany<K>>::Request>,
     >(
         &mut self,
         query: Q,
@@ -257,7 +254,6 @@ impl MockDashPlatformSdk {
     ) -> &mut Self
     where
         BTreeMap<K, Option<O>>: MockResponse,
-        <O as FetchMany<K>>::Request: MockRequest,
         <<O as FetchMany<K>>::Request as TransportRequest>::Response: Default,
         BTreeMap<K, Option<O>>: FromProof<
                 <O as FetchMany<K>>::Request,
@@ -272,14 +268,14 @@ impl MockDashPlatformSdk {
     }
 
     /// Save expectations for a request.
-    async fn expect<I: TransportRequest + MockRequest, O: MockResponse>(
+    async fn expect<I: TransportRequest, O: MockResponse>(
         &mut self,
         grpc_request: I,
         returned_object: Option<O>,
     ) where
         I::Response: Default,
     {
-        let key = grpc_request.mock_key();
+        let key = Key::new(&grpc_request);
 
         // This expectation will work for from_proof
         self.from_proof_expectations
@@ -298,11 +294,13 @@ impl MockDashPlatformSdk {
         response: O::Response,
     ) -> Result<Option<O>, drive_proof_verifier::Error>
     where
-        O::Request: MockRequest,
+        O::Request: Mockable,
         Option<O>: MockResponse,
         // O: FromProof<<O as FromProof<I>>::Request>,
     {
-        let data = match self.from_proof_expectations.get(&request.mock_key()) {
+        let key = Key::new(&request);
+
+        let data = match self.from_proof_expectations.get(&key) {
             Some(d) => Option::<O>::mock_deserialize(self, d),
             None => {
                 let provider = self.quorum_provider.as_ref()
