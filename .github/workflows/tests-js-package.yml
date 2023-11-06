@@ -96,7 +96,7 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
-            if (${{ inputs.package }} === '@dashevo/dashmate') {
+            if ('${{ inputs.package }}' === '@dashevo/dashmate') {
               return 'test:unit';
             }
             return 'test';
