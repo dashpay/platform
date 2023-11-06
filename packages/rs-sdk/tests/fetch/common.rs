@@ -19,7 +19,7 @@ pub struct TestConfig {
     pub existing_document_id: Identifier,
 }
 
-pub type Config = rs_sdk::mock::config::Config<TestConfig>;
+pub type Config = super::config::Config<TestConfig>;
 
 /// Create a mock document type for testing of mock API
 pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {

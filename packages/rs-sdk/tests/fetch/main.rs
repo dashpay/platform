@@ -2,6 +2,7 @@
 compile_error!("tests require `mocks` feature to be enabled");
 
 mod common;
+mod config;
 mod data_contract;
 mod document;
 mod identity;

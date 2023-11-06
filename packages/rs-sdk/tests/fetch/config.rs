@@ -2,6 +2,7 @@
 //!
 //! This module contains [Config] struct that can be used to configure rs-sdk.
 //! It's mainly used for testing.
+
 use rs_dapi_client::AddressList;
 use serde::Deserialize;
 use std::{path::PathBuf, str::FromStr};
@@ -46,7 +47,7 @@ impl<D: for<'de1> Deserialize<'de1>> Config<D> {
     /// prefixed with [RS_SDK_](Config::CONFIG_PREFIX).
     pub fn new() -> Self {
         // load config from .env file, ignore errors
-        let path = env!("CARGO_MANIFEST_DIR").to_owned() + "/.env";
+        let path = env!("CARGO_MANIFEST_DIR").to_owned() + "/tests/.env";
 
         dotenvy::from_path(path).expect("failed to load config file");
 
@@ -72,10 +73,10 @@ impl<D: for<'de1> Deserialize<'de1>> Config<D> {
     /// new test vectors during execution
     /// * `offline-testing` is set - use mock implementation and
     /// load existing test vectors from disk
-    pub async fn setup_api(&self) -> crate::Sdk {
+    pub async fn setup_api(&self) -> rs_sdk::Sdk {
         #[cfg(not(feature = "offline-testing"))]
         // Dump all traffic to disk
-        let sdk = crate::SdkBuilder::new(self.address_list())
+        let sdk = rs_sdk::SdkBuilder::new(self.address_list())
             .with_core(
                 &self.platform_host,
                 self.core_port,

@@ -20,7 +20,7 @@ Online testing requires connectivity to the Dash Platform and Dash Core. This mo
 
 Follow these steps to conduct online testing:
 
-1. Configure the environment variables in `packages/rs-sdk/.env`. Refer to the "Test Configuration" section below.
+1. Configure the environment variables in `packages/rs-sdk/tests/.env`. Refer to the "Test Configuration" section below.
 2. Optionally, you can remove existing test vectors.
 3. Run the test without default features, but with `mocks` feature enabled.
 
@@ -44,7 +44,7 @@ cargo test -p rs-sdk
 
 ## Test Configuration
 
-For the `offline-testing` feature, you need to set the configuration in the environment variables or in `packages/rs-sdk/.env` file. You can refer to `packages/rs-sdk/.env.example` for the format.
+For the `online-testing` feature, you need to set the configuration in the environment variables or in `packages/rs-sdk/tests/.env` file. You can refer to `packages/rs-sdk/tests/.env.example` for the format.
 
 The identifiers are generated with the platform test suite. To display them, apply the following diff:
 
@@ -73,4 +73,4 @@ cd packages/platform-test-suite/
 yarn mocha -b test/functional/platform/Document.spec.js
 ```
 
-Find the values in the output and copy them to `packages/rs-sdk/.env`.
+Find the values in the output and copy them to `packages/rs-sdk/tests/.env`.
