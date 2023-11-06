@@ -20,6 +20,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        if: contains(runner.name, 'ubuntu-platform') && steps.cache.outputs.cache-hit != 'true'
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+
       - name: Setup Rust
         uses: ./.github/actions/rust
 
