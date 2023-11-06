@@ -159,7 +159,7 @@ impl IdentityFactoryWasm {
 
         self.0
             .create_identity_create_transition(
-                Identity::from(identity.to_owned()),
+             &   Identity::from(identity.to_owned()),
                 asset_lock_proof,
             )
             .map(Into::into)

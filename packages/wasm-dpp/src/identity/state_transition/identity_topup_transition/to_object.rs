@@ -16,7 +16,7 @@ pub struct ToObjectOptions {
 pub struct ToObject {
     pub transition_type: u8,
     pub identity_id: Identifier,
-    pub asset_lock_proof: &AssetLockProof,
+    pub asset_lock_proof: AssetLockProof,
     pub signature: Option<Vec<u8>>,
 }
 

@@ -137,15 +137,17 @@ impl MockDashPlatformSdk {
         &mut self,
         path: &PathBuf,
     ) -> Result<(), Error> {
-        let data = DumpData::<T>::load(path).map_err(|e| {
-            Error::Config(format!(
-                "cannot load mock expectations from {}: {}",
-                path.display(),
-                e
-            ))
-        })?;
+        let data = DumpData::<T>::load(path)
+            .map_err(|e| {
+                Error::Config(format!(
+                    "cannot load mock expectations from {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?
+            .deserialize();
 
-        self.dapi.lock().await.expect(&data.request, &data.response);
+        self.dapi.lock().await.expect(&data.0, &data.1);
         Ok(())
     }
 
@@ -199,10 +201,7 @@ impl MockDashPlatformSdk {
     ///     assert_eq!(retrieved, expected);
     /// # });
     /// ```
-    pub async fn expect_fetch<
-        O: Fetch + MockResponse,
-        Q: Query<<O as Fetch>::Request> + MockRequest,
-    >(
+    pub async fn expect_fetch<O: Fetch + MockResponse, Q: Query<<O as Fetch>::Request>>(
         &mut self,
         query: Q,
         object: Option<O>,

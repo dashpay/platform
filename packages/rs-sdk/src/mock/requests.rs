@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use dapi_grpc::mock::Mockable;
 use dpp::{
     document::serialization_traits::DocumentCborMethodsV0,
     document::Document,
@@ -29,7 +30,7 @@ pub trait MockRequest {
     fn mock_key(&self) -> Key;
 }
 
-impl<T: serde::Serialize> MockRequest for T {
+impl<T: Mockable> MockRequest for T {
     fn mock_key(&self) -> Key {
         Key::new(self)
     }

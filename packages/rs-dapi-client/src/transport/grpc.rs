@@ -3,14 +3,14 @@
 use std::time::Duration;
 
 use dapi_grpc::core::v0::core_client::CoreClient;
-use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
 use dapi_grpc::core::v0::{self as core_proto};
+use dapi_grpc::platform::v0::{self as platform_proto, platform_client::PlatformClient};
+use dapi_grpc::tonic::Streaming;
+use dapi_grpc::tonic::{transport::Channel, IntoRequest};
 use futures::{future::BoxFuture, FutureExt, TryFutureExt};
 use http::Uri;
-use tonic::Streaming;
-use tonic::{transport::Channel, IntoRequest};
 
-use super::{CanRetry, TransportClient, TransportRequest, TransportResponse};
+use super::{CanRetry, TransportClient, TransportRequest};
 use crate::{request_settings::AppliedRequestSettings, RequestSettings};
 
 /// Platform Client using gRPC transport.
@@ -19,7 +19,7 @@ pub type PlatformGrpcClient = PlatformClient<Channel>;
 pub type CoreGrpcClient = CoreClient<Channel>;
 
 impl TransportClient for PlatformGrpcClient {
-    type Error = tonic::Status;
+    type Error = dapi_grpc::tonic::Status;
 
     fn with_uri(uri: Uri) -> Self {
         Self::new(Channel::builder(uri).connect_lazy())
@@ -27,18 +27,18 @@ impl TransportClient for PlatformGrpcClient {
 }
 
 impl TransportClient for CoreGrpcClient {
-    type Error = tonic::Status;
+    type Error = dapi_grpc::tonic::Status;
 
     fn with_uri(uri: Uri) -> Self {
         Self::new(Channel::builder(uri).connect_lazy())
     }
 }
 
-impl CanRetry for tonic::Status {
+impl CanRetry for dapi_grpc::tonic::Status {
     fn can_retry(&self) -> bool {
         let code = self.code();
 
-        use tonic::Code::*;
+        use dapi_grpc::tonic::Code::*;
         matches!(
             code,
             Ok | DataLoss
@@ -78,7 +78,6 @@ macro_rules! impl_transport_request_grpc {
                     .boxed()
             }
         }
-        impl TransportResponse for $response {}
     };
 }
 

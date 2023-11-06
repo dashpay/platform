@@ -3,9 +3,7 @@ use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 
 impl StateTransition {
-    pub fn deserialize_many(
-        raw_state_transitions: &Vec<Vec<u8>>,
-    ) -> Result<Vec<Self>, ProtocolError> {
+    pub fn deserialize_many(raw_state_transitions: &[Vec<u8>]) -> Result<Vec<Self>, ProtocolError> {
         raw_state_transitions
             .iter()
             .map(|raw_state_transition| Self::deserialize_from_bytes(raw_state_transition))
@@ -63,7 +61,7 @@ mod tests {
 
         let identity_create_transition = IdentityCreateTransition::V0(
             IdentityCreateTransitionV0::try_from_identity(
-                identity,
+                &identity,
                 AssetLockProof::Instant(asset_lock_proof),
                 platform_version,
             )

@@ -129,7 +129,7 @@ macro_rules! delegate_from_proof_variant {
 macro_rules! delegate_enum {
     ($request:ident, $response:ident, $object:ty, $(($variant:ident, $req: ty, $resp: ty)),+) => {
         /// Wrapper around multiple requests for one object type.
-        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, derive_more::From)]
+        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, derive_more::From, dapi_grpc_macros::Mockable)]
         #[allow(missing_docs)]
         pub enum $request {
             $(
@@ -138,7 +138,7 @@ macro_rules! delegate_enum {
         }
 
         /// Wrapper around multiple responses for one object type.
-        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default, derive_more::From)]
+        #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default, derive_more::From, dapi_grpc_macros::Mockable)]
         #[allow(missing_docs)]
         pub enum $response {
             #[default]
@@ -152,9 +152,6 @@ macro_rules! delegate_enum {
                 $variant($resp),
             )+
         }
-
-        impl $crate::platform::dapi::transport::TransportResponse for $response {}
-
 
         $crate::delegate_transport_request_variant! {
             $request,

@@ -1,21 +1,79 @@
 //! Dumping of requests and responses to disk
 
-use crate::{mock::Key, transport::TransportRequest, DapiClient};
-use std::path::PathBuf;
+use dapi_grpc::mock::Mockable;
 
-#[derive(serde::Serialize, serde::Deserialize)]
+use crate::{mock::Key, transport::TransportRequest, DapiClient};
+use std::{any::type_name, path::PathBuf};
+
 /// Data format of dumps created with [DapiClient::dump_dir].
+#[derive(Clone)]
 pub struct DumpData<T: TransportRequest> {
     /// Request that was sent to DAPI.
-    pub request: T,
+    pub serialized_request: Vec<u8>,
     /// Response that was received from DAPI.
-    pub response: T::Response,
+    pub serialized_response: Vec<u8>,
+
+    phantom: std::marker::PhantomData<T>,
+}
+impl<T: TransportRequest> DumpData<T> {
+    /// Return deserialized request
+    pub fn deserialize(&self) -> (T, T::Response) {
+        let req = T::mock_deserialize(&self.serialized_request).unwrap_or_else(|| {
+            panic!(
+                "unable to deserialize mock data of type {}",
+                type_name::<T>()
+            )
+        });
+        let resp = T::Response::mock_deserialize(&self.serialized_response).unwrap_or_else(|| {
+            panic!(
+                "unable to deserialize mock data of type {}",
+                type_name::<T>()
+            )
+        });
+
+        (req, resp)
+    }
+}
+
+impl<T: TransportRequest> dapi_grpc::mock::Mockable for DumpData<T>
+where
+    T: Mockable,
+    T::Response: Mockable,
+{
+    fn mock_serialize(&self) -> Option<Vec<u8>> {
+        let data: [&[u8]; 2] = [&self.serialized_request, &self.serialized_response];
+
+        Some(serde_json::to_vec_pretty(&data).expect("unable to serialize json"))
+    }
+
+    fn mock_deserialize(buf: &[u8]) -> Option<Self> {
+        // we panic as we expect this to be called only with data serialized by mock_serialize()
+        let data: [&[u8]; 2] = serde_json::from_slice(buf)
+            .unwrap_or_else(|_| panic!("cannot mock deserialize DumpData<{}>", type_name::<T>()));
+
+        Some(Self {
+            serialized_request: data[0].to_vec(),
+            serialized_response: data[1].to_vec(),
+            phantom: std::marker::PhantomData,
+        })
+    }
 }
 
 impl<T: TransportRequest> DumpData<T> {
     /// Create new dump data.
-    pub fn new(request: T, response: T::Response) -> Self {
-        Self { request, response }
+    pub fn new(request: &T, response: &T::Response) -> Self {
+        let request = request
+            .mock_serialize()
+            .expect("unable to serialize request");
+        let response = response
+            .mock_serialize()
+            .expect("unable to serialize response");
+
+        Self {
+            serialized_request: request,
+            serialized_response: response,
+            phantom: std::marker::PhantomData,
+        }
     }
 
     // Return request type (T) name without module prefix
@@ -33,7 +91,7 @@ impl<T: TransportRequest> DumpData<T> {
     /// * unique identifier (hash) of the request
     pub fn filename(&self) -> Result<String, std::io::Error> {
         let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
-        let key = Key::try_new(&self.request)?;
+        let key = Key::try_new(&self.serialized_request)?;
         // get request type without underscores (which we use as a file name separator)
         let request_type = Self::request_type().replace('_', "-");
 
@@ -51,33 +109,29 @@ impl<T: TransportRequest> DumpData<T> {
     /// Load dump data from file.
     pub fn load<P: AsRef<std::path::Path>>(file: P) -> Result<Self, std::io::Error>
     where
-        T: for<'de> serde::Deserialize<'de>,
-        T::Response: for<'de> serde::Deserialize<'de>,
+        T: Mockable,
+        T::Response: Mockable,
     {
-        let f = std::fs::File::open(file)?;
-
-        let data: Self = serde_json::from_reader(f).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("unable to parse json: {}", e),
-            )
-        })?;
-
-        Ok(data)
+        let f = std::fs::read(file)?;
+        Self::mock_deserialize(&f).ok_or(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "unable to deserialize mock data of type {}",
+                type_name::<T>()
+            ),
+        ))
     }
 
     /// Save dump data to file.
     pub fn save(&self, file: &std::path::Path) -> Result<(), std::io::Error>
     where
-        T: serde::Serialize,
-        T::Response: serde::Serialize,
+        T: Mockable,
+        T::Response: Mockable,
     {
-        let encoded = serde_json::to_vec_pretty(self).map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("unable to serialize json: {}", e),
-            )
-        })?;
+        let encoded = self.mock_serialize().ok_or(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("unable to serialize mock data of type {}", type_name::<T>()),
+        ))?;
 
         std::fs::write(file, encoded)
     }
@@ -107,12 +161,12 @@ impl DapiClient {
     ///
     /// Any errors are logged on `warn` level and ignored.
     pub(crate) fn dump_request_response<R: TransportRequest>(
-        request: R,
-        response: R::Response,
+        request: &R,
+        response: &R::Response,
         dump_dir: Option<PathBuf>,
     ) where
-        R: serde::Serialize,
-        R::Response: serde::Serialize,
+        R: Mockable,
+        R::Response: Mockable,
     {
         let path = match dump_dir {
             Some(p) => p,

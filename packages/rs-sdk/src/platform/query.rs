@@ -3,9 +3,13 @@
 //! [Query] trait is used to specify individual objects as well as search criteria for fetching multiple objects from the platform.
 use std::fmt::Debug;
 
-use dapi_grpc::platform::v0::{
-    self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
-    AllKeys, GetIdentityKeysRequest, KeyRequestType,
+use dapi_grpc::{
+    mock::Mockable,
+    platform::v0::{
+        self as proto, get_identity_keys_request,
+        get_identity_keys_request::GetIdentityKeysRequestV0, AllKeys, GetIdentityKeysRequest,
+        KeyRequestType,
+    },
 };
 use dpp::prelude::Identifier;
 use drive::query::DriveQuery;
@@ -45,7 +49,7 @@ use crate::{error::Error, platform::document_query::DocumentQuery};
 /// As [Identifier](crate::platform::Identifier) implements [Query], the `query` variable in the code
 /// above can be used as a parameter for [Fetch::fetch()](crate::platform::Fetch::fetch())
 /// and [FetchMany::fetch_many()](crate::platform::FetchMany::fetch_many()) methods.
-pub trait Query<T: TransportRequest>: Send + Debug + Clone {
+pub trait Query<T: TransportRequest + Mockable>: Send + Debug + Clone {
     /// Converts the current instance into an instance of the `TransportRequest` type.
     ///
     /// This method takes ownership of the instance upon which it's called (hence `self`), and attempts to perform the conversion.
