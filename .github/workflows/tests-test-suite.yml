@@ -51,7 +51,7 @@ jobs:
 
       - name: Setup local network
         run: |
-#          echo <<'EOF'
+          # echo <<'EOF'
           set -ex
 
           # create tenderdash blocks every 10s to speed up test suite
@@ -80,9 +80,9 @@ jobs:
           ./scripts/setup_local_network.sh
           ./scripts/configure_test_suite.sh
           ./scripts/configure_dotenv.sh
-#          EOF > scripts/setup_ci.sh
+          # EOF > scripts/setup_ci.sh
 
-#          source scripts/setup_ci.sh
+          # ./scripts/setup_ci.sh
         shell: bash
 
       - name: Start local network
