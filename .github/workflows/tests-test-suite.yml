@@ -82,6 +82,10 @@ jobs:
       - name: Start local network
         run: yarn start
 
+      - run: docker volume ls
+
+      - run: docker inspect (docker volume ls -q | head -n 1)
+
       # TODO: We running these tests twice
       - name: Run Wallet functional tests
         run: yarn workspace @dashevo/wallet-lib test:functional

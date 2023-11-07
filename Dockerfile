@@ -108,6 +108,9 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
 #
 # Configure sccache
 #
+ARG RUSTC_WRAPPER
+ENV RUSTC_WRAPPER=${RUSTC_WRAPPER}
+
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
 ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
