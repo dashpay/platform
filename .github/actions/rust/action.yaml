@@ -2,6 +2,10 @@
 name: "Rust Dependencies"
 description: "Install dependencies"
 inputs:
+  toolchain:
+    description: Rust toolchain to use, stable / nightly / beta, or exact version
+    # The same as in /README.md
+    default: "stable"
   target:
     description: Target Rust platform
     required: false
@@ -21,6 +25,7 @@ runs:
     - uses: dtolnay/rust-toolchain@master
       name: Install Rust toolchain
       with:
+        toolchain: ${{ inputs.toolchain }}
         target: ${{ inputs.target }}
         components: ${{ inputs.components }}
 
