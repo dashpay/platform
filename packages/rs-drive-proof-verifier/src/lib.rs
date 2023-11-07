@@ -10,6 +10,6 @@ pub mod types;
 mod verify;
 pub use error::Error;
 pub use proof::FromProof;
+pub use provider::ContextProvider;
 #[cfg(feature = "mocks")]
-pub use provider::MockQuorumInfoProvider;
-pub use provider::QuorumInfoProvider;
+pub use provider::MockContextProvider;

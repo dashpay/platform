@@ -1,3 +1,5 @@
+//! Verifies the execution of a state transition using a provided proof.
+
 use crate::drive::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;

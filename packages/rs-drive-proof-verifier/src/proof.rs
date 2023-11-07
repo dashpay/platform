@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::{types::*, Error, QuorumInfoProvider};
+use crate::{types::*, ContextProvider, Error};
 use dapi_grpc::platform::v0::get_data_contract_request::GetDataContractRequestV0;
 use dapi_grpc::platform::v0::get_data_contracts_request::GetDataContractsRequestV0;
 use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0;
@@ -61,7 +61,7 @@ pub trait FromProof<Req> {
     ///
     /// * `request`: The request sent to the server.
     /// * `response`: The response received from the server.
-    /// * `provider`: A callback implementing [QuorumInfoProvider] that provides quorum details required to verify the proof.
+    /// * `provider`: A callback implementing [ContextProvider] that provides quorum details required to verify the proof.
     ///
     /// # Returns
     ///
@@ -73,7 +73,7 @@ pub trait FromProof<Req> {
         request: I,
         response: O,
         platform_version: &PlatformVersion,
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: Sized + 'a;
@@ -89,7 +89,7 @@ pub trait FromProof<Req> {
     ///
     /// * `request`: The request sent to the server.
     /// * `response`: The response received from the server.
-    /// * `provider`: A callback implementing [QuorumInfoProvider] that provides quorum details required to verify the proof.
+    /// * `provider`: A callback implementing [ContextProvider] that provides quorum details required to verify the proof.
     ///
     /// # Returns
     ///
@@ -100,7 +100,7 @@ pub trait FromProof<Req> {
         request: I,
         response: O,
         platform_version: &PlatformVersion,
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Self, Error>
     where
         Self: Sized + 'a,
@@ -141,7 +141,7 @@ pub trait FromProofStateTransitionResultWithKnownContracts<Req> {
     /// * `response`: The response received from the server.
     /// * `known_contract_provider`: A function that provides known contracts by their `Identifier`.
     /// * `platform_version`: The version of the platform used to determine the verification process.
-    /// * `provider`: A callback implementing [QuorumInfoProvider] that provides quorum details required to verify the proof.
+    /// * `provider`: A callback implementing [ContextProvider] that provides quorum details required to verify the proof.
     ///
     /// # Returns
     ///
@@ -154,7 +154,7 @@ pub trait FromProofStateTransitionResultWithKnownContracts<Req> {
         state_transition: &StateTransition,
         known_contracts_provider_fn: VerifyKnownContractProviderFn,
         platform_version: &PlatformVersion,
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Self, Error>
     where
         Self: Sized + 'a;
@@ -168,7 +168,7 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
         request: I,
         response: O,
         platform_version: &PlatformVersion,
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Identity: Sized + 'a,
@@ -216,7 +216,7 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Identity: 'a,
@@ -265,7 +265,7 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         IdentityPublicKeys: 'a,
@@ -431,7 +431,7 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         IdentityBalance: 'a,
@@ -477,7 +477,7 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         IdentityBalanceAndRevision: 'a,
@@ -524,7 +524,7 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         DataContract: 'a,
@@ -573,7 +573,7 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         DataContracts: 'a,
@@ -633,7 +633,7 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: Sized + 'a,
@@ -690,7 +690,7 @@ impl FromProofStateTransitionResultWithKnownContracts<platform::WaitForStateTran
         known_contracts_provider_fn: VerifyKnownContractProviderFn,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Self, Error>
     where
         Self: Sized + 'a,
@@ -708,9 +708,12 @@ impl FromProofStateTransitionResultWithKnownContracts<platform::WaitForStateTran
             &proof.grovedb_proof,
             known_contracts_provider_fn,
             platform_version,
-        )?;
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
 
-        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok(result)
     }
@@ -730,7 +733,7 @@ where
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn QuorumInfoProvider,
+        provider: &'a dyn ContextProvider,
     ) -> Result<Option<Self>, Error>
     where
         Self: 'a,

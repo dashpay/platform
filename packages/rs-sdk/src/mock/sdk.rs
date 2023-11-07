@@ -6,7 +6,7 @@ use dapi_grpc::{
     platform::v0::{self as proto},
 };
 use dpp::version::PlatformVersion;
-use drive_proof_verifier::{FromProof, MockQuorumInfoProvider};
+use drive_proof_verifier::{FromProof, MockContextProvider};
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
     transport::TransportRequest,
@@ -37,7 +37,7 @@ pub struct MockDashPlatformSdk {
     platform_version: &'static PlatformVersion,
     dapi: Arc<Mutex<MockDapiClient>>,
     prove: bool,
-    quorum_provider: Option<MockQuorumInfoProvider>,
+    quorum_provider: Option<MockContextProvider>,
 }
 
 impl MockDashPlatformSdk {
@@ -63,7 +63,7 @@ impl MockDashPlatformSdk {
     /// This directory will be used to load quorum information from files.
     /// You can use [SdkBuilder::with_dump_dir()](crate::SdkBuilder::with_dump_dir()) to generate these files.
     pub fn quorum_info_dir<P: AsRef<std::path::Path>>(&mut self, dir: P) -> &mut Self {
-        let mut provider = MockQuorumInfoProvider::new();
+        let mut provider = MockContextProvider::new();
         provider.quorum_keys_dir(Some(dir.as_ref().to_path_buf()));
         self.quorum_provider = Some(provider);
 

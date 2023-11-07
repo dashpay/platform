@@ -147,7 +147,7 @@ impl FromProof<DocumentQuery> for Document {
         request: I,
         response: O,
         version: &dpp::version::PlatformVersion,
-        provider: &'a dyn drive_proof_verifier::QuorumInfoProvider,
+        provider: &'a dyn drive_proof_verifier::ContextProvider,
     ) -> Result<Option<Self>, drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
@@ -178,7 +178,7 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
         request: I,
         response: O,
         version: &dpp::version::PlatformVersion,
-        provider: &'a dyn drive_proof_verifier::QuorumInfoProvider,
+        provider: &'a dyn drive_proof_verifier::ContextProvider,
     ) -> Result<Option<Self>, drive_proof_verifier::Error>
     where
         Self: Sized + 'a,

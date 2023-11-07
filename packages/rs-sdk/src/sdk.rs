@@ -13,8 +13,8 @@ use crate::{core_client::CoreClient, error::Error};
 use dapi_grpc::mock::Mockable;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 #[cfg(feature = "mocks")]
-use drive_proof_verifier::MockQuorumInfoProvider;
-use drive_proof_verifier::{FromProof, QuorumInfoProvider};
+use drive_proof_verifier::MockContextProvider;
+use drive_proof_verifier::{ContextProvider, FromProof};
 #[cfg(feature = "mocks")]
 use hex::ToHex;
 pub use http::Uri;
@@ -77,7 +77,7 @@ enum SdkInstance {
         dapi: Arc<Mutex<MockDapiClient>>,
         /// Mock SDK implementation processing mock expectations and responses.
         mock: MockDashPlatformSdk,
-        quorum_provider: MockQuorumInfoProvider,
+        quorum_provider: MockContextProvider,
     },
 }
 
@@ -191,14 +191,14 @@ impl Sdk {
     }
 }
 
-impl QuorumInfoProvider for Sdk {
+impl ContextProvider for Sdk {
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], drive_proof_verifier::Error> {
-        let provider: &dyn QuorumInfoProvider = match self.inner {
+        let provider: &dyn ContextProvider = match self.inner {
             SdkInstance::Dapi { ref core, .. } => core,
             #[cfg(feature = "mocks")]
             SdkInstance::Mock {
@@ -418,7 +418,7 @@ impl SdkBuilder {
                     inner:SdkInstance::Mock {
                         mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs),
                         dapi,
-                        quorum_provider: MockQuorumInfoProvider::new(),
+                        quorum_provider: MockContextProvider::new(),
                     },
                     dump_dir: self.dump_dir,
                     proofs:self.proofs,

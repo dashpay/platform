@@ -1,13 +1,11 @@
 use hex::ToHex;
 
-/// `QuorumInfoProvider` trait provides an interface to fetch quorum related information, required to verify the proof.
+/// `ContextProvider` trait provides an interface to fetch information about context of proof verification, like
+/// quorum information, data contracts present in the platform, etc.
 ///
-/// Developers should implement this trait to provide required quorum details to [FromProof](crate::FromProof)
+/// Developers should implement this trait to provide required information to [FromProof](crate::FromProof)
 /// implementations.
-///
-/// It defines a single method [`get_quorum_public_key()`](QuorumInfoProvider::get_quorum_public_key())
-/// which retrieves the public key of a given quorum.
-pub trait QuorumInfoProvider: Send + Sync {
+pub trait ContextProvider: Send + Sync {
     /// Fetches the public key for a specified quorum.
     ///
     /// # Arguments
@@ -28,21 +26,21 @@ pub trait QuorumInfoProvider: Send + Sync {
     ) -> Result<[u8; 48], crate::Error>; // public key is 48 bytes
 }
 
-/// Mock QuorumInfoProvider that can read quorum keys from files.
+/// Mock ContextProvider that can read quorum keys from files.
 ///
 /// Use `rs_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.
 #[cfg(feature = "mocks")]
-pub struct MockQuorumInfoProvider {
+pub struct MockContextProvider {
     quorum_keys_dir: Option<std::path::PathBuf>,
 }
 
 #[cfg(feature = "mocks")]
-impl MockQuorumInfoProvider {
-    /// Create a new instance of [MockQuorumInfoProvider].
+impl MockContextProvider {
+    /// Create a new instance of [MockContextProvider].
     ///
     /// This instance can be used to read quorum keys from files.
     /// You need to configure quorum keys dir using
-    /// [MockQuorumInfoProvider::quorum_keys_dir()](MockQuorumInfoProvider::quorum_keys_dir())
+    /// [MockContextProvider::quorum_keys_dir()](MockContextProvider::quorum_keys_dir())
     /// before using this instance.
     ///
     /// In future, we may add more methods to this struct to allow setting expectations.
@@ -60,15 +58,15 @@ impl MockQuorumInfoProvider {
     }
 }
 
-impl Default for MockQuorumInfoProvider {
+impl Default for MockContextProvider {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[cfg(feature = "mocks")]
-impl QuorumInfoProvider for MockQuorumInfoProvider {
-    /// Mock implementation of [QuorumInfoProvider] that returns keys from files saved on disk.
+impl ContextProvider for MockContextProvider {
+    /// Mock implementation of [ContextProvider] that returns keys from files saved on disk.
     ///
     /// Use `rs_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.   
     fn get_quorum_public_key(

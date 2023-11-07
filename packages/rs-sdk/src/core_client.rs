@@ -8,14 +8,14 @@ use dashcore_rpc::{
     dashcore_rpc_json::QuorumType,
 };
 use drive_abci::rpc::core::{CoreRPCLike, DefaultCoreRPC};
-use drive_proof_verifier::QuorumInfoProvider;
+use drive_proof_verifier::ContextProvider;
 use std::sync::Mutex;
 
 use crate::error::Error;
 
 /// Core RPC client that can be used to retrieve quorum keys from core.
 ///
-/// Implements [`QuorumInfoProvider`] trait.
+/// Implements [`ContextProvider`] trait.
 ///
 /// TODO: This is a temporary implementation, effective until we integrate SPV.
 pub struct CoreClient {
@@ -47,7 +47,7 @@ impl CoreClient {
     }
 }
 
-impl QuorumInfoProvider for CoreClient {
+impl ContextProvider for CoreClient {
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
