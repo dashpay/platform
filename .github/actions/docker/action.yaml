@@ -22,8 +22,8 @@ inputs:
     description: Docker Hub token to use
   platforms:
     description: "Docker image platform to build: amd64,arm64"
-#  cache_mounts:
-#    description: Load cache mounts cache
+  cache_mounts:
+    description: Load cache mounts cache
   cargo_profile:
     description: Cargo build profile, i.e release or dev
     default: dev
@@ -97,12 +97,12 @@ runs:
 #    - name: Run retimer to adjust source files mtime for cargo build cache
 #      uses: dcginfra/retimer@master
 #
-#    - name: Load Docker mount cache
-#      uses: dcginfra/buildkit-cache-dance/inject@s5cmd
-#      if: ${{ inputs.cache_mounts != '' }}
-#      with:
-#        bucket: ${{ inputs.bucket }}
-#        mounts: ${{ inputs.cache_mounts }}
+    - name: Load Docker mount cache
+      uses: dcginfra/buildkit-cache-dance/inject@s5cmd
+      if: ${{ inputs.cache_mounts != '' }}
+      with:
+        bucket: ${{ inputs.bucket }}
+        mounts: ${{ inputs.cache_mounts }}
 
     - name: Set suffix
       uses: actions/github-script@v6
@@ -162,10 +162,10 @@ runs:
         push: ${{ fromJSON(inputs.push) }}
         cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
         cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
-#
-#    - name: Save Docker mount cache
-#      uses: dcginfra/buildkit-cache-dance/extract@s5cmd
-#      if: ${{ inputs.cache_mounts != '' }}
-#      with:
-#        bucket: ${{ inputs.bucket }}
-#        mounts: ${{ inputs.cache_mounts }}
+
+    - name: Save Docker mount cache
+      uses: dcginfra/buildkit-cache-dance/extract@s5cmd
+      if: ${{ inputs.cache_mounts != '' }}
+      with:
+        bucket: ${{ inputs.bucket }}
+        mounts: ${{ inputs.cache_mounts }}
