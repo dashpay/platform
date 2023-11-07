@@ -45,7 +45,7 @@ runs:
       shell: bash
       run: echo "key=$(echo '${{ github.ref_name }}' | sha256sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
 
-    - id: cache-group-start
+    - id: build-cache-start
       shell: bash
       run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
 
@@ -67,7 +67,11 @@ runs:
 
     - shell: bash
       run: |
-        echo "Elapsed time: $(($(date +%s) - ${{ steps.cache-group-start.outputs.start_time }})) seconds"
+        echo "Elapsed time: $(($(date +%s) - ${{ steps.build-cache-start.outputs.start_time }})) seconds"
+
+    - id: registry-cache-start
+      shell: bash
+      run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
 
     - name: Cache cargo registry (S3 bucket cache)
       uses: strophy/actions-cache@opendal-update
@@ -84,32 +88,36 @@ runs:
           ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
           ${{ runner.os }}/cargo/registry/
 
-    - name: Cache Rust build artifacts (GitHub Actions cache)
-      uses: actions/cache@v3
-      if: ${{ !contains(runner.name, 'ubuntu-platform') && inputs.cache == 'true' }}
-      with:
-        path: |
-          target
-          retimer-state
-        key: ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-${{ github.sha }}
-          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-
-          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}-
-          ${{ runner.os }}/cargo/build/${{ inputs.target }}/
+    - shell: bash
+      run: |
+        echo "Elapsed time: $(($(date +%s) - ${{ steps.registry-cache-start.outputs.start_time }})) seconds"
 
-    - name: Cache cargo registry (GitHub Actions cache)
-      uses: actions/cache@v3
-      if: ${{ !contains(runner.name, 'ubuntu-platform') && inputs.cache == 'true' }}
-      with:
-        path: |
-          /home/ubuntu/.cargo/registry/index
-          /home/ubuntu/.cargo/registry/cache
-          /home/ubuntu/.cargo/git
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          ${{ runner.os }}-cargo-registry-
+#    - name: Cache Rust build artifacts (GitHub Actions cache)
+#      uses: actions/cache@v3
+#      if: ${{ !contains(runner.name, 'ubuntu-platform') && inputs.cache == 'true' }}
+#      with:
+#        path: |
+#          target
+#          retimer-state
+#        key: ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-${{ github.sha }}
+#        restore-keys: |
+#          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-${{ github.sha }}
+#          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-
+#          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}-
+#          ${{ runner.os }}/cargo/build/${{ inputs.target }}/
+
+#    - name: Cache cargo registry (GitHub Actions cache)
+#      uses: actions/cache@v3
+#      if: ${{ !contains(runner.name, 'ubuntu-platform') && inputs.cache == 'true' }}
+#      with:
+#        path: |
+#          /home/ubuntu/.cargo/registry/index
+#          /home/ubuntu/.cargo/registry/cache
+#          /home/ubuntu/.cargo/git
+#        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+#        restore-keys: |
+#          ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+#          ${{ runner.os }}-cargo-registry-
 
     - name: Install clang
       id: deps-clang
@@ -120,5 +128,13 @@ runs:
         sudo apt install -qq --yes clang llvm b3sum
         sudo update-alternatives --set cc /usr/bin/clang
 
+    - id: retimer-start
+      shell: bash
+      run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
+
     - name: Run retimer to adjust source files mtime for cargo build cache
       uses: dcginfra/retimer@master
+
+    - shell: bash
+      run: |
+        echo "Elapsed time: $(($(date +%s) - ${{ steps.retimer-start.outputs.start_time }})) seconds"
