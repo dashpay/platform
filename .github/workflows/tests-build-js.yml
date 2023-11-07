@@ -46,6 +46,11 @@ jobs:
       - name: Build JS packages
         run: yarn build
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_BUCKET: multi-runner-linux-x64-platform-cache-ui535z23
+          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/wasm32-unknown-unknown/
 
       - name: Ignore only already cached artifacts
         run: |
