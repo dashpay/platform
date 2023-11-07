@@ -60,25 +60,25 @@ jobs:
           DOCKER_HUB_ORG="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
           aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
 
-          GIT_SHA=$(git rev-parse --short HEAD)
+          SHA_TAG=sha-$(git rev-parse --short HEAD)
 
           # Drive
-          yarn dashmate config set --config=local platform.drive.abci.docker.image $DOCKER_HUB_ORG/drive:$GIT_SHA
+          yarn dashmate config set --config=local platform.drive.abci.docker.image $DOCKER_HUB_ORG/drive:$SHA_TAG
 
           # DAPI
-          yarn dashmate config set --config=local platform.dapi.api.docker.image $DOCKER_HUB_ORG/dapi:$GIT_SHA
+          yarn dashmate config set --config=local platform.dapi.api.docker.image $DOCKER_HUB_ORG/dapi:$SHA_TAG
 
           # Dashmate helper image is hardcoded so we replace it with the built one
           VERSION=$(cat package.json | jq -r '.version')
-          docker pull $DOCKER_HUB_ORG/dashmate_helper:$GIT_SHA
-          docker tag $DOCKER_HUB_ORG/dashmate_helper:$GIT_SHA dashpay/dashmate-helper:${VERSION}
+          docker pull $DOCKER_HUB_ORG/dashmate_helper:$SHA_TAG
+          docker tag $DOCKER_HUB_ORG/dashmate_helper:$SHA_TAG dashpay/dashmate-helper:${VERSION}
 
           # TODO: Move setup network to a separate job before test suite to do not run twice?
           ./scripts/setup_local_network.sh
           ./scripts/configure_test_suite.sh
           ./scripts/configure_dotenv.sh
         shell: bash
-
+π
       - name: Start local network
         run: yarn start
 

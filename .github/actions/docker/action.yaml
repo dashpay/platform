@@ -126,7 +126,7 @@ runs:
           type=match,pattern=v(\d+.\d+),group=1,value=${{inputs.image_tag}},enable=${{ inputs.image_tag != '' }}
           type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{inputs.image_tag}},enable=${{ inputs.image_tag != '' }}
           type=match,pattern=v(.*),group=1,value=${{inputs.image_tag}},suffix=,enable=${{ inputs.image_tag != '' }}
-          type=sha,format=long,enable=${{ inputs.image_tag == '' }}
+          type=sha,format=short,enable=${{ inputs.image_tag == '' }}
         flavor: |
           suffix=${{ steps.suffix.outputs.result }},onlatest=true
           latest=${{ github.event_name == 'release' }}
