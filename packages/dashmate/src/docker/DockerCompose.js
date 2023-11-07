@@ -526,8 +526,8 @@ class DockerCompose {
       throw new Error(`Docker Compose V2 is not available in your system. Please follow instructions ${dockerComposeInstallLink}`);
     }
 
-    if (typeof dockerVersionInfo !== 'string') {
-      throw new Error(`docker compose version is not a string: ${util.inspect(dockerVersionInfo)}`);
+    if (typeof version !== 'string') {
+      throw new Error(`docker compose version is not a string: ${util.inspect(version)}`);
     }
 
     if (semver.lt(semver.coerce(version), DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {
