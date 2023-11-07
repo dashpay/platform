@@ -17,19 +17,24 @@ inputs:
     description: Enable Rust cache
     required: false
     default: 'true'
+#  bucket:
+#    description: S3 bucket to use for caching, must match runner define in `runs-on`
+#    default: multi-runner-linux-x64-platform-cache-ui535z23
 
 runs:
   using: composite
   steps:
+    # TODO: Move to AMI and build every day
     - uses: dtolnay/rust-toolchain@master
       name: Install Rust toolchain
       with:
         toolchain: ${{ inputs.toolchain }}
         target: ${{ inputs.target }}
         components: ${{ inputs.components }}
-      env:
-        CARGO_INCREMENTAL: "1"
+#      env:
+#        CARGO_INCREMENTAL: "1"
 
+    # TODO: Move to AMI and build every day
     - name: Install protoc
       id: deps-protoc
       shell: bash
@@ -40,34 +45,39 @@ runs:
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
 
+#    - name: Run sccache-cache
+#      uses: mozilla-actions/sccache-action@v0.0.3
+#      with:
+#        version: "v0.7.0"
+
     - name: Hash ref_name
       id: hashed-ref-name
       shell: bash
       run: echo "key=$(echo '${{ github.ref_name }}' | sha256sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
 
-    - id: build-cache-start
-      shell: bash
-      run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
+#    - id: build-cache-start
+#      shell: bash
+#      run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
+#
+#    - name: Cache Rust build artifacts (S3 bucket cache)
+#      uses: strophy/actions-cache@opendal-update
+#      if: contains(runner.name, 'ubuntu-platform') && inputs.cache == 'true'
+#      with:
+#        bucket: multi-runner-linux-x64-platform-cache-ui535z23
+#        root: actions-cache
+#        path: |
+#          target
+#          retimer-state
+#        key: ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/${{ steps.hashed-ref-name.outputs.key }}/${{ github.sha }}
+#        restore-keys: |
+#          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/${{ steps.hashed-ref-name.outputs.key }}/${{ github.sha }}
+#          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/${{ steps.hashed-ref-name.outputs.key }}/
+#          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/
+#          ${{ runner.os }}/cargo/build/${{ inputs.target }}/
 
-    - name: Cache Rust build artifacts (S3 bucket cache)
-      uses: strophy/actions-cache@opendal-update
-      if: contains(runner.name, 'ubuntu-platform') && inputs.cache == 'true'
-      with:
-        bucket: multi-runner-linux-x64-platform-cache-ui535z23
-        root: actions-cache
-        path: |
-          target
-          retimer-state
-        key: ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/${{ steps.hashed-ref-name.outputs.key }}/${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/${{ steps.hashed-ref-name.outputs.key }}/${{ github.sha }}
-          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/${{ steps.hashed-ref-name.outputs.key }}/
-          ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/
-          ${{ runner.os }}/cargo/build/${{ inputs.target }}/
-
-    - shell: bash
-      run: |
-        echo "Elapsed time: $(($(date +%s) - ${{ steps.build-cache-start.outputs.start_time }})) seconds"
+#    - shell: bash
+#      run: |
+#        echo "Elapsed time: $(($(date +%s) - ${{ steps.build-cache-start.outputs.start_time }})) seconds"
 
     - id: registry-cache-start
       shell: bash
@@ -125,16 +135,16 @@ runs:
       if: runner.os == 'Linux'
       run: |
         sudo apt update -qq
-        sudo apt install -qq --yes clang llvm b3sum
+        sudo apt install -qq --yes clang llvm
         sudo update-alternatives --set cc /usr/bin/clang
-
-    - id: retimer-start
-      shell: bash
-      run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
-
-    - name: Run retimer to adjust source files mtime for cargo build cache
-      uses: dcginfra/retimer@master
-
-    - shell: bash
-      run: |
-        echo "Elapsed time: $(($(date +%s) - ${{ steps.retimer-start.outputs.start_time }})) seconds"
+    # b3sum
+#    - id: retimer-start
+#      shell: bash
+#      run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
+#
+#    - name: Run retimer to adjust source files mtime for cargo build cache
+#      uses: dcginfra/retimer@master
+#
+#    - shell: bash
+#      run: |
+#        echo "Elapsed time: $(($(date +%s) - ${{ steps.retimer-start.outputs.start_time }})) seconds"

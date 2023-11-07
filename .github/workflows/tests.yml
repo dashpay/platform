@@ -50,17 +50,17 @@ jobs:
     secrets: inherit
     uses: ./.github/workflows/tests-build-images.yml
 
-  build-rust:
-    name: Build Rust packages
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    secrets: inherit
-    uses: ./.github/workflows/tests-build-rust.yml
+#  build-rust:
+#    name: Build Rust packages
+#    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+#    secrets: inherit
+#    uses: ./.github/workflows/tests-build-rust.yml
 
   rs-package:
     name: Rust package
     needs:
       - changes
-      - build-rust
+#      - build-rust
     secrets: inherit
     strategy:
       fail-fast: false
