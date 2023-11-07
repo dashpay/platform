@@ -27,6 +27,8 @@ runs:
         toolchain: ${{ inputs.toolchain }}
         target: ${{ inputs.target }}
         components: ${{ inputs.components }}
+      env:
+        CARGO_INCREMENTAL: "1"
 
     - name: Install protoc
       id: deps-protoc
@@ -45,9 +47,7 @@ runs:
 
     - id: cache-group-start
       shell: bash
-      run: |
-        echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
-        echo "::group::Cache Rust build artifacts (S3 bucket cache)"
+      run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
 
     - name: Cache Rust build artifacts (S3 bucket cache)
       uses: everpcpc/actions-cache@v1
@@ -67,8 +67,7 @@ runs:
 
     - shell: bash
       run: |
-        echo "::endgroup::"
-        echo "Elapsed time: $(($(date +%s) - ${{ steps.cache-group-start.outputs.start_time }}))"
+        echo "Elapsed time: $(($(date +%s) - ${{ steps.cache-group-start.outputs.start_time }})) seconds"
 
     - name: Cache cargo registry (S3 bucket cache)
       uses: everpcpc/actions-cache@v1
