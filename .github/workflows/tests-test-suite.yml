@@ -73,6 +73,7 @@ jobs:
           docker pull $DOCKER_HUB_ORG/dashmate_helper:$GIT_SHA
           docker tag $DOCKER_HUB_ORG/dashmate_helper:$GIT_SHA dashpay/dashmate-helper:${VERSION}
 
+          # TODO: Move setup network to a separate job before test suite to do not run twice?
           ./scripts/setup_local_network.sh
           ./scripts/configure_test_suite.sh
           ./scripts/configure_dotenv.sh

@@ -49,7 +49,9 @@ runs:
       with:
         bucket: multi-runner-linux-x64-platform-cache-ui535z23
         root: actions-cache
-        path: target
+        path: |
+          target
+          retimer-state
         key: ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/${{ steps.hashed-ref-name.outputs.key }}/${{ github.sha }}
         restore-keys: |
           ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/${{ steps.hashed-ref-name.outputs.key }}/${{ github.sha }}
@@ -77,10 +79,8 @@ runs:
       if: ${{ !contains(runner.name, 'ubuntu-platform') && inputs.cache == 'true' }}
       with:
         path: |
-          /home/ubuntu/.cargo/registry/index
-          /home/ubuntu/.cargo/registry/cache
-          /home/ubuntu/.cargo/git
           target
+          retimer-state
         key: ${{ runner.os }}-cargo-build-${{ inputs.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-${{ github.sha }}
         restore-keys: |
           ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}-${{ steps.hashed-ref-name.outputs.key }}-${{ github.sha }}
@@ -107,5 +107,8 @@ runs:
       if: runner.os == 'Linux'
       run: |
         sudo apt update -qq
-        sudo apt install -qq --yes clang llvm
+        sudo apt install -qq --yes clang llvm b3sum
         sudo update-alternatives --set cc /usr/bin/clang
+
+    - name: Run retimer to adjust source files mtime for cargo build cache
+      uses: dcginfra/retimer@master
