@@ -84,7 +84,7 @@ jobs:
 
       - run: docker volume ls
 
-      - run: docker inspect (docker volume ls -q | head -n 1)
+      - run: docker inspect $(docker volume ls -q | head -n 1)
 
       # TODO: We running these tests twice
       - name: Run Wallet functional tests

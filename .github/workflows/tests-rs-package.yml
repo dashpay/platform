@@ -63,7 +63,7 @@ jobs:
         id: files
         run: |
           gh pr view https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }} --json files --jq "[.files[].path] | map(select(test(\"packages/${{ inputs.package }}/.*.rs$\")))" > files.json
-          echo "::set-output name=files::$(cat files.json)"
+          echo "files=$(cat files.json)" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -77,7 +77,7 @@ jobs:
               awk '/@immutable/,/}/' $file > "base_structures/$(basename $file).immutable.base"
             fi
           done
-          echo "::set-output name=base_dir::$(pwd)/base_structures"
+          echo "base_dir=$(pwd)/base_structures" >> $GITHUB_OUTPUT
 
       - name: Checkout PR commit
         uses: actions/checkout@v4
@@ -107,7 +107,7 @@ jobs:
             fi
           done
 
-  # TODO: run drive-abci tests with x8 runner or optimize tests
+  # TODO: implement a regular and extended mode for strategy tests in drive abci
   test:
     name: Tests
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
