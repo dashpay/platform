@@ -57,6 +57,7 @@ runs:
              .split(',')
              .map((platform) => `linux/${platform.trim()}`)
              .join(',')
+      if: ${{ inputs.platforms != '' }}
 
     - name: Set up Docker BuildX
       id: buildx
