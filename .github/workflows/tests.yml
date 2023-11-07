@@ -170,9 +170,6 @@ jobs:
       test-pattern: test/e2e/testnetHPFullnode.spec.js
     if: contains(needs.changes.outputs.js-packages, 'dashmate')
 
-
-
-
   test-suite:
     name: Test Suite
     needs:

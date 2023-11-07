@@ -12,7 +12,7 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Cache build artifacts
-        uses: everpcpc/actions-cache@v1
+        uses: strophy/actions-cache@opendal-update
         id: cache
         with:
           bucket: multi-runner-linux-x64-platform-cache-ui535z23

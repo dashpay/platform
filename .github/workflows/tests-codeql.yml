@@ -29,7 +29,7 @@ jobs:
         uses: ./.github/actions/nodejs
 
       - name: Restore JS build artifacts archive
-        uses: everpcpc/actions-cache@v1
+        uses: strophy/actions-cache@opendal-update
         with:
           bucket: multi-runner-linux-x64-platform-cache-ui535z23
           root: actions-cache
