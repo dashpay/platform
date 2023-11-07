@@ -45,10 +45,10 @@ runs:
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
 
-#    - name: Run sccache-cache
-#      uses: mozilla-actions/sccache-action@v0.0.3
-#      with:
-#        version: "v0.7.0"
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.3
+      with:
+        version: "v0.7.0"
 
     - name: Hash ref_name
       id: hashed-ref-name
