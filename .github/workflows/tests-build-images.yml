@@ -13,7 +13,6 @@ jobs:
 
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
-        if: contains(runner.name, 'ubuntu-platform')
         with:
           aws-region: ${{ vars.AWS_REGION }}
 
@@ -46,7 +45,6 @@ jobs:
 
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
-        if: contains(runner.name, 'ubuntu-platform')
         with:
           aws-region: ${{ vars.AWS_REGION }}
 
@@ -80,7 +78,6 @@ jobs:
 
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
-        if: contains(runner.name, 'ubuntu-platform')
         with:
           aws-region: ${{ vars.AWS_REGION }}
 

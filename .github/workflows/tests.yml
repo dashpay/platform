@@ -137,14 +137,41 @@ jobs:
     secrets: inherit
     uses: ./.github/workflows/tests-codeql.yml
 
-  dashmate:
-    name: Dashmate E2E tests
+  dashmate-local-network:
+    name: Dashmate local network E2E tests
     secrets: inherit
     needs:
       - changes
       - build-images
     uses: ./.github/workflows/tests-dashmate.yml
+    with:
+      test-pattern: test/e2e/localNetwork.spec.js
     if: contains(needs.changes.outputs.js-packages, 'dashmate')
+
+  dashmate-fullnode:
+    name: Dashmate full node E2E tests
+    secrets: inherit
+    needs:
+      - changes
+      - build-images
+    uses: ./.github/workflows/tests-dashmate.yml
+    with:
+      test-pattern: test/e2e/testnetHPFullnode.spec.js
+    if: contains(needs.changes.outputs.js-packages, 'dashmate')
+
+  dashmate-evonode:
+    name: Dashmate Evonode E2E tests
+    secrets: inherit
+    needs:
+      - changes
+      - build-images
+    uses: ./.github/workflows/tests-dashmate.yml
+    with:
+      test-pattern: test/e2e/testnetHPFullnode.spec.js
+    if: contains(needs.changes.outputs.js-packages, 'dashmate')
+
+
+
 
   test-suite:
     name: Test Suite

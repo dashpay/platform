@@ -1,9 +1,13 @@
 on:
   workflow_call:
+    inputs:
+      test-pattern:
+        type: string
+        description: Test pattern. i.e. test/e2e/*.spec.js
 
 jobs:
-  dashmate-e2e-tests:
-    name: Run Dashmate E2E tests
+  dashmate-test:
+    name: Run Dashmate test
     # TODO: Try with Github Runner, probably it will be the same time
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 120
@@ -21,7 +25,6 @@ jobs:
 
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
-        if: contains(runner.name, 'ubuntu-platform')
         with:
           aws-region: ${{ vars.AWS_REGION }}
 
@@ -65,12 +68,12 @@ jobs:
           docker tag $DOCKER_HUB_ORG/dashmate_helper:$SHA_TAG dashpay/dashmate-helper:${VERSION}
         shell: bash
 
-      # TODO: We should run these tests in parallel
       - name: Run tests
-        run: yarn workspace dashmate test:e2e
+        run: yarn workspace dashmate run mocha ${{ inputs.test-pattern }}
         env:
           DASHMATE_E2E_TESTS_SKIP_BUILD: true
 
       - name: Show Docker logs
         if: ${{ failure() }}
         uses: jwalton/gh-docker-logs@v2
+
