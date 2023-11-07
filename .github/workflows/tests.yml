@@ -46,7 +46,7 @@ jobs:
 
   build-images:
     name: Build Platform Docker images
-    needs: build-js
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     secrets: inherit
     uses: ./.github/workflows/tests-build-images.yml
 
