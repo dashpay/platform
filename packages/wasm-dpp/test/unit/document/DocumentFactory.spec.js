@@ -1,6 +1,5 @@
 const bs58 = require('bs58');
 const crypto = require('crypto');
-const DocumentCreateTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
 
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
@@ -10,7 +9,7 @@ let {
   Identifier, DocumentFactory, ExtendedDocument,
   InvalidDocumentTypeInDataContractError, InvalidDocumentError,
   JsonSchemaError, NoDocumentsSuppliedError, MismatchOwnerIdsError, InvalidInitialRevisionError,
-  InvalidActionNameError,
+  InvalidActionNameError, DocumentCreateTransition,
 } = require('../../..');
 
 const { default: loadWasmDpp, SerializedObjectParsingError } = require('../../..');
@@ -38,6 +37,7 @@ describe('DocumentFactory', () => {
       MismatchOwnerIdsError,
       InvalidInitialRevisionError,
       InvalidActionNameError,
+      DocumentCreateTransition,
     } = await loadWasmDpp());
   });
 

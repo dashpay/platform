@@ -31,7 +31,8 @@ pub struct DriveCache {
 #[cfg(feature = "full")]
 #[derive(Default)]
 pub struct ProtocolVersionsCache {
-    global_cache: IntMap<ProtocolVersion, u64>,
+    /// The current global cache for protocol versions
+    pub global_cache: IntMap<ProtocolVersion, u64>,
     block_cache: IntMap<ProtocolVersion, u64>,
     loaded: bool,
     needs_wipe: bool,

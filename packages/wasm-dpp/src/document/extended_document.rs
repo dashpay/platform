@@ -27,6 +27,7 @@ use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
 use crate::metadata::MetadataWasm;
 use crate::utils::{with_serde_to_platform_value, IntoWasm, ToSerdeJSONExt, WithJsError};
+use crate::validation::ValidationResultWasm;
 use crate::with_js_error;
 
 #[wasm_bindgen(js_name=ExtendedDocument)]
@@ -344,6 +345,20 @@ impl ExtendedDocumentWasm {
     #[wasm_bindgen(js_name=clone)]
     pub fn deep_clone(&self) -> Self {
         self.clone()
+    }
+
+    #[wasm_bindgen]
+    pub fn validate(&self, platform_version: u32) -> Result<ValidationResultWasm, JsValue> {
+        let platform_version =
+            PlatformVersion::get(platform_version).map_err(|e| JsValue::from(e.to_string()))?;
+
+        let result = self
+            .0
+            .validate(platform_version)
+            .with_js_error()?
+            .map(|_| JsValue::undefined());
+
+        Ok(result.into())
     }
 }
 

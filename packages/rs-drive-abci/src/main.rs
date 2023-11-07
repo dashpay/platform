@@ -361,8 +361,8 @@ mod test {
     use dpp::block::epoch::Epoch;
     use drive::fee_pools::epochs::epoch_key_constants;
 
+    use dpp::version::PlatformVersion;
     use drive_abci::logging::LogLevel;
-    use platform_version::version::PlatformVersion;
     use rocksdb::{IteratorMode, Options};
 
     /// Setup drive database by creating initial state structure and inserting some data.

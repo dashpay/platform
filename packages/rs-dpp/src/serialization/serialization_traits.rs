@@ -165,6 +165,7 @@ pub trait PlatformMessageSignable {
         public_key_data: &[u8],
         signature: &[u8],
     ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
+
     fn sign_by_private_key(
         &self,
         private_key: &[u8],

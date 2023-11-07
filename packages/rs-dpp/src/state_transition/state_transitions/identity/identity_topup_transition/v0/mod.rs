@@ -1,5 +1,6 @@
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
+mod proved;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;

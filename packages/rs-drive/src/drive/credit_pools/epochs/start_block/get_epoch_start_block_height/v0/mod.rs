@@ -37,9 +37,9 @@ impl Drive {
                 .as_slice()
                 .try_into()
                 .map_err(|_| {
-                    Error::Drive(DriveError::CorruptedSerialization(
+                    Error::Drive(DriveError::CorruptedSerialization(String::from(
                         "start block height must be u64",
-                    ))
+                    )))
                 })?,
         );
 

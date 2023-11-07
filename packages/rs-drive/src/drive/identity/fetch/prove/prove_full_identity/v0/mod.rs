@@ -146,6 +146,7 @@ mod tests {
             .query_raw(
                 &path_query,
                 true,
+                true,
                 QueryResultType::QueryPathKeyElementTrioResultType,
                 None,
             )

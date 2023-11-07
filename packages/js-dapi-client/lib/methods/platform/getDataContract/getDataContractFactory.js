@@ -22,6 +22,7 @@ function getDataContractFactory(grpcTransport) {
    * @returns {Promise<GetDataContractResponse>}
    */
   async function getDataContract(contractId, options = {}) {
+    const { GetDataContractRequestV0 } = GetDataContractRequest;
     const getDataContractRequest = new GetDataContractRequest();
 
     // need to convert objects inherited from Buffer to pure buffer as google protobuf
@@ -32,8 +33,11 @@ function getDataContractFactory(grpcTransport) {
       contractId = Buffer.from(contractId);
     }
 
-    getDataContractRequest.setId(contractId);
-    getDataContractRequest.setProve(!!options.prove);
+    getDataContractRequest.setV0(
+      new GetDataContractRequestV0()
+        .setId(contractId)
+        .setProve(!!options.prove),
+    );
 
     let lastError;
 

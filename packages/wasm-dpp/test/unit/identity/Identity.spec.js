@@ -1,5 +1,5 @@
-const { hash: hashFunction } = require('@dashevo/dpp/lib/util/hash');
 const { expect } = require('chai');
+const { hash: hashFunction } = require('../../../lib/utils/hash');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 const {
   Identity, Metadata, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
@@ -131,7 +131,7 @@ describe('Identity', () => {
   });
 
   describe('#hash', () => {
-    it('should return the same has as JS Identity', () => {
+    it('should has identity', () => {
       const expectedHash = hashFunction(identity.toBuffer());
       const result = identity.hash();
       expect(result).to.deep.equal(expectedHash);

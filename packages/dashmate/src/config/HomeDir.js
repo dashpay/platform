@@ -14,17 +14,20 @@ class HomeDir {
   /**
    *
    * @param {string} path - Use the current home dir if not present
+   * @param {boolean} [skipValidation=false] - Do not validate path
    */
-  constructor(path) {
-    if (!fs.existsSync(path)) {
-      throw new HomeDirDoesNotExistError(path);
-    }
+  constructor(path, skipValidation = false) {
+    if (!skipValidation) {
+      if (!fs.existsSync(path)) {
+        throw new HomeDirDoesNotExistError(path);
+      }
 
-    try {
-      // eslint-disable-next-line no-bitwise
-      fs.accessSync(path, fs.constants.R_OK | fs.constants.W_OK);
-    } catch (e) {
-      throw new HomeDirIsNotWritableError(path);
+      try {
+        // eslint-disable-next-line no-bitwise
+        fs.accessSync(path, fs.constants.R_OK | fs.constants.W_OK);
+      } catch (e) {
+        throw new HomeDirIsNotWritableError(path);
+      }
     }
 
     this.#path = path;

@@ -1,98 +1,11 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use dapi_grpc::platform::v0::get_documents_request::Start;
-use dapi_grpc::platform::v0::{
-    get_data_contract_history_response, get_data_contract_response, get_data_contracts_response,
-    get_documents_response, get_identities_by_public_key_hashes_response, get_identities_response,
-    get_identity_balance_and_revision_response, get_identity_balance_response,
-    get_identity_by_public_key_hashes_response, get_identity_keys_response, get_identity_response,
-    GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest,
-    GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
-    GetDocumentsRequest, GetDocumentsResponse, GetIdentitiesByPublicKeyHashesRequest,
-    GetIdentitiesByPublicKeyHashesResponse, GetIdentitiesRequest, GetIdentitiesResponse,
-    GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceResponse,
-    GetIdentityByPublicKeyHashesRequest, GetIdentityByPublicKeyHashesResponse,
-    GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityRequest, GetIdentityResponse,
-    GetProofsRequest, GetProofsResponse, Proof, ResponseMetadata,
-};
-use dpp::identifier::Identifier;
-use dpp::platform_value::{Bytes20, Bytes32, Value};
-use std::collections::BTreeMap;
 
-use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
-use dpp::validation::ValidationResult;
-use dpp::{check_validation_result_with_data, ProtocolError};
-use drive::drive::identity::IdentityDriveQuery;
-use drive::drive::identity::IdentityProveRequestType;
-
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
-use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
-use dapi_grpc::platform::v0::get_identity_balance_and_revision_response::BalanceAndRevision;
+use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 
-use dapi_grpc::platform::v0::get_data_contract_history_response::DataContractHistoryEntry;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use dpp::version::PlatformVersion;
-use drive::drive::identity::key::fetch::{
-    IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
-    SerializedKeyVec,
-};
-use drive::error::query::QuerySyntaxError;
-use drive::query::{DriveQuery, SingleDocumentDriveQuery};
-use prost::Message;
-
-fn from_i32_to_key_kind_request_type(value: i32) -> Option<KeyKindRequestType> {
-    match value {
-        0 => Some(KeyKindRequestType::CurrentKeyOfKindRequest),
-        1 => Some(KeyKindRequestType::AllKeysOfKindRequest),
-        _ => None,
-    }
-}
-
-fn convert_key_request_type(
-    request_type: dapi_grpc::platform::v0::key_request_type::Request,
-) -> Result<KeyRequestType, QueryError> {
-    match request_type {
-        dapi_grpc::platform::v0::key_request_type::Request::AllKeys(_) => {
-            Ok(KeyRequestType::AllKeys)
-        }
-        dapi_grpc::platform::v0::key_request_type::Request::SpecificKeys(specific_keys) => {
-            let key_ids = specific_keys
-                .key_ids
-                .into_iter()
-                .map(|id| id as KeyID)
-                .collect();
-            Ok(KeyRequestType::SpecificKeys(key_ids))
-        }
-        dapi_grpc::platform::v0::key_request_type::Request::SearchKey(search_key) => {
-            let purpose_map = search_key.purpose_map.into_iter().map(|(purpose, security_level_map)| {
-                let security_level_map = security_level_map.security_level_map.into_iter().map(|(security_level, key_kind_request_type)| {
-                    if security_level > u8::MAX as u32 {
-                        return Err(QueryError::Query(QuerySyntaxError::InvalidKeyParameter("security level out of bounds".to_string())));
-                    }
-                    let security_level = SecurityLevel::try_from(security_level as u8).map_err(|_| QueryError::Query(QuerySyntaxError::InvalidKeyParameter(format!("security level {} not recognized", security_level))))?;
-
-                    let key_kind_request_type = from_i32_to_key_kind_request_type(key_kind_request_type).ok_or(QueryError::Query(QuerySyntaxError::InvalidKeyParameter(format!("unknown key kind request type {}", key_kind_request_type))))?;
-                    Ok((
-                        security_level as u8,
-                        key_kind_request_type,
-                    ))
-                }).collect::<Result<BTreeMap<SecurityLevelU8, KeyKindRequestType>, QueryError>>()?;
-                if purpose > u8::MAX as u32 {
-                    return Err(QueryError::Query(QuerySyntaxError::InvalidKeyParameter("purpose out of bounds".to_string())));
-                }
-                let purpose = Purpose::try_from(purpose as u8).map_err(|_| QueryError::Query(QuerySyntaxError::InvalidKeyParameter(format!("purpose {} not recognized", purpose))))?;
-
-                Ok((purpose as u8, security_level_map))
-            }).collect::<Result<BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>, QueryError>>()?;
-
-            Ok(KeyRequestType::SearchKey(purpose_map))
-        }
-    }
-}
 
 impl<C> Platform<C> {
     /// Querying
@@ -103,1051 +16,36 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let state = self.state.read().unwrap();
-        let metadata = ResponseMetadata {
-            height: state.height(),
-            core_chain_locked_height: state.core_height(),
-            time_ms: state.last_block_time_ms().unwrap_or_default(),
-            chain_id: self.config.abci.chain_id.clone(),
-            protocol_version: state.current_protocol_version_in_consensus(),
-        };
-        let quorum_type: u32 = self.config.quorum_type() as u32;
         match query_path {
-            "/identity" => {
-                let GetIdentityRequest { id, prove } =
-                    check_validation_result_with_data!(GetIdentityRequest::decode(query_data)
-                        .map_err(|e| QueryError::InvalidArgument(format!(
-                            "invalid query proto message: {}",
-                            e
-                        ))));
-
-                let identity_id: Identifier = check_validation_result_with_data!(id
-                    .try_into()
-                    .map_err(|_| QueryError::InvalidArgument(
-                        "id must be a valid identifier (32 bytes long)".to_string()
-                    )));
-
-                let response_data = if prove {
-                    let proof = self.drive.prove_full_identity(
-                        identity_id.into_buffer(),
-                        None,
-                        &platform_version.drive,
-                    )?;
-
-                    GetIdentityResponse {
-                        result: Some(get_identity_response::Result::Proof(Proof {
-                            grovedb_proof: proof,
-                            quorum_hash: state.last_quorum_hash().to_vec(),
-                            quorum_type,
-                            block_id_hash: state.last_block_id_hash().to_vec(),
-                            signature: state.last_block_signature().to_vec(),
-                            round: state.last_block_round(),
-                        })),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                } else {
-                    let maybe_identity = self
-                        .drive
-                        .fetch_full_identity(identity_id.into_buffer(), None, platform_version)
-                        .map_err(Error::Drive)?;
-
-                    let identity =
-                        check_validation_result_with_data!(maybe_identity.ok_or_else(|| {
-                            QueryError::NotFound(format!("identity {} not found", identity_id))
-                        }));
-
-                    let serialzied_identity = identity
-                        .serialize_consume_to_bytes()
-                        .map_err(Error::Protocol)?;
-
-                    GetIdentityResponse {
-                        result: Some(get_identity_response::Result::Identity(serialzied_identity)),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                };
-                Ok(QueryValidationResult::new_with_data(response_data))
-            }
-            "/identities" => {
-                let GetIdentitiesRequest { ids, prove } =
-                    check_validation_result_with_data!(GetIdentitiesRequest::decode(query_data)
-                        .map_err(|e| QueryError::InvalidArgument(format!(
-                            "invalid query proto message: {}",
-                            e
-                        ))));
-
-                let identity_ids = check_validation_result_with_data!(ids
-                    .into_iter()
-                    .map(|identity_id_vec| {
-                        Bytes32::from_vec(identity_id_vec)
-                            .map(|bytes| bytes.0)
-                            .map_err(|_| {
-                                QueryError::InvalidArgument(
-                                    "id must be a valid identifier (32 bytes long)".to_string(),
-                                )
-                            })
-                    })
-                    .collect::<Result<Vec<[u8; 32]>, QueryError>>());
-
-                let response_data = if prove {
-                    let proof = self.drive.prove_full_identities(
-                        identity_ids.as_slice(),
-                        None,
-                        &platform_version.drive,
-                    )?;
-                    GetIdentitiesResponse {
-                        metadata: Some(metadata),
-                        result: Some(get_identities_response::Result::Proof(Proof {
-                            grovedb_proof: proof,
-                            quorum_hash: state.last_quorum_hash().to_vec(),
-                            quorum_type,
-                            block_id_hash: state.last_block_id_hash().to_vec(),
-                            signature: state.last_block_signature().to_vec(),
-                            round: state.last_block_round(),
-                        })),
-                    }
-                    .encode_to_vec()
-                } else {
-                    let identities = self.drive.fetch_full_identities(
-                        identity_ids.as_slice(),
-                        None,
-                        platform_version,
-                    )?;
-
-                    let maybe_serialized_identities: Result<Vec<IdentityEntry>, ProtocolError> =
-                        identities
-                            .into_iter()
-                            .map(|(key, maybe_identity)| {
-                                Ok::<IdentityEntry, ProtocolError>(
-                                    get_identities_response::IdentityEntry {
-                                        key: key.to_vec(),
-                                        value: maybe_identity
-                                            .map(|identity| {
-                                                Ok::<
-                                                    get_identities_response::IdentityValue,
-                                                    ProtocolError,
-                                                >(
-                                                    get_identities_response::IdentityValue {
-                                                        value: identity
-                                                            .serialize_consume_to_bytes()?,
-                                                    },
-                                                )
-                                            })
-                                            .transpose()?,
-                                    },
-                                )
-                            })
-                            .collect();
-
-                    if let Err(e) = maybe_serialized_identities {
-                        return Err(Error::Protocol(e));
-                    }
-
-                    let serialized_identities = maybe_serialized_identities.unwrap();
-
-                    GetIdentitiesResponse {
-                        result: Some(get_identities_response::Result::Identities(
-                            get_identities_response::Identities {
-                                identity_entries: serialized_identities,
-                            },
-                        )),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                };
-                Ok(QueryValidationResult::new_with_data(response_data))
-            }
-            "/identity/balance" => {
-                let GetIdentityRequest { id, prove } =
-                    check_validation_result_with_data!(GetIdentityRequest::decode(query_data)
-                        .map_err(|e| QueryError::InvalidArgument(format!(
-                            "invalid query proto message: {}",
-                            e
-                        ))));
-                let identity_id: Identifier = check_validation_result_with_data!(id
-                    .try_into()
-                    .map_err(|_| QueryError::InvalidArgument(
-                        "id must be a valid identifier (32 bytes long)".to_string()
-                    )));
-                let response_data = if prove {
-                    let proof = self.drive.prove_identity_balance(
-                        identity_id.into_buffer(),
-                        None,
-                        &platform_version.drive,
-                    )?;
-
-                    GetIdentityBalanceResponse {
-                        result: Some(get_identity_balance_response::Result::Proof(Proof {
-                            grovedb_proof: proof,
-                            quorum_hash: state.last_quorum_hash().to_vec(),
-                            quorum_type,
-                            block_id_hash: state.last_block_id_hash().to_vec(),
-                            signature: state.last_block_signature().to_vec(),
-                            round: state.last_block_round(),
-                        })),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                } else {
-                    let maybe_balance = self.drive.fetch_identity_balance(
-                        identity_id.into_buffer(),
-                        None,
-                        platform_version,
-                    )?;
-
-                    if let Some(balance) = maybe_balance {
-                        GetIdentityBalanceResponse {
-                            result: Some(get_identity_balance_response::Result::Balance(balance)),
-                            metadata: Some(metadata),
-                        }
-                        .encode_to_vec()
-                    } else {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
-                            format!("identity {} balance not found", identity_id),
-                        )));
-                    }
-                };
-                Ok(QueryValidationResult::new_with_data(response_data))
-            }
+            "/identity" => self.query_identity(&state, query_data, platform_version),
+            "/identities" => self.query_identities(&state, query_data, platform_version),
+            "/identity/balance" => self.query_balance(&state, query_data, platform_version),
             "/identity/balanceAndRevision" => {
-                let GetIdentityRequest { id, prove } =
-                    check_validation_result_with_data!(GetIdentityRequest::decode(query_data)
-                        .map_err(|e| QueryError::InvalidArgument(format!(
-                            "invalid query proto message: {}",
-                            e
-                        ))));
-                let identity_id: Identifier = check_validation_result_with_data!(id
-                    .try_into()
-                    .map_err(|_| QueryError::InvalidArgument(
-                        "id must be a valid identifier (32 bytes long)".to_string()
-                    )));
-
-                let response_data = if prove {
-                    let proof = self.drive.prove_identity_balance_and_revision(
-                        identity_id.into_buffer(),
-                        None,
-                        &platform_version.drive,
-                    )?;
-
-                    GetIdentityBalanceResponse {
-                        result: Some(get_identity_balance_response::Result::Proof(Proof {
-                            grovedb_proof: proof,
-                            quorum_hash: state.last_quorum_hash().to_vec(),
-                            quorum_type,
-                            block_id_hash: state.last_block_id_hash().to_vec(),
-                            signature: state.last_block_signature().to_vec(),
-                            round: state.last_block_round(),
-                        })),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                } else {
-                    let maybe_balance = self.drive.fetch_identity_balance(
-                        identity_id.into_buffer(),
-                        None,
-                        platform_version,
-                    )?;
-
-                    let maybe_revision = self.drive.fetch_identity_revision(
-                        identity_id.into_buffer(),
-                        true,
-                        None,
-                        platform_version,
-                    )?;
-
-                    match (maybe_balance, maybe_revision) {
-                        (Some(balance), Some(revision)) => {
-                            GetIdentityBalanceAndRevisionResponse {
-                                result: Some(
-                                    get_identity_balance_and_revision_response::Result::BalanceAndRevision(
-                                        BalanceAndRevision {
-                                            balance: Some(balance),
-                                            revision: Some(revision)
-                                        }
-                                    ),
-                                ),
-                                metadata: Some(metadata),
-                            }
-                                .encode_to_vec()
-                        },
-                        _ => return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
-                            format!(
-                                "identity {} balance and revision not found",
-                                identity_id
-                            ),
-                        )))
-                    }
-                };
-
-                Ok(QueryValidationResult::new_with_data(response_data))
+                self.query_balance_and_revision(&state, query_data, platform_version)
             }
-            "/identity/keys" => {
-                let GetIdentityKeysRequest {
-                    identity_id,
-                    request_type,
-                    limit,
-                    offset,
-                    prove,
-                } = check_validation_result_with_data!(GetIdentityKeysRequest::decode(query_data)
-                    .map_err(|e| QueryError::InvalidArgument(format!(
-                        "invalid query proto message: {}",
-                        e
-                    ))));
-
-                let identity_id: Identifier = check_validation_result_with_data!(identity_id
-                    .try_into()
-                    .map_err(|_| QueryError::InvalidArgument(
-                        "id must be a valid identifier (32 bytes long)".to_string()
-                    )));
-
-                if let Some(limit) = limit {
-                    if limit > u16::MAX as u32 {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                            QuerySyntaxError::InvalidParameter("limit out of bounds".to_string()),
-                        )));
-                    }
-                    if limit as u16 > self.config.drive.max_query_limit {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                            QuerySyntaxError::InvalidLimit(format!(
-                                "limit greater than max limit {}",
-                                self.config.drive.max_query_limit
-                            )),
-                        )));
-                    }
-                }
-
-                if let Some(offset) = offset {
-                    if offset > u16::MAX as u32 {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                            QuerySyntaxError::InvalidParameter("offset out of bounds".to_string()),
-                        )));
-                    }
-                }
-                let Some(request_type) = request_type else {
-                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        QuerySyntaxError::InvalidParameter(
-                            "key request must be defined".to_string(),
-                        ),
-                    )));
-                };
-                let Some(request) = request_type.request else {
-                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        QuerySyntaxError::InvalidParameter(
-                            "key request must be defined".to_string(),
-                        ),
-                    )));
-                };
-                let key_request_type =
-                    check_validation_result_with_data!(convert_key_request_type(request));
-
-                let key_request = IdentityKeysRequest {
-                    identity_id: identity_id.into_buffer(),
-                    request_type: key_request_type,
-                    limit: limit.map(|l| l as u16),
-                    offset: offset.map(|o| o as u16),
-                };
-
-                let response_data = if prove {
-                    let proof =
-                        self.drive
-                            .prove_identity_keys(key_request, None, platform_version)?;
-
-                    GetIdentityKeysResponse {
-                        result: Some(get_identity_keys_response::Result::Proof(Proof {
-                            grovedb_proof: proof,
-                            quorum_hash: state.last_quorum_hash().to_vec(),
-                            signature: state.last_block_signature().to_vec(),
-                            round: state.last_block_round(),
-                            block_id_hash: state.last_block_id_hash().to_vec(),
-                            quorum_type,
-                        })),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                } else {
-                    let keys: SerializedKeyVec =
-                        self.drive
-                            .fetch_identity_keys(key_request, None, platform_version)?;
-
-                    GetIdentityKeysResponse {
-                        result: Some(get_identity_keys_response::Result::Keys(
-                            get_identity_keys_response::Keys { keys_bytes: keys },
-                        )),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                };
-                Ok(QueryValidationResult::new_with_data(response_data))
-            }
-            "/dataContract" => {
-                let GetDataContractRequest { id, prove } =
-                    check_validation_result_with_data!(GetDataContractRequest::decode(query_data)
-                        .map_err(|e| QueryError::InvalidArgument(format!(
-                            "invalid query proto message: {}",
-                            e
-                        ))));
-                let contract_id: Identifier = check_validation_result_with_data!(id
-                    .try_into()
-                    .map_err(|_| QueryError::InvalidArgument(
-                        "id must be a valid identifier (32 bytes long)".to_string()
-                    )));
-                let response_data = if prove {
-                    let proof = self.drive.prove_contract(
-                        contract_id.into_buffer(),
-                        None,
-                        platform_version,
-                    )?;
-
-                    GetDataContractResponse {
-                        result: Some(get_data_contract_response::Result::Proof(Proof {
-                            grovedb_proof: proof,
-                            quorum_hash: state.last_quorum_hash().to_vec(),
-                            quorum_type,
-                            block_id_hash: state.last_block_id_hash().to_vec(),
-                            signature: state.last_block_signature().to_vec(),
-                            round: state.last_block_round(),
-                        })),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                } else {
-                    let maybe_data_contract_fetch_info = self
-                        .drive
-                        .fetch_contract(
-                            contract_id.into_buffer(),
-                            None,
-                            None,
-                            None,
-                            platform_version,
-                        )
-                        .unwrap()?;
-
-                    let data_contract_fetch_info =
-                        check_validation_result_with_data!(maybe_data_contract_fetch_info
-                            .ok_or_else(|| {
-                                QueryError::NotFound(format!(
-                                    "data contract {} not found",
-                                    contract_id
-                                ))
-                            }));
-
-                    let serialized_data_contract = data_contract_fetch_info
-                        .contract
-                        .serialize_to_bytes_with_platform_version(platform_version)
-                        .map_err(Error::Protocol)?;
-
-                    GetDataContractResponse {
-                        result: Some(get_data_contract_response::Result::DataContract(
-                            serialized_data_contract,
-                        )),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                };
-                Ok(QueryValidationResult::new_with_data(response_data))
-            }
-            "/dataContracts" => {
-                let GetDataContractsRequest { ids, prove } =
-                    check_validation_result_with_data!(GetDataContractsRequest::decode(query_data)
-                        .map_err(|e| QueryError::InvalidArgument(format!(
-                            "invalid query proto message: {}",
-                            e
-                        ))));
-
-                let contract_ids = check_validation_result_with_data!(ids
-                    .into_iter()
-                    .map(|contract_id_vec| {
-                        Bytes32::from_vec(contract_id_vec)
-                            .map(|bytes| bytes.0)
-                            .map_err(|_| {
-                                QueryError::InvalidArgument(
-                                    "id must be a valid identifier (32 bytes long)".to_string(),
-                                )
-                            })
-                    })
-                    .collect::<Result<Vec<[u8; 32]>, QueryError>>());
-
-                let response_data = if prove {
-                    let proof = self.drive.prove_contracts(
-                        contract_ids.as_slice(),
-                        None,
-                        platform_version,
-                    )?;
-                    GetDataContractsResponse {
-                        metadata: Some(metadata),
-                        result: Some(get_data_contracts_response::Result::Proof(Proof {
-                            grovedb_proof: proof,
-                            quorum_hash: state.last_quorum_hash().to_vec(),
-                            quorum_type,
-                            block_id_hash: state.last_block_id_hash().to_vec(),
-                            signature: state.last_block_signature().to_vec(),
-                            round: state.last_block_round(),
-                        })),
-                    }
-                    .encode_to_vec()
-                } else {
-                    let contracts = self.drive.get_contracts_with_fetch_info(
-                        contract_ids.as_slice(),
-                        false,
-                        None,
-                        platform_version,
-                    )?;
-
-                    let contracts = contracts
-                        .into_iter()
-                        .map(|(key, maybe_contract)| {
-                            Ok::<DataContractEntry, ProtocolError>(
-                                get_data_contracts_response::DataContractEntry {
-                                    key: key.to_vec(),
-                                    value: maybe_contract
-                                        .map(|contract| {
-                                            Ok::<
-                                                get_data_contracts_response::DataContractValue,
-                                                ProtocolError,
-                                            >(
-                                                get_data_contracts_response::DataContractValue {
-                                                    value: contract
-                                                        .contract
-                                                        .serialize_to_bytes_with_platform_version(
-                                                            platform_version,
-                                                        )?,
-                                                },
-                                            )
-                                        })
-                                        .transpose()?,
-                                },
-                            )
-                        })
-                        .collect::<Result<Vec<DataContractEntry>, ProtocolError>>()?;
-
-                    GetDataContractsResponse {
-                        result: Some(get_data_contracts_response::Result::DataContracts(
-                            get_data_contracts_response::DataContracts {
-                                data_contract_entries: contracts,
-                            },
-                        )),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                };
-                Ok(QueryValidationResult::new_with_data(response_data))
-            }
-            "/dataContractHistory" => {
-                let GetDataContractHistoryRequest {
-                    id,
-                    limit,
-                    offset,
-                    start_at_ms,
-                    prove,
-                } = check_validation_result_with_data!(GetDataContractHistoryRequest::decode(
-                    query_data
-                )
-                .map_err(|e| QueryError::InvalidArgument(format!(
-                    "invalid query proto message: {}",
-                    e
-                ))));
-                let contract_id: Identifier = check_validation_result_with_data!(id
-                    .try_into()
-                    .map_err(|_| QueryError::InvalidArgument(
-                        "id must be a valid identifier (32 bytes long)".to_string()
-                    )));
-
-                // TODO: make a cast safe
-                let limit = check_validation_result_with_data!(limit
-                    .map(|limit| {
-                        u16::try_from(limit).map_err(|_| {
-                            QueryError::InvalidArgument(
-                                "can't fit u16 limit from the supplied value".to_string(),
-                            )
-                        })
-                    })
-                    .transpose());
-
-                let offset = check_validation_result_with_data!(offset
-                    .map(|offset| {
-                        u16::try_from(offset).map_err(|_| {
-                            QueryError::InvalidArgument(
-                                "can't fit u16 offset from the supplied value".to_string(),
-                            )
-                        })
-                    })
-                    .transpose());
-
-                let response_data = if prove {
-                    let proof = self.drive.prove_contract_history(
-                        contract_id.to_buffer(),
-                        None,
-                        start_at_ms,
-                        limit,
-                        offset,
-                        platform_version,
-                    )?;
-
-                    GetDataContractHistoryResponse {
-                        metadata: Some(metadata),
-                        result: Some(get_data_contract_history_response::Result::Proof(Proof {
-                            grovedb_proof: proof,
-                            quorum_hash: state.last_quorum_hash().to_vec(),
-                            quorum_type,
-                            block_id_hash: state.last_block_id_hash().to_vec(),
-                            signature: state.last_block_signature().to_vec(),
-                            round: state.last_block_round(),
-                        })),
-                    }
-                    .encode_to_vec()
-                } else {
-                    let contracts = self.drive.fetch_contract_with_history(
-                        contract_id.to_buffer(),
-                        None,
-                        start_at_ms,
-                        limit,
-                        offset,
-                        platform_version,
-                    )?;
-
-                    if contracts.is_empty() {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
-                            format!("data contract {} history not found", contract_id),
-                        )));
-                    }
-
-                    let contract_historical_entries: Vec<DataContractHistoryEntry> = contracts
-                        .into_iter()
-                        .map(|(date_in_seconds, data_contract)| {
-                            Ok::<
-                                get_data_contract_history_response::DataContractHistoryEntry,
-                                ProtocolError,
-                            >(
-                                get_data_contract_history_response::DataContractHistoryEntry {
-                                    date: date_in_seconds,
-                                    value: data_contract.serialize_to_bytes_with_platform_version(
-                                        platform_version,
-                                    )?,
-                                },
-                            )
-                        })
-                        .collect::<Result<Vec<DataContractHistoryEntry>, ProtocolError>>()?;
-
-                    GetDataContractHistoryResponse {
-                        result: Some(
-                            get_data_contract_history_response::Result::DataContractHistory(
-                                get_data_contract_history_response::DataContractHistory {
-                                    data_contract_entries: contract_historical_entries,
-                                },
-                            ),
-                        ),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                };
-                Ok(QueryValidationResult::new_with_data(response_data))
-            }
-            "/documents" | "/dataContract/documents" => {
-                let GetDocumentsRequest {
-                    data_contract_id,
-                    document_type: document_type_name,
-                    r#where,
-                    order_by,
-                    limit,
-                    prove,
-                    start,
-                } = check_validation_result_with_data!(GetDocumentsRequest::decode(query_data)
-                    .map_err(|e| QueryError::InvalidArgument(format!(
-                        "invalid query proto message: {}",
-                        e
-                    ))));
-
-                let contract_id: Identifier = check_validation_result_with_data!(data_contract_id
-                    .try_into()
-                    .map_err(|_| QueryError::InvalidArgument(
-                        "id must be a valid identifier (32 bytes long)".to_string()
-                    )));
-
-                let (_, contract) = self.drive.get_contract_with_fetch_info_and_fee(
-                    contract_id.to_buffer(),
-                    None,
-                    true,
-                    None,
-                    platform_version,
-                )?;
-
-                let contract = check_validation_result_with_data!(contract.ok_or(
-                    QueryError::NotFound(format!("data contract {} not found", contract_id))
-                ));
-
-                let contract_ref = &contract.contract;
-
-                let document_type = check_validation_result_with_data!(contract_ref
-                    .document_type_for_name(document_type_name.as_str())
-                    .map_err(|_| QueryError::InvalidArgument(format!(
-                        "document type {} not found for contract {}",
-                        document_type_name, contract_id
-                    ))));
-
-                let where_clause = if r#where.is_empty() {
-                    Value::Null
-                } else {
-                    check_validation_result_with_data!(ciborium::de::from_reader(
-                        r#where.as_slice()
-                    )
-                    .map_err(|_| {
-                        QueryError::Query(QuerySyntaxError::DeserializationError(
-                            "unable to decode 'where' query from cbor".to_string(),
-                        ))
-                    }))
-                };
-
-                let order_by = if !order_by.is_empty() {
-                    check_validation_result_with_data!(ciborium::de::from_reader(
-                        order_by.as_slice()
-                    )
-                    .map_err(|_| {
-                        QueryError::Query(QuerySyntaxError::DeserializationError(
-                            "unable to decode 'order_by' query from cbor".to_string(),
-                        ))
-                    }))
-                } else {
-                    None
-                };
-
-                let (start_at_included, start_at) = if let Some(start) = start {
-                    match start {
-                        Start::StartAfter(after) => (
-                            false,
-                            Some(check_validation_result_with_data!(after
-                                .try_into()
-                                .map_err(|_| QueryError::Query(
-                                    QuerySyntaxError::InvalidStartsWithClause(
-                                        "start after should be a 32 byte identifier",
-                                    )
-                                )))),
-                        ),
-                        Start::StartAt(at) => (
-                            true,
-                            Some(check_validation_result_with_data!(at.try_into().map_err(
-                                |_| QueryError::Query(QuerySyntaxError::InvalidStartsWithClause(
-                                    "start at should be a 32 byte identifier",
-                                ))
-                            ))),
-                        ),
-                    }
-                } else {
-                    (true, None)
-                };
-
-                if limit > u16::MAX as u32 {
-                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                        QuerySyntaxError::InvalidLimit(format!("limit {} out of bounds", limit)),
-                    )));
-                }
-
-                let drive_query = DriveQuery::from_decomposed_values(
-                    where_clause,
-                    order_by,
-                    Some(if limit == 0 {
-                        self.config.drive.default_query_limit
-                    } else {
-                        limit as u16
-                    }),
-                    start_at,
-                    start_at_included,
-                    None,
-                    contract_ref,
-                    document_type,
-                    &self.config.drive,
-                )?;
-
-                let response_data = if prove {
-                    let (proof, _) = drive_query.execute_with_proof(
-                        &self.drive,
-                        None,
-                        None,
-                        platform_version,
-                    )?;
-
-                    GetDocumentsResponse {
-                        result: Some(get_documents_response::Result::Proof(Proof {
-                            grovedb_proof: proof,
-                            quorum_hash: state.last_quorum_hash().to_vec(),
-                            quorum_type,
-                            block_id_hash: state.last_block_id_hash().to_vec(),
-                            signature: state.last_block_signature().to_vec(),
-                            round: state.last_block_round(),
-                        })),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                } else {
-                    let results = drive_query
-                        .execute_raw_results_no_proof(&self.drive, None, None, platform_version)?
-                        .0;
-                    GetDocumentsResponse {
-                        result: Some(get_documents_response::Result::Documents(
-                            get_documents_response::Documents { documents: results },
-                        )),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                };
-                Ok(QueryValidationResult::new_with_data(response_data))
-            }
+            "/identity/keys" => self.query_keys(&state, query_data, platform_version),
             "/identity/by-public-key-hash" => {
-                let GetIdentityByPublicKeyHashesRequest {
-                    public_key_hash,
-                    prove,
-                } = check_validation_result_with_data!(
-                    GetIdentityByPublicKeyHashesRequest::decode(query_data).map_err(|e| {
-                        QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
-                    })
-                );
-                let public_key_hash =
-                    check_validation_result_with_data!(Bytes20::from_vec(public_key_hash)
-                        .map(|bytes| bytes.0)
-                        .map_err(|_| QueryError::InvalidArgument(
-                            "public key hash must be 20 bytes long".to_string()
-                        )));
-
-                let response_data = if prove {
-                    let proof = self.drive.prove_full_identity_by_unique_public_key_hash(
-                        public_key_hash,
-                        None,
-                        platform_version,
-                    )?;
-
-                    GetIdentityByPublicKeyHashesResponse {
-                        metadata: Some(metadata),
-                        result: Some(get_identity_by_public_key_hashes_response::Result::Proof(
-                            Proof {
-                                grovedb_proof: proof,
-                                quorum_hash: state.last_quorum_hash().to_vec(),
-                                quorum_type,
-                                block_id_hash: state.last_block_id_hash().to_vec(),
-                                signature: state.last_block_signature().to_vec(),
-                                round: state.last_block_round(),
-                            },
-                        )),
-                    }
-                    .encode_to_vec()
-                } else {
-                    let fetch_result = self.drive.fetch_full_identity_by_unique_public_key_hash(
-                        public_key_hash,
-                        None,
-                        platform_version,
-                    );
-
-                    let maybe_identity = if let Err(err) = fetch_result {
-                        match err {
-                            drive::error::Error::GroveDB(
-                                drive::grovedb::error::Error::PathKeyNotFound(_),
-                            ) => None,
-                            _ => return Err(Error::Drive(err)),
-                        }
-                    } else {
-                        fetch_result.unwrap()
-                    };
-
-                    let identity =
-                        check_validation_result_with_data!(maybe_identity.ok_or_else(|| {
-                            QueryError::NotFound(format!(
-                                "identity for public key hash {} not found",
-                                hex::encode(public_key_hash)
-                            ))
-                        }));
-
-                    let serialized_identity = identity
-                        .serialize_consume_to_bytes()
-                        .map_err(Error::Protocol)?;
-
-                    GetIdentityByPublicKeyHashesResponse {
-                        metadata: Some(metadata),
-                        result: Some(
-                            get_identity_by_public_key_hashes_response::Result::Identity(
-                                serialized_identity,
-                            ),
-                        ),
-                    }
-                    .encode_to_vec()
-                };
-                Ok(QueryValidationResult::new_with_data(response_data))
+                self.query_identity_by_public_key_hash(&state, query_data, platform_version)
             }
             "/identities/by-public-key-hash" => {
-                let GetIdentitiesByPublicKeyHashesRequest {
-                    public_key_hashes,
-                    prove,
-                } = check_validation_result_with_data!(
-                    GetIdentitiesByPublicKeyHashesRequest::decode(query_data).map_err(|e| {
-                        QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
-                    })
-                );
-
-                let public_key_hashes = check_validation_result_with_data!(public_key_hashes
-                    .into_iter()
-                    .map(|pub_key_hash_vec| {
-                        Bytes20::from_vec(pub_key_hash_vec)
-                            .map(|bytes| bytes.0)
-                            .map_err(|_| {
-                                QueryError::InvalidArgument(
-                                    "public key hash must be 20 bytes long".to_string(),
-                                )
-                            })
-                    })
-                    .collect::<Result<Vec<[u8; 20]>, QueryError>>());
-
-                let response_data = if prove {
-                    let proof = self
-                        .drive
-                        .prove_full_identities_by_unique_public_key_hashes(
-                            &public_key_hashes,
-                            None,
-                            platform_version,
-                        )?;
-
-                    GetIdentitiesByPublicKeyHashesResponse {
-                        result: Some(get_identities_by_public_key_hashes_response::Result::Proof(
-                            Proof {
-                                grovedb_proof: proof,
-                                quorum_hash: state.last_quorum_hash().to_vec(),
-                                quorum_type,
-                                block_id_hash: state.last_block_id_hash().to_vec(),
-                                signature: state.last_block_signature().to_vec(),
-                                round: state.last_block_round(),
-                            },
-                        )),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                } else {
-                    //todo: fix this so we return optionals
-                    let identities = self
-                        .drive
-                        .fetch_full_identities_by_unique_public_key_hashes(
-                            public_key_hashes.as_slice(),
-                            None,
-                            platform_version,
-                        )?;
-
-                    let serialized_identities = identities
-                        .into_values()
-                        .filter_map(|maybe_identity| {
-                            Some(maybe_identity?.serialize_consume_to_bytes())
-                        })
-                        .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()?;
-
-                    GetIdentitiesByPublicKeyHashesResponse {
-                        result: Some(
-                            get_identities_by_public_key_hashes_response::Result::Identities(
-                                get_identities_by_public_key_hashes_response::Identities {
-                                    identities: serialized_identities,
-                                },
-                            ),
-                        ),
-                        metadata: Some(metadata),
-                    }
-                    .encode_to_vec()
-                };
-                Ok(QueryValidationResult::new_with_data(response_data))
+                self.query_identities_by_public_key_hashes(&state, query_data, platform_version)
             }
-            "/proofs" => {
-                let GetProofsRequest {
-                    identities,
-                    contracts,
-                    documents,
-                } = check_validation_result_with_data!(GetProofsRequest::decode(query_data)
-                    .map_err(|e| QueryError::InvalidArgument(format!(
-                        "invalid query proto message: {}",
-                        e
-                    ))));
-
-                let contract_ids = check_validation_result_with_data!(contracts
-                    .into_iter()
-                    .map(|contract_request| {
-                        Bytes32::from_vec(contract_request.contract_id)
-                            .map(|bytes| bytes.0)
-                            .map_err(|_| {
-                                QueryError::InvalidArgument(
-                                    "id must be a valid identifier (32 bytes long)".to_string(),
-                                )
-                            })
-                    })
-                    .collect::<Result<Vec<[u8; 32]>, QueryError>>());
-
-                let identity_requests = check_validation_result_with_data!(identities
-                    .into_iter()
-                    .map(|identity_request| {
-                        Ok(IdentityDriveQuery {
-                            identity_id: Bytes32::from_vec(identity_request.identity_id)
-                                .map(|bytes| bytes.0)
-                                .map_err(|_| {
-                                    QueryError::InvalidArgument(
-                                        "id must be a valid identifier (32 bytes long)".to_string(),
-                                    )
-                                })?,
-                            prove_request_type: IdentityProveRequestType::try_from(
-                                identity_request.request_type as u8,
-                            )
-                            .map_err(|_| {
-                                QueryError::InvalidArgument(
-                                    format!(
-                                        "invalid prove request type '{}'",
-                                        identity_request.request_type
-                                    )
-                                    .to_string(),
-                                )
-                            })?,
-                        })
-                    })
-                    .collect::<Result<Vec<IdentityDriveQuery>, QueryError>>());
-
-                let document_queries = check_validation_result_with_data!(documents
-                    .into_iter()
-                    .map(|document_proof_request| {
-                        let contract_id: Identifier =
-                            document_proof_request.contract_id.try_into().map_err(|_| {
-                                QueryError::InvalidArgument(
-                                    "id must be a valid identifier (32 bytes long)".to_string(),
-                                )
-                            })?;
-                        let document_id: Identifier =
-                            document_proof_request.document_id.try_into().map_err(|_| {
-                                QueryError::InvalidArgument(
-                                    "id must be a valid identifier (32 bytes long)".to_string(),
-                                )
-                            })?;
-
-                        Ok(SingleDocumentDriveQuery {
-                            contract_id: contract_id.into_buffer(),
-                            document_type_name: document_proof_request.document_type,
-                            document_type_keeps_history: document_proof_request
-                                .document_type_keeps_history,
-                            document_id: document_id.into_buffer(),
-                            block_time_ms: None, //None because we want latest
-                        })
-                    })
-                    .collect::<Result<Vec<_>, QueryError>>());
-
-                let proof = self.drive.prove_multiple(
-                    &identity_requests,
-                    &contract_ids,
-                    &document_queries,
-                    None,
-                    platform_version,
-                )?;
-
-                let response_data = GetProofsResponse {
-                    proof: Some(Proof {
-                        grovedb_proof: proof,
-                        quorum_hash: state.last_quorum_hash().to_vec(),
-                        quorum_type,
-                        block_id_hash: state.last_block_id_hash().to_vec(),
-                        signature: state.last_block_signature().to_vec(),
-                        round: state.last_block_round(),
-                    }),
-                    metadata: Some(metadata),
-                }
-                .encode_to_vec();
-
-                Ok(QueryValidationResult::new_with_data(response_data))
+            "/dataContract" => self.query_data_contract(&state, query_data, platform_version),
+            "/dataContracts" => self.query_data_contracts(&state, query_data, platform_version),
+            "/dataContractHistory" => {
+                self.query_data_contract_history(&state, query_data, platform_version)
             }
+            "/documents" | "/dataContract/documents" => {
+                self.query_documents(&state, query_data, platform_version)
+            }
+            "/proofs" => self.query_proofs(&state, query_data, platform_version),
+            "/versionUpgrade/state" => {
+                self.query_version_upgrade_state(&state, query_data, platform_version)
+            }
+            "/versionUpgrade/voteStatus" => {
+                self.query_version_upgrade_vote_status(&state, query_data, platform_version)
+            }
+            "/epochInfos" => self.query_epoch_infos(&state, query_data, platform_version),
             other => Ok(QueryValidationResult::new_with_error(
                 QueryError::InvalidArgument(format!("query path '{}' is not supported", other)),
             )),
@@ -1158,12 +56,11 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod test {
     pub mod query_data_contract_history {
-
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
         use dapi_grpc::platform::v0::{
-            get_data_contract_history_response, GetDataContractHistoryRequest,
-            GetDataContractHistoryResponse,
+            get_data_contract_history_request, get_data_contract_history_response,
+            GetDataContractHistoryRequest, GetDataContractHistoryResponse,
         };
         use dpp::block::block_info::BlockInfo;
 
@@ -1172,6 +69,10 @@ mod test {
         use dpp::data_contract::config::v0::DataContractConfigSettersV0;
 
         use crate::error::query::QueryError;
+        use dapi_grpc::platform::v0::get_data_contract_history_request::GetDataContractHistoryRequestV0;
+        use dapi_grpc::platform::v0::get_data_contract_history_response::{
+            get_data_contract_history_response_v0, GetDataContractHistoryResponseV0,
+        };
         use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
         use dpp::data_contract::schema::DataContractSchemaMethodsV0;
         use dpp::data_contract::DataContract;
@@ -1183,8 +84,8 @@ mod test {
         use drive::drive::Drive;
         use prost::Message;
 
-        fn default_request() -> GetDataContractHistoryRequest {
-            GetDataContractHistoryRequest {
+        fn default_request_v0() -> GetDataContractHistoryRequestV0 {
+            GetDataContractHistoryRequestV0 {
                 id: vec![1; 32],
                 limit: Some(10),
                 offset: Some(0),
@@ -1298,8 +199,12 @@ mod test {
             } = set_up_test();
 
             let request = GetDataContractHistoryRequest {
-                id: original_data_contract.id().to_vec(),
-                ..default_request()
+                version: Some(get_data_contract_history_request::Version::V0(
+                    GetDataContractHistoryRequestV0 {
+                        id: original_data_contract.id().to_vec(),
+                        ..default_request_v0()
+                    },
+                )),
             };
 
             let request_data = request.encode_to_vec();
@@ -1321,17 +226,20 @@ mod test {
             let response = GetDataContractHistoryResponse::decode(data.as_slice())
                 .expect("To decode response");
 
-            let GetDataContractHistoryResponse {
-                metadata: _,
+            let GetDataContractHistoryResponse { version } = response;
+
+            let get_data_contract_history_response::Version::V0(GetDataContractHistoryResponseV0 {
                 result,
-            } = response;
+                metadata: _,
+            }) = version.expect("expected a versioned response");
+
             let res = result.expect("expect result to be returned from the query");
 
             let contract_history = match res {
-                get_data_contract_history_response::Result::DataContractHistory(
+                get_data_contract_history_response_v0::Result::DataContractHistory(
                     data_contract_history,
                 ) => data_contract_history,
-                get_data_contract_history_response::Result::Proof(_) => {
+                get_data_contract_history_response_v0::Result::Proof(_) => {
                     panic!("expect result to be DataContractHistory");
                 }
             };
@@ -1381,11 +289,18 @@ mod test {
                 original_data_contract,
             } = set_up_test();
 
-            let request = GetDataContractHistoryRequest {
+            let request_v0 = GetDataContractHistoryRequestV0 {
                 id: original_data_contract.id().to_vec(),
                 prove: true,
-                ..default_request()
+                ..default_request_v0()
             };
+
+            let start_at_ms = request_v0.start_at_ms;
+
+            let request = GetDataContractHistoryRequest {
+                version: Some(get_data_contract_history_request::Version::V0(request_v0)),
+            };
+
             let request_data = request.encode_to_vec();
 
             let result = platform
@@ -1405,24 +320,27 @@ mod test {
             let response = GetDataContractHistoryResponse::decode(data.as_slice())
                 .expect("To decode response");
 
-            let GetDataContractHistoryResponse {
-                metadata: _,
+            let GetDataContractHistoryResponse { version } = response;
+
+            let get_data_contract_history_response::Version::V0(GetDataContractHistoryResponseV0 {
                 result,
-            } = response;
+                metadata: _,
+            }) = version.expect("expected a versioned response");
+
             let res = result.expect("expect result to be returned from the query");
 
             let contract_proof = match res {
-                get_data_contract_history_response::Result::DataContractHistory(_) => {
+                get_data_contract_history_response_v0::Result::DataContractHistory(_) => {
                     panic!("expect result to be Proof");
                 }
-                get_data_contract_history_response::Result::Proof(proof) => proof,
+                get_data_contract_history_response_v0::Result::Proof(proof) => proof,
             };
 
             // Check that the proof has correct values inside
             let (_root_hash, contract_history) = Drive::verify_contract_history(
                 &contract_proof.grovedb_proof,
                 original_data_contract.id().to_buffer(),
-                request.start_at_ms,
+                start_at_ms,
                 Some(10),
                 Some(0),
                 platform_version,
@@ -1461,26 +379,34 @@ mod test {
             } = set_up_test();
 
             let request = GetDataContractHistoryRequest {
-                id: original_data_contract.id().to_vec(),
-                limit: Some(100000),
-                ..default_request()
+                version: Some(get_data_contract_history_request::Version::V0(
+                    GetDataContractHistoryRequestV0 {
+                        id: original_data_contract.id().to_vec(),
+                        limit: Some(100000),
+                        ..default_request_v0()
+                    },
+                )),
             };
+
             let request_data = request.encode_to_vec();
 
             let validation_result = platform
                 .query_v0("/dataContractHistory", &request_data, platform_version)
                 .expect("To return validation result with an error");
 
+            assert!(!validation_result.is_valid());
+
             let error = validation_result
-                .first_error()
+                .errors
+                .first()
                 .expect("expect error to exist");
 
-            match error {
-                QueryError::InvalidArgument(error_message) => {
-                    assert_eq!(error_message, "can't fit u16 limit from the supplied value");
-                }
-                _ => panic!("expect query error"),
-            }
+            assert!(matches!(error, QueryError::InvalidArgument(_)));
+
+            assert_eq!(
+                error.to_string(),
+                "invalid argument error: limit out of bounds"
+            );
         }
 
         #[test]
@@ -1493,29 +419,34 @@ mod test {
             } = set_up_test();
 
             let request = GetDataContractHistoryRequest {
-                id: original_data_contract.id().to_vec(),
-                offset: Some(100000),
-                ..default_request()
+                version: Some(get_data_contract_history_request::Version::V0(
+                    GetDataContractHistoryRequestV0 {
+                        id: original_data_contract.id().to_vec(),
+                        offset: Some(100000),
+                        ..default_request_v0()
+                    },
+                )),
             };
+
             let request_data = request.encode_to_vec();
 
             let validation_result = platform
                 .query_v0("/dataContractHistory", &request_data, platform_version)
                 .expect("To return validation result with an error");
 
+            assert!(!validation_result.is_valid());
+
             let error = validation_result
-                .first_error()
+                .errors
+                .first()
                 .expect("expect error to exist");
 
-            match error {
-                QueryError::InvalidArgument(error_message) => {
-                    assert_eq!(
-                        error_message,
-                        "can't fit u16 offset from the supplied value"
-                    );
-                }
-                _ => panic!("expect query error"),
-            }
+            assert!(matches!(error, QueryError::InvalidArgument(_)));
+
+            assert_eq!(
+                error.to_string(),
+                "invalid argument error: offset out of bounds"
+            );
         }
     }
 }

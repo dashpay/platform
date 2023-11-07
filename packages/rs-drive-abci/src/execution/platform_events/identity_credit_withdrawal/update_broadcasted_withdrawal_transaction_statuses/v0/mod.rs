@@ -350,7 +350,7 @@ mod tests {
                 validator_sets: Default::default(),
                 full_masternode_list: Default::default(),
                 hpmn_masternode_list: Default::default(),
-                initialization_information: None,
+                genesis_block_info: None,
             }
             .into(),
             proposer_results: None,

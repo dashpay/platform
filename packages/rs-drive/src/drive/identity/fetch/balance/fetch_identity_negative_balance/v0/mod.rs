@@ -44,9 +44,9 @@ impl Drive {
             Ok(Some(Item(encoded_balance, _))) => {
                 let balance = Credits::from_be_bytes(
                     encoded_balance.as_slice().try_into().map_err(|_| {
-                        Error::Drive(DriveError::CorruptedSerialization(
+                        Error::Drive(DriveError::CorruptedSerialization(String::from(
                             "negative balance must be u64",
-                        ))
+                        )))
                     })?,
                 );
 

@@ -17,6 +17,7 @@ use dashcore_rpc::dashcore::BlockHash;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use dpp::block::block_info::BlockInfo;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 use drive::error::Error::GroveDB;
@@ -51,6 +52,8 @@ pub struct PlatformRef<'a, C> {
     pub config: &'a PlatformConfig,
     /// Core RPC Client
     pub core_rpc: &'a C,
+    /// Block info
+    pub block_info: &'a BlockInfo,
 }
 
 // @append_only

@@ -36,12 +36,12 @@ class PlatformStub(object):
                 )
         self.getIdentityBalance = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityBalance',
-                request_serializer=platform__pb2.GetIdentityRequest.SerializeToString,
+                request_serializer=platform__pb2.GetIdentityBalanceRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityBalanceResponse.FromString,
                 )
         self.getIdentityBalanceAndRevision = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityBalanceAndRevision',
-                request_serializer=platform__pb2.GetIdentityRequest.SerializeToString,
+                request_serializer=platform__pb2.GetIdentityBalanceAndRevisionRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityBalanceAndRevisionResponse.FromString,
                 )
         self.getProofs = channel.unary_unary(
@@ -74,10 +74,10 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetIdentitiesByPublicKeyHashesRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentitiesByPublicKeyHashesResponse.FromString,
                 )
-        self.getIdentityByPublicKeyHashes = channel.unary_unary(
-                '/org.dash.platform.dapi.v0.Platform/getIdentityByPublicKeyHashes',
-                request_serializer=platform__pb2.GetIdentityByPublicKeyHashesRequest.SerializeToString,
-                response_deserializer=platform__pb2.GetIdentityByPublicKeyHashesResponse.FromString,
+        self.getIdentityByPublicKeyHash = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getIdentityByPublicKeyHash',
+                request_serializer=platform__pb2.GetIdentityByPublicKeyHashRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentityByPublicKeyHashResponse.FromString,
                 )
         self.waitForStateTransitionResult = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult',
@@ -88,6 +88,21 @@ class PlatformStub(object):
                 '/org.dash.platform.dapi.v0.Platform/getConsensusParams',
                 request_serializer=platform__pb2.GetConsensusParamsRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetConsensusParamsResponse.FromString,
+                )
+        self.getVersionUpgradeState = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getVersionUpgradeState',
+                request_serializer=platform__pb2.GetVersionUpgradeStateRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetVersionUpgradeStateResponse.FromString,
+                )
+        self.getVersionUpgradeVoteStatus = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getVersionUpgradeVoteStatus',
+                request_serializer=platform__pb2.GetVersionUpgradeVoteStatusRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetVersionUpgradeVoteStatusResponse.FromString,
+                )
+        self.getEpochsInfo = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getEpochsInfo',
+                request_serializer=platform__pb2.GetEpochsInfoRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetEpochsInfoResponse.FromString,
                 )
 
 
@@ -119,8 +134,7 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getIdentityBalance(self, request, context):
-        """rpc getIdentitiesKeys (GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
-        """
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -167,7 +181,7 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def getIdentityByPublicKeyHashes(self, request, context):
+    def getIdentityByPublicKeyHash(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -180,6 +194,24 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getConsensusParams(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getVersionUpgradeState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getVersionUpgradeVoteStatus(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getEpochsInfo(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -210,12 +242,12 @@ def add_PlatformServicer_to_server(servicer, server):
             ),
             'getIdentityBalance': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityBalance,
-                    request_deserializer=platform__pb2.GetIdentityRequest.FromString,
+                    request_deserializer=platform__pb2.GetIdentityBalanceRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityBalanceResponse.SerializeToString,
             ),
             'getIdentityBalanceAndRevision': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityBalanceAndRevision,
-                    request_deserializer=platform__pb2.GetIdentityRequest.FromString,
+                    request_deserializer=platform__pb2.GetIdentityBalanceAndRevisionRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityBalanceAndRevisionResponse.SerializeToString,
             ),
             'getProofs': grpc.unary_unary_rpc_method_handler(
@@ -248,10 +280,10 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.GetIdentitiesByPublicKeyHashesRequest.FromString,
                     response_serializer=platform__pb2.GetIdentitiesByPublicKeyHashesResponse.SerializeToString,
             ),
-            'getIdentityByPublicKeyHashes': grpc.unary_unary_rpc_method_handler(
-                    servicer.getIdentityByPublicKeyHashes,
-                    request_deserializer=platform__pb2.GetIdentityByPublicKeyHashesRequest.FromString,
-                    response_serializer=platform__pb2.GetIdentityByPublicKeyHashesResponse.SerializeToString,
+            'getIdentityByPublicKeyHash': grpc.unary_unary_rpc_method_handler(
+                    servicer.getIdentityByPublicKeyHash,
+                    request_deserializer=platform__pb2.GetIdentityByPublicKeyHashRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentityByPublicKeyHashResponse.SerializeToString,
             ),
             'waitForStateTransitionResult': grpc.unary_unary_rpc_method_handler(
                     servicer.waitForStateTransitionResult,
@@ -262,6 +294,21 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getConsensusParams,
                     request_deserializer=platform__pb2.GetConsensusParamsRequest.FromString,
                     response_serializer=platform__pb2.GetConsensusParamsResponse.SerializeToString,
+            ),
+            'getVersionUpgradeState': grpc.unary_unary_rpc_method_handler(
+                    servicer.getVersionUpgradeState,
+                    request_deserializer=platform__pb2.GetVersionUpgradeStateRequest.FromString,
+                    response_serializer=platform__pb2.GetVersionUpgradeStateResponse.SerializeToString,
+            ),
+            'getVersionUpgradeVoteStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.getVersionUpgradeVoteStatus,
+                    request_deserializer=platform__pb2.GetVersionUpgradeVoteStatusRequest.FromString,
+                    response_serializer=platform__pb2.GetVersionUpgradeVoteStatusResponse.SerializeToString,
+            ),
+            'getEpochsInfo': grpc.unary_unary_rpc_method_handler(
+                    servicer.getEpochsInfo,
+                    request_deserializer=platform__pb2.GetEpochsInfoRequest.FromString,
+                    response_serializer=platform__pb2.GetEpochsInfoResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -353,7 +400,7 @@ class Platform(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityBalance',
-            platform__pb2.GetIdentityRequest.SerializeToString,
+            platform__pb2.GetIdentityBalanceRequest.SerializeToString,
             platform__pb2.GetIdentityBalanceResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
@@ -370,7 +417,7 @@ class Platform(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityBalanceAndRevision',
-            platform__pb2.GetIdentityRequest.SerializeToString,
+            platform__pb2.GetIdentityBalanceAndRevisionRequest.SerializeToString,
             platform__pb2.GetIdentityBalanceAndRevisionResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
@@ -478,7 +525,7 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
-    def getIdentityByPublicKeyHashes(request,
+    def getIdentityByPublicKeyHash(request,
             target,
             options=(),
             channel_credentials=None,
@@ -488,9 +535,9 @@ class Platform(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityByPublicKeyHashes',
-            platform__pb2.GetIdentityByPublicKeyHashesRequest.SerializeToString,
-            platform__pb2.GetIdentityByPublicKeyHashesResponse.FromString,
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityByPublicKeyHash',
+            platform__pb2.GetIdentityByPublicKeyHashRequest.SerializeToString,
+            platform__pb2.GetIdentityByPublicKeyHashResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -525,5 +572,56 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getConsensusParams',
             platform__pb2.GetConsensusParamsRequest.SerializeToString,
             platform__pb2.GetConsensusParamsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getVersionUpgradeState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getVersionUpgradeState',
+            platform__pb2.GetVersionUpgradeStateRequest.SerializeToString,
+            platform__pb2.GetVersionUpgradeStateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getVersionUpgradeVoteStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getVersionUpgradeVoteStatus',
+            platform__pb2.GetVersionUpgradeVoteStatusRequest.SerializeToString,
+            platform__pb2.GetVersionUpgradeVoteStatusResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getEpochsInfo(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getEpochsInfo',
+            platform__pb2.GetEpochsInfoRequest.SerializeToString,
+            platform__pb2.GetEpochsInfoResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
