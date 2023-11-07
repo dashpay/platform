@@ -6,7 +6,6 @@ welcome to contribute towards development in the form of peer review, testing
 and patches. This document explains the practical process and guidelines for
 contributing.
 
-
 Branches, Bugfixes and New Features
 -----------------------------------
 
@@ -24,7 +23,6 @@ mailing list discussions).
 
 If a pull request is not (yet) ready to be considered for merging, please set
 its status to "Draft" on GitHub.
-
 
 Conventional Commits
 --------------------
@@ -46,7 +44,6 @@ atomic](https://en.wikipedia.org/wiki/Atomic_commit#Atomic_commit_convention)
 and diffs should be easy to read. For this reason, do not mix any formatting
 fixes or code movement with actual code changes.
 
-
 Code Conventions
 ----------------
 
@@ -54,6 +51,12 @@ Please ensure that the code you write adheres to the code style adopted in the
 project, and that all linting checks are passing. We use [AirBnB
 style](https://github.com/airbnb/javascript) for JS code.
 
+For Rust, please format your code using nightly version of rustfmt
+and configuration in `.rustfmt.toml`:
+
+```bash
+cargo +nightly fmt
+```
 
 Testing
 -------
@@ -70,7 +73,6 @@ Code should generally be covered by unit and integration tests, and functional
 or e2e tests should be written for larger chunks of functionality (when
 appropriate). Unit and integration tests should not make any network calls, and
 unit tests should mock all dependencies.
-
 
 Squashing Commits
 -----------------
@@ -99,7 +101,6 @@ respective change set.
 The length of time required for peer review is unpredictable and will vary from
 pull request to pull request.
 
-
 Pull Request Philosophy
 -----------------------
 
@@ -107,7 +108,6 @@ Patchsets should always be focused. For example, a pull request could add a
 feature, fix a bug, or refactor code; but not a mixture. Please also avoid super
 pull requests which attempt to do too much, are overly large, or overly complex
 as this makes review difficult.
-
 
 "Decision Making" Process
 -------------------------
@@ -127,7 +127,6 @@ In general, all pull requests must:
 - Not break the existing test suite;
 - Where bugs are fixed, where possible, there should be unit tests demonstrating
   the bug and also proving the fix. This helps prevent regression.
-
 
 Release process
 ---------------
