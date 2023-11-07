@@ -155,7 +155,7 @@ runs:
         labels: ${{ steps.docker_meta.outputs.labels }}
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
-          RUSTC_WRAPPER=sscache
+          RUSTC_WRAPPER=sccache
           SCCACHE_BUCKET=${{ inputs.bucket }}
           SCCACHE_REGION=${{ inputs.region }}
           SCCACHE_S3_KEY_PREFIX="${{ runner.os }}/sccache"
