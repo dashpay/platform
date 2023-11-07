@@ -3512,6 +3512,7 @@ dependencies = [
  "ciborium",
  "dapi-grpc",
  "dashcore-rpc",
+ "data-contracts",
  "derive_more",
  "dotenvy",
  "dpp",

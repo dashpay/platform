@@ -12,65 +12,40 @@ You can also inspect tests in `tests/` folder for more detailed examples.
 
 ## Tests
 
-This section provides instructions on how to test the RS-SDK for Dash Platform. The tests can be run in two modes: **offline** (without connectivity to the Dash Platform) and **online** (with connectivity to the Dash Platform). **Offline** mode is the default one.
+This section provides instructions on how to test the RS-SDK for Dash Platform. The tests can be run in two modes: **offline** (without connectivity to the Dash Platform) and **network** (with connectivity to the Dash Platform). **Offline** mode is the default one.
 
-## Online Testing
+## Network Testing
 
-Online testing requires connectivity to the Dash Platform and Dash Core. This mode generates new test vectors that can be used in offline mode.
+Network testing requires connectivity to the Dash Platform and Dash Core.
 
-Follow these steps to conduct online testing:
+Follow these steps to conduct network testing:
 
-1. Configure the environment variables in `packages/rs-sdk/.env`. Refer to the "Test Configuration" section below.
-2. Optionally, you can remove existing test vectors.
-3. Run the test without default features, but with `mocks` feature enabled.
-
-Use the following commands for the above steps:
+1. Configure platform address and credentials in `packages/rs-sdk/tests/.env`.
+   Note that the `.env` file might already be configured during  project setup (`yarn setup`).
+2. Run the test without default features, but with `network-testing` feature enabled.
 
 ```bash
 cd packages/rs-sdk
-rm tests/vectors/*
-cargo test -p rs-sdk --no-default-features --features mocks
+cargo test -p rs-sdk --no-default-features --features network-testing
 ```
 
 ## Offline Testing
 
-Offline testing uses the vectors generated in online mode. These vectors must be saved in `packages/rs-sdk/tests/vectors`.
+Offline testing uses the vectors generated using `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
+These vectors must be saved in `packages/rs-sdk/tests/vectors`.
+
+### Generating test vectors
+
+To generate test vectors for offline testing:
+
+1. Configure platform address and credentials in `packages/rs-sdk/tests/.env`.
+   Note that the `.env` file might already be configured during project setup (`yarn setup`).
+2. Run  `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
+
+### Running tests in offline mode
 
 Run the offline test using the following command:
 
 ```bash
 cargo test -p rs-sdk
 ```
-
-## Test Configuration
-
-For the `offline-testing` feature, you need to set the configuration in the environment variables or in `packages/rs-sdk/.env` file. You can refer to `packages/rs-sdk/.env.example` for the format.
-
-The identifiers are generated with the platform test suite. To display them, apply the following diff:
-
-```diff
-diff --git a/packages/platform-test-suite/test/functional/platform/Document.spec.js b/packages/platform-test-suite/test/functional/platform/Document.spec.js
-index 29dca311b..fba0aefc2 100644
---- a/packages/platform-test-suite/test/functional/platform/Document.spec.js
-+++ b/packages/platform-test-suite/test/functional/platform/Document.spec.js
-@@ -180,6 +180,9 @@ describe('Platform', () => {
- 
-       // Additional wait time to mitigate testnet latency
-       await waitForSTPropagated();
-+      console.log("Owner ID: " + document.getOwnerId().toString("base58"));
-+      console.log("Data Contract: " + document.getDataContractId().toString("base58"));
-+      console.log("Document: " + document.getId().toString("base58"));
-     });
- 
-     it('should fetch created document', async () => {
-
-```
-
-To run the document test, use the following commands:
-
-```bash
-cd packages/platform-test-suite/
-yarn mocha -b test/functional/platform/Document.spec.js
-```
-
-Find the values in the output and copy them to `packages/rs-sdk/.env`.
