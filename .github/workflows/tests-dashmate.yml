@@ -12,9 +12,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore timestamps
-        uses: chetan/git-restore-mtime-action@v2
-
       - name: Login to DockerHub
         uses: docker/login-action@v3
         with:

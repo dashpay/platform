@@ -12,9 +12,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore timestamps
-        uses: chetan/git-restore-mtime-action@v2
-        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+      - name: Persist retimer state
+        uses: actions/cache@v3
+        with:
+          path: retimer-state
+          key: retimer-state-${{ github.sha }}
+          restore-keys: |
+            retimer-state-${{ github.sha }}
+            retimer-state-
+
+      - name: Run retimer to adjust source files mtime for cargo build cache
+        uses: dcginfra/retimer@master
 
       - name: Login to DockerHub
         uses: docker/login-action@v3

@@ -11,8 +11,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore timestamps
-        uses: chetan/git-restore-mtime-action@v2
+      - name: Persist retimer state
+        uses: actions/cache@v3
+        with:
+          path: retimer-state
+          key: retimer-state-${{ github.sha }}
+          restore-keys: |
+            retimer-state-${{ github.sha }}
+            retimer-state-
+
+      - name: Run retimer to adjust source files mtime for cargo build cache
+        uses: dcginfra/retimer@master
 
       - name: Login to DockerHub
         uses: docker/login-action@v3
@@ -57,7 +66,7 @@ jobs:
                 keepDuration = 864000 # 10 days
 
       - name: Load Docker mount cache
-        uses: dcginfra/buildkit-cache-dance/inject@main
+        uses: dcginfra/buildkit-cache-dance/inject@s5cmd
         with:
           bucket: multi-runner-linux-x64-platform-cache-ui535z23
           mounts: |
@@ -113,7 +122,7 @@ jobs:
           CACHE_BASE_TO: ${{ steps.base_layer_cache_settings.outputs.cache_to }}
 
       - name: Store Docker mount cache
-        uses: dcginfra/buildkit-cache-dance/extract@main
+        uses: dcginfra/buildkit-cache-dance/extract@s5cmd
         with:
           bucket: multi-runner-linux-x64-platform-cache-ui535z23
           mounts: |

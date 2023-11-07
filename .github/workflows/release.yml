@@ -89,8 +89,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore timestamps
-        uses: chetan/git-restore-mtime-action@v2
+      - name: Persist retimer state
+        uses: actions/cache@v3
+        with:
+          path: retimer-state
+          key: retimer-state-${{ github.sha }}
+          restore-keys: |
+            retimer-state-${{ github.sha }}
+            retimer-state-
+
+      - name: Run retimer to adjust source files mtime for cargo build cache
+        uses: dcginfra/retimer@master
 
       - name: Get image tag
         uses: actions/github-script@v6
@@ -131,8 +140,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore timestamps
-        uses: chetan/git-restore-mtime-action@v2
+      - name: Persist retimer state
+        uses: actions/cache@v3
+        with:
+          path: retimer-state
+          key: retimer-state-${{ github.sha }}
+          restore-keys: |
+            retimer-state-${{ github.sha }}
+            retimer-state-
+
+      - name: Run retimer to adjust source files mtime for cargo build cache
+        uses: dcginfra/retimer@master
 
       - name: Get image tag
         uses: actions/github-script@v6
@@ -175,8 +193,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore timestamps
-        uses: chetan/git-restore-mtime-action@v2
+      - name: Persist retimer state
+        uses: actions/cache@v3
+        with:
+          path: retimer-state
+          key: retimer-state-${{ github.sha }}
+          restore-keys: |
+            retimer-state-${{ github.sha }}
+            retimer-state-
+
+      - name: Run retimer to adjust source files mtime for cargo build cache
+        uses: dcginfra/retimer@master
 
       - name: Get image tag
         uses: actions/github-script@v6
@@ -219,8 +246,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore timestamps
-        uses: chetan/git-restore-mtime-action@v2
+      - name: Persist retimer state
+        uses: actions/cache@v3
+        with:
+          path: retimer-state
+          key: retimer-state-${{ github.sha }}
+          restore-keys: |
+            retimer-state-${{ github.sha }}
+            retimer-state-
+
+      - name: Run retimer to adjust source files mtime for cargo build cache
+        uses: dcginfra/retimer@master
 
       - name: Get image tag
         uses: actions/github-script@v6
