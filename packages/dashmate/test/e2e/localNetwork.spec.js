@@ -20,7 +20,11 @@ describe('Local Network', function main() {
     container = await createDIContainer();
 
     homeDir = container.resolve('homeDir');
-    homeDir.change(HomeDir.createTemp());
+    if (process.env.DASHMATE_E2E_TESTS_LOCAL_HOMEDIR) {
+      homeDir.change(new HomeDir(process.env.DASHMATE_E2E_TESTS_LOCAL_HOMEDIR));
+    } else {
+      homeDir.change(HomeDir.createTemp());
+    }
 
     // Create config file
     configFileRepository = container.resolve('configFileRepository');
@@ -70,7 +74,11 @@ describe('Local Network', function main() {
     homeDir.remove();
   });
 
-  describe('setup', () => {
+  describe('setup', function describeSetup() {
+    if (process.env.DASHMATE_E2E_TESTS_LOCAL_HOMEDIR) {
+      this.skip('local network already set up');
+    }
+
     it('should setup local network', async () => {
       // TODO: Refactor setup command to extract setup logic to
       //  setupTask function and use it here
