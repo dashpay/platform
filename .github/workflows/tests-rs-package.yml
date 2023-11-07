@@ -32,16 +32,10 @@ jobs:
 
   formatting:
     name: Formatting
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
-
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        if: contains(runner.name, 'ubuntu-platform')
-        with:
-          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Setup Rust
         uses: ./.github/actions/rust
@@ -52,28 +46,9 @@ jobs:
       - name: Check formatting
         run: exit `cargo fmt --check --package=${{ inputs.package }} | wc -l`
 
-  compile:
-    name: Compilation errors
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    timeout-minutes: 15
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        if: contains(runner.name, 'ubuntu-platform')
-        with:
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Setup Rust
-        uses: ./.github/actions/rust
-
-      - run: cargo check --package=${{ inputs.package }} --all-features --frozen
-
   detect_structure_changes:
     name: Detect immutable structure changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout base commit
         uses: actions/checkout@v4

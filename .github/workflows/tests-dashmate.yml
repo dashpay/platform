@@ -54,7 +54,7 @@ jobs:
           # Drive
           DRIVE_IMAGE_AND_VERSION=$(yarn dashmate config get --config=local platform.drive.abci.docker.image)
           docker pull $DOCKER_HUB_ORG/drive:$GIT_SHA
-          docker tage $DOCKER_HUB_ORG/drive:$GIT_SHA $DRIVE_IMAGE_AND_VERSION
+          docker tag $DOCKER_HUB_ORG/drive:$GIT_SHA $DRIVE_IMAGE_AND_VERSION
 
           # DAPI
           DAPI_IMAGE_AND_VERSION=$(yarn dashmate config get --config=local platform.dapi.api.docker.image)

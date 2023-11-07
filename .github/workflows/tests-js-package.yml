@@ -19,17 +19,16 @@ on:
 jobs:
   lint:
     name: Linting
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    timeout-minutes: 15
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
-        if: contains(runner.name, 'ubuntu-platform')
         with:
           aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
