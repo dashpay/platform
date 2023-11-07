@@ -41,10 +41,6 @@ runs:
         password: ${{ inputs.dockerhub_token }}
       if: ${{ inputs.dockerhub_token != '' }}
 
-    - name: Login to ECR
-      run: aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
-      shell: bash
-
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
       with:
@@ -118,7 +114,6 @@ runs:
           } else {
             return '';
           }
-      if: ${{ inputs.image_tag != '' }}
 
     - name: Set Docker tags and labels from image tag
       id: docker_meta
@@ -126,21 +121,14 @@ runs:
       with:
         images: ${{ inputs.image }}
         tags: |
-          type=match,pattern=v(\d+),group=1,value=${{inputs.image_tag}}
-          type=match,pattern=v(\d+.\d+),group=1,value=${{inputs.image_tag}}
-          type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{inputs.image_tag}}
-          type=match,pattern=v(.*),group=1,value=${{inputs.image_tag}},suffix=
+          type=match,pattern=v(\d+),group=1,value=${{inputs.image_tag}},enable=${{ inputs.image_tag != '' }}
+          type=match,pattern=v(\d+.\d+),group=1,value=${{inputs.image_tag}},enable=${{ inputs.image_tag != '' }}
+          type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{inputs.image_tag}},enable=${{ inputs.image_tag != '' }}
+          type=match,pattern=v(.*),group=1,value=${{inputs.image_tag}},suffix=,enable=${{ inputs.image_tag != '' }}
+          type=sha,format=long,enable=${{ inputs.image_tag == '' }}
         flavor: |
           suffix=${{ steps.suffix.outputs.result }},onlatest=true
           latest=${{ github.event_name == 'release' }}
-      if: ${{ inputs.image_tag != '' }}
-
-    - name: Set Docker tags and labels from commit SHA
-      id: docker_meta
-      uses: docker/metadata-action@v5
-      with:
-        tags: type=sha,format=long
-      if: ${{ inputs.image_tag == '' }}
 
     # TODO: must be the same for dashpay/ and ECR
     - name: Configure docker layer cache
