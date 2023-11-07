@@ -4,13 +4,14 @@ on:
       test-pattern:
         type: string
         description: Test pattern. i.e. test/e2e/*.spec.js
+        required: true
 
 jobs:
   dashmate-test:
     name: Run Dashmate test
     # TODO: Try with Github Runner, probably it will be the same time
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    timeout-minutes: 120
+    timeout-minutes: 30
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
