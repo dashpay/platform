@@ -12,7 +12,7 @@ pub trait BroadcastStateTransition {
         &self,
         sdk: &mut Sdk,
         time_out_ms: Option<u64>,
-    ) -> Result<(), Error>;
+    ) -> Result<StateTransitionProofResult, Error>;
 }
 
 #[async_trait::async_trait]
@@ -43,8 +43,6 @@ impl BroadcastStateTransition for StateTransition {
 
         let response = request.execute(sdk, RequestSettings::default()).await?;
 
-        let proof = response.proof()?;
-
-        Ok(())
+        todo!("not finished yet");
     }
 }

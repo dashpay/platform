@@ -19,7 +19,7 @@ pub struct TestConfig {
     pub existing_document_id: Identifier,
 }
 
-pub type Config = rs_sdk::mock::config::Config<TestConfig>;
+pub type Config = dash_platform_sdk::mock::config::Config<TestConfig>;
 
 /// Create a mock document type for testing of mock API
 pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
@@ -90,7 +90,7 @@ pub fn mock_data_contract(
 pub fn setup_logs() {
     tracing_subscriber::fmt::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(
-            "info,rs_sdk=trace,h2=info",
+            "info,dash_platform_sdk=trace,h2=info",
         ))
         .pretty()
         .with_ansi(true)

@@ -36,7 +36,7 @@ use crate::platform::broadcast_request::BroadcastRequestForStateTransition;
 ///
 /// ```rust, ignore
 ///
-/// use rs_sdk::{Sdk, platform::{BroadcastNewIdentity, IdentityCreateTransition}};
+/// use dash_platform_sdk::{Sdk, platform::{BroadcastNewIdentity, IdentityCreateTransition}};
 /// use dpp::identity::signer::Signer;
 /// use dpp::prelude::{AssetLockProof, PrivateKey};
 /// use dpp::version::PlatformVersion;

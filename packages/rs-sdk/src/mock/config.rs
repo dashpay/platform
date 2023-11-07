@@ -11,8 +11,8 @@ use std::{path::PathBuf, str::FromStr};
 ///
 /// Content of this configuration is loaded from environment variables or `${CARGO_MANIFEST_DIR}/.env` file
 /// when the [Config::new()] is called.
-/// Variable names in the enviroment and `.env` file must be prefixed with [RS_SDK_](Config::CONFIG_PREFIX)
-/// and written as SCREAMING_SNAKE_CASE (e.g. `RS_SDK_PLATFORM_HOST`).
+/// Variable names in the enviroment and `.env` file must be prefixed with [dash_platform_sdk_](Config::CONFIG_PREFIX)
+/// and written as SCREAMING_SNAKE_CASE (e.g. `dash_platform_sdk_PLATFORM_HOST`).
 pub struct Config<D> {
     /// Hostname of the Dash Platform node to connect to
     pub platform_host: String,
@@ -38,12 +38,12 @@ pub struct Config<D> {
 
 impl<D: for<'de1> Deserialize<'de1>> Config<D> {
     /// Prefix of configuration options in the environment variables and `.env` file.
-    pub const CONFIG_PREFIX: &str = "RS_SDK_";
+    pub const CONFIG_PREFIX: &str = "dash_platform_sdk_";
     /// Load configuration from operating system environment variables and `.env` file.
     ///
     /// Create new [Config] with data from environment variables and `${CARGO_MANIFEST_DIR}/.env` file.
     /// Variable names in the environment and `.env` file must be converted to SCREAMING_SNAKE_CASE and
-    /// prefixed with [RS_SDK_](Config::CONFIG_PREFIX).
+    /// prefixed with [dash_platform_sdk_](Config::CONFIG_PREFIX).
     pub fn new() -> Self {
         // load config from .env file, ignore errors
         let path = env!("CARGO_MANIFEST_DIR").to_owned() + "/.env";
