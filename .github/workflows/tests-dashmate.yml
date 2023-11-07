@@ -10,12 +10,8 @@ jobs:
   dashmate-test:
     name: Run Dashmate test
     # TODO: Try with Github Runner, probably it will be the same time
-#    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    runs-on: ubuntu-22.04
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 30
-    permissions:
-      id-token: write
-      contents: read
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -32,13 +28,12 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ vars.AWS_REGION }}
-          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
       - name: Restore JS build artifacts
-        uses: strophy/actions-cache@opendal-update
+        uses: everpcpc/actions-cache@v1
         with:
           bucket: multi-runner-linux-x64-platform-cache-ui535z23
           root: actions-cache

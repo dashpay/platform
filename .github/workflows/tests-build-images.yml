@@ -28,11 +28,12 @@ jobs:
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           push: true
-          cache_mounts: |
-            cargo_registry_index
-            cargo_registry_cache
-            cargo_git
-            target_amd64
+          region: ${{ vars.AWS_REGION }}
+#          cache_mounts: |
+#            cargo_registry_index
+#            cargo_registry_cache
+#            cargo_git
+#            target_amd64
 
   build-dapi:
     name: Build DAPI image
@@ -60,12 +61,13 @@ jobs:
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           push: true
-          cache_mounts: |
-            cargo_registry_index
-            cargo_registry_cache
-            cargo_git
-            target_wasm
-            unplugged_amd64
+          region: ${{ vars.AWS_REGION }}
+#          cache_mounts: |
+#            cargo_registry_index
+#            cargo_registry_cache
+#            cargo_git
+#            target_wasm
+#            unplugged_amd64
 
   build-dashmate-helper:
     name: Build Dashmate helper image
@@ -93,9 +95,10 @@ jobs:
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           push: true
-          cache_mounts: |
-            cargo_registry_index
-            cargo_registry_cache
-            cargo_git
-            target_wasm
-            unplugged_amd64
+          region: ${{ vars.AWS_REGION }}
+#          cache_mounts: |
+#            cargo_registry_index
+#            cargo_registry_cache
+#            cargo_git
+#            target_wasm
+#            unplugged_amd64

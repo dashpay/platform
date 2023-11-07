@@ -128,12 +128,13 @@ jobs:
           push: true
           image_tag: ${{steps.tag.outputs.result}}
           bucket: multi-runner-linux-x64-platform-8x-cache-wp1sy0o6
-          cache_mounts: |
-            cargo_registry_index
-            cargo_registry_cache
-            cargo_git
-            target_amd64
-            target_arm64
+          region: ${{ vars.AWS_REGION }}
+#          cache_mounts: |
+#            cargo_registry_index
+#            cargo_registry_cache
+#            cargo_git
+#            target_amd64
+#            target_arm64
 
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
@@ -183,15 +184,16 @@ jobs:
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           push: true
           image_tag: ${{steps.tag.outputs.result}}
-          cache_mounts: |
-            cargo_registry_index
-            cargo_registry_cache
-            cargo_git
-            target_amd64
-            target_arm64
-            target_wasm
-            unplugged_amd64
-            unplugged_arm64
+          region: ${{ vars.AWS_REGION }}
+#          cache_mounts: |
+#            cargo_registry_index
+#            cargo_registry_cache
+#            cargo_git
+#            target_amd64
+#            target_arm64
+#            target_wasm
+#            unplugged_amd64
+#            unplugged_arm64
 
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
@@ -241,15 +243,16 @@ jobs:
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           push: true
           image_tag: ${{steps.tag.outputs.result}}
-          cache_mounts: |
-            cargo_registry_index
-            cargo_registry_cache
-            cargo_git
-            target_amd64
-            target_arm64
-            target_wasm
-            unplugged_amd64
-            unplugged_arm64
+          region: ${{ vars.AWS_REGION }}
+#          cache_mounts: |
+#            cargo_registry_index
+#            cargo_registry_cache
+#            cargo_git
+#            target_amd64
+#            target_arm64
+#            target_wasm
+#            unplugged_amd64
+#            unplugged_arm64
 
   release-dashmate-helper-docker-image:
     name: Release Dashmate helper to Docker Hub
@@ -299,15 +302,16 @@ jobs:
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           push: true
           image_tag: ${{steps.tag.outputs.result}}
-          cache_mounts: |
-            cargo_registry_index
-            cargo_registry_cache
-            cargo_git
-            target_amd64
-            target_arm64
-            target_wasm
-            unplugged_amd64
-            unplugged_arm64
+          region: ${{ vars.AWS_REGION }}
+#          cache_mounts: |
+#            cargo_registry_index
+#            cargo_registry_cache
+#            cargo_git
+#            target_amd64
+#            target_arm64
+#            target_wasm
+#            unplugged_amd64
+#            unplugged_arm64
 
   release-dashmate-packages:
     name: Release Dashmate packages
