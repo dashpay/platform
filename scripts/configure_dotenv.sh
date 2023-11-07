@@ -34,6 +34,7 @@ cp "${DAPI_PATH}"/.env.example "${DAPI_PATH}"/.env
 # JS-SDK:
 FAUCET_ADDRESS=$(grep -m 1 "Address:" "${LOGS_PATH}"/mint.log | awk '{printf $3}')
 FAUCET_PRIVATE_KEY=$(grep -m 1 "Private key:" "${LOGS_PATH}"/mint.log | awk '{printf $4}')
+# TODO This will be removed from dashmate. Please use hardcoded ID from contract crates
 DPNS_CONTRACT_ID=$(get_config platform.dpns.contract.id)
 
 SDK_ENV_FILE_PATH=${SDK_PATH}/.env

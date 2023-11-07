@@ -21,7 +21,7 @@ Network testing requires connectivity to the Dash Platform and Dash Core.
 Follow these steps to conduct network testing:
 
 1. Configure platform address and credentials in `packages/rs-sdk/tests/.env`.
-   Note that the `.env` file might already be configured during platform setup.
+   Note that the `.env` file might already be configured during  project setup (`yarn setup`).
 2. Run the test without default features, but with `network-testing` feature enabled.
 
 ```bash
@@ -39,7 +39,7 @@ These vectors must be saved in `packages/rs-sdk/tests/vectors`.
 To generate test vectors for offline testing:
 
 1. Configure platform address and credentials in `packages/rs-sdk/tests/.env`.
-   Note that the `.env` file might already be configured during platform setup.
+   Note that the `.env` file might already be configured during project setup (`yarn setup`).
 2. Run  `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
 
 ### Running tests in offline mode
