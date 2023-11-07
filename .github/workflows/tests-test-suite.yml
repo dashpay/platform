@@ -10,6 +10,7 @@ on:
 jobs:
   test-suite:
     name: Run Test Suite
+    # TODO: Try with Github Runner, probably it will be the same time
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 120
     steps:
@@ -81,9 +82,11 @@ jobs:
       - name: Start local network
         run: yarn start
 
+      # TODO: We running these tests twice
       - name: Run Wallet functional tests
         run: yarn workspace @dashevo/wallet-lib test:functional
 
+      # TODO: We running these tests twice
       - name: Run SDK functional tests
         run: yarn workspace dash test:functional
 
