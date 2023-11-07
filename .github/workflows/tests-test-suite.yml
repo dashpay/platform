@@ -78,7 +78,7 @@ jobs:
           ./scripts/configure_test_suite.sh
           ./scripts/configure_dotenv.sh
         shell: bash
-π
+
       - name: Start local network
         run: yarn start
 

@@ -4,6 +4,7 @@ on:
 jobs:
   dashmate-e2e-tests:
     name: Run Dashmate E2E tests
+    # TODO: Try with Github Runner, probably it will be the same time
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 120
     steps:
@@ -64,6 +65,7 @@ jobs:
           docker tag $DOCKER_HUB_ORG/dashmate_helper:$SHA_TAG dashpay/dashmate-helper:${VERSION}
         shell: bash
 
+      # TODO: We should run these tests in parallel
       - name: Run tests
         run: yarn workspace dashmate test:e2e
         env:
