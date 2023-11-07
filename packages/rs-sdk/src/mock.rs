@@ -18,8 +18,7 @@
 //! ```
 //!
 //! See tests/mock_*.rs for more detailed examples.
-#[cfg(feature = "mocks")]
-pub mod config;
+
 #[cfg(feature = "mocks")]
 mod requests;
 #[cfg(feature = "mocks")]
