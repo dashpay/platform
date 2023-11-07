@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use crate::common::{setup_logs, Config};
+use crate::common::setup_logs;
+use crate::config::Config;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::string_encoding::Encoding;
@@ -19,7 +20,7 @@ async fn document_read() {
     let cfg = Config::new();
     let mut sdk = cfg.setup_api().await;
 
-    let data_contract_id = cfg.settings.existing_data_contract_id;
+    let data_contract_id = cfg.existing_data_contract_id;
 
     let contract = Arc::new(
         DataContract::fetch(&mut sdk, data_contract_id)
@@ -29,11 +30,9 @@ async fn document_read() {
     );
 
     // Fetch multiple documents so that we get document ID
-    let all_docs_query = DocumentQuery::new(
-        Arc::clone(&contract),
-        &cfg.settings.existing_document_type_name,
-    )
-    .expect("create SdkDocumentQuery");
+    let all_docs_query =
+        DocumentQuery::new(Arc::clone(&contract), &cfg.existing_document_type_name)
+            .expect("create SdkDocumentQuery");
     let first_doc = Document::fetch_many(&mut sdk, all_docs_query)
         .await
         .expect("fetch many documents")
@@ -43,7 +42,7 @@ async fn document_read() {
         .expect("document must exist");
 
     // Now query for individual document
-    let query = DocumentQuery::new(contract, &cfg.settings.existing_document_type_name)
+    let query = DocumentQuery::new(contract, &cfg.existing_document_type_name)
         .expect("create SdkDocumentQuery")
         .with_document_id(&first_doc.id());
 
@@ -68,7 +67,7 @@ async fn document_read_no_contract() {
     let query = DocumentQuery::new_with_data_contract_id(
         &mut sdk,
         data_contract_id,
-        &cfg.settings.existing_document_type_name,
+        &cfg.existing_document_type_name,
     )
     .await;
 
@@ -89,13 +88,13 @@ async fn document_read_no_document() {
     let cfg = Config::new();
     let mut sdk = cfg.setup_api().await;
 
-    let data_contract_id = cfg.settings.existing_data_contract_id;
-    let document_id = cfg.settings.existing_document_id;
+    let data_contract_id = cfg.existing_data_contract_id;
+    let document_id = cfg.existing_document_id;
 
     let query = DocumentQuery::new_with_data_contract_id(
         &mut sdk,
         data_contract_id,
-        &cfg.settings.existing_document_type_name,
+        &cfg.existing_document_type_name,
     )
     .await
     .expect("create SdkDocumentQuery")
@@ -119,7 +118,7 @@ async fn document_list_drive_query() {
     let cfg = Config::new();
     let mut sdk = cfg.setup_api().await;
 
-    let data_contract_id = cfg.settings.existing_data_contract_id;
+    let data_contract_id = cfg.existing_data_contract_id;
 
     let data_contract = DataContract::fetch(&mut sdk, data_contract_id)
         .await
@@ -127,7 +126,7 @@ async fn document_list_drive_query() {
         .expect("data contract not found");
 
     let doctype = data_contract
-        .document_type_for_name(&cfg.settings.existing_document_type_name)
+        .document_type_for_name(&cfg.existing_document_type_name)
         .expect("document type not found");
 
     let query = DriveQuery::any_item_query(&data_contract, doctype);
@@ -154,7 +153,7 @@ async fn document_list_document_query() {
     let cfg = Config::new();
     let mut sdk = cfg.setup_api().await;
 
-    let data_contract_id = cfg.settings.existing_data_contract_id;
+    let data_contract_id = cfg.existing_data_contract_id;
 
     let data_contract = Arc::new(
         DataContract::fetch(&mut sdk, data_contract_id)
@@ -163,11 +162,8 @@ async fn document_list_document_query() {
             .expect("data contra)ct not found"),
     );
 
-    let query = DocumentQuery::new(
-        Arc::clone(&data_contract),
-        &cfg.settings.existing_document_type_name,
-    )
-    .expect("document query created");
+    let query = DocumentQuery::new(Arc::clone(&data_contract), &cfg.existing_document_type_name)
+        .expect("document query created");
 
     let docs = <Document>::fetch_many(&mut sdk, query)
         .await

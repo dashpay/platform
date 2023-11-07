@@ -51,15 +51,23 @@ FAUCET_PRIVATE_KEY=${FAUCET_PRIVATE_KEY}
 NETWORK=regtest" >>"${WALLET_LIB_ENV_FILE_PATH}"
 #EOF
 
-# RS_SDK tests config:
-# TODO: set variables using dashmate config get
+# RS_SDK tests config
+
+DPNS_CONTRACT_ID=$(yarn dashmate config get --config="${CONFIG}_1" platform.dpns.contract.id)
+CORE_RPC_PORT=$(yarn dashmate config get --config="${CONFIG}_1" core.rpc.port)
+CORE_RPC_USER=$(yarn dashmate config get --config="${CONFIG}_1" core.rpc.user)
+CORE_RPC_PASSWORD=$(yarn dashmate config get --config="${CONFIG}_1" core.rpc.password)
+
+PLATFORM_RPC_PORT=$(yarn dashmate config get --config="${CONFIG}_1" platform.dapi.envoy.http.port)
+
+yarn dashmate config get --config local_1
 cat <<EOF >"${RS_SDK_PATH}"/tests/.env
 
 RS_SDK_PLATFORM_HOST="127.0.0.1"
-RS_SDK_PLATFORM_PORT=2443
+RS_SDK_PLATFORM_PORT="$PLATFORM_RPC_PORT"
 
-RS_SDK_CORE_PORT=20002
-RS_SDK_CORE_USER="someuser"
-RS_SDK_CORE_PASSWORD="verysecretpassword"
+RS_SDK_CORE_PORT="$CORE_RPC_PORT"
+RS_SDK_CORE_USER="$CORE_RPC_USER"
+RS_SDK_CORE_PASSWORD="$CORE_RPC_PASSWORD"
 
 EOF
