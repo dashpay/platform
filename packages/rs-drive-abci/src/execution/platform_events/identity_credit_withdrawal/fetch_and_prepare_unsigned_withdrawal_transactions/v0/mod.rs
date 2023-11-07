@@ -104,9 +104,10 @@ where
                             ))
                         })?;
 
-                    let original_transaction_id = hash::hash_to_vec(untied_transaction_bytes);
+                    let original_transaction_id =
+                        hash::hash_double_to_vec(untied_transaction_bytes);
                     let update_transaction_id =
-                        hash::hash_to_vec(unsigned_transaction_bytes.clone());
+                        hash::hash_double_to_vec(unsigned_transaction_bytes.clone());
 
                     let mut document = self.drive.find_withdrawal_document_by_transaction_id(
                         &original_transaction_id,

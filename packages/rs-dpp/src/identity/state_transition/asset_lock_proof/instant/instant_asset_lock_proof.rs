@@ -17,7 +17,7 @@ use crate::identity::state_transition::asset_lock_proof::validate_asset_lock_tra
 use crate::prelude::Identifier;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
-use crate::util::hash::hash;
+use crate::util::hash::hash_double;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 
@@ -28,11 +28,11 @@ use crate::ProtocolError;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstantAssetLockProof {
     /// The transaction's Instant Lock
-    instant_lock: InstantLock,
+    pub instant_lock: InstantLock,
     /// Asset Lock Special Transaction
-    transaction: Transaction,
+    pub transaction: Transaction,
     /// Index of the output in the transaction payload
-    output_index: u32,
+    pub output_index: u32,
 }
 
 impl Serialize for InstantAssetLockProof {
@@ -135,7 +135,7 @@ impl InstantAssetLockProof {
             .try_into()
             .map_err(|e: io::Error| ProtocolError::EncodingError(e.to_string()))?;
 
-        let hash = hash(output_vec);
+        let hash = hash_double(output_vec);
 
         Ok(Identifier::new(hash))
     }

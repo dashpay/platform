@@ -24,7 +24,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentReplaceTransitionActio
         let data_contract_id = self.base().data_contract_id();
         let document_type_name = self.base().document_type_name().clone();
         let document =
-            Document::try_from_owned_replace_transition(self, owner_id, platform_version)?;
+            Document::try_from_owned_replace_transition_action(self, owner_id, platform_version)?;
 
         let storage_flags = StorageFlags::new_single_epoch(epoch.index, Some(owner_id.to_buffer()));
 

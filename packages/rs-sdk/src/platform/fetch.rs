@@ -10,7 +10,8 @@
 
 use crate::mock::MockResponse;
 use crate::{error::Error, platform::query::Query, Sdk};
-use dapi_grpc::platform::v0::{self as platform_proto};
+use dapi_grpc::platform::v0::{self as platform_proto, WaitForStateTransitionResultRequest};
+use dpp::state_transition::StateTransition;
 use dpp::{document::Document, prelude::Identity};
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};

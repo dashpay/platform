@@ -7,7 +7,12 @@
 //! these operations, including the handling of asset lock proof and signing operations.
 use std::fmt::Debug;
 
-use dapi_grpc::platform::v0::{self as proto, BroadcastStateTransitionRequest};
+use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
+    Version, WaitForStateTransitionResultRequestV0,
+};
+use dapi_grpc::platform::v0::{
+    self as proto, BroadcastStateTransitionRequest, WaitForStateTransitionResultRequest,
+};
 use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
 use dpp::prelude::{AssetLockProof, Identity};
@@ -86,6 +91,10 @@ pub(crate) trait BroadcastRequestForStateTransition: Send + Debug + Clone {
     fn broadcast_request_for_state_transition(
         &self,
     ) -> Result<BroadcastStateTransitionRequest, Error>;
+
+    fn wait_for_state_transition_result_request(
+        &self,
+    ) -> Result<WaitForStateTransitionResultRequest, Error>;
 }
 
 impl BroadcastRequestForStateTransition for StateTransition {
@@ -94,6 +103,17 @@ impl BroadcastRequestForStateTransition for StateTransition {
     ) -> Result<BroadcastStateTransitionRequest, Error> {
         Ok(BroadcastStateTransitionRequest {
             state_transition: self.serialize_to_bytes()?,
+        })
+    }
+
+    fn wait_for_state_transition_result_request(
+        &self,
+    ) -> Result<WaitForStateTransitionResultRequest, Error> {
+        Ok(WaitForStateTransitionResultRequest {
+            version: Some(Version::V0(WaitForStateTransitionResultRequestV0 {
+                state_transition_hash: self.transaction_id()?.to_vec(),
+                prove: true,
+            })),
         })
     }
 }

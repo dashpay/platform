@@ -56,7 +56,7 @@ use crate::version::drive_versions::{
     DriveSystemProtocolVersionMethodVersions, DriveVerifyContractMethodVersions,
     DriveVerifyDocumentMethodVersions, DriveVerifyIdentityMethodVersions,
     DriveVerifyMethodVersions, DriveVerifySingleDocumentMethodVersions,
-    DriveVerifySystemMethodVersions, DriveVersion,
+    DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions, DriveVersion,
 };
 use crate::version::mocks::TEST_BYTES;
 use crate::version::protocol_version::{FeatureVersionBounds, PlatformVersion};
@@ -254,6 +254,9 @@ pub(crate) const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     verify_epoch_infos: 0,
                     verify_upgrade_state: 0,
                     verify_upgrade_vote_status: 0,
+                },
+                state_transition: DriveVerifyStateTransitionMethodVersions {
+                    verify_state_transition_was_executed_with_proof: 0,
                 },
             },
             identity: DriveIdentityMethodVersions {

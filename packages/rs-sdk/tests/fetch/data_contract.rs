@@ -1,6 +1,6 @@
 use crate::common::Config;
+use dash_platform_sdk::platform::Fetch;
 use dpp::prelude::{DataContract, Identifier};
-use rs_sdk::platform::Fetch;
 
 /// Given some dummy data contract ID, when I fetch data contract, I get None because it doesn't exist.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

@@ -43,7 +43,7 @@ use crate::data_contract::serialized_version::{
     DataContractInSerializationFormat, CONTRACT_DESERIALIZATION_LIMIT,
 };
 use crate::data_contract::v0::data_contract::DataContractV0;
-use crate::util::hash::hash_to_vec;
+use crate::util::hash::hash_double_to_vec;
 
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
@@ -240,9 +240,9 @@ impl DataContract {
     }
 
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(self.serialize_to_bytes_with_platform_version(
-            platform_version,
-        )?))
+        Ok(hash_double_to_vec(
+            self.serialize_to_bytes_with_platform_version(platform_version)?,
+        ))
     }
 }
 

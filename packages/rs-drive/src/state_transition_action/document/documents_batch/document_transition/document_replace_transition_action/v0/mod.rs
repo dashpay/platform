@@ -3,9 +3,11 @@ pub mod transformer;
 use dpp::document::{Document, DocumentV0};
 use dpp::identity::TimestampMillis;
 use dpp::platform_value::{Identifier, Value};
-use dpp::prelude::Revision;
+use dpp::prelude::{DataContract, Revision};
 use dpp::ProtocolError;
 
+use dpp::state_transition::documents_batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use std::collections::BTreeMap;
 
 use crate::state_transition_action::document::documents_batch::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
@@ -56,7 +58,7 @@ pub trait DocumentFromReplaceTransitionV0 {
     /// # Returns
     ///
     /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_replace_transition_v0(
+    fn try_from_replace_transition_action_v0(
         value: &DocumentReplaceTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
@@ -73,17 +75,15 @@ pub trait DocumentFromReplaceTransitionV0 {
     /// # Returns
     ///
     /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_owned_replace_transition_v0(
+    fn try_from_owned_replace_transition_action_v0(
         value: DocumentReplaceTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
-}
 
-impl DocumentFromReplaceTransitionV0 for Document {
-    /// Attempts to create a new `Document` from the given `DocumentReplaceTransitionAction` reference and `owner_id`.
+    /// Attempts to create a new `Document` from the given `DocumentReplaceTransition` reference and `owner_id`.
     ///
     /// # Arguments
     ///
@@ -94,6 +94,35 @@ impl DocumentFromReplaceTransitionV0 for Document {
     ///
     /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
     fn try_from_replace_transition_v0(
+        value: &DocumentReplaceTransitionV0,
+        owner_id: Identifier,
+        created_at: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
+    /// Attempts to create a new `Document` from the given `DocumentReplaceTransition` instance and `owner_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A `DocumentReplaceTransitionAction` instance containing information about the document being created.
+    /// * `owner_id` - The `Identifier` of the document's owner.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
+    fn try_from_owned_replace_transition_v0(
+        value: DocumentReplaceTransitionV0,
+        owner_id: Identifier,
+        created_at: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
+}
+
+impl DocumentFromReplaceTransitionV0 for Document {
+    fn try_from_replace_transition_action_v0(
         value: &DocumentReplaceTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
@@ -130,17 +159,7 @@ impl DocumentFromReplaceTransitionV0 for Document {
         }
     }
 
-    /// Attempts to create a new `Document` from the given `DocumentReplaceTransitionAction` instance and `owner_id`.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - A `DocumentReplaceTransitionAction` instance containing information about the document being created.
-    /// * `owner_id` - The `Identifier` of the document's owner.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_owned_replace_transition_v0(
+    fn try_from_owned_replace_transition_action_v0(
         value: DocumentReplaceTransitionActionV0,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
@@ -149,6 +168,80 @@ impl DocumentFromReplaceTransitionV0 for Document {
             base,
             revision,
             created_at,
+            updated_at,
+            data,
+        } = value;
+
+        let id = base.id();
+
+        match platform_version
+            .dpp
+            .document_versions
+            .document_structure_version
+        {
+            0 => Ok(DocumentV0 {
+                id,
+                owner_id,
+                properties: data,
+                revision: Some(revision),
+                created_at,
+                updated_at,
+            }
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::try_from_replace_transition".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    fn try_from_replace_transition_v0(
+        value: &DocumentReplaceTransitionV0,
+        owner_id: Identifier,
+        created_at: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        let DocumentReplaceTransitionV0 {
+            base,
+            revision,
+            updated_at,
+            data,
+        } = value;
+
+        let id = base.id();
+
+        match platform_version
+            .dpp
+            .document_versions
+            .document_structure_version
+        {
+            0 => Ok(DocumentV0 {
+                id,
+                owner_id,
+                properties: data.clone(),
+                revision: Some(*revision),
+                created_at,
+                updated_at: *updated_at,
+            }
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::try_from_replace_transition".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    fn try_from_owned_replace_transition_v0(
+        value: DocumentReplaceTransitionV0,
+        owner_id: Identifier,
+        created_at: Option<u64>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        let DocumentReplaceTransitionV0 {
+            base,
+            revision,
             updated_at,
             data,
         } = value;

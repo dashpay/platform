@@ -10,7 +10,7 @@ use tonic::Streaming;
 /// This trait should be implemented by any object that can be used in the DAPI.
 ///
 /// We use serde_json to serialize/deserialize messages.
-//  TODO: Move to a different crate where it can be easily shared by dapi-grpc, rs-sdk, and rs-dapi-client.
+//  TODO: Move to a different crate where it can be easily shared by dapi-grpc, dash-platform-sdk, and rs-dapi-client.
 pub trait Mockable
 where
     Self: std::marker::Sized,

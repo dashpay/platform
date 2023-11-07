@@ -22,6 +22,12 @@ pub enum Error {
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
     DapiClientError(String),
+    /// Dash core error
+    #[error("Dash core error: {0}")]
+    CoreError(#[from] dpp::dashcore::Error),
+    /// MerkleBlockError
+    #[error("Dash core error: {0}")]
+    MerkleBlockError(#[from] dpp::dashcore::merkle_tree::MerkleBlockError),
     /// Core client error, for example, connection error
     #[error("Core client error: {0}")]
     CoreClientError(#[from] dashcore_rpc::Error),

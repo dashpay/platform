@@ -83,7 +83,7 @@ where
                 )));
             };
 
-            let transaction_id = hash::hash_to_vec(transaction_bytes);
+            let transaction_id = hash::hash_double_to_vec(transaction_bytes);
 
             document.set_bytes(
                 withdrawal::properties::TRANSACTION_ID,

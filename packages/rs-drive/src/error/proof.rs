@@ -25,6 +25,19 @@ pub enum ProofError {
     #[error("corrupted error: {0}")]
     CorruptedProof(String),
 
+    /// The proof returned is said to be valid, data is what we asked for, but is not what was
+    /// expected, for example if we updated a contract, but we are getting back the old contract
+    #[error("incorrect proof error: {0}")]
+    IncorrectProof(String),
+
+    /// The transition we are trying to prove was executed is invalid
+    #[error("invalid transition error: {0}")]
+    InvalidTransition(String),
+
+    /// The transition we are trying to prove has an unknown contract
+    #[error("unknown contract in documents batch transition error: {0}")]
+    UnknownContract(String),
+
     /// Incomplete proof error
     #[error("incomplete proof error: {0}")]
     IncompleteProof(&'static str),
@@ -52,5 +65,8 @@ fn get_error_code(error: &ProofError) -> u32 {
         ProofError::IncompleteProof(_) => 6004,
         ProofError::IncorrectValueSize(_) => 6005,
         ProofError::IncorrectElementPath { .. } => 6006,
+        ProofError::IncorrectProof(_) => 6007,
+        ProofError::InvalidTransition(_) => 6008,
+        ProofError::UnknownContract(_) => 6009,
     }
 }

@@ -12,7 +12,7 @@ use crate::identity::TimestampMillis;
 use crate::metadata::Metadata;
 use crate::prelude::Revision;
 
-use crate::util::hash::hash_to_vec;
+use crate::util::hash::hash_double_to_vec;
 use crate::ProtocolError;
 
 use platform_value::btreemap_extensions::{
@@ -415,7 +415,7 @@ impl ExtendedDocumentV0 {
     }
 
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(
+        Ok(hash_double_to_vec(
             ExtendedDocumentPlatformConversionMethodsV0::serialize_to_bytes(
                 self,
                 platform_version,

@@ -302,7 +302,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 // );
                                 assert_eq!(
                                     document,
-                                    Document::try_from_create_transition(
+                                    Document::try_from_create_transition_action(
                                         creation_action,
                                         documents_batch_transition.owner_id(),
                                         platform_version,
@@ -321,7 +321,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 if let Some(document) = document {
                                     assert_eq!(
                                         document,
-                                        Document::try_from_replace_transition(
+                                        Document::try_from_replace_transition_action(
                                             replace_action,
                                             documents_batch_transition.owner_id(),
                                             platform_version,
@@ -335,7 +335,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 if let Some(document) = document {
                                     assert_ne!(
                                         document,
-                                        Document::try_from_replace_transition(
+                                        Document::try_from_replace_transition_action(
                                             replace_action,
                                             documents_batch_transition.owner_id(),
                                             platform_version,

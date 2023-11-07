@@ -25,7 +25,7 @@ use indexmap::IndexMap;
 
 use crate::error::execution::ExecutionError;
 use dpp::block::block_info::BlockInfo;
-use dpp::util::hash::hash;
+use dpp::util::hash::hash_double;
 use std::collections::BTreeMap;
 
 /// Platform state
@@ -112,7 +112,7 @@ impl PlatformDeserializableFromVersionedStructure for PlatformState {
 impl PlatformState {
     /// Get the state fingerprint
     pub fn fingerprint(&self) -> [u8; 32] {
-        hash(
+        hash_double(
             self.serialize_to_bytes()
                 .expect("expected to serialize state"),
         )
