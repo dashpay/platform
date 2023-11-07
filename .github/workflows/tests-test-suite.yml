@@ -51,6 +51,7 @@ jobs:
 
       - name: Setup local network
         run: |
+#          echo <<'EOF'
           set -ex
 
           # create tenderdash blocks every 10s to speed up test suite
@@ -76,9 +77,12 @@ jobs:
           docker pull $DOCKER_HUB_ORG/dashmate_helper:$GIT_SHA
           docker tag $DOCKER_HUB_ORG/dashmate_helper:$GIT_SHA dashpay/dashmate-helper:${VERSION}
 
-          source ./scripts/setup_local_network.sh
-          source ./scripts/configure_test_suite.sh
-          source ./scripts/configure_dotenv.sh
+          ./scripts/setup_local_network.sh
+          ./scripts/configure_test_suite.sh
+          ./scripts/configure_dotenv.sh
+#          EOF > scripts/setup_ci.sh
+
+#          source scripts/setup_ci.sh
         shell: bash
 
       - name: Start local network

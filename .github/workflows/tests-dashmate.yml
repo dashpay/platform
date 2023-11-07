@@ -59,7 +59,7 @@ jobs:
           # DAPI
           DAPI_IMAGE_AND_VERSION=$(yarn dashmate config get --config=local platform.dapi.api.docker.image)
           docker pull $DOCKER_HUB_ORG/dapi:$GIT_SHA
-          docker tage $DOCKER_HUB_ORG/dapi:$GIT_SHA $DAPI_IMAGE_AND_VERSION
+          docker tag $DOCKER_HUB_ORG/dapi:$GIT_SHA $DAPI_IMAGE_AND_VERSION
 
           # Dashmate helper image is hardcoded so we replace it with the built one
           VERSION=$(cat package.json | jq -r '.version')
