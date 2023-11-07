@@ -20,6 +20,9 @@ jobs:
   lint:
     name: Linting
     runs-on: ubuntu-22.04
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
