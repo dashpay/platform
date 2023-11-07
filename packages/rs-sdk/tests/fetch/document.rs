@@ -89,7 +89,7 @@ async fn document_read_no_document() {
     let mut sdk = cfg.setup_api().await;
 
     let data_contract_id = cfg.existing_data_contract_id;
-    let document_id = cfg.existing_document_id;
+    let document_id = [0; 32].into();
 
     let query = DocumentQuery::new_with_data_contract_id(
         &mut sdk,
