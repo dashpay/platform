@@ -92,7 +92,7 @@ jobs:
         uses: ./.github/actions/docker
         with:
           image: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/dashmate_helper
-          target: dapi
+          target: dashmate-helper
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           push: true

@@ -43,6 +43,12 @@ runs:
       shell: bash
       run: echo "key=$(echo '${{ github.ref_name }}' | sha256sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
 
+    - id: cache-group-start
+      shell: bash
+      run: |
+        echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
+        echo "::group::Cache Rust build artifacts (S3 bucket cache)"
+
     - name: Cache Rust build artifacts (S3 bucket cache)
       uses: everpcpc/actions-cache@v1
       if: contains(runner.name, 'ubuntu-platform') && inputs.cache == 'true'
@@ -58,6 +64,11 @@ runs:
           ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/${{ steps.hashed-ref-name.outputs.key }}/
           ${{ runner.os }}/cargo/build/${{ inputs.target }}/${{ hashFiles('**/Cargo.lock') }}/
           ${{ runner.os }}/cargo/build/${{ inputs.target }}/
+
+    - shell: bash
+      run: |
+        echo "::endgroup::"
+        echo "Elapsed time: $(($(date +%s) - ${{ steps.cache-group-start.outputs.start_time }}))"
 
     - name: Cache cargo registry (S3 bucket cache)
       uses: everpcpc/actions-cache@v1
