@@ -53,10 +53,10 @@ jobs:
           aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
 
           SHA_TAG=sha-${{ github.sha }}
+          VERSION=$(cat package.json | jq -r '.version')
 
-          # Dashmate
           docker pull $DOCKER_HUB_ORG/dashmate_helper:$SHA_TAG
-          docker tag $DOCKER_HUB_ORG/dashmate_helper:$SHA_TAG dashpay/dashmate_helper:${{ github.sha }}
+          docker tag $DOCKER_HUB_ORG/dashmate_helper:$SHA_TAG dashpay/dashmate_helper:$VERSION
 
       - name: Get dashmate fingerprint
         id: dashmate-fingerprint
@@ -91,7 +91,6 @@ jobs:
           # DAPI
           yarn dashmate config set --config=local platform.dapi.api.docker.image $DOCKER_HUB_ORG/dapi:$SHA_TAG
 
-          # TODO: Move setup network to a separate job before test suite to do not run twice?
           ./scripts/setup_local_network.sh
           ./scripts/configure_test_suite.sh
           ./scripts/configure_dotenv.sh
