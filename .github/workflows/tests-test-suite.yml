@@ -46,6 +46,33 @@ jobs:
       - name: Unpack JS build artifacts archive
         run: tar -xf build-js-artifacts-${{ github.sha }}.tar
 
+      - name: Pull dashmate image
+        run: |
+          # Login to ECR
+          DOCKER_HUB_ORG="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
+          aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
+
+          SHA_TAG=sha-${{ github.sha }}
+
+          # Dashmate
+          docker pull $DOCKER_HUB_ORG/dashmate:$SHA_TAG
+          docker tag $DOCKER_HUB_ORG/dashmate:$SHA_TAG dashpay/dashmate:${{ github.sha }}
+
+      - name: Get dashmate fingerprint
+        id: dashmate-fingerprint
+        run: |
+          echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_ENV
+
+      - name: Cache local network data
+        id: local-network-data
+        uses: actions/cache@v2
+        with:
+          path: |
+            /home/ubuntu/.dashmate
+            **/.env
+            /mnt/instance-store/volumes/dashmate*
+          key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
+
       - name: Setup local network
         run: |
           set -ex
@@ -56,10 +83,6 @@ jobs:
           # collect drive logs for bench suite
           yarn dashmate config set --config=local platform.drive.abci.logs.stdout.level "trace"
 
-          # Login to ECR
-          DOCKER_HUB_ORG="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
-          aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
-
           SHA_TAG=sha-${{ github.sha }}
 
           # Drive
@@ -68,29 +91,19 @@ jobs:
           # DAPI
           yarn dashmate config set --config=local platform.dapi.api.docker.image $DOCKER_HUB_ORG/dapi:$SHA_TAG
 
-          # Dashmate helper image is hardcoded so we replace it with the built one
-          VERSION=$(cat package.json | jq -r '.version')
-          docker pull $DOCKER_HUB_ORG/dashmate_helper:$SHA_TAG
-          docker tag $DOCKER_HUB_ORG/dashmate_helper:$SHA_TAG dashpay/dashmate-helper:${VERSION}
-
           # TODO: Move setup network to a separate job before test suite to do not run twice?
           ./scripts/setup_local_network.sh
           ./scripts/configure_test_suite.sh
           ./scripts/configure_dotenv.sh
         shell: bash
+        if: steps.local-network-data.outputs.cache-hit != 'true'
 
       - name: Start local network
         run: yarn start
 
-      - run: docker volume ls
-
-      - run: docker inspect $(docker volume ls -q | head -n 1)
-
-      # TODO: We running these tests twice
       - name: Run Wallet functional tests
         run: yarn workspace @dashevo/wallet-lib test:functional
 
-      # TODO: We running these tests twice
       - name: Run SDK functional tests
         run: yarn workspace dash test:functional
 
