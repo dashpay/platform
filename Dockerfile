@@ -67,8 +67,8 @@ SHELL ["/bin/bash", "-c"]
 ARG TARGETARCH
 
 # Rust version the same as in /README.md
-RUN rustup install 1.73 && \
-    rustup target add wasm32-unknown-unknown --toolchain 1.73
+RUN rustup install stable && \
+    rustup target add wasm32-unknown-unknown --toolchain stable
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
