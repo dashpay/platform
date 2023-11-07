@@ -107,6 +107,7 @@ jobs:
             fi
           done
 
+  # TODO: run drive-abci tests with x8 runner or optimize tests
   test:
     name: Tests
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
