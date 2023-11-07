@@ -55,8 +55,8 @@ jobs:
           SHA_TAG=sha-${{ github.sha }}
 
           # Dashmate
-          docker pull $DOCKER_HUB_ORG/dashmate:$SHA_TAG
-          docker tag $DOCKER_HUB_ORG/dashmate:$SHA_TAG dashpay/dashmate:${{ github.sha }}
+          docker pull $DOCKER_HUB_ORG/dashmate_helper:$SHA_TAG
+          docker tag $DOCKER_HUB_ORG/dashmate_helper:$SHA_TAG dashpay/dashmate_helper:${{ github.sha }}
 
       - name: Get dashmate fingerprint
         id: dashmate-fingerprint
@@ -65,7 +65,7 @@ jobs:
 
       - name: Cache local network data
         id: local-network-data
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
             /home/ubuntu/.dashmate
