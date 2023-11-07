@@ -6,6 +6,12 @@ jobs:
     name: Build JS
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     steps:
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        if: contains(runner.name, 'ubuntu-platform') && steps.cache.outputs.cache-hit != 'true'
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+
       - name: Cache build artifacts
         uses: everpcpc/actions-cache@v1
         id: cache
@@ -27,12 +33,6 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        if: contains(runner.name, 'ubuntu-platform') && steps.cache.outputs.cache-hit != 'true'
-        with:
-          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
