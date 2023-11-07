@@ -62,7 +62,7 @@ jobs:
       - name: Get dashmate fingerprint
         id: dashmate-fingerprint
         run: |
-          echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_ENV
+          echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_OUTPUT
 
       - name: Cache local network data
         id: local-network-data
