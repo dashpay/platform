@@ -4,9 +4,6 @@ class ConfigCreateCommand extends BaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
-   * @param {renderServiceTemplates} renderServiceTemplates
-   * @param {writeServiceConfigs} writeServiceConfigs
-   * @param {ConfigFileJsonRepository} configFileRepository
    * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
@@ -16,17 +13,9 @@ class ConfigCreateCommand extends BaseCommand {
       from: fromConfigName,
     },
     flags,
-    renderServiceTemplates,
-    writeServiceConfigs,
-    configFileRepository,
     configFile,
   ) {
     configFile.createConfig(configName, fromConfigName);
-
-    configFileRepository.write(configFile);
-
-    const serviceConfigs = renderServiceTemplates(configFile.getConfig(configName));
-    writeServiceConfigs(configName, serviceConfigs);
 
     // eslint-disable-next-line no-console
     console.log(`${configName} created`);

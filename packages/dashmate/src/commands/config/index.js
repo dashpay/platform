@@ -9,8 +9,6 @@ class ConfigCommand extends ConfigBaseCommand {
    * @param {Object} args
    * @param {Object} flags
    * @param {Config} config
-   * @param {renderServiceTemplates} renderServiceTemplates
-   * @param {writeServiceConfigs} writeServiceConfigs
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -19,8 +17,6 @@ class ConfigCommand extends ConfigBaseCommand {
       format,
     },
     config,
-    renderServiceTemplates,
-    writeServiceConfigs,
   ) {
     let configOptions;
     if (format === OUTPUT_FORMATS.JSON) {
@@ -33,9 +29,6 @@ class ConfigCommand extends ConfigBaseCommand {
     }
 
     const output = `${config.getName()} config:\n\n${configOptions}`;
-
-    const serviceConfigs = renderServiceTemplates(config);
-    writeServiceConfigs(config.getName(), serviceConfigs);
 
     // eslint-disable-next-line no-console
     console.log(output);

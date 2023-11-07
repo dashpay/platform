@@ -113,11 +113,8 @@ describe('Testnet Fullnode', function main() {
       // Write configs
       await configFileRepository.write(configFile);
 
-      const renderServiceTemplates = container.resolve('renderServiceTemplates');
-      const writeServiceConfigs = container.resolve('writeServiceConfigs');
-
-      const serviceConfigFiles = renderServiceTemplates(config);
-      writeServiceConfigs(config.getName(), serviceConfigFiles);
+      const writeConfigTemplates = container.resolve('writeConfigTemplates');
+      writeConfigTemplates(config);
     });
   });
 

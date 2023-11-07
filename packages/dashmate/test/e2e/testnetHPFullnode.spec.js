@@ -113,11 +113,9 @@ describe('Testnet HP Fullnode', function main() {
       // Write configs
       await configFileRepository.write(configFile);
 
-      const renderServiceTemplates = container.resolve('renderServiceTemplates');
-      const writeServiceConfigs = container.resolve('writeServiceConfigs');
+      const writeConfigTemplates = container.resolve('writeConfigTemplates');
 
-      const serviceConfigFiles = renderServiceTemplates(config);
-      writeServiceConfigs(config.getName(), serviceConfigFiles);
+      writeConfigTemplates(config);
     });
   });
 
