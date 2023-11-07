@@ -51,7 +51,7 @@ jobs:
           DOCKER_HUB_ORG="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
           aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
 
-          SHA_TAG=sha-$(git rev-parse --short HEAD)
+          SHA_TAG=sha-${{ github.sha }}
 
           # Drive
           DRIVE_IMAGE_AND_VERSION=$(yarn dashmate config get --config=local platform.drive.abci.docker.image)

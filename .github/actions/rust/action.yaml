@@ -50,7 +50,7 @@ runs:
       run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
 
     - name: Cache Rust build artifacts (S3 bucket cache)
-      uses: everpcpc/actions-cache@v1
+      uses: strophy/actions-cache@opendal-update
       if: contains(runner.name, 'ubuntu-platform') && inputs.cache == 'true'
       with:
         bucket: multi-runner-linux-x64-platform-cache-ui535z23
@@ -70,7 +70,7 @@ runs:
         echo "Elapsed time: $(($(date +%s) - ${{ steps.cache-group-start.outputs.start_time }})) seconds"
 
     - name: Cache cargo registry (S3 bucket cache)
-      uses: everpcpc/actions-cache@v1
+      uses: strophy/actions-cache@opendal-update
       if: contains(runner.name, 'ubuntu-platform') && inputs.cache == 'true'
       with:
         bucket: multi-runner-linux-x64-platform-cache-ui535z23
