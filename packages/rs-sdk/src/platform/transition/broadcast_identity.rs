@@ -17,8 +17,8 @@ use dpp::version::PlatformVersion;
 use dpp::NativeBlsModule;
 use rs_dapi_client::transport::TransportRequest;
 
+use super::broadcast_request::BroadcastRequestForStateTransition;
 use crate::error::Error;
-use crate::platform::broadcast_request::BroadcastRequestForStateTransition;
 
 /// Trait implemented by objects that can be used to broadcast new identity state transitions.
 ///

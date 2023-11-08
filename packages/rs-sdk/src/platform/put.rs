@@ -1,48 +1,58 @@
-use crate::platform::broadcast_request::BroadcastRequestForStateTransition;
+use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
+
+use crate::platform::transition::{broadcast_identity, TransitionContext};
 use crate::{Error, Sdk};
-use dapi_grpc::platform::VersionedGrpcResponse;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::state_transition::StateTransition;
-use rs_dapi_client::{DapiRequest, RequestSettings};
 
+use super::transition::TxId;
+
+/// Trait implemented by objects that can be created or modified and pushed to the Dash Platform.
 #[async_trait::async_trait]
-pub trait BroadcastStateTransition {
-    async fn broadcast(&self, sdk: &mut Sdk) -> Result<(), Error>;
-    async fn broadcast_and_wait(
+pub trait Put {
+    /// Put (create or update) object on the Platform.
+    ///
+    /// An asynchronous method provided by the Put trait that puts data on Dash Platform.
+    /// It locks funds that will be used to pay for the operation, creates a state transition,
+    /// signs it with appropriate keys, and broadcasts it to the platform.
+    ///
+    /// It returns a future that resolves to the saved object when the operation is successful,
+    /// and the transaction is confirmed on the platform.
+    ///
+    /// ## Parameters
+    ///
+    /// - `sdk`: An instance of [Sdk].
+    /// - `context` - contextual information about the transition that will be generated and broadcasted.
+    /// It contains information about keys to use, payment details, etc.
+    ///
+    /// ## Timeouts
+    ///
+    /// Depending on network conditions, the operation may take a long time to complete.
+    /// To prevent the operation from taking too long, consider using [Put::put_unconfirmed()].
+    ///
+    /// ## Canceling
+    ///
+    /// The returned future can be canceled by:
+    ///
+    /// * calling [`context.cancel()`](TransitionContext::cancel())
+    /// * dropping the returned future
+    ///
+    /// ## Returns
+    ///
+    /// Returns:
+    /// - ID of transaction on success
+    /// - [`Err(Error)`](Error) when an error occurs
+    async fn put<C: TransitionContext>(&self, sdk: &Sdk, context: &C) -> Result<TxId, Error>;
+
+    ///     Put (create or update) object on the Platform, without waiting for confirmation.
+    ///
+    /// An asynchronous method provided by the Put trait that puts data on Dash Platform.
+    /// It locks funds that will be used to pay for the operation, creates a state transition,
+    /// signs it with appropriate keys, and broadcasts it to the platform.
+    /// Unlike [Put::put()], it does not wait for the transaction to be confirmed.
+    /// 
+    /// See [Put::put()](Put::put()) for more details.
+    async fn put_unconfirmed<C: TransitionContext>(
         &self,
-        sdk: &mut Sdk,
-        time_out_ms: Option<u64>,
-    ) -> Result<StateTransitionProofResult, Error>;
-}
-
-#[async_trait::async_trait]
-impl BroadcastStateTransition for StateTransition {
-    async fn broadcast(&self, sdk: &mut Sdk) -> Result<(), Error> {
-        let request = self.broadcast_request_for_state_transition()?;
-
-        request.execute(sdk, RequestSettings::default()).await?;
-
-        // response is empty for a broadcast, result comes from the stream wait for state transition result
-
-        Ok(())
-    }
-
-    async fn broadcast_and_wait(
-        &self,
-        sdk: &mut Sdk,
-        time_out_ms: Option<u64>,
-    ) -> Result<StateTransitionProofResult, Error> {
-        let request = self.broadcast_request_for_state_transition()?;
-
-        request
-            .clone()
-            .execute(sdk, RequestSettings::default())
-            .await?;
-
-        let request = self.wait_for_state_transition_result_request()?;
-
-        let response = request.execute(sdk, RequestSettings::default()).await?;
-
-        todo!("not finished yet");
-    }
+        sdk: &Sdk,
+        context: &C,
+    ) -> Result<TxId, Error>;
 }

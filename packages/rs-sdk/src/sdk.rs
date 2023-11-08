@@ -9,7 +9,9 @@ use std::{
 
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
-use crate::{core_client::CoreClient, error::Error};
+use crate::{
+    core_client::CoreClient, error::Error, platform::transition::TransitionContextBuilder,
+};
 use crate::{mock::MockResponse, platform::Fetch};
 use dapi_grpc::mock::Mockable;
 use dpp::{
@@ -229,6 +231,12 @@ impl Sdk {
             tracing::warn!("Unable to write dump file {:?}: {}", path, e);
         }
     }
+
+    /// Create a new [`TransitionContextBuilder`] that allows configuration of various
+    /// parameters of the transition, like keys to use, fee details, etc.
+    pub fn transition_context_builder(&self) -> TransitionContextBuilder {
+        TransitionContextBuilder::new(self)
+    }
 }
 
 impl ContextProvider for Sdk {
@@ -304,7 +312,7 @@ impl Dapi for Sdk {
             SdkInstance::Dapi { ref dapi, .. } => dapi.execute(request, settings).await,
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref dapi, .. } => {
-                let mut dapi_guard = dapi.lock().await;
+                let dapi_guard = dapi.lock().await;
                 dapi_guard.execute(request, settings).await
             }
         }
