@@ -84,6 +84,12 @@ jobs:
             /opt/actions-runner/_work/docker/volumes/dashmate*
           key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
 
+      - name: Debug restored cache
+        run: |
+          ls -lha /home/ubuntu/.dashmate
+          ls -lha /opt/actions-runner/_work/docker
+          ls -lha /opt/actions-runner/_work/docker/volumes
+
       - name: Run tests with cache
         run: yarn workspace dashmate run mocha ${{ inputs.test-pattern }}
         env:
@@ -96,6 +102,12 @@ jobs:
         env:
           DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD: true
         if: steps.local-network-data.outputs.cache-hit != 'true'
+
+      - name: Debug cache before storing
+        run: |
+          ls -lha /home/ubuntu/.dashmate
+          ls -lha /opt/actions-runner/_work/docker
+          ls -lha /opt/actions-runner/_work/docker/volumes
 
       - name: Show Docker logs
         if: ${{ failure() }}
