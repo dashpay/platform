@@ -70,6 +70,5 @@ jobs:
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
 
       - name: Create an archive of built files
-        run: |
-          xargs -a artifacts_list.txt tar cvf build-js-artifacts-${{ github.sha }}.tar
+        run: xargs -a artifacts_list.txt tar cvf build-js-artifacts-${{ github.sha }}.tar
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}

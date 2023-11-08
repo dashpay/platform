@@ -73,7 +73,7 @@ jobs:
         id: dashmate-fingerprint
         run: echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_OUTPUT
 
-      - name: Cache local network data
+      - name: Use test suite local network data to speed up dashmate local network tests
         id: local-network-data
         uses: everpcpc/actions-cache/restore@v1
         with:
@@ -83,6 +83,7 @@ jobs:
             /home/ubuntu/.dashmate
             /opt/actions-runner/_work/docker/volumes/dashmate*
           key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
+        if: contains(inputs.test-pattern, 'local')
 
       - name: Run tests with cache
         run: yarn workspace dashmate run mocha ${{ inputs.test-pattern }}
