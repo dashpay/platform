@@ -1,4 +1,9 @@
+use std::sync::Arc;
+
+use dpp::prelude::{DataContract, Identifier};
 use hex::ToHex;
+
+use crate::Error;
 
 /// `ContextProvider` trait provides an interface to fetch information about context of proof verification, like
 /// quorum information, data contracts present in the platform, etc.
@@ -24,6 +29,24 @@ pub trait ContextProvider: Send + Sync {
         quorum_hash: [u8; 32], // quorum hash is 32 bytes
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], crate::Error>; // public key is 48 bytes
+
+    /// Fetches the data contract for a specified data contract ID.
+    /// This method is used by [FromProof](crate::FromProof) implementations to fetch data contracts
+    /// referenced in proofs.
+    ///
+    /// # Arguments
+    ///
+    /// * `data_contract_id`: The ID of the data contract to fetch.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Option<Arc<DataContract>>)`: On success, returns the data contract if it exists, or `None` if it does not.
+    /// We use Arc to avoid copying the data contract.
+    /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
+    fn get_data_contract<'a>(
+        &'a self,
+        id: &Identifier,
+    ) -> Result<Option<Arc<DataContract>>, crate::Error>;
 }
 
 /// Mock ContextProvider that can read quorum keys from files.
@@ -106,5 +129,12 @@ impl ContextProvider for MockContextProvider {
         let key: Vec<u8> = serde_json::from_reader(f).expect("cannot parse quorum key");
 
         Ok(key.try_into().expect("quorum key format mismatch"))
+    }
+
+    fn get_data_contract<'a>(
+        &'a self,
+        _data_contract_id: &Identifier,
+    ) -> Result<Option<Arc<DataContract>>, crate::Error> {
+        todo!("not implemented yet");
     }
 }
