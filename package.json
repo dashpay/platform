@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.25.0-pr.1545.2",
+  "version": "1.0.0-pr.1545.2",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
