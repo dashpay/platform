@@ -1059,6 +1059,7 @@ dependencies = [
  "rs-dapi-client",
  "serde",
  "serde_json",
+ "simple-signer",
  "thiserror",
  "tokio",
  "tokio-util",

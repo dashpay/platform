@@ -64,6 +64,7 @@ pub mod error;
 pub mod mock;
 pub mod platform;
 pub mod sdk;
+pub mod wallet;
 
 pub use error::Error;
 pub use sdk::{Sdk, SdkBuilder};
