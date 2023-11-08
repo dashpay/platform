@@ -75,11 +75,11 @@ describe('Local Network', function main() {
   });
 
   describe('setup', function describeSetup() {
-    if (process.env.DASHMATE_E2E_TESTS_LOCAL_HOMEDIR) {
-      this.skip('local network already set up');
-    }
-
     it('should setup local network', async () => {
+      if (process.env.DASHMATE_E2E_TESTS_LOCAL_HOMEDIR) {
+        this.skip('local network already set up');
+      }
+
       // TODO: Refactor setup command to extract setup logic to
       //  setupTask function and use it here
       const setupLocalPresetTask = await container.resolve('setupLocalPresetTask');
