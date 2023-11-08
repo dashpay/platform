@@ -75,7 +75,7 @@ jobs:
 
       - name: Use test suite local network data to speed up dashmate local network tests
         id: local-network-data
-        uses: everpcpc/actions-cache/restore@v1
+        uses: strophy/actions-cache/restore@opendal-update
         with:
           bucket: multi-runner-linux-x64-platform-cache-ui535z23
           root: local-network-data
