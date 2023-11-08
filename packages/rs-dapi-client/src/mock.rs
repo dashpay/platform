@@ -87,7 +87,7 @@ impl MockDapiClient {
 #[async_trait]
 impl Dapi for MockDapiClient {
     async fn execute<R: TransportRequest>(
-        &mut self,
+        &self,
         request: R,
         _settings: RequestSettings,
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>

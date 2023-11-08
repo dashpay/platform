@@ -42,7 +42,7 @@ impl<TE: CanRetry> CanRetry for DapiClientError<TE> {
 pub trait Dapi {
     /// Execute request using this DAPI client.
     async fn execute<R>(
-        &mut self,
+        &self,
         request: R,
         settings: RequestSettings,
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
@@ -52,9 +52,9 @@ pub trait Dapi {
 }
 
 #[async_trait]
-impl<D: Dapi + Send> Dapi for &mut D {
+impl<D: Dapi + Send + Sync> Dapi for &mut D {
     async fn execute<R>(
-        &mut self,
+        &self,
         request: R,
         settings: RequestSettings,
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
@@ -62,7 +62,7 @@ impl<D: Dapi + Send> Dapi for &mut D {
         R: TransportRequest + Mockable,
         R::Response: Mockable,
     {
-        (**self).execute(request, settings).await
+        self.execute(request, settings).await
     }
 }
 
@@ -91,7 +91,7 @@ impl DapiClient {
 impl Dapi for DapiClient {
     /// Execute the [DapiRequest](crate::DapiRequest).
     async fn execute<R>(
-        &mut self,
+        &self,
         request: R,
         settings: RequestSettings,
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>>
