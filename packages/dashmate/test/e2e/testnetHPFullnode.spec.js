@@ -95,7 +95,7 @@ describe('Testnet HP Fullnode', function main() {
 
       config = configFile.getConfig(preset);
 
-      if (process.env.DASHMATE_E2E_TESTS_SKIP_BUILD !== 'true') {
+      if (process.env.DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD !== 'true') {
         config.set('dashmate.helper.docker.build.enabled', true);
         config.set('platform.drive.abci.docker.build.enabled', true);
         config.set('platform.dapi.api.docker.build.enabled', true);

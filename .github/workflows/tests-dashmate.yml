@@ -73,6 +73,7 @@ jobs:
         id: dashmate-fingerprint
         run: echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_OUTPUT
 
+      # TODO: We should move it to s3?
       - name: Cache local network data
         id: local-network-data
         uses: actions/cache/restore@v3
@@ -85,14 +86,14 @@ jobs:
       - name: Run tests with cache
         run: yarn workspace dashmate run mocha ${{ inputs.test-pattern }}
         env:
-          DASHMATE_E2E_TESTS_SKIP_BUILD: true
+          DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD: true
           DASHMATE_E2E_TESTS_LOCAL_HOMEDIR: /home/ubuntu/.dashmate
         if: steps.local-network-data.outputs.cache-hit == 'true'
 
-      - name: Run tests
+      - name: Run tests without cache
         run: yarn workspace dashmate run mocha ${{ inputs.test-pattern }}
         env:
-          DASHMATE_E2E_TESTS_SKIP_BUILD: true
+          DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD: true
         if: steps.local-network-data.outputs.cache-hit != 'true'
 
       - name: Show Docker logs

@@ -36,7 +36,7 @@ describe('Local Network', function main() {
     // Update local config template that will be used to setup nodes
     const localConfig = configFile.getConfig(groupName);
 
-    if (process.env.DASHMATE_E2E_TESTS_SKIP_BUILD !== 'true') {
+    if (process.env.DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD !== 'true') {
       localConfig.set('dashmate.helper.docker.build.enabled', true);
       localConfig.set('platform.drive.abci.docker.build.enabled', true);
       localConfig.set('platform.dapi.api.docker.build.enabled', true);
