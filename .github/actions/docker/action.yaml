@@ -7,7 +7,6 @@ inputs:
     required: true
   image_tag:
     description: Docker image tag. Commit SHA if empty
-    # default: ${{ github.head_ref || github.ref_name }}
   dockerfile:
     description: Path to the Dockerfile, for example `./Dockerfile`
     default: './Dockerfile'
@@ -79,24 +78,6 @@ runs:
               keepBytes = 30000000000 # 30 GB
               keepDuration = 864000 # 10 days
 
-#    - name: Install b3sum for retimer
-#      shell: bash
-#      run: |
-#        sudo apt-get update
-#        sudo apt-get install b3sum -y
-#
-#    - name: Persist retimer state
-#      uses: actions/cache@v3
-#      with:
-#        path: retimer-state
-#        key: retimer-state-${{ github.sha }}
-#        restore-keys: |
-#          retimer-state-${{ github.sha }}
-#          retimer-state-
-#
-#    - name: Run retimer to adjust source files mtime for cargo build cache
-#      uses: dcginfra/retimer@master
-#
     - name: Load Docker mount cache
       uses: dcginfra/buildkit-cache-dance/inject@s5cmd
       if: ${{ inputs.cache_mounts != '' }}
