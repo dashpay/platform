@@ -16,8 +16,6 @@ drive = { path = "../rs-drive", default-features = false, features = [
     "verify",
 ] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
-# drive-abci is only needed for core rpc; TODO remove once we have correct core rpc impl
-drive-abci = { path = "../rs-drive-abci", default-features = false }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 
 bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
@@ -37,7 +35,7 @@ futures = { version = "0.3.28" }
 derive_more = { version = "0.99.16" }
 lru = { version = "0.12.0" }
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "master" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "feat/get-raw-change-address" }
 
 [dev-dependencies]
 rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks", "dump"] }

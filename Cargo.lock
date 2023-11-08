@@ -1045,12 +1045,11 @@ dependencies = [
  "ciborium",
  "dapi-grpc",
  "dapi-grpc-macros",
- "dashcore-rpc",
+ "dashcore-rpc 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/get-raw-change-address)",
  "derive_more",
  "dotenvy",
  "dpp",
  "drive",
- "drive-abci",
  "drive-proof-verifier",
  "envy",
  "futures",
@@ -1091,16 +1090,45 @@ source = "git+https://github.com/dashpay/rust-dashcore?branch=master#43ffb72915a
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.1"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#d6eb09d3cb4f11f57901bed5f3ab2f9657848e2e"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/get-raw-change-address#db254213738019e2775110470566cffdc9db6fec"
 dependencies = [
  "dashcore-private",
- "dashcore-rpc-json",
+ "dashcore-rpc-json 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/get-raw-change-address)",
  "env_logger 0.10.0",
  "hex",
  "jsonrpc",
  "log",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "dashcore-rpc"
+version = "0.15.1"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#d6eb09d3cb4f11f57901bed5f3ab2f9657848e2e"
+dependencies = [
+ "dashcore-private",
+ "dashcore-rpc-json 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=master)",
+ "env_logger 0.10.0",
+ "hex",
+ "jsonrpc",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "dashcore-rpc-json"
+version = "0.15.1"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/get-raw-change-address#db254213738019e2775110470566cffdc9db6fec"
+dependencies = [
+ "bincode 2.0.0-rc.3",
+ "dashcore",
+ "hex",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "serde_with 2.3.3",
 ]
 
 [[package]]
@@ -1345,7 +1373,7 @@ dependencies = [
  "ciborium",
  "clap 4.4.7",
  "dapi-grpc",
- "dashcore-rpc",
+ "dashcore-rpc 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=master)",
  "delegate",
  "derive_more",
  "dotenvy",
@@ -3919,7 +3947,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
- "dashcore-rpc",
+ "dashcore-rpc 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=master)",
  "dpp",
 ]
 
@@ -4018,7 +4046,7 @@ dependencies = [
  "ciborium",
  "clap 4.4.7",
  "dapi-grpc",
- "dashcore-rpc",
+ "dashcore-rpc 0.15.1 (git+https://github.com/dashpay/rust-dashcore-rpc?branch=master)",
  "delegate",
  "derive_more",
  "dotenvy",

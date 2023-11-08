@@ -4,10 +4,10 @@
 //! into dash-platform-sdk.
 
 use dashcore_rpc::{
-    dashcore::{hashes::Hash, QuorumHash},
-    dashcore_rpc_json::QuorumType,
+    dashcore::{address::NetworkUnchecked, hashes::Hash, Amount, QuorumHash},
+    dashcore_rpc_json as json, Auth, Client, RawTx, RpcApi,
 };
-use drive_abci::rpc::core::{CoreRPCLike, DefaultCoreRPC};
+use drive_proof_verifier::QuorumInfoProvider;
 use std::sync::Mutex;
 
 use crate::error::Error;
@@ -17,8 +17,8 @@ use crate::error::Error;
 /// Implements [`ContextProvider`] trait.
 ///
 /// TODO: This is a temporary implementation, effective until we integrate SPV.
-pub struct CoreClient {
-    core: Mutex<Box<dyn CoreRPCLike + Send + Sync>>,
+pub(crate) struct CoreClient {
+    core: Mutex<Client>,
 }
 
 impl CoreClient {
@@ -36,14 +36,69 @@ impl CoreClient {
         core_user: &str,
         core_password: &str,
     ) -> Result<Self, Error> {
-        let core_addr = format!("http://{}:{}", server_address, core_port);
-        let core =
-            DefaultCoreRPC::open(&core_addr, core_user.to_string(), core_password.to_string())?;
-
+        let addr = format!("http://{}:{}", server_address, core_port);
+        let core = Client::new(
+            &addr,
+            Auth::UserPass(core_user.to_string(), core_password.to_string()),
+        )
+        .map_err(Error::CoreClientError)?;
         Ok(Self {
-            core: Mutex::new(Box::new(core)),
+            core: Mutex::new(core),
         })
     }
+}
+// Wallet functions
+impl CoreClient {
+    /// List unspent transactions
+    ///
+    /// ## Arguments
+    ///
+    /// * `minimum_sum_satoshi` - Minimum total sum of all returned unspent transactions
+    ///
+    /// ## See also
+    ///
+    /// * [Dash Core documentation](https://docs.dash.org/projects/core/en/stable/docs/api/remote-procedure-calls-wallet.html#listunspent)
+    pub fn list_unspent(
+        &self,
+        minimum_sum_satoshi: Option<u64>,
+    ) -> Result<Vec<dashcore_rpc::json::ListUnspentResultEntry>, Error> {
+        let options = json::ListUnspentQueryOptions {
+            minimum_sum_amount: minimum_sum_satoshi.map(Amount::from_sat),
+            ..Default::default()
+        };
+
+        self.core
+            .lock()
+            .expect("Core lock poisoned")
+            .list_unspent(None, None, None, None, None)
+            .map_err(Error::CoreClientError)
+    }
+
+    /// Sign raw transaction with wallet
+    ///
+    /// See https://docs.dash.org/projects/core/en/stable/docs/api/remote-procedure-calls-wallet.html#signrawtransactionwithwallet
+    pub fn sign_raw_transaction_with_wallet<R: RawTx>(
+        &self,
+        tx: R,
+        utxos: Option<&[json::SignRawTransactionInput]>,
+        sighash_type: Option<json::SigHashType>,
+    ) -> Result<json::SignRawTransactionResult, Error> {
+        self.core
+            .lock()
+            .expect("Core lock poisoned")
+            .sign_raw_transaction_with_wallet(tx, utxos, sighash_type)
+            .map_err(Error::CoreClientError)
+    }
+
+    /// Return address to which change of transaction can be sent.
+    pub fn change_address(&self) -> Result<dpp::dashcore::Address<NetworkUnchecked>, Error> {
+        self.core
+            .lock()
+            .expect("Core lock poisoned")
+            .get_raw_change_address()
+            .map_err(Error::CoreClientError)
+    }
+}
 
     pub fn get_quorum_public_key(
         &self,
@@ -59,7 +114,7 @@ impl CoreClient {
 
         let core = self.core.lock().expect("Core lock poisoned");
         let quorum_info = core
-            .get_quorum_info(QuorumType::from(quorum_type), &quorum_hash, None)
+            .get_quorum_info(json::QuorumType::from(quorum_type), &quorum_hash, None)
             .map_err(
                 |e: dashcore_rpc::Error| drive_proof_verifier::Error::InvalidQuorum {
                     error: e.to_string(),
