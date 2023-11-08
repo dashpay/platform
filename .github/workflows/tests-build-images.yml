@@ -5,7 +5,7 @@ jobs:
   # TODO: try with x8
   build-drive:
     name: Build Drive image
-    runs-on: [ "self-hosted", "linux", "x64", "8x-ubuntu-platform" ]
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -30,7 +30,7 @@ jobs:
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           push: true
           region: ${{ vars.AWS_REGION }}
-          bucket: multi-runner-linux-x64-platform-8x-cache-wp1sy0o6
+          bucket: multi-runner-linux-x64-platform-cache-wp1sy0o6
           cache_mounts: |
             cargo_registry_index
             cargo_registry_cache
@@ -39,7 +39,7 @@ jobs:
   # TODO: try with x8
   build-dapi:
     name: Build DAPI image
-    runs-on: [ "self-hosted", "linux", "x64", "8x-ubuntu-platform" ]
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -64,7 +64,7 @@ jobs:
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           push: true
           region: ${{ vars.AWS_REGION }}
-          bucket: multi-runner-linux-x64-platform-8x-cache-wp1sy0o6
+          bucket: multi-runner-linux-x64-platform-cache-wp1sy0o6
           cache_mounts: |
             cargo_registry_index
             cargo_registry_cache
@@ -73,7 +73,7 @@ jobs:
   # TODO: try with x8
   build-dashmate-helper:
     name: Build Dashmate helper image
-    runs-on: [ "self-hosted", "linux", "x64", "8x-ubuntu-platform" ]
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -98,7 +98,7 @@ jobs:
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           push: true
           region: ${{ vars.AWS_REGION }}
-          bucket: multi-runner-linux-x64-platform-8x-cache-wp1sy0o6
+          bucket: multi-runner-linux-x64-platform-cache-wp1sy0o6
           cache_mounts: |
             cargo_registry_index
             cargo_registry_cache
