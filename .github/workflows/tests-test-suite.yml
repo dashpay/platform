@@ -71,7 +71,7 @@ jobs:
           path: |
             /home/ubuntu/.dashmate
             **/.env
-            /mnt/instance-store/volumes/dashmate*
+            /opt/actions-runner/_work/docker/volumes/dashmate*
           key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
 
       - name: Setup local network
