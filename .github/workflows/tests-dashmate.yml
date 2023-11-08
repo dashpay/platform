@@ -73,11 +73,12 @@ jobs:
         id: dashmate-fingerprint
         run: echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_OUTPUT
 
-      # TODO: We should move it to s3?
       - name: Cache local network data
         id: local-network-data
-        uses: actions/cache/restore@v3
+        uses: everpcpc/actions-cache@v1
         with:
+          bucket: multi-runner-linux-x64-platform-cache-ui535z23
+          root: local-network-data
           path: |
             /home/ubuntu/.dashmate
             /opt/actions-runner/_work/docker/volumes/dashmate*
