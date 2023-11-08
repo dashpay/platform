@@ -67,8 +67,9 @@ SHELL ["/bin/bash", "-c"]
 
 ARG TARGETARCH
 
-RUN rustup install stable && \
-    rustup target add wasm32-unknown-unknown --toolchain stable
+# Rust version the same as in /README.md
+RUN rustup install 1.73 && \
+    rustup target add wasm32-unknown-unknown --toolchain 1.73
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
@@ -269,7 +270,6 @@ COPY --from=build-dashmate-helper /platform/package.json /platform/yarn.lock /pl
 # Copy only necessary packages from monorepo
 COPY --from=build-dashmate-helper /platform/packages/dashmate packages/dashmate
 COPY --from=build-dashmate-helper /platform/packages/dashpay-contract packages/dashpay-contract
-COPY --from=build-dashmate-helper /platform/packages/js-dpp packages/js-dpp
 COPY --from=build-dashmate-helper /platform/packages/wallet-lib packages/wallet-lib
 COPY --from=build-dashmate-helper /platform/packages/js-dash-sdk packages/js-dash-sdk
 COPY --from=build-dashmate-helper /platform/packages/js-dapi-client packages/js-dapi-client
@@ -322,7 +322,6 @@ COPY --from=build-test-suite /platform/packages/platform-test-suite/Cargo.toml.t
 # Copy only necessary packages from monorepo
 COPY --from=build-test-suite /platform/packages/platform-test-suite packages/platform-test-suite
 COPY --from=build-test-suite /platform/packages/dashpay-contract packages/dashpay-contract
-COPY --from=build-test-suite /platform/packages/js-dpp packages/js-dpp
 COPY --from=build-test-suite /platform/packages/wallet-lib packages/wallet-lib
 COPY --from=build-test-suite /platform/packages/js-dash-sdk packages/js-dash-sdk
 COPY --from=build-test-suite /platform/packages/js-dapi-client packages/js-dapi-client
@@ -377,7 +376,6 @@ COPY --from=build-dapi /platform/package.json /platform/yarn.lock /platform/.yar
 # yarn run ultra --info --filter '@dashevo/dapi' |  sed -E 's/.*@dashevo\/(.*)/COPY --from=build-dapi \/platform\/packages\/\1 \/platform\/packages\/\1/'
 COPY --from=build-dapi /platform/packages/dapi /platform/packages/dapi
 COPY --from=build-dapi /platform/packages/dapi-grpc /platform/packages/dapi-grpc
-COPY --from=build-dapi /platform/packages/js-dpp /platform/packages/js-dpp
 COPY --from=build-dapi /platform/packages/js-grpc-common /platform/packages/js-grpc-common
 COPY --from=build-dapi /platform/packages/wasm-dpp /platform/packages/wasm-dpp
 COPY --from=build-dapi /platform/packages/js-dapi-client /platform/packages/js-dapi-client

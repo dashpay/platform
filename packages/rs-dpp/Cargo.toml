@@ -1,8 +1,15 @@
 [package]
 name = "dpp"
-version = "0.25.0-dev.30"
+version = "0.25.0"
 edition = "2021"
-authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>", "Samuel Westrich <sam@dash.org>", "Ivan Shumkov <ivan@shumkov.ru>", "Djavid Gabibiyan <djavid@dash.org>", "Igor Markin <igor.markin@dash.org>"]
+rust-version = "1.73"
+authors = [
+    "Anton Suprunchuk <anton.suprunchuk@gmail.com>",
+    "Samuel Westrich <sam@dash.org>",
+    "Ivan Shumkov <ivan@shumkov.ru>",
+    "Djavid Gabibiyan <djavid@dash.org>",
+    "Igor Markin <igor.markin@dash.org>",
+]
 
 [dependencies]
 anyhow = { version = "1.0.70" }
@@ -15,7 +22,7 @@ chrono = { version = "0.4.20", default-features = false, features = [
     "wasmbind",
     "clock",
 ] }
-ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" , optional = true}
+ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined", optional = true }
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
     "std",
     "secp-recovery",
@@ -24,11 +31,11 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
     "serde",
 ], default-features = false, branch = "master" }
 env_logger = { version = "0.9" }
-enum-map = { version = "2.5.0"}
+enum-map = { version = "2.5.0" }
 futures = { version = "0.3" }
 getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
-integer-encoding = { version = "3.0.4" }
+integer-encoding = { version = "4.0.0" }
 itertools = { version = "0.10" }
 json-patch = "0.2.6"
 jsonptr = "0.1.5"
@@ -57,7 +64,7 @@ platform-value-convertible = { path = "../rs-platform-value-convertible" }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 derive_more = "0.99.17"
-ed25519-dalek = {version = "2.0.0-rc.2", features = ["rand_core"] }
+ed25519-dalek = { version = "2.0.0-rc.2", features = ["rand_core"] }
 nohash-hasher = "0.2.0"
 rust_decimal = "1.29.1"
 rust_decimal_macros = "1.29.1"
@@ -69,14 +76,104 @@ pretty_assertions = { version = "1.3.0" }
 dpp = { path = ".", features = ["all_features_without_client"] }
 
 [features]
-default = ["json-object", "platform-value", "system_contracts", "state-transitions", "extended-document"]
-all_features = ["json-object", "platform-value", "system_contracts", "state-transitions", "extended-document", "cbor", "validation", "identity-hashing", "identity-serialization", "ciborium", "document-serde-conversion", "document-value-conversion", "document-json-conversion", "document-cbor-conversion", "data-contract-serde-conversion", "data-contract-value-conversion", "data-contract-json-conversion", "data-contract-cbor-conversion", "identity-serde-conversion", "identity-value-conversion", "identity-json-conversion", "identity-cbor-conversion", "state-transition-serde-conversion", "state-transition-value-conversion", "state-transition-json-conversion",  "state-transition-validation", "state-transition-signing", "state-transitions", "factories", "fixtures-and-mocks", "mockall", "random-public-keys", "random-identities", "random-documents", "random-document-types", "fee-distribution", "client"]
-all_features_without_client = ["json-object", "platform-value", "system_contracts", "state-transitions", "extended-document", "cbor", "validation", "identity-hashing", "identity-serialization", "ciborium", "document-serde-conversion", "document-value-conversion", "document-json-conversion", "document-cbor-conversion", "data-contract-serde-conversion", "data-contract-value-conversion", "data-contract-json-conversion", "data-contract-cbor-conversion", "identity-serde-conversion", "identity-value-conversion", "identity-json-conversion", "identity-cbor-conversion", "state-transition-serde-conversion", "state-transition-value-conversion", "state-transition-json-conversion",  "state-transition-validation", "state-transition-signing", "state-transitions", "factories", "fixtures-and-mocks", "mockall", "random-public-keys", "random-identities", "random-documents", "random-document-types", "fee-distribution"]
+default = [
+    "json-object",
+    "platform-value",
+    "system_contracts",
+    "state-transitions",
+    "extended-document",
+]
+all_features = [
+    "json-object",
+    "platform-value",
+    "system_contracts",
+    "state-transitions",
+    "extended-document",
+    "cbor",
+    "validation",
+    "identity-hashing",
+    "identity-serialization",
+    "ciborium",
+    "document-serde-conversion",
+    "document-value-conversion",
+    "document-json-conversion",
+    "document-cbor-conversion",
+    "data-contract-serde-conversion",
+    "data-contract-value-conversion",
+    "data-contract-json-conversion",
+    "data-contract-cbor-conversion",
+    "identity-serde-conversion",
+    "identity-value-conversion",
+    "identity-json-conversion",
+    "identity-cbor-conversion",
+    "state-transition-serde-conversion",
+    "state-transition-value-conversion",
+    "state-transition-json-conversion",
+    "state-transition-validation",
+    "state-transition-signing",
+    "state-transitions",
+    "factories",
+    "fixtures-and-mocks",
+    "mockall",
+    "random-public-keys",
+    "random-identities",
+    "random-documents",
+    "random-document-types",
+    "fee-distribution",
+    "client",
+]
+all_features_without_client = [
+    "json-object",
+    "platform-value",
+    "system_contracts",
+    "state-transitions",
+    "extended-document",
+    "cbor",
+    "validation",
+    "identity-hashing",
+    "identity-serialization",
+    "ciborium",
+    "document-serde-conversion",
+    "document-value-conversion",
+    "document-json-conversion",
+    "document-cbor-conversion",
+    "data-contract-serde-conversion",
+    "data-contract-value-conversion",
+    "data-contract-json-conversion",
+    "data-contract-cbor-conversion",
+    "identity-serde-conversion",
+    "identity-value-conversion",
+    "identity-json-conversion",
+    "identity-cbor-conversion",
+    "state-transition-serde-conversion",
+    "state-transition-value-conversion",
+    "state-transition-json-conversion",
+    "state-transition-validation",
+    "state-transition-signing",
+    "state-transitions",
+    "factories",
+    "fixtures-and-mocks",
+    "mockall",
+    "random-public-keys",
+    "random-identities",
+    "random-documents",
+    "random-document-types",
+    "fee-distribution",
+]
 drive = ["state-transitions", "fee-distribution", "system_contracts"]
-abci = ["state-transitions", "state-transition-validation", "validation", "random-public-keys",
-  "identity-serialization"]
+abci = [
+    "state-transitions",
+    "state-transition-validation",
+    "validation",
+    "random-public-keys",
+    "identity-serialization",
+]
 cbor = ["ciborium"]
-validation = ["platform-value", "document-value-conversion", "state-transition-serde-conversion"]
+validation = [
+    "platform-value",
+    "document-value-conversion",
+    "state-transition-serde-conversion",
+]
 json-object = ["platform-value"]
 platform-value = []
 identity-hashing = ["identity-serialization"]
@@ -94,8 +191,15 @@ identity-value-conversion = ["identity-serde-conversion"]
 identity-json-conversion = ["identity-value-conversion"]
 identity-cbor-conversion = ["identity-value-conversion", "cbor"]
 state-transition-serde-conversion = ["data-contract-serde-conversion"]
-state-transition-value-conversion = ["platform-value", "state-transition-serde-conversion", "data-contract-value-conversion"]
-state-transition-json-conversion = ["json-object", "data-contract-json-conversion"]
+state-transition-value-conversion = [
+    "platform-value",
+    "state-transition-serde-conversion",
+    "data-contract-value-conversion",
+]
+state-transition-json-conversion = [
+    "json-object",
+    "data-contract-json-conversion",
+]
 state-transition-validation = []
 state-transition-signing = []
 state-transitions = []
@@ -106,6 +210,10 @@ random-identities = ["random-public-keys"]
 random-documents = []
 random-document-types = []
 fee-distribution = []
-extended-document = ["document-serde-conversion", "data-contract-serde-conversion",  "data-contract-json-conversion"]
+extended-document = [
+    "document-serde-conversion",
+    "data-contract-serde-conversion",
+    "data-contract-json-conversion",
+]
 client = []
 factories = []

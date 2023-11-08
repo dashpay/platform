@@ -28,7 +28,6 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
-          toolchain: stable
           target: wasm32-unknown-unknown
 
       - name: Install yq

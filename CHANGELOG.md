@@ -1,3 +1,200 @@
+### [0.25.10](https://github.com/dashpay/platform/compare/v0.25.9...v0.25.10) (2023-11-02)
+
+### Bug Fixes
+
+* **dashmate:** invalid SSL path in the obtain command ([#1553](https://github.com/dashpay/platform/issues/1553))
+
+
+
+### [0.25.9](https://github.com/dashpay/platform/compare/v0.25.8...v0.25.9) (2023-11-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* DAPI proto messages are changed (#1542)
+* Consensus rules for Identity Create and TopUp are changed. (#1510)
+* Asset Lock Proof structure is changed  (#1510)
+* Identity Create Transition balance validation requires correct amount (twice more) (#1510)
+* **dashmate:** `enabledCount` is replaced with `masternodeEnabled` in the masternode status output (#1505)
+* **dashmate:** SSL keys are now stored in the node's config subdirectory (#1502)
+
+### Features
+
+* **dashmate:** add cli command for core service ([#1501](https://github.com/dashpay/platform/issues/1501))
+* **dashmate:** configure dashd command arguments ([#1520](https://github.com/dashpay/platform/issues/1520))
+* **dashmate:** docker build command ([#1546](https://github.com/dashpay/platform/issues/1546))
+* **dashmate:** docker build command ([#1546](https://github.com/dashpay/platform/issues/1546))
+* **dashmate:** move ssl dir ([#1502](https://github.com/dashpay/platform/issues/1502))
+* identity funding with asset lock special transactions ([#1510](https://github.com/dashpay/platform/issues/1510))
+* **platform:** proto message and query versioning ([#1522](https://github.com/dashpay/platform/issues/1522))
+* **platform:** query version upgrade (both votes and status) and epoch info ([#1542](https://github.com/dashpay/platform/issues/1542))
+
+
+### Bug Fixes
+
+* **dashmate:** payment queue and extend enabled count ([#1505](https://github.com/dashpay/platform/issues/1505))
+* **dashmate:** reset command doesn't reset configs ([#1541](https://github.com/dashpay/platform/issues/1541))
+* **drive:** mishandling internal errors as validation ones ([#1492](https://github.com/dashpay/platform/issues/1492))
+* security advisories in browserify-sign and crypto-js ([#1548](https://github.com/dashpay/platform/issues/1548))
+
+
+### Performance Improvements
+
+* **dashmate:** disable config auto render ([#1499](https://github.com/dashpay/platform/issues/1499))
+* **dashmate:** speedup container cleanup ([#1518](https://github.com/dashpay/platform/issues/1518))
+
+
+### Continuous Integration
+
+* fix s3 layer cache access forbidden on 8x runners ([#1521](https://github.com/dashpay/platform/issues/1521))
+
+
+### Tests
+
+* **dashmate:** successful migration test ([#1500](https://github.com/dashpay/platform/issues/1500))
+* **test-suite:** add optional bail ([#1488](https://github.com/dashpay/platform/issues/1488))
+
+
+### Build System
+
+* update rust to 1.73 ([#1529](https://github.com/dashpay/platform/issues/1529))
+
+
+### Code Refactoring
+
+* remove js-dpp ([#1517](https://github.com/dashpay/platform/issues/1517))
+
+
+### Documentation
+
+* Update README.md to give information about correctly adding to correct Shell $PATH ([#1550](https://github.com/dashpay/platform/issues/1550))
+
+
+### Miscellaneous Chores
+
+* adds missing crypto js ([#1538](https://github.com/dashpay/platform/issues/1538))
+* **dashmate:** set tenderdash logging level to info ([#1540](https://github.com/dashpay/platform/issues/1540))
+* **dpp:** version `InstantAssetLockProof.validate_structure` ([#1549](https://github.com/dashpay/platform/issues/1549))
+
+### [0.25.8](https://github.com/dashpay/platform/compare/v0.25.7...v0.25.8) (2023-10-20)
+
+
+### Bug Fixes
+
+* **drive-abci:** cached protocol versions ([#1516](https://github.com/dashpay/platform/issues/1516))
+
+
+### Miscellaneous Chores
+
+* **drive:** remove runtime state logging ([#1511](https://github.com/dashpay/platform/issues/1511))
+* **drive:** set correct target for grove logs ([#1512](https://github.com/dashpay/platform/issues/1512))
+
+
+### Continuous Integration
+
+* c6id.8xlarge runners ([#1514](https://github.com/dashpay/platform/issues/1514))
+
+### [0.25.7](https://github.com/dashpay/platform/compare/v0.25.6...v0.25.7) (2023-10-18)
+
+
+### Miscellaneous Chores
+
+* **drive:** add more logs ([#1506](https://github.com/dashpay/platform/issues/1506))
+
+### [0.25.6](https://github.com/dashpay/platform/compare/v0.25.5...v0.25.6) (2023-10-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** remove extended quorum info from platform state (#1496)
+
+### Miscellaneous Chores
+
+* **drive:** fix logging levels ([#1495](https://github.com/dashpay/platform/issues/1495))
+* **drive:** remove extended quorum info from platform state ([#1496](https://github.com/dashpay/platform/issues/1496))
+* logging hex strings ([#1497](https://github.com/dashpay/platform/issues/1497))
+
+### [0.25.3](https://github.com/dashpay/platform/compare/v0.25.2...v0.25.3) (2023-10-12)
+
+
+### Bug Fixes
+
+* **dashmate:** a testnet node fails to sync ([#1485](https://github.com/dashpay/platform/issues/1485))
+
+
+### Documentation
+
+* cleanup changelog
+
+### [0.25.2](https://github.com/dashpay/platform/compare/v0.25.1...v0.25.2) (2023-10-11)
+
+
+### Features
+
+* **dashmate:** force start ([#1481](https://github.com/dashpay/platform/issues/1481))
+
+### [0.25.1](https://github.com/dashpay/platform/compare/v0.25.0...v0.25.1) (2023-10-11)
+
+
+### Bug Fixes
+
+* **dashmate:** log permissions on linux system ([#1479](https://github.com/dashpay/platform/issues/1479))
+
+## [0.25.0](https://github.com/dashpay/platform/compare/v0.25.0-dev.33...v0.25.0) (2023-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* block results might be different while blockchain replying (#1464)
+* **platform:** the default epoch length is changed (#1467)
+* **drive-abci:** masternode operator keys are no longer added to the unique tree lookup (#1459)
+* **drive:** contracts with arrays won't be valid anymore (#1457)
+* **drive-abci:** small differences in serialization of Null value (#1456)
+* the DPNS system data contract is changed so the previously created state won't be valid (#1454)
+* drive volume is changed so volumes and containers must be recreated. It means platform file must be wiped (#1406)
+
+### Features
+
+* **dashmate:** add epochTime to abci config ([#1468](https://github.com/dashpay/platform/issues/1468))
+* **dashmate:** tenderdash log file ([#1396](https://github.com/dashpay/platform/issues/1396))
+* mitigate homograph attack in DPNS ([#1454](https://github.com/dashpay/platform/issues/1454))
+* **platform:** configurable epoch time (default down to 9.125 days) ([#1467](https://github.com/dashpay/platform/issues/1467))
+
+
+### Bug Fixes
+
+* consensus error is missing in tx results ([#1458](https://github.com/dashpay/platform/issues/1458))
+* **dashmate:** drive logs configuration ([#1406](https://github.com/dashpay/platform/issues/1406))
+* **drive-abci:** double state transition with document same unique index ([#1456](https://github.com/dashpay/platform/issues/1456))
+* **drive-abci:** masternode identities unique keys ([#1459](https://github.com/dashpay/platform/issues/1459))
+* **drive:** deadlock in tenderdash abci client ([#1463](https://github.com/dashpay/platform/issues/1463))
+* **drive:** document type doesn't match array value ([#1457](https://github.com/dashpay/platform/issues/1457))
+* incorrect invalidation of data contract cache ([#1464](https://github.com/dashpay/platform/issues/1464))
+
+
+### Documentation
+
+* **dashmate:** typos in README ([#1256](https://github.com/dashpay/platform/issues/1256))
+
+
+### Continuous Integration
+
+* add missing Drive workflow ([#1461](https://github.com/dashpay/platform/issues/1461))
+* disable runs on draft prs ([#1380](https://github.com/dashpay/platform/issues/1380))
+* update action dependency versions ([#1449](https://github.com/dashpay/platform/issues/1449))
+
+
+### Miscellaneous Chores
+
+* add a breaking changes checkbox to the PR template ([#1455](https://github.com/dashpay/platform/issues/1455))
+* **dashmate:** update config for testnet-26 ([#1470](https://github.com/dashpay/platform/issues/1470))
+* **dashmate:** update core image ([#1469](https://github.com/dashpay/platform/issues/1469))
+* **drive:** improve quorum info update logs ([#1444](https://github.com/dashpay/platform/issues/1444))
+* **drive:** log grovedb operations ([#1446](https://github.com/dashpay/platform/issues/1446))
+* increase scopes for ci ([#1460](https://github.com/dashpay/platform/issues/1460))
+* removed old code ([#1471](https://github.com/dashpay/platform/issues/1471))
+
+
 ## [0.25.0-dev.33](https://github.com/dashpay/platform/compare/v0.25.0-dev.32...v0.25.0-dev.33) (2023-10-05)
 
 

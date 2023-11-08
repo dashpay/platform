@@ -71,6 +71,25 @@ where
         // Start by getting information from the state
         let state = self.state.read().unwrap();
 
+        if tracing::enabled!(tracing::Level::TRACE) {
+            let root_hash = self
+                .drive
+                .grove
+                .root_hash(Some(transaction))
+                .unwrap()
+                .map_err(|e| Error::Drive(GroveDB(e)))?;
+
+            tracing::trace!(
+                method = "run_block_proposal_v0",
+                ?block_proposal,
+                ?epoch_info,
+                platform_state_fingerprint = hex::encode(state.fingerprint()),
+                app_hash = hex::encode(root_hash),
+                "running a block proposal on epoch {}",
+                epoch_info.current_epoch_index()
+            );
+        }
+
         let last_block_time_ms = state.last_block_time_ms();
         let last_block_height =
             state.known_height_or(self.config.abci.genesis_height.saturating_sub(1));
@@ -96,9 +115,7 @@ where
         }
 
         // Cleanup block cache before we execute a new proposal
-        let mut drive_cache = self.drive.cache.write().unwrap();
-        drive_cache.cached_contracts.clear_block_cache();
-        drop(drive_cache);
+        self.clear_drive_block_cache(platform_version)?;
 
         // destructure the block proposal
         let block_proposal::v0::BlockProposal {
@@ -153,6 +170,43 @@ where
             .epoch_info
             .is_epoch_change_but_not_genesis()
         {
+            tracing::info!(
+                epoch_index = block_execution_context.epoch_info.current_epoch_index(),
+                "epoch change occurring from epoch {} to epoch {}",
+                block_execution_context
+                    .epoch_info
+                    .previous_epoch_index()
+                    .expect("must be set since we aren't on genesis"),
+                block_execution_context.epoch_info.current_epoch_index(),
+            );
+
+            if block_execution_context
+                .block_platform_state
+                .current_protocol_version_in_consensus()
+                == block_execution_context
+                    .block_platform_state
+                    .next_epoch_protocol_version()
+            {
+                tracing::trace!(
+                    epoch_index = block_execution_context.epoch_info.current_epoch_index(),
+                    "protocol version remains the same {}",
+                    block_execution_context
+                        .block_platform_state
+                        .current_protocol_version_in_consensus(),
+                );
+            } else {
+                tracing::info!(
+                    epoch_index = block_execution_context.epoch_info.current_epoch_index(),
+                    "protocol version changed from {} to {}",
+                    block_execution_context
+                        .block_platform_state
+                        .current_protocol_version_in_consensus(),
+                    block_execution_context
+                        .block_platform_state
+                        .next_epoch_protocol_version(),
+                );
+            }
+
             // Set current protocol version to the version from upcoming epoch
             block_execution_context
                 .block_platform_state
@@ -247,13 +301,15 @@ where
         let block_fees_v0: BlockFeesV0 = block_fees.into();
 
         // Process fees
-        let _processed_block_fees = self.process_block_fees(
+        let processed_block_fees = self.process_block_fees(
             block_execution_context.block_state_info(),
             &epoch_info,
             block_fees_v0.into(),
             transaction,
             platform_version,
         )?;
+
+        tracing::debug!(block_fees = ?processed_block_fees, "block fees are processed");
 
         let root_hash = self
             .drive
@@ -269,6 +325,16 @@ where
         let state = self.state.read().unwrap();
         let validator_set_update =
             self.validator_set_update(&state, &mut block_execution_context, platform_version)?;
+
+        if tracing::enabled!(tracing::Level::TRACE) {
+            tracing::trace!(
+                method = "run_block_proposal_v0",
+                app_hash = hex::encode(root_hash),
+                block_platform_state_fingerprint =
+                    hex::encode(block_execution_context.block_platform_state().fingerprint()),
+                "block proposal executed successfully",
+            );
+        }
 
         self.block_execution_context
             .write()

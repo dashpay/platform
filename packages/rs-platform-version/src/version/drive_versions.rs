@@ -61,6 +61,7 @@ pub struct DriveVerifyMethodVersions {
     pub document: DriveVerifyDocumentMethodVersions,
     pub identity: DriveVerifyIdentityMethodVersions,
     pub single_document: DriveVerifySingleDocumentMethodVersions,
+    pub system: DriveVerifySystemMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -86,6 +87,13 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_identity_id_by_public_key_hash: FeatureVersion,
     pub verify_identity_ids_by_public_key_hashes: FeatureVersion,
     pub verify_identity_keys_by_identity_id: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifySystemMethodVersions {
+    pub verify_epoch_infos: FeatureVersion,
+    pub verify_upgrade_state: FeatureVersion,
+    pub verify_upgrade_vote_status: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -375,6 +383,8 @@ pub struct DriveCreditPoolMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveCreditPoolEpochsMethodVersions {
+    pub get_epochs_infos: FeatureVersion,
+    pub prove_epochs_infos: FeatureVersion,
     pub get_epoch_fee_multiplier: FeatureVersion,
     pub get_epoch_processing_credits_for_distribution: FeatureVersion,
     pub get_epoch_storage_credits_for_distribution: FeatureVersion,
@@ -408,6 +418,9 @@ pub struct DriveProtocolUpgradeVersions {
     pub clear_version_information: FeatureVersion,
     pub change_to_new_version_and_clear_version_information: FeatureVersion,
     pub fetch_versions_with_counter: FeatureVersion,
+    pub fetch_proved_versions_with_counter: FeatureVersion,
+    pub fetch_validator_version_votes: FeatureVersion,
+    pub fetch_proved_validator_version_votes: FeatureVersion,
     pub remove_validators_proposed_app_versions: FeatureVersion,
     pub update_validator_proposed_app_version: FeatureVersion,
 }

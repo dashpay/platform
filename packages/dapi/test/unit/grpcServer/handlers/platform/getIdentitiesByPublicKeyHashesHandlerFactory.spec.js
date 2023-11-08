@@ -1,3 +1,5 @@
+const { BytesValue } = require('google-protobuf/google/protobuf/wrappers_pb');
+
 const {
   server: {
     error: {
@@ -31,15 +33,20 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
   let proofMock;
   let response;
   let proofResponse;
+  let request;
 
   beforeEach(async function beforeEach() {
     publicKeyHash = Buffer.from('556c2910d46fda2b327ef9d9bda850cc84d30db0', 'hex');
 
-    call = new GrpcCallMock(this.sinon, {
+    request = {
       getPublicKeyHashesList: this.sinon.stub().returns(
         [publicKeyHash],
       ),
       getProve: this.sinon.stub().returns(false),
+    };
+
+    call = new GrpcCallMock(this.sinon, {
+      getV0: () => request,
     });
 
     identity = await getIdentityFixture();
@@ -51,14 +58,28 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
     proofMock = new Proof();
     proofMock.setGrovedbProof(proofFixture.merkleProof);
 
-    response = new GetIdentitiesByPublicKeyHashesResponse();
-    const identitiesList = new GetIdentitiesByPublicKeyHashesResponse.Identities();
-    identitiesList.setIdentitiesList([identity.toBuffer()]);
+    const {
+      IdentitiesByPublicKeyHashes,
+      PublicKeyHashIdentityEntry,
+      GetIdentitiesByPublicKeyHashesResponseV0,
+    } = GetIdentitiesByPublicKeyHashesResponse;
 
-    response.setIdentities(identitiesList);
+    response = new GetIdentitiesByPublicKeyHashesResponse();
+    response.setV0(
+      new GetIdentitiesByPublicKeyHashesResponseV0().setIdentities(
+        new IdentitiesByPublicKeyHashes()
+          .setIdentityEntriesList([
+            new PublicKeyHashIdentityEntry()
+              .setPublicKeyHash(publicKeyHash)
+              .setValue(new BytesValue().setValue(identity.toBuffer())),
+          ]),
+      ),
+    );
 
     proofResponse = new GetIdentitiesByPublicKeyHashesResponse();
-    proofResponse.setProof(proofMock);
+    proofResponse.setV0(
+      new GetIdentitiesByPublicKeyHashesResponseV0().setProof(proofMock),
+    );
 
     driveClientMock = {
       fetchIdentitiesByPublicKeyHashes: this.sinon.stub().resolves(response.serializeBinary()),
@@ -74,27 +95,31 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(GetIdentitiesByPublicKeyHashesResponse);
 
-    expect(result.getIdentities().getIdentitiesList()).to.deep.equal(
-      [identity.toBuffer()],
+    expect(result.getV0()
+      .getIdentities()
+      .getIdentityEntriesList()[0]
+      .getValue()
+      .getValue()).to.deep.equal(
+      identity.toBuffer(),
     );
 
     expect(driveClientMock.fetchIdentitiesByPublicKeyHashes)
       .to.be.calledOnceWith(call.request);
 
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.undefined();
   });
 
   it('should return proof', async () => {
-    call.request.getProve.returns(true);
+    request.getProve.returns(true);
     driveClientMock.fetchIdentitiesByPublicKeyHashes.resolves(proofResponse.serializeBinary());
 
     const result = await getIdentitiesByPublicKeyHashesHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentitiesByPublicKeyHashesResponse);
 
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
     const merkleProof = proof.getGrovedbProof();
@@ -103,7 +128,7 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
   });
 
   it('should throw an InvalidArgumentGrpcError if no hashes were submitted', async () => {
-    call.request.getPublicKeyHashesList.returns([]);
+    request.getPublicKeyHashesList.returns([]);
 
     try {
       await getIdentitiesByPublicKeyHashesHandler(call);

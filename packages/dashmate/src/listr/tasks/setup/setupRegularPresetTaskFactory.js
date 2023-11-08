@@ -22,6 +22,7 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {ConfigFile} configFile
  * @param {generateBlsKeys} generateBlsKeys
  * @param {registerMasternodeTask} registerMasternodeTask
+ * @param {ConfigFileJsonRepository} configFileRepository
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
  * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
@@ -34,6 +35,7 @@ function setupRegularPresetTaskFactory(
   configFile,
   generateBlsKeys,
   registerMasternodeTask,
+  configFileRepository,
   renderServiceTemplates,
   writeServiceConfigs,
   obtainZeroSSLCertificateTask,
@@ -149,6 +151,11 @@ function setupRegularPresetTaskFactory(
         task: (ctx, task) => {
           configFile.setConfig(ctx.config);
           configFile.setDefaultConfigName(ctx.preset);
+
+          configFileRepository.write(configFile);
+
+          const serviceConfigFiles = renderServiceTemplates(ctx.config);
+          writeServiceConfigs(ctx.config.getName(), serviceConfigFiles);
 
           // eslint-disable-next-line no-param-reassign
           task.output = chalk`Node configuration completed successfully!

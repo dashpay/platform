@@ -20,6 +20,7 @@ Usage: test <seed> [options]
               --feature-flags-contract-id=ff_contract_id    - feature-flags contract id
               --faucet-wallet-use-storage=true              - use persistent wallet storage for faucet
               --faucet-wallet-storage-dir=absolute_dir      - specify directory where faucet wallet persistent storage will be stored
+  -b          --bail                                        - bail after first test failure
   -t          --timeout                                     - test timeout in milliseconds
   -h          --help                                        - show help
 
@@ -73,6 +74,9 @@ case ${i} in
     ;;
     --feature-flags-contract-id=*)
     ff_contract_id="${i#*=}"
+    ;;
+    -b|--bail)
+    bail=true
     ;;
     -t=*|--timeout=*)
     timeout="${i#*=}"
@@ -190,7 +194,14 @@ then
   cmd="${cmd} FAUCET_WALLET_STORAGE_DIR=${faucet_wallet_storage_dir}"
 fi
 
-cmd="${cmd} NODE_ENV=test yarn mocha -b ${scope_dirs}"
+cmd="${cmd} NODE_ENV=test yarn mocha"
+
+if [ -n "$bail" ]
+then
+  cmd="${cmd} -b"
+fi
+
+cmd="${cmd} ${scope_dirs}"
 
 if [ -n "$timeout" ]
 then

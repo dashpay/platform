@@ -1,14 +1,18 @@
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::contract::DataContractFetchInfo;
+use crate::drive::Drive;
+use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::TimestampMillis;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::util::deserializer::ProtocolVersion;
+use grovedb::TransactionArg;
 #[cfg(any(feature = "full", feature = "verify"))]
 use moka::sync::Cache;
 #[cfg(any(feature = "full", feature = "verify"))]
 use nohash_hasher::IntMap;
+use platform_version::version::drive_versions::DriveVersion;
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::sync::Arc;
 
@@ -20,14 +24,100 @@ pub struct DriveCache {
     /// Genesis time in ms
     pub genesis_time_ms: Option<TimestampMillis>,
     /// Lazy loaded counter of votes to upgrade protocol version
-    pub protocol_versions_counter: Option<IntMap<ProtocolVersion, u64>>,
+    pub protocol_versions_counter: ProtocolVersionsCache,
 }
 
-/// DataContract cache that handle both non global and block data
+/// ProtocolVersion cache that handles both global and block data
+#[cfg(feature = "full")]
+#[derive(Default)]
+pub struct ProtocolVersionsCache {
+    /// The current global cache for protocol versions
+    pub global_cache: IntMap<ProtocolVersion, u64>,
+    block_cache: IntMap<ProtocolVersion, u64>,
+    loaded: bool,
+    needs_wipe: bool,
+}
+
+/// DataContract cache that handles both global and block data
 #[cfg(feature = "full")]
 pub struct DataContractCache {
     global_cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>,
     block_cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>,
+}
+
+#[cfg(feature = "full")]
+impl ProtocolVersionsCache {
+    /// Create a new ProtocolVersionsCache instance
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Load the protocol versions cache from disk if needed
+    pub fn load_if_needed(
+        &mut self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        drive_version: &DriveVersion,
+    ) -> Result<(), Error> {
+        if !self.loaded {
+            self.global_cache = drive.fetch_versions_with_counter(transaction, drive_version)?;
+            self.loaded = true;
+        };
+        Ok(())
+    }
+
+    /// Sets the protocol version to the block cache
+    pub fn set_block_cache_version_count(&mut self, version: ProtocolVersion, count: u64) {
+        self.block_cache.insert(version, count);
+    }
+
+    /// Tries to get a version from block cache if present
+    /// if block cache doesn't have the version set
+    /// then it tries get the version from global cache
+    pub fn get(&self, version: &ProtocolVersion) -> Option<&u64> {
+        if let Some(count) = self.block_cache.get(version) {
+            Some(count)
+        } else {
+            self.global_cache.get(version)
+        }
+    }
+
+    /// Merge block cache to global cache
+    pub fn merge_block_cache(&mut self) {
+        if self.needs_wipe {
+            self.global_cache.clear();
+            self.block_cache.clear();
+            self.needs_wipe = false;
+        } else {
+            self.global_cache.extend(self.block_cache.drain());
+        }
+    }
+
+    /// Clear block cache
+    pub fn clear_block_cache(&mut self) {
+        self.block_cache.clear()
+    }
+
+    /// Versions passing threshold
+    pub fn versions_passing_threshold(
+        &mut self,
+        required_upgraded_hpns: u64,
+    ) -> Vec<ProtocolVersion> {
+        self.needs_wipe = true;
+        let mut cache = self.global_cache.clone();
+
+        cache.extend(self.block_cache.drain());
+        cache
+            .into_iter()
+            .filter_map(|(protocol_version, count)| {
+                if count >= required_upgraded_hpns {
+                    Some(protocol_version)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<ProtocolVersion>>()
+    }
 }
 
 #[cfg(feature = "full")]
@@ -52,7 +142,7 @@ impl DataContractCache {
         }
     }
 
-    /// Tries to get a data contract from black cache if present
+    /// Tries to get a data contract from block cache if present
     /// if block cache doesn't have the contract
     /// then it tries get the contract from global cache
     pub fn get(

@@ -2,14 +2,14 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * @return {resolveDockerHostIp}
+ * @return {ensureFileMountExists}
  */
 function ensureFileMountExistsFactory() {
   /**
-   * @typedef {resolveDockerHostIp}
+   * @typedef {ensureFileMountExists}
    * @param {string} filePath
    * @param {string|number} [mode] - https://nodejs.org/api/fs.html#fschmodpath-mode-callback
-   * @return {Promise<void>}
+   * @return {void}
    */
   function ensureFileMountExists(filePath, mode = undefined) {
     // Remove directory that could potentially be created by Docker mount

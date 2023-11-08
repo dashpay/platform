@@ -57,6 +57,7 @@ where
             state: block_platform_state,
             config: &self.config,
             core_rpc: &self.core_rpc,
+            block_info,
         };
         let exec_tx_results = state_transitions
             .into_iter()
@@ -70,7 +71,26 @@ where
 
                 let execution_result = if state_transition_execution_event.is_valid() {
                     let execution_event = state_transition_execution_event.into_data()?;
-                    self.execute_event(execution_event, block_info, transaction, platform_version)?
+
+                    let result = self.execute_event(
+                        execution_event,
+                        block_info,
+                        transaction,
+                        platform_version,
+                    )?;
+
+                    // TODO: Provide short details on state transition (hash, type) instead of full print
+                    if tracing::enabled!(tracing::Level::TRACE) {
+                        tracing::trace!(
+                            method = "process_raw_state_transitions_v0",
+                            ?state_transition,
+                            block_platform_state_fingerprint =
+                                hex::encode(block_platform_state.fingerprint()),
+                            "State transition successfully processed",
+                        );
+                    }
+
+                    result
                 } else {
                     // Re-enable this to see errors during testing
                     // dbg!(
@@ -78,13 +98,16 @@ where
                     //     state_transition_execution_event.errors.first().clone()
                     // );
 
-                    tracing::debug!(
-                        method = "process_raw_state_transitions_v0",
-                        "ERRORS: {:?} | state transition: {:?} | state: {:?}",
-                        state_transition_execution_event.errors.first().clone(),
-                        state_transition,
-                        block_platform_state,
-                    );
+                    if tracing::enabled!(tracing::Level::TRACE) {
+                        tracing::trace!(
+                            method = "process_raw_state_transitions_v0",
+                            ?state_transition,
+                            block_platform_state_fingerprint =
+                                hex::encode(block_platform_state.fingerprint()),
+                            "Invalid state transition: {:?}",
+                            state_transition_execution_event.errors.first().clone(),
+                        );
+                    }
 
                     ConsensusExecutionError(SimpleConsensusValidationResult::new_with_errors(
                         state_transition_execution_event.errors,

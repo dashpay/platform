@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dpns-contract",
-  "version": "0.25.0-dev.33",
+  "version": "0.25.10",
   "description": "A contract and helper scripts for DPNS DApp",
   "scripts": {
     "lint": "eslint .",
@@ -31,7 +31,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@dashevo/dpp": "workspace:*",
+    "@dashevo/wasm-dpp": "workspace:*",
     "chai": "^4.3.9",
     "dirty-chai": "^2.0.1",
     "eslint": "^7.32.0",

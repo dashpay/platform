@@ -1,6 +1,6 @@
 import { Platform } from '../../Platform';
 
-const convertToHomographSafeChars = require('@dashevo/dpp/lib/util/convertToHomographSafeChars');
+import convertToHomographSafeChars from '../../../../../utils/convertToHomographSafeChars';
 
 /**
  *

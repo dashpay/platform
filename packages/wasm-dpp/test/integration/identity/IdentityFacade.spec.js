@@ -24,8 +24,7 @@ describe('IdentityFacade', () => {
     );
 
     const chainAssetLockProofJS = getChainAssetLockProofFixture();
-    const instantAssetLockProofJS = await getInstantAssetLockProofFixture();
-    instantAssetLockProof = new InstantAssetLockProof(instantAssetLockProofJS.toObject());
+    instantAssetLockProof = await getInstantAssetLockProofFixture();
     chainAssetLockProof = new ChainAssetLockProof(chainAssetLockProofJS.toObject());
 
     identity = await getIdentityFixture(instantAssetLockProof.createIdentifier());

@@ -32,7 +32,9 @@ impl Drive {
 
         let start_time =
             u64::from_be_bytes(encoded_start_time.as_slice().try_into().map_err(|_| {
-                Error::Drive(DriveError::CorruptedSerialization("start time must be u64"))
+                Error::Drive(DriveError::CorruptedSerialization(String::from(
+                    "start time must be u64",
+                )))
             })?);
 
         Ok(start_time)

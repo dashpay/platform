@@ -1,4 +1,6 @@
 /* eslint-disable no-param-reassign */
+const fs = require('fs');
+const path = require('path');
 
 const { NETWORK_LOCAL, NETWORK_TESTNET, NETWORK_MAINNET } = require('../src/constants');
 
@@ -216,6 +218,68 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
             if (options.network !== NETWORK_MAINNET) {
               options.core.docker.image = base.get('core.docker.image');
             }
+          });
+
+        return configFile;
+      },
+      '0.25.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            if (options.network === NETWORK_TESTNET) {
+              options.platform.drive.abci.epochTime = testnet.get('platform.drive.abci.epochTime');
+            }
+            options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
+            options.platform.dapi.api.docker.image = base.get('platform.drive.abci.docker.image');
+          });
+
+        return configFile;
+      },
+      '0.25.4': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            delete options.platform.drive.abci.log;
+
+            options.platform.drive.abci.logs = base.get('platform.drive.abci.logs');
+          });
+
+        return configFile;
+      },
+      '0.25.7': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (options.network !== NETWORK_MAINNET) {
+              const filenames = ['private.key', 'bundle.crt', 'bundle.csr', 'csr.pem'];
+
+              for (const filename of filenames) {
+                const oldFilePath = homeDir.joinPath('ssl', name, filename);
+                const newFilePath = homeDir.joinPath(name,
+                  'platform', 'dapi', 'envoy', 'ssl', filename);
+
+                if (fs.existsSync(oldFilePath)) {
+                  fs.mkdirSync(path.dirname(newFilePath), { recursive: true });
+                  fs.copyFileSync(oldFilePath, newFilePath);
+                  fs.rmSync(oldFilePath, { recursive: true });
+                }
+              }
+            }
+          });
+
+        if (fs.existsSync(homeDir.joinPath('ssl'))) {
+          fs.rmSync(homeDir.joinPath('ssl'), { recursive: true });
+        }
+
+        return configFile;
+      },
+      '1.0.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.tenderdash.log.level = 'info';
+
+            if (options.network !== NETWORK_MAINNET) {
+              options.core.docker.image = base.get('core.docker.image');
+            }
+
+            options.core.docker.commandArgs = [];
           });
 
         return configFile;

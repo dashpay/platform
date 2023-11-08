@@ -15,8 +15,8 @@ use crate::state_transition::errors::{
     StateTransitionError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
 };
 use crate::{
-    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError, NonConsensusError,
-    SerdeParsingError,
+    CompatibleProtocolVersionIsNotDefinedError, DashPlatformProtocolInitError,
+    InvalidVectorSizeError, NonConsensusError, SerdeParsingError,
 };
 
 use dashcore::consensus::encode::Error as DashCoreError;
@@ -213,6 +213,9 @@ pub enum ProtocolError {
 
     #[error("critical corrupted credits code execution: {0}")]
     CriticalCorruptedCreditsCodeExecution(String),
+
+    #[error(transparent)]
+    InvalidVectorSizeError(InvalidVectorSizeError),
 }
 
 impl From<&str> for ProtocolError {
@@ -248,5 +251,11 @@ impl From<SerdeParsingError> for ProtocolError {
 impl From<DashPlatformProtocolInitError> for ProtocolError {
     fn from(e: DashPlatformProtocolInitError) -> Self {
         ProtocolError::Generic(e.to_string())
+    }
+}
+
+impl From<InvalidVectorSizeError> for ProtocolError {
+    fn from(err: InvalidVectorSizeError) -> Self {
+        Self::InvalidVectorSizeError(err)
     }
 }

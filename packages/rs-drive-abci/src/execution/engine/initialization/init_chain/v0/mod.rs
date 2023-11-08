@@ -8,9 +8,7 @@ use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 
 use crate::platform_types::cleaned_abci_messages::request_init_chain_cleaned_params;
-use crate::platform_types::platform_state::v0::{
-    PlatformInitializationState, PlatformStateV0Methods,
-};
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
 use dpp::version::PlatformVersion;
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
@@ -46,21 +44,28 @@ where
             platform_version,
         )?;
 
-        let mut state_cache = self.state.write().unwrap();
+        let mut state_guard = self.state.write().unwrap();
+
+        let genesis_block_info = BlockInfo {
+            height: request.initial_height,
+            core_height,
+            time_ms: genesis_time,
+            ..Default::default()
+        };
 
         self.update_core_info(
             None,
-            &mut state_cache,
+            &mut state_guard,
             core_height,
             true,
-            &BlockInfo::genesis(),
+            &genesis_block_info,
             transaction,
             platform_version,
         )?;
 
         let (quorum_hash, validator_set) =
             {
-                let validator_set_inner = state_cache.validator_sets().first().ok_or(
+                let validator_set_inner = state_guard.validator_sets().first().ok_or(
                     ExecutionError::InitializationError("we should have at least one quorum"),
                 )?;
 
@@ -70,11 +75,16 @@ where
                 )
             };
 
-        state_cache.set_current_validator_set_quorum_hash(quorum_hash);
+        state_guard.set_current_validator_set_quorum_hash(quorum_hash);
 
-        state_cache.set_initialization_information(Some(PlatformInitializationState {
-            core_initialization_height: core_height,
-        }));
+        state_guard.set_genesis_block_info(Some(genesis_block_info));
+
+        if tracing::enabled!(tracing::Level::TRACE) {
+            tracing::trace!(
+                platform_state_fingerprint = hex::encode(state_guard.fingerprint()),
+                "platform runtime state",
+            );
+        }
 
         let app_hash = self
             .drive

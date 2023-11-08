@@ -65,7 +65,8 @@ function getBaseConfigFactory(homeDir) {
       },
       core: {
         docker: {
-          image: 'dashpay/dashd:20.0.0-beta.4',
+          image: 'dashpay/dashd:20.0.0-rc.2',
+          commandArgs: [],
         },
         p2p: {
           port: 9999,
@@ -160,17 +161,12 @@ function getBaseConfigFactory(homeDir) {
                 target: 'drive-abci',
               },
             },
-            log: {
+            logs: {
               stdout: {
+                destination: 'stdout',
                 level: 'info',
-              },
-              prettyFile: {
-                level: 'silent',
-                path: homeDir.joinPath('logs', 'base', 'drive-pretty.log'),
-              },
-              jsonFile: {
-                level: 'silent',
-                path: homeDir.joinPath('logs', 'base', 'drive-json.log'),
+                format: 'compact',
+                color: true,
               },
             },
             validatorSet: {
@@ -204,7 +200,7 @@ function getBaseConfigFactory(homeDir) {
               createEmptyBlocksInterval: '3m',
             },
             log: {
-              level: 'debug',
+              level: 'info',
               format: 'plain',
               path: null,
             },

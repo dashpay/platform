@@ -14,6 +14,7 @@ use dpp::version::PlatformVersion;
 use crate::identifier::IdentifierWrapper;
 
 use crate::identity::state_transition::asset_lock_proof::create_asset_lock_proof_from_wasm_instance;
+use dpp::identity::state_transition::AssetLockProved;
 
 use crate::{
     buffer::Buffer,

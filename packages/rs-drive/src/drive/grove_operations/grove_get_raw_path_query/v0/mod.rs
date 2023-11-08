@@ -16,9 +16,13 @@ impl Drive {
         result_type: QueryResultType,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(QueryResultElements, u16), Error> {
-        let CostContext { value, cost } =
-            self.grove
-                .query_raw(path_query, transaction.is_some(), result_type, transaction);
+        let CostContext { value, cost } = self.grove.query_raw(
+            path_query,
+            transaction.is_some(),
+            true,
+            result_type,
+            transaction,
+        );
         drive_operations.push(CalculatedCostOperation(cost));
         value.map_err(Error::GroveDB)
     }

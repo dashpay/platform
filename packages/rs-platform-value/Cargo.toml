@@ -2,20 +2,21 @@
 name = "platform-value"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "A simple value module"
-version = "0.1.0"
+version = "0.25.0"
 edition = "2021"
+rust-version = "1.73"
 license = "MIT"
 private = true
 
 [dependencies]
-bincode = { version="2.0.0-rc.3", features=["serde"] }
-ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined"}
+bincode = { version = "2.0.0-rc.3", features = ["serde"] }
+ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
 thiserror = "1.0.30"
 bs58 = "0.4.0"
 base64 = "0.13.0"
 hex = "0.4.3"
 serde = { version = "1.0.152", features = ["derive"] }
-serde_json = { version="1.0", features=["preserve_order"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
 rand = { version = "0.8.4", features = ["small_rng"] }
 treediff = "4.0.2"
 regex = "1.7.1"

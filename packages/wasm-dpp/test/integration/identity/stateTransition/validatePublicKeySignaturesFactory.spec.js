@@ -2,9 +2,9 @@ const { PrivateKey, crypto: { Hash } } = require('@dashevo/dashcore-lib');
 
 const crypto = require('crypto');
 
-const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
-
 const { expect } = require('chai');
+const BlsSignatures = require('../../../../lib/bls/bls');
+
 const getIdentityCreateTransitionFixture = require('../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 const getBlsAdapterMock = require('../../../../lib/test/mocks/getBlsAdapterMock');

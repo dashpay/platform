@@ -90,7 +90,6 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
-          toolchain: stable
           target: wasm32-unknown-unknown
 
       - name: Build SDK
@@ -180,7 +179,7 @@ jobs:
         run: yarn workspace dash test:functional
 
       - name: Run test suite
-        run: yarn test:suite
+        run: yarn test:suite -b
 
       - name: Show Docker logs
         if: ${{ failure() }}
@@ -212,7 +211,6 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
-          toolchain: stable
           target: wasm32-unknown-unknown
 
       - name: Build SDK
@@ -338,7 +336,6 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/rust
         with:
-          toolchain: stable
           target: wasm32-unknown-unknown
 
       - name: Build package and dependencies

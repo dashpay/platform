@@ -37,7 +37,9 @@ use dpp::block::epoch::Epoch;
 use grovedb::TransactionArg;
 
 pub mod credit_distribution_pools;
+mod get_epochs_infos;
 pub mod proposers;
+mod prove_epochs_infos;
 pub mod start_block;
 pub mod start_time;
 

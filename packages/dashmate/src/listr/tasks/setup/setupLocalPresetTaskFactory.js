@@ -2,7 +2,6 @@ const { Listr } = require('listr2');
 
 const {
   PRESET_LOCAL,
-  SSL_PROVIDERS,
 } = require('../../../constants');
 
 const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
@@ -18,6 +17,8 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {configFileRepository} configFileRepository
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
  * @param {HomeDir} homeDir
+ * @param {writeServiceConfigs} writeServiceConfigs
+ * @param {renderServiceTemplates} renderServiceTemplates
  */
 function setupLocalPresetTaskFactory(
   configFile,
@@ -28,6 +29,8 @@ function setupLocalPresetTaskFactory(
   configFileRepository,
   generateHDPrivateKeys,
   homeDir,
+  writeServiceConfigs,
+  renderServiceTemplates,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -82,7 +85,7 @@ function setupLocalPresetTaskFactory(
           ctx.minerInterval = await task.prompt({
             type: 'input',
             message: 'Enter the interval between core blocks',
-            initial: configFile.getConfig('base').options.core.miner.interval,
+            initial: configFile.getConfig('base').get('core.miner.interval'),
             validate: (state) => {
               if (state.match(/\d+(\.\d+)?(m|s)/)) {
                 return true;
@@ -229,16 +232,14 @@ function setupLocalPresetTaskFactory(
                   config.set('platform.drive.tenderdash.mode', 'validator');
 
                   // Setup logs
-                  const drivePrettyFilePath = homeDir.joinPath('logs', config.getName(), 'drive-pretty.log');
-                  config.set('platform.drive.abci.log.prettyFile.path', drivePrettyFilePath);
-
-                  const driveJsonFilePath = homeDir.joinPath('logs', config.getName(), 'drive-json.log');
-                  config.set('platform.drive.abci.log.jsonFile.path', driveJsonFilePath);
-
                   if (ctx.debugLogs) {
-                    config.set('platform.drive.abci.log.stdout.level', 'trace');
-                    config.set('platform.drive.abci.log.prettyFile.level', 'trace');
+                    const stdoutLogger = config.get('platform.drive.abci.logs.stdout');
+                    if (stdoutLogger) {
+                      config.set('platform.drive.abci.logs.stdout.level', 'trace');
+                      config.set('platform.drive.abci.logs.stdout.format', 'full');
+                    }
 
+                    // TODO: Shall we use trace?
                     config.set('platform.drive.tenderdash.log.level', 'debug');
                   }
 
@@ -271,16 +272,6 @@ function setupLocalPresetTaskFactory(
             }
           ));
 
-          subTasks.push({
-            title: 'Save configs',
-            task: async () => {
-              configFile.setDefaultGroupName(PRESET_LOCAL);
-
-              // Persist configs
-              configFileRepository.write(configFile);
-            },
-          });
-
           return new Listr(subTasks);
         },
         options: {
@@ -296,18 +287,28 @@ function setupLocalPresetTaskFactory(
         task: (ctx) => configureTenderdashTask(ctx.configGroup),
       },
       {
+        title: 'Persist configs',
+        task: (ctx) => {
+          configFile.setDefaultGroupName(PRESET_LOCAL);
+
+          for (const config of ctx.configGroup) {
+            const serviceConfigFiles = renderServiceTemplates(config);
+            writeServiceConfigs(config.getName(), serviceConfigFiles);
+          }
+
+          configFileRepository.write(configFile);
+        },
+      },
+      {
         title: 'Configure SSL certificates',
         task: (ctx) => {
           const platformConfigs = ctx.configGroup.filter((config) => config.get('platform.enable'));
 
-          const subTasks = platformConfigs.map((config) => {
-            config.set('platform.dapi.envoy.ssl.provider', SSL_PROVIDERS.SELF_SIGNED);
-
-            return {
-              title: `Generate certificate for ${config.getName()}`,
-              task: async () => obtainSelfSignedCertificateTask(config),
-            };
-          });
+          const subTasks = platformConfigs.map((config) => ({
+            title: `Generate certificate for ${config.getName()}`,
+            task: async () => obtainSelfSignedCertificateTask(config),
+          }
+          ));
 
           return new Listr(subTasks);
         },

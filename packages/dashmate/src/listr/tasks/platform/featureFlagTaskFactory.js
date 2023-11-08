@@ -2,7 +2,7 @@ const { Listr } = require('listr2');
 
 const Dash = require('dash');
 
-const Identifier = require('@dashevo/dpp/lib/Identifier');
+const { Identifier } = require('@dashevo/wasm-dpp');
 
 /**
  *

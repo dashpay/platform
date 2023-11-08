@@ -8,10 +8,12 @@ use crate::platform_types::state_transition_execution_result::StateTransitionExe
 use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::ConsensusExecutionError;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::consensus::basic::decode::SerializedObjectParsingError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
+use dpp::fee::epoch::GENESIS_EPOCH_INDEX;
 use dpp::fee::fee_result::FeeResult;
 use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
@@ -40,6 +42,7 @@ where
             state: &state_read_guard,
             config: &self.config,
             core_rpc: &self.core_rpc,
+            block_info,
         };
 
         let state_transition_execution_event =
@@ -86,40 +89,28 @@ where
                 ))
             }
         };
+
         let state_read_guard = self.state.read().unwrap();
+
+        // Latest committed or genesis block info
+        let block_info = state_read_guard.any_block_info();
+
         let platform_ref = PlatformRef {
             drive: &self.drive,
             state: &state_read_guard,
             config: &self.config,
             core_rpc: &self.core_rpc,
+            block_info,
         };
+
         let execution_event = process_state_transition(&platform_ref, state_transition, None)?;
 
         let platform_version = platform_ref.state.current_platform_version()?;
 
-        // We should run the execution event in dry run to see if we would have enough fees for the transaction
-
-        // We need the approximate block info
-        if let Some(block_info) = state_read_guard.last_committed_block_info().as_ref() {
-            // We do not put the transaction, because this event happens outside of a block
-            execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(
-                    execution_event,
-                    block_info.basic_info(),
-                    None,
-                    platform_version,
-                )
-            })
-        } else {
-            execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(
-                    execution_event,
-                    &BlockInfo::default(),
-                    None,
-                    platform_version,
-                )
-            })
-        }
+        // We should run the execution event in dry run to see if we would have enough fees for the transition
+        execution_event.and_then_borrowed_validation(|execution_event| {
+            self.validate_fees_of_event(execution_event, block_info, None, platform_version)
+        })
     }
 }
 
@@ -130,10 +121,10 @@ mod tests {
     use crate::platform_types::state_transition_execution_result::StateTransitionExecutionResult::SuccessfulPaidExecution;
     use crate::platform_types::system_identity_public_keys::v0::SystemIdentityPublicKeysV0;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use crate::test::helpers::signer::SimpleSigner;
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::signature::SignatureError;
+    use simple_signer::signer::SimpleSigner;
 
     use dpp::consensus::ConsensusError;
     use dpp::dashcore::secp256k1::Secp256k1;
@@ -181,9 +172,14 @@ mod tests {
     #[test]
     #[ignore]
     fn verify_check_tx_on_data_contract_create() {
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let state = platform.state.read().unwrap();
         let protocol_version = state.current_protocol_version_in_consensus();
@@ -254,9 +250,15 @@ mod tests {
 
     #[test]
     fn data_contract_create_check_tx() {
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
         let state = platform.state.read().unwrap();
         let protocol_version = state.current_protocol_version_in_consensus();
         let platform_version = PlatformVersion::get(protocol_version).unwrap();
@@ -314,11 +316,16 @@ mod tests {
 
     #[test]
     fn document_update_check_tx() {
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
 
-        let platform_state = platform.state.read().unwrap();
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
+
+        let mut platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
 
         let mut signer = SimpleSigner::default();
@@ -456,7 +463,12 @@ mod tests {
                 &transaction,
             )
             .expect("expected to execute identity_create tx");
-        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        assert!(
+            matches!(validation_result, SuccessfulPaidExecution(..)),
+            "{:?}",
+            validation_result
+        );
 
         let validation_result = platform
             .execute_tx(
@@ -491,9 +503,14 @@ mod tests {
 
     #[test]
     fn identity_top_up_check_tx() {
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -619,9 +636,14 @@ mod tests {
 
     #[test]
     fn identity_cant_double_top_up() {
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -758,9 +780,14 @@ mod tests {
 
     #[test]
     fn identity_top_up_with_unknown_identity_doesnt_panic() {
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -840,9 +867,14 @@ mod tests {
 
     #[test]
     fn identity_cant_create_with_used_outpoint() {
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(PlatformConfig::default())
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -1041,9 +1073,14 @@ mod tests {
 
         config.abci.keys.dpns_second_public_key = high_public_key.serialize().to_vec();
 
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config)
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();
@@ -1144,9 +1181,14 @@ mod tests {
 
         config.abci.keys.dashpay_second_public_key = high_public_key.serialize().to_vec();
 
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config)
             .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_verify_instant_lock()
+            .returning(|_, _| Ok(true));
 
         let platform_state = platform.state.read().unwrap();
         let platform_version = platform_state.current_platform_version().unwrap();

@@ -68,6 +68,8 @@ class IdentitySyncWorker extends Worker {
       const { privateKey } = this.identities.getIdentityHDKeyByIndex(index, 0);
       const publicKey = privateKey.toPublicKey();
 
+      // TODO: rework with singular `getIdentityByPublicKeyHash`?
+      //   (needs to be implemented in the transport and dapi)
       // eslint-disable-next-line no-await-in-loop
       const identityBuffers = await this.transport.getIdentitiesByPublicKeyHashes(
         [publicKey.hash],
@@ -75,7 +77,7 @@ class IdentitySyncWorker extends Worker {
 
       // if identity is not preset then increment gap count
       // and stop sync if gap limit is reached
-      if (identityBuffers.length === 0) {
+      if (!identityBuffers[0]) {
         gapCount += 1;
 
         if (gapCount >= this.gapLimit) {
