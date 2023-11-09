@@ -1,9 +1,9 @@
+use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::{Error, Sdk};
 use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
 use dpp::prelude::{AssetLockProof, Identity};
 use rs_dapi_client::{DapiRequest, RequestSettings};
-use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 
 #[async_trait::async_trait]
 pub trait PutIdentity<S: Signer> {

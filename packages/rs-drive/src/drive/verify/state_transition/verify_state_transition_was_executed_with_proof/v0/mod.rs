@@ -19,7 +19,9 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::state_transition::documents_batch_transition::document_create_transition::DocumentFromCreateTransition;
 use dpp::state_transition::documents_batch_transition::document_delete_transition::v0::v0_methods::DocumentDeleteTransitionV0Methods;
+use dpp::state_transition::documents_batch_transition::document_replace_transition::DocumentFromReplaceTransition;
 use dpp::state_transition::documents_batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedPartialIdentity};
@@ -31,8 +33,6 @@ use crate::drive::verify::RootHash;
 use crate::error::Error;
 use crate::error::proof::ProofError;
 use crate::query::SingleDocumentDriveQuery;
-use crate::state_transition_action::document::documents_batch::document_transition::document_create_transition_action::DocumentFromCreateTransition;
-use crate::state_transition_action::document::documents_batch::document_transition::document_replace_transition_action::DocumentFromReplaceTransition;
 
 impl Drive {
     pub(super) fn verify_state_transition_was_executed_with_proof_v0(

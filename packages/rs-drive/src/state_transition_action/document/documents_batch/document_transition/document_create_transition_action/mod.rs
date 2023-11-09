@@ -68,7 +68,7 @@ impl DocumentCreateTransitionActionAccessorsV0 for DocumentCreateTransitionActio
 }
 
 /// document from create transition
-pub trait DocumentFromCreateTransition {
+pub trait DocumentFromCreateTransitionAction {
     /// Attempts to create a new `Document` from the given `DocumentCreateTransitionAction` reference and `owner_id`.
     ///
     /// # Arguments
@@ -103,46 +103,9 @@ pub trait DocumentFromCreateTransition {
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
-
-    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` reference and `owner_id`.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - A reference to the `DocumentCreateTransition` containing information about the document being created.
-    /// * `owner_id` - The `Identifier` of the document's owner.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_create_transition(
-        document_create_transition: &DocumentCreateTransition,
-        owner_id: Identifier,
-        data_contract: &DataContract,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized;
-    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` instance and `owner_id`.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - A `DocumentCreateTransition` instance containing information about the document being created.
-    /// * `owner_id` - The `Identifier` of the document's owner.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_owned_create_transition(
-        document_create_transition: DocumentCreateTransition,
-        owner_id: Identifier,
-        data_contract: &DataContract,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized;
 }
 
-impl DocumentFromCreateTransition for Document {
+impl DocumentFromCreateTransitionAction for Document {
     fn try_from_create_transition_action(
         document_create_transition_action: &DocumentCreateTransitionAction,
         owner_id: Identifier,
@@ -164,41 +127,6 @@ impl DocumentFromCreateTransition for Document {
             DocumentCreateTransitionAction::V0(v0) => {
                 Self::try_from_owned_create_transition_action_v0(v0, owner_id, platform_version)
             }
-        }
-    }
-
-    fn try_from_create_transition(
-        document_create_transition: &DocumentCreateTransition,
-        owner_id: Identifier,
-        data_contract: &DataContract,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        match document_create_transition {
-            DocumentCreateTransition::V0(v0) => {
-                Self::try_from_create_transition_v0(v0, owner_id, data_contract, platform_version)
-            }
-        }
-    }
-
-    fn try_from_owned_create_transition(
-        document_create_transition: DocumentCreateTransition,
-        owner_id: Identifier,
-        data_contract: &DataContract,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        match document_create_transition {
-            DocumentCreateTransition::V0(v0) => Self::try_from_owned_create_transition_v0(
-                v0,
-                owner_id,
-                data_contract,
-                platform_version,
-            ),
         }
     }
 }
