@@ -10,10 +10,12 @@ use std::{
 
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
-use crate::{
-    core_client::CoreClient, error::Error, platform::transition::TransitionContextBuilder,
-};
-use crate::{mock::MockResponse, platform::Fetch};
+
+use crate::mock::wallet::platform::PlatformSignerWallet;
+use crate::wallet::{CompositeWallet, Wallet};
+use crate::mock::wallet::core::CoreGrpcWallet;
+use crate::{error::Error, platform::transition::TransitionContextBuilder};
+use crate::{mock::MockResponse, };
 use dapi_grpc::mock::Mockable;
 use dpp::{
     prelude::{DataContract, Identifier},
@@ -60,10 +62,11 @@ pub struct Sdk {
     /// This is set to `true` by default. `false` is not implemented yet.
     proofs: bool,
 
-    /// Data contracts cache.
-    ///
-    /// Users can insert new data contracts into the cache using [`Cache::put`].
-    pub data_contracts: Cache<Identifier, dpp::data_contract::DataContract>,
+    /// Context provider used by the SDK.
+    context_provider: Box<dyn ContextProvider>,
+    /// Default wallet to use when executing various operations.
+    wallet: Box<dyn Wallet>,
+   
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
 }
@@ -108,8 +111,7 @@ enum SdkInstance {
     Dapi {
         /// DAPI client used to communicate with Dash Platform.
         dapi: DapiClient,
-        /// Core client used to retrieve quorum keys from core.
-        core: CoreClient,
+
         /// Platform version configured for this Sdk
         version: &'static PlatformVersion,
     },
@@ -120,7 +122,6 @@ enum SdkInstance {
         dapi: Arc<Mutex<MockDapiClient>>,
         /// Mock SDK implementation processing mock expectations and responses.
         mock: MockDashPlatformSdk,
-        quorum_provider: MockContextProvider,
     },
 }
 
@@ -247,20 +248,11 @@ impl ContextProvider for Sdk {
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], drive_proof_verifier::Error> {
-        let key: [u8; 48] = match self.inner {
-            SdkInstance::Dapi { ref core, .. } => {
-                core.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)?
-            }
-            #[cfg(feature = "mocks")]
-            SdkInstance::Mock {
-                ref quorum_provider,
-                ..
-            } => quorum_provider.get_quorum_public_key(
-                quorum_type,
-                quorum_hash,
-                core_chain_locked_height,
-            )?,
-        };
+        let key: [u8; 48] = self.context_provider.get_quorum_public_key(
+            quorum_type,
+            quorum_hash,
+            core_chain_locked_height,
+        )?;
 
         #[cfg(feature = "mocks")]
         self.dump_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height, &key);
@@ -272,33 +264,7 @@ impl ContextProvider for Sdk {
         &self,
         data_contract_id: &Identifier,
     ) -> Result<Option<Arc<DataContract>>, drive_proof_verifier::Error> {
-        if let Some(contract) = self.data_contracts.get(data_contract_id) {
-            return Ok(Some(contract));
-        };
-
-        let handle = match tokio::runtime::Handle::try_current() {
-            Ok(handle) => handle,
-            // not an error, we rely on the caller to provide a data contract using
-            Err(e) => {
-                tracing::warn!(
-                    error = e.to_string(),
-                    "data contract cache miss and no tokio runtime detected, skipping fetch"
-                );
-                return Ok(None);
-            }
-        };
-
-        let data_contract = handle
-            .block_on(DataContract::fetch(self, *data_contract_id))
-            .map_err(|e| drive_proof_verifier::Error::InvalidDataContract {
-                error: e.to_string(),
-            })?;
-
-        if let Some(ref dc) = data_contract {
-            self.data_contracts.put(*data_contract_id, dc.clone());
-        };
-
-        Ok(data_contract.map(Arc::new))
+        self.context_provider.get_data_contract(data_contract_id)
     }
 }
 
@@ -355,6 +321,12 @@ pub struct SdkBuilder {
 
     version: &'static PlatformVersion,
 
+    /// Wallet used by the SDK.
+    wallet: Option<Box<dyn Wallet>>,
+
+    /// Context provider used by the SDK.
+    context_provider: Option<Box<dyn ContextProvider>>,
+
     /// directory where dump files will be stored
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
@@ -374,6 +346,8 @@ impl Default for SdkBuilder {
             proofs: true,
 
             contracts_cache_size: 100,
+            context_provider: None,
+            wallet: None,
 
             version: PlatformVersion::latest(),
             #[cfg(feature = "mocks")]
@@ -439,16 +413,43 @@ impl SdkBuilder {
         self
     }
 
-    /// Configure connection to Dash Core
-    ///
-    /// TODO: This is temporary implementation, effective until we integrate SPV into dash-platform-sdk.
-    pub fn with_core(mut self, ip: &str, port: u16, user: &str, password: &str) -> Self {
-        self.core_ip = ip.to_string();
-        self.core_port = port;
-        self.core_user = user.to_string();
-        self.core_password = password.to_string();
+    /// Configure wallet to use.
+    /// 
+    /// Wallet is used to manage keys and addresses and sign transactions.
+    /// 
+    /// See [Wallet] for more information and [CompositeWallet] for an example implementation.
+    pub fn with_wallet<W:Wallet+'static>(mut self, wallet:W) ->Self{
+        self.wallet=Some(Box::new(wallet));
 
         self
+    }
+
+    /// Configure context provider to use.
+    /// 
+    /// Context provider is used to retrieve data contracts and quorum public keys from application state.
+    /// It should be implemented by the user of this SDK to provide stateful information about the application.
+    /// 
+    /// See [ContextProvider] for more information and [GrpcContextProvider] for an example implementation.
+    pub fn with_context_provider<C:ContextProvider+'static>(mut self, context_provider:C) ->Self{
+        self.context_provider=Some(Box::new(context_provider));
+
+        self
+    }
+
+    /// Use Dash Core as a wallet and context provider.
+    ///
+    /// This is a conveniance method that configures the SDK to use Dash Core as a wallet and context provider.
+    /// 
+    /// For more control over the configuration, use [SdkBuilder::with_wallet()] and [SdkBuilder::with_context_provider()].
+    /// 
+    /// This is temporary implementation, intended for development purposes.   
+        pub fn with_core(mut self, ip: &str, port: u16, user: &str, password: &str) -> Self {
+            self.core_ip = ip.to_string();
+            self.core_port = port;
+            self.core_user = user.to_string();
+            self.core_password = password.to_string();
+        
+            self
     }
 
     /// Configure directory where dumps of all requests and responses will be saved.
@@ -470,6 +471,17 @@ impl SdkBuilder {
         self
     }
 
+    /// Create a new composite wallet using [CoreGrpcWallet] and [PlatformSignerWallet] intended for testing.
+     fn build_core_wallet(& self, 
+    ) -> Result<Box<dyn Wallet>,Error> {
+        let core_wallet = CoreGrpcWallet::new(&self.core_ip, self.core_port, &self.core_user, &self.core_password)?;
+        let platform_wallet = PlatformSignerWallet::new();
+
+       Ok(
+        Box::new(  CompositeWallet::new(core_wallet, platform_wallet)),
+    )
+    }
+
     /// Build the Sdk instance.
     ///
     /// This method will create the Sdk instance based on the configuration provided to the builder.
@@ -480,10 +492,14 @@ impl SdkBuilder {
     pub fn build(self) -> Result<Sdk, Error> {
         PlatformVersion::set_current(self.version);
 
-        let data_contract_cache_size = NonZeroUsize::new(self.contracts_cache_size).ok_or(
-            Error::Config("contracts_cache_size must be greater than 0".to_string()),
-        )?;
-        let data_contracts = Cache::new(data_contract_cache_size);
+       let  wallet= match   self.wallet {
+        Some(wallet) => wallet,
+         None =>  self.build_core_wallet()?,
+       };
+       
+        let context_provider= self.context_provider.ok_or(Error::Config(
+            "context provider must be configured with SdkBuilder::with_context_provider".to_string(),
+        ))?;
 
         match self.addresses {
             Some(addresses) => {
@@ -496,19 +512,14 @@ impl SdkBuilder {
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
 
-                let core = CoreClient::new(
-                    &self.core_ip,
-                    self.core_port,
-                    &self.core_user,
-                    &self.core_password,
-                )?;
+      
 
                 Ok(Sdk{
-                    inner:SdkInstance::Dapi { dapi, core, version:self.version },
+                    inner:SdkInstance::Dapi { dapi,  version:self.version },
                     proofs:self.proofs,
+                wallet,context_provider,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
-                    data_contracts,
                 })
             },
             #[cfg(feature = "mocks")]
@@ -517,11 +528,12 @@ impl SdkBuilder {
                     inner:SdkInstance::Mock {
                         mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs),
                         dapi,
-                        quorum_provider: MockContextProvider::new(),
+               
                     },
                     dump_dir: self.dump_dir,
                     proofs:self.proofs,
-                    data_contracts,
+                    context_provider,
+                    wallet,
             })},
             #[cfg(not(feature = "mocks"))]
             None => Err(Error::Config(

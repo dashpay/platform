@@ -7,7 +7,6 @@ use dashcore_rpc::{
     dashcore::{address::NetworkUnchecked, hashes::Hash, Amount, QuorumHash},
     dashcore_rpc_json as json, Auth, Client, RawTx, RpcApi,
 };
-use drive_proof_verifier::QuorumInfoProvider;
 use std::sync::Mutex;
 
 use crate::error::Error;
@@ -98,7 +97,14 @@ impl CoreClient {
             .get_raw_change_address()
             .map_err(Error::CoreClientError)
     }
-}
+
+    // pub fn get_address_utxos(&self) -> Result<dpp::dashcore::Address<NetworkUnchecked>, Error> {
+    //     self.core
+    //         .lock()
+    //         .expect("Core lock poisoned")
+    //         .get_address_info()
+    //         .map_err(Error::CoreClientError)
+    // }
 
     pub fn get_quorum_public_key(
         &self,

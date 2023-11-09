@@ -59,7 +59,6 @@
 #![warn(missing_docs)]
 
 pub mod core;
-pub mod core_client;
 pub mod error;
 pub mod mock;
 pub mod platform;

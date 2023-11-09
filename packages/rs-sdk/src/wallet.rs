@@ -1,60 +1,28 @@
 //! Wallet for managing keys assets in Dash Core and Platform.
 
-use dashcore_rpc::dashcore::address::NetworkUnchecked;
-use dashcore_rpc::dashcore::Address;
-use dashcore_rpc::json;
+use async_trait::async_trait;
 use dpp::bls_signatures::PrivateKey;
 pub use dpp::identity::signer::Signer;
 use dpp::prelude::AssetLockProof;
-use rs_dapi_client::transport::CoreGrpcClient;
-use simple_signer::signer::SimpleSigner;
 
-use crate::{core_client::CoreClient, Error, Sdk};
+use crate::Error;
 
-/// Default wallet implementation for Dash Platform SDK.
+/// Wallet used by Dash Platform SDK.
 ///
-/// This wallet uses Dash Core wallet RPC client to manage Core keys, and [Signer] instance to manage Platform keys.
+/// Wallet is used to manage keys and addresses, and sign transactions.
+/// It must support:
 ///
-pub struct Wallet {
-    core_wallet: CoreWallet,
-    platform_wallet: SimpleSigner,
-}
+/// * Dash Core operations, as defined in [CoreWallet]
+/// * Platform operations, as defined in [PlatformWallet]
+///
+pub trait Wallet: CoreWallet + PlatformWallet + Send + Sync {}
 
-impl Wallet {
-    /// Create new wallet.
-    ///
-    /// Create new wallet using dash core wallet RPC client to manage Core keys, and Signer instance to manage Platform keys.
-    ///
-    /// # Arguments
-    ///
-    /// * `core` - Dash Core RPC client [CoreClient]. Should be owned by [Sdk].
-    /// * `signer` - [Signer] instance, for example [simple_signer::signer::SimpleSigner].
-    /// Should be owned by [Sdk].
-    pub(crate) fn new_with_clients<S: Signer>(
-        core_client: CoreClient,
-        signer: SimpleSigner,
-    ) -> Self {
-        Self {
-            core_wallet: CoreWallet { core_client },
-            platform_wallet: signer,
-        }
-    }
-
-    /// Return Core wallet client.
-    pub(crate) fn core<'a>(&'a self) -> &'a CoreWallet {
-        &self.core_wallet
-    }
-
-    /// Return Platform wallet client.
-    pub(crate) fn platform<'a>(&'a self) -> &'a SimpleSigner {
-        &self.platform_wallet
-    }
-}
-
-pub(crate) struct CoreWallet {
-    core_client: CoreClient,
-}
-impl CoreWallet {
+/// Core Wallet manages Dash Core keys, addresses and signs transactions.
+///
+/// This trait should be implemented by developers who use the Sdk, to provide interface to Dash Core
+/// wallet that allows generation and signing of Dash Core transactions.
+#[async_trait]
+pub trait CoreWallet: Send + Sync {
     /// Create new asset lock transaction that locks some amount of Dash to be used in Platform.
     ///
     /// # Arguments
@@ -66,12 +34,62 @@ impl CoreWallet {
     /// * `AssetLockProof` - Asset lock proof.
     /// * `PrivateKey` - One-time private key used to use locked Dash in Platform.
     /// This key should be used to sign Platform transactions.
-    pub(crate) async fn lock_assets(
-        &self,
-        sdk: &Sdk,
-        amount: u64,
-    ) -> Result<(AssetLockProof, PrivateKey), Error> {
-        let change = self.core_client.change_address();
-        todo!("implement asset lock tx")
+    async fn lock_assets(&self, amount: u64) -> Result<(AssetLockProof, PrivateKey), Error>;
+}
+
+/// Platform Wallet that can be used to sign Platform transactions.
+///
+/// This trait should be implemented by developers who use the Sdk, to provide interface to Platform
+/// wallet that allows signing of Platform state transitions.
+pub trait PlatformWallet: Send + Sync {
+    /// Return signer that can be used to sign Platform transactions.
+    fn signer(&self) -> &dyn Signer;
+}
+
+/// Wallet that combines separate Core and Platform wallets into one.
+///
+/// ## See also
+///
+/// * [CoreGrpcWallet](crate::mock::wallet::CoreGrpcWallet)
+/// * [PlatformSignerWallet](crate::mock::wallet::PlatformSignerWallet)
+pub struct CompositeWallet<C: CoreWallet, P: PlatformWallet> {
+    core_wallet: C,
+    platform_wallet: P,
+}
+
+impl<C: CoreWallet, P: PlatformWallet> CompositeWallet<C, P> {
+    /// Create new composite wallet.
+    ///
+    /// Create new composite wallet comprising of Core wallet and Platform wallet.
+    pub fn new(core_wallet: C, platform_wallet: P) -> Self {
+        Self {
+            core_wallet,
+            platform_wallet,
+        }
+    }
+
+    /// Return Core wallet client.
+    pub fn core(&self) -> &C {
+        &self.core_wallet
+    }
+
+    /// Return Platform wallet client.
+    pub fn platform(&self) -> &P {
+        &self.platform_wallet
     }
 }
+#[async_trait]
+impl<C: CoreWallet, P: PlatformWallet> CoreWallet for CompositeWallet<C, P> {
+    async fn lock_assets(&self, amount: u64) -> Result<(AssetLockProof, PrivateKey), Error> {
+        self.core_wallet.lock_assets(amount).await
+    }
+}
+
+#[async_trait]
+impl<C: CoreWallet, P: PlatformWallet> PlatformWallet for CompositeWallet<C, P> {
+    fn signer(&self) -> &dyn Signer {
+        self.platform_wallet.signer()
+    }
+}
+
+impl<C: CoreWallet, P: PlatformWallet> Wallet for CompositeWallet<C, P> {}
