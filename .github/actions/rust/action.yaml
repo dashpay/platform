@@ -43,7 +43,7 @@ runs:
     - name: Run sccache-cache
       uses: mozilla-actions/sccache-action@v0.0.3
       with:
-        version: "v0.7.0" # Must be the same as in Dockerfile
+        version: "v0.7.1" # Must be the same as in Dockerfile
       if: inputs.cache == 'true'
 
     - name: Hash ref_name
