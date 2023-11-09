@@ -42,9 +42,7 @@ jobs:
           bucket: multi-runner-linux-x64-platform-cache-ui535z23
           root: actions-cache
           path: build-js-artifacts-${{ github.sha }}.tar
-          key: ${{ runner.os }}/build-js-artifacts/${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}/build-js-artifacts/${{ github.sha }}
+          key: build-js-artifacts/${{ github.sha }}
 
       - name: Unpack JS build artifacts archive
         run: tar -xf build-js-artifacts-${{ github.sha }}.tar
@@ -80,9 +78,7 @@ jobs:
           bucket: multi-runner-linux-x64-platform-cache-ui535z23
           root: actions-cache
           path: build-js-artifacts-${{ github.sha }}.tar
-          key: ${{ runner.os }}/build-js-artifacts/${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}/build-js-artifacts/${{ github.sha }}
+          key: build-js-artifacts/${{ github.sha }}
 
       - name: Unpack JS build artifacts archive
         run: tar -xf build-js-artifacts-${{ github.sha }}.tar
