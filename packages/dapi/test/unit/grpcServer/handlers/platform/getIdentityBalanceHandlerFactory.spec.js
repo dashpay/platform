@@ -13,6 +13,10 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
+const {
+  GetIdentityBalanceResponseV0,
+} = GetIdentityBalanceResponse;
+
 /* eslint-disable import/no-extraneous-dependencies */
 const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
@@ -23,13 +27,9 @@ const getIdentityBalanceHandlerFactory = require('../../../../../lib/grpcServer/
 describe('getIdentityBalanceHandlerFactory', () => {
   let call;
   let getIdentityBalanceHandler;
-  let driveClientMock;
   let request;
   let id;
-  let proofFixture;
-  let proofMock;
-  let response;
-  let proofResponse;
+  let fetchIdentityBalanceMock;
 
   beforeEach(async function beforeEach() {
     id = await generateRandomIdentifierAsync();
@@ -40,65 +40,53 @@ describe('getIdentityBalanceHandlerFactory', () => {
 
     call = new GrpcCallMock(this.sinon, request);
 
-    proofFixture = {
-      merkleProof: Buffer.alloc(1, 1),
-    };
+    fetchIdentityBalanceMock = this.sinon.stub();
 
-    proofMock = new Proof();
-    proofMock.setGrovedbProof(proofFixture.merkleProof);
-
-    response = new GetIdentityBalanceResponse();
-    response.setBalance({
-      toArray: () => [],
-      getValue: () => 0,
+    getIdentityBalanceHandler = getIdentityBalanceHandlerFactory({
+      fetchIdentityBalance: fetchIdentityBalanceMock,
     });
-
-    proofResponse = new GetIdentityBalanceResponse();
-    proofResponse.setProof(proofMock);
-
-    driveClientMock = {
-      fetchIdentityBalance: this.sinon.stub().resolves(response.serializeBinary()),
-    };
-
-    getIdentityBalanceHandler = getIdentityBalanceHandlerFactory(driveClientMock);
   });
 
   it('should return identity balance', async () => {
+    const response = new GetIdentityBalanceResponse()
+      .setV0(new GetIdentityBalanceResponseV0().setBalance(15));
+
+    fetchIdentityBalanceMock.resolves(response.serializeBinary());
+
     const result = await getIdentityBalanceHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentityBalanceResponse);
 
-    const identityBalance = result.getBalance().getValue();
+    const identityBalance = result.getV0().getBalance();
 
-    expect(identityBalance).to.deep.equal(0);
-
-    const proof = result.getProof();
-
-    expect(proof).to.be.undefined();
+    expect(identityBalance).to.deep.equal(15);
   });
 
-  it('should return proof', async function it() {
-    driveClientMock = {
-      fetchIdentityBalance: this.sinon.stub().resolves(proofResponse.serializeBinary()),
+  it('should return proof', async () => {
+    const proofFixture = {
+      merkleProof: Buffer.alloc(1, 1),
     };
 
-    getIdentityBalanceHandler = getIdentityBalanceHandlerFactory(driveClientMock);
+    const proofMock = new Proof();
+    proofMock.setGrovedbProof(proofFixture.merkleProof);
+
+    const response = new GetIdentityBalanceResponse()
+      .setV0(new GetIdentityBalanceResponseV0().setProof(proofMock));
+
+    fetchIdentityBalanceMock.resolves(response.serializeBinary());
 
     const result = await getIdentityBalanceHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentityBalanceResponse);
 
-    const identityBalance = result.getBalance();
-    expect(identityBalance).to.be.undefined();
-
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
     const merkleProof = proof.getGrovedbProof();
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    expect(driveClientMock.fetchIdentityBalance).to.be.calledOnceWith(call.request);
+    expect(fetchIdentityBalanceMock).to.be.calledOnceWith(call.request);
   });
 
   it('should throw InvalidArgumentGrpcError error if ids are not specified', async () => {
@@ -111,7 +99,7 @@ describe('getIdentityBalanceHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('identity id is not specified');
-      expect(driveClientMock.fetchIdentityBalance).to.be.not.called();
+      expect(fetchIdentityBalanceMock).to.be.not.called();
     }
   });
 
@@ -119,7 +107,7 @@ describe('getIdentityBalanceHandlerFactory', () => {
     const message = 'Some error';
     const abciResponseError = new Error(message);
 
-    driveClientMock.fetchIdentityBalance.throws(abciResponseError);
+    fetchIdentityBalanceMock.throws(abciResponseError);
 
     try {
       await getIdentityBalanceHandler(call);

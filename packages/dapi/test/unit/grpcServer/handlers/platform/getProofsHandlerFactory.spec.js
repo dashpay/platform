@@ -9,6 +9,10 @@ const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
 const getProofsHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getProofsHandlerFactory');
 
+const {
+  GetProofsResponseV0,
+} = GetProofsResponse;
+
 describe('getProofsHandlerFactory', () => {
   let call;
   let getProofsHandler;
@@ -32,8 +36,8 @@ describe('getProofsHandlerFactory', () => {
     proofMock = new Proof();
     proofMock.setGrovedbProof(proofFixture.merkleProof);
 
-    response = new GetProofsResponse();
-    response.setProof(proofMock);
+    response = new GetProofsResponse()
+      .setV0(new GetProofsResponseV0().setProof(proofMock));
 
     driveClientMock = {
       fetchProofs: this.sinon.stub().resolves(response.serializeBinary()),
@@ -47,7 +51,7 @@ describe('getProofsHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(GetProofsResponse);
 
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
     const merkleProof = proof.getGrovedbProof();

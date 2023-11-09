@@ -8,7 +8,7 @@ const {
 
 const {
   v0: {
-    GetIdentityByPublicKeyHashesResponse,
+    GetIdentityByPublicKeyHashResponse,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -17,13 +17,13 @@ const {
  * @param {DriveClient} driveClient
  * @return {getIdentityByPublicKeyHashesHandler}
  */
-function getIdentityByPublicKeyHashesHandlerFactory(
+function getIdentityByPublicKeyHashHandlerFactory(
   driveClient,
 ) {
   /**
    * @typedef getIdentityByPublicKeyHashesHandler
    * @param {Object} call
-   * @return {Promise<GetIdentityByPublicKeyHashesResponse>}
+   * @return {Promise<GetIdentityByPublicKeyHashResponse>}
    */
   async function getIdentityByPublicKeyHashesHandler(call) {
     const { request } = call;
@@ -33,12 +33,12 @@ function getIdentityByPublicKeyHashesHandlerFactory(
     }
 
     const identitiesResponseBuffer = await driveClient
-      .fetchIdentityByPublicKeyHashes(request);
+      .fetchIdentityByPublicKeyHash(request);
 
-    return GetIdentityByPublicKeyHashesResponse.deserializeBinary(identitiesResponseBuffer);
+    return GetIdentityByPublicKeyHashResponse.deserializeBinary(identitiesResponseBuffer);
   }
 
   return getIdentityByPublicKeyHashesHandler;
 }
 
-module.exports = getIdentityByPublicKeyHashesHandlerFactory;
+module.exports = getIdentityByPublicKeyHashHandlerFactory;
