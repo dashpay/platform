@@ -105,7 +105,7 @@ const getDataContractHistoryHandlerFactory = require(
   './getDataContractHistoryHandlerFactory',
 );
 const getIdentityByPublicKeyHashesHandlerFactory = require(
-  './getIdentityByPublicKeyHashesHandlerFactory',
+  './getIdentityByPublicKeyHashHandlerFactory',
 );
 const getIdentitiesByPublicKeyHashesHandlerFactory = require(
   './getIdentitiesByPublicKeyHashesHandlerFactory',

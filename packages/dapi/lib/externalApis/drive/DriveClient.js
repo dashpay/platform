@@ -177,13 +177,13 @@ class DriveClient {
   }
 
   /**
-   * Fetch serialized identity by its public key hashes
+   * Fetch serialized identity by its public key hash
    *
-   * @param {GetIdentityByPublicKeyHashesRequest} request
+   * @param {GetIdentityByPublicKeyHashRequest} request
    *
    * @return {Promise<Buffer[]>}
    */
-  async fetchIdentityByPublicKeyHashes(request) {
+  async fetchIdentityByPublicKeyHash(request) {
     return this.request(
       '/identity/by-public-key-hash',
       request.serializeBinary(),
