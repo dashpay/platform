@@ -74,26 +74,7 @@ jobs:
           key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
 
       - name: Restore dashmate volumes
-        run: |
-          # Directory where volume dumps are stored
-          volume_dump_dir="dashmate_volumes_dump"
-          dump_file="$volume_dump_dir/data.tar.gz"
-          metadata_file="$volume_dump_dir/metadata.json"
-
-          # Read each line (metadata for each volume) and recreate the volume
-          cat $metadata_file | jq -c '.[]' | while read -r metadata; do
-            volume=$(echo $metadata | jq -r '.Name')
-            labels=$(echo $metadata | jq -r '.Labels | to_entries | map("--label \(.key)=\(.value)") | .[]')
-
-            # Create volume with labels
-            docker volume create $labels $volume
-          done
-
-          # Restore all volumes from the tarball
-          docker run --rm \
-            $(cat $metadata_file | jq -r '.[].Name' | xargs -I {} echo -n "-v {}:/dashmate_volumes/{} ") \
-            -v $(pwd)/$volume_dump_dir:/backup busybox tar xf /backup/data.tar.gz -C /dashmate_volumes
-        shell: bash
+        run: ./scripts/dashmate/volumes/restore.sh
         if: steps.local-network-data.outputs.cache-hit == 'true'
 
       - name: Setup local network
@@ -122,41 +103,7 @@ jobs:
         if: steps.local-network-data.outputs.cache-hit != 'true'
 
       - name: Dump dashmate volumes
-        run: |
-          # Directory where volume dumps will be stored
-          volume_dump_dir="dashmate_volumes_dump"
-          dump_file="$volume_dump_dir/data.tar.gz"
-          metadata_file="$volume_dump_dir/metadata.json"
-
-          mkdir -p $volume_dump_dir
-
-          # Initialize the volume mount arguments
-          volume_mounts=""
-
-          # Initialize metadata file
-          echo "[]" > $metadata_file
-
-          # Temporary file for individual volume metadata
-          temp_metadata_file="$volume_dump_dir/temp_metadata.json"
-
-          # Loop through each volume, prepare mounts and save metadata
-          for volume in $(docker volume ls --filter name=dashmate_ -q); do
-            volume_mounts="$volume_mounts -v $volume:/all_volumes/$volume"
-            
-            # Get metadata for the current volume
-            docker volume inspect $volume > $temp_metadata_file
-
-            # Append metadata to the main file
-            # Merge the current metadata array with the existing one
-            jq -s '.[0] + .[1]' $metadata_file $temp_metadata_file > $temp_metadata_file && mv $temp_metadata_file $metadata_file
-          done
-
-          # Cleanup temporary metadata file
-          rm $temp_metadata_file
-
-          # Run a container with all volumes mounted and perform the dump
-          docker run --rm $volume_mounts -v $(pwd)/volume_dumps:/backup ubuntu tar czf /backup/all_volumes.tar.gz -C /all_volumes .
-        shell: bash
+        run: ./scripts/dashmate/volumes/dump.sh
         if: steps.local-network-data.outputs.cache-hit != 'true'
 
       - name: Save local network data

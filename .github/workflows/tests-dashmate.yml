@@ -85,26 +85,7 @@ jobs:
         if: contains(inputs.test-pattern, 'local')
 
       - name: Restore dashmate volumes
-        run: |
-          # Directory where volume dumps are stored
-          volume_dump_dir="dashmate_volumes_dump"
-          dump_file="$volume_dump_dir/data.tar.gz"
-          metadata_file="$volume_dump_dir/metadata.json"
-
-          # Read each line (metadata for each volume) and recreate the volume
-          cat $metadata_file | jq -c '.[]' | while read -r metadata; do
-            volume=$(echo $metadata | jq -r '.Name')
-            labels=$(echo $metadata | jq -r '.Labels | to_entries | map("--label \(.key)=\(.value)") | .[]')
-
-            # Create volume with labels
-            docker volume create $labels $volume
-          done
-
-          # Restore all volumes from the tarball
-          docker run --rm \
-            $(cat $metadata_file | jq -r '.[].Name' | xargs -I {} echo -n "-v {}:/dashmate_volumes/{} ") \
-            -v $(pwd)/$volume_dump_dir:/backup busybox tar xf /backup/data.tar.gz -C /dashmate_volumes
-        shell: bash
+        run: ./scripts/dashmate/volumes/restore.sh
         if: steps.local-network-data.outputs.cache-hit == 'true'
 
       - name: Run tests with cache
