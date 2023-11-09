@@ -44,7 +44,7 @@ pub trait DapiRequest {
     /// Executes the request.
     fn execute<'c, D: Dapi>(
         self,
-        dapi_client: &'c mut D,
+        dapi_client: &'c D,
         settings: RequestSettings,
     ) -> BoxFuture<'c, Result<Self::Response, DapiClientError<Self::TransportError>>>
     where
@@ -59,7 +59,7 @@ impl<T: transport::TransportRequest + Send> DapiRequest for T {
 
     fn execute<'c, D: Dapi>(
         self,
-        dapi_client: &'c mut D,
+        dapi_client: &'c D,
         settings: RequestSettings,
     ) -> BoxFuture<'c, Result<Self::Response, DapiClientError<Self::TransportError>>>
     where

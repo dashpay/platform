@@ -38,7 +38,7 @@ use crate::{error::Error, platform::document_query::DocumentQuery};
 /// or [FetchMany](crate::platform::FetchMany) trait:
 ///
 /// ```rust
-/// use rs_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
+/// use dash_platform_sdk::{Sdk, platform::{Query, Identifier, Fetch, Identity}};
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
 /// let mut sdk = Sdk::new_mock();

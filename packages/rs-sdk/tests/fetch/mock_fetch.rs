@@ -2,6 +2,10 @@
 //!
 
 use super::common::{mock_data_contract, mock_document_type};
+use dash_platform_sdk::{
+    platform::{DocumentQuery, Fetch},
+    Sdk,
+};
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters,
@@ -12,10 +16,6 @@ use dpp::{
     document::Document,
     identity::{accessors::IdentityGettersV0, IdentityV0},
     prelude::{DataContract, Identifier, Identity},
-};
-use rs_sdk::{
-    platform::{DocumentQuery, Fetch},
-    Sdk,
 };
 
 #[tokio::test]

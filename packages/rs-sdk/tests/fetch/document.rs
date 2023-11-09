@@ -3,13 +3,13 @@
 use std::sync::Arc;
 
 use crate::common::{setup_logs, Config};
+use dash_platform_sdk::platform::DocumentQuery;
+use dash_platform_sdk::platform::{Fetch, FetchMany};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::{DataContract, Identifier};
 use drive::query::DriveQuery;
-use rs_sdk::platform::DocumentQuery;
-use rs_sdk::platform::{Fetch, FetchMany};
 
 /// Given some data contract ID, document type and document ID, when I fetch it, then I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -76,7 +76,7 @@ async fn document_read_no_contract() {
 
     assert!(matches!(
         query,
-        Err(rs_sdk::error::Error::MissingDependency(_, _))
+        Err(dash_platform_sdk::error::Error::MissingDependency(_, _))
     ));
 }
 

@@ -4,8 +4,7 @@ use dapi_grpc::core::v0::{
     TransactionsWithProofsResponse,
 };
 use dpp::dashcore::consensus::Decodable;
-use dpp::dashcore::{InstantLock, MerkleBlock, Transaction, Txid};
-use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+use dpp::dashcore::{InstantLock, Transaction};
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
 use rs_dapi_client::{Dapi, RequestSettings};

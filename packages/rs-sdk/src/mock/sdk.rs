@@ -6,7 +6,7 @@ use dapi_grpc::{
     platform::v0::{self as proto},
 };
 use dpp::version::PlatformVersion;
-use drive_proof_verifier::{FromProof, MockQuorumInfoProvider};
+use drive_proof_verifier::{FromProof, MockContextProvider};
 use rs_dapi_client::{
     mock::{Key, MockDapiClient},
     transport::TransportRequest,
@@ -37,7 +37,7 @@ pub struct MockDashPlatformSdk {
     platform_version: &'static PlatformVersion,
     dapi: Arc<Mutex<MockDapiClient>>,
     prove: bool,
-    quorum_provider: Option<MockQuorumInfoProvider>,
+    quorum_provider: Option<MockContextProvider>,
 }
 
 impl MockDashPlatformSdk {
@@ -63,7 +63,7 @@ impl MockDashPlatformSdk {
     /// This directory will be used to load quorum information from files.
     /// You can use [SdkBuilder::with_dump_dir()](crate::SdkBuilder::with_dump_dir()) to generate these files.
     pub fn quorum_info_dir<P: AsRef<std::path::Path>>(&mut self, dir: P) -> &mut Self {
-        let mut provider = MockQuorumInfoProvider::new();
+        let mut provider = MockContextProvider::new();
         provider.quorum_keys_dir(Some(dir.as_ref().to_path_buf()));
         self.quorum_provider = Some(provider);
 
@@ -179,7 +179,7 @@ impl MockDashPlatformSdk {
     /// # let r = tokio::runtime::Runtime::new().unwrap();
     /// #
     /// # r.block_on(async {
-    ///     use rs_sdk::{Sdk, platform::{Identity, Fetch, dpp::identity::accessors::IdentityGettersV0}};
+    ///     use dash_platform_sdk::{Sdk, platform::{Identity, Fetch, dpp::identity::accessors::IdentityGettersV0}};
     ///
     ///     let mut api = Sdk::new_mock();
     ///     // Define expected response
@@ -303,11 +303,12 @@ impl MockDashPlatformSdk {
         let data = match self.from_proof_expectations.get(&key) {
             Some(d) => Option::<O>::mock_deserialize(self, d),
             None => {
+                let version = self.version();
                 let provider = self.quorum_provider.as_ref()
                     .ok_or(drive_proof_verifier::Error::InvalidQuorum{
                         error:"expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
                     })?;
-                O::maybe_from_proof(request, response, self.version(), provider)?
+                O::maybe_from_proof(request, response, version, provider)?
             }
         };
 

@@ -57,6 +57,10 @@ pub enum Error {
     #[error("invalid quorum: {error}")]
     InvalidQuorum { error: String },
 
+    /// Data contract is invalid or not found, or some error occurred during data contract retrieval
+    #[error("cannot get data contract: {error}")]
+    InvalidDataContract { error: String },
+
     /// Signature format is invalid
     #[error("invalid signature format: {error}")]
     InvalidSignatureFormat { error: String },

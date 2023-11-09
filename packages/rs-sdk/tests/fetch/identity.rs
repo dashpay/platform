@@ -3,9 +3,9 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::prelude::IdentityPublicKey;
 use dpp::{identity::hash::IdentityPublicKeyHashMethodsV0, prelude::Identity};
 
+use dash_platform_sdk::platform::identity::PublicKeyHash;
+use dash_platform_sdk::platform::{Fetch, FetchMany};
 use drive_proof_verifier::types::{IdentityBalance, IdentityBalanceAndRevision};
-use rs_sdk::platform::identity::PublicKeyHash;
-use rs_sdk::platform::{Fetch, FetchMany};
 
 use crate::common::{setup_logs, Config};
 

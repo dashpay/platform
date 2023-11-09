@@ -1,5 +1,6 @@
 //! [Sdk] entrypoint to Dash Platform.
 
+use std::{hash::Hash, num::NonZeroUsize};
 #[cfg(feature = "mocks")]
 use std::{
     path::{Path, PathBuf},
@@ -8,13 +9,18 @@ use std::{
 
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
-use crate::mock::MockResponse;
-use crate::{core_client::CoreClient, error::Error};
+use crate::{
+    core_client::CoreClient, error::Error, platform::transition::TransitionContextBuilder,
+};
+use crate::{mock::MockResponse, platform::Fetch};
 use dapi_grpc::mock::Mockable;
-use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use dpp::{
+    prelude::{DataContract, Identifier},
+    version::{PlatformVersion, PlatformVersionCurrentVersion},
+};
 #[cfg(feature = "mocks")]
-use drive_proof_verifier::MockQuorumInfoProvider;
-use drive_proof_verifier::{FromProof, QuorumInfoProvider};
+use drive_proof_verifier::MockContextProvider;
+use drive_proof_verifier::{ContextProvider, FromProof};
 #[cfg(feature = "mocks")]
 use hex::ToHex;
 pub use http::Uri;
@@ -52,8 +58,44 @@ pub struct Sdk {
     ///
     /// This is set to `true` by default. `false` is not implemented yet.
     proofs: bool,
+
+    /// Data contracts cache.
+    ///
+    /// Users can insert new data contracts into the cache using [`Cache::put`].
+    pub data_contracts: Cache<Identifier, dpp::data_contract::DataContract>,
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
+}
+
+/// Thread-safe cache of various objects inside the SDK.
+///
+/// This is used to cache objects that are expensive to fetch from the platform, like data contracts.
+pub struct Cache<K: Hash + Eq, V> {
+    // We use a Mutex to allow access to the cache when we don't have mutable &self
+    // And we use Arc to allow multiple threads to access the cache without having to clone it
+    inner: std::sync::RwLock<lru::LruCache<K, Arc<V>>>,
+}
+
+impl<K: Hash + Eq, V> Cache<K, V> {
+    /// Create new cache
+    pub fn new(capacity: NonZeroUsize) -> Self {
+        Self {
+            // inner: std::sync::Mutex::new(lru::LruCache::new(capacity)),
+            inner: std::sync::RwLock::new(lru::LruCache::new(capacity)),
+        }
+    }
+
+    /// Get a reference to the value stored under `k`.
+    pub fn get(&self, k: &K) -> Option<Arc<V>> {
+        let mut guard = self.inner.write().expect("cache lock poisoned");
+        guard.get(k).map(Arc::clone)
+    }
+
+    /// Insert a new value into the cache.
+    pub fn put(&self, k: K, v: V) {
+        let mut guard = self.inner.write().expect("cache lock poisoned");
+        guard.put(k, Arc::new(v));
+    }
 }
 
 /// Internal Sdk instance.
@@ -77,7 +119,7 @@ enum SdkInstance {
         dapi: Arc<Mutex<MockDapiClient>>,
         /// Mock SDK implementation processing mock expectations and responses.
         mock: MockDashPlatformSdk,
-        quorum_provider: MockQuorumInfoProvider,
+        quorum_provider: MockContextProvider,
     },
 }
 
@@ -189,46 +231,88 @@ impl Sdk {
             tracing::warn!("Unable to write dump file {:?}: {}", path, e);
         }
     }
+
+    /// Create a new [`TransitionContextBuilder`] that allows configuration of various
+    /// parameters of the transition, like keys to use, fee details, etc.
+    pub fn transition_context_builder(&self) -> TransitionContextBuilder {
+        TransitionContextBuilder::new(self)
+    }
 }
 
-impl QuorumInfoProvider for Sdk {
+impl ContextProvider for Sdk {
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], drive_proof_verifier::Error> {
-        let provider: &dyn QuorumInfoProvider = match self.inner {
-            SdkInstance::Dapi { ref core, .. } => core,
+        let key: [u8; 48] = match self.inner {
+            SdkInstance::Dapi { ref core, .. } => {
+                core.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)?
+            }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock {
                 ref quorum_provider,
                 ..
-            } => quorum_provider,
+            } => quorum_provider.get_quorum_public_key(
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+            )?,
         };
-
-        let key =
-            provider.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)?;
 
         #[cfg(feature = "mocks")]
         self.dump_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height, &key);
 
         Ok(key)
     }
+
+    fn get_data_contract(
+        &self,
+        data_contract_id: &Identifier,
+    ) -> Result<Option<Arc<DataContract>>, drive_proof_verifier::Error> {
+        if let Some(contract) = self.data_contracts.get(data_contract_id) {
+            return Ok(Some(contract));
+        };
+
+        let handle = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => handle,
+            // not an error, we rely on the caller to provide a data contract using
+            Err(e) => {
+                tracing::warn!(
+                    error = e.to_string(),
+                    "data contract cache miss and no tokio runtime detected, skipping fetch"
+                );
+                return Ok(None);
+            }
+        };
+
+        let data_contract = handle
+            .block_on(DataContract::fetch(self, *data_contract_id))
+            .map_err(|e| drive_proof_verifier::Error::InvalidDataContract {
+                error: e.to_string(),
+            })?;
+
+        if let Some(ref dc) = data_contract {
+            self.data_contracts.put(*data_contract_id, dc.clone());
+        };
+
+        Ok(data_contract.map(Arc::new))
+    }
 }
 
 #[async_trait::async_trait]
 impl Dapi for Sdk {
     async fn execute<R: TransportRequest>(
-        &mut self,
+        &self,
         request: R,
         settings: RequestSettings,
     ) -> Result<R::Response, DapiClientError<<R::Client as TransportClient>::Error>> {
         match self.inner {
-            SdkInstance::Dapi { ref mut dapi, .. } => dapi.execute(request, settings).await,
+            SdkInstance::Dapi { ref dapi, .. } => dapi.execute(request, settings).await,
             #[cfg(feature = "mocks")]
-            SdkInstance::Mock { ref mut dapi, .. } => {
-                let mut dapi_guard = dapi.lock().await;
+            SdkInstance::Mock { ref dapi, .. } => {
+                let dapi_guard = dapi.lock().await;
                 dapi_guard.execute(request, settings).await
             }
         }
@@ -259,6 +343,12 @@ pub struct SdkBuilder {
     core_user: String,
     core_password: String,
 
+    /// Max number of data contracts to keep in cache.
+    ///
+    /// When the cache is full, the least recently used data contract will be removed from cache.
+    ///
+    /// Defaults to 100.
+    contracts_cache_size: usize,
     /// If true, request and verify proofs of the responses.
     proofs: bool,
 
@@ -281,6 +371,8 @@ impl Default for SdkBuilder {
             core_user: "".to_string(),
 
             proofs: true,
+
+            contracts_cache_size: 100,
 
             version: PlatformVersion::latest(),
             #[cfg(feature = "mocks")]
@@ -387,6 +479,11 @@ impl SdkBuilder {
     pub fn build(self) -> Result<Sdk, Error> {
         PlatformVersion::set_current(self.version);
 
+        let data_contract_cache_size = NonZeroUsize::new(self.contracts_cache_size).ok_or(
+            Error::Config("contracts_cache_size must be greater than 0".to_string()),
+        )?;
+        let data_contracts = Cache::new(data_contract_cache_size);
+
         match self.addresses {
             Some(addresses) => {
                 if self.core_ip.is_empty() || self.core_port == 0 {
@@ -410,6 +507,7 @@ impl SdkBuilder {
                     proofs:self.proofs,
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
+                    data_contracts,
                 })
             },
             #[cfg(feature = "mocks")]
@@ -418,10 +516,11 @@ impl SdkBuilder {
                     inner:SdkInstance::Mock {
                         mock: MockDashPlatformSdk::new(self.version, Arc::clone(&dapi), self.proofs),
                         dapi,
-                        quorum_provider: MockQuorumInfoProvider::new(),
+                        quorum_provider: MockContextProvider::new(),
                     },
                     dump_dir: self.dump_dir,
                     proofs:self.proofs,
+                    data_contracts,
             })},
             #[cfg(not(feature = "mocks"))]
             None => Err(Error::Config(

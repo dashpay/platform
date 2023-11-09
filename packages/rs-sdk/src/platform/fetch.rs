@@ -10,8 +10,7 @@
 
 use crate::mock::MockResponse;
 use crate::{error::Error, platform::query::Query, Sdk};
-use dapi_grpc::platform::v0::{self as platform_proto, WaitForStateTransitionResultRequest};
-use dpp::state_transition::StateTransition;
+use dapi_grpc::platform::v0::{self as platform_proto};
 use dpp::{document::Document, prelude::Identity};
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
@@ -60,7 +59,7 @@ where
     ///
     /// Any errors encountered during the execution are returned as [Error] instances.
     async fn fetch<Q: Query<<Self as Fetch>::Request>>(
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         query: Q,
     ) -> Result<Option<Self>, Error> {
         let request = query.query(sdk.prove())?;

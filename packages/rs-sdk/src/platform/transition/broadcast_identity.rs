@@ -7,23 +7,17 @@
 //! these operations, including the handling of asset lock proof and signing operations.
 use std::fmt::Debug;
 
-use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
-    Version, WaitForStateTransitionResultRequestV0,
-};
-use dapi_grpc::platform::v0::{
-    self as proto, BroadcastStateTransitionRequest, WaitForStateTransitionResultRequest,
-};
+use dapi_grpc::platform::v0::{self as proto, BroadcastStateTransitionRequest};
 use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
 use dpp::prelude::{AssetLockProof, Identity};
-use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::NativeBlsModule;
 use rs_dapi_client::transport::TransportRequest;
 
+use super::broadcast_request::BroadcastRequestForStateTransition;
 use crate::error::Error;
 
 /// Trait implemented by objects that can be used to broadcast new identity state transitions.
@@ -42,7 +36,7 @@ use crate::error::Error;
 ///
 /// ```rust, ignore
 ///
-/// use rs_sdk::{Sdk, platform::{BroadcastNewIdentity, IdentityCreateTransition}};
+/// use dash_platform_sdk::{Sdk, platform::{BroadcastNewIdentity, IdentityCreateTransition}};
 /// use dpp::identity::signer::Signer;
 /// use dpp::prelude::{AssetLockProof, PrivateKey};
 /// use dpp::version::PlatformVersion;
@@ -66,9 +60,11 @@ use crate::error::Error;
 /// }
 /// ```
 ///
-/// As [BroadcastRequestForStateTransition] is a trait, it can be implemented for any type that represents
+/// As [BroadcastRequestForNewIdentity] is a trait, it can be implemented for any type that represents
 /// a new identity creation operation, allowing for flexibility in how new identities are broadcasted.
-pub(crate) trait BroadcastRequestForStateTransition: Send + Debug + Clone {
+pub(crate) trait BroadcastRequestForNewIdentity<T: TransportRequest, S: Signer>:
+    Send + Debug + Clone
+{
     /// Converts the current instance into an instance of the `TransportRequest` type, ready for broadcasting.
     ///
     /// This method takes ownership of the instance upon which it's called (hence `self`), and attempts to perform the conversion,
@@ -88,32 +84,33 @@ pub(crate) trait BroadcastRequestForStateTransition: Send + Debug + Clone {
     /// # Error Handling
     /// This method propagates any errors encountered during the signing or conversion process.
     /// These are returned as [`Error`] instances.
-    fn broadcast_request_for_state_transition(
+    fn broadcast_request_for_new_identity(
         &self,
-    ) -> Result<BroadcastStateTransitionRequest, Error>;
-
-    fn wait_for_state_transition_result_request(
-        &self,
-    ) -> Result<WaitForStateTransitionResultRequest, Error>;
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_private_key: &PrivateKey,
+        signer: &S,
+        platform_version: &PlatformVersion,
+    ) -> Result<T, Error>;
 }
 
-impl BroadcastRequestForStateTransition for StateTransition {
-    fn broadcast_request_for_state_transition(
+impl<S: Signer> BroadcastRequestForNewIdentity<proto::BroadcastStateTransitionRequest, S>
+    for Identity
+{
+    fn broadcast_request_for_new_identity(
         &self,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_private_key: &PrivateKey,
+        signer: &S,
+        platform_version: &PlatformVersion,
     ) -> Result<BroadcastStateTransitionRequest, Error> {
-        Ok(BroadcastStateTransitionRequest {
-            state_transition: self.serialize_to_bytes()?,
-        })
-    }
-
-    fn wait_for_state_transition_result_request(
-        &self,
-    ) -> Result<WaitForStateTransitionResultRequest, Error> {
-        Ok(WaitForStateTransitionResultRequest {
-            version: Some(Version::V0(WaitForStateTransitionResultRequestV0 {
-                state_transition_hash: self.transaction_id()?.to_vec(),
-                prove: true,
-            })),
-        })
+        let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signer(
+            self,
+            asset_lock_proof,
+            asset_lock_proof_private_key.inner.as_ref(),
+            signer,
+            &NativeBlsModule,
+            platform_version,
+        )?;
+        identity_create_transition.broadcast_request_for_state_transition()
     }
 }

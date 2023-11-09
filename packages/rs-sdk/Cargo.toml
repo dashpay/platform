@@ -23,6 +23,7 @@ dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
 bincode = { version = "2.0.0-rc.3", features = ["serde"], optional = true }
 thiserror = "1.0.47"
 tokio = { version = "1.32.0", features = ["macros"] }
+tokio-util = { version = "0.7.8" }
 async-trait = { version = "0.1.73" }
 http = { version = "0.2.9" }
 ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
@@ -34,6 +35,7 @@ dotenvy = { version = "0.15.7", optional = true }
 envy = { version = "0.4.2", optional = true }
 futures = { version = "0.3.28" }
 derive_more = { version = "0.99.16" }
+lru = { version = "0.12.0" }
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "master" }
 

@@ -1,13 +1,16 @@
+use std::sync::Arc;
+
+use dpp::prelude::{DataContract, Identifier};
 use hex::ToHex;
 
-/// `QuorumInfoProvider` trait provides an interface to fetch quorum related information, required to verify the proof.
+use crate::Error;
+
+/// `ContextProvider` trait provides an interface to fetch information about context of proof verification, like
+/// quorum information, data contracts present in the platform, etc.
 ///
-/// Developers should implement this trait to provide required quorum details to [FromProof](crate::FromProof)
+/// Developers should implement this trait to provide required information to [FromProof](crate::FromProof)
 /// implementations.
-///
-/// It defines a single method [`get_quorum_public_key()`](QuorumInfoProvider::get_quorum_public_key())
-/// which retrieves the public key of a given quorum.
-pub trait QuorumInfoProvider: Send + Sync {
+pub trait ContextProvider: Send + Sync {
     /// Fetches the public key for a specified quorum.
     ///
     /// # Arguments
@@ -26,23 +29,41 @@ pub trait QuorumInfoProvider: Send + Sync {
         quorum_hash: [u8; 32], // quorum hash is 32 bytes
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], crate::Error>; // public key is 48 bytes
+
+    /// Fetches the data contract for a specified data contract ID.
+    /// This method is used by [FromProof](crate::FromProof) implementations to fetch data contracts
+    /// referenced in proofs.
+    ///
+    /// # Arguments
+    ///
+    /// * `data_contract_id`: The ID of the data contract to fetch.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Option<Arc<DataContract>>)`: On success, returns the data contract if it exists, or `None` if it does not.
+    /// We use Arc to avoid copying the data contract.
+    /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
+    fn get_data_contract<'a>(
+        &'a self,
+        id: &Identifier,
+    ) -> Result<Option<Arc<DataContract>>, crate::Error>;
 }
 
-/// Mock QuorumInfoProvider that can read quorum keys from files.
+/// Mock ContextProvider that can read quorum keys from files.
 ///
-/// Use `rs_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.
+/// Use `dash_platform_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.
 #[cfg(feature = "mocks")]
-pub struct MockQuorumInfoProvider {
+pub struct MockContextProvider {
     quorum_keys_dir: Option<std::path::PathBuf>,
 }
 
 #[cfg(feature = "mocks")]
-impl MockQuorumInfoProvider {
-    /// Create a new instance of [MockQuorumInfoProvider].
+impl MockContextProvider {
+    /// Create a new instance of [MockContextProvider].
     ///
     /// This instance can be used to read quorum keys from files.
     /// You need to configure quorum keys dir using
-    /// [MockQuorumInfoProvider::quorum_keys_dir()](MockQuorumInfoProvider::quorum_keys_dir())
+    /// [MockContextProvider::quorum_keys_dir()](MockContextProvider::quorum_keys_dir())
     /// before using this instance.
     ///
     /// In future, we may add more methods to this struct to allow setting expectations.
@@ -54,23 +75,23 @@ impl MockQuorumInfoProvider {
 
     /// Set the directory where quorum keys are stored.
     ///
-    /// This directory should contain quorum keys files generated using `rs_sdk::SdkBuilder::with_dump_dir()`.
+    /// This directory should contain quorum keys files generated using `dash_platform_sdk::SdkBuilder::with_dump_dir()`.
     pub fn quorum_keys_dir(&mut self, quorum_keys_dir: Option<std::path::PathBuf>) {
         self.quorum_keys_dir = quorum_keys_dir;
     }
 }
 
-impl Default for MockQuorumInfoProvider {
+impl Default for MockContextProvider {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[cfg(feature = "mocks")]
-impl QuorumInfoProvider for MockQuorumInfoProvider {
-    /// Mock implementation of [QuorumInfoProvider] that returns keys from files saved on disk.
+impl ContextProvider for MockContextProvider {
+    /// Mock implementation of [ContextProvider] that returns keys from files saved on disk.
     ///
-    /// Use `rs_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.   
+    /// Use `dash_platform_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.   
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
@@ -108,5 +129,12 @@ impl QuorumInfoProvider for MockQuorumInfoProvider {
         let key: Vec<u8> = serde_json::from_reader(f).expect("cannot parse quorum key");
 
         Ok(key.try_into().expect("quorum key format mismatch"))
+    }
+
+    fn get_data_contract<'a>(
+        &'a self,
+        _data_contract_id: &Identifier,
+    ) -> Result<Option<Arc<DataContract>>, crate::Error> {
+        todo!("not implemented yet");
     }
 }

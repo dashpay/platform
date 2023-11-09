@@ -37,7 +37,7 @@ impl Drive {
     pub(super) fn verify_state_transition_was_executed_with_proof_v0(
         state_transition: &StateTransition,
         proof: &[u8],
-        known_contracts_provider_fn: VerifyKnownContractProviderFn,
+        known_contracts_provider_fn: &VerifyKnownContractProviderFn,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofResult), Error> {
         match state_transition {
@@ -124,7 +124,7 @@ impl Drive {
                         let expected_document = Document::try_from_create_transition(
                             create_transition,
                             documents_batch_transition.owner_id(),
-                            contract,
+                            &contract,
                             platform_version,
                         )?;
 

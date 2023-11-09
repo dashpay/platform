@@ -81,11 +81,12 @@ impl AddressList {
     }
 
     /// Randomly select a not banned address.
-    pub fn get_live_address(&mut self) -> Option<&mut Address> {
+    pub fn get_live_address(&self) -> Option<&Address> {
         let now = time::Instant::now();
         let mut rng = SmallRng::from_entropy();
+
         self.addresses
-            .iter_mut()
+            .iter()
             .filter(|addr| {
                 addr.banned_until
                     .map(|banned_until| banned_until < now)

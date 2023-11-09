@@ -5,16 +5,14 @@
 // generated types. Later these re-exports could be swapped with actual dash-platform-sdk's requests
 // and while it will change the substance, the API structure will remain the same.
 
-mod broadcast_identity;
-mod broadcast_request;
 mod delegate;
 mod document_query;
 mod fetch;
 mod fetch_many;
 pub mod identity;
-mod put;
-mod put_identity;
+pub mod put;
 mod query;
+pub mod transition;
 
 pub use dapi_grpc::platform::v0::{self as proto};
 pub use drive::{
