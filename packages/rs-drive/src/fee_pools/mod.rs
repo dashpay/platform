@@ -28,13 +28,13 @@
 //
 
 #[cfg(feature = "full")]
+use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+#[cfg(feature = "full")]
 use crate::drive::batch::GroveDbOpBatch;
 #[cfg(feature = "full")]
 use crate::drive::credit_pools::paths::pools_vec_path;
 #[cfg(feature = "full")]
 use crate::error::Error;
-#[cfg(feature = "full")]
-use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 #[cfg(feature = "full")]
 use crate::fee_pools::epochs::operations_factory::EpochOperations;
 #[cfg(feature = "full")]
