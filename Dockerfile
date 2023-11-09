@@ -98,10 +98,12 @@ ENV NODE_ENV ${NODE_ENV}
 
 FROM deps-base AS deps-sccache
 
+ARG SCCHACHE_VERSION=0.7.0
+
 # Install sccache for caching
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
     curl -Ls \
-        https://github.com/mozilla/sccache/releases/download/v0.4.1/sccache-v0.7.0-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
+        https://github.com/mozilla/sccache/releases/download/v$SCCHACHE_VERSION/sccache-v$SCCHACHE_VERSION-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
         tar -C /tmp -xz && \
         mv /tmp/sccache-*/sccache /usr/bin/
 
