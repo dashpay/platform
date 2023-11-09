@@ -1,5 +1,6 @@
 //! [Sdk] entrypoint to Dash Platform.
 
+use std::borrow::Cow;
 use std::{hash::Hash, num::NonZeroUsize};
 #[cfg(feature = "mocks")]
 use std::{

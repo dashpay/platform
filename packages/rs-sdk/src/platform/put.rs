@@ -48,7 +48,7 @@ pub trait Put {
     /// It locks funds that will be used to pay for the operation, creates a state transition,
     /// signs it with appropriate keys, and broadcasts it to the platform.
     /// Unlike [Put::put()], it does not wait for the transaction to be confirmed.
-    /// 
+    ///
     /// See [Put::put()](Put::put()) for more details.
     async fn put_unconfirmed<C: TransitionContext>(
         &self,

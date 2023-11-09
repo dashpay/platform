@@ -22,7 +22,7 @@ async fn main() {
     // Note that in future versions of the SDK, core user and password will not be needed.
     let uri = http::Uri::from_str(&format!("http://{}:{}", PLATFORM_IP, PLATFORM_PORT))
         .expect("platform address uri");
-    let  sdk = dash_platform_sdk::SdkBuilder::new(AddressList::from_iter([uri]))
+    let sdk = dash_platform_sdk::SdkBuilder::new(AddressList::from_iter([uri]))
         .with_core(PLATFORM_IP, CORE_PORT, CORE_USER, CORE_PASSWORD)
         .build()
         .expect("cannot initialize api");
@@ -31,9 +31,8 @@ async fn main() {
     let id = Identifier::from_bytes(&DATA_CONTRACT_ID_BYTES).expect("parse data contract id");
 
     // Fetch identity from the Platform
-    let contract: Option<DataContract> = DataContract::fetch(& sdk, id)
-        .await
-        .expect("fetch identity");
+    let contract: Option<DataContract> =
+        DataContract::fetch(&sdk, id).await.expect("fetch identity");
 
     // Check the result; note that in our case, we expect to not find the data contract, as the
     // identifier is not valid.

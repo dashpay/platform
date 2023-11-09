@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -22,9 +23,9 @@ use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
-use drive::drive::verify::state_transition::verify_state_transition_was_executed_with_proof::VerifyKnownContractProviderFn;
 pub use drive::drive::verify::RootHash;
 use drive::drive::Drive;
+use drive::error::proof::ProofError;
 use drive::query::DriveQuery;
 
 use crate::verify::verify_tenderdash_proof;
@@ -646,15 +647,11 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
         let known_contracts_provider_fn =
-            Box::new(|id: &Identifier| -> Option<Arc<DataContract>> {
-                provider
-                    .get_data_contract(id)
-                    .map_err(|e| Error::DriveError {
-                        error: e.to_string(),
-                    })
-                    .ok()
-                    .flatten()
-            });
+            |id: &Identifier| -> Result<Option<Arc<DataContract>>, drive::error::Error> {
+                provider.get_data_contract(id).map_err(|e| {
+                    drive::error::Error::Proof(ProofError::ErrorRetrievingContract(e.to_string()))
+                })
+            };
 
         let (root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,

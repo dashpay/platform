@@ -38,6 +38,10 @@ pub enum ProofError {
     #[error("unknown contract in documents batch transition error: {0}")]
     UnknownContract(String),
 
+    /// We are trying to callback to retrieve a contract, but there was an error
+    #[error("the contract could not be retrieved during verification: {0}")]
+    ErrorRetrievingContract(String),
+
     /// Incomplete proof error
     #[error("incomplete proof error: {0}")]
     IncompleteProof(&'static str),
@@ -68,5 +72,6 @@ fn get_error_code(error: &ProofError) -> u32 {
         ProofError::IncorrectProof(_) => 6007,
         ProofError::InvalidTransition(_) => 6008,
         ProofError::UnknownContract(_) => 6009,
+        ProofError::ErrorRetrievingContract(_) => 6010,
     }
 }

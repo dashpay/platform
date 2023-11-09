@@ -1,5 +1,6 @@
 //! Verifies the execution of a state transition using a provided proof.
 //!
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::drive::verify::RootHash;
@@ -12,11 +13,6 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 mod v0;
-
-/// Type alias for a function that provides known contracts.
-/// It takes an `Identifier` and returns an `Option<DataContract>`.
-// pub type VerifyKnownContractProviderFn<'a> = fn(&Identifier) -> Option<&'a DataContract>;
-pub type VerifyKnownContractProviderFn<'c> = dyn Fn(&Identifier) -> Option<Arc<DataContract>> + 'c;
 
 impl Drive {
     /// Verifies the execution of a state transition using a provided proof.
@@ -49,7 +45,7 @@ impl Drive {
     pub fn verify_state_transition_was_executed_with_proof(
         state_transition: &StateTransition,
         proof: &[u8],
-        known_contracts_provider_fn: &VerifyKnownContractProviderFn,
+        known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofResult), Error> {
         match platform_version

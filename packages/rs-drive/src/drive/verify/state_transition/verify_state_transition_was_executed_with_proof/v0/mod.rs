@@ -1,4 +1,6 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -26,7 +28,6 @@ use platform_version::version::PlatformVersion;
 use crate::drive::Drive;
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::verify::RootHash;
-use crate::drive::verify::state_transition::verify_state_transition_was_executed_with_proof::VerifyKnownContractProviderFn;
 use crate::error::Error;
 use crate::error::proof::ProofError;
 use crate::query::SingleDocumentDriveQuery;
@@ -37,7 +38,7 @@ impl Drive {
     pub(super) fn verify_state_transition_was_executed_with_proof_v0(
         state_transition: &StateTransition,
         proof: &[u8],
-        known_contracts_provider_fn: &VerifyKnownContractProviderFn,
+        known_contracts_provider_fn: &impl Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error>,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofResult), Error> {
         match state_transition {
@@ -91,7 +92,7 @@ impl Drive {
 
                 let data_contract_id = transition.data_contract_id();
 
-                let contract = known_contracts_provider_fn(&data_contract_id).ok_or(
+                let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
                     Error::Proof(ProofError::UnknownContract(format!(
                         "unknown contract with id {}",
                         data_contract_id

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use dpp::prelude::{DataContract, Identifier};
@@ -43,10 +44,8 @@ pub trait ContextProvider: Send + Sync {
     /// * `Ok(Option<Arc<DataContract>>)`: On success, returns the data contract if it exists, or `None` if it does not.
     /// We use Arc to avoid copying the data contract.
     /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
-    fn get_data_contract<'a>(
-        &'a self,
-        id: &Identifier,
-    ) -> Result<Option<Arc<DataContract>>, crate::Error>;
+    fn get_data_contract(&self, id: &Identifier)
+        -> Result<Option<Arc<DataContract>>, crate::Error>;
 }
 
 /// Mock ContextProvider that can read quorum keys from files.
@@ -131,8 +130,8 @@ impl ContextProvider for MockContextProvider {
         Ok(key.try_into().expect("quorum key format mismatch"))
     }
 
-    fn get_data_contract<'a>(
-        &'a self,
+    fn get_data_contract(
+        &self,
         _data_contract_id: &Identifier,
     ) -> Result<Option<Arc<DataContract>>, crate::Error> {
         todo!("not implemented yet");
