@@ -27,27 +27,42 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
+#[cfg(feature = "full")]
 use crate::drive::batch::GroveDbOpBatch;
+#[cfg(feature = "full")]
 use crate::drive::credit_pools::paths::pools_vec_path;
+#[cfg(feature = "full")]
 use crate::error::Error;
-
+#[cfg(feature = "full")]
 use crate::drive::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+#[cfg(feature = "full")]
 use crate::fee_pools::epochs::operations_factory::EpochOperations;
+#[cfg(feature = "full")]
 use crate::fee_pools::epochs_root_tree_key_constants::{
     KEY_PENDING_EPOCH_REFUNDS, KEY_STORAGE_FEE_POOL, KEY_UNPAID_EPOCH_INDEX,
 };
+#[cfg(feature = "full")]
 use dpp::balances::credits::Creditable;
+#[cfg(feature = "full")]
 use dpp::block::epoch::{Epoch, EpochIndex};
+#[cfg(feature = "full")]
 use dpp::fee::epoch::{perpetual_storage_epochs, GENESIS_EPOCH_INDEX};
+#[cfg(feature = "full")]
 use dpp::fee::Credits;
+#[cfg(feature = "full")]
 use grovedb::batch::GroveDbOp;
+#[cfg(feature = "full")]
 use grovedb::Element;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Epochs module
 pub mod epochs;
+
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Epochs root tree key constants module
 pub mod epochs_root_tree_key_constants;
 
+#[cfg(feature = "full")]
 /// Adds the operations to groveDB op batch to create the fee pool trees
 pub fn add_create_fee_pool_trees_operations(
     batch: &mut GroveDbOpBatch,
@@ -72,11 +87,13 @@ pub fn add_create_fee_pool_trees_operations(
     Ok(())
 }
 
+#[cfg(feature = "full")]
 /// Adds operations to batch to create pending pool updates tree
 pub fn add_create_pending_epoch_refunds_tree_operations(batch: &mut GroveDbOpBatch) {
     batch.add_insert_empty_sum_tree(pools_vec_path(), KEY_PENDING_EPOCH_REFUNDS.to_vec());
 }
 
+#[cfg(feature = "full")]
 /// Updates the storage fee distribution pool with a new storage fee
 pub fn update_storage_fee_distribution_pool_operation(
     storage_fee: Credits,
@@ -88,6 +105,7 @@ pub fn update_storage_fee_distribution_pool_operation(
     ))
 }
 
+#[cfg(feature = "full")]
 /// Updates the unpaid epoch index
 pub fn update_unpaid_epoch_index_operation(epoch_index: EpochIndex) -> GroveDbOp {
     GroveDbOp::insert_op(

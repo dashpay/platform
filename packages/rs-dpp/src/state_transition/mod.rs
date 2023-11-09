@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 pub use abstract_state_transition::state_transition_helpers;
 
-use platform_value::{BinaryData, Bytes32, Identifier, IdentifierBytes32};
+use platform_value::{BinaryData, Identifier};
 pub use state_transition_types::*;
 
 use bincode::{Decode, Encode};
@@ -18,7 +18,7 @@ mod state_transition_types;
 pub mod state_transition_factory;
 
 pub mod errors;
-use crate::util::hash::{hash_double, hash_double_to_vec, hash_single, ripemd160_sha256};
+use crate::util::hash::{hash_double_to_vec, hash_single, ripemd160_sha256};
 
 pub mod proof_result;
 mod serialization;

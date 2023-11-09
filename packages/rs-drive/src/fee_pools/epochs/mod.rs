@@ -30,7 +30,11 @@
 //! Epoch pools
 //!
 
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Epoch key constants module
 pub mod epoch_key_constants;
+
+#[cfg(feature = "full")]
 pub mod operations_factory;
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod paths;

@@ -20,7 +20,7 @@ pub mod drive;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod error;
 /// Fee pools module
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod fee_pools;
 /// Query module
 #[cfg(any(feature = "full", feature = "verify"))]
