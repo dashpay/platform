@@ -69,7 +69,7 @@ impl CoreClient {
         self.core
             .lock()
             .expect("Core lock poisoned")
-            .list_unspent(None, None, None, None, None)
+            .list_unspent(None, None, None, None, Some(options))
             .map_err(Error::CoreClientError)
     }
 
@@ -98,13 +98,14 @@ impl CoreClient {
             .map_err(Error::CoreClientError)
     }
 
-    // pub fn get_address_utxos(&self) -> Result<dpp::dashcore::Address<NetworkUnchecked>, Error> {
-    //     self.core
-    //         .lock()
-    //         .expect("Core lock poisoned")
-    //         .get_address_info()
-    //         .map_err(Error::CoreClientError)
-    // }
+    /// Return address to which change of transaction can be sent.
+    pub fn get_balance(&self) -> Result<Amount, Error> {
+        self.core
+            .lock()
+            .expect("Core lock poisoned")
+            .get_balance(None, None)
+            .map_err(Error::CoreClientError)
+    }
 
     pub fn get_quorum_public_key(
         &self,

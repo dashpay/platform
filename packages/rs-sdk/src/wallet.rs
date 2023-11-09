@@ -1,6 +1,7 @@
 //! Wallet for managing keys assets in Dash Core and Platform.
 
 use async_trait::async_trait;
+use dashcore_rpc::dashcore_rpc_json::ListUnspentResultEntry;
 use dpp::bls_signatures::PrivateKey;
 pub use dpp::identity::signer::Signer;
 use dpp::prelude::AssetLockProof;
@@ -35,6 +36,12 @@ pub trait CoreWallet: Send + Sync {
     /// * `PrivateKey` - One-time private key used to use locked Dash in Platform.
     /// This key should be used to sign Platform transactions.
     async fn lock_assets(&self, amount: u64) -> Result<(AssetLockProof, PrivateKey), Error>;
+
+    /// Return balance of the wallet, in satoshis.
+    async fn core_balance(&self) -> Result<u64, Error>;
+
+    /// Return list of unspent transactions with summarized balance at least `sum`
+    async fn core_utxos(&self, sum: Option<u64>) -> Result<Vec<ListUnspentResultEntry>, Error>;
 }
 
 /// Platform Wallet that can be used to sign Platform transactions.
@@ -82,6 +89,14 @@ impl<C: CoreWallet, P: PlatformWallet> CompositeWallet<C, P> {
 impl<C: CoreWallet, P: PlatformWallet> CoreWallet for CompositeWallet<C, P> {
     async fn lock_assets(&self, amount: u64) -> Result<(AssetLockProof, PrivateKey), Error> {
         self.core_wallet.lock_assets(amount).await
+    }
+    /// Return balance of the wallet, in satoshis.
+    async fn core_balance(&self) -> Result<u64, Error> {
+        self.core_wallet.core_balance().await
+    }
+
+    async fn core_utxos(&self, sum: Option<u64>) -> Result<Vec<ListUnspentResultEntry>, Error> {
+        self.core_wallet.core_utxos(sum).await
     }
 }
 
