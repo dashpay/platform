@@ -1,10 +1,7 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use dpp::prelude::{DataContract, Identifier};
 use hex::ToHex;
-
-use crate::Error;
 
 /// `ContextProvider` trait provides an interface to fetch information about context of proof verification, like
 /// quorum information, data contracts present in the platform, etc.
@@ -52,6 +49,7 @@ pub trait ContextProvider: Send + Sync {
 ///
 /// Use `dash_platform_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.
 #[cfg(feature = "mocks")]
+#[derive(Debug)]
 pub struct MockContextProvider {
     quorum_keys_dir: Option<std::path::PathBuf>,
 }

@@ -32,6 +32,7 @@ use super::MockResponse;
 /// ## Panics
 ///
 /// Can panic on errors.
+#[derive(Debug)]
 pub struct MockDashPlatformSdk {
     from_proof_expectations: BTreeMap<Key, Vec<u8>>,
     platform_version: &'static PlatformVersion,

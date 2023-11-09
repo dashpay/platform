@@ -1,6 +1,4 @@
-use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
-
-use crate::platform::transition::{broadcast_identity, TransitionContext};
+use crate::platform::transition::TransitionContext;
 use crate::{Error, Sdk};
 
 use super::transition::TxId;
@@ -40,7 +38,7 @@ pub trait Put {
     /// Returns:
     /// - ID of transaction on success
     /// - [`Err(Error)`](Error) when an error occurs
-    async fn put<C: TransitionContext>(&self, sdk: &Sdk, context: &C) -> Result<TxId, Error>;
+    async fn put(&self, sdk: &Sdk, context: &TransitionContext) -> Result<TxId, Error>;
 
     ///     Put (create or update) object on the Platform, without waiting for confirmation.
     ///
@@ -50,9 +48,5 @@ pub trait Put {
     /// Unlike [Put::put()], it does not wait for the transaction to be confirmed.
     ///
     /// See [Put::put()](Put::put()) for more details.
-    async fn put_unconfirmed<C: TransitionContext>(
-        &self,
-        sdk: &Sdk,
-        context: &C,
-    ) -> Result<TxId, Error>;
+    async fn put_unconfirmed(&self, sdk: &Sdk, context: &TransitionContext) -> Result<TxId, Error>;
 }

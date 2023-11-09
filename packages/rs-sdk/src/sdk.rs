@@ -1,6 +1,6 @@
 //! [Sdk] entrypoint to Dash Platform.
 
-use std::borrow::Cow;
+use std::fmt::Debug;
 use std::{hash::Hash, num::NonZeroUsize};
 #[cfg(feature = "mocks")]
 use std::{
@@ -11,18 +11,16 @@ use std::{
 #[cfg(feature = "mocks")]
 use crate::mock::MockDashPlatformSdk;
 
+use crate::mock::MockResponse;
 use crate::mock::wallet::platform::PlatformSignerWallet;
 use crate::wallet::{CompositeWallet, Wallet};
 use crate::mock::wallet::core::CoreGrpcWallet;
-use crate::{error::Error, platform::transition::TransitionContextBuilder};
-use crate::{mock::MockResponse, };
+use crate::{error::Error, platform::transition::TransitionContext};
+
 use dapi_grpc::mock::Mockable;
-use dpp::{
-    prelude::{DataContract, Identifier},
-    version::{PlatformVersion, PlatformVersionCurrentVersion},
-};
+use dpp::prelude::{Identifier, DataContract};
+use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
 #[cfg(feature = "mocks")]
-use drive_proof_verifier::MockContextProvider;
 use drive_proof_verifier::{ContextProvider, FromProof};
 #[cfg(feature = "mocks")]
 use hex::ToHex;
@@ -65,12 +63,29 @@ pub struct Sdk {
     /// Context provider used by the SDK.
     context_provider: Box<dyn ContextProvider>,
     /// Default wallet to use when executing various operations.
-    wallet: Box<dyn Wallet>,
+    pub(crate) wallet: Box<dyn Wallet>,
    
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
 }
 
+impl Debug for Sdk {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.inner {
+            SdkInstance::Dapi { dapi, .. } => f
+                .debug_struct("Sdk")
+                .field("dapi", dapi)
+                .field("proofs", &self.proofs)
+                .finish(),
+            #[cfg(feature = "mocks")]
+            SdkInstance::Mock { mock, .. } => f
+                .debug_struct("Sdk")
+                .field("mock", mock)
+                .field("proofs", &self.proofs)
+                .finish(),
+        }
+    }
+}
 /// Thread-safe cache of various objects inside the SDK.
 ///
 /// This is used to cache objects that are expensive to fetch from the platform, like data contracts.
@@ -106,6 +121,7 @@ impl<K: Hash + Eq, V> Cache<K, V> {
 ///
 /// This is used to store the actual Sdk instance, which can be either a real Sdk or a mock Sdk.
 /// We use it to avoid exposing internals defined below to the public.
+#[derive(Debug)]
 enum SdkInstance {
     /// Real Sdk, using DAPI with gRPC transport
     Dapi {
@@ -115,7 +131,6 @@ enum SdkInstance {
         /// Platform version configured for this Sdk
         version: &'static PlatformVersion,
     },
-    #[cfg(feature = "mocks")]
     /// Mock SDK
     Mock {
         /// Mock DAPI client used to communicate with Dash Platform.
@@ -155,7 +170,7 @@ impl Sdk {
     {
         match self.inner {
             SdkInstance::Dapi { .. } => {
-                O::maybe_from_proof(request, response, self.version(), self)
+                O::maybe_from_proof(request, response, self.version(), self.context_provider.as_ref())
             }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => mock.parse_proof(request, response),
@@ -234,10 +249,12 @@ impl Sdk {
         }
     }
 
-    /// Create a new [`TransitionContextBuilder`] that allows configuration of various
-    /// parameters of the transition, like keys to use, fee details, etc.
-    pub fn transition_context_builder(&self) -> TransitionContextBuilder {
-        TransitionContextBuilder::new(self)
+    /// Create a new [`TransitionContext`] with default configuration.
+    /// 
+    /// This method is used to create a new [`TransitionContext`] that stores various parameters
+    /// required to execute a state transition.
+    pub fn create_transition_context(&self) -> TransitionContext {
+        TransitionContext::new(self)
     }
 }
 
@@ -310,12 +327,6 @@ pub struct SdkBuilder {
     core_user: String,
     core_password: String,
 
-    /// Max number of data contracts to keep in cache.
-    ///
-    /// When the cache is full, the least recently used data contract will be removed from cache.
-    ///
-    /// Defaults to 100.
-    contracts_cache_size: usize,
     /// If true, request and verify proofs of the responses.
     proofs: bool,
 
@@ -345,7 +356,6 @@ impl Default for SdkBuilder {
 
             proofs: true,
 
-            contracts_cache_size: 100,
             context_provider: None,
             wallet: None,
 
