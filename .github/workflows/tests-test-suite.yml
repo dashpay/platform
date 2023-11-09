@@ -63,8 +63,6 @@ jobs:
         id: dashmate-fingerprint
         run: echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_OUTPUT
 
-      - run: ls -la /opt/actions-runner/_work/docker/volumes/
-
       - name: Cache local network data
         id: local-network-data
         uses: actions/cache@v3
@@ -105,6 +103,8 @@ jobs:
 
       - name: Start local network
         run: yarn start
+
+      - run: ls -la /opt/actions-runner/_work/docker/volumes/
 
       - name: Run Wallet functional tests
         run: yarn workspace @dashevo/wallet-lib test:functional

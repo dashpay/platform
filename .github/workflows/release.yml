@@ -304,8 +304,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: release-npm
     permissions:
-      id-token: write
-      contents: read
+      id-token: write # s3 cache
+      contents: write # update release artifacts
     strategy:
       fail-fast: false
       matrix:
@@ -336,7 +336,7 @@ jobs:
           bucket: multi-runner-linux-x64-platform-cache-ui535z23
           root: actions-cache
           path: build-js-artifacts-${{ github.sha }}.tar
-          key: ${{ runner.os }}/build-js-artifacts/${{ github.sha }}
+          key: Linux/build-js-artifacts/${{ github.sha }} # We use hardcoded runner.os here for purpose
 
       - name: Unpack JS build artifacts archive
         run: tar -xf build-js-artifacts-${{ github.sha }}.tar
@@ -362,7 +362,7 @@ jobs:
           # import certificate and provisioning profile from secrets
           echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
 
-           # create temporary keychain
+          # create temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
