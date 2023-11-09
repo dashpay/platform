@@ -101,8 +101,6 @@ jobs:
       - name: Start local network
         run: yarn start
 
-      - run: ls -la /opt/actions-runner/_work/docker/volumes/
-
       - name: Run Wallet functional tests
         run: yarn workspace @dashevo/wallet-lib test:functional
 
