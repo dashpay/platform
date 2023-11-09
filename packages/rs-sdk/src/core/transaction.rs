@@ -14,7 +14,7 @@ use tokio::time::timeout;
 impl Sdk {
     /// Starts the stream to listen for instant send lock messages
     pub async fn start_instant_send_lock_stream(
-        &mut self,
+        &self,
     ) -> Result<dapi_grpc::tonic::Streaming<TransactionsWithProofsResponse>, Error> {
         let core_transactions_stream = TransactionsWithProofsRequest {
             bloom_filter: None,

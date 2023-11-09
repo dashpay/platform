@@ -1,4 +1,4 @@
-use crate::platform::broadcast_identity::BroadcastRequestForNewIdentity;
+use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::{Error, Sdk};
 use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
@@ -9,7 +9,7 @@ use rs_dapi_client::{DapiRequest, RequestSettings};
 pub trait PutIdentity<S: Signer> {
     async fn put_to_platform(
         &self,
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
         signer: &S,
@@ -20,7 +20,7 @@ pub trait PutIdentity<S: Signer> {
 impl<S: Signer> PutIdentity<S> for Identity {
     async fn put_to_platform(
         &self,
-        sdk: &mut Sdk,
+        sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
         signer: &S,

@@ -50,12 +50,12 @@ pub trait DocumentCreateTransitionActionAccessorsV0 {
 }
 
 /// documents from create transition v0
-pub trait DocumentFromCreateTransitionV0 {
-    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` instance and `owner_id`.
+pub trait DocumentFromCreateTransitionActionV0 {
+    /// Attempts to create a new `Document` from the given `DocumentCreateTransitionActionV0` instance and `owner_id`.
     ///
     /// # Arguments
     ///
-    /// * `value` - A `DocumentCreateTransition` instance containing information about the document being created.
+    /// * `value` - A `DocumentCreateTransitionActionV0` instance containing information about the document being created.
     /// * `owner_id` - The `Identifier` of the document's owner.
     ///
     /// # Returns
@@ -68,7 +68,7 @@ pub trait DocumentFromCreateTransitionV0 {
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
-    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` reference and `owner_id`.
+    /// Attempts to create a new `Document` from the given `DocumentCreateTransitionActionV0` reference and `owner_id`.
     ///
     /// # Arguments
     ///
@@ -81,50 +81,13 @@ pub trait DocumentFromCreateTransitionV0 {
     fn try_from_create_transition_action_v0(
         v0: &DocumentCreateTransitionActionV0,
         owner_id: Identifier,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized;
-
-    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` instance and `owner_id`.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - A `DocumentCreateTransition` instance containing information about the document being created.
-    /// * `owner_id` - The `Identifier` of the document's owner.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_owned_create_transition_v0(
-        v0: DocumentCreateTransitionV0,
-        owner_id: Identifier,
-        data_contract: &DataContract,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized;
-    /// Attempts to create a new `Document` from the given `DocumentCreateTransition` reference and `owner_id`.
-    ///
-    /// # Arguments
-    ///
-    /// * `value` - A reference to the `DocumentCreateTransitionActionV0` containing information about the document being created.
-    /// * `owner_id` - The `Identifier` of the document's owner.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
-    fn try_from_create_transition_v0(
-        v0: &DocumentCreateTransitionV0,
-        owner_id: Identifier,
-        data_contract: &DataContract,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
     where
         Self: Sized;
 }
 
-impl DocumentFromCreateTransitionV0 for Document {
+impl DocumentFromCreateTransitionActionV0 for Document {
     fn try_from_create_transition_action_v0(
         v0: &DocumentCreateTransitionActionV0,
         owner_id: Identifier,
@@ -215,110 +178,6 @@ impl DocumentFromCreateTransitionV0 for Document {
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {
                         method: "Document::try_from_owned_create_transition_v0".to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    }),
-                }
-            }
-        }
-    }
-
-    fn try_from_create_transition_v0(
-        v0: &DocumentCreateTransitionV0,
-        owner_id: Identifier,
-        data_contract: &DataContract,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        let DocumentCreateTransitionV0 {
-            base,
-            created_at,
-            updated_at,
-            data,
-            ..
-        } = v0;
-
-        match base {
-            DocumentBaseTransition::V0(base_v0) => {
-                let DocumentBaseTransitionV0 {
-                    id,
-                    document_type_name,
-                    ..
-                } = base_v0;
-
-                let document_type =
-                    data_contract.document_type_for_name(document_type_name.as_str())?;
-
-                match platform_version
-                    .dpp
-                    .document_versions
-                    .document_structure_version
-                {
-                    0 => Ok(DocumentV0 {
-                        id: *id,
-                        owner_id,
-                        properties: data.clone(),
-                        revision: document_type.initial_revision(),
-                        created_at: *created_at,
-                        updated_at: *updated_at,
-                    }
-                    .into()),
-                    version => Err(ProtocolError::UnknownVersionMismatch {
-                        method: "Document::try_from_owned_create_transition_v0".to_string(),
-                        known_versions: vec![0],
-                        received: version,
-                    }),
-                }
-            }
-        }
-    }
-
-    fn try_from_owned_create_transition_v0(
-        v0: DocumentCreateTransitionV0,
-        owner_id: Identifier,
-        data_contract: &DataContract,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        let DocumentCreateTransitionV0 {
-            base,
-            created_at,
-            updated_at,
-            data,
-            ..
-        } = v0;
-
-        match base {
-            DocumentBaseTransition::V0(base_v0) => {
-                let DocumentBaseTransitionV0 {
-                    id,
-                    document_type_name,
-                    ..
-                } = base_v0;
-
-                let document_type =
-                    data_contract.document_type_for_name(document_type_name.as_str())?;
-
-                match platform_version
-                    .dpp
-                    .document_versions
-                    .document_structure_version
-                {
-                    0 => Ok(DocumentV0 {
-                        id,
-                        owner_id,
-                        properties: data,
-                        revision: document_type.initial_revision(),
-                        created_at,
-                        updated_at,
-                    }
-                    .into()),
-                    version => Err(ProtocolError::UnknownVersionMismatch {
-                        method: "Document::try_from_create_transition_v0".to_string(),
                         known_versions: vec![0],
                         received: version,
                     }),
