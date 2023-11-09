@@ -98,7 +98,7 @@ ENV NODE_ENV ${NODE_ENV}
 
 FROM deps-base AS deps-sccache
 
-ARG SCCHACHE_VERSION=0.7.0
+ARG SCCHACHE_VERSION=0.7.1
 
 # Install sccache for caching
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
