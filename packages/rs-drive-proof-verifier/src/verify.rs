@@ -28,11 +28,11 @@ use crate::ContextProvider;
 /// * `Ok(())` when the proof is valid
 /// * `Err(Error)` when the proof is invalid
 ///
-pub(crate) fn verify_tenderdash_proof(
+pub(crate) fn verify_tenderdash_proof<P: ContextProvider>(
     proof: &Proof,
     mtd: &ResponseMetadata,
     root_hash: &[u8],
-    provider: &dyn ContextProvider,
+    provider: P,
 ) -> Result<(), Error> {
     let block_id_hash = proof.block_id_hash.to_vec();
 

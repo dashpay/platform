@@ -240,7 +240,7 @@ impl Sdk {
     }
 }
 
-impl ContextProvider for Sdk {
+impl ContextProvider for &Sdk {
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,

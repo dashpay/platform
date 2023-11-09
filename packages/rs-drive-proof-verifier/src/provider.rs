@@ -87,7 +87,7 @@ impl Default for MockContextProvider {
 }
 
 #[cfg(feature = "mocks")]
-impl ContextProvider for MockContextProvider {
+impl ContextProvider for &MockContextProvider {
     /// Mock implementation of [ContextProvider] that returns keys from files saved on disk.
     ///
     /// Use `dash_platform_sdk::SdkBuilder::with_dump_dir()` to generate quorum keys files.   
