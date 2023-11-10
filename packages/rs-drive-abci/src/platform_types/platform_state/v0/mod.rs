@@ -17,7 +17,7 @@ use crate::platform_types::masternode::Masternode;
 use crate::platform_types::validator_set::ValidatorSet;
 use dpp::block::block_info::{BlockInfo, DEFAULT_BLOCK_INFO};
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
+use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 
@@ -165,12 +165,17 @@ impl TryFrom<PlatformStateV0> for PlatformStateForSavingV0 {
     }
 }
 
-impl From<PlatformStateForSavingV0> for PlatformStateV0 {
-    fn from(value: PlatformStateForSavingV0) -> Self {
-        PlatformStateV0 {
+impl TryFromPlatformVersioned<PlatformStateForSavingV0> for PlatformStateV0 {
+    type Error = Error;
+
+    fn try_from_platform_versioned(
+        value: PlatformStateForSavingV0,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        Ok(PlatformStateV0 {
             genesis_block_info: value.genesis_block_info,
             last_committed_block_info: value.last_committed_block_info,
-            current_protocol_version_in_consensus: value.current_protocol_version_in_consensus,
+            current_protocol_version_in_consensus: platform_version.protocol_version,
             next_epoch_protocol_version: value.next_epoch_protocol_version,
             current_validator_set_quorum_hash: QuorumHash::from_byte_array(
                 value.current_validator_set_quorum_hash.to_buffer(),
@@ -193,7 +198,7 @@ impl From<PlatformStateForSavingV0> for PlatformStateV0 {
                 .into_iter()
                 .map(|(k, v)| (ProTxHash::from_byte_array(k.to_buffer()), v.into()))
                 .collect(),
-        }
+        })
     }
 }
 

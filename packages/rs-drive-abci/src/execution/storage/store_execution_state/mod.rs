@@ -8,6 +8,7 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C> {
+    /// Store the execution state in grovedb storage
     pub fn store_execution_state(
         &self,
         state: &PlatformState,

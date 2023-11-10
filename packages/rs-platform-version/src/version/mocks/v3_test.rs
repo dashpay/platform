@@ -14,7 +14,8 @@ use crate::version::drive_abci_versions::{
     DriveAbciBlockFeeProcessingMethodVersions, DriveAbciBlockStartMethodVersions,
     DriveAbciCoreBasedUpdatesMethodVersions, DriveAbciCoreSubsidyMethodVersions,
     DriveAbciDocumentsStateTransitionValidationVersions, DriveAbciEngineMethodVersions,
-    DriveAbciEpochMethodVersions, DriveAbciFeePoolInwardsDistributionMethodVersions,
+    DriveAbciEpochMethodVersions, DriveAbciExecutionStateStorageMethodVersions,
+    DriveAbciFeePoolInwardsDistributionMethodVersions,
     DriveAbciFeePoolOutwardsDistributionMethodVersions,
     DriveAbciIdentityCreditWithdrawalMethodVersions, DriveAbciInitializationMethodVersions,
     DriveAbciMasternodeIdentitiesUpdatesMethodVersions, DriveAbciMethodVersions,
@@ -531,10 +532,13 @@ pub(crate) const TEST_PLATFORM_V3: PlatformVersion = PlatformVersion {
                 clear_drive_block_cache: 0,
             },
             block_end: DriveAbciBlockEndMethodVersions {
-                store_execution_state: 0,
                 update_execution_state: 0,
                 update_drive_cache: 0,
                 validator_set_update: 0,
+            },
+            execution_state_storage: DriveAbciExecutionStateStorageMethodVersions {
+                fetch_execution_state: 0,
+                store_execution_state: 0,
             },
         },
         validation_and_processing: DriveAbciValidationVersions {

@@ -20,7 +20,6 @@ use dpp::util::deserializer::ProtocolVersion;
 
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned, TryIntoPlatformVersioned};
 use dpp::ProtocolError;
-use dpp::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 use indexmap::IndexMap;
 
 use crate::error::execution::ExecutionError;
@@ -59,31 +58,12 @@ impl PlatformSerializable for PlatformState {
         let platform_state_for_saving: PlatformStateForSaving =
             self.clone().try_into_platform_versioned(platform_version)?;
         bincode::encode_to_vec(platform_state_for_saving, config).map_err(|e| {
-            PlatformSerializationError(format!("unable to serialize PlatformState: {}", e)).into()
+            ProtocolError::PlatformSerializationError(format!(
+                "unable to serialize PlatformState: {}",
+                e
+            ))
+            .into()
         })
-    }
-}
-
-// The version we should deserialize this into is determined by the actual saved state
-impl PlatformDeserializable for PlatformState {
-    fn deserialize_from_bytes_no_limit(data: &[u8]) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        let config = config::standard().with_big_endian().with_no_limit();
-        let platform_state_in_save_format: PlatformStateForSaving =
-            bincode::decode_from_slice(data, config)
-                .map_err(|e| {
-                    PlatformDeserializationError(format!(
-                        "unable to deserialize PlatformStateForSaving: {}",
-                        e
-                    ))
-                })?
-                .0;
-        let platform_version = PlatformVersion::get(
-            platform_state_in_save_format.current_protocol_version_in_consensus(),
-        )?;
-        platform_state_in_save_format.try_into_platform_versioned(platform_version)
     }
 }
 
@@ -99,13 +79,16 @@ impl PlatformDeserializableFromVersionedStructure for PlatformState {
         let platform_state_in_save_format: PlatformStateForSaving =
             bincode::decode_from_slice(data, config)
                 .map_err(|e| {
-                    PlatformDeserializationError(format!(
+                    ProtocolError::PlatformDeserializationError(format!(
                         "unable to deserialize PlatformStateForSaving: {}",
                         e
                     ))
                 })?
                 .0;
-        platform_state_in_save_format.try_into_platform_versioned(platform_version)
+
+        platform_state_in_save_format
+            .try_into_platform_versioned(platform_version)
+            .map_err(|e: Error| ProtocolError::Generic(e.to_string()))
     }
 }
 
@@ -183,7 +166,7 @@ impl TryFromPlatformVersioned<PlatformState> for PlatformStateForSaving {
 }
 
 impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
-    type Error = ProtocolError;
+    type Error = Error;
 
     fn try_from_platform_versioned(
         value: PlatformStateForSaving,
@@ -193,16 +176,18 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
             PlatformStateForSaving::V0(v0) => {
                 match platform_version.drive_abci.structs.platform_state_structure {
                     0 => {
-                        let platform_state_v0: PlatformStateV0 = v0.into();
+                        let platform_state_v0: PlatformStateV0 =
+                            v0.try_into_platform_versioned(platform_version)?;
+
                         Ok(platform_state_v0.into())
                     }
-                    version => Err(ProtocolError::UnknownVersionMismatch {
+                    version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                         method:
                             "PlatformState::try_from_platform_versioned(PlatformStateForSaving)"
                                 .to_string(),
                         known_versions: vec![0],
                         received: version,
-                    }),
+                    })),
                 }
             }
         }

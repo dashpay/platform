@@ -309,7 +309,7 @@ mod tests {
 
         abci_app
             .platform
-            .recreate_state(platform_version)
+            .reload_state_from_storage(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -449,7 +449,7 @@ mod tests {
 
         abci_app
             .platform
-            .recreate_state(platform_version)
+            .reload_state_from_storage(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {
@@ -2890,7 +2890,7 @@ mod tests {
 
         abci_app
             .platform
-            .recreate_state(platform_version)
+            .reload_state_from_storage(platform_version)
             .expect("expected to recreate state");
 
         let ResponseInfo {

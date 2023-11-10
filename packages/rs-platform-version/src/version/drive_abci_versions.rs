@@ -79,7 +79,7 @@ pub struct DriveAbciValidationVersions {
 }
 
 #[derive(Clone, Debug, Default)]
-struct DriveAbciExecutionStateStorageMethodVersions {
+pub struct DriveAbciExecutionStateStorageMethodVersions {
     pub fetch_execution_state: FeatureVersion,
     pub store_execution_state: FeatureVersion,
 }

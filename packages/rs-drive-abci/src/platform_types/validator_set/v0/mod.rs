@@ -26,7 +26,6 @@ pub struct ValidatorSetV0 {
     /// The list of masternodes
     pub members: BTreeMap<ProTxHash, ValidatorV0>,
     /// The threshold quorum public key
-    #[serde(serialize_with = "serialize_bls_public_key")]
     pub threshold_public_key: BlsPublicKey,
 }
 
