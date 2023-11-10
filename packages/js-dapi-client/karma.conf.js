@@ -7,6 +7,7 @@ const karmaFirefoxLauncher = require('karma-firefox-launcher');
 const karmaWebpack = require('karma-webpack');
 const which = require('which');
 const webpackConfig = require('./webpack.config');
+// TODO: Use https://github.com/litixsoft/karma-detect-browsers
 
 /**
  * Is chromium exist
@@ -15,7 +16,7 @@ const webpackConfig = require('./webpack.config');
  */
 function isChromiumExist() {
   const ChromiumHeadlessBrowser = karmaChromeLauncher['launcher:ChromiumHeadless'][1];
-  const chromiumBrowser = new ChromiumHeadlessBrowser();
+  const chromiumBrowser = new ChromiumHeadlessBrowser(() => { }, {});
 
   let chromiumPath = chromiumBrowser.DEFAULT_CMD[process.platform];
   if (chromiumBrowser.ENV_CMD && process.env[chromiumBrowser.ENV_CMD]) {

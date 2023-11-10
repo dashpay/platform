@@ -22,7 +22,7 @@ if (process.env.LOAD_ENV) {
 
 function isChromiumExist() {
   const ChromiumHeadlessBrowser = karmaChromeLauncher['launcher:ChromiumHeadless'][1];
-  const chromiumBrowser = new ChromiumHeadlessBrowser();
+  const chromiumBrowser = new ChromiumHeadlessBrowser(() => { }, {});
 
   let chromiumPath = chromiumBrowser.DEFAULT_CMD[process.platform];
   if (chromiumBrowser.ENV_CMD && process.env[chromiumBrowser.ENV_CMD]) {
