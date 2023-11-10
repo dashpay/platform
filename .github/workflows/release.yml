@@ -128,6 +128,7 @@ jobs:
   release-docker-images:
     name: Release Docker images
     strategy:
+      fail-fast: false
       matrix:
         include:
           - name: Drive
