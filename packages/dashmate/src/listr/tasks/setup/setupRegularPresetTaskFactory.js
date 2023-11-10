@@ -17,6 +17,8 @@ const {
 } = require('./nodeTypes');
 
 const generateRandomString = require('../../../util/generateRandomString');
+const providers = require("../../../status/providers");
+const PortStatusEnum = require("../../../status/enums/portState");
 
 /**
  * @param {ConfigFile} configFile
@@ -27,6 +29,7 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {configureNodeTask} configureNodeTask
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
  * @param {DefaultConfigs} defaultConfigs
+ * @param {createPortIsNotReachableForm} createPortIsNotReachableForm
  */
 function setupRegularPresetTaskFactory(
   configFile,
@@ -37,6 +40,7 @@ function setupRegularPresetTaskFactory(
   configureNodeTask,
   configureSSLCertificateTask,
   defaultConfigs,
+  createPortIsNotReachableForm,
 ) {
   /**
    * @typedef {setupRegularPresetTask}
@@ -136,6 +140,25 @@ function setupRegularPresetTaskFactory(
       {
         enabled: (ctx) => ctx.isMasternodeRegistered || ctx.nodeType === NODE_TYPE_FULLNODE,
         task: () => configureNodeTask(),
+      },
+      {
+        enabled: (ctx) => true,
+        task: async (ctx, task) => {
+          const port = ctx.config.get('core.p2p.port');
+          const externalIp = ctx.config.get('externalIp')
+
+          const portStatus = await providers.mnowatch.checkPortStatus(port);
+
+          if (portStatus !== PortStatusEnum.OPEN) {
+            const confirmed = await task.prompt(
+              await createPortIsNotReachableForm(port),
+            );
+
+            if (!confirmed) {
+              throw new Error('Operation is cancelled');
+            }
+          }
+        },
       },
       {
         enabled: (ctx) => ctx.config && ctx.config.get('platform.enable'),
