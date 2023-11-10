@@ -60,7 +60,7 @@ module.exports = (config) => {
     logLevel: config.LOG_INFO,
     autoWatch: false,
     browsers: [
-      'ChromeHeadless',
+      'ChromiumHeadless',
       'FirefoxHeadless',
     ],
     singleRun: false,

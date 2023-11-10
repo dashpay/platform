@@ -18,7 +18,7 @@ runs:
       run: npm config set audit false
 
     - name: Cache NPM build artifacts (S3 bucket cache)
-      uses: everpcpc/actions-cache@v1
+      uses: strophy/actions-cache@opendal-update
       with:
         bucket: multi-runner-cache-x1xibo9c
         root: actions-cache

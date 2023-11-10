@@ -52,7 +52,7 @@ runs:
       run: echo "key=$(echo '${{ github.ref_name }}' | sha256sum | cut -d ' ' -f1)" >> $GITHUB_OUTPUT
 
     - name: Cache cargo registry (S3 bucket cache)
-      uses: everpcpc/actions-cache@v1
+      uses: strophy/actions-cache@opendal-update
       if: inputs.cache == 'true'
       with:
         bucket: multi-runner-cache-x1xibo9c
