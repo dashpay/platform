@@ -1,4 +1,4 @@
-name: Release Packages
+name: Release Platform
 
 on:
   release:
@@ -125,8 +125,8 @@ jobs:
         run: xargs -a artifacts_list.txt tar cvf build-js-artifacts-${{ github.sha }}.tar
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
 
-  release-drive-docker-image:
-    name: Release Drive to Docker Hub
+  release-drive-image:
+    name: Release Drive ${{ matrix.platform }} image
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
@@ -243,9 +243,9 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  push-drive-docker-image:
-    name: Push Drive to Docker Hub
-    needs: build-drive-docker-image
+  release-drive-images-manifest:
+    name: Release Drive images manifest
+    needs: release-drive-docker-image
     runs-on: ubuntu-22.04
     steps:
       - name: Download digests
