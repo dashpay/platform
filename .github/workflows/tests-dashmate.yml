@@ -16,7 +16,7 @@ on:
 
 jobs:
   dashmate-test:
-    name: Run Dashmate test
+    name: Run ${{ inputs.name }} tests
     # TODO: Try with Github Runner, probably it will be the same time
     runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
     timeout-minutes: 30
@@ -78,7 +78,7 @@ jobs:
       - name: Get dashmate fingerprint
         id: dashmate-fingerprint
         run: echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_OUTPUT
-        if: inputs.restore_local_network_data == 'true'
+        if: inputs.restore_local_network_data == true
 
       - name: Use test suite local network data to speed up dashmate local network tests
         id: local-network-data
@@ -90,7 +90,7 @@ jobs:
             /home/ubuntu/.dashmate
             dashmate_volumes_dump
           key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
-        if: inputs.restore_local_network_data == 'true'
+        if: inputs.restore_local_network_data == true
 
       - name: Restore dashmate volumes
         run: ./scripts/dashmate/volumes/restore.sh
