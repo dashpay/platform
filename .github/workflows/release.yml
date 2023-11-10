@@ -125,30 +125,41 @@ jobs:
         run: xargs -a artifacts_list.txt tar cvf build-js-artifacts-${{ github.sha }}.tar
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
 
-  release-docker-images:
-    name: Release Docker images
+  release-drive-image:
+    name: Release Drive image
     secrets: inherit
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Drive
-            image_name: drive
-            target: drive-abci
-          - name: DAPI
-            image_name: dapi
-            target: dapi
-          - name: Test Suite
-            image_name: platform-test-suite
-            target: test-suite
-          - name: Dashmate helper
-            image_name: dashmate-helper
-            target: dashmate-helper
     uses: ./.github/workflows/release-docker-image.yml
     with:
-      name: ${{ matrix.name}}
-      image_name: ${{ matrix.image_name }}
-      target: ${{ matrix.target }}
+      name: Drive
+      image_name: drive
+      target: drive-abci
+
+  release-drive-dapi:
+    name: Release DAPI image
+    secrets: inherit
+    uses: ./.github/workflows/release-docker-image.yml
+    with:
+      name: DAPI
+      image_name: dapi
+      target: dapi
+
+  release-test-suite-image:
+    name: Release Test Suite image
+    secrets: inherit
+    uses: ./.github/workflows/release-docker-image.yml
+    with:
+      name: Test Suite
+      image_name: platform-test-suite
+      target: test-suite
+
+  release-dashmate-helper-image:
+    name: Release Dashmate Helper image
+    secrets: inherit
+    uses: ./.github/workflows/release-docker-image.yml
+    with:
+      name: Dashmate Helper
+      image_name: dashmate-helper
+      target: dashmate-helper
 
   release-dashmate-packages:
     name: Release Dashmate packages

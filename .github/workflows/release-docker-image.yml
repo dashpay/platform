@@ -16,7 +16,7 @@ on:
 
 jobs:
   build-image:
-    name: Build ${{ inputs.name }} ${{ matrix.platform }} image
+    name: Build ${{ matrix.platform }} image
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
@@ -75,7 +75,7 @@ jobs:
           retention-days: 1
 
   publish-manifest:
-    name: Publish ${{ inputs.name }} images
+    name: Publish images
     needs: build-image
     runs-on: ubuntu-22.04
     steps:
