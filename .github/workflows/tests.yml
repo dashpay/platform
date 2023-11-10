@@ -18,7 +18,7 @@ jobs:
   changes:
     name: Determine changed packages
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       js-packages: ${{ steps.filter-js.outputs.changes }}
       rs-packages: ${{ steps.filter-rs.outputs.changes }}
@@ -187,4 +187,5 @@ jobs:
             command: test:browsers
     uses: ./.github/workflows/tests-test-suite.yml
     with:
+      name: ${{ matrix.name }}
       command: ${{ matrix.command }}
