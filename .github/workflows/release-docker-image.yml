@@ -53,7 +53,7 @@ jobs:
         uses: ./.github/actions/docker
         with:
           image_name: ${{ inputs.image_name }}
-          image_version: ${{steps.version.outputs.result}}
+          image_version: ${{ steps.version.outputs.result }}
           target: ${{ inputs.target }}
           cargo_profile: release
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}

@@ -127,6 +127,7 @@ jobs:
 
   release-docker-images:
     name: Release Docker images
+    secrets: inherit
     strategy:
       fail-fast: false
       matrix:
@@ -143,7 +144,7 @@ jobs:
           - name: Dashmate helper
             image_name: dashmate-helper
             target: dashmate-helper
-    uses: ./github/workflows/release-docker-image.yml
+    uses: ./.github/workflows/release-docker-image.yml
     with:
       name: ${{ matrix.name}}
       image_name: ${{ matrix.image_name }}
