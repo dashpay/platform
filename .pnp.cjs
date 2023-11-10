@@ -2752,7 +2752,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.25.3"],\
             ["events", "npm:3.3.0"],\
-            ["github-api", "npm:3.4.0"],\
             ["https-browserify", "npm:1.0.0"],\
             ["js-merkle", "npm:0.1.5"],\
             ["karma", "npm:6.4.1"],\
@@ -6033,16 +6032,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["util", "npm:0.12.4"],\
             ["uuid", "npm:8.0.0"],\
             ["xml2js", "npm:0.4.19"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
-      ["axios", [\
-        ["npm:0.21.4", {\
-          "packageLocation": "./.yarn/cache/axios-npm-0.21.4-e278873748-44245f24ac.zip/node_modules/axios/",\
-          "packageDependencies": [\
-            ["axios", "npm:0.21.4"],\
-            ["follow-redirects", "virtual:a313c479c5c7e54d9ec8fbeeea69ff640f56b8989ea2dff42351a3fa5c4061fb80a52d8ede0f0826a181a216820c2d2c3f15da881e7fdf31cef1c446e42f0c45#npm:1.15.2"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -10447,19 +10436,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD"\
         }]\
       ]],\
-      ["github-api", [\
-        ["npm:3.4.0", {\
-          "packageLocation": "./.yarn/cache/github-api-npm-3.4.0-da2c85f5b5-d6f2def92b.zip/node_modules/github-api/",\
-          "packageDependencies": [\
-            ["github-api", "npm:3.4.0"],\
-            ["axios", "npm:0.21.4"],\
-            ["debug", "virtual:6e177cabfad012f413f9c41366539c04d8701f0567119998690ab02224012faa99ec3a16b9f74f4d7920ab472c12b3e70f47f8f143239c06d0e2569e60ed9f62#npm:2.6.9"],\
-            ["js-base64", "npm:2.6.4"],\
-            ["utf8", "npm:2.1.2"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
       ["github-slugger", [\
         ["npm:1.5.0", {\
           "packageLocation": "./.yarn/cache/github-slugger-npm-1.5.0-8a3622aa03-c709882245.zip/node_modules/github-slugger/",\
@@ -12045,15 +12021,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/jmespath-npm-0.16.0-d47535c65a-2d602493a1.zip/node_modules/jmespath/",\
           "packageDependencies": [\
             ["jmespath", "npm:0.16.0"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
-      ["js-base64", [\
-        ["npm:2.6.4", {\
-          "packageLocation": "./.yarn/cache/js-base64-npm-2.6.4-569350f803-5f4084078d.zip/node_modules/js-base64/",\
-          "packageDependencies": [\
-            ["js-base64", "npm:2.6.4"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -18374,15 +18341,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["utf-8-validate", "npm:5.0.9"],\
             ["node-gyp", "npm:8.4.0"],\
             ["node-gyp-build", "npm:4.3.0"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
-      ["utf8", [\
-        ["npm:2.1.2", {\
-          "packageLocation": "./.yarn/cache/utf8-npm-2.1.2-17bfd49a94-de5d18adb2.zip/node_modules/utf8/",\
-          "packageDependencies": [\
-            ["utf8", "npm:2.1.2"]\
           ],\
           "linkType": "HARD"\
         }]\
