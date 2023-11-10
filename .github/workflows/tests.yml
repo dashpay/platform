@@ -166,7 +166,8 @@ jobs:
             test-pattern: test/e2e/testnetHPEvonode.spec.js
     uses: ./.github/workflows/tests-dashmate.yml
     with:
-      test-pattern: test/e2e/localNetwork.spec.js
+      name: ${{ matrix.name }}
+      test-pattern: ${{ matrix.test-pattern }}
       restore_local_network_data: ${{ matrix.restore_local_network_data }}
     if: contains(needs.changes.outputs.js-packages, 'dashmate')
 
