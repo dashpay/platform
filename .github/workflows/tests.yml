@@ -45,7 +45,7 @@ jobs:
     uses: ./.github/workflows/tests-build-js.yml
 
   build-images:
-    name: Build Platform Docker images
+    name: Build Docker images
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     secrets: inherit
     strategy:
@@ -67,8 +67,8 @@ jobs:
       image_name: ${{ matrix.image_name }}
       target: ${{ matrix.target }}
 
-  rs-package:
-    name: Rust package
+  rs-packages:
+    name: Rust packages
     needs:
       - changes
     secrets: inherit
@@ -93,8 +93,8 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  js-package:
-    name: JS package
+  js-packages:
+    name: JS packages
     needs:
       - changes
       - build-js
