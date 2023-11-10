@@ -56,7 +56,7 @@ module.exports = {
   ],
   customLaunchers: {
     chromeWithoutSecurity: {
-      base: 'ChromiumHeadless',
+      base: 'ChromeHeadless',
       flags: ['--allow-insecure-localhost'],
       displayName: 'Chrome w/o security',
     },

@@ -5,10 +5,6 @@ const karmaChromeLauncher = require('karma-chrome-launcher');
 const karmaFirefoxLauncher = require('karma-firefox-launcher');
 const karmaWebpack = require('karma-webpack');
 
-// process.env.CHROME_BIN = require('puppeteer').executablePath();
-// console.log(process.env.CHROME_BIN);
-// process.exit();
-
 const webpackConfig = require('./webpack.config');
 
 module.exports = (config) => {
@@ -35,7 +31,7 @@ module.exports = (config) => {
     colors: true,
     logLevel: config.LOG_INFO,
     autoWatch: false,
-    browsers: ['ChromiumHeadless', 'FirefoxHeadless'],
+    browsers: ['ChromeHeadless', 'FirefoxHeadless'],
     singleRun: false,
     concurrency: Infinity,
     plugins: [
