@@ -125,7 +125,7 @@ jobs:
         run: xargs -a artifacts_list.txt tar cvf build-js-artifacts-${{ github.sha }}.tar
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
 
-  release-drive-image:
+  release-drive-docker-image:
     name: Release Drive ${{ matrix.platform }} image
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
