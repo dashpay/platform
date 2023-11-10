@@ -74,7 +74,7 @@ runs:
         images: ${{ inputs.image_org }}/${{ inputs.image_name }}
         tags: |
           type=semver,pattern={{version}},value=${{inputs.image_version}},enable=${{ inputs.image_version != '' }}
-          type=sha,format=long,enable=${{ inputs.image_version != '' }}
+          type=sha,format=long,enable=${{ inputs.image_version == '' }}
 
     - name: Configure docker layer cache
       uses: ./.github/actions/s3-layer-cache-settings
