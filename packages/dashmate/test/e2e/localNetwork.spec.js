@@ -74,10 +74,10 @@ describe('Local Network', function main() {
     homeDir.remove();
   });
 
-  describe('setup', function describeSetup() {
-    it('should setup local network', async () => {
+  describe('setup', () => {
+    it('should setup local network', async function testSetup() {
       if (process.env.DASHMATE_E2E_TESTS_LOCAL_HOMEDIR) {
-        this.skip('local network already set up');
+        this.skip('local network set up is provided');
       }
 
       // TODO: Refactor setup command to extract setup logic to
