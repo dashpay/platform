@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const semver = require('semver');
-const TOML = require('@iarna/toml')
 const packagesIterator = require('../utils/packagesIterator');
 const rootPackageJson = require('../../package.json');
 
