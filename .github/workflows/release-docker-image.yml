@@ -51,6 +51,7 @@ jobs:
 
       - name: Build and push by digest
         uses: ./.github/actions/docker
+        id: docker_build
         with:
           image_name: ${{ inputs.image_name }}
           image_version: ${{ steps.version.outputs.result }}
