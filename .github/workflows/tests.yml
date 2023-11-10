@@ -162,8 +162,10 @@ jobs:
             restore_local_network_data: true
           - name: Testnet HP fullnode
             test-pattern: test/e2e/testnetHPFullnode.spec.js
+            restore_local_network_data: false
           - name: Testnet HP evonode
             test-pattern: test/e2e/testnetHPEvonode.spec.js
+            restore_local_network_data: false
     uses: ./.github/workflows/tests-dashmate.yml
     with:
       name: ${{ matrix.name }}
