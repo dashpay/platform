@@ -58,8 +58,8 @@ jobs:
           SHA_TAG=sha-${{ github.sha }}
           VERSION=$(cat package.json | jq -r '.version')
 
-          docker pull $DOCKER_HUB_ORG/dashmate_helper:$SHA_TAG
-          docker tag $DOCKER_HUB_ORG/dashmate_helper:$SHA_TAG dashpay/dashmate_helper:$VERSION
+          docker pull $DOCKER_HUB_ORG/dashmate-helper:$SHA_TAG
+          docker tag $DOCKER_HUB_ORG/dashmate-helper:$SHA_TAG dashpay/dashmate-helper:$VERSION
 
       - name: Get dashmate fingerprint
         id: dashmate-fingerprint

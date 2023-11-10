@@ -59,7 +59,7 @@ jobs:
             image_name: dapi
             target: dapi
           - name: Dashmate helper
-            image_name: dashmate_helper
+            image_name: dashmate-helper
             target: dashmate-helper
     uses: ./.github/workflows/tests-build-image.yml
     with:

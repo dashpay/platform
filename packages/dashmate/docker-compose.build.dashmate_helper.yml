@@ -19,4 +19,4 @@ services:
         - ${CACHE_DASHMATE_HELPER_FROM:-${DASHMATE_HELPER_DOCKER_IMAGE}}
       cache_to:
         - ${CACHE_DASHMATE_HELPER_TO:-type=inline}
-    image: dashmate_helper:local
+    image: dashmate-helper:local
