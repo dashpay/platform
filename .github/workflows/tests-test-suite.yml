@@ -1,6 +1,10 @@
 on:
   workflow_call:
     inputs:
+      name:
+        type: string
+        description: Name
+        required: true
       command:
         description: Run tests command
         type: string
@@ -9,7 +13,7 @@ on:
 
 jobs:
   test-suite:
-    name: Run Test Suite
+    name: Run ${{ inputs.name }}
     # TODO: Try with Github Runner, probably it will be the same time
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 120

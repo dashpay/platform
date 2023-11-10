@@ -1,0 +1,45 @@
+on:
+  workflow_call:
+    inputs:
+      name:
+        type: string
+        description: Name
+        required: true
+      image_name:
+        type: string
+        description: Image name
+        required: true
+      target:
+        type: string
+        description: Image target
+        required: true
+
+jobs:
+  build-image:
+    name: Build ${{ inputs.name }} image
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to ECR
+        run: aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+        shell: bash
+
+      - name: Build and push by SHA
+        uses: ./.github/actions/docker
+        with:
+          image_name: ${{ inputs.image_name }}
+          image_org: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+          target: ${{ inputs.target }}
+          push_tag: true
+          dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
+          region: ${{ vars.AWS_REGION }}

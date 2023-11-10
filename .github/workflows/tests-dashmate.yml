@@ -1,10 +1,18 @@
 on:
   workflow_call:
     inputs:
+      name:
+        type: string
+        description: Name
+        required: true
       test-pattern:
         type: string
         description: Test pattern. i.e. test/e2e/*.spec.js
         required: true
+      restore_local_network_data:
+        type: boolean
+        description: Load local network data from cache
+        default: false
 
 jobs:
   dashmate-test:
@@ -70,7 +78,7 @@ jobs:
       - name: Get dashmate fingerprint
         id: dashmate-fingerprint
         run: echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_OUTPUT
-        if: contains(inputs.test-pattern, 'local')
+        if: inputs.restore_local_network_data == 'true'
 
       - name: Use test suite local network data to speed up dashmate local network tests
         id: local-network-data
@@ -82,7 +90,7 @@ jobs:
             /home/ubuntu/.dashmate
             dashmate_volumes_dump
           key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
-        if: contains(inputs.test-pattern, 'local')
+        if: inputs.restore_local_network_data == 'true'
 
       - name: Restore dashmate volumes
         run: ./scripts/dashmate/volumes/restore.sh

@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   release-npm:
-    name: Release NPM packages
+    name: Release NPM packagesπ
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
     timeout-minutes: 15
     if: github.event_name != 'workflow_dispatch'
@@ -125,314 +125,28 @@ jobs:
         run: xargs -a artifacts_list.txt tar cvf build-js-artifacts-${{ github.sha }}.tar
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
 
-  release-drive-docker-image:
-    name: Release Drive ${{ matrix.platform }} image
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
+  release-docker-images:
+    name: Release Docker images
     strategy:
       matrix:
         include:
-          - runner: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-            platform: linux/amd64
-          - runner: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-            platform: linux/arm64
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Get image tag
-        uses: actions/github-script@v6
-        id: tag
-        with:
-          result-encoding: string
-          script: |
-            return (
-              context.eventName === 'workflow_dispatch'
-                ? '${{ github.event.inputs.tag }}'
-                : context.payload.release.tag_name
-            );
-
-      - name: Set up Docker BuildX
-        id: buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          install: true
-          driver-opts: env.BUILDKIT_STEP_LOG_MAX_SIZE=10485760
-          cleanup: false
-          platforms: ${{ matrix.platform }}
-          config-inline: |
-            [worker.oci]
-              gc = false
-
-      - name: Load Docker mount cache
-        uses: dcginfra/buildkit-cache-dance/inject@s5cmd
-        with:
-          bucket: multi-runner-cache-x1xibo9c
-          mounts: |
-            cargo_registry_index
-            cargo_registry_cache
-            cargo_git
-
-      # TODO: must be the same for dashpay/ and ECR
-      - name: Configure docker layer cache
-        uses: ./.github/actions/s3-layer-cache-settings
-        id: layer_cache_settings
-        with:
-          name: dashpay/drive
-          head_ref: ${{ steps.tag.outputs.result }}
-          bucket: multi-runner-cache-x1xibo9c
-
-      - name: Docker meta
-        id: docker_meta
-        uses: docker/metadata-action@v5
-        with:
-          images: dashpay/drive
-
-      - name: Build and push by digest
-        id: docker_build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          builder: ${{ steps.buildx.outputs.name }}
-          target: drive-abci
-          build-args: |
-            CARGO_BUILD_PROFILE=release
-            RUSTC_WRAPPER=sccache
-            SCCACHE_BUCKET=multi-runner-cache-x1xibo9c
-            SCCACHE_REGION=${{ vars.AWS_REGION }}
-            SCCACHE_S3_KEY_PREFIX=${{ runner.os }}/sccache
-          labels: ${{ steps.docker_meta.outputs.labels }}
-          platforms: ${{ matrix.platform }}
-          cache-from: ${{ steps.layer_cache_settings.outputs.cache_from }}
-          cache-to: ${{ steps.layer_cache_settings.outputs.cache_to }}
-          outputs: type=image,name=dashpay/drive,push-by-digest=true,name-canonical=true,push=true
-
-      - name: Save Docker mount cache
-        uses: dcginfra/buildkit-cache-dance/extract@s5cmd
-        with:
-          bucket: multi-runner-cache-x1xibo9c
-          mounts: |
-            cargo_registry_index
-            cargo_registry_cache
-            cargo_git
-
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests
-          digest="${{ steps.docker_build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-
-      - name: Upload digest
-        uses: actions/upload-artifact@v3
-        with:
-          name: digests
-          path: /tmp/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  release-drive-images-manifest:
-    name: Release Drive images manifest
-    needs: release-drive-docker-image
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Download digests
-        uses: actions/download-artifact@v3
-        with:
-          name: digests
-          path: /tmp/digests
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Set suffix
-        uses: actions/github-script@v6
-        id: suffix
-        with:
-          result-encoding: string
-          script: |
-            const fullTag = '${{inputs.image_tag}}';
-            if (fullTag.includes('-')) {
-              const [, fullSuffix] = fullTag.split('-');
-              const [suffix] = fullSuffix.split('.');
-              return `-${suffix}`;
-            } else {
-              return '';
-            }
-
-      - name: Set Docker tags and labels from image tag
-        id: docker_meta
-        uses: docker/metadata-action@v5
-        with:
-          images: dashpay/drive
-          tags: |
-            type=match,pattern=v(\d+),group=1,value=${{inputs.image_tag}}
-            type=match,pattern=v(\d+.\d+),group=1,value=${{inputs.image_tag}}
-            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{inputs.image_tag}}
-            type=match,pattern=v(.*),group=1,value=${{inputs.image_tag}},suffix=
-          flavor: |
-            suffix=${{ steps.suffix.outputs.result }},onlatest=true
-            latest=${{ github.event_name == 'release' }}
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Create manifest list and push
-        working-directory: /tmp/digests
-        run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'dashpay/drive@sha256:%s ' *)
-
-      - name: Inspect image
-        run: |
-          docker buildx imagetools inspect dashpay/drive:${{ steps.docker_meta.outputs.version }}     
-
-  release-dapi-docker-image:
-    name: Release DAPI to Docker Hub
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    timeout-minutes: 120
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get image tag
-        uses: actions/github-script@v6
-        id: tag
-        with:
-          result-encoding: string
-          script: |
-            return (
-              context.eventName === 'workflow_dispatch'
-                ? '${{ github.event.inputs.tag }}'
-                : context.payload.release.tag_name
-            );
-
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Build Docker image
-        uses: ./.github/actions/docker
-        with:
-          image: dashpay/dapi
-          image_tag: ${{steps.tag.outputs.result}}
-          target: dapi
-          cargo_profile: release
-          push: true
-          dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
-          dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
-          platforms: amd64,arm64
-          region: ${{ vars.AWS_REGION }}
-          cache_mounts: |
-            cargo_registry_index
-            cargo_registry_cache
-            cargo_git
-
-  release-test-suite-docker-image:
-    name: Release Test Suite to Docker Hub
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    timeout-minutes: 120
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get image tag
-        uses: actions/github-script@v6
-        id: tag
-        with:
-          result-encoding: string
-          script: |
-            return (
-              context.eventName === 'workflow_dispatch'
-                ? '${{ github.event.inputs.tag }}'
-                : context.payload.release.tag_name
-            );
-
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Build Docker image
-        uses: ./.github/actions/docker
-        with:
-          image: dashpay/platform-test-suite
-          image_tag: ${{steps.tag.outputs.result}}
-          target: test-suite
-          cargo_profile: release
-          push: true
-          dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
-          dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
-          platforms: amd64,arm64
-          region: ${{ vars.AWS_REGION }}
-          cache_mounts: |
-            cargo_registry_index
-            cargo_registry_cache
-            cargo_git
-
-  release-dashmate-helper-docker-image:
-    name: Release Dashmate helper to Docker Hub
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
-    timeout-minutes: 120
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get image tag
-        uses: actions/github-script@v6
-        id: tag
-        with:
-          result-encoding: string
-          script: |
-            return (
-              context.eventName === 'workflow_dispatch'
-                ? '${{ github.event.inputs.tag }}'
-                : context.payload.release.tag_name
-            );
-
-      - name: Configure AWS credentials and bucket region
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Build Docker image
-        uses: ./.github/actions/docker
-        with:
-          image: dashpay/dashmate-helper
-          image_tag: ${{steps.tag.outputs.result}}
-          target: dashmate-helper
-          cargo_profile: release
-          push: true
-          dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
-          dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
-          platforms: amd64,arm64
-          region: ${{ vars.AWS_REGION }}
-          cache_mounts: |
-            cargo_registry_index
-            cargo_registry_cache
-            cargo_git
+          - name: Drive
+            image_name: drive
+            target: drive-abci
+          - name: DAPI
+            image_name: dapi
+            target: dapi
+          - name: Test Suite
+            image_name: platform-test-suite
+            target: test-suite
+          - name: Dashmate helper
+            image_name: dashmate-helper
+            target: dashmate-helper
+    uses: ./github/workflows/release-docker-image.yml
+    with:
+      name: ${{ matrix.name}}
+      image_name: ${{ matrix.image_name }}
+      target: ${{ matrix.target }}
 
   release-dashmate-packages:
     name: Release Dashmate packages
@@ -471,7 +185,7 @@ jobs:
           bucket: multi-runner-cache-x1xibo9c
           root: actions-cache
           path: build-js-artifacts-${{ github.sha }}.tar
-          key: build-js-artifacts/${{ github.sha }} # We use hardcoded runner.os here for purpose
+          key: build-js-artifacts/${{ github.sha }}
 
       - name: Unpack JS build artifacts archive
         run: tar -xf build-js-artifacts-${{ github.sha }}.tar

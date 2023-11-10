@@ -48,7 +48,24 @@ jobs:
     name: Build Platform Docker images
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     secrets: inherit
-    uses: ./.github/workflows/tests-build-images.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Drive
+            image_name: drive
+            target: drive-abci
+          - name: DAPI
+            image_name: dapi
+            target: dapi
+          - name: Dashmate helper
+            image_name: dashmate_helper
+            target: dashmate-helper
+    uses: ./.github/workflows/tests-build-image.yml
+    with:
+      name: ${{ matrix.name }}
+      image_name: ${{ matrix.image_name }}
+      target: ${{ matrix.target }}
 
   rs-package:
     name: Rust package
@@ -130,37 +147,27 @@ jobs:
     secrets: inherit
     uses: ./.github/workflows/tests-codeql.yml
 
-  dashmate-local-network:
-    name: Dashmate local network E2E tests
+  dashmate-e2e-tests:
+    name: Dashmate E2E tests
     secrets: inherit
     needs:
       - changes
       - build-images
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Local network
+            test-pattern: test/e2e/localNetwork.spec.js
+            restore_local_network_data: true
+          - name: Testnet HP fullnode
+            test-pattern: test/e2e/testnetHPFullnode.spec.js
+          - name: Testnet HP evonode
+            test-pattern: test/e2e/testnetHPEvonode.spec.js
     uses: ./.github/workflows/tests-dashmate.yml
     with:
       test-pattern: test/e2e/localNetwork.spec.js
-    if: contains(needs.changes.outputs.js-packages, 'dashmate')
-
-  dashmate-fullnode:
-    name: Dashmate full node E2E tests
-    secrets: inherit
-    needs:
-      - changes
-      - build-images
-    uses: ./.github/workflows/tests-dashmate.yml
-    with:
-      test-pattern: test/e2e/testnetHPFullnode.spec.js
-    if: contains(needs.changes.outputs.js-packages, 'dashmate')
-
-  dashmate-evonode:
-    name: Dashmate Evonode E2E tests
-    secrets: inherit
-    needs:
-      - changes
-      - build-images
-    uses: ./.github/workflows/tests-dashmate.yml
-    with:
-      test-pattern: test/e2e/testnetHPFullnode.spec.js
+      restore_local_network_data: ${{ matrix.restore_local_network_data }}
     if: contains(needs.changes.outputs.js-packages, 'dashmate')
 
   test-suite:
@@ -169,16 +176,14 @@ jobs:
       - build-js
       - build-images
     secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Test Suite
+            command: test:suite -b
+          - name: Test Suite in browser
+            command: test:browsers
     uses: ./.github/workflows/tests-test-suite.yml
     with:
-      command: test:suite -b
-
-  test-suite-browser:
-    name: Test Suite in browser
-    needs:
-      - build-js
-      - build-images
-    secrets: inherit
-    uses: ./.github/workflows/tests-test-suite.yml
-    with:
-      command: test:browsers
+      command: ${{ matrix.command }}
