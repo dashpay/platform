@@ -51,7 +51,7 @@ jobs:
       - name: Unpack JS build artifacts archive
         run: tar -xf build-js-artifacts-${{ github.sha }}.tar
 
-      - name: Pull pre-built images
+      - name: Replace with pre-built images
         run: |
           # Login to ECR
           DOCKER_HUB_ORG="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
