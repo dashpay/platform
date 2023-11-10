@@ -95,6 +95,7 @@
     "util": "^0.12.4",
     "wasm-x11-hash": "~0.0.2",
     "webpack": "^5.76.1",
-    "webpack-cli": "^4.9.1"
+    "webpack-cli": "^4.9.1",
+    "which": "^4.0.0"
   }
 }

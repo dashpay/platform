@@ -1,11 +1,38 @@
+const fs = require('fs');
 const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
 const karmaChai = require('karma-chai');
 const karmaChromeLauncher = require('karma-chrome-launcher');
 const karmaFirefoxLauncher = require('karma-firefox-launcher');
 const karmaWebpack = require('karma-webpack');
-
+const which = require('which');
 const webpackConfig = require('./webpack.config');
+
+/**
+ * Is chromium exist
+ *
+ * @return {boolean}
+ */
+function isChromiumExist() {
+  const ChromiumHeadlessBrowser = karmaChromeLauncher['launcher:ChromiumHeadless'][1];
+  const chromiumBrowser = new ChromiumHeadlessBrowser();
+
+  let chromiumPath = chromiumBrowser.DEFAULT_CMD[process.platform];
+  if (chromiumBrowser.ENV_CMD && process.env[chromiumBrowser.ENV_CMD]) {
+    chromiumPath = process.env[chromiumBrowser.ENV_CMD];
+  }
+
+  if (!chromiumPath) {
+    return false;
+  }
+
+  // On linux, the browsers just return the command, not a path, so we need to check if it exists.
+  if (process.platform === 'linux') {
+    return !!which.sync(chromiumPath, { nothrow: true });
+  }
+
+  return fs.existsSync(chromiumPath);
+}
 
 module.exports = (config) => {
   config.set({
@@ -31,7 +58,7 @@ module.exports = (config) => {
     colors: true,
     logLevel: config.LOG_INFO,
     autoWatch: false,
-    browsers: ['ChromeHeadless', 'FirefoxHeadless'],
+    browsers: [isChromiumExist() ? 'ChromiumHeadless' : 'ChromeHeadless', 'FirefoxHeadless'],
     singleRun: false,
     concurrency: Infinity,
     plugins: [
@@ -42,11 +69,5 @@ module.exports = (config) => {
       karmaFirefoxLauncher,
       karmaWebpack,
     ],
-    customLaunchers: {
-      FirefoxHeadless: {
-        base: 'Firefox',
-        flags: ['-headless'],
-      },
-    },
   });
 };

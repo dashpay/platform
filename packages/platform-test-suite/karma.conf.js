@@ -7,9 +7,32 @@ const karmaChai = require('karma-chai');
 const karmaChromeLauncher = require('karma-chrome-launcher');
 const karmaSourcemapLoader = require('karma-sourcemap-loader');
 const karmaWebpack = require('karma-webpack');
+const fs = require('fs');
+const which = require('which');
 
 if (dotenvResult.error) {
   throw dotenvResult.error;
+}
+
+function isChromiumExist() {
+  const ChromiumHeadlessBrowser = karmaChromeLauncher['launcher:ChromiumHeadless'][1];
+  const chromiumBrowser = new ChromiumHeadlessBrowser();
+
+  let chromiumPath = chromiumBrowser.DEFAULT_CMD[process.platform];
+  if (chromiumBrowser.ENV_CMD && process.env[chromiumBrowser.ENV_CMD]) {
+    chromiumPath = process.env[chromiumBrowser.ENV_CMD];
+  }
+
+  if (!chromiumPath) {
+    return false;
+  }
+
+  // On linux, the browsers just return the command, not a path, so we need to check if it exists.
+  if (process.platform === 'linux') {
+    return !!which.sync(chromiumPath, { nothrow: true });
+  }
+
+  return fs.existsSync(chromiumPath);
 }
 
 module.exports = (config) => {
@@ -80,7 +103,7 @@ module.exports = (config) => {
     ],
     customLaunchers: {
       chromeWithoutSecurity: {
-        base: 'ChromeHeadless',
+        base: isChromiumExist() ? 'ChromiumHeadless' : 'ChromeHeadless',
         flags: ['--allow-insecure-localhost'],
         displayName: 'Chrome w/o security',
       },
