@@ -30,7 +30,7 @@ jobs:
           args: --package ${{ inputs.package }} --all-features --frozen -- --no-deps
         env:
           RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-linux-x64-platform-cache-ui535z23
+          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
           SCCACHE_REGION: ${{ vars.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/amd64/x86_64-unknown-linux-gnu/
 
@@ -128,6 +128,6 @@ jobs:
         run: cargo test --package=${{ inputs.package }} --all-features --frozen
         env:
           RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-linux-x64-platform-cache-ui535z23
+          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
           SCCACHE_REGION: ${{ vars.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/amd64/x86_64-unknown-linux-gnu/

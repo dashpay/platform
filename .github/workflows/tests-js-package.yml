@@ -39,7 +39,7 @@ jobs:
       - name: Restore JS build artifacts
         uses: everpcpc/actions-cache@v1
         with:
-          bucket: multi-runner-linux-x64-platform-cache-ui535z23
+          bucket: multi-runner-cache-x1xibo9c
           root: actions-cache
           path: build-js-artifacts-${{ github.sha }}.tar
           key: build-js-artifacts/${{ github.sha }}
@@ -75,7 +75,7 @@ jobs:
       - name: Restore JS build artifacts
         uses: everpcpc/actions-cache@v1
         with:
-          bucket: multi-runner-linux-x64-platform-cache-ui535z23
+          bucket: multi-runner-cache-x1xibo9c
           root: actions-cache
           path: build-js-artifacts-${{ github.sha }}.tar
           key: build-js-artifacts/${{ github.sha }}

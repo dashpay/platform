@@ -38,7 +38,7 @@ jobs:
         uses: everpcpc/actions-cache@v1
         id: cache
         with:
-          bucket: multi-runner-linux-x64-platform-cache-ui535z23
+          bucket: multi-runner-cache-x1xibo9c
           root: actions-cache
           path: build-js-artifacts-${{ github.sha }}.tar
           key: build-js-artifacts/${{ github.sha }}
@@ -68,7 +68,7 @@ jobs:
         env:
           CARGO_BUILD_PROFILE: release
           RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-linux-x64-platform-cache-ui535z23
+          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
           SCCACHE_REGION: ${{ vars.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/wasm/wasm32-unknown-unknown/
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
@@ -173,7 +173,7 @@ jobs:
 
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    runs-on: [ "self-hosted", "linux", "x64", "8x-ubuntu-platform" ]
     timeout-minutes: 120
     steps:
       - name: Check out repo
@@ -217,7 +217,7 @@ jobs:
 
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    runs-on: [ "self-hosted", "linux", "x64", "8x-ubuntu-platform" ]
     timeout-minutes: 120
     steps:
       - name: Check out repo
@@ -261,7 +261,7 @@ jobs:
 
   release-dashmate-helper-docker-image:
     name: Release Dashmate helper to Docker Hub
-    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    runs-on: [ "self-hosted", "linux", "x64", "8x-ubuntu-platform" ]
     timeout-minutes: 120
     steps:
       - name: Check out repo
@@ -337,7 +337,7 @@ jobs:
       - name: Retrieve JS build artifacts
         uses: everpcpc/actions-cache@v1
         with:
-          bucket: multi-runner-linux-x64-platform-cache-ui535z23
+          bucket: multi-runner-cache-x1xibo9c
           root: actions-cache
           path: build-js-artifacts-${{ github.sha }}.tar
           key: build-js-artifacts/${{ github.sha }} # We use hardcoded runner.os here for purpose

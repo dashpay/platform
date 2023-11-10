@@ -28,7 +28,7 @@ inputs:
     default: dev
   bucket:
     description: S3 bucket to use for caching, must match runner define in `runs-on`
-    default: multi-runner-linux-x64-platform-cache-ui535z23
+    default: multi-runner-cache-x1xibo9c
   region:
     description: S3 bucket region
     required: true

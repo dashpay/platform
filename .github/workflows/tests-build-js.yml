@@ -15,7 +15,7 @@ jobs:
         uses: everpcpc/actions-cache@v1
         id: cache
         with:
-          bucket: multi-runner-linux-x64-platform-cache-ui535z23
+          bucket: multi-runner-cache-x1xibo9c
           root: actions-cache
           path: build-js-artifacts-${{ github.sha }}.tar
           key: build-js-artifacts/${{ github.sha }}
@@ -48,7 +48,7 @@ jobs:
         if: ${{ steps.cache.outputs.cache-hit != 'true' }}
         env:
           RUSTC_WRAPPER: sccache
-          SCCACHE_BUCKET: multi-runner-linux-x64-platform-cache-ui535z23
+          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
           SCCACHE_REGION: ${{ vars.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/wasm/wasm32-unknown-unknown/
 
