@@ -131,6 +131,7 @@ jobs:
     uses: ./.github/workflows/release-docker-image.yml
     with:
       name: Drive
+      image_org: dashpay
       image_name: drive
       target: drive-abci
 
@@ -140,6 +141,7 @@ jobs:
     uses: ./.github/workflows/release-docker-image.yml
     with:
       name: DAPI
+      image_org: dashpay
       image_name: dapi
       target: dapi
 
@@ -149,6 +151,7 @@ jobs:
     uses: ./.github/workflows/release-docker-image.yml
     with:
       name: Test Suite
+      image_org: dashpay
       image_name: platform-test-suite
       target: test-suite
 
@@ -158,6 +161,7 @@ jobs:
     uses: ./.github/workflows/release-docker-image.yml
     with:
       name: Dashmate Helper
+      image_org: dashpay
       image_name: dashmate-helper
       target: dashmate-helper
 
