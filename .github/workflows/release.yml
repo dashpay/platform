@@ -15,6 +15,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-rs-dpp:
+    name: Release RS-DPP package
+    runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+    timeout-minutes: 15
+    if: github.event_name != 'workflow_dispatch'
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - uses: katyo/publish-crates@v2
+        with:
+          path: './packages/rs-dpp'
+          registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
   release-npm:
     name: Release NPM packages
     runs-on: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
