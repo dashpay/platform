@@ -24,7 +24,7 @@ jobs:
         include:
           - runner: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
             platform: linux/amd64
-          - runner: [ "self-hosted", "linux", "x64", "ubuntu-platform" ]
+          - runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
             platform: linux/arm64
     steps:
       - name: Check out repo
