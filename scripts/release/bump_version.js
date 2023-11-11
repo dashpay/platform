@@ -14,28 +14,28 @@ const convertPrereleaseType = (version, prereleaseType) => {
   return `${semver.major(version)}.${semver.minor(version)}.0-${prereleaseType}.1`;
 };
 
-const handlePackages = (versionFunc, releaseType) => {
-  for (const { filename, json, toml } of packagesIterator())  {
-    if (json) {
-      const { version } = json;
+const bumpNpmPackages = (versionFunc, releaseType) => {
+  for (const {filename, json} of packagesIterator.npm()) {
+    const {version} = json;
 
-      json.version = versionFunc(version, releaseType);
+    json.version = versionFunc(version, releaseType);
 
-      fs.writeFileSync(filename, `${JSON.stringify(json, null, 2)}\n`);
-    }
+    fs.writeFileSync(filename, `${JSON.stringify(json, null, 2)}\n`);
+  }
+}
 
-    if (toml) {
-      const {version} = toml.package;
+const bumpRustPackages = (versionFunc, releaseType) => {
+  for (const {filename, toml} of packagesIterator.rust()) {
+    const {version} = toml.package;
 
-      const tomlVersion = versionFunc(version, releaseType);
+    const tomlVersion = versionFunc(version, releaseType);
 
-      const cargoFile = fs.readFileSync(filename, 'utf-8');
+    const cargoFile = fs.readFileSync(filename, 'utf-8');
 
-      const replaceFrom = `version = "${version}"`;
-      const replaceTo = `version = "${tomlVersion}"`;
+    const replaceFrom = `version = "${version}"`;
+    const replaceTo = `version = "${tomlVersion}"`;
 
-      fs.writeFileSync(filename, cargoFile.replace(replaceFrom, replaceTo));
-    }
+    fs.writeFileSync(filename, cargoFile.replace(replaceFrom, replaceTo));
   }
 }
 
@@ -59,35 +59,40 @@ const handlePackages = (versionFunc, releaseType) => {
 
   if (rootVersionType === releaseType && releaseType === 'release') {
     // release to release
-    handlePackages(semver.inc, 'patch');
+    bumpNpmPackages(semver.inc, 'patch');
+    bumpRustPackages(semver.inc, 'patch');
 
     // root version
     rootPackageJson.version = semver.inc(rootPackageJson.version, 'patch');
     fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   } else if (rootVersionType === 'release' && releaseType !== 'release') {
     // release to prerelease
-    handlePackages(convertReleaseToPrerelease, releaseType);
+    bumpNpmPackages(convertReleaseToPrerelease, releaseType);
+    bumpRustPackages(convertReleaseToPrerelease, releaseType);
 
     // root version
     rootPackageJson.version = convertReleaseToPrerelease(rootPackageJson.version, releaseType);
     fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   } else if (rootVersionType !== 'release' && releaseType === 'release') {
     // prerelease to release
-    handlePackages(semver.inc, 'minor');
+    bumpNpmPackages(semver.inc, 'minor');
+    bumpRustPackages(semver.inc, 'minor');
 
     // root version
     rootPackageJson.version = semver.inc(rootPackageJson.version, 'minor');
     fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   } else if (rootVersionType !== releaseType) {
     // dev to alpha or vice versa
-    handlePackages(convertPrereleaseType, releaseType);
+    bumpNpmPackages(convertPrereleaseType, releaseType);
+    bumpRustPackages(convertPrereleaseType, releaseType);
 
     // root version
     rootPackageJson.version = convertPrereleaseType(rootPackageJson.version, releaseType);
     fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
   } else {
     // prerelease to prerelease (the same type)
-    handlePackages(semver.inc, 'prerelease');
+    bumpNpmPackages(semver.inc, 'prerelease');
+    bumpRustPackages(semver.inc, 'prerelease');
 
     // root version
     rootPackageJson.version = semver.inc(rootPackageJson.version, 'prerelease');
