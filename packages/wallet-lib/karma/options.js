@@ -6,7 +6,7 @@ const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
 const karmaChai = require('karma-chai');
 const karmaChromeLauncher = require('karma-chrome-launcher');
-const karmaChromiumEdgeLauncher = require('@chiragrupani/karma-chromium-edge-launcher');
+const karmaFirefoxLauncher = require('karma-firefox-launcher');
 const karmaSourcemapLoader = require('karma-sourcemap-loader');
 const karmaWebpack = require('karma-webpack');
 
@@ -43,7 +43,7 @@ module.exports = {
   port: 9876,
   colors: true,
   autoWatch: false,
-  browsers: ['chromeWithoutSecurity'],
+  browsers: [process.env.BROWSER_TESTS_INSECURE_BROWSER || 'chromeWithoutSecurity'],
   singleRun: false,
   concurrency: Infinity,
   browserNoActivityTimeout: 10 * 60 * 1000,
@@ -52,15 +52,21 @@ module.exports = {
     karmaMochaReporter,
     karmaChai,
     karmaChromeLauncher,
-    karmaChromiumEdgeLauncher,
+    karmaFirefoxLauncher,
     karmaSourcemapLoader,
     karmaWebpack,
   ],
   customLaunchers: {
-    chromeWithoutSecurity: {
-      base: process.env.CHROMIUM_BASED_BROWSER_NAME || 'ChromeHeadless',
+    ChromeHeadlessInsecure: {
+      base: process.env.BROWSER_TESTS_CHROMIUM_BROWSER || 'ChromeHeadless',
       flags: ['--allow-insecure-localhost'],
       displayName: 'Chrome w/o security',
+    },
+    FirefoxHeadlessInsecure: {
+      base: 'FirefoxHeadless',
+      prefs: {
+        acceptInsecureCerts: true,
+      },
     },
   },
 };

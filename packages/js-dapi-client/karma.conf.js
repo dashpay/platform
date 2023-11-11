@@ -3,7 +3,6 @@ const karmaMochaReporter = require('karma-mocha-reporter');
 const karmaChai = require('karma-chai');
 const karmaChromeLauncher = require('karma-chrome-launcher');
 const karmaFirefoxLauncher = require('karma-firefox-launcher');
-const karmaChromiumEdgeLauncher = require('@chiragrupani/karma-chromium-edge-launcher');
 const karmaWebpack = require('karma-webpack');
 const webpackConfig = require('./webpack.config');
 
@@ -31,7 +30,7 @@ module.exports = (config) => {
     colors: true,
     logLevel: config.LOG_INFO,
     autoWatch: false,
-    browsers: [process.env.CHROMIUM_BASED_BROWSER_NAME || 'ChromeHeadless', 'FirefoxHeadless'],
+    browsers: [process.env.BROWSER_TESTS_CHROMIUM_BROWSER || 'ChromeHeadless', 'FirefoxHeadless'],
     singleRun: false,
     concurrency: Infinity,
     plugins: [
@@ -40,7 +39,6 @@ module.exports = (config) => {
       karmaChai,
       karmaChromeLauncher,
       karmaFirefoxLauncher,
-      karmaChromiumEdgeLauncher,
       karmaWebpack,
     ],
   });

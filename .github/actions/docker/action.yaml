@@ -15,6 +15,9 @@ inputs:
     default: "false"
   target:
     description: "Target stage within Dockerfile: dapi, drive-abci, dashmate-helper, test-suite"
+  platform:
+    description: Platform to build for. i.e linux/amd64 or linux/arm64
+    required: true
   dockerhub_username:
     description: User name to use when pushing images to Docker Hub
   dockerhub_token:
@@ -89,9 +92,9 @@ runs:
       with:
         script: |
           if ('${{ inputs.push_tags}}' != 'true') {
-            core.setOutput('tags', '');    
+            core.setOutput('tags', '');
           } else {
-            core.setOutput('tags', '${{ steps.docker_meta.outputs.tags }}');            
+            core.setOutput('tags', '${{ steps.docker_meta.outputs.tags }}');
           }
 
     - name: Build and push Docker image ${{ inputs.image }}
@@ -103,6 +106,7 @@ runs:
         target: ${{ inputs.target }}
         labels: ${{ steps.docker_meta.outputs.labels }}
         tags: ${{ steps.tags.outputs.tags }}
+        platforms: ${{ inputs.platform }}
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
           RUSTC_WRAPPER=sccache

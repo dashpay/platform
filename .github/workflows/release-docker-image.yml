@@ -64,6 +64,7 @@ jobs:
           image_org: ${{ inputs.image_org }}
           image_version: ${{ steps.version.outputs.result }}
           target: ${{ inputs.target }}
+          platform: ${{ matrix.platform }}
           cargo_profile: release
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}

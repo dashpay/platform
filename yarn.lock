@@ -1290,13 +1290,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@chiragrupani/karma-chromium-edge-launcher@npm:^2.3.1":
-  version: 2.3.1
-  resolution: "@chiragrupani/karma-chromium-edge-launcher@npm:2.3.1"
-  checksum: 8fd4a8e6e06f8188fa91ca3a07b51c9a325045a47cc5e483fd718aa890692148ee7e8b528f9f1c50151074c80f4cb81808ddb4dc5ca02c665dea6c932eb15325
-  languageName: node
-  linkType: hard
-
 "@colors/colors@npm:1.5.0":
   version: 1.5.0
   resolution: "@colors/colors@npm:1.5.0"
@@ -1366,7 +1359,6 @@ __metadata:
   resolution: "@dashevo/dapi-client@workspace:packages/js-dapi-client"
   dependencies:
     "@babel/core": ^7.15.5
-    "@chiragrupani/karma-chromium-edge-launcher": ^2.3.1
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dash-spv": "workspace:*"
     "@dashevo/dashcore-lib": ~0.21.0
@@ -1703,7 +1695,6 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/platform-test-suite@workspace:packages/platform-test-suite"
   dependencies:
-    "@chiragrupani/karma-chromium-edge-launcher": ^2.3.1
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": ~0.21.0
     "@dashevo/dpns-contract": "workspace:*"
@@ -1804,7 +1795,6 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/wallet-lib@workspace:packages/wallet-lib"
   dependencies:
-    "@chiragrupani/karma-chromium-edge-launcher": ^2.3.1
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dash-spv": "workspace:*"
     "@dashevo/dashcore-lib": ~0.21.0
@@ -1829,6 +1819,7 @@ __metadata:
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
+    karma-firefox-launcher: ^2.1.2
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-sourcemap-loader: ^0.3.7
@@ -1865,7 +1856,6 @@ __metadata:
     "@babel/cli": ^7.21.0
     "@babel/core": ^7.15.5
     "@babel/preset-env": ^7.15.4
-    "@chiragrupani/karma-chromium-edge-launcher": ^2.3.1
     "@dashevo/bls": ~1.2.9
     "@dashevo/dashcore-lib": ~0.21.0
     "@dashevo/dpns-contract": "workspace:*"
@@ -6009,7 +5999,6 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dash@workspace:packages/js-dash-sdk"
   dependencies:
-    "@chiragrupani/karma-chromium-edge-launcher": ^2.3.1
     "@dashevo/bls": ~1.2.9
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
@@ -6049,6 +6038,7 @@ __metadata:
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
+    karma-firefox-launcher: ^2.1.2
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
@@ -9680,7 +9670,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"karma-firefox-launcher@npm:^2.1.1":
+"karma-firefox-launcher@npm:^2.1.1, karma-firefox-launcher@npm:^2.1.2":
   version: 2.1.2
   resolution: "karma-firefox-launcher@npm:2.1.2"
   dependencies:

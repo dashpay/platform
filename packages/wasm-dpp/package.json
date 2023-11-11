@@ -43,7 +43,6 @@
     "@babel/cli": "^7.21.0",
     "@babel/core": "^7.15.5",
     "@babel/preset-env": "^7.15.4",
-    "@chiragrupani/karma-chromium-edge-launcher": "^2.3.1",
     "@dashevo/dashcore-lib": "~0.21.0",
     "@dashevo/dpns-contract": "workspace:*",
     "@types/bs58": "^4.0.1",

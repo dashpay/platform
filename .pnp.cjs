@@ -2274,15 +2274,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD"\
         }]\
       ]],\
-      ["@chiragrupani/karma-chromium-edge-launcher", [\
-        ["npm:2.3.1", {\
-          "packageLocation": "./.yarn/cache/@chiragrupani-karma-chromium-edge-launcher-npm-2.3.1-9faca73d35-8fd4a8e6e0.zip/node_modules/@chiragrupani/karma-chromium-edge-launcher/",\
-          "packageDependencies": [\
-            ["@chiragrupani/karma-chromium-edge-launcher", "npm:2.3.1"]\
-          ],\
-          "linkType": "HARD"\
-        }]\
-      ]],\
       ["@colors/colors", [\
         ["npm:1.5.0", {\
           "packageLocation": "./.yarn/cache/@colors-colors-npm-1.5.0-875af3a8b4-d64d5260be.zip/node_modules/@colors/colors/",\
@@ -2405,7 +2396,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@babel/core", "npm:7.16.0"],\
-            ["@chiragrupani/karma-chromium-edge-launcher", "npm:2.3.1"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
             ["@dashevo/dashcore-lib", "npm:0.21.0"],\
@@ -2738,7 +2728,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/platform-test-suite/",\
           "packageDependencies": [\
             ["@dashevo/platform-test-suite", "workspace:packages/platform-test-suite"],\
-            ["@chiragrupani/karma-chromium-edge-launcher", "npm:2.3.1"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dashcore-lib", "npm:0.21.0"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
@@ -2831,7 +2820,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/wallet-lib/",\
           "packageDependencies": [\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
-            ["@chiragrupani/karma-chromium-edge-launcher", "npm:2.3.1"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
             ["@dashevo/dashcore-lib", "npm:0.21.0"],\
@@ -2856,6 +2844,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["karma", "npm:6.4.1"],\
             ["karma-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:0.1.0"],\
             ["karma-chrome-launcher", "npm:3.1.0"],\
+            ["karma-firefox-launcher", "npm:2.1.2"],\
             ["karma-mocha", "npm:2.0.1"],\
             ["karma-mocha-reporter", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.2.5"],\
             ["karma-sourcemap-loader", "npm:0.3.8"],\
@@ -2894,7 +2883,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/cli", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.21.0"],\
             ["@babel/core", "npm:7.16.0"],\
             ["@babel/preset-env", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.16.4"],\
-            ["@chiragrupani/karma-chromium-edge-launcher", "npm:2.3.1"],\
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dashcore-lib", "npm:0.21.0"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
@@ -8000,7 +7988,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-dash-sdk/",\
           "packageDependencies": [\
             ["dash", "workspace:packages/js-dash-sdk"],\
-            ["@chiragrupani/karma-chromium-edge-launcher", "npm:2.3.1"],\
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
@@ -8040,6 +8027,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["karma", "npm:6.4.1"],\
             ["karma-chai", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:0.1.0"],\
             ["karma-chrome-launcher", "npm:3.1.0"],\
+            ["karma-firefox-launcher", "npm:2.1.2"],\
             ["karma-mocha", "npm:2.0.1"],\
             ["karma-mocha-reporter", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.2.5"],\
             ["karma-webpack", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.0.0"],\

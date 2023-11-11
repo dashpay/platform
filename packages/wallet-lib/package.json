@@ -58,7 +58,6 @@
     "winston": "^3.2.1"
   },
   "devDependencies": {
-    "@chiragrupani/karma-chromium-edge-launcher": "^2.3.1",
     "@dashevo/dash-spv": "workspace:*",
     "assert": "^2.0.0",
     "browserify-zlib": "^0.2.0",
@@ -76,6 +75,7 @@
     "karma": "^6.4.1",
     "karma-chai": "^0.1.0",
     "karma-chrome-launcher": "^3.1.0",
+    "karma-firefox-launcher": "^2.1.2",
     "karma-mocha": "^2.0.1",
     "karma-mocha-reporter": "^2.2.5",
     "karma-sourcemap-loader": "^0.3.7",
