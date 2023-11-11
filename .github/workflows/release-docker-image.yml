@@ -17,6 +17,8 @@ on:
         type: string
         description: Image target. i.e. drive-abci, dapi
         required: true
+env:
+  DIGEST_DIR_PATH: /tmp/digests/${{ inputs.image_org }}/${{ inputs.image_name }}
 
 jobs:
   build-image:
@@ -68,16 +70,16 @@ jobs:
 
       - name: Export digest
         run: |
-          mkdir -p /tmp/digests
+          mkdir -p ${{ env.DIGEST_DIR_PATH }}
           digest="${{ steps.docker_build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-          ls -lah /tmp/digests
+          touch "${{ env.DIGEST_DIR_PATH }}/${digest#sha256:}"
+          ls -lah ${{ env.DIGEST_DIR_PATH }}
 
       - name: Upload digest
         uses: actions/upload-artifact@v3
         with:
           name: digests
-          path: /tmp/digests/*
+          path: ${{ env.DIGEST_DIR_PATH }}/*
           if-no-files-found: error
           retention-days: 1
 
@@ -90,7 +92,7 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: digests
-          path: /tmp/digests
+          path: ${{ env.DIGEST_DIR_PATH }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -143,7 +145,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Create manifest list and push
-        working-directory: /tmp/digests
+        working-directory: ${{ env.DIGEST_DIR_PATH }}
         run: |
           ls -lah
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
@@ -151,4 +153,4 @@ jobs:
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ${{ inputs.image_org }}/${{ inputs.image_name }}/drive:${{ steps.docker_meta.outputs.version }}     
+          docker buildx imagetools inspect ${{ inputs.image_org }}/${{ inputs.image_name }}:${{ steps.docker_meta.outputs.version }}     
