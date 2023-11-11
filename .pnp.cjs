@@ -2388,7 +2388,7 @@ const RAW_RUNTIME_STATE =
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
           ["nyc", "npm:15.1.0"],\
           ["semver", "npm:7.5.3"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["swagger-jsdoc", "npm:3.7.0"],\
           ["ws", "virtual:7469c013e9c5baa67d67122340123f2260ba4f66d6748855fb7f2ab67ea3fe52b2c8821a105003266d54faf99a9564056fb1b532d9ae8b6985087ab5f8394bf0#npm:7.5.5"],\
@@ -2442,7 +2442,7 @@ const RAW_RUNTIME_STATE =
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
           ["setimmediate", "npm:1.0.5"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
           ["string_decoder", "npm:1.3.0"],\
@@ -2475,7 +2475,7 @@ const RAW_RUNTIME_STATE =
           ["long", "npm:5.2.0"],\
           ["mocha", "npm:9.2.2"],\
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -2506,7 +2506,7 @@ const RAW_RUNTIME_STATE =
           ["memdown", "npm:5.1.0"],\
           ["mocha", "npm:9.2.2"],\
           ["should", "npm:13.2.3"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["wasm-x11-hash", "npm:0.0.2"]\
         ],\
         "linkType": "SOFT"\
@@ -2576,7 +2576,7 @@ const RAW_RUNTIME_STATE =
           ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:14.2.1"],\
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.25.3"],\
           ["mocha", "npm:9.2.2"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -2618,7 +2618,7 @@ const RAW_RUNTIME_STATE =
           ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:14.2.1"],\
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.25.3"],\
           ["mocha", "npm:9.2.2"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -2636,7 +2636,7 @@ const RAW_RUNTIME_STATE =
           ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:14.2.1"],\
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.25.3"],\
           ["mocha", "npm:9.2.2"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -2663,7 +2663,7 @@ const RAW_RUNTIME_STATE =
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
           ["nyc", "npm:15.1.0"],\
           ["semver", "npm:7.5.3"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -2681,7 +2681,7 @@ const RAW_RUNTIME_STATE =
           ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:14.2.1"],\
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.25.3"],\
           ["mocha", "npm:9.2.2"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -2777,7 +2777,7 @@ const RAW_RUNTIME_STATE =
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
           ["semver", "npm:7.5.3"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
           ["stream-http", "npm:3.2.0"],\
@@ -2864,7 +2864,7 @@ const RAW_RUNTIME_STATE =
           ["pbkdf2", "npm:3.1.2"],\
           ["process", "npm:0.11.10"],\
           ["setimmediate", "npm:1.0.5"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
           ["stream-http", "npm:3.2.0"],\
@@ -2924,7 +2924,7 @@ const RAW_RUNTIME_STATE =
           ["mocha", "npm:9.2.2"],\
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
           ["stream-http", "npm:3.2.0"],\
@@ -2953,7 +2953,7 @@ const RAW_RUNTIME_STATE =
           ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:14.2.1"],\
           ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.25.3"],\
           ["mocha", "npm:9.2.2"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"]\
         ],\
         "linkType": "SOFT"\
@@ -3994,9 +3994,41 @@ const RAW_RUNTIME_STATE =
           ["type-detect", "npm:4.0.8"]\
         ],\
         "linkType": "HARD"\
+      }],\
+      ["npm:2.0.0", {\
+        "packageLocation": "./.yarn/cache/@sinonjs-commons-npm-2.0.0-3716f24f20-bd6b449570.zip/node_modules/@sinonjs/commons/",\
+        "packageDependencies": [\
+          ["@sinonjs/commons", "npm:2.0.0"],\
+          ["type-detect", "npm:4.0.8"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:3.0.0", {\
+        "packageLocation": "./.yarn/cache/@sinonjs-commons-npm-3.0.0-fa72ff71a1-086720ae0b.zip/node_modules/@sinonjs/commons/",\
+        "packageDependencies": [\
+          ["@sinonjs/commons", "npm:3.0.0"],\
+          ["type-detect", "npm:4.0.8"]\
+        ],\
+        "linkType": "HARD"\
       }]\
     ]],\
     ["@sinonjs/fake-timers", [\
+      ["npm:10.3.0", {\
+        "packageLocation": "./.yarn/cache/@sinonjs-fake-timers-npm-10.3.0-7417f876b4-78155c7bd8.zip/node_modules/@sinonjs/fake-timers/",\
+        "packageDependencies": [\
+          ["@sinonjs/fake-timers", "npm:10.3.0"],\
+          ["@sinonjs/commons", "npm:3.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:11.2.2", {\
+        "packageLocation": "./.yarn/cache/@sinonjs-fake-timers-npm-11.2.2-eb695fcf3c-da7dfa677b.zip/node_modules/@sinonjs/fake-timers/",\
+        "packageDependencies": [\
+          ["@sinonjs/fake-timers", "npm:11.2.2"],\
+          ["@sinonjs/commons", "npm:3.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:7.1.2", {\
         "packageLocation": "./.yarn/cache/@sinonjs-fake-timers-npm-7.1.2-2a6b119ac7-ea3270c330.zip/node_modules/@sinonjs/fake-timers/",\
         "packageDependencies": [\
@@ -4007,11 +4039,11 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@sinonjs/samsam", [\
-      ["npm:6.0.2", {\
-        "packageLocation": "./.yarn/cache/@sinonjs-samsam-npm-6.0.2-5e8e8897e2-596e1e17f6.zip/node_modules/@sinonjs/samsam/",\
+      ["npm:8.0.0", {\
+        "packageLocation": "./.yarn/cache/@sinonjs-samsam-npm-8.0.0-fb46139e7a-0c9928a7d1.zip/node_modules/@sinonjs/samsam/",\
         "packageDependencies": [\
-          ["@sinonjs/samsam", "npm:6.0.2"],\
-          ["@sinonjs/commons", "npm:1.8.3"],\
+          ["@sinonjs/samsam", "npm:8.0.0"],\
+          ["@sinonjs/commons", "npm:2.0.0"],\
           ["lodash.get", "npm:4.4.2"],\
           ["type-detect", "npm:4.0.8"]\
         ],\
@@ -8015,7 +8047,7 @@ const RAW_RUNTIME_STATE =
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
           ["rimraf", "npm:3.0.2"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:3.7.0"],\
           ["stream-browserify", "npm:3.0.0"],\
           ["stream-http", "npm:3.2.0"],\
@@ -8093,7 +8125,7 @@ const RAW_RUNTIME_STATE =
           ["qs", "npm:6.11.0"],\
           ["rxjs", "npm:6.6.7"],\
           ["semver", "npm:7.5.3"],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["table", "npm:5.4.6"],\
           ["wrap-ansi", "npm:7.0.0"]\
@@ -13676,7 +13708,7 @@ const RAW_RUNTIME_STATE =
           ["@types/mocha", null],\
           ["@types/sinon", null],\
           ["mocha", "npm:9.2.2"],\
-          ["sinon", "npm:11.1.2"]\
+          ["sinon", "npm:17.0.1"]\
         ],\
         "packagePeers": [\
           "@types/mocha",\
@@ -13880,12 +13912,12 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["nise", [\
-      ["npm:5.1.0", {\
-        "packageLocation": "./.yarn/cache/nise-npm-5.1.0-8fc543b66e-97035ac04b.zip/node_modules/nise/",\
+      ["npm:5.1.5", {\
+        "packageLocation": "./.yarn/cache/nise-npm-5.1.5-847a2de198-c6afe82b91.zip/node_modules/nise/",\
         "packageDependencies": [\
-          ["nise", "npm:5.1.0"],\
-          ["@sinonjs/commons", "npm:1.8.3"],\
-          ["@sinonjs/fake-timers", "npm:7.1.2"],\
+          ["nise", "npm:5.1.5"],\
+          ["@sinonjs/commons", "npm:2.0.0"],\
+          ["@sinonjs/fake-timers", "npm:10.3.0"],\
           ["@sinonjs/text-encoding", "npm:0.7.1"],\
           ["just-extend", "npm:4.2.1"],\
           ["path-to-regexp", "npm:1.8.0"]\
@@ -16381,15 +16413,15 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["sinon", [\
-      ["npm:11.1.2", {\
-        "packageLocation": "./.yarn/cache/sinon-npm-11.1.2-5325724cb2-e6013a3642.zip/node_modules/sinon/",\
+      ["npm:17.0.1", {\
+        "packageLocation": "./.yarn/cache/sinon-npm-17.0.1-997c13081d-b34f1a97da.zip/node_modules/sinon/",\
         "packageDependencies": [\
-          ["sinon", "npm:11.1.2"],\
-          ["@sinonjs/commons", "npm:1.8.3"],\
-          ["@sinonjs/fake-timers", "npm:7.1.2"],\
-          ["@sinonjs/samsam", "npm:6.0.2"],\
-          ["diff", "npm:5.0.0"],\
-          ["nise", "npm:5.1.0"],\
+          ["sinon", "npm:17.0.1"],\
+          ["@sinonjs/commons", "npm:3.0.0"],\
+          ["@sinonjs/fake-timers", "npm:11.2.2"],\
+          ["@sinonjs/samsam", "npm:8.0.0"],\
+          ["diff", "npm:5.1.0"],\
+          ["nise", "npm:5.1.5"],\
           ["supports-color", "npm:7.2.0"]\
         ],\
         "linkType": "HARD"\
@@ -16410,7 +16442,7 @@ const RAW_RUNTIME_STATE =
           ["@types/chai", "npm:4.2.22"],\
           ["@types/sinon", "npm:9.0.11"],\
           ["chai", "npm:4.3.9"],\
-          ["sinon", "npm:11.1.2"]\
+          ["sinon", "npm:17.0.1"]\
         ],\
         "packagePeers": [\
           "@types/chai",\
@@ -16427,7 +16459,7 @@ const RAW_RUNTIME_STATE =
           ["@types/chai", null],\
           ["@types/sinon", null],\
           ["chai", "npm:4.3.9"],\
-          ["sinon", "npm:11.1.2"]\
+          ["sinon", "npm:17.0.1"]\
         ],\
         "packagePeers": [\
           "@types/chai",\
@@ -17768,7 +17800,7 @@ const RAW_RUNTIME_STATE =
           ["ts-mock-imports", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:1.3.8"],\
           ["@types/sinon", "npm:9.0.11"],\
           ["@types/typescript", null],\
-          ["sinon", "npm:11.1.2"],\
+          ["sinon", "npm:17.0.1"],\
           ["typescript", "patch:typescript@npm%3A3.9.10#optional!builtin<compat/typescript>::version=3.9.10&hash=3bd3d3"]\
         ],\
         "packagePeers": [\
