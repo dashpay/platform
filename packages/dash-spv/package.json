@@ -20,7 +20,7 @@
     "wasm-x11-hash": "~0.0.2"
   },
   "devDependencies": {
-    "chai": "^4.3.9",
+    "chai": "^4.3.10",
     "eslint": "^7.32.0",
     "eslint-config-airbnb-base": "^14.2.1",
     "eslint-plugin-import": "^2.29.0",
