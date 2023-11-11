@@ -81,7 +81,9 @@
     "word-wrap": "^1.2.4",
     "protobufjs": "^6.11.4",
     "browserify-sign": "4.2.2",
-    "istanbul-lib-processinfo": "2.0.3"
+    "istanbul-lib-processinfo": "2.0.3",
+    "@babel/core": "7.23.3",
+    "tsconfig-paths": "4.2.0"
   },
   "dependencies": {
     "node-gyp": "^9.3.1"
