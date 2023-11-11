@@ -71,6 +71,7 @@ jobs:
           mkdir -p /tmp/digests
           digest="${{ steps.docker_build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
+          ls -lah /tmp/digests
 
       - name: Upload digest
         uses: actions/upload-artifact@v3
@@ -144,6 +145,7 @@ jobs:
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
+          ls -lah
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ inputs.image_org }}/${{ inputs.image_name }}@sha256:%s ' *)
 
