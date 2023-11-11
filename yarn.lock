@@ -1585,7 +1585,7 @@ __metadata:
     chai: "npm:^4.3.10"
     chai-as-promised: "npm:^7.1.1"
     comment-parser: "npm:^0.7.6"
-    core-js: "npm:^3.17.2"
+    core-js: "npm:^3.33.1"
     crypto-browserify: "npm:^3.12.0"
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^7.32.0"
@@ -6200,10 +6200,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"core-js@npm:^3.17.2":
-  version: 3.19.1
-  resolution: "core-js@npm:3.19.1"
-  checksum: 3626760d04d95f5f7aa0551626a02950919796aacc5fb03f5ef7c99999e9da8e14ee1d51244fbca8a5ac3715a9701b2512c2bcaf1a1977c0e3a85c50f1239a52
+"core-js@npm:^3.33.1":
+  version: 3.33.2
+  resolution: "core-js@npm:3.33.2"
+  checksum: d62554d51ce8a3f33d0b1f8b064cbd21afcae275043ae96d3d43f18701b80cd423fab484517a81ee1d096db252e2aeada6ef6d1fd80a26db54f82f8f349a62c7
   languageName: node
   linkType: hard
 
