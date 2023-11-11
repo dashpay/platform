@@ -1,3 +1,10 @@
+### [0.25.13](https://github.com/dashpay/platform/compare/v0.25.12...v0.25.13) (2023-11-05)
+
+
+### Bug Fixes
+
+* **dashmate:** config is not persisted after migration ([#1561](https://github.com/dashpay/platform/issues/1561))
+
 ### [0.25.12](https://github.com/dashpay/platform/compare/v0.25.11...v0.25.12) (2023-11-03)
 
 

@@ -93,13 +93,9 @@ describe('Local Network', function main() {
       // Write configs
       await configFileRepository.write(configFile);
 
-      const renderServiceTemplates = container.resolve('renderServiceTemplates');
+      const writeConfigTemplates = container.resolve('writeConfigTemplates');
 
-      const writeServiceConfigs = container.resolve('writeServiceConfigs');
-      for (const config of configGroup) {
-        const serviceConfigFiles = renderServiceTemplates(config);
-        writeServiceConfigs(config.getName(), serviceConfigFiles);
-      }
+      configGroup.forEach(writeConfigTemplates);
     });
   });
 
