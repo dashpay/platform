@@ -80,7 +80,8 @@
     "semver": "^7.5.3",
     "word-wrap": "^1.2.4",
     "protobufjs": "^6.11.4",
-    "browserify-sign": "4.2.2"
+    "browserify-sign": "4.2.2",
+    "istanbul-lib-processinfo": "2.0.3"
   },
   "dependencies": {
     "node-gyp": "^9.3.1"
