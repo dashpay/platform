@@ -85,7 +85,8 @@
     "@babel/core": "7.23.3",
     "tsconfig-paths": "4.2.0",
     "ansi-regex": "5.0.1",
-    "cacache": "18.0.0"
+    "cacache": "18.0.0",
+    "got": "11.8.3"
   },
   "dependencies": {
     "node-gyp": "^9.3.1"
