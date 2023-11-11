@@ -18,6 +18,7 @@ on:
         description: Image target. i.e. drive-abci, dapi
         required: true
 env:
+  DIGEST_NAME: digests-${{ github.sha }}
   DIGEST_DIR_PATH: /tmp/digests/${{ inputs.image_org }}/${{ inputs.image_name }}
 
 jobs:
@@ -78,7 +79,7 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v3
         with:
-          name: digests
+          name: ${{ env.DIGEST_NAME }}
           path: ${{ env.DIGEST_DIR_PATH }}/*
           if-no-files-found: error
           retention-days: 1
@@ -91,7 +92,7 @@ jobs:
       - name: Download digests
         uses: actions/download-artifact@v3
         with:
-          name: digests
+          name: ${{ env.DIGEST_NAME }}
           path: ${{ env.DIGEST_DIR_PATH }}
 
       - name: Set up Docker Buildx
@@ -147,7 +148,6 @@ jobs:
       - name: Create manifest list and push
         working-directory: ${{ env.DIGEST_DIR_PATH }}
         run: |
-          ls -lah
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ inputs.image_org }}/${{ inputs.image_name }}@sha256:%s ' *)
 

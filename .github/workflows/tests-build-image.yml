@@ -17,7 +17,7 @@ on:
 jobs:
   build-image:
     name: Build ${{ inputs.name }} image
-    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    runs-on: [ "self-hosted", "linux", "arm64-4x", "ubuntu-platform" ]
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
