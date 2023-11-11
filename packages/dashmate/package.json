@@ -93,7 +93,7 @@
     "qs": "^6.11.0",
     "rxjs": "^6.6.7",
     "semver": "^7.5.3",
-    "table": "^5.4.6",
+    "table": "^6.8.1",
     "wrap-ansi": "^7.0.0"
   },
   "devDependencies": {

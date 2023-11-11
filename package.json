@@ -83,7 +83,8 @@
     "browserify-sign": "4.2.2",
     "istanbul-lib-processinfo": "2.0.3",
     "@babel/core": "7.23.3",
-    "tsconfig-paths": "4.2.0"
+    "tsconfig-paths": "4.2.0",
+    "strip-ansi": "7.1.0"
   },
   "dependencies": {
     "node-gyp": "^9.3.1"
