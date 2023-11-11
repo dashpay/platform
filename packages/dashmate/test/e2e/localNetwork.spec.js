@@ -96,19 +96,21 @@ describe('Local Network', function main() {
 
       expect(configExists).to.be.true();
 
-      // Store config group for further usage
-      configGroup = configFile.getGroupConfigs(groupName);
-
-      container.register({
-        configGroup: asValue(configGroup),
-      });
-
       // Write configs
       await configFileRepository.write(configFile);
 
       const writeConfigTemplates = container.resolve('writeConfigTemplates');
 
       configGroup.forEach(writeConfigTemplates);
+    });
+
+    after(async () => {
+      // Store config group for further usage
+      configGroup = configFile.getGroupConfigs(groupName);
+
+      container.register({
+        configGroup: asValue(configGroup),
+      });
     });
   });
 
