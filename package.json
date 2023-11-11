@@ -84,7 +84,7 @@
     "istanbul-lib-processinfo": "2.0.3",
     "@babel/core": "7.23.3",
     "tsconfig-paths": "4.2.0",
-    "strip-ansi": "7.1.0",
+    "ansi-regex": "5.0.1",
     "cacache": "18.0.0"
   },
   "dependencies": {
