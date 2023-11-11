@@ -27,11 +27,18 @@ describe('Local Network', function main() {
     }
 
     // Create config file
+    /**
+     * @type {ConfigFileJsonRepository}
+     */
     configFileRepository = container.resolve('configFileRepository');
 
     const createConfigFile = container.resolve('createConfigFile');
 
-    configFile = createConfigFile();
+    if (process.env.DASHMATE_E2E_TESTS_LOCAL_HOMEDIR) {
+      configFile = configFileRepository.read();
+    } else {
+      configFile = createConfigFile();
+    }
 
     // Update local config template that will be used to setup nodes
     const localConfig = configFile.getConfig(groupName);
