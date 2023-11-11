@@ -1290,6 +1290,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@chiragrupani/karma-chromium-edge-launcher@npm:^2.3.1":
+  version: 2.3.1
+  resolution: "@chiragrupani/karma-chromium-edge-launcher@npm:2.3.1"
+  checksum: 8fd4a8e6e06f8188fa91ca3a07b51c9a325045a47cc5e483fd718aa890692148ee7e8b528f9f1c50151074c80f4cb81808ddb4dc5ca02c665dea6c932eb15325
+  languageName: node
+  linkType: hard
+
 "@colors/colors@npm:1.5.0":
   version: 1.5.0
   resolution: "@colors/colors@npm:1.5.0"
@@ -1359,6 +1366,7 @@ __metadata:
   resolution: "@dashevo/dapi-client@workspace:packages/js-dapi-client"
   dependencies:
     "@babel/core": ^7.15.5
+    "@chiragrupani/karma-chromium-edge-launcher": ^2.3.1
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dash-spv": "workspace:*"
     "@dashevo/dashcore-lib": ~0.21.0
@@ -1407,7 +1415,6 @@ __metadata:
     wasm-x11-hash: ~0.0.2
     webpack: ^5.76.1
     webpack-cli: ^4.9.1
-    which: ^4.0.0
     winston: ^3.2.1
   languageName: unknown
   linkType: soft
@@ -1696,6 +1703,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/platform-test-suite@workspace:packages/platform-test-suite"
   dependencies:
+    "@chiragrupani/karma-chromium-edge-launcher": ^2.3.1
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": ~0.21.0
     "@dashevo/dpns-contract": "workspace:*"
@@ -1748,7 +1756,6 @@ __metadata:
     utf-8-validate: ^5.0.9
     util: ^0.12.4
     webpack: ^5.76.1
-    which: ^4.0.0
     ws: ^7.5.3
   bin:
     test: bin/test.sh
@@ -1797,6 +1804,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/wallet-lib@workspace:packages/wallet-lib"
   dependencies:
+    "@chiragrupani/karma-chromium-edge-launcher": ^2.3.1
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dash-spv": "workspace:*"
     "@dashevo/dashcore-lib": ~0.21.0
@@ -1845,7 +1853,6 @@ __metadata:
     wasm-x11-hash: ~0.0.2
     webpack: ^5.76.1
     webpack-cli: ^4.9.1
-    which: ^4.0.0
     winston: ^3.2.1
   languageName: unknown
   linkType: soft
@@ -1858,6 +1865,7 @@ __metadata:
     "@babel/cli": ^7.21.0
     "@babel/core": ^7.15.5
     "@babel/preset-env": ^7.15.4
+    "@chiragrupani/karma-chromium-edge-launcher": ^2.3.1
     "@dashevo/bls": ~1.2.9
     "@dashevo/dashcore-lib": ~0.21.0
     "@dashevo/dpns-contract": "workspace:*"
@@ -1906,7 +1914,6 @@ __metadata:
     varint: ^6.0.0
     webpack: ^5.76.1
     webpack-cli: ^4.9.1
-    which: ^4.0.0
   languageName: unknown
   linkType: soft
 
@@ -6002,6 +6009,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dash@workspace:packages/js-dash-sdk"
   dependencies:
+    "@chiragrupani/karma-chromium-edge-launcher": ^2.3.1
     "@dashevo/bls": ~1.2.9
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
@@ -6069,7 +6077,6 @@ __metadata:
     util: ^0.12.4
     webpack: ^5.76.1
     webpack-cli: ^4.9.1
-    which: ^4.0.0
     winston: ^3.2.1
   languageName: unknown
   linkType: soft
@@ -9145,13 +9152,6 @@ fsevents@~2.3.2:
   version: 2.0.0
   resolution: "isexe@npm:2.0.0"
   checksum: 26bf6c5480dda5161c820c5b5c751ae1e766c587b1f951ea3fcfc973bafb7831ae5b54a31a69bd670220e42e99ec154475025a468eae58ea262f813fdc8d1c62
-  languageName: node
-  linkType: hard
-
-"isexe@npm:^3.1.1":
-  version: 3.1.1
-  resolution: "isexe@npm:3.1.1"
-  checksum: 7fe1931ee4e88eb5aa524cd3ceb8c882537bc3a81b02e438b240e47012eef49c86904d0f0e593ea7c3a9996d18d0f1f3be8d3eaa92333977b0c3a9d353d5563e
   languageName: node
   linkType: hard
 
@@ -15189,17 +15189,6 @@ typescript@^3.9.5:
   bin:
     which: ./bin/which
   checksum: f2e185c6242244b8426c9df1510e86629192d93c1a986a7d2a591f2c24869e7ffd03d6dac07ca863b2e4c06f59a4cc9916c585b72ee9fa1aa609d0124df15e04
-  languageName: node
-  linkType: hard
-
-"which@npm:^4.0.0":
-  version: 4.0.0
-  resolution: "which@npm:4.0.0"
-  dependencies:
-    isexe: ^3.1.1
-  bin:
-    node-which: bin/which.js
-  checksum: f17e84c042592c21e23c8195108cff18c64050b9efb8459589116999ea9da6dd1509e6a1bac3aeebefd137be00fabbb61b5c2bc0aa0f8526f32b58ee2f545651
   languageName: node
   linkType: hard
 

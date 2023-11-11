@@ -1,13 +1,12 @@
 /* eslint-disable import/no-extraneous-dependencies */
 const webpack = require('webpack');
 const dotenvSafe = require('dotenv-safe');
-const which = require('which');
-const fs = require('fs');
 
 const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
 const karmaChai = require('karma-chai');
 const karmaChromeLauncher = require('karma-chrome-launcher');
+const karmaChromiumEdgeLauncher = require('@chiragrupani/karma-chromium-edge-launcher');
 const karmaSourcemapLoader = require('karma-sourcemap-loader');
 const karmaWebpack = require('karma-webpack');
 
@@ -20,27 +19,6 @@ if (process.env.LOAD_ENV) {
     throw dotenvResult.error;
   }
   env = dotenvResult.parsed;
-}
-
-function isChromiumExist() {
-  const ChromiumHeadlessBrowser = karmaChromeLauncher['launcher:ChromiumHeadless'][1];
-  const chromiumBrowser = new ChromiumHeadlessBrowser(() => { }, {});
-
-  let chromiumPath = chromiumBrowser.DEFAULT_CMD[process.platform];
-  if (chromiumBrowser.ENV_CMD && process.env[chromiumBrowser.ENV_CMD]) {
-    chromiumPath = process.env[chromiumBrowser.ENV_CMD];
-  }
-
-  if (!chromiumPath) {
-    return false;
-  }
-
-  // On linux, the browsers just return the command, not a path, so we need to check if it exists.
-  if (process.platform === 'linux') {
-    return !!which.sync(chromiumPath, { nothrow: true });
-  }
-
-  return fs.existsSync(chromiumPath);
 }
 
 module.exports = {
@@ -74,12 +52,13 @@ module.exports = {
     karmaMochaReporter,
     karmaChai,
     karmaChromeLauncher,
+    karmaChromiumEdgeLauncher,
     karmaSourcemapLoader,
     karmaWebpack,
   ],
   customLaunchers: {
     chromeWithoutSecurity: {
-      base: isChromiumExist() ? 'ChromiumHeadless' : 'ChromeHeadless',
+      base: process.env.CHROMIUM_BASED_BROWSER_NAME || 'ChromeHeadless',
       flags: ['--allow-insecure-localhost'],
       displayName: 'Chrome w/o security',
     },

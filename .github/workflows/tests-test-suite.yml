@@ -16,7 +16,9 @@ jobs:
     name: Run ${{ inputs.name }}
     # TODO: Try with Github Runner, probably it will be the same time
     runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
-    timeout-minutes: 120
+    timeout-minutes: 15
+    env:
+      CHROMIUM_BASED_BROWSER_NAME: EdgeAny
     steps:
       - name: Check out repo
         uses: actions/checkout@v4

@@ -58,6 +58,7 @@
     "winston": "^3.2.1"
   },
   "devDependencies": {
+    "@chiragrupani/karma-chromium-edge-launcher": "^2.3.1",
     "@dashevo/dash-spv": "workspace:*",
     "assert": "^2.0.0",
     "browserify-zlib": "^0.2.0",
@@ -95,7 +96,6 @@
     "util": "^0.12.4",
     "wasm-x11-hash": "~0.0.2",
     "webpack": "^5.76.1",
-    "webpack-cli": "^4.9.1",
-    "which": "^4.0.0"
+    "webpack-cli": "^4.9.1"
   }
 }

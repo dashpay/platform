@@ -2274,6 +2274,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD"\
         }]\
       ]],\
+      ["@chiragrupani/karma-chromium-edge-launcher", [\
+        ["npm:2.3.1", {\
+          "packageLocation": "./.yarn/cache/@chiragrupani-karma-chromium-edge-launcher-npm-2.3.1-9faca73d35-8fd4a8e6e0.zip/node_modules/@chiragrupani/karma-chromium-edge-launcher/",\
+          "packageDependencies": [\
+            ["@chiragrupani/karma-chromium-edge-launcher", "npm:2.3.1"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
       ["@colors/colors", [\
         ["npm:1.5.0", {\
           "packageLocation": "./.yarn/cache/@colors-colors-npm-1.5.0-875af3a8b4-d64d5260be.zip/node_modules/@colors/colors/",\
@@ -2396,6 +2405,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@babel/core", "npm:7.16.0"],\
+            ["@chiragrupani/karma-chromium-edge-launcher", "npm:2.3.1"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
             ["@dashevo/dashcore-lib", "npm:0.21.0"],\
@@ -2444,7 +2454,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["wasm-x11-hash", "npm:0.0.2"],\
             ["webpack", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:5.76.1"],\
             ["webpack-cli", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:4.9.1"],\
-            ["which", "npm:4.0.0"],\
             ["winston", "npm:3.3.3"]\
           ],\
           "linkType": "SOFT"\
@@ -2729,6 +2738,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/platform-test-suite/",\
           "packageDependencies": [\
             ["@dashevo/platform-test-suite", "workspace:packages/platform-test-suite"],\
+            ["@chiragrupani/karma-chromium-edge-launcher", "npm:2.3.1"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dashcore-lib", "npm:0.21.0"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
@@ -2781,7 +2791,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["utf-8-validate", "npm:5.0.9"],\
             ["util", "npm:0.12.4"],\
             ["webpack", "virtual:01938c2be4835443e5a304e2b117c575220e96e8b7cedeb0f48d79264590b4c4babc6d1fea6367f522b1ca0149d795b42f2ab89c34a6ffe3c20f0a8cbb8b4453#npm:5.76.1"],\
-            ["which", "npm:4.0.0"],\
             ["ws", "virtual:01938c2be4835443e5a304e2b117c575220e96e8b7cedeb0f48d79264590b4c4babc6d1fea6367f522b1ca0149d795b42f2ab89c34a6ffe3c20f0a8cbb8b4453#npm:7.5.5"]\
           ],\
           "linkType": "SOFT"\
@@ -2822,6 +2831,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/wallet-lib/",\
           "packageDependencies": [\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
+            ["@chiragrupani/karma-chromium-edge-launcher", "npm:2.3.1"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
             ["@dashevo/dashcore-lib", "npm:0.21.0"],\
@@ -2870,7 +2880,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["wasm-x11-hash", "npm:0.0.2"],\
             ["webpack", "virtual:45f214395bc38640da4dc5e940482d5df0572c5384e0262802601d1973e71077ec8bbd76b77eafa4c0550b706b664abd84d63fd67a5897139f0b2675530fc84f#npm:5.76.1"],\
             ["webpack-cli", "virtual:45f214395bc38640da4dc5e940482d5df0572c5384e0262802601d1973e71077ec8bbd76b77eafa4c0550b706b664abd84d63fd67a5897139f0b2675530fc84f#npm:4.9.1"],\
-            ["which", "npm:4.0.0"],\
             ["winston", "npm:3.3.3"]\
           ],\
           "linkType": "SOFT"\
@@ -2885,6 +2894,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@babel/cli", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.21.0"],\
             ["@babel/core", "npm:7.16.0"],\
             ["@babel/preset-env", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.16.4"],\
+            ["@chiragrupani/karma-chromium-edge-launcher", "npm:2.3.1"],\
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dashcore-lib", "npm:0.21.0"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
@@ -2932,8 +2942,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["util", "npm:0.12.4"],\
             ["varint", "npm:6.0.0"],\
             ["webpack", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:5.76.1"],\
-            ["webpack-cli", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:4.9.1"],\
-            ["which", "npm:4.0.0"]\
+            ["webpack-cli", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:4.9.1"]\
           ],\
           "linkType": "SOFT"\
         }]\
@@ -7991,6 +8000,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-dash-sdk/",\
           "packageDependencies": [\
             ["dash", "workspace:packages/js-dash-sdk"],\
+            ["@chiragrupani/karma-chromium-edge-launcher", "npm:2.3.1"],\
             ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dapi-grpc", "workspace:packages/dapi-grpc"],\
@@ -8058,7 +8068,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["util", "npm:0.12.4"],\
             ["webpack", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:5.76.1"],\
             ["webpack-cli", "virtual:ad53cff31b1dbd4927a99e71702e3b8b10338636eaff010987c27c9ccea2d52af36900a9e36a4231cbb6e5464248ccc9c1da5d1d24d9b0f4f95660296b1060a6#npm:4.9.1"],\
-            ["which", "npm:4.0.0"],\
             ["winston", "npm:3.3.3"]\
           ],\
           "linkType": "SOFT"\
@@ -11739,13 +11748,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/isexe-npm-2.0.0-b58870bd2e-26bf6c5480.zip/node_modules/isexe/",\
           "packageDependencies": [\
             ["isexe", "npm:2.0.0"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
-        ["npm:3.1.1", {\
-          "packageLocation": "./.yarn/cache/isexe-npm-3.1.1-9c0061eead-7fe1931ee4.zip/node_modules/isexe/",\
-          "packageDependencies": [\
-            ["isexe", "npm:3.1.1"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -18969,14 +18971,6 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["which", "npm:2.0.2"],\
             ["isexe", "npm:2.0.0"]\
-          ],\
-          "linkType": "HARD"\
-        }],\
-        ["npm:4.0.0", {\
-          "packageLocation": "./.yarn/cache/which-npm-4.0.0-dd31cd4928-f17e84c042.zip/node_modules/which/",\
-          "packageDependencies": [\
-            ["which", "npm:4.0.0"],\
-            ["isexe", "npm:3.1.1"]\
           ],\
           "linkType": "HARD"\
         }]\

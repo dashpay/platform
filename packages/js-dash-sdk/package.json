@@ -53,6 +53,7 @@
     "winston": "^3.2.1"
   },
   "devDependencies": {
+    "@chiragrupani/karma-chromium-edge-launcher": "^2.3.1",
     "@types/chai": "^4.2.12",
     "@types/dirty-chai": "^2.0.2",
     "@types/expect": "^24.3.0",
@@ -107,7 +108,6 @@
     "url": "^0.11.0",
     "util": "^0.12.4",
     "webpack": "^5.76.1",
-    "webpack-cli": "^4.9.1",
-    "which": "^4.0.0"
+    "webpack-cli": "^4.9.1"
   }
 }

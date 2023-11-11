@@ -22,7 +22,7 @@ jobs:
   build-image:
     name: Build ${{ matrix.platform }} image
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
+    timeout-minutes: 20
     strategy:
       matrix:
         include:
