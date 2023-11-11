@@ -18,8 +18,8 @@ on:
         description: Image target. i.e. drive-abci, dapi
         required: true
 env:
-  DIGEST_NAME: digests-${{ github.sha }}
-  DIGEST_DIR_PATH: /tmp/digests/${{ inputs.image_org }}/${{ inputs.image_name }}
+  DIGEST_NAME: digests-${{ inputs.image_org }}-${{ inputs.image_name }}-${{ github.sha }}
+  DIGEST_DIR_PATH: /tmp/digests
 
 jobs:
   build-image:
@@ -148,11 +148,10 @@ jobs:
       - name: Create manifest list and push
         working-directory: ${{ env.DIGEST_DIR_PATH }}
         run: |
-          echo "Path: ${{ env.DIGEST_DIR_PATH }}" 
-          ls -lah ${{ env.DIGEST_DIR_PATH }}
+          ls -lah
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ inputs.image_org }}/${{ inputs.image_name }}@sha256:%s ' *)
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ${{ inputs.image_org }}/${{ inputs.image_name }}:${{ steps.docker_meta.outputs.version }}     
+          docker buildx imagetools inspect ${{ inputs.image_org }}/${{ inputs.image_name }}:${{ steps.docker_meta.outputs.version }}
