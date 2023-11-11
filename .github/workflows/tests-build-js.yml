@@ -11,6 +11,7 @@ jobs:
         with:
           aws-region: ${{ vars.AWS_REGION }}
 
+      # TODO: Use upload artifacts action instead
       - name: Cache build artifacts
         uses: strophy/actions-cache@opendal-update
         id: cache

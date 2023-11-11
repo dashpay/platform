@@ -101,6 +101,7 @@ describe('Local Network', function main() {
 
       const writeConfigTemplates = container.resolve('writeConfigTemplates');
 
+      configGroup = configFile.getGroupConfigs(groupName);
       configGroup.forEach(writeConfigTemplates);
     });
 

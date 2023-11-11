@@ -148,6 +148,8 @@ jobs:
       - name: Create manifest list and push
         working-directory: ${{ env.DIGEST_DIR_PATH }}
         run: |
+          echo "Path: ${{ env.DIGEST_DIR_PATH }}" 
+          ls -lah ${{ env.DIGEST_DIR_PATH }}
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ inputs.image_org }}/${{ inputs.image_name }}@sha256:%s ' *)
 

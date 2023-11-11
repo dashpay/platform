@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 15
     env:
       CHROMIUM_BASED_BROWSER_NAME: EdgeHeadless
+      EDGE_BIN: /usr/bin/microsoft-edge
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -54,6 +55,7 @@ jobs:
         id: dashmate-fingerprint
         run: echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_OUTPUT
 
+      # TODO: Use upload artifacts action instead
       - name: Restore local network data
         id: local-network-data
         uses: strophy/actions-cache/restore@opendal-update
