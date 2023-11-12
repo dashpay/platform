@@ -110,7 +110,7 @@ jobs:
   # TODO: implement a regular and extended mode for strategy tests in drive abci
   test:
     name: Tests
-    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]
     timeout-minutes: 20
     steps:
       - name: Check out repo
