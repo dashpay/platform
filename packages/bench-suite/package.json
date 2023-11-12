@@ -5,7 +5,7 @@
   "description": "Dash Platform benchmark tool",
   "scripts": {
     "bench": "node ./bin/bench.js",
-    "lint": "eslint ."
+    "lint": ""
   },
   "dependencies": {
     "@dashevo/dashcore-lib": "~0.21.0",

@@ -1,5 +1,5 @@
 exit: true
-timeout: 900000
+timeout: 650000
 require:
   - ./lib/test/bootstrap.js
 parallel: true

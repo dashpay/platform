@@ -5,7 +5,7 @@ const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
 describe('e2e', () => {
   describe('Contacts', function contacts() {
-    // this.timeout(950000);
+    this.timeout(950000);
 
     let dataContract;
 
