@@ -15,6 +15,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - run: echo ${{ false && '111' || '000'}}
+
   changes:
     name: Determine changed packages
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
