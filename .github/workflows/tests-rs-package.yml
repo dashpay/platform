@@ -17,7 +17,7 @@ on:
 jobs:
   lint:
     name: Linting
-    runs-on: ${{ fromJSON(inputs.lint-runner) }}
+    runs-on: ubuntu-22.04 #${{ fromJSON(inputs.lint-runner) }}
     permissions:
       id-token: write
       contents: read
