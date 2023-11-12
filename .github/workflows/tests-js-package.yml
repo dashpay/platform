@@ -9,12 +9,10 @@ on:
         description: Skip running tests
         type: boolean
         default: false
-        required: false
       test-command:
         description: Test command to run
         type: string
         default: test
-        required: false
 
 jobs:
   lint:
@@ -87,17 +85,5 @@ jobs:
         run: |
           cp packages/dapi/.env.example packages/dapi/.env
 
-      # TODO: Use test-command input
-      - name: Set test command
-        id: test-command
-        uses: actions/github-script@v6
-        with:
-          script: |
-            if ('${{ inputs.package }}' === 'dashmate') {
-              return 'test:unit';
-            }
-            return 'test';
-          result-encoding: string
-
       - name: Run tests
-        run: yarn workspace "${{ inputs.package }}" ${{ steps.test-command.outputs.result }}
+        run: yarn workspace "${{ inputs.package }}" ${{ inputs.test-command }}

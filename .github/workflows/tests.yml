@@ -79,8 +79,10 @@ jobs:
     uses: ./.github/workflows/tests-rs-package.yml
     with:
       package: ${{ matrix.rs-package }}
-      tests4x: ${{ contains(['drive-abci'], matrix.rs-package) }}
-      linting2x: ${{ contains(['drive-abci', 'drive'], matrix.rs-package) }}
+      # Run drive and drive-abci linter on self-hosted 2x
+      lint-runner: ${{ contains(fromJSON('["drive-abci", "drive"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' || 'ubuntu-22.04' }}
+      # Run drive tests on self-hosted 4x
+      test-runner: ${{ contains(fromJSON('["drive-abci",]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]' || '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' }}
 
   rs-crates-security:
     name: Rust crates security audit
@@ -108,6 +110,7 @@ jobs:
     uses: ./.github/workflows/tests-js-package.yml
     with:
       package: ${{ matrix.js-package }}
+      test-command: ${{ matrix.js-package == 'dashmate' && 'test:unit' || 'test' }}
       skip-tests: ${{ contains(matrix.js-package, 'platform-test-suite') }}
 
   js-deps-versions:

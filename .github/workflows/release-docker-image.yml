@@ -44,25 +44,13 @@ jobs:
         with:
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Get image version
-        uses: actions/github-script@v6
-        id: version
-        with:
-          result-encoding: string
-          script: |
-            return (
-              context.eventName === 'workflow_dispatch'
-                ? '${{ github.event.inputs.tag }}'
-                : context.payload.release.tag_name
-            );
-
       - name: Build and push by digest
         uses: ./.github/actions/docker
         id: docker_build
         with:
           image_name: ${{ inputs.image_name }}
           image_org: ${{ inputs.image_org }}
-          image_version: ${{ steps.version.outputs.result }}
+          image_version: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.event.release.tag_name }}
           target: ${{ inputs.target }}
           platform: ${{ matrix.platform }}
           cargo_profile: release

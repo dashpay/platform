@@ -86,17 +86,6 @@ runs:
         name: ${{ inputs.image_name }}
         bucket: ${{ inputs.bucket }}
 
-    - name: Set tags
-      uses: actions/github-script@v6
-      id: tags
-      with:
-        script: |
-          if ('${{ inputs.push_tags}}' != 'true') {
-            core.setOutput('tags', '');
-          } else {
-            core.setOutput('tags', '${{ steps.docker_meta.outputs.tags }}');
-          }
-
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
       uses: docker/build-push-action@v5
@@ -105,7 +94,7 @@ runs:
         builder: ${{ steps.buildx.outputs.name }}
         target: ${{ inputs.target }}
         labels: ${{ steps.docker_meta.outputs.labels }}
-        tags: ${{ steps.tags.outputs.tags }}
+        tags: ${{ inputs.push_tags == 'true' && steps.docker_meta.outputs.tags || '' }}
         platforms: ${{ inputs.platform }}
         build-args: |
           CARGO_BUILD_PROFILE=${{ inputs.cargo_profile }}
