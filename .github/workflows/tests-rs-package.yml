@@ -5,7 +5,7 @@ on:
         description: The package name to run tests for
         type: string
         required: true
-      tests-runner:
+      test-runner:
         description: Runner for tests (accepts JSON)
         type: string
         default: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
