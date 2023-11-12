@@ -15,11 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    runs-on: ubuntu-22.04
-    steps:
-      - run: echo ${{ false && '111' || '000'}}
-
   changes:
     name: Determine changed packages
     if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
@@ -85,8 +80,8 @@ jobs:
     with:
       package: ${{ matrix.rs-package }}
       # Run drive and drive-abci linter on self-hosted 2x
-      # contains(fromJSON('["drive-abci", "drive"]'), matrix.rs-package)
-      lint-runner: ${{ false && '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' || 'ubuntu-22.04' }}
+      lint-runner: 'ubuntu-22.04'
+#      lint-runner: ${{ contains(fromJSON('["drive-abci", "drive"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' || 'ubuntu-22.04' }}
       # Run drive tests on self-hosted 4x
       test-runner: ${{ contains(fromJSON('["drive-abci"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]' || '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' }}
 
