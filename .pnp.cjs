@@ -4333,6 +4333,13 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@sindresorhus/is", [\
+      ["npm:0.14.0", {\
+        "packageLocation": "./.yarn/cache/@sindresorhus-is-npm-0.14.0-9f906ea34b-789cd128f0.zip/node_modules/@sindresorhus/is/",\
+        "packageDependencies": [\
+          ["@sindresorhus/is", "npm:0.14.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:4.6.0", {\
         "packageLocation": "./.yarn/cache/@sindresorhus-is-npm-4.6.0-7cad05c55e-e7f36ed72a.zip/node_modules/@sindresorhus/is/",\
         "packageDependencies": [\
@@ -4433,6 +4440,14 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@szmarczak/http-timer", [\
+      ["npm:1.1.2", {\
+        "packageLocation": "./.yarn/cache/@szmarczak-http-timer-npm-1.1.2-ea82ca2d55-9b63853bd5.zip/node_modules/@szmarczak/http-timer/",\
+        "packageDependencies": [\
+          ["@szmarczak/http-timer", "npm:1.1.2"],\
+          ["defer-to-connect", "npm:1.1.3"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:4.0.6", {\
         "packageLocation": "./.yarn/cache/@szmarczak-http-timer-npm-4.0.6-6ace00d82d-c29df3bcec.zip/node_modules/@szmarczak/http-timer/",\
         "packageDependencies": [\
@@ -5622,7 +5637,7 @@ const RAW_RUNTIME_STATE =
           ["cross-spawn", "npm:7.0.3"],\
           ["diff", "npm:5.1.0"],\
           ["globby", "npm:11.1.0"],\
-          ["got", "npm:11.8.3"],\
+          ["got", "npm:11.8.6"],\
           ["lodash", "npm:4.17.21"],\
           ["micromatch", "npm:4.0.4"],\
           ["p-limit", "npm:2.3.0"],\
@@ -7125,6 +7140,20 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["cacheable-request", [\
+      ["npm:6.1.0", {\
+        "packageLocation": "./.yarn/cache/cacheable-request-npm-6.1.0-684b834873-804f6c377c.zip/node_modules/cacheable-request/",\
+        "packageDependencies": [\
+          ["cacheable-request", "npm:6.1.0"],\
+          ["clone-response", "npm:1.0.3"],\
+          ["get-stream", "npm:5.2.0"],\
+          ["http-cache-semantics", "npm:4.1.1"],\
+          ["keyv", "npm:3.1.0"],\
+          ["lowercase-keys", "npm:2.0.0"],\
+          ["normalize-url", "npm:4.5.1"],\
+          ["responselike", "npm:1.0.2"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:7.0.4", {\
         "packageLocation": "./.yarn/cache/cacheable-request-npm-7.0.4-92bf077a92-0f4f200126.zip/node_modules/cacheable-request/",\
         "packageDependencies": [\
@@ -8754,6 +8783,14 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["decompress-response", [\
+      ["npm:3.3.0", {\
+        "packageLocation": "./.yarn/cache/decompress-response-npm-3.3.0-6e7b6375c3-952552ac3b.zip/node_modules/decompress-response/",\
+        "packageDependencies": [\
+          ["decompress-response", "npm:3.3.0"],\
+          ["mimic-response", "npm:1.0.1"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:6.0.0", {\
         "packageLocation": "./.yarn/cache/decompress-response-npm-6.0.0-359de2878c-d377cf47e0.zip/node_modules/decompress-response/",\
         "packageDependencies": [\
@@ -8812,6 +8849,13 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["defer-to-connect", [\
+      ["npm:1.1.3", {\
+        "packageLocation": "./.yarn/cache/defer-to-connect-npm-1.1.3-5887885147-9491b301dc.zip/node_modules/defer-to-connect/",\
+        "packageDependencies": [\
+          ["defer-to-connect", "npm:1.1.3"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:2.0.1", {\
         "packageLocation": "./.yarn/cache/defer-to-connect-npm-2.0.1-9005cc8c60-8a9b50d2f2.zip/node_modules/defer-to-connect/",\
         "packageDependencies": [\
@@ -9173,6 +9217,15 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["dotenv-safe", "npm:8.2.0"],\
           ["dotenv", "npm:8.6.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["duplexer3", [\
+      ["npm:0.1.5", {\
+        "packageLocation": "./.yarn/cache/duplexer3-npm-0.1.5-343d4ab7e3-e677cb4c48.zip/node_modules/duplexer3/",\
+        "packageDependencies": [\
+          ["duplexer3", "npm:0.1.5"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -10917,6 +10970,14 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["get-stream", [\
+      ["npm:4.1.0", {\
+        "packageLocation": "./.yarn/cache/get-stream-npm-4.1.0-314d430a5d-12673e8aeb.zip/node_modules/get-stream/",\
+        "packageDependencies": [\
+          ["get-stream", "npm:4.1.0"],\
+          ["pump", "npm:3.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:5.2.0", {\
         "packageLocation": "./.yarn/cache/get-stream-npm-5.2.0-2cfd3b452b-13a73148dc.zip/node_modules/get-stream/",\
         "packageDependencies": [\
@@ -11151,10 +11212,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["got", [\
-      ["npm:11.8.3", {\
-        "packageLocation": "./.yarn/cache/got-npm-11.8.3-caf98d599b-eae5373c35.zip/node_modules/got/",\
+      ["npm:11.8.6", {\
+        "packageLocation": "./.yarn/cache/got-npm-11.8.6-89e7cd5d67-a30c74029d.zip/node_modules/got/",\
         "packageDependencies": [\
-          ["got", "npm:11.8.3"],\
+          ["got", "npm:11.8.6"],\
           ["@sindresorhus/is", "npm:4.6.0"],\
           ["@szmarczak/http-timer", "npm:4.0.6"],\
           ["@types/cacheable-request", "npm:6.0.3"],\
@@ -11166,6 +11227,26 @@ const RAW_RUNTIME_STATE =
           ["lowercase-keys", "npm:2.0.0"],\
           ["p-cancelable", "npm:2.1.1"],\
           ["responselike", "npm:2.0.1"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:9.6.0", {\
+        "packageLocation": "./.yarn/cache/got-npm-9.6.0-80edc15fd0-fae3273b44.zip/node_modules/got/",\
+        "packageDependencies": [\
+          ["got", "npm:9.6.0"],\
+          ["@sindresorhus/is", "npm:0.14.0"],\
+          ["@szmarczak/http-timer", "npm:1.1.2"],\
+          ["@types/keyv", "npm:3.1.4"],\
+          ["@types/responselike", "npm:1.0.3"],\
+          ["cacheable-request", "npm:6.1.0"],\
+          ["decompress-response", "npm:3.3.0"],\
+          ["duplexer3", "npm:0.1.5"],\
+          ["get-stream", "npm:4.1.0"],\
+          ["lowercase-keys", "npm:1.0.1"],\
+          ["mimic-response", "npm:1.0.1"],\
+          ["p-cancelable", "npm:1.1.0"],\
+          ["to-readable-stream", "npm:1.0.0"],\
+          ["url-parse-lax", "npm:3.0.0"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -12628,6 +12709,13 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["json-buffer", [\
+      ["npm:3.0.0", {\
+        "packageLocation": "./.yarn/cache/json-buffer-npm-3.0.0-21c267a314-6e36458560.zip/node_modules/json-buffer/",\
+        "packageDependencies": [\
+          ["json-buffer", "npm:3.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:3.0.1", {\
         "packageLocation": "./.yarn/cache/json-buffer-npm-3.0.1-f8f6d20603-8287615452.zip/node_modules/json-buffer/",\
         "packageDependencies": [\
@@ -13033,6 +13121,14 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["keyv", [\
+      ["npm:3.1.0", {\
+        "packageLocation": "./.yarn/cache/keyv-npm-3.1.0-81c9ff4454-6de272b3f7.zip/node_modules/keyv/",\
+        "packageDependencies": [\
+          ["keyv", "npm:3.1.0"],\
+          ["json-buffer", "npm:3.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:4.5.4", {\
         "packageLocation": "./.yarn/cache/keyv-npm-4.5.4-4c8e2cf7f7-167eb6ef64.zip/node_modules/keyv/",\
         "packageDependencies": [\
@@ -13481,6 +13577,13 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["lowercase-keys", [\
+      ["npm:1.0.1", {\
+        "packageLocation": "./.yarn/cache/lowercase-keys-npm-1.0.1-0979e653b8-12ba64572d.zip/node_modules/lowercase-keys/",\
+        "packageDependencies": [\
+          ["lowercase-keys", "npm:1.0.1"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:2.0.0", {\
         "packageLocation": "./.yarn/cache/lowercase-keys-npm-2.0.0-1876065a32-1c233d2da3.zip/node_modules/lowercase-keys/",\
         "packageDependencies": [\
@@ -14798,6 +14901,13 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["normalize-url", [\
+      ["npm:4.5.1", {\
+        "packageLocation": "./.yarn/cache/normalize-url-npm-4.5.1-603d40bc18-20ced2845f.zip/node_modules/normalize-url/",\
+        "packageDependencies": [\
+          ["normalize-url", "npm:4.5.1"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:6.1.0", {\
         "packageLocation": "./.yarn/cache/normalize-url-npm-6.1.0-b95bc12ece-5ae699402c.zip/node_modules/normalize-url/",\
         "packageDependencies": [\
@@ -15178,7 +15288,7 @@ const RAW_RUNTIME_STATE =
           ["find-yarn-workspace-root", "npm:2.0.0"],\
           ["fs-extra", "npm:8.1.0"],\
           ["github-slugger", "npm:1.5.0"],\
-          ["got", "npm:11.8.3"],\
+          ["got", "npm:11.8.6"],\
           ["lodash.template", "npm:4.5.0"],\
           ["normalize-package-data", "npm:3.0.3"],\
           ["semver", "npm:7.5.3"],\
@@ -15330,6 +15440,13 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["p-cancelable", [\
+      ["npm:1.1.0", {\
+        "packageLocation": "./.yarn/cache/p-cancelable-npm-1.1.0-d147d5996f-2db3814fef.zip/node_modules/p-cancelable/",\
+        "packageDependencies": [\
+          ["p-cancelable", "npm:1.1.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:2.1.1", {\
         "packageLocation": "./.yarn/cache/p-cancelable-npm-2.1.1-9388305f02-7f1b64db17.zip/node_modules/p-cancelable/",\
         "packageDependencies": [\
@@ -15919,6 +16036,15 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
+    ["prepend-http", [\
+      ["npm:2.0.0", {\
+        "packageLocation": "./.yarn/cache/prepend-http-npm-2.0.0-e1fc4332f2-7694a95254.zip/node_modules/prepend-http/",\
+        "packageDependencies": [\
+          ["prepend-http", "npm:2.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
     ["pretty-bytes", [\
       ["npm:5.6.0", {\
         "packageLocation": "./.yarn/cache/pretty-bytes-npm-5.6.0-0061079c9f-9c082500d1.zip/node_modules/pretty-bytes/",\
@@ -16136,7 +16262,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["public-ip", "npm:4.0.4"],\
           ["dns-socket", "npm:4.2.2"],\
-          ["got", "npm:11.8.3"],\
+          ["got", "npm:9.6.0"],\
           ["is-ip", "npm:3.1.0"]\
         ],\
         "linkType": "HARD"\
@@ -16754,6 +16880,14 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["responselike", [\
+      ["npm:1.0.2", {\
+        "packageLocation": "./.yarn/cache/responselike-npm-1.0.2-d0bf50cde4-2e9e70f1dc.zip/node_modules/responselike/",\
+        "packageDependencies": [\
+          ["responselike", "npm:1.0.2"],\
+          ["lowercase-keys", "npm:1.0.1"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
       ["npm:2.0.1", {\
         "packageLocation": "./.yarn/cache/responselike-npm-2.0.1-7f64b6e122-b122535466.zip/node_modules/responselike/",\
         "packageDependencies": [\
@@ -18506,6 +18640,15 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
+    ["to-readable-stream", [\
+      ["npm:1.0.0", {\
+        "packageLocation": "./.yarn/cache/to-readable-stream-npm-1.0.0-4fa4da8130-a99e23d497.zip/node_modules/to-readable-stream/",\
+        "packageDependencies": [\
+          ["to-readable-stream", "npm:1.0.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
     ["to-regex-range", [\
       ["npm:5.0.1", {\
         "packageLocation": "./.yarn/cache/to-regex-range-npm-5.0.1-f1e8263b00-10dda13571.zip/node_modules/to-regex-range/",\
@@ -19374,6 +19517,16 @@ const RAW_RUNTIME_STATE =
           ["url", "npm:0.11.3"],\
           ["punycode", "npm:1.4.1"],\
           ["qs", "npm:6.11.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["url-parse-lax", [\
+      ["npm:3.0.0", {\
+        "packageLocation": "./.yarn/cache/url-parse-lax-npm-3.0.0-92aa8effa0-1040e35775.zip/node_modules/url-parse-lax/",\
+        "packageDependencies": [\
+          ["url-parse-lax", "npm:3.0.0"],\
+          ["prepend-http", "npm:2.0.0"]\
         ],\
         "linkType": "HARD"\
       }]\
