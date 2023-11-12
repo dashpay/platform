@@ -117,19 +117,10 @@ jobs:
           docker pull $DOCKER_HUB_ORG/dashmate-helper:$SHA_TAG
           docker tag $DOCKER_HUB_ORG/dashmate-helper:$SHA_TAG dashpay/dashmate-helper:$VERSION
 
-          # Drive
-          yarn dashmate config set --config=local platform.drive.abci.docker.image $DOCKER_HUB_ORG/drive:$SHA_TAG
-          yarn dashmate config set --config=local_1 platform.drive.abci.docker.image $DOCKER_HUB_ORG/drive:$SHA_TAG
-          yarn dashmate config set --config=local_2 platform.drive.abci.docker.image $DOCKER_HUB_ORG/drive:$SHA_TAG
-          yarn dashmate config set --config=local_3 platform.drive.abci.docker.image $DOCKER_HUB_ORG/drive:$SHA_TAG
-          yarn dashmate config set --config=local_seed platform.drive.abci.docker.image $DOCKER_HUB_ORG/drive:$SHA_TAG
+          # Replace DAPI and Drive images with new org and tag in dashmate config
+          sed -i -E "s/[^\/]+\/(drive|dapi):[^\"]+/${DOCKER_HUB_ORG}\/\1:${SHA_TAG}/g" /home/ubuntu/.dashmate/config.json
 
-          # DAPI
-          yarn dashmate config set --config=local platform.dapi.api.docker.image $DOCKER_HUB_ORG/dapi:$SHA_TAG
-          yarn dashmate config set --config=local_1 platform.dapi.api.docker.image $DOCKER_HUB_ORG/dapi:$SHA_TAG
-          yarn dashmate config set --config=local_2 platform.dapi.api.docker.image $DOCKER_HUB_ORG/dapi:$SHA_TAG
-          yarn dashmate config set --config=local_3 platform.dapi.api.docker.image $DOCKER_HUB_ORG/dapi:$SHA_TAG
-          yarn dashmate config set --config=local_seed platform.dapi.api.docker.image $DOCKER_HUB_ORG/dapi:$SHA_TAG
+          cat /home/ubuntu/.dashmate/config.json
 
       - name: Start local network
         run: yarn start

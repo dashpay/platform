@@ -5,11 +5,19 @@ on:
         description: The package name to run tests for
         type: string
         required: true
+      tests4x:
+        description: Run tests on more performant runner
+        type: boolean
+        default: false
 
 jobs:
   lint:
     name: Linting
-    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+#    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    runs-on: ubuntu-22.04
+    permissions:
+      id-token: write
+      contents: read
     timeout-minutes: 15
     steps:
       - name: Check out repo
@@ -19,6 +27,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
 
       - name: Setup Rust
         uses: ./.github/actions/rust
@@ -107,10 +116,35 @@ jobs:
             fi
           done
 
-  # TODO: implement a regular and extended mode for strategy tests in drive abci
   test:
     name: Tests
+    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    if: inputs.tests4x == 'false'
+    timeout-minutes: 20
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+
+      - name: Run tests
+        run: cargo test --package=${{ inputs.package }} --all-features --locked
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
+          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/amd64/x86_64-unknown-linux-gnu/
+
+  test4x:
+    name: Tests on 4x runner
     runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]
+    if: inputs.tests4x == 'true'
     timeout-minutes: 20
     steps:
       - name: Check out repo

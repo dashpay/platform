@@ -79,6 +79,7 @@ jobs:
     uses: ./.github/workflows/tests-rs-package.yml
     with:
       package: ${{ matrix.rs-package }}
+      tests4x: ${{ matrix.rs-package == 'drive-abci' }}
 
   rs-crates-security:
     name: Rust crates security audit
