@@ -6,13 +6,13 @@ on:
         type: string
         required: true
       test-runner:
-        description: Runner for tests (accepts JSON)
+        description: Runner for tests. Must be JSON valid string.
         type: string
         default: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
       lint-runner:
-        description: Runner for linting (accepts JSON)
+        description: Runner for linting. Must be JSON valid string.
         type: string
-        default: ubuntu-22.04
+        default: '"ubuntu-22.04"'
 
 jobs:
   lint:

@@ -13,7 +13,7 @@ process.env.NODE_ENV = 'test';
 
 exports.mochaHooks = {
   beforeAll: loadWasmDpp,
-  beforeEach: () => {
+  beforeEach() {
     if (!this.sinon) {
       this.sinon = sinon.createSandbox();
     } else {
@@ -21,7 +21,7 @@ exports.mochaHooks = {
     }
   },
 
-  afterEach: () => {
+  afterEach() {
     this.sinon.restore();
   },
 };

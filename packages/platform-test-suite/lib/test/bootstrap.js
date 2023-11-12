@@ -17,7 +17,7 @@ dotenvSafe.config({
 });
 
 exports.mochaHooks = {
-  beforeEach: () => {
+  beforeEach() {
     if (!this.sinon) {
       this.sinon = sinon.createSandbox();
     } else {
@@ -25,7 +25,7 @@ exports.mochaHooks = {
     }
   },
 
-  afterEach: () => {
+  afterEach() {
     this.sinon.restore();
   },
 };

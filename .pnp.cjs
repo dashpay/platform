@@ -2752,6 +2752,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.25.3"],\
             ["events", "npm:3.3.0"],\
+            ["glob", "npm:10.3.10"],\
             ["https-browserify", "npm:1.0.0"],\
             ["js-merkle", "npm:0.1.5"],\
             ["karma", "npm:6.4.1"],\
@@ -10458,6 +10459,18 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["glob", [\
+        ["npm:10.3.10", {\
+          "packageLocation": "./.yarn/cache/glob-npm-10.3.10-da1ef8b112-4f2fe2511e.zip/node_modules/glob/",\
+          "packageDependencies": [\
+            ["glob", "npm:10.3.10"],\
+            ["foreground-child", "npm:3.1.1"],\
+            ["jackspeak", "npm:2.3.6"],\
+            ["minimatch", "npm:9.0.3"],\
+            ["minipass", "npm:7.0.3"],\
+            ["path-scurry", "npm:1.10.1"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
         ["npm:10.3.4", {\
           "packageLocation": "./.yarn/cache/glob-npm-10.3.4-f58cd31f55-176b97c124.zip/node_modules/glob/",\
           "packageDependencies": [\
@@ -11859,6 +11872,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/jackspeak-npm-2.3.3-755684cc60-4313a7c0cc.zip/node_modules/jackspeak/",\
           "packageDependencies": [\
             ["jackspeak", "npm:2.3.3"],\
+            ["@isaacs/cliui", "npm:8.0.2"],\
+            ["@pkgjs/parseargs", "npm:0.11.0"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["npm:2.3.6", {\
+          "packageLocation": "./.yarn/cache/jackspeak-npm-2.3.6-42e1233172-57d43ad11e.zip/node_modules/jackspeak/",\
+          "packageDependencies": [\
+            ["jackspeak", "npm:2.3.6"],\
             ["@isaacs/cliui", "npm:8.0.2"],\
             ["@pkgjs/parseargs", "npm:0.11.0"]\
           ],\

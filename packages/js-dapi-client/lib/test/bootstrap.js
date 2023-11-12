@@ -15,7 +15,7 @@ use(dirtyChai);
 exports.mochaHooks = {
   beforeAll: loadDpp,
 
-  beforeEach: () => {
+  beforeEach() {
     if (!this.sinon) {
       this.sinon = sinon.createSandbox();
     } else {
@@ -23,7 +23,7 @@ exports.mochaHooks = {
     }
   },
 
-  afterEach: () => {
+  afterEach() {
     this.sinon.restore();
   },
 };
