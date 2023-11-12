@@ -4,7 +4,7 @@ on:
 jobs:
   build-js:
     name: Build JS
-    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]
     steps:
       - name: Configure AWS credentials and bucket region
         uses: aws-actions/configure-aws-credentials@v4
