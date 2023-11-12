@@ -1385,7 +1385,7 @@ __metadata:
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
-    karma-firefox-launcher: ^2.1.1
+    karma-firefox-launcher: ^2.1.2
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
@@ -1724,7 +1724,7 @@ __metadata:
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
-    karma-firefox-launcher: ^2.1.1
+    karma-firefox-launcher: ^2.1.2
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-sourcemap-loader: ^0.3.7
@@ -1882,7 +1882,7 @@ __metadata:
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
-    karma-firefox-launcher: ^2.1.1
+    karma-firefox-launcher: ^2.1.2
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
@@ -9670,7 +9670,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"karma-firefox-launcher@npm:^2.1.1, karma-firefox-launcher@npm:^2.1.2":
+"karma-firefox-launcher@npm:^2.1.2":
   version: 2.1.2
   resolution: "karma-firefox-launcher@npm:2.1.2"
   dependencies:

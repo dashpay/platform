@@ -62,11 +62,5 @@ module.exports = {
       flags: ['--allow-insecure-localhost'],
       displayName: 'Chrome w/o security',
     },
-    FirefoxHeadlessInsecure: {
-      base: 'FirefoxHeadless',
-      prefs: {
-        acceptInsecureCerts: true,
-      },
-    },
   },
 };
