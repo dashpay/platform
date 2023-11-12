@@ -79,7 +79,8 @@ jobs:
     uses: ./.github/workflows/tests-rs-package.yml
     with:
       package: ${{ matrix.rs-package }}
-      tests4x: ${{ matrix.rs-package == 'drive-abci' }}
+      tests4x: ${{ contains(['drive-abci'], matrix.rs-package) }}
+      linting2x: ${{ contains(['drive-abci', 'drive'], matrix.rs-package) }}
 
   rs-crates-security:
     name: Rust crates security audit
@@ -185,7 +186,7 @@ jobs:
       matrix:
         include:
           - name: Test Suite
-            command: test:suite -b
+            command: test:suite
           - name: Test Suite in browser
             command: test:browsers
     uses: ./.github/workflows/tests-test-suite.yml
