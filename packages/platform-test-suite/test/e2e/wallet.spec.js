@@ -9,7 +9,7 @@ const { EVENTS } = Dash.WalletLib;
 
 describe('e2e', () => {
   describe('Wallet', function main() {
-    this.timeout(950000);
+    // this.timeout(950000);
 
     let failed = false;
     let fundedWallet;

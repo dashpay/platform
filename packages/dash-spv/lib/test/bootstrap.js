@@ -8,12 +8,16 @@ beforeEach(function beforeEach() {
   }
 });
 
-before(function before() {
-  if (!this.sinon) {
-    this.sinon = sinon.createSandbox();
-  }
-});
+exports.mochaHooks = {
+  beforeEach: () => {
+    if (!this.sinon) {
+      this.sinon = sinon.createSandbox();
+    } else {
+      this.sinon.restore();
+    }
+  },
 
-afterEach(function afterEach() {
-  this.sinon.restore();
-});
+  afterEach: () => {
+    this.sinon.restore();
+  },
+};

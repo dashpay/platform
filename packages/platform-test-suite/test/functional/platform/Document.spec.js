@@ -20,7 +20,7 @@ const {
 
 describe('Platform', () => {
   describe('Document', function main() {
-    this.timeout(700000);
+    // this.timeout(700000);
 
     let client;
     let dataContractFixture;

@@ -31,7 +31,7 @@ const {
 
 describe('Platform', () => {
   describe('Identity', function describeIdentity() {
-    this.bail(true); // bail on first failure
+    // this.bail(true); // bail on first failure
 
     let client;
     let identity;
@@ -237,7 +237,7 @@ describe('Platform', () => {
     describe('chainLock', function describe() {
       let chainLockIdentity;
 
-      this.timeout(850000);
+      // this.timeout(850000);
 
       it('should create identity using chainLock', async () => {
         await client.platform.initialize();

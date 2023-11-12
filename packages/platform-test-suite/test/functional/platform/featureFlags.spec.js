@@ -9,7 +9,7 @@ const createClientWithFundedWallet = require('../../../lib/test/createClientWith
 //   at rs-drive-abci side
 describe.skip('Platform', () => {
   describe('Feature flags', function main() {
-    this.timeout(900000);
+    // this.timeout(900000);
 
     describe('updateConsensusParams', () => {
       let oldConsensusParams;

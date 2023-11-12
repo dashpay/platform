@@ -6,7 +6,7 @@ describe('Core', () => {
   describe('getStatus', function main() {
     let client;
 
-    this.timeout(160000);
+    // this.timeout(160000);
 
     before(() => {
       client = createClientWithoutWallet();

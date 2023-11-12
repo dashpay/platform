@@ -42,7 +42,9 @@ describe('Platform', () => {
     });
 
     after(() => {
-      dashClient.disconnect();
+      if (dashClient) {
+        dashClient.disconnect();
+      }
     });
 
     describe('Merkle Proofs', () => {

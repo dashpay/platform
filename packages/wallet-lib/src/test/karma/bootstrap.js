@@ -9,24 +9,18 @@ use(chaiAsPromised);
 use(sinonChai);
 use(dirtyChai);
 
-beforeEach(function beforeEach() {
-  if (!this.sinon) {
-    this.sinon = sinon.createSandbox();
-    // Legacy
-    this.sinonSanbox = this.sinon;
-  } else {
+exports.mochaHooks = {
+  beforeEach: () => {
+    if (!this.sinon) {
+      this.sinon = sinon.createSandbox();
+    } else {
+      this.sinon.restore();
+    }
+  },
+
+  afterEach: () => {
     this.sinon.restore();
-  }
-});
-
-before(function before() {
-  if (!this.sinon) {
-    this.sinon = sinon.createSandbox();
-  }
-});
-
-afterEach(function afterEach() {
-  this.sinon.restore();
-});
+  },
+};
 
 global.expect = expect;
