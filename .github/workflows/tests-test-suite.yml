@@ -10,6 +10,14 @@ on:
         type: string
         default: test
         required: true
+      batch_index:
+        description: Browser test batch index
+        type: number
+        default: 0
+      batch_total:
+        description: Browser test batch total
+        type: number
+        default: 0
 
 jobs:
   test-suite:
@@ -18,7 +26,6 @@ jobs:
     runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
     timeout-minutes: 15
     env:
-      BROWSER_TESTS_INSECURE_BROWSER: ChromiumHeadless
       BROWSER_TESTS_CHROMIUM_BROWSER: ChromiumHeadless
     steps:
       - name: Check out repo
@@ -118,7 +125,7 @@ jobs:
           docker tag $DOCKER_HUB_ORG/dashmate-helper:$SHA_TAG dashpay/dashmate-helper:$VERSION
 
           # Replace DAPI and Drive images with new org and tag in dashmate config
-          sed -i -E "s/[^\/]+\/(drive|dapi):[^\"]+/${DOCKER_HUB_ORG}\/\1:${SHA_TAG}/g" /home/ubuntu/.dashmate/config.json
+          sed -i -E "s/dashpay\/(drive|dapi):[^\"]+/${DOCKER_HUB_ORG}\/\1:${SHA_TAG}/g" /home/ubuntu/.dashmate/config.json
 
           cat /home/ubuntu/.dashmate/config.json
 
@@ -133,6 +140,9 @@ jobs:
 
       - name: Run test suite
         run: yarn workspace @dashevo/platform-test-suite ${{ inputs.command }}
+        env:
+            BROWSER_TEST_BATCH_INDEX: ${{ inputs.batch_index }}
+            BROWSER_TEST_BATCH_TOTAL: ${{ inputs.batch_total }}
 
       - name: Show Docker logs
         if: ${{ failure() }}

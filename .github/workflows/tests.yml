@@ -165,11 +165,11 @@ jobs:
           - name: Local network
             test-pattern: test/e2e/localNetwork.spec.js
             restore_local_network_data: true
-          - name: Testnet HP fullnode
-            test-pattern: test/e2e/testnetHPFullnode.spec.js
+          - name: Testnet fullnode
+            test-pattern: test/e2e/testnetFullnode.spec.js
             restore_local_network_data: false
-          - name: Testnet HP evonode
-            test-pattern: test/e2e/testnetHPEvonode.spec.js
+          - name: Testnet Evonode
+            test-pattern: test/e2e/testnetEvonode.spec.js
             restore_local_network_data: false
     uses: ./.github/workflows/tests-dashmate.yml
     with:
@@ -190,9 +190,19 @@ jobs:
         include:
           - name: Test Suite
             command: test:suite
-          - name: Test Suite in browser
+            batch_index: 0
+            batch_total: 0
+          - name: Test Suite in browser (1)
             command: test:browsers
+            batch_index: 0
+            batch_total: 2
+          - name: Test Suite in browser (2)
+            command: test:browsers
+            batch_index: 1
+            batch_total: 2
     uses: ./.github/workflows/tests-test-suite.yml
     with:
       name: ${{ matrix.name }}
       command: ${{ matrix.command }}
+      batch_total: ${{ matrix.batch }}
+      batch_index: ${{ matrix.batch }}

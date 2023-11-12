@@ -68,7 +68,7 @@ module.exports = (config) => {
     port: 9876,
     colors: true,
     logLevel: config.LOG_INFO,
-    browsers: [process.env.BROWSER_TESTS_INSECURE_BROWSER || 'ChromeHeadlessInsecure'],
+    browsers: ['ChromeHeadlessInsecure'],
     singleRun: true,
     concurrency: Infinity,
     plugins: [

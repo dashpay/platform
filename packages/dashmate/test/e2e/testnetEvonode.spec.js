@@ -9,7 +9,7 @@ const createRpcClient = require('../../src/core/createRpcClient');
 const waitForCoreDataFactory = require('../../src/test/waitForCoreDataFactory');
 const HomeDir = require('../../src/config/HomeDir');
 
-describe('Testnet HP Fullnode', function main() {
+describe('Testnet Evonode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
   this.bail(true); // bail on first failure
 

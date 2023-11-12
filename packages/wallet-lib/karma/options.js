@@ -43,7 +43,7 @@ module.exports = {
   port: 9876,
   colors: true,
   autoWatch: false,
-  browsers: [process.env.BROWSER_TESTS_INSECURE_BROWSER || 'ChromeWithoutSecurity'],
+  browsers: ['ChromeHeadlessInsecure'],
   singleRun: false,
   concurrency: Infinity,
   browserNoActivityTimeout: 10 * 60 * 1000,
