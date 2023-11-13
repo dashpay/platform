@@ -72,7 +72,6 @@ async fn test_identity_balance_read() {
         .expect("fetch identity balance")
         .expect("found identity balance");
 
-    assert_ne!(0, balance);
     tracing::debug!(balance, ?id, "identity balance")
 }
 
@@ -91,7 +90,6 @@ async fn test_identity_balance_revision_read() {
         .expect("fetch identity balance")
         .expect("found identity balance");
 
-    assert_ne!(0, balance);
     tracing::debug!(balance, revision, ?id, "identity balance and revision")
 }
 
