@@ -1,6 +1,6 @@
-const convertDate = require('./convertDate');
+import {convertDate} from "./convertDate.js";
 
-class Certificate {
+export class Certificate {
   id;
 
   type;
@@ -118,5 +118,3 @@ class Certificate {
     return this.isExpiredInDays(Certificate.EXPIRATION_LIMIT_DAYS);
   }
 }
-
-module.exports = Certificate;

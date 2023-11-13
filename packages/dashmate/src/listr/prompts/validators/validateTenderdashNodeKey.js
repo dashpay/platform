@@ -1,10 +1,10 @@
-const crypto = require('node:crypto');
+import crypto from 'node:crypto'
 
 /**
  * @param {string} value
  * @returns {boolean|string}
  */
-function validateTenderdashNodeKey(value) {
+export function validateTenderdashNodeKey(value) {
   if (value.length < 1) {
     return 'should not be empty';
   }
@@ -42,5 +42,3 @@ function validateTenderdashNodeKey(value) {
 
   return true;
 }
-
-module.exports = validateTenderdashNodeKey;

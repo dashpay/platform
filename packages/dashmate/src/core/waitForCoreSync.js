@@ -1,4 +1,4 @@
-const wait = require('../util/wait');
+import {wait} from '../util/wait';
 
 /**
  * Wait Core to be synced
@@ -8,7 +8,7 @@ const wait = require('../util/wait');
  * @param {function(progress: {percent: number, blocks: number, headers: number})} progressCallback
  * @return {Promise<void>}
  */
-async function waitForCoreSync(coreService, progressCallback = () => {}) {
+export async function waitForCoreSync(coreService, progressCallback = () => {}) {
   let isSynced = false;
   let isBlockchainSynced = false;
   let verificationProgress = 0.0;
@@ -30,5 +30,3 @@ async function waitForCoreSync(coreService, progressCallback = () => {}) {
     }
   } while (!isSynced || !isBlockchainSynced);
 }
-
-module.exports = waitForCoreSync;

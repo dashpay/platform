@@ -1,10 +1,10 @@
-const BlsSignatures = require('@dashevo/bls');
+import BlsSignatures from '@dashevo/bls';
 
 /**
  * @param {string} privateKeyHex
  * @returns {Promise<void>}
  */
-async function getBLSPublicKeyFromPrivateKeyHex(privateKeyHex) {
+export async function getBLSPublicKeyFromPrivateKeyHex(privateKeyHex) {
   const { PrivateKey } = await BlsSignatures();
 
   const operatorPrivateKeyBuffer = Buffer.from(privateKeyHex, 'hex');
@@ -18,5 +18,3 @@ async function getBLSPublicKeyFromPrivateKeyHex(privateKeyHex) {
 
   return Buffer.from(operatorPublicKey.serialize()).toString('hex');
 }
-
-module.exports = getBLSPublicKeyFromPrivateKeyHex;

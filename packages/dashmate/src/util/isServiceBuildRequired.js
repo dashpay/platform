@@ -5,7 +5,7 @@
  *
  * @returns {boolean}
  */
-function isServiceBuildRequired(config) {
+export function isServiceBuildRequired(config) {
   const isDashmateBuildRequired = config.get('dashmate.helper.docker.build.enabled');
   const isDriveBuildRequired = config.get('platform.enable') && config.get('platform.drive.abci.docker.build.enabled');
   const isDapiBuildRequired = config.get('platform.enable') && config.get('platform.dapi.api.docker.build.enabled');
@@ -14,5 +14,3 @@ function isServiceBuildRequired(config) {
     || isDriveBuildRequired
     || isDapiBuildRequired;
 }
-
-module.exports = isServiceBuildRequired;

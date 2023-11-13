@@ -1,13 +1,28 @@
-const { Listr } = require('listr2');
+import { Listr }  from 'listr2';
+import { Flags } from '@oclif/core';
 
-const { Flags } = require('@oclif/core');
+import { NETWORK_LOCAL } from '../../constants';
+import {ConfigBaseCommand} from "../../oclif/command/ConfigBaseCommand.js";
+import {MuteOneLineError} from "../../oclif/errors/MuteOneLineError.js";
 
-const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
+export class MintCommand extends ConfigBaseCommand {
+  static description = `Mint tDash
 
-const { NETWORK_LOCAL } = require('../../constants');
+Mint given amount of tDash to a new or specified address
+`;
 
-class MintCommand extends ConfigBaseCommand {
+  static args = [{
+    name: 'amount',
+    required: true,
+    description: 'amount of tDash to be generated to address',
+    parse: (input) => parseInt(input, 10),
+  }];
+
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    address: Flags.string({ char: 'a', description: 'use recipient address instead of creating new', default: null }),
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -58,22 +73,3 @@ class MintCommand extends ConfigBaseCommand {
     }
   }
 }
-
-MintCommand.description = `Mint tDash
-
-Mint given amount of tDash to a new or specified address
-`;
-
-MintCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  address: Flags.string({ char: 'a', description: 'use recipient address instead of creating new', default: null }),
-};
-
-MintCommand.args = [{
-  name: 'amount',
-  required: true,
-  description: 'amount of tDash to be generated to address',
-  parse: (input) => parseInt(input, 10),
-}];
-
-module.exports = MintCommand;

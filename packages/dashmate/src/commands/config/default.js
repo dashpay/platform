@@ -1,6 +1,20 @@
-const BaseCommand = require('../../oclif/command/BaseCommand');
+import {BaseCommand} from "../../oclif/command/BaseCommand.js";
 
-class ConfigDefaultCommand extends BaseCommand {
+export class ConfigDefaultCommand extends BaseCommand {
+  static description = `Manage default config
+
+Shows default config name or sets another config as default
+`;
+
+
+  static args = [{
+    name: 'config',
+    required: false,
+    description: 'config name',
+    default: null,
+  }];
+
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -25,17 +39,3 @@ class ConfigDefaultCommand extends BaseCommand {
     }
   }
 }
-
-ConfigDefaultCommand.description = `Manage default config
-
-Shows default config name or sets another config as default
-`;
-
-ConfigDefaultCommand.args = [{
-  name: 'config',
-  required: false,
-  description: 'config name',
-  default: null,
-}];
-
-module.exports = ConfigDefaultCommand;

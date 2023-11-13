@@ -1,10 +1,11 @@
-const wait = require('../util/wait');
+import {wait} from "../util/wait.js";
 
 /**
  * @param {CoreRpcClient} rpcClient
  * @returns {waitForCoreData}
  */
-function waitForCoreDataFactory(rpcClient) {
+
+export function waitForCoreDataFactory(rpcClient) {
   /**
    * @typedef {function} waitForCoreData
    * @param {number} originalValue
@@ -27,5 +28,3 @@ function waitForCoreDataFactory(rpcClient) {
 
   return waitForCoreData;
 }
-
-module.exports = waitForCoreDataFactory;

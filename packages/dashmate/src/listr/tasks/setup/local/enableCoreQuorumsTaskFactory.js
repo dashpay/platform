@@ -1,21 +1,17 @@
-const { Listr } = require('listr2');
-const isEqual = require('lodash/isEqual');
-
-const wait = require('../../../../util/wait');
-
-const { LLMQ_TYPE_TEST, NETWORK_LOCAL } = require('../../../../constants');
-
-const waitForQuorumPhase = require('../../../../core/quorum/waitForQuorumPhase');
-const waitForNodesToHaveTheSameHeight = require('../../../../core/waitForNodesToHaveTheSameHeight');
-const waitForQuorumConnections = require('../../../../core/quorum/waitForQuorumConnections');
-const waitForMasternodeProbes = require('../../../../core/quorum/waitForMasternodeProbes');
-const waitForQuorumCommitments = require('../../../../core/quorum/waitForQuorumCommitements');
+import { Listr }  from 'listr2';
+import * as isEqual from 'lodash/isEqual';
+import { LLMQ_TYPE_TEST, NETWORK_LOCAL } from '../../../../constants';
+import {waitForNodesToHaveTheSameHeight} from "../../../../core/waitForNodesToHaveTheSameHeight.js";
+import {waitForQuorumPhase} from "../../../../core/quorum/waitForQuorumPhase.js";
+import {waitForQuorumConnections} from "../../../../core/quorum/waitForQuorumConnections.js";
+import {waitForQuorumCommitments} from "../../../../core/quorum/waitForQuorumCommitements.js";
+import {wait} from "../../../../util/wait.js";
 
 /**
  * @param {generateBlocks} generateBlocks
  * @return {enableCoreQuorumsTask}
  */
-function enableCoreQuorumsTaskFactory(generateBlocks) {
+export function enableCoreQuorumsTaskFactory(generateBlocks) {
   /**
    * @typedef {enableCoreQuorumsTask}
    * @return {Listr}
@@ -297,5 +293,3 @@ function enableCoreQuorumsTaskFactory(generateBlocks) {
 
   return enableCoreQuorumsTask;
 }
-
-module.exports = enableCoreQuorumsTaskFactory;

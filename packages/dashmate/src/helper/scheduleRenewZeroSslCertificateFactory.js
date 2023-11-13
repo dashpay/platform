@@ -1,5 +1,5 @@
-const { CronJob } = require('cron');
-const { EXPIRATION_LIMIT_DAYS } = require('../ssl/zerossl/Certificate');
+import { CronJob } from 'cron';
+import {Certificate} from "../ssl/zerossl/Certificate.js";
 
 /**
  *
@@ -11,7 +11,7 @@ const { EXPIRATION_LIMIT_DAYS } = require('../ssl/zerossl/Certificate');
  * @param {writeConfigTemplates} writeConfigTemplates
  * @return {scheduleRenewZeroSslCertificate}
  */
-function scheduleRenewZeroSslCertificateFactory(
+export function scheduleRenewZeroSslCertificateFactory(
   getCertificate,
   obtainZeroSSLCertificateTask,
   dockerCompose,
@@ -35,16 +35,16 @@ function scheduleRenewZeroSslCertificateFactory(
     }
 
     let expiresAt;
-    if (certificate.isExpiredInDays(EXPIRATION_LIMIT_DAYS)) {
+    if (certificate.isExpiredInDays(Certificate.EXPIRATION_LIMIT_DAYS)) {
       // Obtain new certificate right away
       expiresAt = new Date(Date.now() + 3000);
 
       // eslint-disable-next-line no-console
-      console.log(`SSL certificate ${certificate.id} will expire in less than ${EXPIRATION_LIMIT_DAYS} days at ${certificate.expires}. Schedule to obtain it NOW.`);
+      console.log(`SSL certificate ${certificate.id} will expire in less than ${Certificate.EXPIRATION_LIMIT_DAYS} days at ${certificate.expires}. Schedule to obtain it NOW.`);
     } else {
       // Schedule a new check close to expiration period
       expiresAt = new Date(certificate.expires);
-      expiresAt.setDate(expiresAt.getDate() - EXPIRATION_LIMIT_DAYS);
+      expiresAt.setDate(expiresAt.getDate() - Certificate.EXPIRATION_LIMIT_DAYS);
 
       // eslint-disable-next-line no-console
       console.log(`SSL certificate ${certificate.id} will expire at ${certificate.expires}. Schedule to obtain at ${expiresAt}.`);
@@ -55,7 +55,7 @@ function scheduleRenewZeroSslCertificateFactory(
         const tasks = await obtainZeroSSLCertificateTask(config);
 
         await tasks.run({
-          expirationDays: EXPIRATION_LIMIT_DAYS,
+          expirationDays: Certificate.EXPIRATION_LIMIT_DAYS,
         });
 
         // Write config files
@@ -77,5 +77,3 @@ function scheduleRenewZeroSslCertificateFactory(
 
   return scheduleRenewZeroSslCertificate;
 }
-
-module.exports = scheduleRenewZeroSslCertificateFactory;

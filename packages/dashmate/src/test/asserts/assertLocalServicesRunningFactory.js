@@ -1,11 +1,11 @@
-const { SERVICES } = require('../constants/services');
+import { SERVICES } from '../constants/services';
 
 /**
  * @param {assertServiceRunning} assertServiceRunning
  *
  * @returns {assertLocalServicesRunning}
  */
-function assertLocalServicesRunningFactory(assertServiceRunning) {
+export function assertLocalServicesRunningFactory(assertServiceRunning) {
   /**
    * Check all node services are up and running
    *
@@ -27,5 +27,3 @@ function assertLocalServicesRunningFactory(assertServiceRunning) {
 
   return assertLocalServicesRunning;
 }
-
-module.exports = assertLocalServicesRunningFactory;

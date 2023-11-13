@@ -1,121 +1,149 @@
-const {
-  createContainer: createAwilixContainer,
+import {
+  createContainer as createAwilixContainer,
   InjectionMode,
   asFunction,
   asValue,
   asClass,
-} = require('awilix');
+} from 'awilix';
 
-const Docker = require('dockerode');
+import Docker from 'dockerode';
 
-const getServiceListFactory = require('./docker/getServiceListFactory');
-const ensureFileMountExistsFactory = require('./docker/ensureFileMountExistsFactory');
-const getConnectionHostFactory = require('./docker/getConnectionHostFactory');
-const ConfigFileJsonRepository = require('./config/configFile/ConfigFileJsonRepository');
-const createConfigFileFactory = require('./config/configFile/createConfigFileFactory');
-const migrateConfigFileFactory = require('./config/configFile/migrateConfigFileFactory');
-const DefaultConfigs = require('./config/DefaultConfigs');
+import {getServiceListFactory} from './docker/getServiceListFactory';
+import {ensureFileMountExistsFactory} from './docker/ensureFileMountExistsFactory';
+import {getConnectionHostFactory} from './docker/getConnectionHostFactory';
+import {ConfigFileJsonRepository} from './config/configFile/ConfigFileJsonRepository';
+import {createConfigFileFactory} from './config/configFile/createConfigFileFactory';
+import {migrateConfigFileFactory} from './config/configFile/migrateConfigFileFactory';
+import {DefaultConfigs} from './config/DefaultConfigs';
 
-const renderTemplateFactory = require('./templates/renderTemplateFactory');
-const renderServiceTemplatesFactory = require('./templates/renderServiceTemplatesFactory');
-const writeServiceConfigsFactory = require('./templates/writeServiceConfigsFactory');
+import {renderTemplateFactory} from './templates/renderTemplateFactory';
+import {renderServiceTemplatesFactory} from './templates/renderServiceTemplatesFactory';
+import {writeServiceConfigsFactory} from './templates/writeServiceConfigsFactory';
 
-const DockerCompose = require('./docker/DockerCompose');
-const StartedContainers = require('./docker/StartedContainers');
-const stopAllContainersFactory = require('./docker/stopAllContainersFactory');
-const dockerPullFactory = require('./docker/dockerPullFactory');
-const resolveDockerHostIpFactory = require('./docker/resolveDockerHostIpFactory');
+import {DockerCompose} from './docker/DockerCompose';
+import {StartedContainers} from './docker/StartedContainers';
+import {stopAllContainersFactory} from './docker/stopAllContainersFactory';
+import {dockerPullFactory} from './docker/dockerPullFactory';
+import {resolveDockerHostIpFactory} from './docker/resolveDockerHostIpFactory';
 
-const startCoreFactory = require('./core/startCoreFactory');
-const createRpcClient = require('./core/createRpcClient');
-const waitForCoreStart = require('./core/waitForCoreStart');
-const waitForCoreSync = require('./core/waitForCoreSync');
-const waitForMasternodesSync = require('./core/waitForMasternodesSync');
-const waitForBlocks = require('./core/waitForBlocks');
-const waitForConfirmations = require('./core/waitForConfirmations');
-const generateBlsKeys = require('./core/generateBlsKeys');
-const activateCoreSpork = require('./core/activateCoreSpork');
-const waitForCorePeersConnected = require('./core/waitForCorePeersConnected');
+import {startCoreFactory} from './core/startCoreFactory';
+import {createRpcClient} from './core/createRpcClient';
+import {waitForCoreStart} from './core/waitForCoreStart';
+import {waitForCoreSync} from './core/waitForCoreSync';
+import {waitForMasternodesSync} from './core/waitForMasternodesSync';
+import {waitForBlocks} from './core/waitForBlocks';
+import {waitForConfirmations} from './core/waitForConfirmations'
+import {generateBlsKeys} from './core/generateBlsKeys'
+import {activateCoreSpork} from './core/activateCoreSpork'
+import {waitForCorePeersConnected} from './core/waitForCorePeersConnected'
 
-const createNewAddress = require('./core/wallet/createNewAddress');
-const generateBlocks = require('./core/wallet/generateBlocks');
-const generateToAddress = require('./core/wallet/generateToAddress');
-const importPrivateKey = require('./core/wallet/importPrivateKey');
-const getAddressBalance = require('./core/wallet/getAddressBalance');
-const sendToAddress = require('./core/wallet/sendToAddress');
-const registerMasternode = require('./core/wallet/registerMasternode');
-const waitForBalanceToConfirm = require('./core/wallet/waitForBalanceToConfirm');
+import {createNewAddress} from './core/wallet/createNewAddress';
+import {generateBlocks} from './core/wallet/generateBlocks';
+import {generateToAddress} from './core/wallet/generateToAddress';
+import {importPrivateKey} from './core/wallet/importPrivateKey';
+import {getAddressBalance} from './core/wallet/getAddressBalance';
+import {sendToAddress} from './core/wallet/sendToAddress';
+import {registerMasternode} from './core/wallet/registerMasternode';
+import {waitForBalanceToConfirm} from './core/wallet/waitForBalanceToConfirm';
 
-const getCoreScopeFactory = require('./status/scopes/core');
-const getMasternodeScopeFactory = require('./status/scopes/masternode');
-const getPlatformScopeFactory = require('./status/scopes/platform');
-const getOverviewScopeFactory = require('./status/scopes/overview');
-const getServicesScopeFactory = require('./status/scopes/services');
-const getHostScopeFactory = require('./status/scopes/host');
+import {getCoreScopeFactory} from './status/scopes/core';
+import {getMasternodeScopeFactory} from './status/scopes/masternode';
+import {getPlatformScopeFactory} from './status/scopes/platform';
+import {getOverviewScopeFactory} from './status/scopes/overview';
+import {getServicesScopeFactory} from './status/scopes/services';
+import {getHostScopeFactory} from './status/scopes/host';
 
-const generateToAddressTaskFactory = require('./listr/tasks/wallet/generateToAddressTaskFactory');
-const registerMasternodeTaskFactory = require('./listr/tasks/registerMasternodeTaskFactory');
-const featureFlagTaskFactory = require('./listr/tasks/platform/featureFlagTaskFactory');
-const startNodeTaskFactory = require('./listr/tasks/startNodeTaskFactory');
+import {generateToAddressTaskFactory} from './listr/tasks/wallet/generateToAddressTaskFactory';
+import {registerMasternodeTaskFactory} from './listr/tasks/registerMasternodeTaskFactory';
+import {featureFlagTaskFactory} from './listr/tasks/platform/featureFlagTaskFactory';
+import {startNodeTaskFactory} from './listr/tasks/startNodeTaskFactory';
 
-const createTenderdashRpcClient = require('./tenderdash/createTenderdashRpcClient');
-const setupLocalPresetTaskFactory = require('./listr/tasks/setup/setupLocalPresetTaskFactory');
-const setupRegularPresetTaskFactory = require('./listr/tasks/setup/setupRegularPresetTaskFactory');
-const stopNodeTaskFactory = require('./listr/tasks/stopNodeTaskFactory');
-const restartNodeTaskFactory = require('./listr/tasks/restartNodeTaskFactory');
-const resetNodeTaskFactory = require('./listr/tasks/resetNodeTaskFactory');
-const configureCoreTaskFactory = require('./listr/tasks/setup/local/configureCoreTaskFactory');
-const configureTenderdashTaskFactory = require('./listr/tasks/setup/local/configureTenderdashTaskFactory');
-const obtainSelfSignedCertificateTaskFactory = require('./listr/tasks/ssl/selfSigned/obtainSelfSignedCertificateTaskFactory');
-const waitForNodeToBeReadyTaskFactory = require('./listr/tasks/platform/waitForNodeToBeReadyTaskFactory');
-const enableCoreQuorumsTaskFactory = require('./listr/tasks/setup/local/enableCoreQuorumsTaskFactory');
-const startGroupNodesTaskFactory = require('./listr/tasks/startGroupNodesTaskFactory');
-const buildServicesTaskFactory = require('./listr/tasks/buildServicesTaskFactory');
-const reindexNodeTaskFactory = require('./listr/tasks/reindexNodeTaskFactory');
+import {createTenderdashRpcClient} from './tenderdash/createTenderdashRpcClient';
+import {
+  setupLocalPresetTaskFactory
+} from './listr/tasks/setup/setupLocalPresetTaskFactory';
+import {
+  setupRegularPresetTaskFactory
+} from './listr/tasks/setup/setupRegularPresetTaskFactory';
+import {stopNodeTaskFactory} from './listr/tasks/stopNodeTaskFactory';
+import {restartNodeTaskFactory} from './listr/tasks/restartNodeTaskFactory';
+import {resetNodeTaskFactory} from './listr/tasks/resetNodeTaskFactory';
+import {configureCoreTaskFactory} from './listr/tasks/setup/local/configureCoreTaskFactory';
+import {
+  configureTenderdashTaskFactory
+} from './listr/tasks/setup/local/configureTenderdashTaskFactory';
+import {
+  obtainSelfSignedCertificateTaskFactory
+} from './listr/tasks/ssl/selfSigned/obtainSelfSignedCertificateTaskFactory';
+import {
+  waitForNodeToBeReadyTaskFactory
+} from './listr/tasks/platform/waitForNodeToBeReadyTaskFactory';
+import {
+  enableCoreQuorumsTaskFactory
+} from './listr/tasks/setup/local/enableCoreQuorumsTaskFactory';
+import {startGroupNodesTaskFactory} from './listr/tasks/startGroupNodesTaskFactory';
+import {buildServicesTaskFactory} from './listr/tasks/buildServicesTaskFactory';
+import {reindexNodeTaskFactory} from './listr/tasks/reindexNodeTaskFactory';
 
-const updateNodeFactory = require('./update/updateNodeFactory');
+import {updateNodeFactory} from './update/updateNodeFactory';
 
-const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
+import {generateHDPrivateKeys} from './util/generateHDPrivateKeys';
 
-const obtainZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory');
-const VerificationServer = require('./listr/tasks/ssl/VerificationServer');
-const saveCertificateTaskFactory = require('./listr/tasks/ssl/saveCertificateTask');
+import {
+  obtainZeroSSLCertificateTaskFactory
+} from './listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory';
+import {VerificationServer} from './listr/tasks/ssl/VerificationServer';
+import {saveCertificateTaskFactory} from './listr/tasks/ssl/saveCertificateTask';
 
-const createZeroSSLCertificate = require('./ssl/zerossl/createZeroSSLCertificate');
-const verifyDomain = require('./ssl/zerossl/verifyDomain');
-const downloadCertificate = require('./ssl/zerossl/downloadCertificate');
-const getCertificate = require('./ssl/zerossl/getCertificate');
-const listCertificates = require('./ssl/zerossl/listCertificates');
-const generateCsr = require('./ssl/zerossl/generateCsr');
-const generateKeyPair = require('./ssl/generateKeyPair');
-const createSelfSignedCertificate = require('./ssl/selfSigned/createSelfSignedCertificate');
+import {createZeroSSLCertificate} from './ssl/zerossl/createZeroSSLCertificate';
+import {verifyDomain} from './ssl/zerossl/verifyDomain';
+import {downloadCertificate} from './ssl/zerossl/downloadCertificate';
+import {getCertificate} from './ssl/zerossl/getCertificate';
+import {listCertificates} from './ssl/zerossl/listCertificates';
+import {generateCsr} from './ssl/zerossl/generateCsr';
+import {generateKeyPair} from './ssl/generateKeyPair';
+import {createSelfSignedCertificate} from './ssl/selfSigned/createSelfSignedCertificate';
 
-const scheduleRenewZeroSslCertificateFactory = require('./helper/scheduleRenewZeroSslCertificateFactory');
-const registerMasternodeGuideTaskFactory = require('./listr/tasks/setup/regular/registerMasternodeGuideTaskFactory');
-const configureNodeTaskFactory = require('./listr/tasks/setup/regular/configureNodeTaskFactory');
-const configureSSLCertificateTaskFactory = require('./listr/tasks/setup/regular/configureSSLCertificateTaskFactory');
-const createHttpApiServerFactory = require('./helper/api/createHttpApiServerFactory');
-const resolveDockerSocketPath = require('./docker/resolveDockerSocketPath');
-const HomeDir = require('./config/HomeDir');
-const getBaseConfigFactory = require('../configs/defaults/getBaseConfigFactory');
-const getLocalConfigFactory = require('../configs/defaults/getLocalConfigFactory');
-const getTestnetConfigFactory = require('../configs/defaults/getTestnetConfigFactory');
-const getMainnetConfigFactory = require('../configs/defaults/getMainnetConfigFactory');
-const getConfigFileMigrationsFactory = require('../configs/getConfigFileMigrationsFactory');
-const assertLocalServicesRunningFactory = require('./test/asserts/assertLocalServicesRunningFactory');
-const assertServiceRunningFactory = require('./test/asserts/assertServiceRunningFactory');
-const generateEnvsFactory = require('./config/generateEnvsFactory');
-const getConfigProfilesFactory = require('./config/getConfigProfilesFactory');
-const createIpAndPortsFormFactory = require('./listr/prompts/createIpAndPortsForm');
-const registerMasternodeWithCoreWalletFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet');
-const registerMasternodeWithDMTFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithDMT');
-const writeConfigTemplatesFactory = require('./templates/writeConfigTemplatesFactory');
+import {
+  scheduleRenewZeroSslCertificateFactory
+} from './helper/scheduleRenewZeroSslCertificateFactory';
+import {
+  registerMasternodeGuideTaskFactory
+} from './listr/tasks/setup/regular/registerMasternodeGuideTaskFactory';
+import {configureNodeTaskFactory} from './listr/tasks/setup/regular/configureNodeTaskFactory';
+import {
+  configureSSLCertificateTaskFactory
+} from './listr/tasks/setup/regular/configureSSLCertificateTaskFactory';
+import {createHttpApiServerFactory} from './helper/api/createHttpApiServerFactory';
+import {resolveDockerSocketPath} from './docker/resolveDockerSocketPath';
+import HomeDir from './config/HomeDir';
+import {getBaseConfigFactory} from '../configs/defaults/getBaseConfigFactory';
+import {getLocalConfigFactory} from '../configs/defaults/getLocalConfigFactory';
+import {getTestnetConfigFactory} from '../configs/defaults/getTestnetConfigFactory';
+import {getMainnetConfigFactory} from '../configs/defaults/getMainnetConfigFactory';
+import {
+  getConfigFileMigrationsFactory
+} from '../configs/getConfigFileMigrationsFactory';
+import {
+  assertLocalServicesRunningFactory
+} from './test/asserts/assertLocalServicesRunningFactory';
+import {assertServiceRunningFactory} from './test/asserts/assertServiceRunningFactory';
+import {generateEnvsFactory} from './config/generateEnvsFactory';
+import {getConfigProfilesFactory} from './config/getConfigProfilesFactory';
+import {createIpAndPortsFormFactory} from './listr/prompts/createIpAndPortsForm';
+import {
+  registerMasternodeWithCoreWalletFactory
+} from './listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet';
+import {
+  registerMasternodeWithDMTFactory
+} from './listr/tasks/setup/regular/registerMasternode/registerMasternodeWithDMT';
+import {writeConfigTemplatesFactory} from './templates/writeConfigTemplatesFactory';
 
 /**
  * @param {Object} [options]
  * @returns {Promise<AwilixContainer<any>>}
  */
-async function createDIContainer(options = {}) {
+export async function createDIContainer(options = {}) {
   const container = createAwilixContainer({
     injectionMode: InjectionMode.CLASSIC,
   });
@@ -320,5 +348,3 @@ async function createDIContainer(options = {}) {
 
   return container;
 }
-
-module.exports = createDIContainer;

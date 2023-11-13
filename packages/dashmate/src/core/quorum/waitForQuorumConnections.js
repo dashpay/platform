@@ -1,6 +1,5 @@
-const wait = require('../../util/wait');
-
-const { LLMQ_TYPE_TEST } = require('../../constants');
+import { LLMQ_TYPE_TEST } from '../../constants';
+import {wait} from "../../util/wait.js";
 
 /**
  * @param {RpcClient} rpcClient
@@ -36,7 +35,7 @@ async function checkQuorumConnections(rpcClient, expectedConnectionsCount) {
  * @param {number} [timeout]
  * @return {Promise<void>}
  */
-async function waitForQuorumConnections(
+export async function waitForQuorumConnections(
   rpcClients,
   expectedConnectionsCount,
   bumpMockTime,
@@ -69,5 +68,3 @@ async function waitForQuorumConnections(
     }
   }
 }
-
-module.exports = waitForQuorumConnections;

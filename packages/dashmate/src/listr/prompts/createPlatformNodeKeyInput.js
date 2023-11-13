@@ -1,12 +1,12 @@
-const generateTenderdashNodeKey = require('../../tenderdash/generateTenderdashNodeKey');
-const validateTenderdashNodeKey = require('./validators/validateTenderdashNodeKey');
+import {validateTenderdashNodeKey} from './validators/validateTenderdashNodeKey'
+import {generateTenderdashNodeKey} from "../../tenderdash/generateTenderdashNodeKey.js";
 
 /**
  * @param {Object} [options]
  * @param {string} [options.initial]
  * @returns {Object}
  */
-function createPlatformNodeKeyInput(options = {}) {
+export function createPlatformNodeKeyInput(options = {}) {
   let { initial } = options;
   if (initial === null || initial === undefined) {
     initial = generateTenderdashNodeKey();
@@ -27,5 +27,3 @@ function createPlatformNodeKeyInput(options = {}) {
     validate: validateTenderdashNodeKey,
   };
 }
-
-module.exports = createPlatformNodeKeyInput;

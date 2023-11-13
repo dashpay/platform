@@ -1,4 +1,4 @@
-const { PrivateKey } = require('@dashevo/dashcore-lib');
+import { PrivateKey } from '@dashevo/dashcore-lib';
 
 /**
  *
@@ -9,7 +9,7 @@ const { PrivateKey } = require('@dashevo/dashcore-lib');
  * @param {function(balance: number)} [progressCallback]
  * @returns {Promise<void>}
  */
-async function generateBlocks(
+export async function generateBlocks(
   coreService,
   blocks,
   network,
@@ -32,5 +32,3 @@ async function generateBlocks(
     }
   } while (generatedBlocks < blocks);
 }
-
-module.exports = generateBlocks;

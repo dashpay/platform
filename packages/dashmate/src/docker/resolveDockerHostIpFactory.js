@@ -1,15 +1,13 @@
-const os = require('os');
-
-const { WritableStream } = require('memory-streams');
-
-const isWSL = require('../util/isWSL');
+import os from 'os';
+import { WritableStream } from 'memory-streams';
+import {isWSL} from "../util/isWSL.js";
 
 /**
  * @param {Docker} docker
  * @param {dockerPull} dockerPull
  * @return {resolveDockerHostIp}
  */
-function resolveDockerHostIpFactory(docker, dockerPull) {
+export function resolveDockerHostIpFactory(docker, dockerPull) {
   /**
    * @typedef {resolveDockerHostIp}
    * @return {Promise<string>}
@@ -51,5 +49,3 @@ function resolveDockerHostIpFactory(docker, dockerPull) {
 
   return resolveDockerHostIp;
 }
-
-module.exports = resolveDockerHostIpFactory;

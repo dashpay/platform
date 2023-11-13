@@ -1,4 +1,4 @@
-const { client: JsonRpcClient } = require('jayson/promise');
+import {client} from 'jayson/promise'
 
 /**
  * Create Tenderdash RPC client
@@ -7,11 +7,9 @@ const { client: JsonRpcClient } = require('jayson/promise');
  * @param {string} [options.host]
  * @param {number} [options.port]
  */
-function createTenderdashRpcClient({ host, port } = {}) {
-  return JsonRpcClient.http({
+export function createTenderdashRpcClient({ host, port } = {}) {
+  return client.http({
     host: host || '127.0.0.1',
     port: port || 26657,
   });
 }
-
-module.exports = createTenderdashRpcClient;

@@ -1,4 +1,4 @@
-const errorDescriptions = require('./errors/errorDescriptions');
+import * as errorDescriptions from  './errors/errorDescriptions';
 
 /**
  * Request the ZeroSSL API
@@ -7,7 +7,7 @@ const errorDescriptions = require('./errors/errorDescriptions');
  * @param {Object} options
  * @returns {Promise<Object>}
  */
-async function requestApi(url, options) {
+export async function requestApi(url, options) {
   const response = await fetch(url, options);
   const data = await response.json();
 
@@ -23,5 +23,3 @@ async function requestApi(url, options) {
 
   return data;
 }
-
-module.exports = requestApi;

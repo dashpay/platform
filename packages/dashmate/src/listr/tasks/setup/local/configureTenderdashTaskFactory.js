@@ -1,10 +1,10 @@
-const { Listr } = require('listr2');
-const { getLatestProtocolVersion } = require('@dashevo/wasm-dpp');
+import { Listr }  from 'listr2';
+import { getLatestProtocolVersion } from '@dashevo/wasm-dpp';
 
 /**
  * @return {configureTenderdashTask}
  */
-function configureTenderdashTaskFactory() {
+export function configureTenderdashTaskFactory() {
   /**
    * @typedef {configureTenderdashTask}
    * @param {Config[]} configGroup
@@ -70,5 +70,3 @@ function configureTenderdashTaskFactory() {
 
   return configureTenderdashTask;
 }
-
-module.exports = configureTenderdashTaskFactory;

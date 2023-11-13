@@ -1,8 +1,7 @@
-const util = require('util');
+import util from 'util';
+import {AbstractError} from "../../errors/AbstractError.js";
 
-const AbstractError = require('../../errors/AbstractError');
-
-class DockerComposeError extends AbstractError {
+export class DockerComposeError extends AbstractError {
   /**
    * @param {{err: string, out: string, exitCode: number}} dockerComposeExecutionResult
    */
@@ -26,5 +25,3 @@ class DockerComposeError extends AbstractError {
     return this.dockerComposeExecutionResult;
   }
 }
-
-module.exports = DockerComposeError;

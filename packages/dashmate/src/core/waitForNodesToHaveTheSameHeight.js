@@ -5,7 +5,7 @@
  * @param {number} [waitTime] - wait interval
  * @return {Promise<void>}
  */
-async function waitForNodesToHaveTheSameHeight(rpcClients, timeout = 60000, waitTime = 1000) {
+export async function waitForNodesToHaveTheSameHeight(rpcClients, timeout = 60000, waitTime = 1000) {
   const heights = await Promise.all(
     rpcClients.map(async (rpc) => {
       const promise = rpc.getBlockCount();
@@ -53,5 +53,3 @@ async function waitForNodesToHaveTheSameHeight(rpcClients, timeout = 60000, wait
     }
   }
 }
-
-module.exports = waitForNodesToHaveTheSameHeight;

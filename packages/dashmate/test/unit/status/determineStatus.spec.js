@@ -1,8 +1,8 @@
-const MasternodeSyncAssetEnum = require('../../../src/status/enums/masternodeSyncAsset');
-const ServiceStatusEnum = require('../../../src/status/enums/serviceStatus');
-const DockerStatusEnum = require('../../../src/status/enums/dockerStatus');
-const determineStatus = require('../../../src/status/determineStatus');
-const getConfigMock = require('../../../src/test/mock/getConfigMock');
+import {MasternodeSyncAssetEnum} from '../../../src/status/enums/masternodeSyncAsset';
+import {ServiceStatusEnum} from '../../../src/status/enums/serviceStatus';
+import {DockerStatusEnum} from '../../../src/status/enums/dockerStatus';
+import determineStatus from '../../../src/status/determineStatus';
+import {getConfigMock} from '../../../src/test/mock/getConfigMock';
 
 describe('determineStatus', () => {
   describe('#docker', () => {

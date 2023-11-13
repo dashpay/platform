@@ -1,10 +1,9 @@
-const Config = require('../Config');
+import {Config} from '../Config.js'
+import {ConfigIsNotPresentError} from "../errors/ConfigIsNotPresentError.js";
+import {GroupIsNotPresentError} from "../errors/GroupIsNotPresentError.js";
+import {ConfigAlreadyPresentError} from "../errors/ConfigAlreadyPresentError.js";
 
-const ConfigAlreadyPresentError = require('../errors/ConfigAlreadyPresentError');
-const ConfigIsNotPresentError = require('../errors/ConfigIsNotPresentError');
-const GroupIsNotPresentError = require('../errors/GroupIsNotPresentError');
-
-class ConfigFile {
+export class ConfigFile {
   /**
    * @param {Config[]} configs
    * @param {string} configFormatVersion
@@ -323,5 +322,3 @@ class ConfigFile {
     return result;
   }
 }
-
-module.exports = ConfigFile;

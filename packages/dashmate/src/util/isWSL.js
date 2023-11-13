@@ -1,7 +1,7 @@
-const os = require('os');
-const fs = require('fs');
+import os from 'os'
+import fs from 'fs'
 
-function isWSL() {
+export function isWSL() {
   if (process.platform !== 'linux') {
     return false;
   }
@@ -16,5 +16,3 @@ function isWSL() {
     return false;
   }
 }
-
-module.exports = isWSL;

@@ -1,4 +1,4 @@
-const wait = require('../util/wait');
+import wait from '../util/wait';
 
 /**
  * Wait Core to be synced
@@ -8,7 +8,7 @@ const wait = require('../util/wait');
  * @param {function(progress: number)} [progressCallback]
  * @return {Promise<void>}
  */
-async function waitForMasternodesSync(rpcClient, progressCallback = () => {}) {
+export async function waitForMasternodesSync(rpcClient, progressCallback = () => {}) {
   let isSynced = false;
   let verificationProgress = 0.0;
 
@@ -43,5 +43,3 @@ async function waitForMasternodesSync(rpcClient, progressCallback = () => {}) {
     }
   } while (!isSynced);
 }
-
-module.exports = waitForMasternodesSync;

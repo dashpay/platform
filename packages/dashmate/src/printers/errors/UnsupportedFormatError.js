@@ -1,6 +1,6 @@
-const AbstractError = require('../../errors/AbstractError');
+import {AbstractError} from "../../errors/AbstractError.js";
 
-class UnsupportedFormatError extends AbstractError {
+export class UnsupportedFormatError extends AbstractError {
   /**
    * @param {string} formatName
    */
@@ -15,9 +15,7 @@ class UnsupportedFormatError extends AbstractError {
    *
    * @return {string}
    */
-  getformatName() {
+  getFormatName() {
     return this.formatName;
   }
 }
-
-module.exports = UnsupportedFormatError;

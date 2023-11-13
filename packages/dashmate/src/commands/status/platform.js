@@ -1,14 +1,23 @@
 /* eslint-disable dot-notation */
 /* eslint-disable quote-props */
-const { Flags } = require('@oclif/core');
-const { OUTPUT_FORMATS } = require('../../constants');
+import { Flags } from '@oclif/core';
+import { OUTPUT_FORMATS } from '../../constants';
+import * as colors from '../../status/colors';
+import {ConfigBaseCommand} from "../../oclif/command/ConfigBaseCommand.js";
+import {printObject} from "../../printers/printObject.js";
 
-const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const printObject = require('../../printers/printObject');
+export class PlatformStatusCommand extends ConfigBaseCommand {
+  static description = 'Show Platform status details';
 
-const colors = require('../../status/colors');
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    format: Flags.string({
+      description: 'display output format',
+      default: OUTPUT_FORMATS.PLAIN,
+      options: Object.values(OUTPUT_FORMATS),
+    }),
+  };
 
-class PlatformStatusCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -99,16 +108,3 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     return printObject(scope, flags.format);
   }
 }
-
-PlatformStatusCommand.description = 'Show Platform status details';
-
-PlatformStatusCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  format: Flags.string({
-    description: 'display output format',
-    default: OUTPUT_FORMATS.PLAIN,
-    options: Object.values(OUTPUT_FORMATS),
-  }),
-};
-
-module.exports = PlatformStatusCommand;

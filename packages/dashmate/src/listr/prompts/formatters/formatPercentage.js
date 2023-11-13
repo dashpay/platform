@@ -1,11 +1,11 @@
-const placeholder = require('enquirer/lib/placeholder');
+import * as placeholder from "enquirer/lib/placeholder";
 
 /**
  * @param {string} input
  * @param {Object} choice
  * @returns {*}
  */
-function formatPercentage(input, choice) {
+export function formatPercentage(input, choice) {
   let str;
 
   const number = Number(input);
@@ -26,5 +26,3 @@ function formatPercentage(input, choice) {
 
   return placeholder(this, options);
 }
-
-module.exports = formatPercentage;

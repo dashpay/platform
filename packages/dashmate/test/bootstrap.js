@@ -1,9 +1,9 @@
-const sinon = require('sinon');
-const { expect, use } = require('chai');
-const sinonChai = require('sinon-chai');
-const dirtyChai = require('dirty-chai');
-const chaiAsPromised = require('chai-as-promised');
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+import sinon from 'sinon';
+import { expect, use } from 'chai';
+import sinonChai from 'sinon-chai';
+import dirtyChai from 'dirty-chai';
+import chaiAsPromised from 'chai-as-promised';
+import { default as loadWasmDpp } from '@dashevo/wasm-dpp';
 
 use(sinonChai);
 use(chaiAsPromised);

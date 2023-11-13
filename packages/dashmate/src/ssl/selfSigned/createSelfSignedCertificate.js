@@ -1,4 +1,4 @@
-const forge = require('node-forge');
+import forge from 'node-forge'
 
 /**
  * @typedef {createSelfSignedCertificate}
@@ -8,7 +8,7 @@ const forge = require('node-forge');
  * @param {string} csrPem
  * @return {Promise<{cert: string, key: string}>}
  */
-async function createSelfSignedCertificate(keyPair, csrPem) {
+export async function createSelfSignedCertificate(keyPair, csrPem) {
   const cert = forge.pki.createCertificate();
   const csr = forge.pki.certificationRequestFromPem(csrPem);
 
@@ -25,5 +25,3 @@ async function createSelfSignedCertificate(keyPair, csrPem) {
 
   return forge.pki.certificateToPem(cert);
 }
-
-module.exports = createSelfSignedCertificate;

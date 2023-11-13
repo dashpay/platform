@@ -1,12 +1,12 @@
-const { Listr } = require('listr2');
-const path = require('path');
-const fs = require('fs');
+import { Listr }  from 'listr2';
+import path from 'path';
+import fs from 'fs';
 
 /**
  * @param {HomeDir} homeDir
  * @return {saveCertificateTask}
  */
-function saveCertificateTaskFactory(homeDir) {
+export function saveCertificateTaskFactory(homeDir) {
   /**
    * @typedef {function} saveCertificateTask
    * @param {Config} config
@@ -36,5 +36,3 @@ function saveCertificateTaskFactory(homeDir) {
 
   return saveCertificateTask;
 }
-
-module.exports = saveCertificateTaskFactory;

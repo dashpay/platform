@@ -16,7 +16,7 @@
     "type": "git",
     "url": "git+https://github.com/dashevo/dashmate.git"
   },
-  "type": "commonjs",
+  "type": "module",
   "bin": "./bin/run.js",
   "contributors": [
     {
@@ -46,7 +46,7 @@
     }
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "license": "MIT",
   "bugs": {

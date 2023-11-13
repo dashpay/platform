@@ -1,15 +1,25 @@
-const chalk = require('chalk');
+import chalk from 'chalk';
+import { Flags } from '@oclif/core';
+import { OUTPUT_FORMATS } from '../../constants';
+import * as colors from '../../status/colors';
+import {ConfigBaseCommand} from "../../oclif/command/ConfigBaseCommand.js";
+import {MasternodeSyncAssetEnum} from "../../status/enums/masternodeSyncAsset.js";
+import {MasternodeStateEnum} from "../../status/enums/masternodeState.js";
+import {printObject} from "../../printers/printObject.js";
 
-const { Flags } = require('@oclif/core');
-const { OUTPUT_FORMATS } = require('../../constants');
+export class MasternodeStatusCommand extends ConfigBaseCommand {
+  static description = 'Show masternode status details';
 
-const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const printObject = require('../../printers/printObject');
-const colors = require('../../status/colors');
-const MasternodeStateEnum = require('../../status/enums/masternodeState');
-const MasternodeSyncAssetEnum = require('../../status/enums/masternodeSyncAsset');
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    format: Flags.string({
+      description: 'display output format',
+      default: OUTPUT_FORMATS.PLAIN,
+      options: Object.values(OUTPUT_FORMATS),
+    }),
+  };
 
-class MasternodeStatusCommand extends ConfigBaseCommand {
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -83,16 +93,3 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
     return printObject(scope, flags.format);
   }
 }
-
-MasternodeStatusCommand.description = 'Show masternode status details';
-
-MasternodeStatusCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  format: Flags.string({
-    description: 'display output format',
-    default: OUTPUT_FORMATS.PLAIN,
-    options: Object.values(OUTPUT_FORMATS),
-  }),
-};
-
-module.exports = MasternodeStatusCommand;

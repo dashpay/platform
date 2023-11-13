@@ -1,14 +1,23 @@
 /* eslint-disable quote-props */
-const { Flags } = require('@oclif/core');
-const { OUTPUT_FORMATS } = require('../../constants');
-
-const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
-const printObject = require('../../printers/printObject');
-const printArrayOfObjects = require('../../printers/printArrayOfObjects');
-const colors = require('../../status/colors');
-const ServiceStatusEnum = require('../../status/enums/serviceStatus');
+import { Flags } from '@oclif/core';
+import {GroupBaseCommand} from "../../oclif/command/GroupBaseCommand.js";
+import {printArrayOfObjects} from "../../printers/printArrayOfObjects.js";
+import {printObject} from "../../printers/printObject.js";
+import { OUTPUT_FORMATS } from '../../constants';
+import * as colors from '../../status/colors';
+import {ServiceStatusEnum} from "../../status/enums/serviceStatus.js";
 
 class GroupStatusCommand extends GroupBaseCommand {
+  static description = 'Show group status overview';
+  static flags = {
+    ...GroupBaseCommand.flags,
+    format: Flags.string({
+      description: 'display output format',
+      default: OUTPUT_FORMATS.PLAIN,
+      options: Object.values(OUTPUT_FORMATS),
+    }),
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -94,16 +103,3 @@ class GroupStatusCommand extends GroupBaseCommand {
     }
   }
 }
-
-GroupStatusCommand.description = 'Show group status overview';
-
-GroupStatusCommand.flags = {
-  ...GroupBaseCommand.flags,
-  format: Flags.string({
-    description: 'display output format',
-    default: OUTPUT_FORMATS.PLAIN,
-    options: Object.values(OUTPUT_FORMATS),
-  }),
-};
-
-module.exports = GroupStatusCommand;

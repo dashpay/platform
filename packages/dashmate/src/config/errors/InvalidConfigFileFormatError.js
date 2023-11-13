@@ -1,6 +1,6 @@
-const AbstractError = require('../../errors/AbstractError');
+import {AbstractError} from "../../errors/AbstractError.js";
 
-class InvalidConfigFileFormatError extends AbstractError {
+export class InvalidConfigFileFormatError extends AbstractError {
   /**
    * @param {string} configFilePath
    * @param {Error} error
@@ -26,5 +26,3 @@ class InvalidConfigFileFormatError extends AbstractError {
     return this.configFilePath;
   }
 }
-
-module.exports = InvalidConfigFileFormatError;

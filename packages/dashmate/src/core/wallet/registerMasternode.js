@@ -12,7 +12,7 @@
  * @param {boolean} [hp=false]
  * @return {Promise<string>}
  */
-async function registerMasternode(
+export async function registerMasternode(
   coreService,
   collateralHash,
   ownerAddress,
@@ -60,5 +60,3 @@ async function registerMasternode(
 
   return proRegTxId;
 }
-
-module.exports = registerMasternode;

@@ -1,24 +1,22 @@
-const { Listr } = require('listr2');
-
-const BlsSignatures = require('@dashevo/bls');
-
-const {
+import { Listr }  from 'listr2';
+import BlsSignatures from '@dashevo/bls';
+import {
   NODE_TYPE_MASTERNODE,
   PRESET_MAINNET,
   NODE_TYPE_FULLNODE,
-} = require('../../../../constants');
+} from '../../../../constants';
+import {validateBLSPrivateKeyFactory} from "../../../prompts/validators/validateBLSPrivateKeyFactory.js";
+import {createPlatformNodeKeyInput} from "../../../prompts/createPlatformNodeKeyInput.js";
+import {deriveTenderdashNodeId} from "../../../../tenderdash/deriveTenderdashNodeId.js";
+import {getConfigurationOutputFromContext} from "./getConfigurationOutputFromContext.js";
 
-const validateBLSPrivateKeyFactory = require('../../../prompts/validators/validateBLSPrivateKeyFactory');
-const createPlatformNodeKeyInput = require('../../../prompts/createPlatformNodeKeyInput');
-const deriveTenderdashNodeId = require('../../../../tenderdash/deriveTenderdashNodeId');
-const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
 
 /**
  *
  * @param {createIpAndPortsForm} createIpAndPortsForm
  * @return {configureNodeTask}
  */
-function configureNodeTaskFactory(createIpAndPortsForm) {
+export function configureNodeTaskFactory(createIpAndPortsForm) {
   /**
    * @typedef {function} configureNodeTask
    * @returns {Listr}
@@ -106,5 +104,3 @@ function configureNodeTaskFactory(createIpAndPortsForm) {
 
   return configureNodeTask;
 }
-
-module.exports = configureNodeTaskFactory;

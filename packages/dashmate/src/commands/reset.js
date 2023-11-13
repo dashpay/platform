@@ -1,12 +1,21 @@
-const { Listr } = require('listr2');
+import { Listr }  from 'listr2';
 
-const { Flags } = require('@oclif/core');
+import { Flags } from '@oclif/core';
+import {ConfigBaseCommand} from "../oclif/command/ConfigBaseCommand.js";
+import {MuteOneLineError} from "../oclif/errors/MuteOneLineError.js";
 
-const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
+export  class ResetCommand extends ConfigBaseCommand {
+  static description = 'Reset node data';
 
-const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    hard: Flags.boolean({ char: 'h', description: 'reset config as well as data', default: false }),
+    force: Flags.boolean({ char: 'f', description: 'skip running services check', default: false }),
+    platform: Flags.boolean({ char: 'p', description: 'reset platform services and data only', default: false }),
+    verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
+  };
 
-class ResetCommand extends ConfigBaseCommand {
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -54,15 +63,3 @@ class ResetCommand extends ConfigBaseCommand {
     }
   }
 }
-
-ResetCommand.description = 'Reset node data';
-
-ResetCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  hard: Flags.boolean({ char: 'h', description: 'reset config as well as data', default: false }),
-  force: Flags.boolean({ char: 'f', description: 'skip running services check', default: false }),
-  platform: Flags.boolean({ char: 'p', description: 'reset platform services and data only', default: false }),
-  verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
-};
-
-module.exports = ResetCommand;

@@ -1,10 +1,10 @@
-const fs = require('fs');
-const dots = require('dot');
+import fs from 'fs';
+import dots from 'dot'
 
 /**
  * @return {renderTemplate}
  */
-function renderTemplateFactory() {
+export function renderTemplateFactory() {
   /**
    * Render template for a service
    *
@@ -23,5 +23,3 @@ function renderTemplateFactory() {
 
   return renderTemplate;
 }
-
-module.exports = renderTemplateFactory;

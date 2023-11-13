@@ -1,10 +1,10 @@
-const validateHex = require('./validateHex');
-
+import {validateHex} from "./validateHex.js";
 /**
  * @param blsSignatures
  * @returns {validateBLSPrivateKey}
  */
-function validateBLSPrivateKeyFactory(blsSignatures) {
+
+export function validateBLSPrivateKeyFactory(blsSignatures) {
   /**
    * @typedef validateBLSPrivateKey
    * @param {string} value
@@ -37,5 +37,3 @@ function validateBLSPrivateKeyFactory(blsSignatures) {
 
   return validateBLSPrivateKey;
 }
-
-module.exports = validateBLSPrivateKeyFactory;

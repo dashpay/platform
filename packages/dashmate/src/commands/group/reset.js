@@ -1,12 +1,30 @@
-const { Listr } = require('listr2');
+import { Listr }  from 'listr2';
+import { Flags } from '@oclif/core';
+import {GroupBaseCommand} from "../../oclif/command/GroupBaseCommand.js";
+import {MuteOneLineError} from "../../oclif/errors/MuteOneLineError.js";
+import {PRESET_LOCAL} from '../../constants.js'
 
-const { Flags } = require('@oclif/core');
+export class GroupResetCommand extends GroupBaseCommand {
+  static description = 'Reset group nodes';
 
-const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
-const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
-const { PRESET_LOCAL } = require('../../constants');
+  static flags = {
+    ...GroupBaseCommand.flags,
+    hard: Flags.boolean({
+      description: 'reset config as well as data',
+      default: false,
+    }),
+    force: Flags.boolean({
+      char: 'f',
+      description: 'reset even running node',
+      default: false,
+    }),
+    platform: Flags.boolean({
+      char: 'p',
+      description: 'reset platform services and data only',
+      default: false,
+    }),
+  };
 
-class GroupResetCommand extends GroupBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -81,25 +99,3 @@ class GroupResetCommand extends GroupBaseCommand {
     }
   }
 }
-
-GroupResetCommand.description = 'Reset group nodes';
-
-GroupResetCommand.flags = {
-  ...GroupBaseCommand.flags,
-  hard: Flags.boolean({
-    description: 'reset config as well as data',
-    default: false,
-  }),
-  force: Flags.boolean({
-    char: 'f',
-    description: 'reset even running node',
-    default: false,
-  }),
-  platform: Flags.boolean({
-    char: 'p',
-    description: 'reset platform services and data only',
-    default: false,
-  }),
-};
-
-module.exports = GroupResetCommand;

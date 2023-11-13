@@ -1,8 +1,8 @@
-const { Listr } = require('listr2');
-const { Observable } = require('rxjs');
-const path = require('path');
-const CoreService = require('../../core/CoreService');
-const { TEMPLATES_DIR } = require('../../constants');
+import { Listr }  from 'listr2';
+import { Observable } from 'rxjs';
+import path from 'path';
+import { TEMPLATES_DIR } from '../../constants';
+import {CoreService} from "../../core/CoreService.js";
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -18,7 +18,7 @@ const { TEMPLATES_DIR } = require('../../constants');
  * @param {Docker} docker
  * @return {reindexNodeTask}
  */
-function reindexNodeTaskFactory(
+export function reindexNodeTaskFactory(
   dockerCompose,
   startNodeTask,
   restartNodeTask,
@@ -159,5 +159,3 @@ function reindexNodeTaskFactory(
 
   return reindexNodeTask;
 }
-
-module.exports = reindexNodeTaskFactory;

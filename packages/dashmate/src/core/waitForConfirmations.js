@@ -1,4 +1,4 @@
-const wait = require('../util/wait');
+import wait from '../util/wait';
 
 /**
  * Wait for confirmations to be reached
@@ -9,7 +9,7 @@ const wait = require('../util/wait');
  * @param {function(confirmations: number)} [progressCallback]
  * @returns {Promise<void>}
  */
-async function waitForConfirmations(
+export async function waitForConfirmations(
   coreService,
   txHash,
   confirmations,
@@ -30,5 +30,3 @@ async function waitForConfirmations(
     await progressCallback(confirmationsReached);
   } while (confirmationsReached < confirmations);
 }
-
-module.exports = waitForConfirmations;

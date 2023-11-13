@@ -1,4 +1,4 @@
-class CoreService {
+export class CoreService {
   /**
    *
    * @param {Config} config
@@ -54,5 +54,3 @@ class CoreService {
     return true;
   }
 }
-
-module.exports = CoreService;

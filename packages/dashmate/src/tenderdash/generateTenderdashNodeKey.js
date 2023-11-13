@@ -1,10 +1,10 @@
-const crypto = require('crypto');
+import crypto from 'crypto'
 
 /**
  * @typedef generateTenderdashNodeKey
  * @returns {string}
  */
-function generateTenderdashNodeKey() {
+export function generateTenderdashNodeKey() {
   const {
     privateKey,
     publicKey,
@@ -23,5 +23,3 @@ function generateTenderdashNodeKey() {
 
   return nodeKey.toString('base64');
 }
-
-module.exports = generateTenderdashNodeKey;

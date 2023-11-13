@@ -1,8 +1,7 @@
-const { Listr } = require('listr2');
-
-const { PrivateKey } = require('@dashevo/dashcore-lib');
-const { NETWORK_LOCAL } = require('../../constants');
-const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
+import { Listr }  from 'listr2';
+import { PrivateKey } from '@dashevo/dashcore-lib';
+import { NETWORK_LOCAL } from '../../constants';
+import {isServiceBuildRequired} from "../../util/isServiceBuildRequired.js";
 
 /**
  *
@@ -17,7 +16,7 @@ const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
  * @param {getConnectionHost} getConnectionHost
  * @return {startGroupNodesTask}
  */
-function startGroupNodesTaskFactory(
+export function startGroupNodesTaskFactory(
   dockerCompose,
   waitForCorePeersConnected,
   waitForMasternodesSync,
@@ -170,5 +169,3 @@ function startGroupNodesTaskFactory(
 
   return startGroupNodesTask;
 }
-
-module.exports = startGroupNodesTaskFactory;

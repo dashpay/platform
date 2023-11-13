@@ -1,6 +1,6 @@
-const AbstractError = require('../../errors/AbstractError');
+import {AbstractError} from "../../errors/AbstractError.js";
 
-class ConfigFileNotFoundError extends AbstractError {
+export class ConfigFileNotFoundError extends AbstractError {
   /**
    * @param {string} configFilePath
    */
@@ -17,5 +17,3 @@ class ConfigFileNotFoundError extends AbstractError {
     return this.configFilePath;
   }
 }
-
-module.exports = ConfigFileNotFoundError;

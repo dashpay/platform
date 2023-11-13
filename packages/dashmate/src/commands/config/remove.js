@@ -1,7 +1,7 @@
-const fs = require('node:fs');
-const BaseCommand = require('../../oclif/command/BaseCommand');
+import fs from 'fs';
+import {BaseCommand} from "../../oclif/command/BaseCommand.js";
 
-class ConfigRemoveCommand extends BaseCommand {
+export class ConfigRemoveCommand extends BaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -44,5 +44,3 @@ ConfigRemoveCommand.args = [{
   required: true,
   description: 'config name',
 }];
-
-module.exports = ConfigRemoveCommand;

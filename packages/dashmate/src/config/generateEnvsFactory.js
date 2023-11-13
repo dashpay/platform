@@ -1,7 +1,7 @@
-const nodePath = require('path');
-const os = require('os');
-const convertObjectToEnvs = require('./convertObjectToEnvs');
-const { DASHMATE_HELPER_DOCKER_IMAGE } = require('../constants');
+import {convertObjectToEnvs} from "./convertObjectToEnvs.js";
+import path from 'path';
+import os from 'os'
+import { DASHMATE_HELPER_DOCKER_IMAGE } from '../constants';
 
 /**
  * @param {ConfigFile} configFile
@@ -9,7 +9,7 @@ const { DASHMATE_HELPER_DOCKER_IMAGE } = require('../constants');
  * @param {getConfigProfiles} getConfigProfiles
  * @return {generateEnvs}
  */
-function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
+export function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
   /**
    * @typedef {function} generateEnvs
    * @param {Config} config
@@ -57,7 +57,7 @@ function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
     let tenderdashLogDirectoryPath = homeDir.joinPath('logs', config.get('network'));
     const tenderdashLogFilePath = config.get('platform.drive.tenderdash.log.path');
     if (tenderdashLogFilePath !== null) {
-      tenderdashLogDirectoryPath = nodePath.dirname(tenderdashLogFilePath);
+      tenderdashLogDirectoryPath = path.dirname(tenderdashLogFilePath);
     }
 
     return {
@@ -71,7 +71,7 @@ function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
       COMPOSE_PATH_SEPARATOR: ':',
       DOCKER_BUILDKIT: 1,
       COMPOSE_DOCKER_CLI_BUILD: 1,
-      CORE_LOG_DIRECTORY_PATH: nodePath.dirname(
+      CORE_LOG_DIRECTORY_PATH: path.dirname(
         config.get('core.log.file.path'),
       ),
       DASHMATE_HELPER_DOCKER_IMAGE,
@@ -82,5 +82,3 @@ function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
 
   return generateEnvs;
 }
-
-module.exports = generateEnvsFactory;

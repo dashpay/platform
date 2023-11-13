@@ -1,9 +1,20 @@
-const { Flags } = require('@oclif/core');
-const { Listr } = require('listr2');
-const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
-const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
+import { Flags } from '@oclif/core';
+import { Listr }  from 'listr2';
+import {GroupBaseCommand} from "../../oclif/command/GroupBaseCommand.js";
+import {MuteOneLineError} from "../../oclif/errors/MuteOneLineError.js";
 
-class GroupStopCommand extends GroupBaseCommand {
+export class GroupStopCommand extends GroupBaseCommand {
+  static description = 'Stop group nodes';
+
+  static flags = {
+    ...GroupBaseCommand.flags,
+    force: Flags.boolean({
+      char: 'f',
+      description: 'force stop even if any is running',
+      default: false,
+    }),
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -58,16 +69,3 @@ class GroupStopCommand extends GroupBaseCommand {
     }
   }
 }
-
-GroupStopCommand.description = 'Stop group nodes';
-
-GroupStopCommand.flags = {
-  ...GroupBaseCommand.flags,
-  force: Flags.boolean({
-    char: 'f',
-    description: 'force stop even if any is running',
-    default: false,
-  }),
-};
-
-module.exports = GroupStopCommand;

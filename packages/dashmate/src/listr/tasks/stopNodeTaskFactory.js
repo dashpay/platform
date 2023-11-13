@@ -1,4 +1,4 @@
-const { Listr } = require('listr2');
+import { Listr }  from 'listr2';
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -6,7 +6,7 @@ const { Listr } = require('listr2');
  * @param {getConnectionHost} getConnectionHost
  * @return {stopNodeTask}
  */
-function stopNodeTaskFactory(
+export function stopNodeTaskFactory(
   dockerCompose,
   createRpcClient,
   getConnectionHost,
@@ -67,5 +67,3 @@ function stopNodeTaskFactory(
 
   return stopNodeTask;
 }
-
-module.exports = stopNodeTaskFactory;

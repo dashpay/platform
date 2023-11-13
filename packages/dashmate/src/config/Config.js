@@ -1,19 +1,19 @@
-const Ajv = require('ajv');
+import Ajv from  'ajv';
 
-const lodashGet = require('lodash/get');
-const lodashSet = require('lodash/set');
-const lodashCloneDeep = require('lodash/cloneDeep');
-const lodashIsEqual = require('lodash/isEqual');
+import * as lodashGet from 'lodash/get';
+import * as lodashSet from 'lodash/set';
+import * as lodashCloneDeep from 'lodash/cloneDeep';
+import * as lodashIsEqual from 'lodash/isEqual';
 
-const addFormats = require('ajv-formats');
-const configJsonSchema = require('./configJsonSchema');
+import addFormats from 'ajv-formats';
+import * as configJsonSchema from './configJsonSchema';
 
-const InvalidOptionPathError = require('./errors/InvalidOptionPathError');
-const InvalidOptionError = require('./errors/InvalidOptionError');
-const InvalidOptionsError = require('./errors/InvalidOptionsError');
-const OptionIsNotSetError = require('./errors/OptionIsNotSetError');
+import {InvalidOptionPathError} from "./errors/InvalidOptionPathError.js";
+import {OptionIsNotSetError} from "./errors/OptionIsNotSetError.js";
+import {InvalidOptionError} from "./errors/InvalidOptionError.js";
+import {InvalidOptionsError} from "./errors/InvalidOptionsError.js";
 
-class Config {
+export class Config {
   /**
    * @param {string} name
    * @param {Object} options
@@ -183,5 +183,3 @@ class Config {
 
 Config.ajv = new Ajv({ coerceTypes: true });
 addFormats(Config.ajv, { mode: 'fast', formats: ['ipv4'] });
-
-module.exports = Config;

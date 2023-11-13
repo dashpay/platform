@@ -1,9 +1,9 @@
-const { Listr } = require('listr2');
+import { Listr }  from 'listr2';
 
-const chalk = require('chalk');
-const path = require('path');
-const fs = require('fs');
-const wait = require('../../../../util/wait');
+import chalk from 'chalk';
+import path from 'path'
+import fs from 'fs'
+import {wait} from "../../../../util/wait.js";
 
 /**
  * @param {generateCsr} generateCsr
@@ -18,7 +18,7 @@ const wait = require('../../../../util/wait');
  * @param {HomeDir} homeDir
  * @return {obtainZeroSSLCertificateTask}
  */
-function obtainZeroSSLCertificateTaskFactory(
+export function obtainZeroSSLCertificateTaskFactory(
   generateCsr,
   generateKeyPair,
   createZeroSSLCertificate,
@@ -316,5 +316,3 @@ function obtainZeroSSLCertificateTaskFactory(
 
   return obtainZeroSSLCertificateTask;
 }
-
-module.exports = obtainZeroSSLCertificateTaskFactory;

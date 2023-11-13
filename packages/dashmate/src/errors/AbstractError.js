@@ -1,4 +1,4 @@
-class AbstractError extends Error {
+export class AbstractError extends Error {
   /**
    * @param {string} message
    */
@@ -13,5 +13,3 @@ class AbstractError extends Error {
     }
   }
 }
-
-module.exports = AbstractError;

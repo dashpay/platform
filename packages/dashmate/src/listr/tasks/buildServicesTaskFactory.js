@@ -1,4 +1,4 @@
-const { Listr } = require('listr2');
+import { Listr }  from 'listr2';
 
 /**
  *
@@ -6,7 +6,7 @@ const { Listr } = require('listr2');
  * @param {generateEnvs} generateEnvs
  * @return {buildServicesTask}
  */
-function buildServicesTaskFactory(
+export function buildServicesTaskFactory(
   dockerCompose,
   generateEnvs,
 ) {
@@ -51,5 +51,3 @@ function buildServicesTaskFactory(
 
   return buildServicesTask;
 }
-
-module.exports = buildServicesTaskFactory;

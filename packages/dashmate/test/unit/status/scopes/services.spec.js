@@ -1,5 +1,5 @@
-const getServicesScopeFactory = require('../../../../src/status/scopes/services');
-const getConfigMock = require('../../../../src/test/mock/getConfigMock');
+import {getConfigMock} from "../../../../src/test/mock/getConfigMock.js";
+import {getServicesScopeFactory} from "../../../../src/status/scopes/services.js";
 
 describe('getServicesScopeFactory', () => {
   describe('#getServicesScope', () => {

@@ -2,7 +2,7 @@
  * @param {Docker} docker
  * @return {dockerPull}
  */
-function dockerPullFactory(docker) {
+export function dockerPullFactory(docker) {
   /**
    * @typedef {dockerPull}
    * @param {string} image
@@ -32,5 +32,3 @@ function dockerPullFactory(docker) {
 
   return dockerPull;
 }
-
-module.exports = dockerPullFactory;

@@ -1,8 +1,9 @@
-const { table } = require('table');
+import {table} from 'table'
+import {BaseCommand} from "../../oclif/command/BaseCommand.js";
 
-const BaseCommand = require('../../oclif/command/BaseCommand');
+export class ConfigListCommand extends BaseCommand {
+  static description = 'List available configs';
 
-class ConfigListCommand extends BaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -23,7 +24,3 @@ class ConfigListCommand extends BaseCommand {
     console.log(output);
   }
 }
-
-ConfigListCommand.description = 'List available configs';
-
-module.exports = ConfigListCommand;

@@ -1,17 +1,15 @@
-const lodashMerge = require('lodash/merge');
+import * as lodashMerge from 'lodash/merge';
 
-const {
-  NETWORK_LOCAL,
-} = require('../../src/constants');
-
-const Config = require('../../src/config/Config');
-const { SSL_PROVIDERS } = require('../../src/constants');
+import {
+  NETWORK_LOCAL, SSL_PROVIDERS
+} from '../../src/constants';
+import {Config} from "../../src/config/Config.js";
 
 /**
  * @param {getBaseConfig} getBaseConfig
  * @returns {getLocalConfig}
  */
-function getLocalConfigFactory(getBaseConfig) {
+export function getLocalConfigFactory(getBaseConfig) {
   /**
    * @typedef {function} getLocalConfig
    * @returns {Config}
@@ -77,5 +75,3 @@ function getLocalConfigFactory(getBaseConfig) {
 
   return getLocalConfig;
 }
-
-module.exports = getLocalConfigFactory;

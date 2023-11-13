@@ -1,31 +1,33 @@
-const { Command, Flags, settings } = require('@oclif/core');
+import { Command, Flags, settings } from '@oclif/core';
 
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+import { asValue } from 'awilix';
 
-const { asValue } = require('awilix');
+import graceful from 'node-graceful';
 
-const graceful = require('node-graceful');
-
-const dotenv = require('dotenv');
-
-const getFunctionParams = require('../../util/getFunctionParams');
-
-const createDIContainer = require('../../createDIContainer');
-
-const ConfigFileNotFoundError = require('../../config/errors/ConfigFileNotFoundError');
+import dotenv from 'dotenv';
+import {createDIContainer} from "../../createDIContainer.js";
+import {ConfigFileNotFoundError} from "../../config/errors/ConfigFileNotFoundError.js";
 
 /**
  * @abstract
  */
-class BaseCommand extends Command {
+export class BaseCommand extends Command {
+  static flags = {
+    verbose: Flags.boolean({
+      char: 'v',
+      description: 'use verbose mode for output',
+      default: false,
+    }),
+  };
+
   async init() {
-    // Load wasm-dpp for further usage
-    await loadWasmDpp();
+    // todo Load wasm-dpp for further usage
+    // await loadWasmDpp();
 
     // Read environment variables from .env file
     dotenv.config();
 
-    const { args, flags } = await this.parse(this.constructor);
+    const { args, flags } = await this.parse(this);
 
     this.parsedArgs = args;
     this.parsedFlags = flags;
@@ -136,13 +138,3 @@ class BaseCommand extends Command {
     return super.finally(err);
   }
 }
-
-BaseCommand.flags = {
-  verbose: Flags.boolean({
-    char: 'v',
-    description: 'use verbose mode for output',
-    default: false,
-  }),
-};
-
-module.exports = BaseCommand;

@@ -1,6 +1,6 @@
-const AbstractError = require('../../errors/AbstractError');
+import {AbstractError} from "../../errors/AbstractError.js";
 
-class GroupIsNotPresentError extends AbstractError {
+export class GroupIsNotPresentError extends AbstractError {
   /**
    * @param {string} groupName
    */
@@ -17,5 +17,3 @@ class GroupIsNotPresentError extends AbstractError {
     return this.groupName;
   }
 }
-
-module.exports = GroupIsNotPresentError;

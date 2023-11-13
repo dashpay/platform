@@ -1,20 +1,34 @@
-const { Listr } = require('listr2');
+import { Listr }  from 'listr2';
 
-const { Flags } = require('@oclif/core');
+import { Flags } from '@oclif/core';
 
-const chalk = require('chalk');
+import chalk from 'chalk';
+import {BaseCommand} from "../oclif/command/BaseCommand.js";
+import {MuteOneLineError} from "../oclif/errors/MuteOneLineError.js";
 
-const BaseCommand = require('../oclif/command/BaseCommand');
-
-const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
-
-const {
+import {
   PRESET_LOCAL,
   PRESET_MAINNET,
   PRESETS,
-} = require('../constants');
+} from '../constants';
 
-class SetupCommand extends BaseCommand {
+export class SetupCommand extends BaseCommand {
+  static description = 'Set up a new Dash node';
+  static args = [{
+    name: 'preset',
+    required: false,
+    description: 'Node configuration preset',
+    options: PRESETS,
+  }];
+
+  static flags = {
+    'debug-logs': Flags.boolean({ char: 'd', description: 'enable debug logs', allowNo: true }),
+    'node-count': Flags.integer({ char: 'c', description: 'number of nodes to setup' }),
+    'miner-interval': Flags.string({ char: 'm', description: 'interval between blocks' }),
+
+    verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -151,22 +165,3 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
     }
   }
 }
-
-SetupCommand.description = 'Set up a new Dash node';
-
-SetupCommand.args = [{
-  name: 'preset',
-  required: false,
-  description: 'Node configuration preset',
-  options: PRESETS,
-}];
-
-SetupCommand.flags = {
-  'debug-logs': Flags.boolean({ char: 'd', description: 'enable debug logs', allowNo: true }),
-  'node-count': Flags.integer({ char: 'c', description: 'number of nodes to setup' }),
-  'miner-interval': Flags.string({ char: 'm', description: 'interval between blocks' }),
-
-  verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
-};
-
-module.exports = SetupCommand;

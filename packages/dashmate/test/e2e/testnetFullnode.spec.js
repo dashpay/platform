@@ -1,13 +1,13 @@
-const { asValue } = require('awilix');
+import {asValue} from 'awilix';
 
-const createDIContainer = require('../../src/createDIContainer');
-const { NODE_TYPE_NAMES, getNodeTypeByName } = require('../../src/listr/tasks/setup/nodeTypes');
-const { SSL_PROVIDERS } = require('../../src/constants');
-const generateTenderdashNodeKey = require('../../src/tenderdash/generateTenderdashNodeKey');
-const createSelfSignedCertificate = require('../../src/test/createSelfSignedCertificate');
-const createRpcClient = require('../../src/core/createRpcClient');
-const waitForCoreDataFactory = require('../../src/test/waitForCoreDataFactory');
-const HomeDir = require('../../src/config/HomeDir');
+import {NODE_TYPE_NAMES, getNodeTypeByName} from '../../src/listr/tasks/setup/nodeTypes';
+import {SSL_PROVIDERS} from '../../src/constants';
+import HomeDir from "../../src/config/HomeDir.js";
+import {createDIContainer} from "../../src/createDIContainer.js";
+import {createSelfSignedCertificate} from "../../src/ssl/selfSigned/createSelfSignedCertificate.js";
+import {generateTenderdashNodeKey} from "../../src/tenderdash/generateTenderdashNodeKey.js";
+import {createRpcClient} from "../../src/core/createRpcClient.js";
+import {waitForCoreDataFactory} from "../../src/test/waitForCoreDataFactory.js";
 
 describe('Testnet Fullnode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
@@ -68,7 +68,7 @@ describe('Testnet Fullnode', function main() {
 
       const ip = '127.0.0.1';
 
-      const { certificatePath, privKeyPath } = await createSelfSignedCertificate(ip);
+      const {certificatePath, privKeyPath} = await createSelfSignedCertificate(ip);
 
       await setupTask.run({
         preset,

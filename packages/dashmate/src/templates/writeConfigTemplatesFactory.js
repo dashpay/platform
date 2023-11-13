@@ -1,7 +1,7 @@
 /**
  * @return {writeConfigTemplates}
  */
-function writeConfigTemplatesFactory(renderServiceTemplates, writeServiceConfigs) {
+export function writeConfigTemplatesFactory(renderServiceTemplates, writeServiceConfigs) {
   /**
    * @typedef {writeConfigTemplates}
    * @param {Config} config
@@ -15,5 +15,3 @@ function writeConfigTemplatesFactory(renderServiceTemplates, writeServiceConfigs
 
   return writeConfigTemplates;
 }
-
-module.exports = writeConfigTemplatesFactory;

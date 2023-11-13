@@ -1,4 +1,4 @@
-class DefaultConfigs {
+export class DefaultConfigs {
   /**
    * @type {Object<string, function(): Config>}
    */
@@ -46,5 +46,3 @@ class DefaultConfigs {
     return Object.prototype.hasOwnProperty.call(this.#configGetters, name);
   }
 }
-
-module.exports = DefaultConfigs;

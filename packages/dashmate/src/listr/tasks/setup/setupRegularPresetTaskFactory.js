@@ -1,22 +1,21 @@
-const { Listr } = require('listr2');
+import { Listr }  from 'listr2';
 
-const chalk = require('chalk');
+import chalk from 'chalk';
 
-const {
+import {
   NODE_TYPE_MASTERNODE,
   NODE_TYPE_HPMN,
   NODE_TYPE_FULLNODE,
   PRESET_MAINNET,
-} = require('../../../constants');
+} from '../../../constants';
 
-const {
+import {
   NODE_TYPE_NAMES,
   getNodeTypeByName,
   getNodeTypeNameByType,
   isNodeTypeNameHighPerformance,
-} = require('./nodeTypes');
-
-const generateRandomString = require('../../../util/generateRandomString');
+} from './nodeTypes';
+import {generateRandomString} from "../../../util/generateRandomString.js";
 
 /**
  * @param {ConfigFile} configFile
@@ -28,7 +27,7 @@ const generateRandomString = require('../../../util/generateRandomString');
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
  * @param {DefaultConfigs} defaultConfigs
  */
-function setupRegularPresetTaskFactory(
+export function setupRegularPresetTaskFactory(
   configFile,
   generateBlsKeys,
   registerMasternodeTask,
@@ -167,5 +166,3 @@ function setupRegularPresetTaskFactory(
 
   return setupRegularPresetTask;
 }
-
-module.exports = setupRegularPresetTaskFactory;

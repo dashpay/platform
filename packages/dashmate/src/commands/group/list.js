@@ -1,8 +1,14 @@
-const { table } = require('table');
+import {GroupBaseCommand} from "../../oclif/command/GroupBaseCommand.js";
 
-const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
+import { table } from 'table';
 
-class GroupListCommand extends GroupBaseCommand {
+export class GroupListCommand extends GroupBaseCommand {
+  static description = 'List available groups';
+
+  static flags = {
+    ...GroupBaseCommand.flags,
+  };
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -22,11 +28,3 @@ class GroupListCommand extends GroupBaseCommand {
     console.log(output);
   }
 }
-
-GroupListCommand.description = 'List available groups';
-
-GroupListCommand.flags = {
-  ...GroupBaseCommand.flags,
-};
-
-module.exports = GroupListCommand;

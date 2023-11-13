@@ -1,7 +1,7 @@
-const {
+import {
   NODE_TYPE_MASTERNODE,
   NODE_TYPE_FULLNODE,
-} = require('../../../constants');
+} from '../../../constants';
 
 const NODE_TYPE_NAMES = {
   MASTERNODE: 'masternode',
@@ -34,7 +34,7 @@ function getNodeTypeNameByType(nodeType) {
   return NODE_TYPE_NAME_BY_TYPE[nodeType];
 }
 
-module.exports = {
+export default {
   NODE_TYPE_NAMES,
   isNodeTypeNameHighPerformance,
   getNodeTypeByName,

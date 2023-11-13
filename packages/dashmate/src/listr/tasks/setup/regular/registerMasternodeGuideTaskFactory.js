@@ -1,7 +1,6 @@
-const { Listr } = require('listr2');
-
-const deriveTenderdashNodeId = require('../../../../tenderdash/deriveTenderdashNodeId');
-const getConfigurationOutputFromContext = require('./getConfigurationOutputFromContext');
+import { Listr }  from 'listr2';
+import {deriveTenderdashNodeId} from "../../../../tenderdash/deriveTenderdashNodeId.js";
+import {getConfigurationOutputFromContext} from "./getConfigurationOutputFromContext.js";
 
 /**
  * @param {DefaultConfigs} defaultConfigs
@@ -9,7 +8,7 @@ const getConfigurationOutputFromContext = require('./getConfigurationOutputFromC
  * @param {registerMasternodeWithDMT} registerMasternodeWithDMT
  * @return {registerMasternodeGuideTask}
  */
-function registerMasternodeGuideTaskFactory(defaultConfigs,
+export function registerMasternodeGuideTaskFactory(defaultConfigs,
   registerMasternodeWithCoreWallet, registerMasternodeWithDMT) {
   /**
    * @typedef {registerMasternodeGuideTask}
@@ -87,5 +86,3 @@ function registerMasternodeGuideTaskFactory(defaultConfigs,
 
   return registerMasternodeGuideTask;
 }
-
-module.exports = registerMasternodeGuideTaskFactory;

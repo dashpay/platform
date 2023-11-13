@@ -1,4 +1,4 @@
-const isEqual = require('lodash/isEqual');
+import * as isEqual from 'lodash/isEqual'
 
 /**
  * @param {CoreService[]} coreServices
@@ -23,7 +23,7 @@ async function checkSporksAreTheSame(coreServices) {
  * @param {number} [timeout]
  * @return {Promise<void>}
  */
-async function waitForNodesToHaveTheSameSporks(coreServices, timeout = 30000) {
+export async function waitForNodesToHaveTheSameSporks(coreServices, timeout = 30000) {
   const deadline = Date.now() + timeout;
 
   let isReady = false;
@@ -36,5 +36,3 @@ async function waitForNodesToHaveTheSameSporks(coreServices, timeout = 30000) {
     }
   }
 }
-
-module.exports = waitForNodesToHaveTheSameSporks;

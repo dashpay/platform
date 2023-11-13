@@ -1,14 +1,13 @@
-const BlsSignatures = require('@dashevo/bls');
-
-const createPlatformNodeKeyInput = require('../../../../prompts/createPlatformNodeKeyInput');
-const validateBLSPrivateKeyFactory = require('../../../../prompts/validators/validateBLSPrivateKeyFactory');
+import BlsSignatures from '@dashevo/bls';
+import {validateBLSPrivateKeyFactory} from "../../../../prompts/validators/validateBLSPrivateKeyFactory.js";
+import {createPlatformNodeKeyInput} from "../../../../prompts/createPlatformNodeKeyInput.js";
 
 /**
  *
  * @param {createIpAndPortsForm} createIpAndPortsForm
  * @return {registerMasternodeWithDMTFactory}
  */
-function registerMasternodeWithDMTFactory(createIpAndPortsForm) {
+export function registerMasternodeWithDMTFactory(createIpAndPortsForm) {
   /**
    * Print prompts to collect masternode registration data with DMT
    *
@@ -84,5 +83,3 @@ function registerMasternodeWithDMTFactory(createIpAndPortsForm) {
 
   return registerMasternodeWithDMT;
 }
-
-module.exports = registerMasternodeWithDMTFactory;

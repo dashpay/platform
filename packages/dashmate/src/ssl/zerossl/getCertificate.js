@@ -1,5 +1,5 @@
-const Certificate = require('./Certificate');
-const requestApi = require('./requestApi');
+import {Certificate} from "./Certificate.js";
+import {requestApi} from "./requestApi.js";
 
 /**
  * Get ZeroSSL certificate
@@ -9,7 +9,7 @@ const requestApi = require('./requestApi');
  * @param {string} id
  * @return {Promise<Certificate>}
  */
-async function getCertificate(apiKey, id) {
+export async function getCertificate(apiKey, id) {
   const url = `https://api.zerossl.com/certificates/${id}?access_key=${apiKey}`;
 
   const requestOptions = {
@@ -21,5 +21,3 @@ async function getCertificate(apiKey, id) {
 
   return new Certificate(data);
 }
-
-module.exports = getCertificate;

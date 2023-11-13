@@ -1,20 +1,17 @@
-const { Observable } = require('rxjs');
+import { Observable } from 'rxjs';
 
-const isWsl = require('is-wsl');
+import isWsl from 'is-wsl';
+import dockerCompose from '@dashevo/docker-compose';
 
-const dockerCompose = require('@dashevo/docker-compose');
+import hasbin from 'hasbin';
+import semver from 'semver';
 
-const hasbin = require('hasbin');
-const semver = require('semver');
+import { PACKAGE_ROOT_DIR } from '../constants';
+import {ServiceAlreadyRunningError} from "./errors/ServiceAlreadyRunningError.js";
+import {DockerComposeError} from "./errors/DockerComposeError.js";
+import {ServiceIsNotRunningError} from "./errors/ServiceIsNotRunningError.js";
 
-const DockerComposeError = require('./errors/DockerComposeError');
-const ServiceAlreadyRunningError = require('./errors/ServiceAlreadyRunningError');
-const ServiceIsNotRunningError = require('./errors/ServiceIsNotRunningError');
-const ContainerIsNotPresentError = require('./errors/ContainerIsNotPresentError');
-
-const { PACKAGE_ROOT_DIR } = require('../constants');
-
-class DockerCompose {
+export class DockerCompose {
   /**
    * Minimal
    *
@@ -572,5 +569,3 @@ class DockerCompose {
     };
   }
 }
-
-module.exports = DockerCompose;

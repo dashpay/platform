@@ -1,5 +1,6 @@
-const path = require('path');
-const { version } = require('../package.json');
+import path from 'path';
+import fs from 'fs';
+import * as url from 'url';
 
 const networks = {
   NETWORK_LOCAL: 'local',
@@ -30,12 +31,14 @@ const quorumTypes = {
 const MASTERNODE_COLLATERAL_AMOUNT = 1000;
 const HPMN_COLLATERAL_AMOUNT = 4000;
 
-const PACKAGE_ROOT_DIR = path.join(__dirname, '..');
+const PACKAGE_ROOT_DIR = path.join(url.fileURLToPath(import.meta.url), '../..');
 const TEMPLATES_DIR = path.join(PACKAGE_ROOT_DIR, 'templates');
+
+const {version} = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
 const DASHMATE_HELPER_DOCKER_IMAGE = `dashpay/dashmate-helper:${version}`;
 
-const OUTPUT_FORMATS = {
+export const OUTPUT_FORMATS = {
   JSON: 'json',
   PLAIN: 'plain',
 };
@@ -46,7 +49,7 @@ const SSL_PROVIDERS = {
   SELF_SIGNED: 'self-signed',
 };
 
-module.exports = {
+export default {
   ...networks,
   ...presets,
   ...nodeTypes,

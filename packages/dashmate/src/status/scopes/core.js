@@ -1,9 +1,9 @@
 /* eslint-disable camelcase */
-const DockerStatusEnum = require('../enums/dockerStatus');
-const determineStatus = require('../determineStatus');
-const providers = require('../providers');
-const extractCoreVersion = require('../../core/extractCoreVersion');
-const ServiceStatusEnum = require('../enums/serviceStatus');
+import * as providers from '../providers.js'
+import {ServiceStatusEnum} from "../enums/serviceStatus.js";
+import {DockerStatusEnum} from "../enums/dockerStatus.js";
+import determineStatus from "../determineStatus.js";
+import {extractCoreVersion} from "../../core/extractCoreVersion.js";
 
 /**
  * @returns {getCoreScopeFactory}
@@ -11,7 +11,7 @@ const ServiceStatusEnum = require('../enums/serviceStatus');
  * @param {createRpcClient} createRpcClient
  * @param {getConnectionHost} getConnectionHost
  */
-function getCoreScopeFactory(
+export function getCoreScopeFactory(
   dockerCompose,
   createRpcClient,
   getConnectionHost,
@@ -139,5 +139,3 @@ function getCoreScopeFactory(
 
   return getCoreScope;
 }
-
-module.exports = getCoreScopeFactory;

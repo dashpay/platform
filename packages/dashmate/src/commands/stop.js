@@ -1,12 +1,25 @@
-const { Listr } = require('listr2');
+import { Listr }  from 'listr2';
 
-const { Flags } = require('@oclif/core');
+import { Flags } from '@oclif/core';
+import {ConfigBaseCommand} from "../oclif/command/ConfigBaseCommand.js";
+import {MuteOneLineError} from "../oclif/errors/MuteOneLineError.js";
 
-const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
+export class StopCommand extends ConfigBaseCommand {
+  static description = 'Stop node';
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    force: Flags.boolean({
+      char: 'f',
+      description: 'force stop even if any service is running',
+      default: false,
+    }),
+    platform: Flags.boolean({
+      char: 'p',
+      description: 'stop only platform',
+      default: false,
+    }),
+  };
 
-const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
-
-class StopCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -50,21 +63,3 @@ class StopCommand extends ConfigBaseCommand {
     }
   }
 }
-
-StopCommand.description = 'Stop node';
-
-StopCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  force: Flags.boolean({
-    char: 'f',
-    description: 'force stop even if any service is running',
-    default: false,
-  }),
-  platform: Flags.boolean({
-    char: 'p',
-    description: 'stop only platform',
-    default: false,
-  }),
-};
-
-module.exports = StopCommand;

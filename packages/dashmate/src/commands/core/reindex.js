@@ -1,12 +1,27 @@
-const { Listr } = require('listr2');
+import { Listr }  from 'listr2';
 
-const { Flags } = require('@oclif/core');
+import { Flags } from '@oclif/core';
+import {ConfigBaseCommand} from "../../oclif/command/ConfigBaseCommand.js";
+import MuteOneLineError from "../../oclif/errors/MuteOneLineError.js";
 
-const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 
-const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
+export class ReindexCommand extends ConfigBaseCommand {
+  static description = 'Reindex Core data';
 
-class ReindexCommand extends ConfigBaseCommand {
+  static flags = {
+    ...ConfigBaseCommand.flags,
+    verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
+    detach: Flags.boolean({
+      char: 'd',
+      description: 'run the reindex process in the background',
+      default: false,
+    }),
+    force: Flags.boolean({
+      char: 'f',
+      description: 'reindex already running node without confirmation',
+      default: false,
+    }),
+  };
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -51,22 +66,3 @@ class ReindexCommand extends ConfigBaseCommand {
     }
   }
 }
-
-ReindexCommand.description = 'Reindex Core data';
-
-ReindexCommand.flags = {
-  ...ConfigBaseCommand.flags,
-  verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
-  detach: Flags.boolean({
-    char: 'd',
-    description: 'run the reindex process in the background',
-    default: false,
-  }),
-  force: Flags.boolean({
-    char: 'f',
-    description: 'reindex already running node without confirmation',
-    default: false,
-  }),
-};
-
-module.exports = ReindexCommand;

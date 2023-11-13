@@ -1,14 +1,14 @@
-const yaml = require('js-yaml');
-const fs = require('fs');
-const path = require('path');
-const { DASHMATE_HELPER_DOCKER_IMAGE, PACKAGE_ROOT_DIR } = require('../constants');
+import yaml from 'js-yaml';
+import fs from "fs";
+import path from "path";
+import {DASHMATE_HELPER_DOCKER_IMAGE, PACKAGE_ROOT_DIR} from '../constants';
 
 /**
  * @param {generateEnvs} generateEnvs
  * @param {getConfigProfiles} getConfigProfiles
  * @return {getServiceList}
  */
-function getServiceListFactory(generateEnvs, getConfigProfiles) {
+export function getServiceListFactory(generateEnvs, getConfigProfiles) {
   const file = fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'docker-compose.yml'));
   const composeFile = yaml.load(file);
 
@@ -26,7 +26,7 @@ function getServiceListFactory(generateEnvs, getConfigProfiles) {
 
     return Object
       .entries(composeFile.services)
-      .map(([serviceName, { image: serviceImage, labels, profiles: serviceProfiles }]) => {
+      .map(([serviceName, {image: serviceImage, labels, profiles: serviceProfiles}]) => {
         const title = labels?.['org.dashmate.service.title'];
 
         if (!title) {
@@ -51,5 +51,3 @@ function getServiceListFactory(generateEnvs, getConfigProfiles) {
 
   return getServiceList;
 }
-
-module.exports = getServiceListFactory;

@@ -1,4 +1,4 @@
-const RpcClient = require('@dashevo/dashd-rpc/promise');
+import {RpcClient} from '@dashevo/dashd-rpc/promise'
 
 /**
  * Create Core JSON RPC Client
@@ -12,7 +12,7 @@ const RpcClient = require('@dashevo/dashd-rpc/promise');
  * @param {number} [config.port=20002]
  * @return {RpcClient|PromisifyModule}
  */
-function createRpcClient(config = {}) {
+export function createRpcClient(config = {}) {
   // eslint-disable-next-line no-param-reassign
   config = {
     protocol: 'http',
@@ -25,5 +25,3 @@ function createRpcClient(config = {}) {
 
   return new RpcClient(config);
 }
-
-module.exports = createRpcClient;

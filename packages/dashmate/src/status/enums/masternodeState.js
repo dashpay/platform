@@ -1,5 +1,5 @@
 // according doc https://dashcore.readme.io/docs/core-api-ref-remote-procedure-calls-dash#masternode-status
-const MasternodeStateEnum = {
+export const MasternodeStateEnum = {
   WAITING_FOR_PROTX: 'WAITING_FOR_PROTX',
   POSE_BANNED: 'POSE_BANNED',
   REMOVED: 'REMOVED',
@@ -9,5 +9,3 @@ const MasternodeStateEnum = {
   ERROR: 'ERROR',
   UNKNOWN: 'UNKNOWN',
 };
-
-module.exports = MasternodeStateEnum;

@@ -1,11 +1,11 @@
-const dots = require('dot');
-const glob = require('glob');
-const { TEMPLATES_DIR } = require('../constants');
+import dots from 'dot'
+import glob from 'glob';
+import { TEMPLATES_DIR } from '../constants';
 
 /**
  * @return {renderServiceTemplates}
  */
-function renderServiceTemplatesFactory(renderTemplate) {
+export function renderServiceTemplatesFactory(renderTemplate) {
   /**
    * Render templates for services
    *
@@ -38,5 +38,3 @@ function renderServiceTemplatesFactory(renderTemplate) {
 
   return renderServiceTemplates;
 }
-
-module.exports = renderServiceTemplatesFactory;

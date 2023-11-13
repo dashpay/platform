@@ -1,20 +1,20 @@
 /* eslint-disable no-param-reassign */
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
-const {
+import {
   NETWORK_LOCAL,
   NETWORK_TESTNET,
   NETWORK_MAINNET,
   SSL_PROVIDERS,
-} = require('../src/constants');
+} from '../src/constants';
 
 /**
  * @param {HomeDir} homeDir
  * @param {DefaultConfigs} defaultConfigs
  * @returns {getConfigFileMigrations}
  */
-function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
+export function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
   /**
    * @typedef {function} getConfigFileMigrations
    * @returns {Object}
@@ -319,5 +319,3 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
   return getConfigFileMigrations;
 }
-
-module.exports = getConfigFileMigrationsFactory;

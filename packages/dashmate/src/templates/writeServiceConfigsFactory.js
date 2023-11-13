@@ -1,11 +1,11 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
 /**
  * @param {HomeDir} homeDir
  * @return {writeServiceConfigs}
  */
-function writeServiceConfigsFactory(homeDir) {
+export function writeServiceConfigsFactory(homeDir) {
   /**
    * Write service config files
    *
@@ -32,5 +32,3 @@ function writeServiceConfigsFactory(homeDir) {
 
   return writeServiceConfigs;
 }
-
-module.exports = writeServiceConfigsFactory;

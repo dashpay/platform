@@ -1,4 +1,4 @@
-const wait = require('../util/wait');
+import {wait} from '../util/wait';
 
 /**
  * Wait for Core to start
@@ -7,7 +7,7 @@ const wait = require('../util/wait');
  * @param {CoreService} coreService
  * @return {Promise<void>}
  */
-async function waitForCoreStart(coreService) {
+export async function waitForCoreStart(coreService) {
   let retries = 0;
   let isReady = false;
   const maxRetries = 120; // ~2 minutes
@@ -29,5 +29,3 @@ async function waitForCoreStart(coreService) {
     throw new Error('Could not connect to Core RPC');
   }
 }
-
-module.exports = waitForCoreStart;

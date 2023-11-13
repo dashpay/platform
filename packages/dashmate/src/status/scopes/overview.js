@@ -4,7 +4,7 @@
  * @param getMasternodeScope {getMasternodeScope}
  * @param getPlatformScope {getPlatformScope}
  */
-function getOverviewScopeFactory(getCoreScope,
+export function getOverviewScopeFactory(getCoreScope,
   getMasternodeScope,
   getPlatformScope) {
   /**
@@ -70,5 +70,3 @@ function getOverviewScopeFactory(getCoreScope,
 
   return getOverviewScope;
 }
-
-module.exports = getOverviewScopeFactory;

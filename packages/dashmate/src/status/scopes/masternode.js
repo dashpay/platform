@@ -1,7 +1,7 @@
-const calculatePaymentQueuePosition = require('../../core/calculatePaymentQueuePosition');
-const blocksToTime = require('../../util/blocksToTime');
-const MasternodeStateEnum = require('../enums/masternodeState');
-const MasternodeSyncAssetEnum = require('../enums/masternodeSyncAsset');
+import {calculatePaymentQueuePosition} from "../../core/calculatePaymentQueuePosition.js";
+import {MasternodeSyncAssetEnum} from "../enums/masternodeSyncAsset.js";
+import {blocksToTime} from "../../util/blocksToTime.js";
+import {MasternodeStateEnum} from "../enums/masternodeState.js";
 
 /**
  * @param {DockerCompose}dockerCompose
@@ -9,7 +9,7 @@ const MasternodeSyncAssetEnum = require('../enums/masternodeSyncAsset');
  * @param {getConnectionHost} getConnectionHost
  * @returns {getMasternodeScopeFactory}
  */
-function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnectionHost) {
+export function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnectionHost) {
   async function getSyncAsset(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),
@@ -154,5 +154,3 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
 
   return getMasternodeScope;
 }
-
-module.exports = getMasternodeScopeFactory;

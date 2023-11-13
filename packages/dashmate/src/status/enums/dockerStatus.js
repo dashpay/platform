@@ -1,4 +1,4 @@
-const DockerStatusEnum = {
+export const DockerStatusEnum = {
   // all possible Docker statuses
   created: 'created',
   restarting: 'restarting',
@@ -8,5 +8,3 @@ const DockerStatusEnum = {
   dead: 'dead',
   not_started: 'not_started',
 };
-
-module.exports = DockerStatusEnum;

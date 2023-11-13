@@ -3,7 +3,7 @@
  * @param docker
  * @return {stopAllContainers}
  */
-function stopAllContainersFactory(docker) {
+export function stopAllContainersFactory(docker) {
   /**
    * @typedef {stopAllContainers}
    * @param {string[]} containersIds
@@ -32,5 +32,3 @@ function stopAllContainersFactory(docker) {
 
   return stopAllContainers;
 }
-
-module.exports = stopAllContainersFactory;

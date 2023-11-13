@@ -1,8 +1,7 @@
-const { Listr } = require('listr2');
-const { Observable } = require('rxjs');
-
-const { NETWORK_LOCAL } = require('../../constants');
-const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
+import { Listr }  from 'listr2';
+import { Observable } from 'rxjs';
+import { NETWORK_LOCAL } from '../../constants';
+import {isServiceBuildRequired} from "../../util/isServiceBuildRequired.js";
 
 /**
  *
@@ -15,7 +14,7 @@ const isServiceBuildRequired = require('../../util/isServiceBuildRequired');
  * @param {ensureFileMountExists} ensureFileMountExists
  * @return {startNodeTask}
  */
-function startNodeTaskFactory(
+export function startNodeTaskFactory(
   dockerCompose,
   waitForCorePeersConnected,
   waitForMasternodesSync,
@@ -138,5 +137,3 @@ function startNodeTaskFactory(
 
   return startNodeTask;
 }
-
-module.exports = startNodeTaskFactory;

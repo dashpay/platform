@@ -1,43 +1,43 @@
-const path = require('path');
+import path from 'path';
 
-const {
-  contractId: dpnsContractId,
-  ownerId: dpnsOwnerId,
-} = require('@dashevo/dpns-contract/lib/systemIds');
+import {
+  contractId as dpnsContractId,
+  ownerId as dpnsOwnerId,
+} from '@dashevo/dpns-contract/lib/systemIds';
 
-const {
-  contractId: dashpayContractId,
-} = require('@dashevo/dashpay-contract/lib/systemIds');
+import {
+  contractId as dashpayContractId,
+} from '@dashevo/dashpay-contract/lib/systemIds';
 
-const {
-  contractId: featureFlagsContractId,
-  ownerId: featureFlagsOwnerId,
-} = require('@dashevo/feature-flags-contract/lib/systemIds');
+import {
+  contractId as featureFlagsContractId,
+  ownerId as featureFlagsOwnerId,
+} from '@dashevo/feature-flags-contract/lib/systemIds';
 
-const {
-  contractId: masternodeRewardSharesContractId,
-} = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
+import {
+  contractId as masternodeRewardSharesContractId,
+} from '@dashevo/masternode-reward-shares-contract/lib/systemIds';
 
-const {
-  contractId: withdrawalsContractId,
-} = require('@dashevo/withdrawals-contract/lib/systemIds');
+import {
+  contractId as withdrawalsContractId,
+} from '@dashevo/withdrawals-contract/lib/systemIds';
 
-const semver = require('semver');
+import semver from 'semver';
 
-const {
+import {
   NETWORK_TESTNET,
   PACKAGE_ROOT_DIR,
-} = require('../../src/constants');
+} from '../../src/constants';
+import {Config} from "../../src/config/Config.js";
 
-const { version } = require('../../package.json');
+const {version} = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
-const Config = require('../../src/config/Config');
 
 /**
  * @param {HomeDir} homeDir
  * @returns {getBaseConfig}
  */
-function getBaseConfigFactory(homeDir) {
+export function getBaseConfigFactory(homeDir) {
   const prereleaseTag = semver.prerelease(version) === null ? '' : `-${semver.prerelease(version)[0]}`;
   const dockerImageVersion = `${semver.major(version)}.${semver.minor(version)}${prereleaseTag}`;
 
@@ -299,5 +299,3 @@ function getBaseConfigFactory(homeDir) {
 
   return getBaseConfig;
 }
-
-module.exports = getBaseConfigFactory;

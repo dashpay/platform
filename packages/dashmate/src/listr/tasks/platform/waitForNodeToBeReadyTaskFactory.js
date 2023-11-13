@@ -1,12 +1,12 @@
-const { Listr } = require('listr2');
-const wait = require('../../../util/wait');
+import { Listr }  from 'listr2';
+import {wait} from "../../../util/wait.js";
 
 /**
  *
  * @param {createTenderdashRpcClient} createTenderdashRpcClient
  * @return {waitForNodeToBeReadyTask}
  */
-function waitForNodeToBeReadyTaskFactory(
+export function waitForNodeToBeReadyTaskFactory(
   createTenderdashRpcClient,
 ) {
   /**
@@ -42,5 +42,3 @@ function waitForNodeToBeReadyTaskFactory(
 
   return waitForNodeToBeReadyTask;
 }
-
-module.exports = waitForNodeToBeReadyTaskFactory;

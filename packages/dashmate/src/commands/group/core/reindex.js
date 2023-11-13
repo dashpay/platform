@@ -1,11 +1,27 @@
-const { Listr } = require('listr2');
+import { Listr }  from 'listr2';
 
-const { Flags } = require('@oclif/core');
+import { Flags } from '@oclif/core';
+import {GroupBaseCommand} from "../../../oclif/command/GroupBaseCommand.js";
 
-const MuteOneLineError = require('../../../oclif/errors/MuteOneLineError');
-const GroupBaseCommand = require('../../../oclif/command/GroupBaseCommand');
+export class GroupReindexCommand extends GroupBaseCommand {
+  static description = 'Reindex group Core data';
 
-class GroupReindexCommand extends GroupBaseCommand {
+  static flags = {
+    ...GroupBaseCommand.flags,
+    verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
+    detach: Flags.boolean({
+      char: 'd',
+      description: 'run the reindex process in the background',
+      default: false,
+    }),
+    force: Flags.boolean({
+      char: 'f',
+      description: 'reindex already running node without confirmation',
+      default: false,
+    }),
+  };
+
+
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -99,22 +115,3 @@ class GroupReindexCommand extends GroupBaseCommand {
     }
   }
 }
-
-GroupReindexCommand.description = 'Reindex group Core data';
-
-GroupReindexCommand.flags = {
-  ...GroupBaseCommand.flags,
-  verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
-  detach: Flags.boolean({
-    char: 'd',
-    description: 'run the reindex process in the background',
-    default: false,
-  }),
-  force: Flags.boolean({
-    char: 'f',
-    description: 'reindex already running node without confirmation',
-    default: false,
-  }),
-};
-
-module.exports = GroupReindexCommand;

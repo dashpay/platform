@@ -1,6 +1,6 @@
-const AbstractError = require('../../errors/AbstractError');
+import {AbstractError} from "../../errors/AbstractError.js";
 
-class HomeDirDoesNotExistError extends AbstractError {
+export class HomeDirDoesNotExistError extends AbstractError {
   /**
    * @param {string} homeDirPath
    */
@@ -17,5 +17,3 @@ class HomeDirDoesNotExistError extends AbstractError {
     return this.homeDirPath;
   }
 }
-
-module.exports = HomeDirDoesNotExistError;

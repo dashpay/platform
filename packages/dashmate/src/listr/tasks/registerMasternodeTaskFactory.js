@@ -1,12 +1,12 @@
-const { Listr } = require('listr2');
+import { Listr }  from 'listr2';
 
-const { Observable } = require('rxjs');
+import { Observable } from 'rxjs';
 
-const {
+import {
   NETWORK_LOCAL,
   MASTERNODE_COLLATERAL_AMOUNT,
   HPMN_COLLATERAL_AMOUNT,
-} = require('../../constants');
+} from '../../constants';
 
 /**
  *
@@ -23,7 +23,7 @@ const {
  * @param {waitForBalanceToConfirm} waitForBalanceToConfirm
  * @return {registerMasternodeTask}
  */
-function registerMasternodeTaskFactory(
+export function registerMasternodeTaskFactory(
   startCore,
   createNewAddress,
   generateToAddress,
@@ -291,5 +291,3 @@ function registerMasternodeTaskFactory(
 
   return registerMasternodeTask;
 }
-
-module.exports = registerMasternodeTaskFactory;
