@@ -210,7 +210,6 @@ jobs:
       command: ${{ matrix.command }}
       batch_total: ${{ matrix.batch_total }}
       batch_index: ${{ matrix.batch_index }}
-      runner: ${{ toJSON(matrix.runner) }}
 
   test-functional:
     name: Packages functional tests
