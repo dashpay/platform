@@ -2,7 +2,6 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::storage::EXECUTION_STORAGE_PATH;
 use dpp::version::PlatformVersion;
-use drive::drive::grove_operations::QueryType;
 use drive::drive::Drive;
 use drive::error::drive::DriveError;
 use drive::grovedb::Element;
@@ -13,20 +12,15 @@ pub(super) const EXECUTION_STORAGE_PLATFORM_VERSION_KEY: &[u8; 1] = b"V";
 /// This method can't be versioned since there is no knowledge about versions before it called
 /// but fallbacks to support all changes in this method must be implemented
 pub fn fetch_current_protocol_version(drive: &Drive) -> Result<Option<u32>, Error> {
-    let mut ops = Vec::new();
-
-    let platform_version = PlatformVersion::latest();
-
     let maybe_element = drive
-        .grove_get(
+        .grove
+        .get_raw_optional(
             (&EXECUTION_STORAGE_PATH).into(),
             EXECUTION_STORAGE_PLATFORM_VERSION_KEY,
-            QueryType::StatefulQuery,
             None,
-            &mut ops,
-            &platform_version.drive,
         )
-        .map_err(Error::Drive)?;
+        .unwrap()
+        .map_err(|e| Error::Drive(drive::error::Error::GroveDB(e)))?;
 
     let Some(element) = maybe_element else {
         return Ok(None);

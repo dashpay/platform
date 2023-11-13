@@ -25,7 +25,7 @@ use std::fmt::{Debug, Formatter};
 #[derive(Clone)]
 pub struct PlatformStateV0 {
     /// Information about the genesis block
-    pub genesis_block_info: Option<BlockInfo>,
+    pub genesis_block_info: Option<BlockInfo>, // TODO: we already have it in epoch 0
     /// Information about the last block
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
     /// Current Version
@@ -99,7 +99,7 @@ pub(super) struct PlatformStateForSavingV0 {
     /// Information about the last block
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
     /// Current Version
-    pub current_protocol_version_in_consensus: ProtocolVersion,
+    pub current_protocol_version_in_consensus: ProtocolVersion, // TODO: Remove this
     /// upcoming protocol version
     pub next_epoch_protocol_version: ProtocolVersion,
     /// current quorum
