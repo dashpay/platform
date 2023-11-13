@@ -12,26 +12,20 @@ use(sinonChai);
 use(chaiAsPromised);
 use(dirtyChai);
 
-before(async () => {
-  await loadDpp();
-});
+exports.mochaHooks = {
+  beforeAll: loadDpp,
 
-beforeEach(function beforeEach() {
-  if (!this.sinon) {
-    this.sinon = sinon.createSandbox();
-  } else {
+  beforeEach() {
+    if (!this.sinon) {
+      this.sinon = sinon.createSandbox();
+    } else {
+      this.sinon.restore();
+    }
+  },
+
+  afterEach() {
     this.sinon.restore();
-  }
-});
-
-afterEach(function afterEach() {
-  this.sinon.restore();
-});
-
-before(function before() {
-  if (!this.sinon) {
-    this.sinon = sinon.createSandbox();
-  }
-});
+  },
+};
 
 global.expect = expect;

@@ -29,7 +29,7 @@ describe('IdentityFactory', () => {
     identity = await getIdentityFixture(instantAssetLockProof.createIdentifier());
     identity.setBalance(0);
 
-    fakeTime = this.sinonSandbox.useFakeTimers(new Date());
+    fakeTime = this.sinon.useFakeTimers(new Date());
   });
 
   afterEach(() => {

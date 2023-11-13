@@ -5,10 +5,6 @@ class ConfigSetCommand extends ConfigBaseCommand {
    * @param args
    * @param flags
    * @param {Config} config
-   * @param {renderServiceTemplates} renderServiceTemplates
-   * @param {writeServiceConfigs} writeServiceConfigs
-   * @param {ConfigFileJsonRepository} configFileRepository
-   * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -18,10 +14,6 @@ class ConfigSetCommand extends ConfigBaseCommand {
     },
     flags,
     config,
-    renderServiceTemplates,
-    writeServiceConfigs,
-    configFileRepository,
-    configFile,
   ) {
     // check for existence
     config.get(optionPath);
@@ -35,11 +27,6 @@ class ConfigSetCommand extends ConfigBaseCommand {
     }
 
     config.set(optionPath, value);
-
-    configFileRepository.write(configFile);
-
-    const serviceConfigs = renderServiceTemplates(config);
-    writeServiceConfigs(config.getName(), serviceConfigs);
 
     // eslint-disable-next-line no-console
     console.log(`${optionPath} set to ${optionValue}`);
