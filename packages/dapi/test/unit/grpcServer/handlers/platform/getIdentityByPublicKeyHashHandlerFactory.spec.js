@@ -22,7 +22,7 @@ const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdent
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
-const getIdentityByPublicKeyHashesHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getIdentityByPublicKeyHashHandlerFactory');
+const getIdentityByPublicKeyHashHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getIdentityByPublicKeyHashHandlerFactory');
 
 describe('getIdentityByPublicKeyHashHandlerFactory', () => {
   let call;
@@ -38,11 +38,13 @@ describe('getIdentityByPublicKeyHashHandlerFactory', () => {
       getProve: this.sinon.stub().returns(true),
     };
 
-    call = new GrpcCallMock(this.sinon, request);
+    call = new GrpcCallMock(this.sinon, {
+      getV0: () => request,
+    });
 
     fetchIdentityByPublicKeyHashMock = this.sinon.stub();
 
-    getIdentityByPublicKeyHashHandler = getIdentityByPublicKeyHashesHandlerFactory({
+    getIdentityByPublicKeyHashHandler = getIdentityByPublicKeyHashHandlerFactory({
       fetchIdentityByPublicKeyHash: fetchIdentityByPublicKeyHashMock,
     });
   });
