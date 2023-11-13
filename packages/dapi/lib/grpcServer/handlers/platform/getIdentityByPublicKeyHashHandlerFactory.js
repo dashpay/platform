@@ -15,20 +15,20 @@ const {
 /**
  *
  * @param {DriveClient} driveClient
- * @return {getIdentityByPublicKeyHashesHandler}
+ * @return {getIdentityByPublicKeyHashHandler}
  */
 function getIdentityByPublicKeyHashHandlerFactory(
   driveClient,
 ) {
   /**
-   * @typedef getIdentityByPublicKeyHashesHandler
+   * @typedef getIdentityByPublicKeyHashHandler
    * @param {Object} call
    * @return {Promise<GetIdentityByPublicKeyHashResponse>}
    */
-  async function getIdentityByPublicKeyHashesHandler(call) {
+  async function getIdentityByPublicKeyHashHandler(call) {
     const { request } = call;
 
-    if (request.getPublicKeyHash().length === 0) {
+    if (request.getV0().getPublicKeyHash().length === 0) {
       throw new InvalidArgumentGrpcError('No public key hash is provided');
     }
 
@@ -38,7 +38,7 @@ function getIdentityByPublicKeyHashHandlerFactory(
     return GetIdentityByPublicKeyHashResponse.deserializeBinary(identitiesResponseBuffer);
   }
 
-  return getIdentityByPublicKeyHashesHandler;
+  return getIdentityByPublicKeyHashHandler;
 }
 
 module.exports = getIdentityByPublicKeyHashHandlerFactory;

@@ -43,7 +43,9 @@ describe('getIdentityBalanceAndRevisionHandlerFactory', () => {
       getProve: this.sinon.stub().returns(true),
     };
 
-    call = new GrpcCallMock(this.sinon, request);
+    call = new GrpcCallMock(this.sinon, {
+      getV0: () => request,
+    });
 
     fetchIdentityBalanceAndRevisionMock = this.sinon.stub();
 

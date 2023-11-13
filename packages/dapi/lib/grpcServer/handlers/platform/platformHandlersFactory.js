@@ -24,7 +24,7 @@ const {
     GetDocumentsRequest,
     GetIdentitiesRequest,
     GetIdentitiesByPublicKeyHashesRequest,
-    GetIdentityByPublicKeyHashesRequest,
+    GetIdentityByPublicKeyHashRequest,
     WaitForStateTransitionResultRequest,
     GetConsensusParamsRequest,
     GetProofsRequest,
@@ -50,8 +50,8 @@ const {
       GetDocumentsResponse: PBJSGetDocumentsResponse,
       GetIdentitiesByPublicKeyHashesResponse: PBJSGetIdentitiesByPublicKeyHashesResponse,
       GetIdentitiesByPublicKeyHashesRequest: PBJSGetIdentitiesByPublicKeyHashesRequest,
-      GetIdentityByPublicKeyHashesResponse: PBJSGetIdentityByPublicKeyHashesResponse,
-      GetIdentityByPublicKeyHashesRequest: PBJSGetIdentityByPublicKeyHashesRequest,
+      GetIdentityByPublicKeyHashResponse: PBJSGetIdentityByPublicKeyHashResponse,
+      GetIdentityByPublicKeyHashRequest: PBJSGetIdentityByPublicKeyHashRequest,
       WaitForStateTransitionResultRequest: PBJSWaitForStateTransitionResultRequest,
       WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
       GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
@@ -104,7 +104,7 @@ const getDataContractsHandlerFactory = require(
 const getDataContractHistoryHandlerFactory = require(
   './getDataContractHistoryHandlerFactory',
 );
-const getIdentityByPublicKeyHashesHandlerFactory = require(
+const getIdentityByPublicKeyHashHandlerFactory = require(
   './getIdentityByPublicKeyHashHandlerFactory',
 );
 const getIdentitiesByPublicKeyHashesHandlerFactory = require(
@@ -313,20 +313,20 @@ function platformHandlersFactory(
     wrapInErrorHandler(getDataContractHistoryHandler),
   );
 
-  // getIdentityByPublicKeyHashes
-  const getIdentityByPublicKeyHashesHandler = getIdentityByPublicKeyHashesHandlerFactory(
+  // getIdentityByPublicKeyHash
+  const getIdentityByPublicKeyHashHandler = getIdentityByPublicKeyHashHandlerFactory(
     driveClient,
   );
 
-  const wrappedGetIdentityByPublicKeyHashes = jsonToProtobufHandlerWrapper(
+  const wrappedGetIdentityByPublicKeyHash = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
-      GetIdentityByPublicKeyHashesRequest,
-      PBJSGetIdentityByPublicKeyHashesRequest,
+      GetIdentityByPublicKeyHashRequest,
+      PBJSGetIdentityByPublicKeyHashRequest,
     ),
     protobufToJsonFactory(
-      PBJSGetIdentityByPublicKeyHashesResponse,
+      PBJSGetIdentityByPublicKeyHashResponse,
     ),
-    wrapInErrorHandler(getIdentityByPublicKeyHashesHandler),
+    wrapInErrorHandler(getIdentityByPublicKeyHashHandler),
   );
 
   // getIdentitiesByPublicKeyHashes
@@ -466,7 +466,7 @@ function platformHandlersFactory(
     getDataContract: wrappedGetDataContract,
     getDataContracts: wrappedGetDataContracts,
     getDataContractHistory: wrappedGetDataContractHistory,
-    getIdentityByPublicKeyHashes: wrappedGetIdentityByPublicKeyHashes,
+    getIdentityByPublicKeyHash: wrappedGetIdentityByPublicKeyHash,
     getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
     getConsensusParams: wrappedGetConsensusParams,
