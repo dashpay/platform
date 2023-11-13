@@ -1,27 +1,9 @@
 on:
   workflow_call:
-    inputs:
-      name:
-        type: string
-        description: Name
-        required: true
-      command:
-        description: Run tests command
-        type: string
-        default: test
-        required: true
-      batch_index:
-        description: Browser test batch index
-        type: number
-        default: 0
-      batch_total:
-        description: Browser test batch total
-        type: number
-        default: 0
 
 jobs:
-  test-suite:
-    name: Run ${{ inputs.name }}
+  test-functional:
+    name: Run functional tests
     runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
     timeout-minutes: 15
     env:
@@ -131,11 +113,11 @@ jobs:
       - name: Start local network
         run: yarn start
 
-      - name: Run test suite
-        run: yarn workspace @dashevo/platform-test-suite ${{ inputs.command }}
-        env:
-            BROWSER_TEST_BATCH_INDEX: ${{ inputs.batch_index }}
-            BROWSER_TEST_BATCH_TOTAL: ${{ inputs.batch_total }}
+      - name: Run Wallet functional tests
+        run: yarn workspace @dashevo/wallet-lib test:functional
+
+      - name: Run SDK functional tests
+        run: yarn workspace dash test:functional
 
       - name: Show Docker logs
         if: ${{ failure() }}

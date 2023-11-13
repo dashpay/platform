@@ -210,3 +210,11 @@ jobs:
       command: ${{ matrix.command }}
       batch_total: ${{ matrix.batch_total }}
       batch_index: ${{ matrix.batch_index }}
+
+  test-functional:
+    name: Packages functional tests
+    needs:
+      - build-js
+      - build-images
+    secrets: inherit
+    uses: ./.github/workflows/tests-packges-functional.yml
