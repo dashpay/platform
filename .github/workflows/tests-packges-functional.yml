@@ -8,6 +8,7 @@ jobs:
     timeout-minutes: 15
     env:
       CHROME_BIN: /usr/bin/brave-browser
+      ECR_HOST: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
@@ -25,8 +26,13 @@ jobs:
         with:
           aws-region: ${{ vars.AWS_REGION }}
 
+      - name: Login to ECR
+        run: aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_HOST }}
+
       - name: Start local network
         uses: ./.github/actions/local-network
+        with:
+          image_org: ${{ env.ECR_HOST }}
 
       - name: Run Wallet functional tests
         run: yarn workspace @dashevo/wallet-lib test:functional
