@@ -5,8 +5,8 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_version_upgrade_vote_status_request::Version;
-use dapi_grpc::platform::v0::GetVersionUpgradeVoteStatusRequest;
+use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::Version;
+use dapi_grpc::platform::v0::GetProtocolVersionUpgradeVoteStatusRequest;
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
@@ -20,8 +20,8 @@ impl<C> Platform<C> {
         query_data: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let GetVersionUpgradeVoteStatusRequest { version } = check_validation_result_with_data!(
-            GetVersionUpgradeVoteStatusRequest::decode(query_data).map_err(|e| {
+        let GetProtocolVersionUpgradeVoteStatusRequest { version } = check_validation_result_with_data!(
+            GetProtocolVersionUpgradeVoteStatusRequest::decode(query_data).map_err(|e| {
                 QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
             })
         );
@@ -53,10 +53,10 @@ impl<C> Platform<C> {
             ));
         }
         match version {
-            Version::V0(get_version_upgrade_vote_status_request) => self
+            Version::V0(get_protocol_version_upgrade_vote_status_request) => self
                 .query_version_upgrade_vote_status_v0(
                     state,
-                    get_version_upgrade_vote_status_request,
+                    get_protocol_version_upgrade_vote_status_request,
                     platform_version,
                 ),
         }

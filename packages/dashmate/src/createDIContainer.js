@@ -109,6 +109,7 @@ const getConfigProfilesFactory = require('./config/getConfigProfilesFactory');
 const createIpAndPortsFormFactory = require('./listr/prompts/createIpAndPortsForm');
 const registerMasternodeWithCoreWalletFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet');
 const registerMasternodeWithDMTFactory = require('./listr/tasks/setup/regular/registerMasternode/registerMasternodeWithDMT');
+const writeConfigTemplatesFactory = require('./templates/writeConfigTemplatesFactory');
 
 /**
  * @param {Object} [options]
@@ -176,6 +177,7 @@ async function createDIContainer(options = {}) {
     renderTemplate: asFunction(renderTemplateFactory).singleton(),
     renderServiceTemplates: asFunction(renderServiceTemplatesFactory).singleton(),
     writeServiceConfigs: asFunction(writeServiceConfigsFactory).singleton(),
+    writeConfigTemplates: asFunction(writeConfigTemplatesFactory).singleton(),
   });
 
   /**

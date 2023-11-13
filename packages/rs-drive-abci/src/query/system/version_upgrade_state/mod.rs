@@ -5,8 +5,8 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
-use dapi_grpc::platform::v0::get_version_upgrade_state_request::Version;
-use dapi_grpc::platform::v0::GetVersionUpgradeStateRequest;
+use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_request::Version;
+use dapi_grpc::platform::v0::GetProtocolVersionUpgradeStateRequest;
 use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
@@ -20,11 +20,11 @@ impl<C> Platform<C> {
         query_data: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
-        let GetVersionUpgradeStateRequest { version } =
-            check_validation_result_with_data!(GetVersionUpgradeStateRequest::decode(query_data)
-                .map_err(|e| {
-                    QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
-                }));
+        let GetProtocolVersionUpgradeStateRequest { version } = check_validation_result_with_data!(
+            GetProtocolVersionUpgradeStateRequest::decode(query_data).map_err(|e| {
+                QueryError::InvalidArgument(format!("invalid query proto message: {}", e))
+            })
+        );
 
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
@@ -53,11 +53,12 @@ impl<C> Platform<C> {
             ));
         }
         match version {
-            Version::V0(get_version_upgrade_state_request) => self.query_version_upgrade_state_v0(
-                state,
-                get_version_upgrade_state_request,
-                platform_version,
-            ),
+            Version::V0(get_protocol_version_upgrade_state_request) => self
+                .query_version_upgrade_state_v0(
+                    state,
+                    get_protocol_version_upgrade_state_request,
+                    platform_version,
+                ),
         }
     }
 }

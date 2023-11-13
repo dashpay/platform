@@ -1,0 +1,89 @@
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: The package name to run tests for
+        type: string
+        required: true
+      skip-tests:
+        description: Skip running tests
+        type: boolean
+        default: false
+      test-command:
+        description: Test command to run
+        type: string
+        default: test
+
+jobs:
+  lint:
+    name: Linting
+    runs-on: ubuntu-22.04
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+
+      - name: Setup Node.JS
+        uses: ./.github/actions/nodejs
+
+      - name: Restore JS build artifacts
+        uses: strophy/actions-cache@opendal-update
+        with:
+          bucket: multi-runner-cache-x1xibo9c
+          root: actions-cache
+          path: build-js-artifacts-${{ github.sha }}.tar
+          key: build-js-artifacts/${{ github.sha }}
+
+      - name: Unpack JS build artifacts archive
+        run: tar -xf build-js-artifacts-${{ github.sha }}.tar
+
+      - name: Run ESLinter
+        run: yarn workspace "${{ inputs.package }}" lint
+
+  test:
+    name: Tests
+    runs-on: ubuntu-22.04
+    permissions:
+      id-token: write
+      contents: read
+    if: ${{ !inputs.skip-tests }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+
+      - name: Setup Node.JS
+        uses: ./.github/actions/nodejs
+
+      - name: Restore JS build artifacts
+        uses: strophy/actions-cache@opendal-update
+        with:
+          bucket: multi-runner-cache-x1xibo9c
+          root: actions-cache
+          path: build-js-artifacts-${{ github.sha }}.tar
+          key: build-js-artifacts/${{ github.sha }}
+
+      - name: Unpack JS build artifacts archive
+        run: tar -xf build-js-artifacts-${{ github.sha }}.tar
+
+      - name: Create necessary dotenv files
+        run: |
+          cp packages/dapi/.env.example packages/dapi/.env
+
+      - name: Run tests
+        run: yarn workspace "${{ inputs.package }}" ${{ inputs.test-command }}

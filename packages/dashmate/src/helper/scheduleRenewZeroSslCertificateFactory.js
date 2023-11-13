@@ -8,8 +8,7 @@ const { EXPIRATION_LIMIT_DAYS } = require('../ssl/zerossl/Certificate');
  * @param {DockerCompose} dockerCompose
  * @param {ConfigFileJsonRepository} configFileRepository
  * @param {ConfigFile} configFile
- * @param {renderServiceTemplates} renderServiceTemplates
- * @param {writeServiceConfigs} writeServiceConfigs
+ * @param {writeConfigTemplates} writeConfigTemplates
  * @return {scheduleRenewZeroSslCertificate}
  */
 function scheduleRenewZeroSslCertificateFactory(
@@ -18,8 +17,7 @@ function scheduleRenewZeroSslCertificateFactory(
   dockerCompose,
   configFileRepository,
   configFile,
-  renderServiceTemplates,
-  writeServiceConfigs,
+  writeConfigTemplates,
 ) {
   /**
    * @typedef scheduleRenewZeroSslCertificate
@@ -62,9 +60,7 @@ function scheduleRenewZeroSslCertificateFactory(
 
         // Write config files
         configFileRepository.write(configFile);
-
-        const serviceConfigs = renderServiceTemplates(config);
-        writeServiceConfigs(config.getName(), serviceConfigs);
+        writeConfigTemplates(config);
 
         // Restart Envoy to catch up new SSL certificates
         await dockerCompose.execCommand(config, 'dapi_envoy', 'kill -SIGHUP 1');

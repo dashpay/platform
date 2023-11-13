@@ -35,7 +35,7 @@ describe.skip('validateStateTransitionKeySignatureFactory', () => {
     executionContext = new StateTransitionExecutionContext();
     stateTransition = await getIdentityCreateTransitionFixture();
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
 
     const validator = new StateTransitionKeySignatureValidator(stateRepositoryMock);
 
@@ -99,7 +99,7 @@ describe.skip('validateStateTransitionKeySignatureFactory', () => {
 
     expect(error.getCode()).to.equal(2000);
 
-    const { match } = this.sinonSandbox;
+    const { match } = this.sinon;
     expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWithExactly(
       match((identityId) => Buffer.from(identityId.toBuffer())
         .equals(stateTransition.getIdentityId().toBuffer())),

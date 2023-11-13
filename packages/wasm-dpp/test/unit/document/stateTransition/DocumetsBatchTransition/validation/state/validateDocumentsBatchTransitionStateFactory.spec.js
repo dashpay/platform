@@ -73,7 +73,7 @@ describe.skip('validateDocumentsBatchTransitionStateFactory', () => {
 
     executionContext = new StateTransitionExecutionContext();
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchDataContract.resolves(dataContract.clone());
 
     blockTime = Date.now();
@@ -84,12 +84,12 @@ describe.skip('validateDocumentsBatchTransitionStateFactory', () => {
     stateRepositoryMock.fetchExtendedDocuments.resolves([]);
     stateRepositoryMock.fetchDocuments.resolves([]);
 
-    executeDataTriggersMock = this.sinonSandbox.stub();
-    validateDocumentsUniquenessByIndicesMock = this.sinonSandbox.stub();
+    executeDataTriggersMock = this.sinon.stub();
+    validateDocumentsUniquenessByIndicesMock = this.sinon.stub();
 
     validateDocumentsUniquenessByIndicesMock.resolves(new ValidationResultJs());
 
-    fakeTime = this.sinonSandbox.useFakeTimers(new Date());
+    fakeTime = this.sinon.useFakeTimers(new Date());
   });
 
   afterEach(() => {

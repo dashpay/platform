@@ -1,3 +1,4 @@
+const fs = require('node:fs');
 const BaseCommand = require('../../oclif/command/BaseCommand');
 
 class ConfigRemoveCommand extends BaseCommand {
@@ -6,9 +7,7 @@ class ConfigRemoveCommand extends BaseCommand {
    * @param {Object} flags
    * @param {ConfigFile} configFile
    * @param {DefaultConfigs} defaultConfigs
-   * @param {renderServiceTemplates} renderServiceTemplates
-   * @param {writeServiceConfigs} writeServiceConfigs
-   * @param {ConfigFileJsonRepository} configFileRepository
+   * @param {HomeDir} homeDir
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -18,9 +17,7 @@ class ConfigRemoveCommand extends BaseCommand {
     flags,
     configFile,
     defaultConfigs,
-    renderServiceTemplates,
-    writeServiceConfigs,
-    configFileRepository,
+    homeDir,
   ) {
     if (defaultConfigs.has(configName)) {
       throw new Error(`system config ${configName} can't be removed.\nPlease use 'dashmate reset --hard --config=${configName}' command to reset the configuration`);
@@ -28,10 +25,12 @@ class ConfigRemoveCommand extends BaseCommand {
 
     configFile.removeConfig(configName);
 
-    configFileRepository.write(configFile);
+    const serviceConfigsPath = homeDir.joinPath(configName);
 
-    const serviceConfigs = renderServiceTemplates(configFile.getConfig(configName));
-    writeServiceConfigs(configName, serviceConfigs);
+    fs.rmSync(serviceConfigsPath, {
+      recursive: true,
+      force: true,
+    });
 
     // eslint-disable-next-line no-console
     console.log(`${configName} removed`);

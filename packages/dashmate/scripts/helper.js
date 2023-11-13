@@ -28,8 +28,21 @@ const createDIContainer = require('../src/createDIContainer');
    * @type {ConfigFileJsonRepository}
    */
   const configFileRepository = container.resolve('configFileRepository');
+  /**
+   * @type {writeConfigTemplates}
+   */
+  const writeConfigTemplates = container.resolve('writeConfigTemplates');
 
   const configFile = await configFileRepository.read();
+
+  // Persist config if it was migrated
+  if (configFile.isChanged()) {
+    await configFileRepository.write(configFile);
+
+    configFile.getAllConfigs()
+      .filter((config) => config.isChanged())
+      .forEach(writeConfigTemplates);
+  }
 
   const config = configFile.getConfig(configName);
 

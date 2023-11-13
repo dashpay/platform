@@ -4,39 +4,39 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::{
-    get_version_upgrade_state_response, GetVersionUpgradeStateRequest,
-    GetVersionUpgradeStateResponse, Proof,
+    get_protocol_version_upgrade_state_response, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse, Proof,
 };
 use dpp::check_validation_result_with_data;
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use prost::Message;
-use dapi_grpc::platform::v0::get_version_upgrade_state_request::GetVersionUpgradeStateRequestV0;
-use dapi_grpc::platform::v0::get_version_upgrade_state_response::get_version_upgrade_state_response_v0::{VersionEntry, Versions};
-use dapi_grpc::platform::v0::get_version_upgrade_state_response::GetVersionUpgradeStateResponseV0;
+use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_request::GetProtocolVersionUpgradeStateRequestV0;
+use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_response::get_protocol_version_upgrade_state_response_v0::{VersionEntry, Versions};
+use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_response::GetProtocolVersionUpgradeStateResponseV0;
 
 impl<C> Platform<C> {
     pub(super) fn query_version_upgrade_state_v0(
         &self,
         state: &PlatformState,
-        request: GetVersionUpgradeStateRequestV0,
+        request: GetProtocolVersionUpgradeStateRequestV0,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let metadata = self.response_metadata_v0(state);
         let quorum_type = self.config.quorum_type() as u32;
-        let GetVersionUpgradeStateRequestV0 { prove } = request;
+        let GetProtocolVersionUpgradeStateRequestV0 { prove } = request;
 
         let response_data = if prove {
             let proof = check_validation_result_with_data!(self
                 .drive
                 .fetch_proved_versions_with_counter(None, &platform_version.drive));
 
-            GetVersionUpgradeStateResponse {
-                version: Some(get_version_upgrade_state_response::Version::V0(
-                    GetVersionUpgradeStateResponseV0 {
+            GetProtocolVersionUpgradeStateResponse {
+                version: Some(get_protocol_version_upgrade_state_response::Version::V0(
+                    GetProtocolVersionUpgradeStateResponseV0 {
                         result: Some(
-                            get_version_upgrade_state_response::get_version_upgrade_state_response_v0::Result::Proof(
+                            get_protocol_version_upgrade_state_response::get_protocol_version_upgrade_state_response_v0::Result::Proof(
                                 Proof {
                                     grovedb_proof: proof,
                                     quorum_hash: state.last_quorum_hash().to_vec(),
@@ -64,11 +64,11 @@ impl<C> Platform<C> {
                 })
                 .collect();
 
-            GetVersionUpgradeStateResponse {
-                version: Some(get_version_upgrade_state_response::Version::V0(
-                    GetVersionUpgradeStateResponseV0 {
+            GetProtocolVersionUpgradeStateResponse {
+                version: Some(get_protocol_version_upgrade_state_response::Version::V0(
+                    GetProtocolVersionUpgradeStateResponseV0 {
                         result: Some(
-                            get_version_upgrade_state_response::get_version_upgrade_state_response_v0::Result::Versions(
+                            get_protocol_version_upgrade_state_response::get_protocol_version_upgrade_state_response_v0::Result::Versions(
                                 Versions { versions },
                             ),
                         ),
