@@ -196,20 +196,34 @@ jobs:
             command: test:suite
             batch_index: 0
             batch_total: 0
+            runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
           - name: Test Suite in browser (1)
             command: test:browsers
             batch_index: 0
             batch_total: 2
+            runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]
           - name: Test Suite in browser (2)
             command: test:browsers
             batch_index: 1
             batch_total: 2
+            runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]
+          - name: Test Suite in browser (full 4x)
+            command: test:browsers
+            batch_index: 0
+            batch_total: 0
+            runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]
+          - name: Test Suite in browser (full 2x)
+            command: test:browsers
+            batch_index: 0
+            batch_total: 0
+            runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
     uses: ./.github/workflows/tests-test-suite.yml
     with:
       name: ${{ matrix.name }}
       command: ${{ matrix.command }}
       batch_total: ${{ matrix.batch_total }}
       batch_index: ${{ matrix.batch_index }}
+      runner: ${{ toJSON(matrix.runner) }}
 
   test-functional:
     name: Packages functional tests

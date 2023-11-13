@@ -1,0 +1,99 @@
+---
+name: "Start local network"
+description: "Setup and start dashmate local network"
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.JS
+      uses: ./.github/actions/nodejs
+
+    - name: Restore JS build artifacts
+      uses: strophy/actions-cache@opendal-update
+      with:
+        bucket: multi-runner-cache-x1xibo9c
+        root: actions-cache
+        path: build-js-artifacts-${{ github.sha }}.tar
+        key: build-js-artifacts/${{ github.sha }}
+
+    - name: Unpack JS build artifacts archive
+      shell: bash
+      run: tar -xf build-js-artifacts-${{ github.sha }}.tar
+
+    - name: Get dashmate fingerprint
+      id: dashmate-fingerprint
+      shell: bash
+      run: echo "sha=$(git log -1 --format="%h" -- packages/dashmate)" >> $GITHUB_OUTPUT
+
+    # TODO: Use upload artifacts action instead
+    - name: Restore local network data
+      id: local-network-data
+      uses: strophy/actions-cache/restore@opendal-update
+      with:
+        bucket: multi-runner-cache-x1xibo9c
+        root: local-network-data
+        path: |
+          /home/ubuntu/.dashmate
+          **/.env
+          dashmate_volumes_dump
+        key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
+
+    - name: Restore dashmate volumes
+      run: ./scripts/dashmate/volumes/restore.sh
+      shell: bash
+      if: steps.local-network-data.outputs.cache-hit == 'true'
+
+    - name: Setup local network
+      run: |
+        set -ex
+
+        # create tenderdash blocks every 10s to speed up test suite
+        yarn dashmate config set --config=local platform.drive.tenderdash.consensus.createEmptyBlocksInterval "10s"
+
+        # collect drive logs for bench suite
+        yarn dashmate config set --config=local platform.drive.abci.logs.stdout.level "trace"
+
+        ./scripts/setup_local_network.sh
+        ./scripts/configure_test_suite.sh
+        ./scripts/configure_dotenv.sh
+      shell: bash
+      if: steps.local-network-data.outputs.cache-hit != 'true'
+
+    - name: Dump dashmate volumes
+      run: ./scripts/dashmate/volumes/dump.sh
+      shell: bash
+      if: steps.local-network-data.outputs.cache-hit != 'true'
+
+    - name: Save local network data
+      uses: strophy/actions-cache/save@opendal-update
+      with:
+        bucket: multi-runner-cache-x1xibo9c
+        root: local-network-data
+        path: |
+          /home/ubuntu/.dashmate
+          **/.env
+          dashmate_volumes_dump
+        key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
+      if: steps.local-network-data.outputs.cache-hit != 'true'
+
+    - name: Configure pre-built docker images
+      shell: bash
+      run: |
+        DOCKER_HUB_ORG="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com"
+        SHA_TAG=sha-${{ github.sha }}
+        VERSION=$(cat package.json | jq -r '.version')
+
+        # Login to ECR
+        aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin $DOCKER_HUB_ORG
+
+        # Dashmate helper
+        docker pull $DOCKER_HUB_ORG/dashmate-helper:$SHA_TAG
+        docker tag $DOCKER_HUB_ORG/dashmate-helper:$SHA_TAG dashpay/dashmate-helper:$VERSION
+
+        # Replace DAPI and Drive images with new org and tag in dashmate config
+        sed -i -E "s/dashpay\/(drive|dapi):[^\"]+/${DOCKER_HUB_ORG}\/\1:${SHA_TAG}/g" /home/ubuntu/.dashmate/config.json
+
+        cat /home/ubuntu/.dashmate/config.json
+
+    - name: Start local network
+      shell: bash
+      run: yarn start
