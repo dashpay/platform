@@ -38,6 +38,7 @@ derive_more = { version = "0.99.16" }
 lru = { version = "0.12.0" }
 # dashcore-rpc is only needed for core rpc; TODO remove once we have correct core rpc impl
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "master" }
+bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 
 [dev-dependencies]
 rs-dapi-client = { path = "../rs-dapi-client", features = ["mocks", "dump"] }

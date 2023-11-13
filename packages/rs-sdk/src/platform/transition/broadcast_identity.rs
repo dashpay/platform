@@ -13,6 +13,7 @@ use dpp::identity::signer::Signer;
 use dpp::prelude::{AssetLockProof, Identity};
 use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::NativeBlsModule;
 use rs_dapi_client::transport::TransportRequest;
@@ -90,7 +91,7 @@ pub(crate) trait BroadcastRequestForNewIdentity<T: TransportRequest, S: Signer>:
         asset_lock_proof_private_key: &PrivateKey,
         signer: &S,
         platform_version: &PlatformVersion,
-    ) -> Result<T, Error>;
+    ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error>;
 }
 
 impl<S: Signer> BroadcastRequestForNewIdentity<proto::BroadcastStateTransitionRequest, S>
@@ -102,7 +103,7 @@ impl<S: Signer> BroadcastRequestForNewIdentity<proto::BroadcastStateTransitionRe
         asset_lock_proof_private_key: &PrivateKey,
         signer: &S,
         platform_version: &PlatformVersion,
-    ) -> Result<BroadcastStateTransitionRequest, Error> {
+    ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error> {
         let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signer(
             self,
             asset_lock_proof,
@@ -111,6 +112,7 @@ impl<S: Signer> BroadcastRequestForNewIdentity<proto::BroadcastStateTransitionRe
             &NativeBlsModule,
             platform_version,
         )?;
-        identity_create_transition.broadcast_request_for_state_transition()
+        let request = identity_create_transition.broadcast_request_for_state_transition()?;
+        Ok((identity_create_transition, request))
     }
 }

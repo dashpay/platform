@@ -1,6 +1,7 @@
 //! Definitions of errors
 use std::fmt::Debug;
 
+use dpp::version::PlatformVersionError;
 use dpp::ProtocolError;
 use rs_dapi_client::DapiClientError;
 
@@ -39,5 +40,11 @@ pub enum Error {
 impl<T: Debug> From<DapiClientError<T>> for Error {
     fn from(value: DapiClientError<T>) -> Self {
         Self::DapiClientError(format!("{:?}", value))
+    }
+}
+
+impl From<PlatformVersionError> for Error {
+    fn from(value: PlatformVersionError) -> Self {
+        Self::Protocol(value.into())
     }
 }
