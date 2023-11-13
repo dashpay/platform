@@ -6,8 +6,7 @@ const testsContext = require.context('../../../test', true, /^.+\.spec\.js$/);
 
 let batch;
 
-if (process.env.BROWSER_TEST_BATCH_INDEX !== '0'
-  && process.env.BROWSER_TEST_BATCH_TOTAL !== '0') {
+if (process.env.BROWSER_TEST_BATCH_TOTAL !== '0') {
   const batchTotal = parseInt(process.env.BROWSER_TEST_BATCH_TOTAL, 10);
   const batchIndex = parseInt(process.env.BROWSER_TEST_BATCH_INDEX, 10);
 
