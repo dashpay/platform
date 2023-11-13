@@ -11,7 +11,9 @@ use crate::{
     platform::{document_query::DocumentQuery, query::Query},
     Sdk,
 };
-use dapi_grpc::platform::v0::{GetDocumentsResponse, GetIdentityKeysRequest};
+use dapi_grpc::platform::v0::{GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest};
+use dpp::block::epoch::EpochIndex;
+use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::document::Document;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
@@ -119,4 +121,9 @@ impl FetchMany<Identifier> for Document {
 #[async_trait::async_trait]
 impl FetchMany<KeyID> for IdentityPublicKey {
     type Request = GetIdentityKeysRequest;
+}
+
+#[async_trait::async_trait]
+impl FetchMany<EpochIndex> for ExtendedEpochInfo {
+    type Request = GetEpochsInfoRequest;
 }

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use dpp::{
+    block::extended_epoch_info::ExtendedEpochInfo,
     document::serialization_traits::DocumentCborMethodsV0,
     document::Document,
     platform_serialization::{
@@ -192,5 +193,19 @@ impl MockResponse for drive_proof_verifier::types::IdentityBalanceAndRevision {
         let (item, _len) = bincode::decode_from_slice(buf, bincode::config::standard())
             .expect("decode IdentityBalanceAndRevision");
         item
+    }
+}
+
+impl MockResponse for ExtendedEpochInfo {
+    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        platform_encode_to_vec(self, bincode::config::standard(), sdk.version())
+            .expect("encode ExtendedEpochInfo")
+    }
+    fn mock_deserialize(sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        platform_versioned_decode_from_slice(buf, bincode::config::standard(), sdk.version())
+            .expect("decode ExtendedEpochInfo")
     }
 }

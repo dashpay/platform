@@ -5,9 +5,9 @@ use std::fmt::Debug;
 
 use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
-    AllKeys, GetIdentityKeysRequest, KeyRequestType,
+    AllKeys, GetEpochsInfoRequest, GetIdentityKeysRequest, KeyRequestType,
 };
-use dpp::prelude::Identifier;
+use dpp::{block::epoch::EpochIndex, prelude::Identifier};
 use drive::query::DriveQuery;
 use rs_dapi_client::transport::TransportRequest;
 
@@ -121,5 +121,73 @@ impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
         }
         let q: DocumentQuery = (&self).into();
         Ok(q)
+    }
+}
+
+/// Wrapper around query that allows to specify limit and offset.
+///
+/// A query that can be used specify limit and offset when fetching multiple objects from the platform
+/// using [`FetchMany`](crate::platform::FetchMany) trait.
+///
+/// ## Example
+///
+/// ```rust
+/// use dash_platform_sdk::{platform::{Query, LimitQuery, Identifier, FetchMany, Identity}};
+///
+/// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
+/// let mut sdk = Sdk::new_mock();
+/// let query = LimitQuery {
+///    query: Identifier::new(SOME_IDENTIFIER),
+///    limit: Some(10),
+///    offset: Some(5),
+/// };
+/// let identity = Identity::fetch_many(&mut sdk, query);
+/// ```
+#[derive(Debug, Clone)]
+pub struct LimitQuery<Q> {
+    /// Actual query to execute
+    pub query: Q,
+    /// Max number of records returned
+    pub limit: Option<u32>,
+    /// Start offset. Will return records starting from this offset
+    /// up to `offset+limit`.
+    pub offset: Option<u32>,
+}
+impl<Q> From<Q> for LimitQuery<Q> {
+    fn from(query: Q) -> Self {
+        Self {
+            query,
+            limit: None,
+            offset: None,
+        }
+    }
+}
+
+impl Query<GetEpochsInfoRequest> for LimitQuery<EpochIndex> {
+    fn query(self, prove: bool) -> Result<GetEpochsInfoRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        if self.offset.is_some() {
+            unimplemented!("offset is not supported for epoch queries");
+        }
+
+        Ok(GetEpochsInfoRequest {
+            version: Some(proto::get_epochs_info_request::Version::V0(
+                proto::get_epochs_info_request::GetEpochsInfoRequestV0 {
+                    prove,
+                    start_epoch: Some(self.query.into()),
+                    count: self.limit.unwrap_or(100),
+                    ascending: true,
+                },
+            )),
+        })
+    }
+}
+
+impl Query<GetEpochsInfoRequest> for EpochIndex {
+    fn query(self, prove: bool) -> Result<GetEpochsInfoRequest, Error> {
+        LimitQuery::from(self).query(prove)
     }
 }

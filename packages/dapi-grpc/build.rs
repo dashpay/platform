@@ -50,7 +50,7 @@ pub fn generate() -> Result<(), std::io::Error> {
     ];
 
     //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
-    const VERSIONED_RESPONSES: [&str; 13] = [
+    const VERSIONED_RESPONSES: [&str; 14] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -64,6 +64,7 @@ pub fn generate() -> Result<(), std::io::Error> {
         "GetIdentityResponse",
         "GetProofsResponse",
         "WaitForStateTransitionResultResponse",
+        "GetEpochsInfoResponse",
     ];
 
     for msg in VERSIONED_RESPONSES {
