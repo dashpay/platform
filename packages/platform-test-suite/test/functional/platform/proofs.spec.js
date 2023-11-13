@@ -24,6 +24,8 @@ function executeProof() {
 
 }
 
+// TODO: Fix test to be running in Browser
+
 describe('Platform', () => {
   describe('Proofs', () => {
     let blake3;
@@ -42,7 +44,9 @@ describe('Platform', () => {
     });
 
     after(() => {
-      dashClient.disconnect();
+      if (dashClient) {
+        dashClient.disconnect();
+      }
     });
 
     describe('Merkle Proofs', () => {

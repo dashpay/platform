@@ -6,6 +6,7 @@ const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
 const karmaChai = require('karma-chai');
 const karmaChromeLauncher = require('karma-chrome-launcher');
+const karmaFirefoxLauncher = require('karma-firefox-launcher');
 const karmaWebpack = require('karma-webpack');
 const webpackBaseConfig = require('../webpack.base.config');
 
@@ -34,7 +35,7 @@ module.exports = {
   port: 9876,
   colors: true,
   autoWatch: false,
-  browsers: ['chromeWithoutSecurity'],
+  browsers: ['ChromeHeadlessInsecure'],
   singleRun: false,
   concurrency: Infinity,
   browserNoActivityTimeout: 7 * 60 * 1000, // 30000 default
@@ -45,10 +46,11 @@ module.exports = {
     karmaMochaReporter,
     karmaChai,
     karmaChromeLauncher,
+    karmaFirefoxLauncher,
     karmaWebpack,
   ],
   customLaunchers: {
-    chromeWithoutSecurity: {
+    ChromeHeadlessInsecure: {
       base: 'ChromeHeadless',
       flags: ['--allow-insecure-localhost'],
       displayName: 'Chrome w/o security',

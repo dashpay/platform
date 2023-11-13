@@ -1,6 +1,6 @@
 /**
  * @typedef {createStateRepositoryMock}
- * @param sinonSandbox
+ * @param sinon
  * @return {{
  *    fetchDataContract: *,
  *    createDataContract: *,
@@ -31,35 +31,35 @@
  *     fetchLatestPlatformBlockTime: *,
  * }}
  */
-module.exports = function createStateRepositoryMock(sinonSandbox) {
+module.exports = function createStateRepositoryMock(sinon) {
   return {
-    fetchDataContract: sinonSandbox.stub(),
-    createDataContract: sinonSandbox.stub(),
-    updateDataContract: sinonSandbox.stub(),
-    fetchDocuments: sinonSandbox.stub(),
-    fetchExtendedDocuments: sinonSandbox.stub(),
-    createDocument: sinonSandbox.stub(),
-    updateDocument: sinonSandbox.stub(),
-    removeDocument: sinonSandbox.stub(),
-    fetchTransaction: sinonSandbox.stub(),
-    fetchIdentity: sinonSandbox.stub(),
-    createIdentity: sinonSandbox.stub(),
-    addKeysToIdentity: sinonSandbox.stub(),
-    disableIdentityKeys: sinonSandbox.stub(),
-    updateIdentityRevision: sinonSandbox.stub(),
-    addToIdentityBalance: sinonSandbox.stub(),
-    fetchIdentityBalance: sinonSandbox.stub(),
-    fetchIdentityBalanceWithDebt: sinonSandbox.stub(),
-    addToSystemCredits: sinonSandbox.stub(),
-    fetchLatestPlatformBlockHeight: sinonSandbox.stub(),
-    fetchLatestPlatformCoreChainLockedHeight: sinonSandbox.stub(),
-    verifyInstantLock: sinonSandbox.stub(),
-    markAssetLockTransactionOutPointAsUsed: sinonSandbox.stub(),
-    verifyChainLockHeight: sinonSandbox.stub(),
-    isAssetLockTransactionOutPointAlreadyUsed: sinonSandbox.stub(),
-    fetchSMLStore: sinonSandbox.stub(),
-    fetchLatestWithdrawalTransactionIndex: sinonSandbox.stub(),
-    enqueueWithdrawalTransaction: sinonSandbox.stub(),
-    fetchLatestPlatformBlockTime: sinonSandbox.stub(),
+    fetchDataContract: sinon.stub(),
+    createDataContract: sinon.stub(),
+    updateDataContract: sinon.stub(),
+    fetchDocuments: sinon.stub(),
+    fetchExtendedDocuments: sinon.stub(),
+    createDocument: sinon.stub(),
+    updateDocument: sinon.stub(),
+    removeDocument: sinon.stub(),
+    fetchTransaction: sinon.stub(),
+    fetchIdentity: sinon.stub(),
+    createIdentity: sinon.stub(),
+    addKeysToIdentity: sinon.stub(),
+    disableIdentityKeys: sinon.stub(),
+    updateIdentityRevision: sinon.stub(),
+    addToIdentityBalance: sinon.stub(),
+    fetchIdentityBalance: sinon.stub(),
+    fetchIdentityBalanceWithDebt: sinon.stub(),
+    addToSystemCredits: sinon.stub(),
+    fetchLatestPlatformBlockHeight: sinon.stub(),
+    fetchLatestPlatformCoreChainLockedHeight: sinon.stub(),
+    verifyInstantLock: sinon.stub(),
+    markAssetLockTransactionOutPointAsUsed: sinon.stub(),
+    verifyChainLockHeight: sinon.stub(),
+    isAssetLockTransactionOutPointAlreadyUsed: sinon.stub(),
+    fetchSMLStore: sinon.stub(),
+    fetchLatestWithdrawalTransactionIndex: sinon.stub(),
+    enqueueWithdrawalTransaction: sinon.stub(),
+    fetchLatestPlatformBlockTime: sinon.stub(),
   };
 };

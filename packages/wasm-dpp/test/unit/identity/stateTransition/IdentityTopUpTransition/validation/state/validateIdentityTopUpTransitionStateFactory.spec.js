@@ -20,7 +20,7 @@ describe.skip('validateIdentityTopUpTransitionStateFactory', () => {
   });
 
   beforeEach(async function beforeEach() {
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
 
     stateTransition = await getIdentityTopUpTransitionFixture();
 
