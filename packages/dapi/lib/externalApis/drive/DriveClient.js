@@ -65,6 +65,20 @@ class DriveClient {
   }
 
   /**
+   * Fetch serialized data contracts
+   *
+   * @param {GetDataContractsRequest} request
+   *
+   * @return {Promise<Buffer>}
+   */
+  async fetchDataContracts(request) {
+    return this.request(
+      '/dataContracts',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
    * Fetch serialized data contract
    *
    * @param {GetDataContractHistoryRequest} request
@@ -102,6 +116,76 @@ class DriveClient {
   async fetchIdentity(request) {
     return this.request(
       '/identity',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
+   * Fetch serialized identities
+   *
+   * @param {GetIdentitiesRequest} request
+   *
+   * @return {Promise<Buffer>}
+   */
+  async fetchIdentities(request) {
+    return this.request(
+      '/identities',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
+   * Fetch serialized identity balance
+   *
+   * @param {GetIdentityBalanceRequest} request
+   *
+   * @return {Promise<Buffer>}
+   */
+  async fetchIdentityBalance(request) {
+    return this.request(
+      '/identity/balance',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
+   * Fetch serialized identity balance and revision
+   *
+   * @param {GetIdentityBalanceAndRevisionRequest} request
+   *
+   * @return {Promise<Buffer>}
+   */
+  async fetchIdentityBalanceAndRevision(request) {
+    return this.request(
+      '/identity/balanceAndRevision',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
+   * Fetch serialized identity keys
+   *
+   * @param {GetIdentityKeysRequest} request
+   *
+   * @return {Promise<Buffer>}
+   */
+  async fetchIdentityKeys(request) {
+    return this.request(
+      '/identity/keys',
+      request.serializeBinary(),
+    );
+  }
+
+  /**
+   * Fetch serialized identity by its public key hash
+   *
+   * @param {GetIdentityByPublicKeyHashRequest} request
+   *
+   * @return {Promise<Buffer[]>}
+   */
+  async fetchIdentityByPublicKeyHash(request) {
+    return this.request(
+      '/identity/by-public-key-hash',
       request.serializeBinary(),
     );
   }

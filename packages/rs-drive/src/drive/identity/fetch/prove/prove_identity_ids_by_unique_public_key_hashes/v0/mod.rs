@@ -71,11 +71,7 @@ mod tests {
                     .filter(|public_key| public_key.key_type().is_unique_key_type())
                     .map(move |public_key| {
                         (
-                            public_key
-                                .hash()
-                                .expect("expected to hash data")
-                                .try_into()
-                                .expect("expected to be 20 bytes"),
+                            public_key.hash().expect("expected to be 20 bytes"),
                             Some(identity.id().to_buffer()),
                         )
                     })

@@ -102,12 +102,12 @@ impl Drive {
                 let epoch_index_result: Result<EpochIndex, Error> = path
                     .last()
                     .ok_or(Error::Proof(ProofError::CorruptedProof(
-                        "extended epoch info: path can not be empty",
+                        "extended epoch info: path can not be empty".to_string(),
                     )))
                     .and_then(|epoch_index_vec| {
                         epoch_index_vec.as_slice().try_into().map_err(|_| {
                             Error::Proof(ProofError::CorruptedProof(
-                                "extended epoch info: item has an invalid length",
+                                "extended epoch info: item has an invalid length".to_string(),
                             ))
                         })
                     })
@@ -115,7 +115,8 @@ impl Drive {
                         EpochIndex::from_be_bytes(epoch_index_bytes)
                             .checked_sub(EPOCH_KEY_OFFSET)
                             .ok_or(Error::Proof(ProofError::CorruptedProof(
-                                "epoch bytes on disk too small, should be over epoch key offset",
+                                "epoch bytes on disk too small, should be over epoch key offset"
+                                    .to_string(),
                             )))
                     });
 

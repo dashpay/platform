@@ -20,7 +20,10 @@ ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-nul
 chrono = "0.4.20"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
-serde_with = { version = "2.3.1", features = ["hex"], default-features = false }
+serde_with = { version = "3.1.0", features = [
+    "hex",
+    "macros",
+], default-features = false }
 drive = { path = "../rs-drive", features = [
     "full",
     "grovedb_operations_logging",
@@ -34,7 +37,6 @@ indexmap = { version = "1.9.3", features = ["serde"] }
 sha2 = "0.10.6"
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "master" }
 dpp = { path = "../rs-dpp", features = ["abci"] }
-strategy-tests = { path = "../strategy-tests" }
 simple-signer = { path = "../simple-signer" }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
@@ -99,6 +101,7 @@ dpp = { path = "../rs-dpp", features = [
     "data-contract-cbor-conversion",
 ] }
 drive = { path = "../rs-drive" }
+strategy-tests = { path = "../strategy-tests" }
 
 # For tests of grovedb verify
 rocksdb = { version = "0.21.0" }
