@@ -60,7 +60,7 @@ module.exports = (config) => {
     logLevel: config.LOG_INFO,
     autoWatch: false,
     browsers: [
-      process.env.BROWSER_TESTS_CHROMIUM_BROWSER || 'ChromeHeadless',
+      'ChromeHeadless',
       'FirefoxHeadless',
     ],
     singleRun: false,

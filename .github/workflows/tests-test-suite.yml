@@ -22,11 +22,10 @@ on:
 jobs:
   test-suite:
     name: Run ${{ inputs.name }}
-    # TODO: Try with Github Runner, probably it will be the same time
     runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
     timeout-minutes: 15
     env:
-      BROWSER_TESTS_CHROMIUM_BROWSER: ChromiumHeadless
+      CHROME_BIN: /usr/bin/brave-browser
     steps:
       - name: Check out repo
         uses: actions/checkout@v4

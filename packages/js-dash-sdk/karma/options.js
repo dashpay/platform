@@ -51,7 +51,7 @@ module.exports = {
   ],
   customLaunchers: {
     ChromeHeadlessInsecure: {
-      base: process.env.BROWSER_TESTS_CHROMIUM_BROWSER || 'ChromeHeadless',
+      base: 'ChromeHeadless',
       flags: ['--allow-insecure-localhost'],
       displayName: 'Chrome w/o security',
     },

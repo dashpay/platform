@@ -30,7 +30,7 @@ module.exports = (config) => {
     colors: true,
     logLevel: config.LOG_INFO,
     autoWatch: false,
-    browsers: [process.env.BROWSER_TESTS_CHROMIUM_BROWSER || 'ChromeHeadless', 'FirefoxHeadless'],
+    browsers: ['ChromeHeadless', 'FirefoxHeadless'],
     singleRun: false,
     concurrency: Infinity,
     plugins: [
