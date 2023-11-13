@@ -42,3 +42,8 @@ drive-abci:
   - .github/workflows/tests*
   - packages/rs-drive-abci/**
   - *drive
+
+rs-sdk:
+  - .github/workflows/tests*
+  - packages/rs-sdk/**
+  - *drive
