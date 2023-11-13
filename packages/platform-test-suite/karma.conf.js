@@ -1,5 +1,6 @@
 const webpack = require('webpack');
 const dotenvResult = require('dotenv-safe').config();
+const glob = require('glob');
 
 const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
@@ -11,6 +12,37 @@ const karmaWebpack = require('karma-webpack');
 
 if (dotenvResult.error) {
   throw dotenvResult.error;
+}
+
+// TODO: Fix test to be running in Browser
+const testFilesPattern = './test/**/!(proofs|waitForStateTransitionResult).spec.js';
+const processors = ['webpack', 'sourcemap'];
+let testFiles = [
+  testFilesPattern,
+];
+let testPreprocessors = {
+  [testFilesPattern]: processors,
+};
+
+if (process.env.BROWSER_TEST_BATCH_TOTAL !== '0') {
+  const batchTotal = parseInt(process.env.BROWSER_TEST_BATCH_TOTAL, 10);
+  const batchIndex = parseInt(process.env.BROWSER_TEST_BATCH_INDEX, 10);
+
+  const files = glob.sync(testFilesPattern);
+  const batchSize = Math.ceil(files.length / batchTotal);
+
+  const batches = [];
+  for (let i = 0; i < files.length; i += batchSize) {
+    batches.push(files.slice(i, i + batchSize));
+  }
+
+  testFiles = batches[batchIndex] || [];
+
+  testPreprocessors = testFiles.reduce((acc, path) => {
+    acc[path] = processors;
+
+    return acc;
+  }, {});
 }
 
 module.exports = (config) => {
@@ -25,12 +57,12 @@ module.exports = (config) => {
     browserDisconnectTimeout: 900000,
     frameworks: ['mocha', 'chai', 'webpack'],
     files: [
-      'lib/test/karma/loader.js',
-      './test/**/!(proofs|waitForStateTransitionResult).spec.js',
+      'lib/test/karma/bootstrap.js',
+      ...testFiles,
     ],
     preprocessors: {
-      'lib/test/karma/loader.js': ['webpack', 'sourcemap'],
-      './test/**/!(proofs|waitForStateTransitionResult).spec.js': ['webpack', 'sourcemap'],
+      'lib/test/karma/bootstrap.js': ['webpack', 'sourcemap'],
+      ...testPreprocessors,
     },
     webpack: {
       mode: 'development',

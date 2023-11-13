@@ -24,6 +24,8 @@ function executeProof() {
 
 }
 
+// TODO: Fix test to be running in Browser
+
 describe('Platform', () => {
   describe('Proofs', () => {
     let blake3;

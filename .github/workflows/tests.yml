@@ -197,25 +197,25 @@ jobs:
             batch_index: 0
             batch_total: 0
             runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
-          - name: Test Suite in browser (1)
+          - name: Test Suite in browser (p1 4x)
             command: test:browsers
             batch_index: 0
             batch_total: 2
             runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]
-          - name: Test Suite in browser (2)
+          - name: Test Suite in browser (p2 4x)
             command: test:browsers
             batch_index: 1
             batch_total: 2
             runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]
-          - name: Test Suite in browser (full 4x)
+          - name: Test Suite in browser (p1 2x)
             command: test:browsers
             batch_index: 0
-            batch_total: 0
-            runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]
-          - name: Test Suite in browser (full 2x)
+            batch_total: 2
+            runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
+          - name: Test Suite in browser (p2 2x)
             command: test:browsers
-            batch_index: 0
-            batch_total: 0
+            batch_index: 1
+            batch_total: 2
             runner: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
     uses: ./.github/workflows/tests-test-suite.yml
     with:

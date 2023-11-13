@@ -2752,6 +2752,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["eslint-config-airbnb-base", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:14.2.1"],\
             ["eslint-plugin-import", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:2.25.3"],\
             ["events", "npm:3.3.0"],\
+            ["glob", "npm:10.3.4"],\
             ["https-browserify", "npm:1.0.0"],\
             ["js-merkle", "npm:0.1.5"],\
             ["karma", "npm:6.4.1"],\
