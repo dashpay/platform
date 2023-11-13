@@ -18,15 +18,11 @@ on:
         description: Browser test batch total
         type: number
         default: 0
-      runner:
-        description: Runner. Must be JSON valid string.
-        type: string
-        default: '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]'
 
 jobs:
   test-suite:
     name: Run ${{ inputs.name }}
-    runs-on: ${{ fromJSON(inputs.runner) }}
+    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform" ]
     timeout-minutes: 15
     env:
       CHROME_BIN: /usr/bin/brave-browser
