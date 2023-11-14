@@ -115,6 +115,7 @@ impl Config {
             builder.build().expect("cannot initialize api")
         };
 
+        // offline testing takes precedence over network testing
         #[cfg(feature = "offline-testing")]
         let sdk = {
             let mut mock_sdk = rs_sdk::SdkBuilder::new_mock()
