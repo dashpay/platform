@@ -1,25 +1,23 @@
-use dapi_grpc::platform::v0::{
-    get_proofs_request, get_proofs_response, GetProofsRequest, GetProofsResponse,
-};
-
-use dpp::document::Document;
-use dpp::identity::PartialIdentity;
-use dpp::state_transition::StateTransition;
-use drive::drive::Drive;
-use drive::query::SingleDocumentDriveQuery;
-use drive_abci::abci::AbciApplication;
-use drive_abci::platform_types::platform::PlatformRef;
-use drive_abci::rpc::core::MockCoreRPCLike;
+use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
+use dapi_grpc::platform::VersionedGrpcResponse;
 
 use dapi_grpc::platform::v0::get_proofs_request::{get_proofs_request_v0, GetProofsRequestV0};
-use dapi_grpc::platform::v0::get_proofs_response::GetProofsResponseV0;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::document::Document;
+use dpp::identity::PartialIdentity;
+use dpp::state_transition::{StateTransition, StateTransitionLike};
 use dpp::version::PlatformVersion;
+use drive::drive::identity::key::fetch::IdentityKeysRequest;
+use drive::drive::Drive;
+use drive::query::SingleDocumentDriveQuery;
 use drive::state_transition_action::document::documents_batch::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
+use drive_abci::abci::AbciApplication;
 use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+use drive_abci::rpc::core::MockCoreRPCLike;
 use prost::Message;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
@@ -105,20 +103,20 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { version } =
+                let response_proof =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                        .expect("expected to decode proof response");
+                        .expect("expected to decode proof response")
+                        .proof_owned()
+                        .expect("proof should be present");
 
-                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
-                    version.expect("expected a versioned response");
-
-                let response_proof = proof.expect("proof should be present");
-
+                // let fetched_contract = abci_app
+                //     .platform.drive.fetch_contract(data_contract_create.data_contract_ref().id().into_buffer(), None, None, None, platform_version).unwrap().unwrap();
                 // we expect to get an identity that matches the state transition
                 let (root_hash, contract) = Drive::verify_contract(
                     &response_proof.grovedb_proof,
                     None,
                     false,
+                    true,
                     data_contract_create.data_contract_ref().id().into_buffer(),
                     platform_version,
                 )
@@ -161,20 +159,17 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { version } =
-                    GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                        .expect("expected to decode proof response");
+                let response = GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
+                    .expect("expected to decode proof response");
 
-                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
-                    version.expect("expected a versioned response");
-
-                let response_proof = proof.expect("proof should be present");
+                let response_proof = response.proof_owned().expect("expected to get proof");
 
                 // we expect to get an identity that matches the state transition
                 let (root_hash, contract) = Drive::verify_contract(
                     &response_proof.grovedb_proof,
                     None,
                     false,
+                    true,
                     data_contract_update.data_contract_ref().id().into_buffer(),
                     platform_version,
                 )
@@ -235,14 +230,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { version } =
-                    GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                        .expect("expected to decode proof response");
+                let response = GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
+                    .expect("expected to decode proof response");
 
-                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
-                    version.expect("expected a versioned response");
-
-                let response_proof = proof.expect("proof should be present");
+                let response_proof = response.proof_owned().expect("proof should be present");
 
                 for document_transition_action in documents_batch_transition.transitions().iter() {
                     let contract_fetch_info =
@@ -383,14 +374,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { version } =
-                    GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                        .expect("expected to decode proof response");
+                let response = GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
+                    .expect("expected to decode proof response");
 
-                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
-                    version.expect("expected a versioned response");
-
-                let response_proof = proof.expect("proof should be present");
+                let response_proof = response.proof_owned().expect("proof should be present");
 
                 // we expect to get an identity that matches the state transition
                 let (root_hash, identity) = Drive::verify_full_identity_by_identity_id(
@@ -450,14 +437,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { version } =
+                let response_proof =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                        .expect("expected to decode proof response");
-
-                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
-                    version.expect("expected a versioned response");
-
-                let response_proof = proof.expect("proof should be present");
+                        .expect("expected to decode proof response")
+                        .proof_owned()
+                        .expect("proof should be present");
 
                 // we expect to get an identity that matches the state transition
                 let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
@@ -514,14 +498,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { version } =
+                let response_proof =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                        .expect("expected to decode proof response");
-
-                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
-                    version.expect("expected a versioned response");
-
-                let response_proof = proof.expect("proof should be present");
+                        .expect("expected to decode proof response")
+                        .proof_owned()
+                        .expect("proof should be present");
 
                 // we expect to get an identity that matches the state transition
                 let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
@@ -564,20 +545,20 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { version } =
+                let response_proof =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                        .expect("expected to decode proof response");
-
-                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
-                    version.expect("expected a versioned response");
-
-                let response_proof = proof.expect("proof should be present");
+                        .expect("expected to decode proof response")
+                        .proof_owned()
+                        .expect("proof should be present");
 
                 // we expect to get an identity that matches the state transition
                 let (root_hash, identity) = Drive::verify_identity_keys_by_identity_id(
                     &response_proof.grovedb_proof,
+                    IdentityKeysRequest::new_all_keys_query(
+                        &identity_update_transition.identity_id().into_buffer(),
+                        None,
+                    ),
                     false,
-                    identity_update_transition.identity_id().into_buffer(),
                     platform_version,
                 )
                 .expect("expected to verify identity keys");
@@ -632,14 +613,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { version } =
+                let response_proof =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
-                        .expect("expected to decode proof response");
-
-                let get_proofs_response::Version::V0(GetProofsResponseV0 { proof, metadata: _ }) =
-                    version.expect("expected a versioned response");
-
-                let response_proof = proof.expect("proof should be present");
+                        .expect("expected to decode proof response")
+                        .proof_owned()
+                        .expect("proof should be present");
 
                 // we expect to get an identity that matches the state transition
                 let (root_hash_identity, _balance_identity) =

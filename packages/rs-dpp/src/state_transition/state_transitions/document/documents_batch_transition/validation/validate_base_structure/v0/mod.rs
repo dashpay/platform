@@ -1,5 +1,6 @@
 use crate::consensus::basic::document::{
-    DuplicateDocumentTransitionsWithIdsError, MaxDocumentsTransitionsExceededError,
+    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
+    MaxDocumentsTransitionsExceededError,
 };
 use crate::consensus::basic::BasicError;
 
@@ -17,13 +18,19 @@ use platform_version::version::PlatformVersion;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
-const MAX_TRANSITIONS_IN_BATCH: usize = 100;
+const MAX_TRANSITIONS_IN_BATCH: usize = 1;
 
 impl DocumentsBatchTransition {
     pub(super) fn validate_base_structure_v0<'d>(
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        if self.transitions().is_empty() {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                DocumentTransitionsAreAbsentError::new().into(),
+            ));
+        }
+
         if self.transitions().len() > MAX_TRANSITIONS_IN_BATCH {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 MaxDocumentsTransitionsExceededError::new(MAX_TRANSITIONS_IN_BATCH as u32).into(),

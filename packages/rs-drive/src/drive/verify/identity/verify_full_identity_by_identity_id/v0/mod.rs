@@ -79,7 +79,7 @@ impl Drive {
                     }
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "balance wasn't for the identity requested",
+                        "balance wasn't for the identity requested".to_string(),
                     )));
                 }
             } else if path == identity_path && key == vec![IdentityTreeRevision as u8] {
@@ -106,7 +106,7 @@ impl Drive {
                     keys.insert(key.id(), key);
                 } else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "we received an absence proof for a key but didn't request one",
+                        "we received an absence proof for a key but didn't request one".to_string(),
                     )));
                 }
             } else {

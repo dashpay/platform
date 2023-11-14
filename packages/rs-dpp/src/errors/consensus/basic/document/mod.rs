@@ -1,4 +1,5 @@
 mod data_contract_not_present_error;
+mod document_transitions_are_absent_error;
 mod duplicate_document_transitions_with_ids_error;
 mod duplicate_document_transitions_with_indices_error;
 mod inconsistent_compound_index_data_error;
@@ -12,6 +13,7 @@ mod missing_document_transition_type_error;
 mod missing_document_type_error;
 
 pub use data_contract_not_present_error::*;
+pub use document_transitions_are_absent_error::*;
 pub use duplicate_document_transitions_with_ids_error::*;
 pub use duplicate_document_transitions_with_indices_error::*;
 pub use inconsistent_compound_index_data_error::*;

@@ -12,4 +12,13 @@ pub mod platform {
     pub mod v0 {
         include!("platform/proto/org.dash.platform.dapi.v0.rs");
     }
+    #[cfg(feature = "tenderdash-proto")]
+    pub use tenderdash_proto as proto;
+
+    mod versioning;
+    pub use versioning::VersionedGrpcResponse;
 }
+
+#[cfg(feature = "serde")]
+// Serde deserialization logic
+pub mod deserialization;

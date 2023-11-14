@@ -140,6 +140,7 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsRequest.GetProofsReq
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsRequest.VersionCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsResponse', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.ResultCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProofsResponse.VersionCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0', null, { proto });
@@ -1047,7 +1048,7 @@ if (goog.DEBUG && !COMPILED) {
  * @constructor
  */
 proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0 = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.oneofGroups_);
 };
 goog.inherits(proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
@@ -10562,6 +10563,31 @@ proto.org.dash.platform.dapi.v0.GetProofsResponse.serializeBinaryToWriter = func
 
 
 
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.oneofGroups_ = [[1]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.ResultCase = {
+  RESULT_NOT_SET: 0,
+  PROOF: 1
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.ResultCase}
+ */
+proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.prototype.getResultCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.ResultCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.oneofGroups_[0]));
+};
+
 
 
 if (jspb.Message.GENERATE_TO_OBJECT) {
@@ -10704,7 +10730,7 @@ proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.prototype.
  * @return {!proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0} returns this
 */
 proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.prototype.setProof = function(value) {
-  return jspb.Message.setWrapperField(this, 1, value);
+  return jspb.Message.setOneofWrapperField(this, 1, proto.org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0.oneofGroups_[0], value);
 };
 
 
