@@ -139,22 +139,22 @@ type PlatformgetConsensusParams = {
   readonly responseType: typeof platform_pb.GetConsensusParamsResponse;
 };
 
-type PlatformgetVersionUpgradeState = {
+type PlatformgetProtocolVersionUpgradeState = {
   readonly methodName: string;
   readonly service: typeof Platform;
   readonly requestStream: false;
   readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetVersionUpgradeStateRequest;
-  readonly responseType: typeof platform_pb.GetVersionUpgradeStateResponse;
+  readonly requestType: typeof platform_pb.GetProtocolVersionUpgradeStateRequest;
+  readonly responseType: typeof platform_pb.GetProtocolVersionUpgradeStateResponse;
 };
 
-type PlatformgetVersionUpgradeVoteStatus = {
+type PlatformgetProtocolVersionUpgradeVoteStatus = {
   readonly methodName: string;
   readonly service: typeof Platform;
   readonly requestStream: false;
   readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetVersionUpgradeVoteStatusRequest;
-  readonly responseType: typeof platform_pb.GetVersionUpgradeVoteStatusResponse;
+  readonly requestType: typeof platform_pb.GetProtocolVersionUpgradeVoteStatusRequest;
+  readonly responseType: typeof platform_pb.GetProtocolVersionUpgradeVoteStatusResponse;
 };
 
 type PlatformgetEpochsInfo = {
@@ -183,8 +183,8 @@ export class Platform {
   static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
   static readonly waitForStateTransitionResult: PlatformwaitForStateTransitionResult;
   static readonly getConsensusParams: PlatformgetConsensusParams;
-  static readonly getVersionUpgradeState: PlatformgetVersionUpgradeState;
-  static readonly getVersionUpgradeVoteStatus: PlatformgetVersionUpgradeVoteStatus;
+  static readonly getProtocolVersionUpgradeState: PlatformgetProtocolVersionUpgradeState;
+  static readonly getProtocolVersionUpgradeVoteStatus: PlatformgetProtocolVersionUpgradeVoteStatus;
   static readonly getEpochsInfo: PlatformgetEpochsInfo;
 }
 
@@ -355,23 +355,23 @@ export class PlatformClient {
     requestMessage: platform_pb.GetConsensusParamsRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetConsensusParamsResponse|null) => void
   ): UnaryResponse;
-  getVersionUpgradeState(
-    requestMessage: platform_pb.GetVersionUpgradeStateRequest,
+  getProtocolVersionUpgradeState(
+    requestMessage: platform_pb.GetProtocolVersionUpgradeStateRequest,
     metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetVersionUpgradeStateResponse|null) => void
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetProtocolVersionUpgradeStateResponse|null) => void
   ): UnaryResponse;
-  getVersionUpgradeState(
-    requestMessage: platform_pb.GetVersionUpgradeStateRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetVersionUpgradeStateResponse|null) => void
+  getProtocolVersionUpgradeState(
+    requestMessage: platform_pb.GetProtocolVersionUpgradeStateRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetProtocolVersionUpgradeStateResponse|null) => void
   ): UnaryResponse;
-  getVersionUpgradeVoteStatus(
-    requestMessage: platform_pb.GetVersionUpgradeVoteStatusRequest,
+  getProtocolVersionUpgradeVoteStatus(
+    requestMessage: platform_pb.GetProtocolVersionUpgradeVoteStatusRequest,
     metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetVersionUpgradeVoteStatusResponse|null) => void
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetProtocolVersionUpgradeVoteStatusResponse|null) => void
   ): UnaryResponse;
-  getVersionUpgradeVoteStatus(
-    requestMessage: platform_pb.GetVersionUpgradeVoteStatusRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetVersionUpgradeVoteStatusResponse|null) => void
+  getProtocolVersionUpgradeVoteStatus(
+    requestMessage: platform_pb.GetProtocolVersionUpgradeVoteStatusRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetProtocolVersionUpgradeVoteStatusResponse|null) => void
   ): UnaryResponse;
   getEpochsInfo(
     requestMessage: platform_pb.GetEpochsInfoRequest,

@@ -1,3 +1,35 @@
+### [0.25.13](https://github.com/dashpay/platform/compare/v0.25.12...v0.25.13) (2023-11-05)
+
+
+### Bug Fixes
+
+* **dashmate:** config is not persisted after migration ([#1561](https://github.com/dashpay/platform/issues/1561))
+
+### [0.25.12](https://github.com/dashpay/platform/compare/v0.25.11...v0.25.12) (2023-11-03)
+
+
+### Code Refactoring
+
+* rename protocol version endpoints ([#1552](https://github.com/dashpay/platform/issues/1552))
+
+
+### Tests
+
+* **dashmate:** fix migrations test ([#1547](https://github.com/dashpay/platform/issues/1547))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** testnet-35 support ([#1559](https://github.com/dashpay/platform/issues/1559))
+* **dashmate:** update tenderdash to v0.13.3
+
+### [0.25.11](https://github.com/dashpay/platform/compare/v0.25.10...v0.25.11) (2023-11-02)
+
+
+### Bug Fixes
+
+* **dashmate:** config commands output ([#1556](https://github.com/dashpay/platform/issues/1556))
+
 ### [0.25.10](https://github.com/dashpay/platform/compare/v0.25.9...v0.25.10) (2023-11-02)
 
 ### Bug Fixes
