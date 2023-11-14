@@ -1,4 +1,4 @@
-pub(crate) mod broadcast;
+pub mod broadcast;
 pub(crate) mod broadcast_identity;
 pub(crate) mod broadcast_request;
 pub(crate) mod context;
