@@ -52,7 +52,7 @@ RUN apk add --no-cache \
         libc-dev \
         linux-headers \
         llvm-static llvm-dev  \
-        'nodejs~=18' \
+        nodejs \
         npm \
         openssl-dev \
         perl \
@@ -281,7 +281,7 @@ RUN yarn workspaces focus --production dashmate
 #
 #  STAGE: FINAL DASHMATE HELPER IMAGE
 #
-FROM node:18-alpine${ALPINE_VERSION} AS dashmate-helper
+FROM node:20-alpine${ALPINE_VERSION} AS dashmate-helper
 
 RUN apk add --no-cache docker-cli docker-cli-compose curl
 
@@ -326,7 +326,7 @@ RUN yarn workspaces focus --production @dashevo/platform-test-suite
 #
 #  STAGE: FINAL TEST SUITE IMAGE
 #
-FROM node:18-alpine${ALPINE_VERSION} AS test-suite
+FROM node:20-alpine${ALPINE_VERSION} AS test-suite
 
 RUN apk add --no-cache bash
 
@@ -386,7 +386,7 @@ RUN yarn workspaces focus --production @dashevo/dapi
 #
 # STAGE: FINAL DAPI IMAGE
 #
-FROM node:18-alpine${ALPINE_VERSION} AS dapi
+FROM node:20-alpine${ALPINE_VERSION} AS dapi
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DAPI Node.JS"
