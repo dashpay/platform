@@ -9,6 +9,7 @@ license = "MIT"
 [dependencies]
 platform-value = { path = "../rs-platform-value" }
 num_enum = "0.5.7"
+# serde is required, `cargo machete` false positive
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0"
 serde_repr = "0.1.7"

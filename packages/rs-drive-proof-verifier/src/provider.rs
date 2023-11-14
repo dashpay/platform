@@ -1,10 +1,7 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use dpp::prelude::{DataContract, Identifier};
 use hex::ToHex;
-
-use crate::Error;
 
 /// `ContextProvider` trait provides an interface to fetch information about context of proof verification, like
 /// quorum information, data contracts present in the platform, etc.

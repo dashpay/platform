@@ -39,6 +39,7 @@ serde_json = { version = "1.0", optional = true }
 
 tenderdash-proto = { git = "https://github.com/dashpay/rs-tenderdash-abci" }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
+# Required by macros, cargo-machete false positive 
 platform-version = { path = "../rs-platform-version" }
 
 [build-dependencies]
