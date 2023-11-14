@@ -1,5 +1,5 @@
-import { Listr }  from 'listr2';
-import {isServiceBuildRequired} from "../../util/isServiceBuildRequired.js";
+import { Listr } from 'listr2';
+import { isServiceBuildRequired } from '../../util/isServiceBuildRequired.js';
 
 /**
  * @param {startNodeTask} startNodeTask

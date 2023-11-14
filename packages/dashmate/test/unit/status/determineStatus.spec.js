@@ -1,8 +1,8 @@
-import {MasternodeSyncAssetEnum} from '../../../src/status/enums/masternodeSyncAsset';
-import {ServiceStatusEnum} from '../../../src/status/enums/serviceStatus';
-import {DockerStatusEnum} from '../../../src/status/enums/dockerStatus';
+import { MasternodeSyncAssetEnum } from '../../../src/status/enums/masternodeSyncAsset';
+import { ServiceStatusEnum } from '../../../src/status/enums/serviceStatus';
+import { DockerStatusEnum } from '../../../src/status/enums/dockerStatus';
 import determineStatus from '../../../src/status/determineStatus';
-import {getConfigMock} from '../../../src/test/mock/getConfigMock';
+import { getConfigMock } from '../../../src/test/mock/getConfigMock';
 
 describe('determineStatus', () => {
   describe('#docker', () => {

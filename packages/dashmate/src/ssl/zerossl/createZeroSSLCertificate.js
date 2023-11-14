@@ -1,6 +1,6 @@
 import qs from 'qs';
-import {Certificate} from './Certificate.js'
-import {requestApi} from "./requestApi.js";
+import { Certificate } from './Certificate.js';
+import { requestApi } from './requestApi.js';
 
 /**
  * Create a ZeroSSL Certificate

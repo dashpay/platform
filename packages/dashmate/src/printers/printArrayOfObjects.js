@@ -1,8 +1,8 @@
 import { table } from 'table';
 
-import { OUTPUT_FORMATS } from '../constants';
+import { OUTPUT_FORMATS } from '../constants.js';
 
-import {UnsupportedFormatError} from './errors/UnsupportedFormatError';
+import { UnsupportedFormatError } from './errors/UnsupportedFormatError.js';
 
 /**
  * Prints object using specified output format

@@ -1,5 +1,5 @@
 import path from 'path';
-import {PACKAGE_ROOT_DIR} from '../../constants';
+import { PACKAGE_ROOT_DIR } from '../../constants.js';
 
 export function getConfigFileDataV0250() {
   return {

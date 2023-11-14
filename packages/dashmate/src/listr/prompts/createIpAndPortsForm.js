@@ -1,8 +1,8 @@
-import publicIp from 'public-ip';
-import {validatePort} from "./validators/validatePort.js";
-import {validateIPv4} from "./validators/validateIPv4.js";
-import {PRESET_MAINNET,} from '../../constants';
-import {wait} from "../../util/wait.js";
+import {publicIp} from 'public-ip';
+import { validatePort } from './validators/validatePort.js';
+import { validateIPv4 } from './validators/validateIPv4.js';
+import { PRESET_MAINNET } from '../../constants.js';
+import { wait } from '../../util/wait.js';
 
 export function createIpAndPortsFormFactory(defaultConfigs) {
   /**
@@ -54,7 +54,7 @@ export function createIpAndPortsFormFactory(defaultConfigs) {
       return validatePort(value);
     }
 
-    let {initialIp} = options;
+    let { initialIp } = options;
     if (initialIp === null || initialIp === undefined) {
       initialIp = await Promise.race([
         publicIp.v4().catch(() => ''),
@@ -63,7 +63,7 @@ export function createIpAndPortsFormFactory(defaultConfigs) {
       ]);
     }
 
-    let {initialCoreP2PPort} = options;
+    let { initialCoreP2PPort } = options;
     if (initialCoreP2PPort === undefined
       || initialCoreP2PPort === null
       || network === PRESET_MAINNET) {
@@ -88,7 +88,7 @@ export function createIpAndPortsFormFactory(defaultConfigs) {
     ];
 
     if (options.isHPMN) {
-      let {initialPlatformP2PPort} = options;
+      let { initialPlatformP2PPort } = options;
       if (initialPlatformP2PPort === null
         || initialPlatformP2PPort === undefined
         || network === PRESET_MAINNET) {
@@ -103,7 +103,7 @@ export function createIpAndPortsFormFactory(defaultConfigs) {
         disabled: network === PRESET_MAINNET ? '(reserved for mainnet)' : false,
       });
 
-      let {initialPlatformHTTPPort} = options;
+      let { initialPlatformHTTPPort } = options;
       if (initialPlatformHTTPPort === null
         || initialPlatformHTTPPort === undefined
         || network === PRESET_MAINNET) {
@@ -129,11 +129,11 @@ export function createIpAndPortsFormFactory(defaultConfigs) {
       message: 'Enter IP address and ports:',
       choices: fields,
       validate: ({
-                   ip,
-                   coreP2PPort,
-                   platformP2PPort,
-                   platformHTTPPort,
-                 }) => {
+        ip,
+        coreP2PPort,
+        platformP2PPort,
+        platformHTTPPort,
+      }) => {
         const areAllFieldsValid = validateIPv4(ip) && validateCoreP2PPort(coreP2PPort)
           && (
             !options.isHPMN

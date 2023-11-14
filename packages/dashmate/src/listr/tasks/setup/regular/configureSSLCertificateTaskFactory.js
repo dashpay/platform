@@ -1,13 +1,13 @@
 import fs from 'fs';
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 
 import {
   PRESET_MAINNET,
   SSL_PROVIDERS,
   NODE_TYPE_FULLNODE,
-} from '../../../../constants';
-import {validateFileExists} from "../../../prompts/validators/validateFileExists.js";
-import {listCertificates} from "../../../../ssl/zerossl/listCertificates.js";
+} from '../../../../constants.js';
+import { validateFileExists } from '../../../prompts/validators/validateFileExists.js';
+import { listCertificates } from '../../../../ssl/zerossl/listCertificates.js';
 
 /**
  * @param {saveCertificateTask} saveCertificateTask

@@ -1,15 +1,14 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 import BlsSignatures from '@dashevo/bls';
 import {
   NODE_TYPE_MASTERNODE,
   PRESET_MAINNET,
   NODE_TYPE_FULLNODE,
-} from '../../../../constants';
-import {validateBLSPrivateKeyFactory} from "../../../prompts/validators/validateBLSPrivateKeyFactory.js";
-import {createPlatformNodeKeyInput} from "../../../prompts/createPlatformNodeKeyInput.js";
-import {deriveTenderdashNodeId} from "../../../../tenderdash/deriveTenderdashNodeId.js";
-import {getConfigurationOutputFromContext} from "./getConfigurationOutputFromContext.js";
-
+} from '../../../../constants.js';
+import { validateBLSPrivateKeyFactory } from '../../../prompts/validators/validateBLSPrivateKeyFactory.js';
+import { createPlatformNodeKeyInput } from '../../../prompts/createPlatformNodeKeyInput.js';
+import { deriveTenderdashNodeId } from '../../../../tenderdash/deriveTenderdashNodeId.js';
+import { getConfigurationOutputFromContext } from './getConfigurationOutputFromContext.js';
 
 /**
  *

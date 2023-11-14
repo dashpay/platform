@@ -1,4 +1,4 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 
 import { Observable } from 'rxjs';
 
@@ -6,7 +6,7 @@ import {
   NETWORK_LOCAL,
   MASTERNODE_COLLATERAL_AMOUNT,
   HPMN_COLLATERAL_AMOUNT,
-} from '../../constants';
+} from '../../constants.js';
 
 /**
  *

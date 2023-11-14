@@ -1,5 +1,5 @@
 import fs from 'fs';
-import dots from 'dot'
+import dots from 'dot';
 
 /**
  * @return {renderTemplate}

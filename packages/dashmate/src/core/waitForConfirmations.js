@@ -1,4 +1,4 @@
-import wait from '../util/wait';
+import {wait} from '../util/wait.js';
 
 /**
  * Wait for confirmations to be reached

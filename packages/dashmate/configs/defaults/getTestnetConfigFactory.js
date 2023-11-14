@@ -1,10 +1,10 @@
-import * as lodashMerge from 'lodash/merge';
-
+import lodash from 'lodash'
 import {
   NETWORK_TESTNET,
-} from '../../src/constants';
-import {Config} from "../../src/config/Config.js";
+} from '../../src/constants.js';
+import { Config } from '../../src/config/Config.js';
 
+const {merge: lodashMerge} = lodash
 /**
  * @param {HomeDir} homeDir
  * @param {getBaseConfig} getBaseConfig

@@ -1,17 +1,15 @@
-import Ajv from  'ajv';
-
-import * as lodashGet from 'lodash/get';
-import * as lodashSet from 'lodash/set';
-import * as lodashCloneDeep from 'lodash/cloneDeep';
-import * as lodashIsEqual from 'lodash/isEqual';
+import Ajv from 'ajv';
+import lodash from 'lodash'
 
 import addFormats from 'ajv-formats';
-import * as configJsonSchema from './configJsonSchema';
+import * as configJsonSchema from './configJsonSchema.js';
 
-import {InvalidOptionPathError} from "./errors/InvalidOptionPathError.js";
-import {OptionIsNotSetError} from "./errors/OptionIsNotSetError.js";
-import {InvalidOptionError} from "./errors/InvalidOptionError.js";
-import {InvalidOptionsError} from "./errors/InvalidOptionsError.js";
+import { InvalidOptionPathError } from './errors/InvalidOptionPathError.js';
+import { OptionIsNotSetError } from './errors/OptionIsNotSetError.js';
+import { InvalidOptionError } from './errors/InvalidOptionError.js';
+import { InvalidOptionsError } from './errors/InvalidOptionsError.js';
+
+const {get: lodashGet, set: lodashSet, cloneDeep: lodashCloneDeep, isEqual: lodashIsEqual} = lodash;
 
 export class Config {
   /**

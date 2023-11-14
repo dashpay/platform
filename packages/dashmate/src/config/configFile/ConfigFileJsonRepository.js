@@ -1,11 +1,12 @@
 import fs from 'fs';
-import Ajv from  'ajv';
-import {Config} from '../Config.js'
-import path from "path";
-import {PACKAGE_ROOT_DIR} from '../../constants.js'
-import {ConfigFileNotFoundError} from "../errors/ConfigFileNotFoundError.js";
-import {InvalidConfigFileFormatError} from "../errors/InvalidConfigFileFormatError.js";
-import configFileJsonSchema from "./configFileJsonSchema.js";
+import Ajv from 'ajv';
+import path from 'path';
+import { Config } from '../Config.js';
+import { PACKAGE_ROOT_DIR } from '../../constants.js';
+import { ConfigFileNotFoundError } from '../errors/ConfigFileNotFoundError.js';
+import { InvalidConfigFileFormatError } from '../errors/InvalidConfigFileFormatError.js';
+import configFileJsonSchema from './configFileJsonSchema.js';
+import {ConfigFile} from "./ConfigFile.js";
 
 export class ConfigFileJsonRepository {
   /**
@@ -37,7 +38,7 @@ export class ConfigFileJsonRepository {
       throw new InvalidConfigFileFormatError(this.configFilePath, e);
     }
 
-    const {version} = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
     const originConfigVersion = configFileData.configFormatVersion;
 

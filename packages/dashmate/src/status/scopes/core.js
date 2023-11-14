@@ -1,9 +1,9 @@
 /* eslint-disable camelcase */
-import * as providers from '../providers.js'
-import {ServiceStatusEnum} from "../enums/serviceStatus.js";
-import {DockerStatusEnum} from "../enums/dockerStatus.js";
-import determineStatus from "../determineStatus.js";
-import {extractCoreVersion} from "../../core/extractCoreVersion.js";
+import * as providers from '../providers.js';
+import { ServiceStatusEnum } from '../enums/serviceStatus.js';
+import { DockerStatusEnum } from '../enums/dockerStatus.js';
+import determineStatus from '../determineStatus.js';
+import { extractCoreVersion } from '../../core/extractCoreVersion.js';
 
 /**
  * @returns {getCoreScopeFactory}

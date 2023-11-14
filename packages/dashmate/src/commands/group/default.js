@@ -1,7 +1,6 @@
-import {BaseCommand} from "../../oclif/command/BaseCommand.js";
+import { BaseCommand } from '../../oclif/command/BaseCommand.js';
 
 export class GroupDefaultCommand extends BaseCommand {
-
   static description = `Manage default group
 
 Shows default group name or sets another group as default

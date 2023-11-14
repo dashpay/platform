@@ -1,4 +1,4 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 import path from 'path';
 import fs from 'fs';
 

@@ -1,5 +1,5 @@
-import {validateTenderdashNodeKey} from './validators/validateTenderdashNodeKey'
-import {generateTenderdashNodeKey} from "../../tenderdash/generateTenderdashNodeKey.js";
+import { validateTenderdashNodeKey } from './validators/validateTenderdashNodeKey.js';
+import { generateTenderdashNodeKey } from '../../tenderdash/generateTenderdashNodeKey.js';
 
 /**
  * @param {Object} [options]

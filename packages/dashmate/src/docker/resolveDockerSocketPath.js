@@ -1,6 +1,6 @@
-import { promisify }from 'util';
+import { promisify } from 'util';
 import path from 'path';
-import child_process from 'child_process'
+import child_process from 'child_process';
 
 const exec = promisify(child_process.exec);
 

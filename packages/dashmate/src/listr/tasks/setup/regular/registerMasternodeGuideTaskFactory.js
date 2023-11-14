@@ -1,6 +1,6 @@
-import { Listr }  from 'listr2';
-import {deriveTenderdashNodeId} from "../../../../tenderdash/deriveTenderdashNodeId.js";
-import {getConfigurationOutputFromContext} from "./getConfigurationOutputFromContext.js";
+import { Listr } from 'listr2';
+import { deriveTenderdashNodeId } from '../../../../tenderdash/deriveTenderdashNodeId.js';
+import { getConfigurationOutputFromContext } from './getConfigurationOutputFromContext.js';
 
 /**
  * @param {DefaultConfigs} defaultConfigs

@@ -1,4 +1,4 @@
-import jayson from 'jayson/promise'
+import jayson from 'jayson';
 import oclif from '@oclif/core';
 
 export function createHttpApiServerFactory() {

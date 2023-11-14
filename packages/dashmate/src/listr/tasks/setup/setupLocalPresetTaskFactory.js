@@ -1,10 +1,9 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 import {
   PRESET_LOCAL,
-} from '../../../constants';
-import {generateTenderdashNodeKey} from "../../../tenderdash/generateTenderdashNodeKey.js";
-import {deriveTenderdashNodeId} from "../../../tenderdash/deriveTenderdashNodeId.js";
-
+} from '../../../constants.js';
+import { generateTenderdashNodeKey } from '../../../tenderdash/generateTenderdashNodeKey.js';
+import { deriveTenderdashNodeId } from '../../../tenderdash/deriveTenderdashNodeId.js';
 
 /**
  * @param {ConfigFile} configFile

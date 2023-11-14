@@ -1,6 +1,6 @@
-import {DockerStatusEnum} from "./enums/dockerStatus.js";
-import {MasternodeSyncAssetEnum} from "./enums/masternodeSyncAsset.js";
-import {ServiceStatusEnum} from "./enums/serviceStatus.js";
+import { DockerStatusEnum } from './enums/dockerStatus.js';
+import { MasternodeSyncAssetEnum } from './enums/masternodeSyncAsset.js';
+import { ServiceStatusEnum } from './enums/serviceStatus.js';
 
 export default {
   /**

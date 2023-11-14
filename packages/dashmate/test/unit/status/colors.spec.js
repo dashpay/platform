@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import * as colors from '../../../src/status/colors';
-import {DockerStatusEnum} from "../../../src/status/enums/dockerStatus.js";
-import {ServiceStatusEnum} from "../../../src/status/enums/serviceStatus.js";
+import { DockerStatusEnum } from '../../../src/status/enums/dockerStatus.js';
+import { ServiceStatusEnum } from '../../../src/status/enums/serviceStatus.js';
 
 describe('colors.js', () => {
   describe('#portState', () => {

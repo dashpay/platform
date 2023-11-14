@@ -5,4 +5,4 @@ async function main() {
   await execute({dir: import.meta.url})
 }
 
-await main()
+await main();

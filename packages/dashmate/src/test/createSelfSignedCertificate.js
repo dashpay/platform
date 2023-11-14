@@ -1,9 +1,9 @@
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
-import {generateKeyPair} from "../ssl/generateKeyPair.js";
-import {generateCsr} from "../ssl/zerossl/generateCsr.js";
-import {createSelfSignedCertificate as createCertificate} from "../ssl/selfSigned/createSelfSignedCertificate";
+import { generateKeyPair } from '../ssl/generateKeyPair.js';
+import { generateCsr } from '../ssl/zerossl/generateCsr.js';
+import { createSelfSignedCertificate as createCertificate } from '../ssl/selfSigned/createSelfSignedCertificate';
 
 // TODO: Refactor to reuse the logic together with obtainSelfSignedCertificateTask
 export async function createSelfSignedCertificate(ip) {

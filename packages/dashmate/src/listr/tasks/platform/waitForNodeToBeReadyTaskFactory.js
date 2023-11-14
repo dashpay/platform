@@ -1,5 +1,5 @@
-import { Listr }  from 'listr2';
-import {wait} from "../../../util/wait.js";
+import { Listr } from 'listr2';
+import { wait } from '../../../util/wait.js';
 
 /**
  *

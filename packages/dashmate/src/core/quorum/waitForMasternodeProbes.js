@@ -1,4 +1,4 @@
-import { LLMQ_TYPE_TEST } from '../../constants';
+import { LLMQ_TYPE_TEST } from '../../constants.js';
 
 /**
  * Checks all mastrenodoes probes to incterconnected masternodes

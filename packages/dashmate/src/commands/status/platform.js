@@ -1,10 +1,10 @@
 /* eslint-disable dot-notation */
 /* eslint-disable quote-props */
 import { Flags } from '@oclif/core';
-import { OUTPUT_FORMATS } from '../../constants';
-import * as colors from '../../status/colors';
-import {ConfigBaseCommand} from "../../oclif/command/ConfigBaseCommand.js";
-import {printObject} from "../../printers/printObject.js";
+import { OUTPUT_FORMATS } from '../../constants.js';
+import * as colors from '../../status/colors.js';
+import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
+import { printObject } from '../../printers/printObject.js';
 
 export class PlatformStatusCommand extends ConfigBaseCommand {
   static description = 'Show Platform status details';

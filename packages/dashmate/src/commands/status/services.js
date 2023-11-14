@@ -1,8 +1,8 @@
 import chalk from 'chalk';
 import { Flags } from '@oclif/core';
-import { OUTPUT_FORMATS } from '../../constants';
-import {ConfigBaseCommand} from "../../oclif/command/ConfigBaseCommand.js";
-import {printArrayOfObjects} from "../../printers/printArrayOfObjects.js";
+import { OUTPUT_FORMATS } from '../../constants.js';
+import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
+import { printArrayOfObjects } from '../../printers/printArrayOfObjects.js';
 
 export class ServicesStatusCommand extends ConfigBaseCommand {
   static description = 'Show service status details';

@@ -1,7 +1,7 @@
-import {convertObjectToEnvs} from "./convertObjectToEnvs.js";
 import path from 'path';
-import os from 'os'
-import { DASHMATE_HELPER_DOCKER_IMAGE } from '../constants';
+import os from 'os';
+import { convertObjectToEnvs } from './convertObjectToEnvs.js';
+import { DASHMATE_HELPER_DOCKER_IMAGE } from '../constants.js';
 
 /**
  * @param {ConfigFile} configFile

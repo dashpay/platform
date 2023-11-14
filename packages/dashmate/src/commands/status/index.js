@@ -1,10 +1,10 @@
 import { Flags } from '@oclif/core';
-import { OUTPUT_FORMATS } from '../../constants';
-import * as colors from '../../status/colors';
-import {ConfigBaseCommand} from "../../oclif/command/ConfigBaseCommand.js";
-import {MasternodeStateEnum} from "../../status/enums/masternodeState.js";
-import {ServiceStatusEnum} from "../../status/enums/serviceStatus.js";
-import {printObject} from "../../printers/printObject.js";
+import { OUTPUT_FORMATS } from '../../constants.js';
+import * as colors from '../../status/colors.js';
+import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
+import { MasternodeStateEnum } from '../../status/enums/masternodeState.js';
+import { ServiceStatusEnum } from '../../status/enums/serviceStatus.js';
+import { printObject } from '../../printers/printObject.js';
 
 export class StatusCommand extends ConfigBaseCommand {
   static description = 'Show status overview';

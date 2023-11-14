@@ -1,16 +1,16 @@
-import { Listr }  from 'listr2';
-import {ConfigBaseCommand} from "../../oclif/command/ConfigBaseCommand.js";
-import {isServiceBuildRequired} from "../../util/isServiceBuildRequired.js";
-import {MuteOneLineError} from "../../oclif/errors/MuteOneLineError.js";
+import { Listr } from 'listr2';
+import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
+import { isServiceBuildRequired } from '../../util/isServiceBuildRequired.js';
+import { MuteOneLineError } from '../../oclif/errors/MuteOneLineError.js';
 
 export class BuildCommand extends ConfigBaseCommand {
   static description = `Build docker images
 Build docker images for services configured to be built from source
 `;
+
   static flags = {
     ...ConfigBaseCommand.flags,
   };
-
 
   /**
    * @param {Object} args

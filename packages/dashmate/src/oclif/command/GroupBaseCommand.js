@@ -1,8 +1,7 @@
 import { Flags } from '@oclif/core';
-import {BaseCommand} from "./BaseCommand.js";
 import { asValue } from 'awilix';
-import {GroupIsNotPresentError} from "../../config/errors/GroupIsNotPresentError.js";
-
+import { BaseCommand } from './BaseCommand.js';
+import { GroupIsNotPresentError } from '../../config/errors/GroupIsNotPresentError.js';
 
 /**
  * @abstract

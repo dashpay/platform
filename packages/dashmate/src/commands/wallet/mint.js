@@ -1,9 +1,9 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
 
-import { NETWORK_LOCAL } from '../../constants';
-import {ConfigBaseCommand} from "../../oclif/command/ConfigBaseCommand.js";
-import {MuteOneLineError} from "../../oclif/errors/MuteOneLineError.js";
+import { NETWORK_LOCAL } from '../../constants.js';
+import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
+import { MuteOneLineError } from '../../oclif/errors/MuteOneLineError.js';
 
 export class MintCommand extends ConfigBaseCommand {
   static description = `Mint tDash

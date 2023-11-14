@@ -1,5 +1,5 @@
-import os from 'os'
-import fs from 'fs'
+import os from 'os';
+import fs from 'fs';
 
 export function isWSL() {
   if (process.platform !== 'linux') {

@@ -1,5 +1,5 @@
-import {ContainerIsNotPresentError} from "../../docker/errors/ContainerIsNotPresentError.js";
-import {DockerStatusEnum} from "../enums/dockerStatus.js";
+import { ContainerIsNotPresentError } from '../../docker/errors/ContainerIsNotPresentError.js';
+import { DockerStatusEnum } from '../enums/dockerStatus.js';
 /**
  * @param {DockerCompose} dockerCompose
  * @param getServiceList

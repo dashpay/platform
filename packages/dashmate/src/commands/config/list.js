@@ -1,5 +1,5 @@
-import {table} from 'table'
-import {BaseCommand} from "../../oclif/command/BaseCommand.js";
+import { table } from 'table';
+import { BaseCommand } from '../../oclif/command/BaseCommand.js';
 
 export class ConfigListCommand extends BaseCommand {
   static description = 'List available configs';

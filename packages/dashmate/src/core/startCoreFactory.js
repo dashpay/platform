@@ -1,4 +1,4 @@
-import CoreService from './CoreService';
+import {CoreService} from './CoreService.js';
 
 /**
  * @param {createRpcClient} createRpcClient

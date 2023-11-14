@@ -5,13 +5,13 @@ import {
   HPMN_COLLATERAL_AMOUNT,
   MASTERNODE_COLLATERAL_AMOUNT,
   PRESET_MAINNET,
-} from '../../../../../constants';
-import {validateBLSPrivateKeyFactory} from "../../../../prompts/validators/validateBLSPrivateKeyFactory.js";
-import {validateAddress} from "../../../../prompts/validators/validateAddress.js";
-import {generateBlsKeys} from "../../../../../core/generateBlsKeys.js";
-import {validateTxHex} from "../../../../prompts/validators/validateTxHex.js";
-import {validatePositiveInteger} from "../../../../prompts/validators/validatePositiveInteger.js";
-import {deriveTenderdashNodeId} from "../../../../../tenderdash/deriveTenderdashNodeId.js";
+} from '../../../../../constants.js';
+import { validateBLSPrivateKeyFactory } from '../../../../prompts/validators/validateBLSPrivateKeyFactory.js';
+import { validateAddress } from '../../../../prompts/validators/validateAddress.js';
+import { generateBlsKeys } from '../../../../../core/generateBlsKeys.js';
+import { validateTxHex } from '../../../../prompts/validators/validateTxHex.js';
+import { validatePositiveInteger } from '../../../../prompts/validators/validatePositiveInteger.js';
+import { deriveTenderdashNodeId } from '../../../../../tenderdash/deriveTenderdashNodeId.js';
 
 /**
  * @param {createIpAndPortsForm} createIpAndPortsForm

@@ -1,4 +1,4 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 
 import chalk from 'chalk';
 
@@ -7,15 +7,15 @@ import {
   NODE_TYPE_HPMN,
   NODE_TYPE_FULLNODE,
   PRESET_MAINNET,
-} from '../../../constants';
+} from '../../../constants.js';
 
 import {
   NODE_TYPE_NAMES,
   getNodeTypeByName,
   getNodeTypeNameByType,
   isNodeTypeNameHighPerformance,
-} from './nodeTypes';
-import {generateRandomString} from "../../../util/generateRandomString.js";
+} from './nodeTypes.js';
+import { generateRandomString } from '../../../util/generateRandomString.js';
 
 /**
  * @param {ConfigFile} configFile

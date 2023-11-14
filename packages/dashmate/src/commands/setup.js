@@ -1,19 +1,20 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 
 import { Flags } from '@oclif/core';
 
 import chalk from 'chalk';
-import {BaseCommand} from "../oclif/command/BaseCommand.js";
-import {MuteOneLineError} from "../oclif/errors/MuteOneLineError.js";
+import { BaseCommand } from '../oclif/command/BaseCommand.js';
+import { MuteOneLineError } from '../oclif/errors/MuteOneLineError.js';
 
 import {
   PRESET_LOCAL,
   PRESET_MAINNET,
   PRESETS,
-} from '../constants';
+} from '../constants.js';
 
 export class SetupCommand extends BaseCommand {
   static description = 'Set up a new Dash node';
+
   static args = [{
     name: 'preset',
     required: false,

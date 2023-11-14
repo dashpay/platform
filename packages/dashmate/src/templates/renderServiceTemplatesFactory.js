@@ -1,6 +1,6 @@
-import dots from 'dot'
-import glob from 'glob';
-import { TEMPLATES_DIR } from '../constants';
+import dots from 'dot';
+import * as glob from 'glob';
+import { TEMPLATES_DIR } from '../constants.js';
 
 /**
  * @return {renderServiceTemplates}

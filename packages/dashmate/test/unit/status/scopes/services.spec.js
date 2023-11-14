@@ -1,5 +1,5 @@
-import {getConfigMock} from "../../../../src/test/mock/getConfigMock.js";
-import {getServicesScopeFactory} from "../../../../src/status/scopes/services.js";
+import { getConfigMock } from '../../../../src/test/mock/getConfigMock.js';
+import { getServicesScopeFactory } from '../../../../src/status/scopes/services.js';
 
 describe('getServicesScopeFactory', () => {
   describe('#getServicesScope', () => {

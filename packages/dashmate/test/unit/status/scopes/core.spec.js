@@ -1,11 +1,11 @@
 import * as providers from '../../../../src/status/providers';
-import determineStatus from "../../../../src/status/determineStatus.js";
-import {getConfigMock} from "../../../../src/test/mock/getConfigMock.js";
-import {getCoreScopeFactory} from "../../../../src/status/scopes/core.js";
-import {DockerStatusEnum} from "../../../../src/status/enums/dockerStatus.js";
-import {MasternodeSyncAssetEnum} from "../../../../src/status/enums/masternodeSyncAsset.js";
-import {ServiceStatusEnum} from "../../../../src/status/enums/serviceStatus.js";
-import {PortStateEnum} from "../../../../src/status/enums/portState.js";
+import determineStatus from '../../../../src/status/determineStatus.js';
+import { getConfigMock } from '../../../../src/test/mock/getConfigMock.js';
+import { getCoreScopeFactory } from '../../../../src/status/scopes/core.js';
+import { DockerStatusEnum } from '../../../../src/status/enums/dockerStatus.js';
+import { MasternodeSyncAssetEnum } from '../../../../src/status/enums/masternodeSyncAsset.js';
+import { ServiceStatusEnum } from '../../../../src/status/enums/serviceStatus.js';
+import { PortStateEnum } from '../../../../src/status/enums/portState.js';
 
 describe('getCoreScopeFactory', () => {
   describe('#getCoreScope', () => {

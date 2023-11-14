@@ -1,4 +1,4 @@
-import {validateHex} from './validateHex';
+import { validateHex } from './validateHex.js';
 
 /**
  *

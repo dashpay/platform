@@ -1,7 +1,7 @@
 import chalk from 'chalk';
-import {PortStateEnum} from "./enums/portState.js";
-import {ServiceStatusEnum} from "./enums/serviceStatus.js";
-import {DockerStatusEnum} from "./enums/dockerStatus.js";
+import { PortStateEnum } from './enums/portState.js';
+import { ServiceStatusEnum } from './enums/serviceStatus.js';
+import { DockerStatusEnum } from './enums/dockerStatus.js';
 
 export default {
   /**

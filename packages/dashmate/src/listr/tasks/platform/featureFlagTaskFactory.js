@@ -1,9 +1,8 @@
-import { Listr }  from 'listr2';
-
 import Dash from 'dash';
+import WasmDPP from '@dashevo/wasm-dpp';
+import { Listr } from 'listr2';
 
-import { Identifier } from '@dashevo/wasm-dpp';
-
+const {Identifier} = WasmDPP
 /**
  *
  * @return {featureFlagTask}

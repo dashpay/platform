@@ -1,9 +1,9 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 
 import chalk from 'chalk';
-import path from 'path'
-import fs from 'fs'
-import {wait} from "../../../../util/wait.js";
+import path from 'path';
+import fs from 'fs';
+import { wait } from '../../../../util/wait.js';
 
 /**
  * @param {generateCsr} generateCsr

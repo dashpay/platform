@@ -1,4 +1,4 @@
-import {calculatePaymentQueuePosition} from "../../../src/core/calculatePaymentQueuePosition.js";
+import { calculatePaymentQueuePosition } from '../../../src/core/calculatePaymentQueuePosition.js';
 
 describe('calculatePaymentQueuePosition', () => {
   it('should just work', async () => {

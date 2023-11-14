@@ -1,4 +1,4 @@
-import crypto from 'crypto'
+import crypto from 'crypto';
 import BlsSignatures from '@dashevo/bls';
 
 /**

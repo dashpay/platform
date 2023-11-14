@@ -1,5 +1,5 @@
-import { QUORUM_TYPES } from '../../constants';
-import {wait} from "../../util/wait.js";
+import { QUORUM_TYPES } from '../../constants.js';
+import { wait } from '../../util/wait.js';
 
 /**
  *

@@ -1,4 +1,4 @@
-import {NETWORKS} from '../constants.js'
+import { NETWORKS } from '../constants.js';
 
 export default {
   $schema: 'http://json-schema.org/draft-07/schema#',

@@ -1,4 +1,4 @@
-import {client} from 'jayson/promise'
+import jayson from 'jayson';
 
 /**
  * Create Tenderdash RPC client
@@ -8,7 +8,7 @@ import {client} from 'jayson/promise'
  * @param {number} [options.port]
  */
 export function createTenderdashRpcClient({ host, port } = {}) {
-  return client.http({
+  return jayson.client.http({
     host: host || '127.0.0.1',
     port: port || 26657,
   });

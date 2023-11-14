@@ -1,7 +1,7 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 
 import { Flags } from '@oclif/core';
-import {GroupBaseCommand} from "../../../oclif/command/GroupBaseCommand.js";
+import { GroupBaseCommand } from '../../../oclif/command/GroupBaseCommand.js';
 
 export class GroupReindexCommand extends GroupBaseCommand {
   static description = 'Reindex group Core data';
@@ -20,7 +20,6 @@ export class GroupReindexCommand extends GroupBaseCommand {
       default: false,
     }),
   };
-
 
   /**
    * @param {Object} args

@@ -1,8 +1,8 @@
 import { Flags } from '@oclif/core';
-import chalk from 'chalk'
-import {inspect} from 'util';
-import { OUTPUT_FORMATS } from '../../constants';
-import {ConfigBaseCommand} from '../../oclif/command/ConfigBaseCommand.js'
+import chalk from 'chalk';
+import { inspect } from 'util';
+import { OUTPUT_FORMATS } from '../../constants.js';
+import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
 
 export class ConfigCommand extends ConfigBaseCommand {
   static description = 'Show default config';
@@ -47,4 +47,3 @@ export class ConfigCommand extends ConfigBaseCommand {
     return config.getOptions();
   }
 }
-

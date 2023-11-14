@@ -6,7 +6,7 @@
  * @param {string} apiKey
  * @returns {Promise<string>}
  */
-import {requestApi} from "./requestApi.js";
+import { requestApi } from './requestApi.js';
 
 export async function downloadCertificate(id, apiKey) {
   const url = `https://api.zerossl.com/certificates/${id}/download/return?access_key=${apiKey}`;

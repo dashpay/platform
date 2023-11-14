@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import dots from 'dot'
+import dots from 'dot';
 import os from 'os';
-import { TEMPLATES_DIR } from '../../../constants';
+import { TEMPLATES_DIR } from '../../../constants.js';
 
 export class VerificationServer {
   /**

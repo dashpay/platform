@@ -1,4 +1,4 @@
-import forge from 'node-forge'
+import forge from 'node-forge';
 
 /**
  * @typedef {generateKeyPair}

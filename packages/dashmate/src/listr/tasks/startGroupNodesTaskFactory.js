@@ -1,7 +1,9 @@
-import { Listr }  from 'listr2';
-import { PrivateKey } from '@dashevo/dashcore-lib';
-import { NETWORK_LOCAL } from '../../constants';
-import {isServiceBuildRequired} from "../../util/isServiceBuildRequired.js";
+import { Listr } from 'listr2';
+import DashCoreLib from '@dashevo/dashcore-lib';
+import { NETWORK_LOCAL } from '../../constants.js';
+import { isServiceBuildRequired } from '../../util/isServiceBuildRequired.js';
+
+const {PrivateKey} = DashCoreLib;
 
 /**
  *

@@ -1,8 +1,9 @@
-import {ConfigBaseCommand} from '../../oclif/command/ConfigBaseCommand';
-import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError';
+import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
+import {ServiceIsNotRunningError} from '../../docker/errors/ServiceIsNotRunningError.js';
 
 export class CliCommand extends ConfigBaseCommand {
   static description = 'Dash Core CLI';
+
   static args = [{
     name: 'command',
     required: true,

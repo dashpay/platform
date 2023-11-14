@@ -1,5 +1,5 @@
-import {requestApi} from "./requestApi.js";
-import {Certificate} from "./Certificate.js";
+import { requestApi } from './requestApi.js';
+import { Certificate } from './Certificate.js';
 
 /**
  * List ZeroSSL certificates

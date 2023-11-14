@@ -1,5 +1,5 @@
 import fs from 'fs';
-import {BaseCommand} from "../../oclif/command/BaseCommand.js";
+import { BaseCommand } from '../../oclif/command/BaseCommand.js';
 
 export class ConfigRemoveCommand extends BaseCommand {
   /**

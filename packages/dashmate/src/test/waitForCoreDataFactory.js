@@ -1,4 +1,4 @@
-import {wait} from "../util/wait.js";
+import { wait } from '../util/wait.js';
 
 /**
  * @param {CoreRpcClient} rpcClient

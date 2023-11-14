@@ -1,7 +1,7 @@
 import yaml from 'js-yaml';
-import fs from "fs";
-import path from "path";
-import {DASHMATE_HELPER_DOCKER_IMAGE, PACKAGE_ROOT_DIR} from '../constants';
+import fs from 'fs';
+import path from 'path';
+import { DASHMATE_HELPER_DOCKER_IMAGE, PACKAGE_ROOT_DIR } from '../constants.js';
 
 /**
  * @param {generateEnvs} generateEnvs
@@ -26,7 +26,7 @@ export function getServiceListFactory(generateEnvs, getConfigProfiles) {
 
     return Object
       .entries(composeFile.services)
-      .map(([serviceName, {image: serviceImage, labels, profiles: serviceProfiles}]) => {
+      .map(([serviceName, { image: serviceImage, labels, profiles: serviceProfiles }]) => {
         const title = labels?.['org.dashmate.service.title'];
 
         if (!title) {

@@ -1,8 +1,8 @@
-import * as providers from '../providers.js'
-import {DockerStatusEnum} from "../enums/dockerStatus.js";
-import {ServiceStatusEnum} from "../enums/serviceStatus.js";
-import determineStatus from "../determineStatus.js";
-import {ContainerIsNotPresentError} from "../../docker/errors/ContainerIsNotPresentError.js";
+import * as providers from '../providers.js';
+import { DockerStatusEnum } from '../enums/dockerStatus.js';
+import { ServiceStatusEnum } from '../enums/serviceStatus.js';
+import determineStatus from '../determineStatus.js';
+import { ContainerIsNotPresentError } from '../../docker/errors/ContainerIsNotPresentError.js';
 
 /**
  * @returns {getPlatformScopeFactory}

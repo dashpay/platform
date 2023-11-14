@@ -8,136 +8,136 @@ import {
 
 import Docker from 'dockerode';
 
-import {getServiceListFactory} from './docker/getServiceListFactory';
-import {ensureFileMountExistsFactory} from './docker/ensureFileMountExistsFactory';
-import {getConnectionHostFactory} from './docker/getConnectionHostFactory';
-import {ConfigFileJsonRepository} from './config/configFile/ConfigFileJsonRepository';
-import {createConfigFileFactory} from './config/configFile/createConfigFileFactory';
-import {migrateConfigFileFactory} from './config/configFile/migrateConfigFileFactory';
-import {DefaultConfigs} from './config/DefaultConfigs';
+import { getServiceListFactory } from './docker/getServiceListFactory.js';
+import { ensureFileMountExistsFactory } from './docker/ensureFileMountExistsFactory.js';
+import { getConnectionHostFactory } from './docker/getConnectionHostFactory.js';
+import { ConfigFileJsonRepository } from './config/configFile/ConfigFileJsonRepository.js';
+import { createConfigFileFactory } from './config/configFile/createConfigFileFactory.js';
+import { migrateConfigFileFactory } from './config/configFile/migrateConfigFileFactory.js';
+import { DefaultConfigs } from './config/DefaultConfigs.js';
 
-import {renderTemplateFactory} from './templates/renderTemplateFactory';
-import {renderServiceTemplatesFactory} from './templates/renderServiceTemplatesFactory';
-import {writeServiceConfigsFactory} from './templates/writeServiceConfigsFactory';
+import { renderTemplateFactory } from './templates/renderTemplateFactory.js';
+import { renderServiceTemplatesFactory } from './templates/renderServiceTemplatesFactory.js';
+import { writeServiceConfigsFactory } from './templates/writeServiceConfigsFactory.js';
 
-import {DockerCompose} from './docker/DockerCompose';
-import {StartedContainers} from './docker/StartedContainers';
-import {stopAllContainersFactory} from './docker/stopAllContainersFactory';
-import {dockerPullFactory} from './docker/dockerPullFactory';
-import {resolveDockerHostIpFactory} from './docker/resolveDockerHostIpFactory';
+import { DockerCompose } from './docker/DockerCompose.js';
+import { StartedContainers } from './docker/StartedContainers.js';
+import { stopAllContainersFactory } from './docker/stopAllContainersFactory.js';
+import { dockerPullFactory } from './docker/dockerPullFactory.js';
+import { resolveDockerHostIpFactory } from './docker/resolveDockerHostIpFactory.js';
 
-import {startCoreFactory} from './core/startCoreFactory';
-import {createRpcClient} from './core/createRpcClient';
-import {waitForCoreStart} from './core/waitForCoreStart';
-import {waitForCoreSync} from './core/waitForCoreSync';
-import {waitForMasternodesSync} from './core/waitForMasternodesSync';
-import {waitForBlocks} from './core/waitForBlocks';
-import {waitForConfirmations} from './core/waitForConfirmations'
-import {generateBlsKeys} from './core/generateBlsKeys'
-import {activateCoreSpork} from './core/activateCoreSpork'
-import {waitForCorePeersConnected} from './core/waitForCorePeersConnected'
+import { startCoreFactory } from './core/startCoreFactory.js';
+import { createRpcClient } from './core/createRpcClient.js';
+import { waitForCoreStart } from './core/waitForCoreStart.js';
+import { waitForCoreSync } from './core/waitForCoreSync.js';
+import { waitForMasternodesSync } from './core/waitForMasternodesSync.js';
+import { waitForBlocks } from './core/waitForBlocks.js';
+import { waitForConfirmations } from './core/waitForConfirmations.js';
+import { generateBlsKeys } from './core/generateBlsKeys.js';
+import { activateCoreSpork } from './core/activateCoreSpork.js';
+import { waitForCorePeersConnected } from './core/waitForCorePeersConnected.js';
 
-import {createNewAddress} from './core/wallet/createNewAddress';
-import {generateBlocks} from './core/wallet/generateBlocks';
-import {generateToAddress} from './core/wallet/generateToAddress';
-import {importPrivateKey} from './core/wallet/importPrivateKey';
-import {getAddressBalance} from './core/wallet/getAddressBalance';
-import {sendToAddress} from './core/wallet/sendToAddress';
-import {registerMasternode} from './core/wallet/registerMasternode';
-import {waitForBalanceToConfirm} from './core/wallet/waitForBalanceToConfirm';
+import { createNewAddress } from './core/wallet/createNewAddress.js';
+import { generateBlocks } from './core/wallet/generateBlocks.js';
+import { generateToAddress } from './core/wallet/generateToAddress.js';
+import { importPrivateKey } from './core/wallet/importPrivateKey.js';
+import { getAddressBalance } from './core/wallet/getAddressBalance.js';
+import { sendToAddress } from './core/wallet/sendToAddress.js';
+import { registerMasternode } from './core/wallet/registerMasternode.js';
+import { waitForBalanceToConfirm } from './core/wallet/waitForBalanceToConfirm.js';
 
-import {getCoreScopeFactory} from './status/scopes/core';
-import {getMasternodeScopeFactory} from './status/scopes/masternode';
-import {getPlatformScopeFactory} from './status/scopes/platform';
-import {getOverviewScopeFactory} from './status/scopes/overview';
-import {getServicesScopeFactory} from './status/scopes/services';
-import {getHostScopeFactory} from './status/scopes/host';
+import { getCoreScopeFactory } from './status/scopes/core.js';
+import { getMasternodeScopeFactory } from './status/scopes/masternode.js';
+import { getPlatformScopeFactory } from './status/scopes/platform.js';
+import { getOverviewScopeFactory } from './status/scopes/overview.js';
+import { getServicesScopeFactory } from './status/scopes/services.js';
+import { getHostScopeFactory } from './status/scopes/host.js';
 
-import {generateToAddressTaskFactory} from './listr/tasks/wallet/generateToAddressTaskFactory';
-import {registerMasternodeTaskFactory} from './listr/tasks/registerMasternodeTaskFactory';
-import {featureFlagTaskFactory} from './listr/tasks/platform/featureFlagTaskFactory';
-import {startNodeTaskFactory} from './listr/tasks/startNodeTaskFactory';
+import { generateToAddressTaskFactory } from './listr/tasks/wallet/generateToAddressTaskFactory.js';
+import { registerMasternodeTaskFactory } from './listr/tasks/registerMasternodeTaskFactory.js';
+import { featureFlagTaskFactory } from './listr/tasks/platform/featureFlagTaskFactory.js';
+import { startNodeTaskFactory } from './listr/tasks/startNodeTaskFactory.js';
 
-import {createTenderdashRpcClient} from './tenderdash/createTenderdashRpcClient';
+import { createTenderdashRpcClient } from './tenderdash/createTenderdashRpcClient.js';
 import {
-  setupLocalPresetTaskFactory
-} from './listr/tasks/setup/setupLocalPresetTaskFactory';
+  setupLocalPresetTaskFactory,
+} from './listr/tasks/setup/setupLocalPresetTaskFactory.js';
 import {
-  setupRegularPresetTaskFactory
-} from './listr/tasks/setup/setupRegularPresetTaskFactory';
-import {stopNodeTaskFactory} from './listr/tasks/stopNodeTaskFactory';
-import {restartNodeTaskFactory} from './listr/tasks/restartNodeTaskFactory';
-import {resetNodeTaskFactory} from './listr/tasks/resetNodeTaskFactory';
-import {configureCoreTaskFactory} from './listr/tasks/setup/local/configureCoreTaskFactory';
+  setupRegularPresetTaskFactory,
+} from './listr/tasks/setup/setupRegularPresetTaskFactory.js';
+import { stopNodeTaskFactory } from './listr/tasks/stopNodeTaskFactory.js';
+import { restartNodeTaskFactory } from './listr/tasks/restartNodeTaskFactory.js';
+import { resetNodeTaskFactory } from './listr/tasks/resetNodeTaskFactory.js';
+import { configureCoreTaskFactory } from './listr/tasks/setup/local/configureCoreTaskFactory.js';
 import {
-  configureTenderdashTaskFactory
-} from './listr/tasks/setup/local/configureTenderdashTaskFactory';
+  configureTenderdashTaskFactory,
+} from './listr/tasks/setup/local/configureTenderdashTaskFactory.js';
 import {
-  obtainSelfSignedCertificateTaskFactory
-} from './listr/tasks/ssl/selfSigned/obtainSelfSignedCertificateTaskFactory';
+  obtainSelfSignedCertificateTaskFactory,
+} from './listr/tasks/ssl/selfSigned/obtainSelfSignedCertificateTaskFactory.js';
 import {
-  waitForNodeToBeReadyTaskFactory
-} from './listr/tasks/platform/waitForNodeToBeReadyTaskFactory';
+  waitForNodeToBeReadyTaskFactory,
+} from './listr/tasks/platform/waitForNodeToBeReadyTaskFactory.js';
 import {
-  enableCoreQuorumsTaskFactory
-} from './listr/tasks/setup/local/enableCoreQuorumsTaskFactory';
-import {startGroupNodesTaskFactory} from './listr/tasks/startGroupNodesTaskFactory';
-import {buildServicesTaskFactory} from './listr/tasks/buildServicesTaskFactory';
-import {reindexNodeTaskFactory} from './listr/tasks/reindexNodeTaskFactory';
+  enableCoreQuorumsTaskFactory,
+} from './listr/tasks/setup/local/enableCoreQuorumsTaskFactory.js';
+import { startGroupNodesTaskFactory } from './listr/tasks/startGroupNodesTaskFactory.js';
+import { buildServicesTaskFactory } from './listr/tasks/buildServicesTaskFactory.js';
+import { reindexNodeTaskFactory } from './listr/tasks/reindexNodeTaskFactory.js';
 
-import {updateNodeFactory} from './update/updateNodeFactory';
+import { updateNodeFactory } from './update/updateNodeFactory.js';
 
-import {generateHDPrivateKeys} from './util/generateHDPrivateKeys';
-
-import {
-  obtainZeroSSLCertificateTaskFactory
-} from './listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory';
-import {VerificationServer} from './listr/tasks/ssl/VerificationServer';
-import {saveCertificateTaskFactory} from './listr/tasks/ssl/saveCertificateTask';
-
-import {createZeroSSLCertificate} from './ssl/zerossl/createZeroSSLCertificate';
-import {verifyDomain} from './ssl/zerossl/verifyDomain';
-import {downloadCertificate} from './ssl/zerossl/downloadCertificate';
-import {getCertificate} from './ssl/zerossl/getCertificate';
-import {listCertificates} from './ssl/zerossl/listCertificates';
-import {generateCsr} from './ssl/zerossl/generateCsr';
-import {generateKeyPair} from './ssl/generateKeyPair';
-import {createSelfSignedCertificate} from './ssl/selfSigned/createSelfSignedCertificate';
+import { generateHDPrivateKeys } from './util/generateHDPrivateKeys.js';
 
 import {
-  scheduleRenewZeroSslCertificateFactory
-} from './helper/scheduleRenewZeroSslCertificateFactory';
+  obtainZeroSSLCertificateTaskFactory,
+} from './listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory.js';
+import { VerificationServer } from './listr/tasks/ssl/VerificationServer.js';
+import { saveCertificateTaskFactory } from './listr/tasks/ssl/saveCertificateTask.js';
+
+import { createZeroSSLCertificate } from './ssl/zerossl/createZeroSSLCertificate.js';
+import { verifyDomain } from './ssl/zerossl/verifyDomain.js';
+import { downloadCertificate } from './ssl/zerossl/downloadCertificate.js';
+import { getCertificate } from './ssl/zerossl/getCertificate.js';
+import { listCertificates } from './ssl/zerossl/listCertificates.js';
+import { generateCsr } from './ssl/zerossl/generateCsr.js';
+import { generateKeyPair } from './ssl/generateKeyPair.js';
+import { createSelfSignedCertificate } from './ssl/selfSigned/createSelfSignedCertificate.js';
+
 import {
-  registerMasternodeGuideTaskFactory
-} from './listr/tasks/setup/regular/registerMasternodeGuideTaskFactory';
-import {configureNodeTaskFactory} from './listr/tasks/setup/regular/configureNodeTaskFactory';
+  scheduleRenewZeroSslCertificateFactory,
+} from './helper/scheduleRenewZeroSslCertificateFactory.js';
 import {
-  configureSSLCertificateTaskFactory
-} from './listr/tasks/setup/regular/configureSSLCertificateTaskFactory';
-import {createHttpApiServerFactory} from './helper/api/createHttpApiServerFactory';
-import {resolveDockerSocketPath} from './docker/resolveDockerSocketPath';
-import HomeDir from './config/HomeDir';
-import {getBaseConfigFactory} from '../configs/defaults/getBaseConfigFactory';
-import {getLocalConfigFactory} from '../configs/defaults/getLocalConfigFactory';
-import {getTestnetConfigFactory} from '../configs/defaults/getTestnetConfigFactory';
-import {getMainnetConfigFactory} from '../configs/defaults/getMainnetConfigFactory';
+  registerMasternodeGuideTaskFactory,
+} from './listr/tasks/setup/regular/registerMasternodeGuideTaskFactory.js';
+import { configureNodeTaskFactory } from './listr/tasks/setup/regular/configureNodeTaskFactory.js';
 import {
-  getConfigFileMigrationsFactory
-} from '../configs/getConfigFileMigrationsFactory';
+  configureSSLCertificateTaskFactory,
+} from './listr/tasks/setup/regular/configureSSLCertificateTaskFactory.js';
+import { createHttpApiServerFactory } from './helper/api/createHttpApiServerFactory.js';
+import { resolveDockerSocketPath } from './docker/resolveDockerSocketPath.js';
+import {HomeDir} from './config/HomeDir.js';
+import { getBaseConfigFactory } from '../configs/defaults/getBaseConfigFactory.js';
+import { getLocalConfigFactory } from '../configs/defaults/getLocalConfigFactory.js';
+import { getTestnetConfigFactory } from '../configs/defaults/getTestnetConfigFactory.js';
+import { getMainnetConfigFactory } from '../configs/defaults/getMainnetConfigFactory.js';
 import {
-  assertLocalServicesRunningFactory
-} from './test/asserts/assertLocalServicesRunningFactory';
-import {assertServiceRunningFactory} from './test/asserts/assertServiceRunningFactory';
-import {generateEnvsFactory} from './config/generateEnvsFactory';
-import {getConfigProfilesFactory} from './config/getConfigProfilesFactory';
-import {createIpAndPortsFormFactory} from './listr/prompts/createIpAndPortsForm';
+  getConfigFileMigrationsFactory,
+} from '../configs/getConfigFileMigrationsFactory.js';
 import {
-  registerMasternodeWithCoreWalletFactory
-} from './listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet';
+  assertLocalServicesRunningFactory,
+} from './test/asserts/assertLocalServicesRunningFactory.js';
+import { assertServiceRunningFactory } from './test/asserts/assertServiceRunningFactory.js';
+import { generateEnvsFactory } from './config/generateEnvsFactory.js';
+import { getConfigProfilesFactory } from './config/getConfigProfilesFactory.js';
+import { createIpAndPortsFormFactory } from './listr/prompts/createIpAndPortsForm.js';
 import {
-  registerMasternodeWithDMTFactory
-} from './listr/tasks/setup/regular/registerMasternode/registerMasternodeWithDMT';
-import {writeConfigTemplatesFactory} from './templates/writeConfigTemplatesFactory';
+  registerMasternodeWithCoreWalletFactory,
+} from './listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet.js';
+import {
+  registerMasternodeWithDMTFactory,
+} from './listr/tasks/setup/regular/registerMasternode/registerMasternodeWithDMT.js';
+import { writeConfigTemplatesFactory } from './templates/writeConfigTemplatesFactory.js';
 
 /**
  * @param {Object} [options]

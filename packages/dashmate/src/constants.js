@@ -2,69 +2,55 @@ import path from 'path';
 import fs from 'fs';
 import * as url from 'url';
 
-const networks = {
-  NETWORK_LOCAL: 'local',
-  NETWORK_DEVNET: 'devnet',
-  NETWORK_TESTNET: 'testnet',
-  NETWORK_MAINNET: 'mainnet',
-};
+export const NETWORK_LOCAL = 'local'
+export const NETWORK_DEVNET = 'devnet'
+export const NETWORK_TESTNET = 'testnet'
+export const NETWORK_MAINNET = 'mainnet'
 
-const presets = {
-  PRESET_MAINNET: 'mainnet',
-  PRESET_TESTNET: 'testnet',
-  PRESET_LOCAL: 'local',
-};
+export const NETWORKS = {
+  NETWORK_LOCAL,
+  NETWORK_DEVNET,
+  NETWORK_TESTNET,
+  NETWORK_MAINNET
+}
 
-const nodeTypes = {
-  NODE_TYPE_MASTERNODE: 'masternode',
-  NODE_TYPE_FULLNODE: 'fullnode',
-};
+export const PRESET_MAINNET = 'mainnet'
+export const PRESET_TESTNET = 'testnet'
+export const PRESET_LOCAL = 'local'
 
-const quorumNames = {
-  LLMQ_TYPE_TEST: 'llmq_test',
-};
+export const PRESETS = {
+  PRESET_MAINNET,
+  PRESET_TESTNET,
+  PRESET_LOCAL
+}
 
-const quorumTypes = {
+export const NODE_TYPE_MASTERNODE = 'masternode'
+export const NODE_TYPE_FULLNODE = 'fullnode'
+export const NODE_TYPE_HPMN = 'hpmn'
+
+export const LLMQ_TYPE_TEST = 'llmq_test'
+
+export const QUORUM_TYPES = {
   LLMQ_TYPE_TEST: 100,
 };
 
-const MASTERNODE_COLLATERAL_AMOUNT = 1000;
-const HPMN_COLLATERAL_AMOUNT = 4000;
+export const MASTERNODE_COLLATERAL_AMOUNT = 1000;
+export const HPMN_COLLATERAL_AMOUNT = 4000;
 
-const PACKAGE_ROOT_DIR = path.join(url.fileURLToPath(import.meta.url), '../..');
-const TEMPLATES_DIR = path.join(PACKAGE_ROOT_DIR, 'templates');
+export const PACKAGE_ROOT_DIR = path.join(url.fileURLToPath(import.meta.url), '../..');
+export const TEMPLATES_DIR = path.join(PACKAGE_ROOT_DIR, 'templates');
 
-const {version} = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
-const DASHMATE_HELPER_DOCKER_IMAGE = `dashpay/dashmate-helper:${version}`;
+export const DASHMATE_HELPER_DOCKER_IMAGE = `dashpay/dashmate-helper:${version}`;
 
 export const OUTPUT_FORMATS = {
   JSON: 'json',
   PLAIN: 'plain',
 };
 
-const SSL_PROVIDERS = {
+export const SSL_PROVIDERS = {
   ZEROSSL: 'zerossl',
   FILE: 'file',
   SELF_SIGNED: 'self-signed',
-};
-
-export default {
-  ...networks,
-  ...presets,
-  ...nodeTypes,
-  ...quorumNames,
-  NETWORKS: Object.values(networks),
-  PRESETS: Object.values(presets),
-  NODE_TYPES: Object.values(nodeTypes),
-  QUORUM_NAMES: Object.values(quorumNames),
-  QUORUM_TYPES: quorumTypes,
-  MASTERNODE_COLLATERAL_AMOUNT,
-  HPMN_COLLATERAL_AMOUNT,
-  PACKAGE_ROOT_DIR,
-  TEMPLATES_DIR,
-  OUTPUT_FORMATS,
-  SSL_PROVIDERS,
-  DASHMATE_HELPER_DOCKER_IMAGE,
-  SSL_PROVIDERS_LIST: Object.values(SSL_PROVIDERS),
 };

@@ -1,8 +1,8 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 import { Observable } from 'rxjs';
 import path from 'path';
-import { TEMPLATES_DIR } from '../../constants';
-import {CoreService} from "../../core/CoreService.js";
+import { TEMPLATES_DIR } from '../../constants.js';
+import { CoreService } from '../../core/CoreService.js';
 
 /**
  * @param {DockerCompose} dockerCompose

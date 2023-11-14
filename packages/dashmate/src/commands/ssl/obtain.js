@@ -1,8 +1,8 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
-import {ConfigBaseCommand} from "../../oclif/command/ConfigBaseCommand.js";
-import {MuteOneLineError} from "../../oclif/errors/MuteOneLineError.js";
-import {Certificate} from "../../ssl/zerossl/Certificate";
+import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
+import { MuteOneLineError } from '../../oclif/errors/MuteOneLineError.js';
+import { Certificate } from '../../ssl/zerossl/Certificate.js';
 
 export class ObtainCommand extends ConfigBaseCommand {
   static description = `Obtain SSL certificate

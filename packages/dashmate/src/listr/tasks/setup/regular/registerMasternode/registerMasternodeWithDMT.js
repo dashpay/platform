@@ -1,6 +1,6 @@
 import BlsSignatures from '@dashevo/bls';
-import {validateBLSPrivateKeyFactory} from "../../../../prompts/validators/validateBLSPrivateKeyFactory.js";
-import {createPlatformNodeKeyInput} from "../../../../prompts/createPlatformNodeKeyInput.js";
+import { validateBLSPrivateKeyFactory } from '../../../../prompts/validators/validateBLSPrivateKeyFactory.js';
+import { createPlatformNodeKeyInput } from '../../../../prompts/createPlatformNodeKeyInput.js';
 
 /**
  *

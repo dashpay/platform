@@ -1,9 +1,9 @@
 /* eslint-disable quote-props */
 import { Flags } from '@oclif/core';
-import { OUTPUT_FORMATS } from '../../constants';
-import {ConfigBaseCommand} from "../../oclif/command/ConfigBaseCommand.js";
-import {printObject} from "../../printers/printObject.js";
-import * as colors from  '../../status/colors';
+import { OUTPUT_FORMATS } from '../../constants.js';
+import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
+import { printObject } from '../../printers/printObject.js';
+import * as colors from '../../status/colors.js';
 
 export class CoreStatusCommand extends ConfigBaseCommand {
   static description = 'Show Core status details';
@@ -16,6 +16,7 @@ export class CoreStatusCommand extends ConfigBaseCommand {
       options: Object.values(OUTPUT_FORMATS),
     }),
   };
+
   /**
    * @param {Object} args
    * @param {Object} flags

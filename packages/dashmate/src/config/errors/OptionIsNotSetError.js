@@ -1,4 +1,4 @@
-import {AbstractError} from "../../errors/AbstractError.js";
+import { AbstractError } from '../../errors/AbstractError.js';
 
 export class OptionIsNotSetError extends AbstractError {
   /**
@@ -33,4 +33,3 @@ export class OptionIsNotSetError extends AbstractError {
     return this.errors;
   }
 }
-

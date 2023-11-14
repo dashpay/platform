@@ -7,7 +7,7 @@ import {
   NETWORK_TESTNET,
   NETWORK_MAINNET,
   SSL_PROVIDERS,
-} from '../src/constants';
+} from '../src/constants.js';
 
 /**
  * @param {HomeDir} homeDir

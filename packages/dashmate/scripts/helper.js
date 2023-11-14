@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
-import {asValue} from 'awilix';
-import {createDIContainer} from "../src/createDIContainer.js";
-import {default as loadWasmDpp} from '@dashevo/wasm-dpp';
+import { asValue } from 'awilix';
+import { default as loadWasmDpp } from '@dashevo/wasm-dpp';
+import { createDIContainer } from '../src/createDIContainer.js';
 
 (async function main() {
   // Load wasm-dpp for further usage

@@ -1,7 +1,7 @@
-import {asValue} from 'awilix';
-import {Flags} from "@oclif/core";
-import {ConfigIsNotPresentError} from "../../config/errors/ConfigIsNotPresentError.js";
-import {BaseCommand} from "./BaseCommand.js";
+import { asValue } from 'awilix';
+import { Flags } from '@oclif/core';
+import { ConfigIsNotPresentError } from '../../config/errors/ConfigIsNotPresentError.js';
+import { BaseCommand } from './BaseCommand.js';
 
 /**
  * @abstract

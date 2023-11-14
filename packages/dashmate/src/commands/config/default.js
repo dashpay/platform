@@ -1,4 +1,4 @@
-import {BaseCommand} from "../../oclif/command/BaseCommand.js";
+import { BaseCommand } from '../../oclif/command/BaseCommand.js';
 
 export class ConfigDefaultCommand extends BaseCommand {
   static description = `Manage default config
@@ -6,14 +6,12 @@ export class ConfigDefaultCommand extends BaseCommand {
 Shows default config name or sets another config as default
 `;
 
-
   static args = [{
     name: 'config',
     required: false,
     description: 'config name',
     default: null,
   }];
-
 
   /**
    * @param {Object} args

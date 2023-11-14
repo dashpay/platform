@@ -1,11 +1,11 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 import { Observable } from 'rxjs';
+import DashCoreLib from '@dashevo/dashcore-lib';
+import { waitForNodesToHaveTheSameHeight } from '../../../../core/waitForNodesToHaveTheSameHeight.js';
+import { waitForNodesToHaveTheSameSporks } from '../../../../core/waitForNodesToHaveTheSameSporks.js';
 
-import {PrivateKey} from '@dashevo/dashcore-lib';
-import {waitForNodesToHaveTheSameHeight} from "../../../../core/waitForNodesToHaveTheSameHeight.js";
-import {waitForNodesToHaveTheSameSporks} from "../../../../core/waitForNodesToHaveTheSameSporks.js";
-
-import { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } from '../../../../constants';
+import { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } from '../../../../constants.js';
+const {PrivateKey} = DashCoreLib;
 
 /**
  * @param {writeConfigTemplates} writeConfigTemplates

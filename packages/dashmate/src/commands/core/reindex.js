@@ -1,9 +1,8 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 
 import { Flags } from '@oclif/core';
-import {ConfigBaseCommand} from "../../oclif/command/ConfigBaseCommand.js";
-import MuteOneLineError from "../../oclif/errors/MuteOneLineError.js";
-
+import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
+import {MuteOneLineError} from '../../oclif/errors/MuteOneLineError.js';
 
 export class ReindexCommand extends ConfigBaseCommand {
   static description = 'Reindex Core data';
@@ -22,6 +21,7 @@ export class ReindexCommand extends ConfigBaseCommand {
       default: false,
     }),
   };
+
   /**
    * @param {Object} args
    * @param {Object} flags

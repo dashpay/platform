@@ -1,4 +1,4 @@
-import {validateHex} from "./validateHex.js";
+import { validateHex } from './validateHex.js';
 /**
  * @param blsSignatures
  * @returns {validateBLSPrivateKey}

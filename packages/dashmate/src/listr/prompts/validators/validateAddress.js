@@ -1,5 +1,6 @@
-import { Address } from '@dashevo/dashcore-lib';
+import DashCoreLib from '@dashevo/dashcore-lib';
 
+const {Address} = DashCoreLib;
 /**
  * @param {string} value
  * @param {string} network

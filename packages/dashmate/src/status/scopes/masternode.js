@@ -1,7 +1,7 @@
-import {calculatePaymentQueuePosition} from "../../core/calculatePaymentQueuePosition.js";
-import {MasternodeSyncAssetEnum} from "../enums/masternodeSyncAsset.js";
-import {blocksToTime} from "../../util/blocksToTime.js";
-import {MasternodeStateEnum} from "../enums/masternodeState.js";
+import { calculatePaymentQueuePosition } from '../../core/calculatePaymentQueuePosition.js';
+import { MasternodeSyncAssetEnum } from '../enums/masternodeSyncAsset.js';
+import { blocksToTime } from '../../util/blocksToTime.js';
+import { MasternodeStateEnum } from '../enums/masternodeState.js';
 
 /**
  * @param {DockerCompose}dockerCompose

@@ -1,5 +1,5 @@
 import { CronJob } from 'cron';
-import {Certificate} from "../ssl/zerossl/Certificate.js";
+import { Certificate } from '../ssl/zerossl/Certificate.js';
 
 /**
  *

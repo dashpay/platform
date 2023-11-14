@@ -1,10 +1,10 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 
 import { Flags } from '@oclif/core';
-import {ConfigBaseCommand} from "../oclif/command/ConfigBaseCommand.js";
-import {MuteOneLineError} from "../oclif/errors/MuteOneLineError.js";
+import { ConfigBaseCommand } from '../oclif/command/ConfigBaseCommand.js';
+import { MuteOneLineError } from '../oclif/errors/MuteOneLineError.js';
 
-export  class ResetCommand extends ConfigBaseCommand {
+export class ResetCommand extends ConfigBaseCommand {
   static description = 'Reset node data';
 
   static flags = {
@@ -14,7 +14,6 @@ export  class ResetCommand extends ConfigBaseCommand {
     platform: Flags.boolean({ char: 'p', description: 'reset platform services and data only', default: false }),
     verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
   };
-
 
   /**
    * @param {Object} args

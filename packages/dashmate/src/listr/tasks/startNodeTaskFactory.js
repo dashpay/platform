@@ -1,7 +1,7 @@
-import { Listr }  from 'listr2';
+import { Listr } from 'listr2';
 import { Observable } from 'rxjs';
-import { NETWORK_LOCAL } from '../../constants';
-import {isServiceBuildRequired} from "../../util/isServiceBuildRequired.js";
+import { NETWORK_LOCAL } from '../../constants.js';
+import { isServiceBuildRequired } from '../../util/isServiceBuildRequired.js';
 
 /**
  *

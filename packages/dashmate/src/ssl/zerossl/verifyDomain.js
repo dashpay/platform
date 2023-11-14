@@ -1,5 +1,5 @@
 import qs from 'qs';
-import {requestApi} from "./requestApi.js";
+import { requestApi } from './requestApi.js';
 
 /**
  * Verify the domain/ip specified by certificate id

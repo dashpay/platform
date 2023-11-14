@@ -1,7 +1,7 @@
-import { Listr }  from 'listr2';
-import fs from 'fs'
-import path from 'path'
-import {wait} from "../../util/wait.js";
+import { Listr } from 'listr2';
+import fs from 'fs';
+import path from 'path';
+import { wait } from '../../util/wait.js';
 
 /**
  * @param {DockerCompose} dockerCompose

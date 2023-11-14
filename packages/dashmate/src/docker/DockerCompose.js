@@ -6,10 +6,10 @@ import dockerCompose from '@dashevo/docker-compose';
 import hasbin from 'hasbin';
 import semver from 'semver';
 
-import { PACKAGE_ROOT_DIR } from '../constants';
-import {ServiceAlreadyRunningError} from "./errors/ServiceAlreadyRunningError.js";
-import {DockerComposeError} from "./errors/DockerComposeError.js";
-import {ServiceIsNotRunningError} from "./errors/ServiceIsNotRunningError.js";
+import { PACKAGE_ROOT_DIR } from '../constants.js';
+import { ServiceAlreadyRunningError } from './errors/ServiceAlreadyRunningError.js';
+import { DockerComposeError } from './errors/DockerComposeError.js';
+import { ServiceIsNotRunningError } from './errors/ServiceIsNotRunningError.js';
 
 export class DockerCompose {
   /**

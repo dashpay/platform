@@ -1,7 +1,7 @@
 import { Flags } from '@oclif/core';
-import { Listr }  from 'listr2';
-import {GroupBaseCommand} from "../../oclif/command/GroupBaseCommand.js";
-import {MuteOneLineError} from "../../oclif/errors/MuteOneLineError.js";
+import { Listr } from 'listr2';
+import { GroupBaseCommand } from '../../oclif/command/GroupBaseCommand.js';
+import { MuteOneLineError } from '../../oclif/errors/MuteOneLineError.js';
 
 export class GroupStopCommand extends GroupBaseCommand {
   static description = 'Stop group nodes';

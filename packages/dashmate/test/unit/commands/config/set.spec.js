@@ -1,6 +1,6 @@
-import HomeDir from "../../../../src/config/HomeDir.js";
-import {ConfigSetCommand} from "../../../../src/commands/config/set.js";
-import {getBaseConfigFactory} from "../../../../configs/defaults/getBaseConfigFactory.js";
+import HomeDir from '../../../../src/config/HomeDir.js';
+import { ConfigSetCommand } from '../../../../src/commands/config/set.js';
+import { getBaseConfigFactory } from '../../../../configs/defaults/getBaseConfigFactory.js';
 
 describe('Config set command', () => {
   const flags = {};

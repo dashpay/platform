@@ -1,4 +1,4 @@
-import {BaseCommand} from "../../oclif/command/BaseCommand.js";
+import { BaseCommand } from '../../oclif/command/BaseCommand.js';
 
 export class ConfigCreateCommand extends BaseCommand {
   static description = 'Create new config';

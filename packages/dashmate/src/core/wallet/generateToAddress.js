@@ -1,4 +1,4 @@
-import {toDash} from "../../util/satoshiConverter.js";
+import { toDash } from '../../util/satoshiConverter.js';
 
 /**
  *

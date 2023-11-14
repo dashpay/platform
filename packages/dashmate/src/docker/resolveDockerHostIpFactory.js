@@ -1,6 +1,6 @@
 import os from 'os';
 import { WritableStream } from 'memory-streams';
-import {isWSL} from "../util/isWSL.js";
+import { isWSL } from '../util/isWSL.js';
 
 /**
  * @param {Docker} docker
