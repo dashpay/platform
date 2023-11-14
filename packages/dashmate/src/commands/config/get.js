@@ -1,4 +1,4 @@
-import { Flags } from '@oclif/core';
+import { Args, Flags } from '@oclif/core';
 import lodash from 'lodash';
 import chalk from 'chalk';
 import { inspect } from 'util';
@@ -20,11 +20,15 @@ Gets a configuration option from the specified config
     ...ConfigBaseCommand.flags,
   };
 
-  static args = [{
-    name: 'option',
-    required: true,
-    description: 'option path',
-  }];
+  static args = {
+    option: Args.string(
+      {
+        name: 'option', // name of arg to show in help and reference with args[name]
+        required: true, // make the arg required with `required: true`
+        description: 'option path', // help description
+      },
+    ),
+  };
 
   /**
    * @param {Object} args

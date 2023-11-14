@@ -1,6 +1,7 @@
 import { Listr } from 'listr2';
 
 import featureFlagTypes from '@dashevo/feature-flags-contract/lib/featureFlagTypes.js';
+import { Args } from '@oclif/core';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 
@@ -11,27 +12,37 @@ export default class FeatureFlagCommand extends ConfigBaseCommand {
     ...ConfigBaseCommand.flags,
   };
 
-  static args = [{
-    name: 'name',
-    required: true,
-    description: 'name of the feature flag to process',
-    options: Object.values(featureFlagTypes),
-  },
-  {
-    name: 'height',
-    required: true,
-    description: 'height at which feature flag should be enabled',
-  },
-  {
-    name: 'hd-private-key',
-    required: true,
-    description: 'feature flag hd private key',
-  },
-  {
-    name: 'dapi-address',
-    required: true,
-    description: 'DAPI address to send feature flags transitions to',
-  }];
+  static args = {
+    name: Args.string(
+      {
+        name: 'name',
+        required: true,
+        description: 'name of the feature flag to process',
+        options: Object.values(featureFlagTypes),
+      },
+    ),
+    height: Args.string(
+      {
+        name: 'height',
+        required: true,
+        description: 'height at which feature flag should be enabled',
+      },
+    ),
+    'hd-private-key': Args.string(
+      {
+        name: 'hd-private-key',
+        required: true,
+        description: 'feature flag hd private key',
+      },
+    ),
+    'dapi-address': Args.string(
+      {
+        name: 'dapi-address',
+        required: true,
+        description: 'DAPI address to send feature flags transitions to',
+      },
+    ),
+  };
 
   /**
    *

@@ -1,5 +1,5 @@
 import { Listr } from 'listr2';
-import { Flags } from '@oclif/core';
+import { Args, Flags } from '@oclif/core';
 
 import { NETWORK_LOCAL } from '../../constants.js';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
@@ -11,12 +11,16 @@ export default class MintCommand extends ConfigBaseCommand {
 Mint given amount of tDash to a new or specified address
 `;
 
-  static args = [{
-    name: 'amount',
-    required: true,
-    description: 'amount of tDash to be generated to address',
-    parse: (input) => parseInt(input, 10),
-  }];
+  static args = {
+    amount: Args.string(
+      {
+        name: 'amount',
+        required: true,
+        description: 'amount of tDash to be generated to address',
+        parse: (input) => parseInt(input, 10),
+      },
+    ),
+  };
 
   static flags = {
     ...ConfigBaseCommand.flags,

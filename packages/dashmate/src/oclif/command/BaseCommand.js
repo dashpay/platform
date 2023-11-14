@@ -5,10 +5,10 @@ import { asValue } from 'awilix';
 import graceful from 'node-graceful';
 
 import dotenv from 'dotenv';
+import WasmDPP from '@dashevo/wasm-dpp';
 import createDIContainer from '../../createDIContainer.js';
 import ConfigFileNotFoundError from '../../config/errors/ConfigFileNotFoundError.js';
 import getFunctionParams from '../../util/getFunctionParams.js';
-import WasmDPP from '@dashevo/wasm-dpp';
 
 /**
  * @abstract

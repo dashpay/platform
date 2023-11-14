@@ -1,3 +1,4 @@
+import { Args } from '@oclif/core';
 import BaseCommand from '../../oclif/command/BaseCommand.js';
 
 export default class GroupDefaultCommand extends BaseCommand {
@@ -6,12 +7,16 @@ export default class GroupDefaultCommand extends BaseCommand {
 Shows default group name or sets another group as default
 `;
 
-  static args = [{
-    name: 'group',
-    required: false,
-    description: 'group name',
-    default: null,
-  }];
+  static args = {
+    group: Args.string(
+      {
+        name: 'group',
+        required: false,
+        description: 'group name',
+        default: null, // only allow input to be from a discrete set
+      },
+    ),
+  };
 
   /**
    * @param {Object} args

@@ -1,6 +1,6 @@
 import { Listr } from 'listr2';
 
-import { Flags } from '@oclif/core';
+import { Args, Flags } from '@oclif/core';
 
 import chalk from 'chalk';
 import BaseCommand from '../oclif/command/BaseCommand.js';
@@ -15,12 +15,16 @@ import {
 export default class SetupCommand extends BaseCommand {
   static description = 'Set up a new Dash node';
 
-  static args = [{
-    name: 'preset',
-    required: false,
-    description: 'Node configuration preset',
-    options: PRESETS,
-  }];
+  static args = {
+    preset: Args.string(
+      {
+        name: 'preset',
+        required: false,
+        description: 'Node configuration preset',
+        options: PRESETS,
+      },
+    ),
+  };
 
   static flags = {
     'debug-logs': Flags.boolean({ char: 'd', description: 'enable debug logs', allowNo: true }),

@@ -1,6 +1,29 @@
+import { Args } from '@oclif/core';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 
 export default class ConfigSetCommand extends ConfigBaseCommand {
+  static description = `Set config option
+
+Sets a configuration option in the default config
+`;
+
+  static flags = {
+    ...ConfigBaseCommand.flags,
+  };
+
+  static args = {
+    option: Args.string({
+      name: 'option',
+      required: true,
+      description: 'option path',
+    }),
+    value: Args.string({
+      name: 'value',
+      required: true,
+      description: 'the option value',
+    }),
+  };
+
   /**
    * @param args
    * @param flags
@@ -32,22 +55,3 @@ export default class ConfigSetCommand extends ConfigBaseCommand {
     console.log(`${optionPath} set to ${optionValue}`);
   }
 }
-
-ConfigSetCommand.description = `Set config option
-
-Sets a configuration option in the default config
-`;
-
-ConfigSetCommand.args = [{
-  name: 'option',
-  required: true,
-  description: 'option path',
-}, {
-  name: 'value',
-  required: true,
-  description: 'the option value',
-}];
-
-ConfigSetCommand.flags = {
-  ...ConfigBaseCommand.flags,
-};

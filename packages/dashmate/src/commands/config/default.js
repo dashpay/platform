@@ -1,3 +1,4 @@
+import { Args } from '@oclif/core';
 import BaseCommand from '../../oclif/command/BaseCommand.js';
 
 export default class ConfigDefaultCommand extends BaseCommand {
@@ -6,12 +7,16 @@ export default class ConfigDefaultCommand extends BaseCommand {
 Shows default config name or sets another config as default
 `;
 
-  static args = [{
-    name: 'config',
-    required: false,
-    description: 'config name',
-    default: null,
-  }];
+  static args = {
+    config: Args.string(
+      {
+        name: 'config',
+        required: false,
+        description: 'config name',
+        default: null, // only allow input to be from a discrete set
+      },
+    ),
+  };
 
   /**
    * @param {Object} args
