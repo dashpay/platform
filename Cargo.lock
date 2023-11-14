@@ -1057,6 +1057,7 @@ dependencies = [
  "dapi-grpc",
  "dapi-grpc-macros",
  "dashcore-rpc",
+ "data-contracts",
  "derive_more",
  "dotenvy",
  "dpp",
@@ -3503,36 +3504,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "rs-sdk"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.21.5",
- "bincode 2.0.0-rc.3",
- "ciborium",
- "dapi-grpc",
- "dashcore-rpc",
- "data-contracts",
- "derive_more",
- "dotenvy",
- "dpp",
- "drive",
- "drive-abci",
- "drive-proof-verifier",
- "envy",
- "futures",
- "hex",
- "http",
- "rs-dapi-client",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
