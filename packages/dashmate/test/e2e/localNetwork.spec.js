@@ -19,19 +19,35 @@ describe('Local Network', function main() {
     container = await createDIContainer();
 
     homeDir = container.resolve('homeDir');
-    homeDir.change(HomeDir.createTemp());
+    if (process.env.DASHMATE_E2E_TESTS_LOCAL_HOMEDIR) {
+      homeDir.change(new HomeDir(process.env.DASHMATE_E2E_TESTS_LOCAL_HOMEDIR));
+    } else {
+      homeDir.change(HomeDir.createTemp());
+    }
 
     // Create config file
+    /**
+     * @type {ConfigFileJsonRepository}
+     */
     configFileRepository = container.resolve('configFileRepository');
 
     const createConfigFile = container.resolve('createConfigFile');
 
-    configFile = createConfigFile();
+    if (process.env.DASHMATE_E2E_TESTS_LOCAL_HOMEDIR) {
+      configFile = configFileRepository.read();
+    } else {
+      configFile = createConfigFile();
+    }
 
     // Update local config template that will be used to setup nodes
     const localConfig = configFile.getConfig(groupName);
-    localConfig.set('dashmate.helper.docker.build.enabled', true);
-    localConfig.set('platform.drive.abci.docker.build.enabled', true);
+
+    if (process.env.DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD !== 'true') {
+      localConfig.set('dashmate.helper.docker.build.enabled', true);
+      localConfig.set('platform.drive.abci.docker.build.enabled', true);
+      localConfig.set('platform.dapi.api.docker.build.enabled', true);
+    }
+
     localConfig.set('docker.network.subnet', '172.30.0.0/24');
     localConfig.set('dashmate.helper.api.port', 40000);
     localConfig.set('core.p2p.port', 40001);
@@ -65,7 +81,11 @@ describe('Local Network', function main() {
   });
 
   describe('setup', () => {
-    it('should setup local network', async () => {
+    it('should setup local network', async function testSetup() {
+      if (process.env.DASHMATE_E2E_TESTS_LOCAL_HOMEDIR) {
+        this.skip('local network set up is provided');
+      }
+
       // TODO: Refactor setup command to extract setup logic to
       //  setupTask function and use it here
       const setupLocalPresetTask = await container.resolve('setupLocalPresetTask');
@@ -82,19 +102,22 @@ describe('Local Network', function main() {
 
       expect(configExists).to.be.true();
 
+      // Write configs
+      await configFileRepository.write(configFile);
+
+      const writeConfigTemplates = container.resolve('writeConfigTemplates');
+
+      configGroup = configFile.getGroupConfigs(groupName);
+      configGroup.forEach(writeConfigTemplates);
+    });
+
+    after(async () => {
       // Store config group for further usage
       configGroup = configFile.getGroupConfigs(groupName);
 
       container.register({
         configGroup: asValue(configGroup),
       });
-
-      // Write configs
-      await configFileRepository.write(configFile);
-
-      const writeConfigTemplates = container.resolve('writeConfigTemplates');
-
-      configGroup.forEach(writeConfigTemplates);
     });
   });
 

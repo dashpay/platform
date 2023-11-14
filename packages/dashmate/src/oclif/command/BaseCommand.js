@@ -44,7 +44,7 @@ export class BaseCommand extends Command {
     let configFile;
     try {
       // Load config collection from config file
-      configFile = await configFileRepository.read();
+      configFile = configFileRepository.read();
     } catch (e) {
       // Create default config collection if config file is not present
       // on the first start for example

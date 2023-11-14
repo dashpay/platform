@@ -2,15 +2,15 @@ const EventEmitter = require('events');
 const getStatus = require('../../transport/FixtureTransport/methods/getStatus');
 
 class TransportMock extends EventEmitter {
-  constructor(sinonSandbox, transactionStreamMock) {
+  constructor(sinon, transactionStreamMock) {
     super();
-    this.sinonSandbox = sinonSandbox;
+    this.sinon = sinon;
 
     this.height = 42;
 
-    this.getBestBlockHeight = sinonSandbox.stub().returns(42);
-    this.subscribeToTransactionsWithProofs = sinonSandbox.stub().returns(transactionStreamMock);
-    this.getBlockHeaderByHeight = sinonSandbox.stub()
+    this.getBestBlockHeight = sinon.stub().returns(42);
+    this.subscribeToTransactionsWithProofs = sinon.stub().returns(transactionStreamMock);
+    this.getBlockHeaderByHeight = sinon.stub()
       .returns({
         hash: '000000059885815cfc06ba74b814200d29658394dbe5d1e93948a8587947747b',
         version: 536870912,
@@ -20,20 +20,20 @@ class TransportMock extends EventEmitter {
         bits: 503385436,
         nonce: 351770,
       });
-    this.subscribeToBlocks = sinonSandbox.stub();
-    this.getIdentitiesByPublicKeyHashes = sinonSandbox.stub().returns([]);
-    this.sendTransaction = sinonSandbox.stub();
-    this.getTransaction = sinonSandbox.stub();
-    this.getBlockHeaderByHash = sinonSandbox.stub();
-    this.getStatus = sinonSandbox.stub().resolves(getStatus.call(this));
+    this.subscribeToBlocks = sinon.stub();
+    this.getIdentitiesByPublicKeyHashes = sinon.stub().returns([]);
+    this.sendTransaction = sinon.stub();
+    this.getTransaction = sinon.stub();
+    this.getBlockHeaderByHash = sinon.stub();
+    this.getStatus = sinon.stub().resolves(getStatus.call(this));
 
     const provider = new EventEmitter();
-    provider.stop = sinonSandbox.stub().callsFake(() => {
+    provider.stop = sinon.stub().callsFake(() => {
       provider.emit('STOPPED');
     });
-    provider.initializeChainWith = sinonSandbox.spy();
-    provider.readHistorical = sinonSandbox.spy();
-    provider.startContinuousSync = sinonSandbox.spy();
+    provider.initializeChainWith = sinon.spy();
+    provider.readHistorical = sinon.spy();
+    provider.startContinuousSync = sinon.spy();
     provider.spvChain = {
       getLongestChain() {
         return [];
@@ -45,7 +45,7 @@ class TransportMock extends EventEmitter {
     this.client = {
       blockHeadersProvider: provider,
       core: {
-        subscribeToTransactionsWithProofs: sinonSandbox.stub().returns(transactionStreamMock),
+        subscribeToTransactionsWithProofs: sinon.stub().returns(transactionStreamMock),
       },
     };
   }

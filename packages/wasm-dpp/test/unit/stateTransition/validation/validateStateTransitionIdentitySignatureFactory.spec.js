@@ -50,7 +50,7 @@ describe.skip('validateStateTransitionIdentitySignatureFactory', () => {
       PublicKeyIsDisabledError,
       IdentityPublicKey,
     } = await loadWasmDpp());
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchDataContract.resolves();
     const blsMock = getBlsMock();
 
@@ -71,7 +71,7 @@ describe.skip('validateStateTransitionIdentitySignatureFactory', () => {
 
     stateTransition.sign(identity.getPublicKeyById(2), privateKey, getBlsMock());
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchIdentity.resolves(identity);
 
     validateStateTransitionIdentitySignature = (st) => validate(

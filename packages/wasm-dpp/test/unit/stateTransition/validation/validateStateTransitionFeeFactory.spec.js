@@ -35,7 +35,7 @@ describe.skip('validateStateTransitionFeeFactory', () => {
       PreCalculatedOperation,
       getCreditsConversionRatio,
     } = await loadWasmDpp());
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchDataContract.resolves(undefined);
 
     dpp = new DashPlatformProtocol(getBlsMock(), stateRepositoryMock);

@@ -51,13 +51,13 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
     rawIdentity.id = await generateRandomIdentifierAsync();
     identity = new Identity(rawIdentity);
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchIdentity.resolves(identity);
 
     blockTime = Date.now();
     const blsAdapter = await getBlsAdapterMock();
 
-    stateRepositoryMock.fetchLatestPlatformBlockTime = this.sinonSandbox.stub();
+    stateRepositoryMock.fetchLatestPlatformBlockTime = this.sinon.stub();
     stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
 
     executionContext = new StateTransitionExecutionContext();
@@ -165,7 +165,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
-    const { match } = this.sinonSandbox;
+    const { match } = this.sinon;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
         match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),
@@ -184,7 +184,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
-    const { match } = this.sinonSandbox;
+    const { match } = this.sinon;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
         match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),
@@ -203,7 +203,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
-    const { match } = this.sinonSandbox;
+    const { match } = this.sinon;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
         match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),
@@ -276,7 +276,7 @@ describe.skip('validateIdentityUpdateTransitionStateFactory', () => {
 
     expect(result.isValid()).to.be.true();
 
-    const { match } = this.sinonSandbox;
+    const { match } = this.sinon;
     expect(stateRepositoryMock.fetchIdentity)
       .to.be.calledOnceWithExactly(
         match((val) => val.toBuffer().equals(stateTransition.getIdentityId().toBuffer())),

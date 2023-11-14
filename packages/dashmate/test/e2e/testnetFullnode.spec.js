@@ -95,8 +95,12 @@ describe('Testnet Fullnode', function main() {
 
       config = configFile.getConfig(preset);
 
-      config.set('dashmate.helper.docker.build.enabled', true);
-      config.set('platform.drive.abci.docker.build.enabled', true);
+      if (process.env.DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD !== 'true') {
+        config.set('dashmate.helper.docker.build.enabled', true);
+        config.set('platform.drive.abci.docker.build.enabled', true);
+        config.set('platform.dapi.api.docker.build.enabled', true);
+      }
+
       config.set('docker.network.subnet', '172.27.24.0/24');
       config.set('dashmate.helper.api.port', 40000);
       config.set('core.p2p.port', 40001);

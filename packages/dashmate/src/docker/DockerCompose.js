@@ -5,6 +5,7 @@ import dockerCompose from '@dashevo/docker-compose';
 
 import hasbin from 'hasbin';
 import semver from 'semver';
+import util from 'node:util';
 
 import { PACKAGE_ROOT_DIR } from '../constants.js';
 import { ServiceAlreadyRunningError } from './errors/ServiceAlreadyRunningError.js';
@@ -503,6 +504,10 @@ export class DockerCompose {
       }
     } else {
       // Since 1.39
+      if (typeof dockerVersionInfo.Components[0].Details.ApiVersion !== 'string') {
+        throw new Error(`docker version is not a string: ${util.inspect(dockerVersionInfo)}`);
+      }
+
       const version = semver.coerce(dockerVersionInfo.Components[0].Details.ApiVersion);
       const minVersion = '1.25.0';
       if (semver.lt(version, minVersion)) {
@@ -516,6 +521,10 @@ export class DockerCompose {
       ({ out: version } = await dockerCompose.version());
     } catch (e) {
       throw new Error(`Docker Compose V2 is not available in your system. Please follow instructions ${dockerComposeInstallLink}`);
+    }
+
+    if (typeof version !== 'string') {
+      throw new Error(`docker compose version is not a string: ${util.inspect(version)}`);
     }
 
     if (semver.lt(semver.coerce(version), DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {

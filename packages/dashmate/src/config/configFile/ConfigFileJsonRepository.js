@@ -22,9 +22,9 @@ export class ConfigFileJsonRepository {
   /**
    * Load configs from file
    *
-   * @returns {Promise<ConfigFile>}
+   * @returns {ConfigFile}
    */
-  async read() {
+  read() {
     if (!fs.existsSync(this.configFilePath)) {
       throw new ConfigFileNotFoundError(this.configFilePath);
     }

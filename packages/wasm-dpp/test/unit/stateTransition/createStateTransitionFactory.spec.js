@@ -27,7 +27,7 @@ describe.skip('createStateTransitionFactory', () => {
 
   beforeEach(async function beforeEach() {
     blsAdapter = await getBlsAdapterMock();
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
 
     dpp = new DashPlatformProtocol(
       blsAdapter,
