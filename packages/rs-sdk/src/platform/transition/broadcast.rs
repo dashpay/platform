@@ -1,6 +1,5 @@
 use super::broadcast_request::BroadcastRequestForStateTransition;
 use crate::{Error, Sdk};
-use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use rs_dapi_client::{DapiRequest, RequestSettings};
