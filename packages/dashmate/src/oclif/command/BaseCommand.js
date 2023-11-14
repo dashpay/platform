@@ -7,6 +7,7 @@ import graceful from 'node-graceful';
 import dotenv from 'dotenv';
 import { createDIContainer } from '../../createDIContainer.js';
 import { ConfigFileNotFoundError } from '../../config/errors/ConfigFileNotFoundError.js';
+import {getFunctionParams} from "../../util/getFunctionParams.js";
 
 /**
  * @abstract

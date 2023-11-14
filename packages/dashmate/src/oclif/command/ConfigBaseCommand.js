@@ -19,7 +19,7 @@ export class ConfigBaseCommand extends BaseCommand {
     const configFile = this.container.resolve('configFile');
 
     let configName;
-    if (this.parsedFlags.config !== null) {
+    if (this.parsedFlags.config) {
       if (!configFile.isConfigExists(this.parsedFlags.config)) {
         throw new ConfigIsNotPresentError(this.parsedFlags.config);
       }
