@@ -45,5 +45,8 @@ drive-abci:
 
 rs-sdk:
   - .github/workflows/tests*
+  - packages/rs-dapi-client/**
+  - packages/dapi-grpc/**
+  - packages/rs-drive-proof-verifier/**
   - packages/rs-sdk/**
   - *drive
