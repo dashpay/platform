@@ -14,7 +14,7 @@ pushd "$CARGO_DIR"
 
 rm -f "${CARGO_DIR}"/tests/vectors/*
 
-cargo test -p rs-sdk \
+cargo test -p dash-platform-sdk \
     --no-default-features \
     --features generate-test-vectors
 
