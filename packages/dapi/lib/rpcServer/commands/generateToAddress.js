@@ -6,7 +6,7 @@ const validator = new Validator(argsSchema);
  * @param coreAPI
  * @return {generateToAddress}
  */
-export default (coreAPI) => {
+const generateToAddressFactory = (coreAPI) => {
   /**
    * Layer 1 endpoint
    * WORKS ONLY IN REGTEST MODE.
