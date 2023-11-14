@@ -21,7 +21,7 @@ export default class SetupCommand extends BaseCommand {
         name: 'preset',
         required: false,
         description: 'Node configuration preset',
-        options: PRESETS,
+        options: Object.values(PRESETS),
       },
     ),
   };
