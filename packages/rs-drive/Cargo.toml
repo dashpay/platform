@@ -50,11 +50,11 @@ grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "67896ea00e69
 grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "67896ea00e697922dd8db29fccbdfddce97a4fe2", optional = true }
 
 [dev-dependencies]
+anyhow = { version = "1.0.75" }
 criterion = "0.3.5"
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
-anyhow = "1.0.71"
 dpp = { path = "../rs-dpp", features = [
   "drive",
   "document-cbor-conversion",
