@@ -43,10 +43,14 @@ drive-abci:
   - packages/rs-drive-abci/**
   - *drive
 
-rs-sdk:
+rs-dapi-client: &dapi_client
   - .github/workflows/tests*
   - packages/rs-dapi-client/**
   - packages/dapi-grpc/**
+
+rs-sdk:
+  - .github/workflows/tests*
   - packages/rs-drive-proof-verifier/**
   - packages/rs-sdk/**
+  - *dapi_client
   - *drive
