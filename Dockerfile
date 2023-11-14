@@ -138,6 +138,36 @@ ARG CARGO_INCREMENTAL=false
 ENV CARGO_INCREMENTAL=${CARGO_INCREMENTAL}
 
 #
+# BUILD ROCKSDB
+#
+# Based on https://github.com/unoexperto/docker-rocksdb/blob/master/Dockerfile
+FROM deps-${RUSTC_WRAPPER:-base} AS rocksdb
+
+# installing latest gflags
+RUN cd /tmp && \
+    git clone https://github.com/gflags/gflags.git && \
+    cd gflags && \
+    mkdir build && \
+    cd build && \
+    cmake -DBUILD_STATIC_LIBS=1 -DGFLAGS_INSTALL_STATIC_LIBS=1 -DGFLAGS_INSTALL_HEADERS=1 .. && \
+    make install && \
+    cd /tmp && \
+    rm -R /tmp/gflags/
+
+# Checkout Rocksdb
+RUN mkdir -p /tmp/rocksdb
+WORKDIR /tmp/rocksdb
+RUN git clone https://github.com/facebook/rocksdb.git -b v8.6.7 --depth 1 .
+RUN  make static_lib 
+
+# Install RocksDB
+RUN mkdir -p /usr/local/rocksdb/lib && \
+    mkdir /usr/local/rocksdb/include && \
+    cp librocksdb.a /usr/local/rocksdb/lib && \
+    cp -r include /usr/local/rocksdb/ && \
+    rm -R /tmp/rocksdb/
+
+#
 # DEPS: FULL DEPENCIES LIST
 #
 # This is separate from `deps` to use sccache for caching
@@ -163,6 +193,11 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     #  - packages/wasm-dpp/Cargo.toml
     #  - packages/wasm-dpp/scripts/build-wasm.sh
     cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.86
+
+COPY --from=rocksdb /usr/local/rocksdb /usr/local/rocksdb
+# Set env variables so that Rust's rocksdb-sys will not build rocksdb from scratch
+ENV ROCKSDB_LIB_DIR=/usr/local/rocksdb/lib
+ENV ROCKSDB_STATIC=/usr/local/rocksdb/lib
 
 #
 # LOAD SOURCES
