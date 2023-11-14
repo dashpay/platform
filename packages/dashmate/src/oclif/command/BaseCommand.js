@@ -29,7 +29,7 @@ export default class BaseCommand extends Command {
     // Read environment variables from .env file
     dotenv.config();
 
-    const { args, flags } = await this.parse(this);
+    const { args, flags } = await this.parse(this.constructor);
 
     this.parsedArgs = args;
     this.parsedFlags = flags;
