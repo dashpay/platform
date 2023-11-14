@@ -4,6 +4,16 @@ This is the official Rust SDK for the Dash Platform. Dash Platform is a Layer 2 
 
 See Rust documentation of this crate for more details.
 
+## Usage
+
+To use this crate, define it as a dependency in your `Cargo.toml`:
+
+```toml
+[dependencies]
+
+dash-platform-sdk = { git="https://github.com/dashpay/platform"0 }
+```
+
 ## Examples
 
 You can find quick start example in `examples/` folder. Examples must be configured by setting constants.
