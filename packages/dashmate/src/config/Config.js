@@ -1,5 +1,5 @@
 import Ajv from 'ajv';
-import lodash from 'lodash'
+import lodash from 'lodash';
 
 import addFormats from 'ajv-formats';
 import * as configJsonSchema from './configJsonSchema.js';
@@ -9,7 +9,9 @@ import { OptionIsNotSetError } from './errors/OptionIsNotSetError.js';
 import { InvalidOptionError } from './errors/InvalidOptionError.js';
 import { InvalidOptionsError } from './errors/InvalidOptionsError.js';
 
-const {get: lodashGet, set: lodashSet, cloneDeep: lodashCloneDeep, isEqual: lodashIsEqual} = lodash;
+const {
+  get: lodashGet, set: lodashSet, cloneDeep: lodashCloneDeep, isEqual: lodashIsEqual,
+} = lodash;
 
 export class Config {
   /**

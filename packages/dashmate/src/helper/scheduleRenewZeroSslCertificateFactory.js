@@ -50,27 +50,25 @@ export function scheduleRenewZeroSslCertificateFactory(
       console.log(`SSL certificate ${certificate.id} will expire at ${certificate.expires}. Schedule to obtain at ${expiresAt}.`);
     }
 
-    const job = new CronJob(
-      expiresAt, async () => {
-        const tasks = await obtainZeroSSLCertificateTask(config);
+    const job = new CronJob(expiresAt, async () => {
+      const tasks = await obtainZeroSSLCertificateTask(config);
 
-        await tasks.run({
-          expirationDays: Certificate.EXPIRATION_LIMIT_DAYS,
-        });
+      await tasks.run({
+        expirationDays: Certificate.EXPIRATION_LIMIT_DAYS,
+      });
 
-        // Write config files
-        configFileRepository.write(configFile);
-        writeConfigTemplates(config);
+      // Write config files
+      configFileRepository.write(configFile);
+      writeConfigTemplates(config);
 
-        // Restart Envoy to catch up new SSL certificates
-        await dockerCompose.execCommand(config, 'dapi_envoy', 'kill -SIGHUP 1');
+      // Restart Envoy to catch up new SSL certificates
+      await dockerCompose.execCommand(config, 'dapi_envoy', 'kill -SIGHUP 1');
 
-        return job.stop();
-      }, async () => {
-        // Schedule new cron task
-        process.nextTick(() => scheduleRenewZeroSslCertificate(config));
-      },
-    );
+      return job.stop();
+    }, async () => {
+      // Schedule new cron task
+      process.nextTick(() => scheduleRenewZeroSslCertificate(config));
+    });
 
     job.start();
   }

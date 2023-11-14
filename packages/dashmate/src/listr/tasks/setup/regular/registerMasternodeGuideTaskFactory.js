@@ -8,8 +8,11 @@ import { getConfigurationOutputFromContext } from './getConfigurationOutputFromC
  * @param {registerMasternodeWithDMT} registerMasternodeWithDMT
  * @return {registerMasternodeGuideTask}
  */
-export function registerMasternodeGuideTaskFactory(defaultConfigs,
-  registerMasternodeWithCoreWallet, registerMasternodeWithDMT) {
+export function registerMasternodeGuideTaskFactory(
+  defaultConfigs,
+  registerMasternodeWithCoreWallet,
+  registerMasternodeWithDMT,
+) {
   /**
    * @typedef {registerMasternodeGuideTask}
    * @return {Listr}

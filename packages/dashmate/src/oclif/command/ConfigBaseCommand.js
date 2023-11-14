@@ -13,7 +13,7 @@ export class ConfigBaseCommand extends BaseCommand {
       default: null,
     }),
     ...BaseCommand.flags,
-  }
+  };
 
   async run() {
     const configFile = this.container.resolve('configFile');

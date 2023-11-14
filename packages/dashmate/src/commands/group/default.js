@@ -11,7 +11,7 @@ Shows default group name or sets another group as default
     required: false,
     description: 'group name',
     default: null,
-  }]
+  }];
 
   /**
    * @param {Object} args

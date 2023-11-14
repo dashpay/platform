@@ -1,5 +1,5 @@
 import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
-import {ServiceIsNotRunningError} from '../../docker/errors/ServiceIsNotRunningError.js';
+import { ServiceIsNotRunningError } from '../../docker/errors/ServiceIsNotRunningError.js';
 
 export class CliCommand extends ConfigBaseCommand {
   static description = 'Dash Core CLI';
@@ -8,7 +8,7 @@ export class CliCommand extends ConfigBaseCommand {
     name: 'command',
     required: true,
     description: 'dash core command written in the double quotes',
-  }]
+  }];
 
   static flags = {
     ...ConfigBaseCommand.flags,

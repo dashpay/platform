@@ -94,8 +94,11 @@ export class StatusCommand extends ConfigBaseCommand {
           const { evonodeEnabled, masternodeEnabled } = masternode;
 
           plain['Masternode ProTX'] = masternode.proTxHash || 'n/a';
-          plain['PoSe Penalty'] = colors.poSePenalty(poSePenalty,
-            masternodeEnabled, evonodeEnabled)(`${poSePenalty}`) || 'n/a';
+          plain['PoSe Penalty'] = colors.poSePenalty(
+            poSePenalty,
+            masternodeEnabled,
+            evonodeEnabled,
+          )(`${poSePenalty}`) || 'n/a';
           plain['Last paid block'] = lastPaidHeight || 'n/a';
           plain['Last paid time'] = lastPaidHeight === 0 ? 'Never' : (lastPaidTime || 'n/a');
           plain['Payment queue position'] = paymentQueuePosition || 'n/a';

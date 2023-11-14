@@ -2,7 +2,7 @@ import DashCoreLib from '@dashevo/dashcore-lib';
 import { toDash } from '../../util/satoshiConverter.js';
 import { NETWORK_LOCAL } from '../../constants.js';
 
-const {PrivateKey} = DashCoreLib;
+const { PrivateKey } = DashCoreLib;
 /**
  *
  * @typedef waitForBalanceToConfirm

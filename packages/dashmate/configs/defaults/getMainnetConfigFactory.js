@@ -1,4 +1,4 @@
-import lodash from 'lodash'
+import lodash from 'lodash';
 
 import {
   NETWORK_MAINNET,
@@ -6,7 +6,7 @@ import {
 
 import { Config } from '../../src/config/Config.js';
 
-const {merge: lodashMerge} = lodash
+const { merge: lodashMerge } = lodash;
 
 /**
  * @param {HomeDir} homeDir

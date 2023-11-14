@@ -2,33 +2,33 @@ import path from 'path';
 import fs from 'fs';
 import * as url from 'url';
 
-export const NETWORK_LOCAL = 'local'
-export const NETWORK_DEVNET = 'devnet'
-export const NETWORK_TESTNET = 'testnet'
-export const NETWORK_MAINNET = 'mainnet'
+export const NETWORK_LOCAL = 'local';
+export const NETWORK_DEVNET = 'devnet';
+export const NETWORK_TESTNET = 'testnet';
+export const NETWORK_MAINNET = 'mainnet';
 
 export const NETWORKS = {
   NETWORK_LOCAL,
   NETWORK_DEVNET,
   NETWORK_TESTNET,
-  NETWORK_MAINNET
-}
+  NETWORK_MAINNET,
+};
 
-export const PRESET_MAINNET = 'mainnet'
-export const PRESET_TESTNET = 'testnet'
-export const PRESET_LOCAL = 'local'
+export const PRESET_MAINNET = 'mainnet';
+export const PRESET_TESTNET = 'testnet';
+export const PRESET_LOCAL = 'local';
 
 export const PRESETS = {
   PRESET_MAINNET,
   PRESET_TESTNET,
-  PRESET_LOCAL
-}
+  PRESET_LOCAL,
+};
 
-export const NODE_TYPE_MASTERNODE = 'masternode'
-export const NODE_TYPE_FULLNODE = 'fullnode'
-export const NODE_TYPE_HPMN = 'hpmn'
+export const NODE_TYPE_MASTERNODE = 'masternode';
+export const NODE_TYPE_FULLNODE = 'fullnode';
+export const NODE_TYPE_HPMN = 'hpmn';
 
-export const LLMQ_TYPE_TEST = 'llmq_test'
+export const LLMQ_TYPE_TEST = 'llmq_test';
 
 export const QUORUM_TYPES = {
   LLMQ_TYPE_TEST: 100,

@@ -2,7 +2,7 @@ export class DefaultConfigs {
   /**
    * @type {Object<string, function(): Config>}
    */
-  #configGetters= {};
+  #configGetters = {};
 
   /**
    * @param {Array<function(): Config>} configGetters

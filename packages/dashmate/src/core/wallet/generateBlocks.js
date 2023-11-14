@@ -1,6 +1,6 @@
 import DashCoreLib from '@dashevo/dashcore-lib';
 
-const {PrivateKey} = DashCoreLib;
+const { PrivateKey } = DashCoreLib;
 /**
  *
  * @typedef {generateBlocks}

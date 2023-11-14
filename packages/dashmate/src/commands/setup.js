@@ -60,83 +60,85 @@ export class SetupCommand extends BaseCommand {
       throw new Error('node-count flag should be not less than 3');
     }
 
-    const tasks = new Listr([
-      {
-        title: 'System requirements',
-        task: async () => dockerCompose.throwErrorIfNotInstalled(),
-      },
-      {
-        title: 'Configuration preset',
-        task: async (ctx, task) => {
-          if (ctx.preset === undefined) {
-            ctx.preset = await task.prompt([
-              {
-                type: 'select',
-                header: `  Dashmate provides three default configuration presets:
+    const tasks = new Listr(
+      [
+        {
+          title: 'System requirements',
+          task: async () => dockerCompose.throwErrorIfNotInstalled(),
+        },
+        {
+          title: 'Configuration preset',
+          task: async (ctx, task) => {
+            if (ctx.preset === undefined) {
+              ctx.preset = await task.prompt([
+                {
+                  type: 'select',
+                  header: `  Dashmate provides three default configuration presets:
 
     mainnet - Run a node connected to the Dash main network
     testnet - Run a node connected to the Dash test network
     local   - Run a full network environment on your machine for local development\n`,
-                message: 'Select preset',
-                choices: PRESETS,
-                initial: PRESET_MAINNET,
-              },
-            ]);
-          }
+                  message: 'Select preset',
+                  choices: PRESETS,
+                  initial: PRESET_MAINNET,
+                },
+              ]);
+            }
 
-          let isAlreadyConfigured;
-          if (ctx.preset === PRESET_LOCAL) {
-            isAlreadyConfigured = configFile.isGroupExists(ctx.preset);
-          } else {
-            const defaultConfig = defaultConfigs.get(ctx.preset);
+            let isAlreadyConfigured;
+            if (ctx.preset === PRESET_LOCAL) {
+              isAlreadyConfigured = configFile.isGroupExists(ctx.preset);
+            } else {
+              const defaultConfig = defaultConfigs.get(ctx.preset);
 
-            isAlreadyConfigured = !configFile.getConfig(ctx.preset).isEqual(defaultConfig);
-          }
+              isAlreadyConfigured = !configFile.getConfig(ctx.preset).isEqual(defaultConfig);
+            }
 
-          if (isAlreadyConfigured) {
-            const resetCommand = ctx.preset === PRESET_LOCAL
-              ? `dashmate group reset --group ${ctx.preset} --hard` : `dashmate reset --config ${ctx.preset} --hard`;
+            if (isAlreadyConfigured) {
+              const resetCommand = ctx.preset === PRESET_LOCAL
+                ? `dashmate group reset --group ${ctx.preset} --hard` : `dashmate reset --config ${ctx.preset} --hard`;
 
-            // eslint-disable-next-line no-param-reassign
-            task.output = chalk`Preset {bold ${ctx.preset}} already configured.
+              // eslint-disable-next-line no-param-reassign
+              task.output = chalk`Preset {bold ${ctx.preset}} already configured.
 
   To set up a node with this preset from scratch use {bold.cyanBright ${resetCommand}}.
   Previous data and configuration for this preset will be lost.
 
   If you want to keep the existing data and configuration, please use the {bold.cyanBright dashmate config create}
   command to create a new configuration for this preset.`;
-            throw new Error(`Preset ${ctx.preset} already configured`);
-          } else {
+              throw new Error(`Preset ${ctx.preset} already configured`);
+            } else {
             // eslint-disable-next-line no-param-reassign
-            task.output = ctx.preset;
-          }
+              task.output = ctx.preset;
+            }
+          },
+          options: {
+            persistentOutput: true,
+            showErrorMessage: false,
+          },
         },
-        options: {
-          persistentOutput: true,
-          showErrorMessage: false,
-        },
-      },
-      {
-        task: (ctx) => {
-          if (ctx.preset === PRESET_LOCAL) {
-            return setupLocalPresetTask();
-          }
+        {
+          task: (ctx) => {
+            if (ctx.preset === PRESET_LOCAL) {
+              return setupLocalPresetTask();
+            }
 
-          return setupRegularPresetTask();
+            return setupRegularPresetTask();
+          },
+        },
+      ],
+      {
+        concurrent: false,
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+          removeEmptyLines: false,
         },
       },
-    ],
-    {
-      concurrent: false,
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
-        removeEmptyLines: false,
-      },
-    });
+    );
 
     if (!isVerbose) { // TODO: We need to print it only with default renderer
       // eslint-disable-next-line import/extensions

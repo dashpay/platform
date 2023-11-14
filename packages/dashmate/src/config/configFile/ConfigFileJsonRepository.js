@@ -6,7 +6,7 @@ import { PACKAGE_ROOT_DIR } from '../../constants.js';
 import { ConfigFileNotFoundError } from '../errors/ConfigFileNotFoundError.js';
 import { InvalidConfigFileFormatError } from '../errors/InvalidConfigFileFormatError.js';
 import configFileJsonSchema from './configFileJsonSchema.js';
-import {ConfigFile} from "./ConfigFile.js";
+import { ConfigFile } from './ConfigFile.js';
 
 export class ConfigFileJsonRepository {
   /**

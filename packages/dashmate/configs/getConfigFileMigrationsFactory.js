@@ -257,8 +257,14 @@ export function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
               for (const filename of filenames) {
                 const oldFilePath = homeDir.joinPath('ssl', name, filename);
-                const newFilePath = homeDir.joinPath(name,
-                  'platform', 'dapi', 'envoy', 'ssl', filename);
+                const newFilePath = homeDir.joinPath(
+                  name,
+                  'platform',
+                  'dapi',
+                  'envoy',
+                  'ssl',
+                  filename,
+                );
 
                 if (fs.existsSync(oldFilePath)) {
                   fs.mkdirSync(path.dirname(newFilePath), { recursive: true });

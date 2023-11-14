@@ -1,4 +1,4 @@
-import RpcClient from '@dashevo/dashd-rpc/promise.js'
+import RpcClient from '@dashevo/dashd-rpc/promise.js';
 
 /**
  * Create Core JSON RPC Client

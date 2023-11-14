@@ -5,7 +5,8 @@ import { waitForNodesToHaveTheSameHeight } from '../../../../core/waitForNodesTo
 import { waitForNodesToHaveTheSameSporks } from '../../../../core/waitForNodesToHaveTheSameSporks.js';
 
 import { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } from '../../../../constants.js';
-const {PrivateKey} = DashCoreLib;
+
+const { PrivateKey } = DashCoreLib;
 
 /**
  * @param {writeConfigTemplates} writeConfigTemplates

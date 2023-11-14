@@ -2,7 +2,7 @@ import Dash from 'dash';
 import WasmDPP from '@dashevo/wasm-dpp';
 import { Listr } from 'listr2';
 
-const {Identifier} = WasmDPP
+const { Identifier } = WasmDPP;
 /**
  *
  * @return {featureFlagTask}

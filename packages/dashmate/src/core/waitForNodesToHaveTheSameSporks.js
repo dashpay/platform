@@ -1,6 +1,6 @@
 import lodash from 'lodash';
 
-const {isEqual} = lodash
+const { isEqual } = lodash;
 
 /**
  * @param {CoreService[]} coreServices

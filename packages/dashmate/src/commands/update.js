@@ -37,16 +37,18 @@ export class UpdateCommand extends ConfigBaseCommand {
 
     // Draw table or show json
     printArrayOfObjects(updateInfo
-      .reduce((acc, {
-        name, title, updated, image,
-      }) => ([
-        ...acc,
-        format === OUTPUT_FORMATS.PLAIN
-          ? { Service: title, Image: image, Updated: updated ? chalk.yellow('updated') : chalk.green('up to date') }
-          : {
-            name, title, updated, image,
-          },
-      ]),
-      []), format);
+      .reduce(
+        (acc, {
+          name, title, updated, image,
+        }) => ([
+          ...acc,
+          format === OUTPUT_FORMATS.PLAIN
+            ? { Service: title, Image: image, Updated: updated ? chalk.yellow('updated') : chalk.green('up to date') }
+            : {
+              name, title, updated, image,
+            },
+        ]),
+        [],
+      ), format);
   }
 }

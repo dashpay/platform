@@ -2,7 +2,7 @@ import { Listr } from 'listr2';
 
 import { Flags } from '@oclif/core';
 import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
-import {MuteOneLineError} from '../../oclif/errors/MuteOneLineError.js';
+import { MuteOneLineError } from '../../oclif/errors/MuteOneLineError.js';
 
 export class ReindexCommand extends ConfigBaseCommand {
   static description = 'Reindex Core data';
@@ -40,21 +40,23 @@ export class ReindexCommand extends ConfigBaseCommand {
     config,
     reindexNodeTask,
   ) {
-    const tasks = new Listr([
+    const tasks = new Listr(
+      [
+        {
+          title: `Reindex ${config.getName()} node`,
+          task: () => reindexNodeTask(config),
+        },
+      ],
       {
-        title: `Reindex ${config.getName()} node`,
-        task: () => reindexNodeTask(config),
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+        },
       },
-    ],
-    {
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
-      },
-    });
+    );
 
     try {
       await tasks.run({

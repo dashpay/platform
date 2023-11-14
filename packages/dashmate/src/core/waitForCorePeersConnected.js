@@ -1,4 +1,4 @@
-import {wait} from '../util/wait.js';
+import { wait } from '../util/wait.js';
 
 /**
  * Wait Core to connect to peers

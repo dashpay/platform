@@ -1,4 +1,4 @@
-import {publicIp} from 'public-ip';
+import { publicIp } from 'public-ip';
 import { validatePort } from './validators/validatePort.js';
 import { validateIPv4 } from './validators/validateIPv4.js';
 import { PRESET_MAINNET } from '../../constants.js';

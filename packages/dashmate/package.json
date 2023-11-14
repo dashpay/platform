@@ -54,6 +54,8 @@
   },
   "homepage": "https://github.com/dashevo/dashmate#readme",
   "dependencies": {
+    "@babel/core": "^7.23.3",
+    "@babel/eslint-parser": "^7.23.3",
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dashcore-lib": "~0.21.0",
     "@dashevo/dashd-rpc": "^18.2.0",
@@ -98,7 +100,6 @@
     "wrap-ansi": "^7.0.0"
   },
   "devDependencies": {
-    "babel-eslint": "^10.1.0",
     "chai": "^4.3.10",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",

@@ -11,7 +11,7 @@ use(dirtyChai);
 
 process.env.NODE_ENV = 'test';
 
-exports.mochaHooks = {
+export default {
   beforeAll: loadWasmDpp,
   beforeEach() {
     if (!this.sinon) {

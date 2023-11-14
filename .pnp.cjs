@@ -252,6 +252,35 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
+    ["@babel/eslint-parser", [\
+      ["npm:7.23.3", {\
+        "packageLocation": "./.yarn/cache/@babel-eslint-parser-npm-7.23.3-4d4192b444-bc487f67aa.zip/node_modules/@babel/eslint-parser/",\
+        "packageDependencies": [\
+          ["@babel/eslint-parser", "npm:7.23.3"]\
+        ],\
+        "linkType": "SOFT"\
+      }],\
+      ["virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:7.23.3", {\
+        "packageLocation": "./.yarn/__virtual__/@babel-eslint-parser-virtual-fb9593e0e4/0/cache/@babel-eslint-parser-npm-7.23.3-4d4192b444-bc487f67aa.zip/node_modules/@babel/eslint-parser/",\
+        "packageDependencies": [\
+          ["@babel/eslint-parser", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:7.23.3"],\
+          ["@babel/core", "npm:7.23.3"],\
+          ["@nicolo-ribaudo/eslint-scope-5-internals", "npm:5.1.1-v1"],\
+          ["@types/babel__core", null],\
+          ["@types/eslint", null],\
+          ["eslint", "npm:8.53.0"],\
+          ["eslint-visitor-keys", "npm:2.1.0"],\
+          ["semver", "npm:7.5.3"]\
+        ],\
+        "packagePeers": [\
+          "@babel/core",\
+          "@types/babel__core",\
+          "@types/eslint",\
+          "eslint"\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
     ["@babel/generator", [\
       ["npm:7.17.3", {\
         "packageLocation": "./.yarn/cache/@babel-generator-npm-7.17.3-b206625c17-9a102a87b4.zip/node_modules/@babel/generator/",\
@@ -3718,6 +3747,16 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/@nicolo-ribaudo-chokidar-2-npm-2.1.8-no-fsevents.3-79ca8bfcef-c6e83af3b5.zip/node_modules/@nicolo-ribaudo/chokidar-2/",\
         "packageDependencies": [\
           ["@nicolo-ribaudo/chokidar-2", "npm:2.1.8-no-fsevents.3"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@nicolo-ribaudo/eslint-scope-5-internals", [\
+      ["npm:5.1.1-v1", {\
+        "packageLocation": "./.yarn/cache/@nicolo-ribaudo-eslint-scope-5-internals-npm-5.1.1-v1-87df86be4b-f2e3b2d6a6.zip/node_modules/@nicolo-ribaudo/eslint-scope-5-internals/",\
+        "packageDependencies": [\
+          ["@nicolo-ribaudo/eslint-scope-5-internals", "npm:5.1.1-v1"],\
+          ["eslint-scope", "npm:5.1.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -8755,6 +8794,8 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./packages/dashmate/",\
         "packageDependencies": [\
           ["dashmate", "workspace:packages/dashmate"],\
+          ["@babel/core", "npm:7.23.3"],\
+          ["@babel/eslint-parser", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:7.23.3"],\
           ["@dashevo/bls", "npm:1.2.9"],\
           ["@dashevo/dashcore-lib", "npm:0.21.0"],\
           ["@dashevo/dashd-rpc", "npm:18.2.0"],\
@@ -8771,7 +8812,6 @@ const RAW_RUNTIME_STATE =
           ["ajv", "npm:8.8.1"],\
           ["ajv-formats", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:2.1.1"],\
           ["awilix", "npm:4.3.4"],\
-          ["babel-eslint", "virtual:27dae49067a60fa65fec6e1c3adad1497d0dda3f71eda711624109131ff3b7d1061a20f55e89b5a0a219da1f7a0a1a0a76bc414d36870315bd60acf5bdcb7f55#npm:10.1.0"],\
           ["begoo", "npm:2.0.2"],\
           ["chai", "npm:4.3.10"],\
           ["chai-as-promised", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:7.1.1"],\
@@ -10320,6 +10360,13 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/eslint-visitor-keys-npm-1.3.0-c07780a0fb-595ab230e0.zip/node_modules/eslint-visitor-keys/",\
         "packageDependencies": [\
           ["eslint-visitor-keys", "npm:1.3.0"]\
+        ],\
+        "linkType": "HARD"\
+      }],\
+      ["npm:2.1.0", {\
+        "packageLocation": "./.yarn/cache/eslint-visitor-keys-npm-2.1.0-c31806b6b9-db4547eef5.zip/node_modules/eslint-visitor-keys/",\
+        "packageDependencies": [\
+          ["eslint-visitor-keys", "npm:2.1.0"]\
         ],\
         "linkType": "HARD"\
       }],\

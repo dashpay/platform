@@ -41,22 +41,24 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
     config,
     obtainZeroSSLCertificateTask,
   ) {
-    const tasks = new Listr([
+    const tasks = new Listr(
+      [
+        {
+          title: 'Obtain ZeroSSL certificate',
+          task: async () => obtainZeroSSLCertificateTask(config),
+        },
+      ],
       {
-        title: 'Obtain ZeroSSL certificate',
-        task: async () => obtainZeroSSLCertificateTask(config),
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+          removeEmptyLines: false,
+        },
       },
-    ],
-    {
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
-        removeEmptyLines: false,
-      },
-    });
+    );
 
     try {
       await tasks.run({

@@ -1,7 +1,7 @@
 import DashCoreLib from '@dashevo/dashcore-lib';
 import { toSatoshi } from '../../util/satoshiConverter.js';
 
-const {Transaction} = DashCoreLib;
+const { Transaction } = DashCoreLib;
 /**
  * Send Dash to address
  *

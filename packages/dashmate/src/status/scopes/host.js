@@ -1,5 +1,5 @@
 import os from 'os';
-import {publicIp} from 'public-ip';
+import { publicIp } from 'public-ip';
 import prettyMs from 'pretty-ms';
 import prettyByte from 'pretty-bytes';
 

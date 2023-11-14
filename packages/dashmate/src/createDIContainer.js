@@ -116,7 +116,7 @@ import {
 } from './listr/tasks/setup/regular/configureSSLCertificateTaskFactory.js';
 import { createHttpApiServerFactory } from './helper/api/createHttpApiServerFactory.js';
 import { resolveDockerSocketPath } from './docker/resolveDockerSocketPath.js';
-import {HomeDir} from './config/HomeDir.js';
+import { HomeDir } from './config/HomeDir.js';
 import { getBaseConfigFactory } from '../configs/defaults/getBaseConfigFactory.js';
 import { getLocalConfigFactory } from '../configs/defaults/getLocalConfigFactory.js';
 import { getTestnetConfigFactory } from '../configs/defaults/getTestnetConfigFactory.js';

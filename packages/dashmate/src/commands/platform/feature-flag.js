@@ -31,7 +31,7 @@ export class FeatureFlagCommand extends ConfigBaseCommand {
     name: 'dapi-address',
     required: true,
     description: 'DAPI address to send feature flags transitions to',
-  }]
+  }];
 
   /**
    *
@@ -54,21 +54,23 @@ export class FeatureFlagCommand extends ConfigBaseCommand {
     featureFlagTask,
     config,
   ) {
-    const tasks = new Listr([
+    const tasks = new Listr(
+      [
+        {
+          title: 'Initialize Feature Flags',
+          task: () => featureFlagTask(config),
+        },
+      ],
       {
-        title: 'Initialize Feature Flags',
-        task: () => featureFlagTask(config),
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+        },
       },
-    ],
-    {
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
-      },
-    });
+    );
 
     try {
       await tasks.run({

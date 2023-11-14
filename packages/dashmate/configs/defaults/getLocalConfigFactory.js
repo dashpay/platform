@@ -1,11 +1,11 @@
-import lodash from 'lodash'
+import lodash from 'lodash';
 
 import {
   NETWORK_LOCAL, SSL_PROVIDERS,
 } from '../../src/constants.js';
 import { Config } from '../../src/config/Config.js';
 
-const {merge: lodashMerge} = lodash
+const { merge: lodashMerge } = lodash;
 /**
  * @param {getBaseConfig} getBaseConfig
  * @returns {getLocalConfig}

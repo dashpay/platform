@@ -17,8 +17,13 @@ export function saveCertificateTaskFactory(homeDir) {
       {
         title: 'Save certificates',
         task: async (ctx) => {
-          const certificatesDir = homeDir.joinPath(config.getName(),
-            'platform', 'dapi', 'envoy', 'ssl');
+          const certificatesDir = homeDir.joinPath(
+            config.getName(),
+            'platform',
+            'dapi',
+            'envoy',
+            'ssl',
+          );
 
           fs.mkdirSync(certificatesDir, { recursive: true });
 

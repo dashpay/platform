@@ -4,9 +4,11 @@
  * @param getMasternodeScope {getMasternodeScope}
  * @param getPlatformScope {getPlatformScope}
  */
-export function getOverviewScopeFactory(getCoreScope,
+export function getOverviewScopeFactory(
+  getCoreScope,
   getMasternodeScope,
-  getPlatformScope) {
+  getPlatformScope,
+) {
   /**
    * Get overview status scope
    *

@@ -34,21 +34,23 @@ export class ResetCommand extends ConfigBaseCommand {
     config,
     resetNodeTask,
   ) {
-    const tasks = new Listr([
+    const tasks = new Listr(
+      [
+        {
+          title: `Reset ${config.getName()} node`,
+          task: () => resetNodeTask(config),
+        },
+      ],
       {
-        title: `Reset ${config.getName()} node`,
-        task: () => resetNodeTask(config),
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+        },
       },
-    ],
-    {
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
-      },
-    });
+    );
 
     try {
       await tasks.run({

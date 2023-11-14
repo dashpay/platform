@@ -1,5 +1,5 @@
 import { Listr } from 'listr2';
-import lodash from 'lodash'
+import lodash from 'lodash';
 import { LLMQ_TYPE_TEST, NETWORK_LOCAL } from '../../../../constants.js';
 import { waitForNodesToHaveTheSameHeight } from '../../../../core/waitForNodesToHaveTheSameHeight.js';
 import { waitForQuorumPhase } from '../../../../core/quorum/waitForQuorumPhase.js';
@@ -7,7 +7,7 @@ import { waitForQuorumConnections } from '../../../../core/quorum/waitForQuorumC
 import { waitForQuorumCommitments } from '../../../../core/quorum/waitForQuorumCommitements.js';
 import { wait } from '../../../../util/wait.js';
 
-const {isEqual} = lodash;
+const { isEqual } = lodash;
 
 /**
  * @param {generateBlocks} generateBlocks

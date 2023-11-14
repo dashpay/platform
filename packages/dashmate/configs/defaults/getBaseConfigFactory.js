@@ -2,31 +2,31 @@ import path from 'path';
 
 import DPNSContract from '@dashevo/dpns-contract/lib/systemIds.js';
 
-const {contractId: dpnsContractId, ownerId: dpnsOwnerId} = DPNSContract
+import DashPayContract from '@dashevo/dashpay-contract/lib/systemIds.js';
 
-import DashPayContract from '@dashevo/dashpay-contract/lib/systemIds.js'
+import FeatureFlagsContract from '@dashevo/feature-flags-contract/lib/systemIds.js';
 
-const {contractId: dashpayContractId} = DashPayContract
+import MasternodeRewardSharesContract from '@dashevo/masternode-reward-shares-contract/lib/systemIds.js';
 
-import FeatureFlagsContract from '@dashevo/feature-flags-contract/lib/systemIds.js'
-
-const {contractId: featureFlagsContractId, ownerId: featureFlagsOwnerId} = FeatureFlagsContract
-
-import MasternodeRewardSharesContract from '@dashevo/masternode-reward-shares-contract/lib/systemIds.js'
-const {contractId: masternodeRewardSharesContractId} = MasternodeRewardSharesContract
-
-import WithdrawalsContract from '@dashevo/withdrawals-contract/lib/systemIds.js'
-const {contractId: withdrawalsContractId} = WithdrawalsContract
+import WithdrawalsContract from '@dashevo/withdrawals-contract/lib/systemIds.js';
 
 import semver from 'semver';
 
+import fs from 'fs';
 import {
   NETWORK_TESTNET, PACKAGE_ROOT_DIR,
 } from '../../src/constants.js';
-import {Config} from '../../src/config/Config.js';
-import fs from "fs";
+import { Config } from '../../src/config/Config.js';
 
-const {version} = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+const { contractId: dpnsContractId, ownerId: dpnsOwnerId } = DPNSContract;
+
+const { contractId: dashpayContractId } = DashPayContract;
+
+const { contractId: featureFlagsContractId, ownerId: featureFlagsOwnerId } = FeatureFlagsContract;
+const { contractId: masternodeRewardSharesContractId } = MasternodeRewardSharesContract;
+const { contractId: withdrawalsContractId } = WithdrawalsContract;
+
+const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
 /**
  * @param {HomeDir} homeDir
@@ -42,10 +42,13 @@ export function getBaseConfigFactory(homeDir) {
    */
   function getBaseConfig() {
     const options = {
-      description: 'base config for use as template', group: null, docker: {
+      description: 'base config for use as template',
+      group: null,
+      docker: {
         network: {
           subnet: '0.0.0.0/0', bindIp: '0.0.0.0',
-        }, baseImage: {
+        },
+        baseImage: {
           build: {
             enabled: false,
             context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
@@ -53,50 +56,69 @@ export function getBaseConfigFactory(homeDir) {
             target: '',
           },
         },
-      }, core: {
+      },
+      core: {
         docker: {
           image: 'dashpay/dashd:20.0.0-rc.2', commandArgs: [],
-        }, p2p: {
+        },
+        p2p: {
           port: 9999, seeds: [],
-        }, rpc: {
+        },
+        rpc: {
           port: 9998,
           user: 'dashrpc',
           password: 'rpcpassword',
-          allowIps: ['127.0.0.1', '172.16.0.0/12', '192.168.0.0/16',],
-        }, spork: {
+          allowIps: ['127.0.0.1', '172.16.0.0/12', '192.168.0.0/16'],
+        },
+        spork: {
           address: null, privateKey: null,
-        }, masternode: {
-          enable: true, operator: {
+        },
+        masternode: {
+          enable: true,
+          operator: {
             privateKey: null,
           },
-        }, miner: {
+        },
+        miner: {
           enable: false, interval: '2.5m', mediantime: null, address: null,
-        }, devnet: {
+        },
+        devnet: {
           name: null, minimumDifficultyBlocks: 0, powTargetSpacing: 150,
-        }, log: {
+        },
+        log: {
           file: {
             categories: [], path: homeDir.joinPath('logs', 'base', 'core.log'),
           },
-        }, logIps: 0, indexes: true,
-      }, platform: {
+        },
+        logIps: 0,
+        indexes: true,
+      },
+      platform: {
         dapi: {
           envoy: {
             docker: {
               image: 'dashpay/envoy:1.22.11',
-            }, http: {
+            },
+            http: {
               port: 443,
-            }, rateLimiter: {
+            },
+            rateLimiter: {
               maxTokens: 300, tokensPerFill: 150, fillInterval: '60s', enabled: true,
-            }, ssl: {
-              enabled: false, provider: 'zerossl', providerConfigs: {
+            },
+            ssl: {
+              enabled: false,
+              provider: 'zerossl',
+              providerConfigs: {
                 zerossl: {
                   apiKey: null, id: null,
                 },
               },
             },
-          }, api: {
+          },
+          api: {
             docker: {
-              image: `dashpay/dapi:${dockerImageVersion}`, build: {
+              image: `dashpay/dapi:${dockerImageVersion}`,
+              build: {
                 enabled: false,
                 context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
                 dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
@@ -104,75 +126,114 @@ export function getBaseConfigFactory(homeDir) {
               },
             },
           },
-        }, drive: {
+        },
+        drive: {
           abci: {
             docker: {
-              image: `dashpay/drive:${dockerImageVersion}`, build: {
+              image: `dashpay/drive:${dockerImageVersion}`,
+              build: {
                 enabled: false,
                 context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
                 dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
                 target: 'drive-abci',
               },
-            }, logs: {
+            },
+            logs: {
               stdout: {
                 destination: 'stdout', level: 'info', format: 'compact', color: true,
               },
-            }, validatorSet: {
+            },
+            validatorSet: {
               llmqType: 4,
-            }, epochTime: 788400,
-          }, tenderdash: {
-            mode: 'full', docker: {
+            },
+            epochTime: 788400,
+          },
+          tenderdash: {
+            mode: 'full',
+            docker: {
               image: 'dashpay/tenderdash:0.13.3',
-            }, p2p: {
+            },
+            p2p: {
               port: 26656, persistentPeers: [], seeds: [],
-            }, rpc: {
+            },
+            rpc: {
               port: 26657,
-            }, pprof: {
+            },
+            pprof: {
               enabled: false, port: 6060,
-            }, metrics: {
+            },
+            metrics: {
               enabled: false, port: 26660,
-            }, consensus: {
+            },
+            consensus: {
               createEmptyBlocks: true, createEmptyBlocksInterval: '3m',
-            }, log: {
+            },
+            log: {
               level: 'info', format: 'plain', path: null,
-            }, node: {
+            },
+            node: {
               id: null, key: null,
-            }, genesis: {
+            },
+            genesis: {
               consensus_params: {
                 block: {
                   max_bytes: '22020096', max_gas: '-1', time_iota_ms: '5000',
-                }, evidence: {
+                },
+                evidence: {
                   max_age: '100000', max_age_num_blocks: '100000', max_age_duration: '172800000000000',
-                }, validator: {
-                  pub_key_types: ['bls12381',],
-                }, version: {
+                },
+                validator: {
+                  pub_key_types: ['bls12381'],
+                },
+                version: {
                   app_version: '1',
                 },
               },
-            }, moniker: null,
+            },
+            moniker: null,
           },
-        }, dpns: {
+        },
+        dpns: {
           contract: {
             id: dpnsContractId,
-          }, ownerId: dpnsOwnerId, masterPublicKey: null, secondPublicKey: null,
-        }, dashpay: {
+          },
+          ownerId: dpnsOwnerId,
+          masterPublicKey: null,
+          secondPublicKey: null,
+        },
+        dashpay: {
           contract: {
             id: dashpayContractId,
-          }, masterPublicKey: null, secondPublicKey: null,
-        }, featureFlags: {
+          },
+          masterPublicKey: null,
+          secondPublicKey: null,
+        },
+        featureFlags: {
           contract: {
             id: featureFlagsContractId,
-          }, ownerId: featureFlagsOwnerId, masterPublicKey: null, secondPublicKey: null,
-        }, sourcePath: null, masternodeRewardShares: {
+          },
+          ownerId: featureFlagsOwnerId,
+          masterPublicKey: null,
+          secondPublicKey: null,
+        },
+        sourcePath: null,
+        masternodeRewardShares: {
           contract: {
             id: masternodeRewardSharesContractId,
-          }, masterPublicKey: null, secondPublicKey: null,
-        }, withdrawals: {
+          },
+          masterPublicKey: null,
+          secondPublicKey: null,
+        },
+        withdrawals: {
           contract: {
             id: withdrawalsContractId,
-          }, masterPublicKey: null, secondPublicKey: null,
-        }, enable: true,
-      }, dashmate: {
+          },
+          masterPublicKey: null,
+          secondPublicKey: null,
+        },
+        enable: true,
+      },
+      dashmate: {
         helper: {
           docker: {
             build: {
@@ -181,11 +242,15 @@ export function getBaseConfigFactory(homeDir) {
               dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
               target: 'dashmate-helper',
             },
-          }, api: {
+          },
+          api: {
             enable: false, port: 9100,
           },
         },
-      }, externalIp: null, network: NETWORK_TESTNET, environment: 'production',
+      },
+      externalIp: null,
+      network: NETWORK_TESTNET,
+      environment: 'production',
     };
 
     return new Config('base', options);

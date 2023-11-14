@@ -30,36 +30,38 @@ export class GroupRestartCommand extends GroupBaseCommand {
   ) {
     const groupName = configGroup[0].get('group');
 
-    const tasks = new Listr({
-      title: `Restart ${groupName} nodes`,
-      task: async () => (
-        new Listr([
-          {
-            title: 'Stop nodes',
-            task: () => (
+    const tasks = new Listr(
+      {
+        title: `Restart ${groupName} nodes`,
+        task: async () => (
+          new Listr([
+            {
+              title: 'Stop nodes',
+              task: () => (
               // So we stop the miner first, as there's a chance that MNs will get banned
               // if the miner is still running when stopping them
-              new Listr(configGroup.reverse().map((config) => ({
-                task: () => stopNodeTask(config),
-              })))
-            ),
-          },
-          {
-            title: 'Start nodes',
-            task: () => startGroupNodesTask(configGroup),
-          },
-        ])
-      ),
-    },
-    {
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
+                new Listr(configGroup.reverse().map((config) => ({
+                  task: () => stopNodeTask(config),
+                })))
+              ),
+            },
+            {
+              title: 'Start nodes',
+              task: () => startGroupNodesTask(configGroup),
+            },
+          ])
+        ),
       },
-    });
+      {
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+        },
+      },
+    );
 
     try {
       await tasks.run({
