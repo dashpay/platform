@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import createDIContainer from '../../createDIContainer.js';
 import ConfigFileNotFoundError from '../../config/errors/ConfigFileNotFoundError.js';
 import getFunctionParams from '../../util/getFunctionParams.js';
+import WasmDPP from '@dashevo/wasm-dpp';
 
 /**
  * @abstract
@@ -22,8 +23,8 @@ export default class BaseCommand extends Command {
   };
 
   async init() {
-    // todo Load wasm-dpp for further usage
-    // await loadWasmDpp();
+    // Load wasm-dpp for further usage
+    await WasmDPP.default();
 
     // Read environment variables from .env file
     dotenv.config();

@@ -1,11 +1,11 @@
 import dotenv from 'dotenv';
 import { asValue } from 'awilix';
-import loadWasmDpp from '@dashevo/wasm-dpp';
+import WasmDPP from '@dashevo/wasm-dpp';
 import createDIContainer from '../src/createDIContainer.js';
 
 (async function main() {
   // Load wasm-dpp for further usage
-  await loadWasmDpp();
+  await WasmDPP.default();
 
   // Read environment variables from .env file
   dotenv.config();
