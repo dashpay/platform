@@ -4,7 +4,7 @@
  * @param {string} value
  * @returns {boolean}
  */
-export function validatePort(value) {
+export default function validatePort(value) {
   const portNumber = Math.floor(Number(value));
 
   return portNumber >= 1

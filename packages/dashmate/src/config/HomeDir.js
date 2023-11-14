@@ -1,11 +1,11 @@
 import fs from 'fs';
 import os from 'os';
 import { resolve, join } from 'path';
-import { HomeDirDoesNotExistError } from './errors/HomeDirDoesNotExistError.js';
-import { HomeDirIsNotWritableError } from './errors/HomeDirIsNotWritableError.js';
-import { CouldNotCreateHomeDirError } from './errors/CouldNotCreateHomeDirError.js';
+import HomeDirDoesNotExistError from './errors/HomeDirDoesNotExistError.js';
+import HomeDirIsNotWritableError from './errors/HomeDirIsNotWritableError.js';
+import CouldNotCreateHomeDirError from './errors/CouldNotCreateHomeDirError.js';
 
-export class HomeDir {
+export default class HomeDir {
   /**
    * @type {string}
    */

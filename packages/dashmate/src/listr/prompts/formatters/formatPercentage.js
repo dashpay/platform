@@ -5,7 +5,7 @@ import * as placeholder from 'enquirer/lib/placeholder';
  * @param {Object} choice
  * @returns {*}
  */
-export function formatPercentage(input, choice) {
+export default function formatPercentage(input, choice) {
   let str;
 
   const number = Number(input);

@@ -1,6 +1,6 @@
-import { AbstractError } from '../../errors/AbstractError.js';
+import AbstractError from '../../errors/AbstractError.js';
 
-export class ContainerIsNotPresentError extends AbstractError {
+export default class ContainerIsNotPresentError extends AbstractError {
   /**
    * @param {string} serviceName
    */

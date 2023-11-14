@@ -14,7 +14,7 @@ import {
  * @param {DefaultConfigs} defaultConfigs
  * @returns {getConfigFileMigrations}
  */
-export function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
+export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
   /**
    * @typedef {function} getConfigFileMigrations
    * @returns {Object}

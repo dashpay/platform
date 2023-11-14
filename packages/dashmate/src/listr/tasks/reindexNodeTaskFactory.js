@@ -2,7 +2,7 @@ import { Listr } from 'listr2';
 import { Observable } from 'rxjs';
 import path from 'path';
 import { TEMPLATES_DIR } from '../../constants.js';
-import { CoreService } from '../../core/CoreService.js';
+import CoreService from '../../core/CoreService.js';
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -18,7 +18,7 @@ import { CoreService } from '../../core/CoreService.js';
  * @param {Docker} docker
  * @return {reindexNodeTask}
  */
-export function reindexNodeTaskFactory(
+export default function reindexNodeTaskFactory(
   dockerCompose,
   startNodeTask,
   restartNodeTask,
@@ -149,7 +149,7 @@ export function reindexNodeTaskFactory(
             observer.next(`${(percent * 100).toFixed(4)}%, ${blocks} / ${headers}`);
           });
 
-          await new Promise((res) => setTimeout(res, 2000));
+          await new Promise((res) => { setTimeout(res, 2000); });
 
           observer.complete();
         }),

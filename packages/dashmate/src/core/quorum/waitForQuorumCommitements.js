@@ -1,5 +1,5 @@
 import { QUORUM_TYPES } from '../../constants.js';
-import { wait } from '../../util/wait.js';
+import wait from '../../util/wait.js';
 
 /**
  *
@@ -34,7 +34,7 @@ async function checkDKGSessionCommitments(quorumHash, rpcClients) {
  * @param {number} [waitBeforeRetry]
  * @return {Promise<void>}
  */
-export async function waitForQuorumCommitments(
+export default async function waitForQuorumCommitments(
   rpcClients,
   quorumHash,
   timeout = 60000,

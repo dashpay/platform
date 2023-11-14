@@ -1,14 +1,14 @@
 import fs from 'fs';
 import Ajv from 'ajv';
 import path from 'path';
-import { Config } from '../Config.js';
+import Config from '../Config.js';
 import { PACKAGE_ROOT_DIR } from '../../constants.js';
-import { ConfigFileNotFoundError } from '../errors/ConfigFileNotFoundError.js';
-import { InvalidConfigFileFormatError } from '../errors/InvalidConfigFileFormatError.js';
+import ConfigFileNotFoundError from '../errors/ConfigFileNotFoundError.js';
+import InvalidConfigFileFormatError from '../errors/InvalidConfigFileFormatError.js';
 import configFileJsonSchema from './configFileJsonSchema.js';
-import { ConfigFile } from './ConfigFile.js';
+import ConfigFile from './ConfigFile.js';
 
-export class ConfigFileJsonRepository {
+export default class ConfigFileJsonRepository {
   /**
    * @param {migrateConfigFile} migrateConfigFile
    * @param {HomeDir} homeDir

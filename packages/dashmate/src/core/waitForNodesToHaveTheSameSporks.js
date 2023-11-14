@@ -25,7 +25,7 @@ async function checkSporksAreTheSame(coreServices) {
  * @param {number} [timeout]
  * @return {Promise<void>}
  */
-export async function waitForNodesToHaveTheSameSporks(coreServices, timeout = 30000) {
+export default async function waitForNodesToHaveTheSameSporks(coreServices, timeout = 30000) {
   const deadline = Date.now() + timeout;
 
   let isReady = false;

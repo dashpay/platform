@@ -1,4 +1,4 @@
-export class AbstractError extends Error {
+export default class AbstractError extends Error {
   /**
    * @param {string} message
    */

@@ -1,4 +1,4 @@
-import { wait } from '../util/wait.js';
+import wait from '../util/wait.js';
 
 /**
  * Wait Core to be synced
@@ -8,7 +8,7 @@ import { wait } from '../util/wait.js';
  * @param {function(progress: number)} [progressCallback]
  * @return {Promise<void>}
  */
-export async function waitForMasternodesSync(rpcClient, progressCallback = () => {}) {
+export default async function waitForMasternodesSync(rpcClient, progressCallback = () => {}) {
   let isSynced = false;
   let verificationProgress = 0.0;
 

@@ -1,5 +1,5 @@
 import { Listr } from 'listr2';
-import { isServiceBuildRequired } from '../../util/isServiceBuildRequired.js';
+import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
 
 /**
  * @param {startNodeTask} startNodeTask
@@ -7,7 +7,7 @@ import { isServiceBuildRequired } from '../../util/isServiceBuildRequired.js';
  * @param {buildServicesTask} buildServicesTask
  * @return {restartNodeTask}
  */
-export function restartNodeTaskFactory(startNodeTask, stopNodeTask, buildServicesTask) {
+export default function restartNodeTaskFactory(startNodeTask, stopNodeTask, buildServicesTask) {
   /**
    * Restart node
    * @typedef {restartNodeTask}

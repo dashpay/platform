@@ -1,6 +1,6 @@
-import { AbstractError } from '../../errors/AbstractError.js';
+import AbstractError from '../../errors/AbstractError.js';
 
-export class OptionIsNotSetError extends AbstractError {
+export default class OptionIsNotSetError extends AbstractError {
   /**
    * @param {Config} config
    * @param {string} path

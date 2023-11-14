@@ -1,6 +1,6 @@
 import semver from 'semver';
 
-export function migrateConfigFileFactory(getConfigFileMigrations) {
+export default function migrateConfigFileFactory(getConfigFileMigrations) {
   /**
    * @typedef {function} migrateConfigFile
    * @param {Object} rawConfigFile

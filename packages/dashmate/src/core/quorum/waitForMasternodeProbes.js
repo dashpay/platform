@@ -76,7 +76,7 @@ async function checkProbes(rpcClients, bumpMockTime) {
  * @param {number} [timeout]
  * @return {Promise<void>}
  */
-export async function waitForMasternodeProbes(rpcClients, bumpMockTime, timeout = 30000) {
+export default async function waitForMasternodeProbes(rpcClients, bumpMockTime, timeout = 30000) {
   const deadline = Date.now() + timeout;
 
   let isReady = false;

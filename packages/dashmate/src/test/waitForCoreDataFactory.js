@@ -1,11 +1,11 @@
-import { wait } from '../util/wait.js';
+import wait from '../util/wait.js';
 
 /**
  * @param {CoreRpcClient} rpcClient
  * @returns {waitForCoreData}
  */
 
-export function waitForCoreDataFactory(rpcClient) {
+export default function waitForCoreDataFactory(rpcClient) {
   /**
    * @typedef {function} waitForCoreData
    * @param {number} originalValue

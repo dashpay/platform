@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { getShortHash } from '../../util/getShortHash.js';
-import { ConfigFile } from './ConfigFile.js';
+import getShortHash from '../../util/getShortHash.js';
+import ConfigFile from './ConfigFile.js';
 import { PACKAGE_ROOT_DIR } from '../../constants.js';
 
 /**
@@ -9,7 +9,7 @@ import { PACKAGE_ROOT_DIR } from '../../constants.js';
  * @param {HomeDir} homeDir
  * @return {createConfigFile}
  */
-export function createConfigFileFactory(defaultConfigs, homeDir) {
+export default function createConfigFileFactory(defaultConfigs, homeDir) {
   /**
    * @typedef {function} createConfigFile
    * @returns {ConfigFile}

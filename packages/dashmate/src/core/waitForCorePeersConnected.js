@@ -1,4 +1,4 @@
-import { wait } from '../util/wait.js';
+import wait from '../util/wait.js';
 
 /**
  * Wait Core to connect to peers
@@ -7,7 +7,7 @@ import { wait } from '../util/wait.js';
  * @param {RpcClient} rpcClient
  * @return {Promise<void>}
  */
-export async function waitForCorePeersConnected(rpcClient) {
+export default async function waitForCorePeersConnected(rpcClient) {
   let hasPeers = false;
 
   do {

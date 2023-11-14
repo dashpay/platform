@@ -4,7 +4,7 @@ import fs from 'fs';
  * @param {string} value
  * @returns {boolean}
  */
-export function validateFileExists(value) {
+export default function validateFileExists(value) {
   try {
     // eslint-disable-next-line no-bitwise
     fs.accessSync(value, fs.constants.R_OK | fs.constants.W_OK);

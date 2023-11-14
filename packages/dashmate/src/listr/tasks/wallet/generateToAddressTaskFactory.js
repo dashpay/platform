@@ -11,7 +11,7 @@ import { Observable } from 'rxjs';
  * @param {waitForBalanceToConfirm} waitForBalanceToConfirm
  * @return {generateToAddressTask}
  */
-export function generateToAddressTaskFactory(
+export default function generateToAddressTaskFactory(
   startCore,
   createNewAddress,
   generateToAddress,

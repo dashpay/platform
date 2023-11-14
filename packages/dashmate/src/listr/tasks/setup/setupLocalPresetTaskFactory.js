@@ -2,8 +2,9 @@ import { Listr } from 'listr2';
 import {
   PRESET_LOCAL,
 } from '../../../constants.js';
-import { generateTenderdashNodeKey } from '../../../tenderdash/generateTenderdashNodeKey.js';
-import { deriveTenderdashNodeId } from '../../../tenderdash/deriveTenderdashNodeId.js';
+import generateTenderdashNodeKey from '../../../tenderdash/generateTenderdashNodeKey.js';
+import deriveTenderdashNodeId from '../../../tenderdash/deriveTenderdashNodeId.js';
+import generateRandomString from '../../../util/generateRandomString.js';
 
 /**
  * @param {ConfigFile} configFile
@@ -14,7 +15,7 @@ import { deriveTenderdashNodeId } from '../../../tenderdash/deriveTenderdashNode
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
  * @param {HomeDir} homeDir
  */
-export function setupLocalPresetTaskFactory(
+export default function setupLocalPresetTaskFactory(
   configFile,
   configureCoreTask,
   obtainSelfSignedCertificateTask,

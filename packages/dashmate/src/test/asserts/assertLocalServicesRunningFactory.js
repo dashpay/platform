@@ -5,7 +5,7 @@ import * as SERVICES from '../constants/services.js';
  *
  * @returns {assertLocalServicesRunning}
  */
-export function assertLocalServicesRunningFactory(assertServiceRunning) {
+export default function assertLocalServicesRunningFactory(assertServiceRunning) {
   /**
    * Check all node services are up and running
    *

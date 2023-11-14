@@ -1,6 +1,6 @@
-import { calculatePaymentQueuePosition } from '../../core/calculatePaymentQueuePosition.js';
+import calculatePaymentQueuePosition from '../../core/calculatePaymentQueuePosition.js';
 import { MasternodeSyncAssetEnum } from '../enums/masternodeSyncAsset.js';
-import { blocksToTime } from '../../util/blocksToTime.js';
+import blocksToTime from '../../util/blocksToTime.js';
 import { MasternodeStateEnum } from '../enums/masternodeState.js';
 
 /**
@@ -9,7 +9,11 @@ import { MasternodeStateEnum } from '../enums/masternodeState.js';
  * @param {getConnectionHost} getConnectionHost
  * @returns {getMasternodeScopeFactory}
  */
-export function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnectionHost) {
+export default function getMasternodeScopeFactory(
+  dockerCompose,
+  createRpcClient,
+  getConnectionHost,
+) {
   async function getSyncAsset(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),

@@ -1,6 +1,6 @@
 import { Listr } from 'listr2';
-import { deriveTenderdashNodeId } from '../../../../tenderdash/deriveTenderdashNodeId.js';
-import { getConfigurationOutputFromContext } from './getConfigurationOutputFromContext.js';
+import deriveTenderdashNodeId from '../../../../tenderdash/deriveTenderdashNodeId.js';
+import getConfigurationOutputFromContext from './getConfigurationOutputFromContext.js';
 
 /**
  * @param {DefaultConfigs} defaultConfigs
@@ -8,7 +8,7 @@ import { getConfigurationOutputFromContext } from './getConfigurationOutputFromC
  * @param {registerMasternodeWithDMT} registerMasternodeWithDMT
  * @return {registerMasternodeGuideTask}
  */
-export function registerMasternodeGuideTaskFactory(
+export default function registerMasternodeGuideTaskFactory(
   defaultConfigs,
   registerMasternodeWithCoreWallet,
   registerMasternodeWithDMT,

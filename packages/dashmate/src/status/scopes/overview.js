@@ -4,7 +4,7 @@
  * @param getMasternodeScope {getMasternodeScope}
  * @param getPlatformScope {getPlatformScope}
  */
-export function getOverviewScopeFactory(
+export default function getOverviewScopeFactory(
   getCoreScope,
   getMasternodeScope,
   getPlatformScope,

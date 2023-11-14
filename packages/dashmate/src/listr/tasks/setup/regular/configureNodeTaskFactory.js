@@ -5,17 +5,17 @@ import {
   PRESET_MAINNET,
   NODE_TYPE_FULLNODE,
 } from '../../../../constants.js';
-import { validateBLSPrivateKeyFactory } from '../../../prompts/validators/validateBLSPrivateKeyFactory.js';
-import { createPlatformNodeKeyInput } from '../../../prompts/createPlatformNodeKeyInput.js';
-import { deriveTenderdashNodeId } from '../../../../tenderdash/deriveTenderdashNodeId.js';
-import { getConfigurationOutputFromContext } from './getConfigurationOutputFromContext.js';
+import validateBLSPrivateKeyFactory from '../../../prompts/validators/validateBLSPrivateKeyFactory.js';
+import createPlatformNodeKeyInput from '../../../prompts/createPlatformNodeKeyInput.js';
+import deriveTenderdashNodeId from '../../../../tenderdash/deriveTenderdashNodeId.js';
+import getConfigurationOutputFromContext from './getConfigurationOutputFromContext.js';
 
 /**
  *
  * @param {createIpAndPortsForm} createIpAndPortsForm
  * @return {configureNodeTask}
  */
-export function configureNodeTaskFactory(createIpAndPortsForm) {
+export default function configureNodeTaskFactory(createIpAndPortsForm) {
   /**
    * @typedef {function} configureNodeTask
    * @returns {Listr}

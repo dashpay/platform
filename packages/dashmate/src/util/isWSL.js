@@ -1,7 +1,7 @@
 import os from 'os';
 import fs from 'fs';
 
-export function isWSL() {
+export default function isWSL() {
   if (process.platform !== 'linux') {
     return false;
   }

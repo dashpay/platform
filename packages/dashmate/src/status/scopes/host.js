@@ -6,7 +6,7 @@ import prettyByte from 'pretty-bytes';
 /**
  * @returns {getHostScope}
  */
-export function getHostScopeFactory() {
+export default function getHostScopeFactory() {
   /**
    * Get host status scope
    *

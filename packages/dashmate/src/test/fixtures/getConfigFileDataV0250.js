@@ -1,7 +1,7 @@
 import path from 'path';
 import { PACKAGE_ROOT_DIR } from '../../constants.js';
 
-export function getConfigFileDataV0250() {
+export default function getConfigFileDataV0250() {
   return {
     configFormatVersion: '0.25.0',
     defaultConfigName: null,

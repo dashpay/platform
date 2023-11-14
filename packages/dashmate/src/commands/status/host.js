@@ -1,9 +1,9 @@
 import { Flags } from '@oclif/core';
 import { OUTPUT_FORMATS } from '../../constants.js';
-import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
-import { printObject } from '../../printers/printObject.js';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
+import printObject from '../../printers/printObject.js';
 
-export class HostStatusCommand extends ConfigBaseCommand {
+export default class HostStatusCommand extends ConfigBaseCommand {
   static description = 'Show host status details';
 
   static flags = {

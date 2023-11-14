@@ -1,6 +1,6 @@
-import { AbstractError } from '../../errors/AbstractError.js';
+import AbstractError from '../../errors/AbstractError.js';
 
-export class GroupIsNotPresentError extends AbstractError {
+export default class GroupIsNotPresentError extends AbstractError {
   /**
    * @param {string} groupName
    */

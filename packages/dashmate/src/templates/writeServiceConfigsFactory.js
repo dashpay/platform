@@ -5,7 +5,7 @@ import path from 'path';
  * @param {HomeDir} homeDir
  * @return {writeServiceConfigs}
  */
-export function writeServiceConfigsFactory(homeDir) {
+export default function writeServiceConfigsFactory(homeDir) {
   /**
    * Write service config files
    *

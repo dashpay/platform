@@ -1,7 +1,7 @@
 /**
  * @return {getConfigProfiles}
  */
-export function getConfigProfilesFactory() {
+export default function getConfigProfilesFactory() {
   function getConfigProfiles(config) {
     const profiles = [];
 

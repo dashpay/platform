@@ -1,6 +1,6 @@
-import { AbstractError } from '../../errors/AbstractError.js';
+import AbstractError from '../../errors/AbstractError.js';
 
-export class InvalidConfigFileFormatError extends AbstractError {
+export default class InvalidConfigFileFormatError extends AbstractError {
   /**
    * @param {string} configFilePath
    * @param {Error} error

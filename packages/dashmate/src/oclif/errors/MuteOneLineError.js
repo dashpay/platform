@@ -1,7 +1,7 @@
 import { settings } from '@oclif/core';
-import { AbstractError } from '../../errors/AbstractError.js';
+import AbstractError from '../../errors/AbstractError.js';
 
-export class MuteOneLineError extends AbstractError {
+export default class MuteOneLineError extends AbstractError {
   /**
    * @param {Error} error
    */

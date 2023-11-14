@@ -15,7 +15,7 @@ import {
   getNodeTypeNameByType,
   isNodeTypeNameHighPerformance,
 } from './nodeTypes.js';
-import { generateRandomString } from '../../../util/generateRandomString.js';
+import generateRandomString from '../../../util/generateRandomString.js';
 
 /**
  * @param {ConfigFile} configFile
@@ -27,7 +27,7 @@ import { generateRandomString } from '../../../util/generateRandomString.js';
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
  * @param {DefaultConfigs} defaultConfigs
  */
-export function setupRegularPresetTaskFactory(
+export default function setupRegularPresetTaskFactory(
   configFile,
   generateBlsKeys,
   registerMasternodeTask,

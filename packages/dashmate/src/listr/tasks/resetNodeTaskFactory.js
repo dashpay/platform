@@ -1,7 +1,7 @@
 import { Listr } from 'listr2';
 import fs from 'fs';
 import path from 'path';
-import { wait } from '../../util/wait.js';
+import wait from '../../util/wait.js';
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -14,7 +14,7 @@ import { wait } from '../../util/wait.js';
  * @param {generateEnvs} generateEnvs
  * @return {resetNodeTask}
  */
-export function resetNodeTaskFactory(
+export default function resetNodeTaskFactory(
   dockerCompose,
   docker,
   startNodeTask,

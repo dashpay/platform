@@ -1,7 +1,7 @@
 import { table } from 'table';
-import { GroupBaseCommand } from '../../oclif/command/GroupBaseCommand.js';
+import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
 
-export class GroupListCommand extends GroupBaseCommand {
+export default class GroupListCommand extends GroupBaseCommand {
   static description = 'List available groups';
 
   static flags = {

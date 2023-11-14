@@ -23,7 +23,7 @@ import {
  * @param {waitForBalanceToConfirm} waitForBalanceToConfirm
  * @return {registerMasternodeTask}
  */
-export function registerMasternodeTaskFactory(
+export default function registerMasternodeTaskFactory(
   startCore,
   createNewAddress,
   generateToAddress,

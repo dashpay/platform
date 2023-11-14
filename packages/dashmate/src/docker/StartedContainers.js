@@ -2,7 +2,7 @@
  *  Store all started docker container IDs
  */
 
-export class StartedContainers {
+export default class StartedContainers {
   constructor() {
     this.containers = new Set();
   }

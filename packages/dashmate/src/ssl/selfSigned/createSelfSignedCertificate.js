@@ -8,7 +8,7 @@ import forge from 'node-forge';
  * @param {string} csrPem
  * @return {Promise<{cert: string, key: string}>}
  */
-export async function createSelfSignedCertificate(keyPair, csrPem) {
+export default async function createSelfSignedCertificate(keyPair, csrPem) {
   const cert = forge.pki.createCertificate();
   const csr = forge.pki.certificationRequestFromPem(csrPem);
 

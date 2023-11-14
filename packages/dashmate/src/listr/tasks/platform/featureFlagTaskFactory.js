@@ -7,7 +7,7 @@ const { Identifier } = WasmDPP;
  *
  * @return {featureFlagTask}
  */
-export function featureFlagTaskFactory() {
+export default function featureFlagTaskFactory() {
   /**
    * @typedef {featureFlagTask}
    * @param {Config} config

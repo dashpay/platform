@@ -10,7 +10,7 @@ const { PrivateKey } = DashCoreLib;
  * @param {function(balance: number)} [progressCallback]
  * @returns {Promise<void>}
  */
-export async function generateBlocks(
+export default async function generateBlocks(
   coreService,
   blocks,
   network,

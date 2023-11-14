@@ -3,9 +3,9 @@ import lodash from 'lodash';
 import chalk from 'chalk';
 import { inspect } from 'util';
 import { OUTPUT_FORMATS } from '../../constants.js';
-import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 
-export class ConfigGetCommand extends ConfigBaseCommand {
+export default class ConfigGetCommand extends ConfigBaseCommand {
   static description = `Get config option
 
 Gets a configuration option from the specified config

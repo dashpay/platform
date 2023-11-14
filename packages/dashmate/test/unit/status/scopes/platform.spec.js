@@ -1,7 +1,7 @@
 import * as providers from '../../../../src/status/providers';
 import determineStatus from '../../../../src/status/determineStatus.js';
-import { getConfigMock } from '../../../../src/test/mock/getConfigMock.js';
-import { getPlatformScopeFactory } from '../../../../src/status/scopes/platform.js';
+import getConfigMock from '../../../../src/test/mock/getConfigMock.js';
+import getPlatformScopeFactory from '../../../../src/status/scopes/platform.js';
 import { DockerStatusEnum } from '../../../../src/status/enums/dockerStatus.js';
 import { PortStateEnum } from '../../../../src/status/enums/portState.js';
 import { ServiceStatusEnum } from '../../../../src/status/enums/serviceStatus.js';

@@ -7,7 +7,7 @@ import * as errorDescriptions from './errors/errorDescriptions.js';
  * @param {Object} options
  * @returns {Promise<Object>}
  */
-export async function requestApi(url, options) {
+export default async function requestApi(url, options) {
   const response = await fetch(url, options);
   const data = await response.json();
 

@@ -6,6 +6,6 @@
  * @param {string} privateKey
  * @return {Promise<void>}
  */
-export async function importPrivateKey(coreService, privateKey) {
+export default async function importPrivateKey(coreService, privateKey) {
   return coreService.getRpcClient().importPrivKey(privateKey, { wallet: 'main' });
 }

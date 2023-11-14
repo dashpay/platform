@@ -1,6 +1,6 @@
-import { convertDate } from './convertDate.js';
+import convertDate from './convertDate.js';
 
-export class Certificate {
+export default class Certificate {
   id;
 
   type;

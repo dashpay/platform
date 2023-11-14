@@ -3,7 +3,7 @@ import { Listr } from 'listr2';
 import chalk from 'chalk';
 import path from 'path';
 import fs from 'fs';
-import { wait } from '../../../../util/wait.js';
+import wait from '../../../../util/wait.js';
 
 /**
  * @param {generateCsr} generateCsr
@@ -18,7 +18,7 @@ import { wait } from '../../../../util/wait.js';
  * @param {HomeDir} homeDir
  * @return {obtainZeroSSLCertificateTask}
  */
-export function obtainZeroSSLCertificateTaskFactory(
+export default function obtainZeroSSLCertificateTaskFactory(
   generateCsr,
   generateKeyPair,
   createZeroSSLCertificate,

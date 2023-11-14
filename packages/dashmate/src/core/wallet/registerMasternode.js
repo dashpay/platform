@@ -12,7 +12,7 @@
  * @param {boolean} [hp=false]
  * @return {Promise<string>}
  */
-export async function registerMasternode(
+export default async function registerMasternode(
   coreService,
   collateralHash,
   ownerAddress,

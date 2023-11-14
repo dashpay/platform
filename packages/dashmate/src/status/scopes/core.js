@@ -3,7 +3,7 @@ import * as providers from '../providers.js';
 import { ServiceStatusEnum } from '../enums/serviceStatus.js';
 import { DockerStatusEnum } from '../enums/dockerStatus.js';
 import determineStatus from '../determineStatus.js';
-import { extractCoreVersion } from '../../core/extractCoreVersion.js';
+import extractCoreVersion from '../../core/extractCoreVersion.js';
 
 /**
  * @returns {getCoreScopeFactory}
@@ -11,7 +11,7 @@ import { extractCoreVersion } from '../../core/extractCoreVersion.js';
  * @param {createRpcClient} createRpcClient
  * @param {getConnectionHost} getConnectionHost
  */
-export function getCoreScopeFactory(
+export default function getCoreScopeFactory(
   dockerCompose,
   createRpcClient,
   getConnectionHost,

@@ -1,13 +1,13 @@
 import BlsSignatures from '@dashevo/bls';
-import { validateBLSPrivateKeyFactory } from '../../../../prompts/validators/validateBLSPrivateKeyFactory.js';
-import { createPlatformNodeKeyInput } from '../../../../prompts/createPlatformNodeKeyInput.js';
+import validateBLSPrivateKeyFactory from '../../../../prompts/validators/validateBLSPrivateKeyFactory.js';
+import createPlatformNodeKeyInput from '../../../../prompts/createPlatformNodeKeyInput.js';
 
 /**
  *
  * @param {createIpAndPortsForm} createIpAndPortsForm
  * @return {registerMasternodeWithDMTFactory}
  */
-export function registerMasternodeWithDMTFactory(createIpAndPortsForm) {
+export default function registerMasternodeWithDMTFactory(createIpAndPortsForm) {
   /**
    * Print prompts to collect masternode registration data with DMT
    *

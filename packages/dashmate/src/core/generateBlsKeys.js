@@ -7,7 +7,7 @@ import BlsSignatures from '@dashevo/bls';
  * @typedef {generateBlsKeys}
  * @return {Promise<{privateKey: *, address: *}>}
  */
-export async function generateBlsKeys() {
+export default async function generateBlsKeys() {
   const blsSignatures = await BlsSignatures();
   const { BasicSchemeMPL } = blsSignatures;
 

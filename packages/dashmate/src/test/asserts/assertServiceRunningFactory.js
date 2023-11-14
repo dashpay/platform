@@ -4,7 +4,7 @@
  *
  * @returns {assertServiceRunning}
  */
-export function assertServiceRunningFactory(configFile, dockerCompose) {
+export default function assertServiceRunningFactory(configFile, dockerCompose) {
   /**
    * Check if service is running
    *

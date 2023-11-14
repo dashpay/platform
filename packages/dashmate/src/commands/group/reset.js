@@ -1,10 +1,10 @@
 import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
-import { GroupBaseCommand } from '../../oclif/command/GroupBaseCommand.js';
-import { MuteOneLineError } from '../../oclif/errors/MuteOneLineError.js';
+import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
+import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 import { PRESET_LOCAL } from '../../constants.js';
 
-export class GroupResetCommand extends GroupBaseCommand {
+export default class GroupResetCommand extends GroupBaseCommand {
   static description = 'Reset group nodes';
 
   static flags = {

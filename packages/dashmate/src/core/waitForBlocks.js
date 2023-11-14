@@ -1,4 +1,4 @@
-import { wait } from '../util/wait.js';
+import wait from '../util/wait.js';
 
 /**
  * Wait for blocks to be generated
@@ -8,7 +8,7 @@ import { wait } from '../util/wait.js';
  * @param {function(confirmations: number)} [progressCallback]
  * @returns {Promise<void>}
  */
-export async function waitForBlocks(coreService, blocks, progressCallback = () => {}) {
+export default async function waitForBlocks(coreService, blocks, progressCallback = () => {}) {
   let { result: currentBlock } = await coreService.getRpcClient().getBlockCount();
   const lastBlock = currentBlock + blocks;
 

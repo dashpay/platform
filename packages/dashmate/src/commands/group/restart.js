@@ -1,8 +1,8 @@
 import { Listr } from 'listr2';
-import { GroupBaseCommand } from '../../oclif/command/GroupBaseCommand.js';
-import { MuteOneLineError } from '../../oclif/errors/MuteOneLineError.js';
+import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
+import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 
-export class GroupRestartCommand extends GroupBaseCommand {
+export default class GroupRestartCommand extends GroupBaseCommand {
   static description = 'Restart group nodes';
 
   static flags = {

@@ -1,11 +1,12 @@
 import { Listr } from 'listr2';
 import lodash from 'lodash';
 import { LLMQ_TYPE_TEST, NETWORK_LOCAL } from '../../../../constants.js';
-import { waitForNodesToHaveTheSameHeight } from '../../../../core/waitForNodesToHaveTheSameHeight.js';
-import { waitForQuorumPhase } from '../../../../core/quorum/waitForQuorumPhase.js';
-import { waitForQuorumConnections } from '../../../../core/quorum/waitForQuorumConnections.js';
-import { waitForQuorumCommitments } from '../../../../core/quorum/waitForQuorumCommitements.js';
-import { wait } from '../../../../util/wait.js';
+import waitForNodesToHaveTheSameHeight from '../../../../core/waitForNodesToHaveTheSameHeight.js';
+import waitForQuorumPhase from '../../../../core/quorum/waitForQuorumPhase.js';
+import waitForQuorumConnections from '../../../../core/quorum/waitForQuorumConnections.js';
+import waitForQuorumCommitments from '../../../../core/quorum/waitForQuorumCommitements.js';
+import wait from '../../../../util/wait.js';
+import waitForMasternodeProbes from '../../../../core/quorum/waitForMasternodeProbes.js';
 
 const { isEqual } = lodash;
 
@@ -13,7 +14,7 @@ const { isEqual } = lodash;
  * @param {generateBlocks} generateBlocks
  * @return {enableCoreQuorumsTask}
  */
-export function enableCoreQuorumsTaskFactory(generateBlocks) {
+export default function enableCoreQuorumsTaskFactory(generateBlocks) {
   /**
    * @typedef {enableCoreQuorumsTask}
    * @return {Listr}

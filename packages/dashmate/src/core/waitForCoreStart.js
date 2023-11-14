@@ -1,4 +1,4 @@
-import { wait } from '../util/wait.js';
+import wait from '../util/wait.js';
 
 /**
  * Wait for Core to start
@@ -7,7 +7,7 @@ import { wait } from '../util/wait.js';
  * @param {CoreService} coreService
  * @return {Promise<void>}
  */
-export async function waitForCoreStart(coreService) {
+export default async function waitForCoreStart(coreService) {
   let retries = 0;
   let isReady = false;
   const maxRetries = 120; // ~2 minutes

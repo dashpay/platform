@@ -1,10 +1,10 @@
 import { Listr } from 'listr2';
 
 import { Flags } from '@oclif/core';
-import { ConfigBaseCommand } from '../oclif/command/ConfigBaseCommand.js';
-import { MuteOneLineError } from '../oclif/errors/MuteOneLineError.js';
+import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
+import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
 
-export class StartCommand extends ConfigBaseCommand {
+export default class StartCommand extends ConfigBaseCommand {
   static description = 'Start node';
 
   static flags = {

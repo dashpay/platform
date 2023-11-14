@@ -2,7 +2,7 @@ import { table } from 'table';
 
 import { OUTPUT_FORMATS } from '../constants.js';
 
-import { UnsupportedFormatError } from './errors/UnsupportedFormatError.js';
+import UnsupportedFormatError from './errors/UnsupportedFormatError.js';
 
 /**
  * Prints object using specified output format
@@ -10,7 +10,7 @@ import { UnsupportedFormatError } from './errors/UnsupportedFormatError.js';
  * @param {[Object[]]} array
  * @param {string} format
  */
-export function printArrayOfObjects(array, format) {
+export default function printArrayOfObjects(array, format) {
   let output;
   switch (format) {
     case OUTPUT_FORMATS.PLAIN: {

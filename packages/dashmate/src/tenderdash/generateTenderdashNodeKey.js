@@ -4,7 +4,7 @@ import crypto from 'crypto';
  * @typedef generateTenderdashNodeKey
  * @returns {string}
  */
-export function generateTenderdashNodeKey() {
+export default function generateTenderdashNodeKey() {
   const {
     privateKey,
     publicKey,

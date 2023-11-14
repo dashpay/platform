@@ -1,6 +1,6 @@
 import table from 'table';
 import { OUTPUT_FORMATS } from '../constants.js';
-import { UnsupportedFormatError } from './errors/UnsupportedFormatError.js';
+import UnsupportedFormatError from './errors/UnsupportedFormatError.js';
 
 /**
  * Prints object using specified output format
@@ -8,7 +8,7 @@ import { UnsupportedFormatError } from './errors/UnsupportedFormatError.js';
  * @param {Object} object
  * @param {string} format
  */
-export function printObject(object, format) {
+export default function printObject(object, format) {
   let output;
   switch (format) {
     case OUTPUT_FORMATS.PLAIN: {

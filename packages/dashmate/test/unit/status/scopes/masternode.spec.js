@@ -1,5 +1,5 @@
-import { getConfigMock } from '../../../../src/test/mock/getConfigMock.js';
-import { getMasternodeScopeFactory } from '../../../../src/status/scopes/masternode.js';
+import getConfigMock from '../../../../src/test/mock/getConfigMock.js';
+import getMasternodeScopeFactory from '../../../../src/status/scopes/masternode.js';
 import { MasternodeSyncAssetEnum } from '../../../../src/status/enums/masternodeSyncAsset.js';
 import { MasternodeStateEnum } from '../../../../src/status/enums/masternodeState.js';
 

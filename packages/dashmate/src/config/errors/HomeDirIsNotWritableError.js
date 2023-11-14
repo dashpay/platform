@@ -1,6 +1,6 @@
-import { AbstractError } from '../../errors/AbstractError.js';
+import AbstractError from '../../errors/AbstractError.js';
 
-export class HomeDirIsNotWritableError extends AbstractError {
+export default class HomeDirIsNotWritableError extends AbstractError {
   /**
    * @param {string} homeDirPath
    */

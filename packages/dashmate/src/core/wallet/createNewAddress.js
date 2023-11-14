@@ -5,7 +5,7 @@
  * @param {CoreService} coreService
  * @return {Promise<{privateKey: *, address: *}>}
  */
-export async function createNewAddress(coreService) {
+export default async function createNewAddress(coreService) {
   const { result: address } = await coreService.getRpcClient().getNewAddress({ wallet: 'main' });
   const { result: privateKey } = await coreService.getRpcClient().dumpPrivKey(address, { wallet: 'main' });
 

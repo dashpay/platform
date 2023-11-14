@@ -10,7 +10,7 @@ import forge from 'node-forge';
  * @param {string} externalIp
  * @return {Promise<string>}
  */
-export async function generateCsr(
+export default async function generateCsr(
   keyPair,
   externalIp,
 ) {

@@ -7,7 +7,7 @@ import { Listr } from 'listr2';
  * @param {saveCertificateTask} saveCertificateTask
  * @return {obtainSelfSignedCertificateTask}
  */
-export function obtainSelfSignedCertificateTaskFactory(
+export default function obtainSelfSignedCertificateTaskFactory(
   generateKeyPair,
   generateCsr,
   createSelfSignedCertificate,

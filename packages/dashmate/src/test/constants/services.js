@@ -1,4 +1,4 @@
-export const services = {
+export default {
   dashmate_helper: 'Dashmate Helper',
   dapi_envoy: 'DAPI Envoy',
   dapi_api: 'DAPI API',

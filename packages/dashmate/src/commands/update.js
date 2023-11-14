@@ -1,10 +1,10 @@
 import { Flags } from '@oclif/core';
 import chalk from 'chalk';
 import { OUTPUT_FORMATS } from '../constants.js';
-import { ConfigBaseCommand } from '../oclif/command/ConfigBaseCommand.js';
-import { printArrayOfObjects } from '../printers/printArrayOfObjects.js';
+import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
+import printArrayOfObjects from '../printers/printArrayOfObjects.js';
 
-export class UpdateCommand extends ConfigBaseCommand {
+export default class UpdateCommand extends ConfigBaseCommand {
   static description = 'Update node software';
 
   static flags = {

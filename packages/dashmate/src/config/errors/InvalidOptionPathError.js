@@ -1,6 +1,6 @@
-import { AbstractError } from '../../errors/AbstractError.js';
+import AbstractError from '../../errors/AbstractError.js';
 
-export class InvalidOptionPathError extends AbstractError {
+export default class InvalidOptionPathError extends AbstractError {
   /**
    * @param {string} path
    */

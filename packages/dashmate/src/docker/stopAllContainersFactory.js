@@ -3,7 +3,7 @@
  * @param docker
  * @return {stopAllContainers}
  */
-export function stopAllContainersFactory(docker) {
+export default function stopAllContainersFactory(docker) {
   /**
    * @typedef {stopAllContainers}
    * @param {string[]} containersIds

@@ -5,7 +5,7 @@ import crypto from 'crypto';
  * @param {string} nodeKey
  * @returns {string}
  */
-export function deriveTenderdashNodeId(nodeKey) {
+export default function deriveTenderdashNodeId(nodeKey) {
   const nodeKeyBuffer = Buffer.from(nodeKey, 'base64');
 
   const publicKey = nodeKeyBuffer.slice(32);

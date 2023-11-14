@@ -1,7 +1,7 @@
 import util from 'util';
-import { AbstractError } from '../../errors/AbstractError.js';
+import AbstractError from '../../errors/AbstractError.js';
 
-export class DockerComposeError extends AbstractError {
+export default class DockerComposeError extends AbstractError {
   /**
    * @param {{err: string, out: string, exitCode: number}} dockerComposeExecutionResult
    */

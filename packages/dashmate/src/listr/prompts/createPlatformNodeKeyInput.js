@@ -1,12 +1,12 @@
-import { validateTenderdashNodeKey } from './validators/validateTenderdashNodeKey.js';
-import { generateTenderdashNodeKey } from '../../tenderdash/generateTenderdashNodeKey.js';
+import validateTenderdashNodeKey from './validators/validateTenderdashNodeKey.js';
+import generateTenderdashNodeKey from '../../tenderdash/generateTenderdashNodeKey.js';
 
 /**
  * @param {Object} [options]
  * @param {string} [options.initial]
  * @returns {Object}
  */
-export function createPlatformNodeKeyInput(options = {}) {
+export default function createPlatformNodeKeyInput(options = {}) {
   let { initial } = options;
   if (initial === null || initial === undefined) {
     initial = generateTenderdashNodeKey();

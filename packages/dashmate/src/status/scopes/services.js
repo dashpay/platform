@@ -1,11 +1,11 @@
-import { ContainerIsNotPresentError } from '../../docker/errors/ContainerIsNotPresentError.js';
+import ContainerIsNotPresentError from '../../docker/errors/ContainerIsNotPresentError.js';
 import { DockerStatusEnum } from '../enums/dockerStatus.js';
 /**
  * @param {DockerCompose} dockerCompose
  * @param getServiceList
  * @returns {getServicesScopeFactory}
  */
-export function getServicesScopeFactory(dockerCompose, getServiceList) {
+export default function getServicesScopeFactory(dockerCompose, getServiceList) {
   /**
    * Get platform status scope
    *

@@ -1,6 +1,6 @@
-import { AbstractError } from '../../errors/AbstractError.js';
+import AbstractError from '../../errors/AbstractError.js';
 
-export class ConfigFileNotFoundError extends AbstractError {
+export default class ConfigFileNotFoundError extends AbstractError {
   /**
    * @param {string} configFilePath
    */

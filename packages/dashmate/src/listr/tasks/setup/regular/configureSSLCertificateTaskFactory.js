@@ -6,8 +6,8 @@ import {
   SSL_PROVIDERS,
   NODE_TYPE_FULLNODE,
 } from '../../../../constants.js';
-import { validateFileExists } from '../../../prompts/validators/validateFileExists.js';
-import { listCertificates } from '../../../../ssl/zerossl/listCertificates.js';
+import validateFileExists from '../../../prompts/validators/validateFileExists.js';
+import listCertificates from '../../../../ssl/zerossl/listCertificates.js';
 
 /**
  * @param {saveCertificateTask} saveCertificateTask
@@ -15,7 +15,7 @@ import { listCertificates } from '../../../../ssl/zerossl/listCertificates.js';
  * @param {obtainSelfSignedCertificateTask} obtainSelfSignedCertificateTask
  * @returns {configureSSLCertificateTask}
  */
-export function configureSSLCertificateTaskFactory(
+export default function configureSSLCertificateTaskFactory(
   saveCertificateTask,
   obtainZeroSSLCertificateTask,
   obtainSelfSignedCertificateTask,

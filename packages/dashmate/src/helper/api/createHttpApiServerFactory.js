@@ -1,7 +1,7 @@
 import jayson from 'jayson';
 import oclif from '@oclif/core';
 
-export function createHttpApiServerFactory() {
+export default function createHttpApiServerFactory() {
   /**
    * @return {HttpServer}
    */

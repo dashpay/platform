@@ -1,5 +1,5 @@
 import { asValue } from 'awilix';
-import { createDIContainer } from '../../src/createDIContainer.js';
+import createDIContainer from '../../src/createDIContainer.js';
 import HomeDir from '../../src/config/HomeDir.js';
 
 describe('Local Network', function main() {

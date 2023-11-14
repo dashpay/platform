@@ -12,7 +12,7 @@ import RpcClient from '@dashevo/dashd-rpc/promise.js';
  * @param {number} [config.port=20002]
  * @return {RpcClient|PromisifyModule}
  */
-export function createRpcClient(config = {}) {
+export default function createRpcClient(config = {}) {
   // eslint-disable-next-line no-param-reassign
   config = {
     protocol: 'http',

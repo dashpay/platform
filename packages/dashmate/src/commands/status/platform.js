@@ -3,10 +3,10 @@
 import { Flags } from '@oclif/core';
 import { OUTPUT_FORMATS } from '../../constants.js';
 import * as colors from '../../status/colors.js';
-import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
-import { printObject } from '../../printers/printObject.js';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
+import printObject from '../../printers/printObject.js';
 
-export class PlatformStatusCommand extends ConfigBaseCommand {
+export default class PlatformStatusCommand extends ConfigBaseCommand {
   static description = 'Show Platform status details';
 
   static flags = {

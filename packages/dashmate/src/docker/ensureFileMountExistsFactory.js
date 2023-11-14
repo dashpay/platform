@@ -5,7 +5,7 @@ import path from 'path';
  * @return {ensureFileMountExists}
  */
 
-export function ensureFileMountExistsFactory() {
+export default function ensureFileMountExistsFactory() {
   /**
    * @typedef {ensureFileMountExists}
    * @param {string} filePath

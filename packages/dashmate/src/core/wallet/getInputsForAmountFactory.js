@@ -4,7 +4,7 @@
  * @param {RpcClient} coreClient
  * @return {getInputsForAmount}
  */
-export function getInputsForAmountFactory(coreClient) {
+export default function getInputsForAmountFactory(coreClient) {
   /**
    * @typedef {getInputsForAmount}
    * @param {string} address

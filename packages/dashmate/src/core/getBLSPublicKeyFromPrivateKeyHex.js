@@ -4,7 +4,7 @@ import BlsSignatures from '@dashevo/bls';
  * @param {string} privateKeyHex
  * @returns {Promise<void>}
  */
-export async function getBLSPublicKeyFromPrivateKeyHex(privateKeyHex) {
+export default async function getBLSPublicKeyFromPrivateKeyHex(privateKeyHex) {
   const { PrivateKey } = await BlsSignatures();
 
   const operatorPrivateKeyBuffer = Buffer.from(privateKeyHex, 'hex');

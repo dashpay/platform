@@ -8,11 +8,12 @@ import semver from 'semver';
 import util from 'node:util';
 
 import { PACKAGE_ROOT_DIR } from '../constants.js';
-import { ServiceAlreadyRunningError } from './errors/ServiceAlreadyRunningError.js';
-import { DockerComposeError } from './errors/DockerComposeError.js';
-import { ServiceIsNotRunningError } from './errors/ServiceIsNotRunningError.js';
+import ServiceAlreadyRunningError from './errors/ServiceAlreadyRunningError.js';
+import DockerComposeError from './errors/DockerComposeError.js';
+import ServiceIsNotRunningError from './errors/ServiceIsNotRunningError.js';
+import ContainerIsNotPresentError from './errors/ContainerIsNotPresentError.js';
 
-export class DockerCompose {
+export default class DockerCompose {
   /**
    * Minimal
    *

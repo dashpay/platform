@@ -1,4 +1,4 @@
-import { wait } from '../util/wait.js';
+import wait from '../util/wait.js';
 
 /**
  * Wait Core to be synced
@@ -8,7 +8,7 @@ import { wait } from '../util/wait.js';
  * @param {function(progress: {percent: number, blocks: number, headers: number})} progressCallback
  * @return {Promise<void>}
  */
-export async function waitForCoreSync(coreService, progressCallback = () => {}) {
+export default async function waitForCoreSync(coreService, progressCallback = () => {}) {
   let isSynced = false;
   let isBlockchainSynced = false;
   let verificationProgress = 0.0;

@@ -1,4 +1,4 @@
-import { wait } from '../util/wait.js';
+import wait from '../util/wait.js';
 
 /**
  * Wait for confirmations to be reached
@@ -9,7 +9,7 @@ import { wait } from '../util/wait.js';
  * @param {function(confirmations: number)} [progressCallback]
  * @returns {Promise<void>}
  */
-export async function waitForConfirmations(
+export default async function waitForConfirmations(
   coreService,
   txHash,
   confirmations,

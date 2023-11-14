@@ -6,7 +6,7 @@ const validator = new Validator(argsSchema);
  * @param coreAPI
  * @return {generateToAddress}
  */
-const generateToAddressFactory = (coreAPI) => {
+export default (coreAPI) => {
   /**
    * Layer 1 endpoint
    * WORKS ONLY IN REGTEST MODE.
@@ -83,5 +83,3 @@ const generateToAddressFactory = (coreAPI) => {
  *                      description: Address to sends funds to
  */
 /* eslint-enable max-len */
-
-module.exports = generateToAddressFactory;

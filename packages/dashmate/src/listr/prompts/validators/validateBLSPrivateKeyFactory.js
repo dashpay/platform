@@ -1,10 +1,10 @@
-import { validateHex } from './validateHex.js';
+import validateHex from './validateHex.js';
 /**
  * @param blsSignatures
  * @returns {validateBLSPrivateKey}
  */
 
-export function validateBLSPrivateKeyFactory(blsSignatures) {
+export default function validateBLSPrivateKeyFactory(blsSignatures) {
   /**
    * @typedef validateBLSPrivateKey
    * @param {string} value

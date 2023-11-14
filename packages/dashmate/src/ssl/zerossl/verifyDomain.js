@@ -1,5 +1,5 @@
 import qs from 'qs';
-import { requestApi } from './requestApi.js';
+import requestApi from './requestApi.js';
 
 /**
  * Verify the domain/ip specified by certificate id
@@ -9,7 +9,7 @@ import { requestApi } from './requestApi.js';
  * @param {string} apiKey
  * @return {Promise<Object>}
  */
-export async function verifyDomain(id, apiKey) {
+export default async function verifyDomain(id, apiKey) {
   const body = qs.stringify({
     validation_method: 'HTTP_CSR_HASH',
   });

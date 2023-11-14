@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
  * @param {string} value
  * @returns {boolean|string}
  */
-export function validateTenderdashNodeKey(value) {
+export default function validateTenderdashNodeKey(value) {
   if (value.length < 1) {
     return 'should not be empty';
   }

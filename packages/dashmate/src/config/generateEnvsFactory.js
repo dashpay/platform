@@ -1,6 +1,6 @@
 import path from 'path';
 import os from 'os';
-import { convertObjectToEnvs } from './convertObjectToEnvs.js';
+import convertObjectToEnvs from './convertObjectToEnvs.js';
 import { DASHMATE_HELPER_DOCKER_IMAGE } from '../constants.js';
 
 /**
@@ -9,7 +9,7 @@ import { DASHMATE_HELPER_DOCKER_IMAGE } from '../constants.js';
  * @param {getConfigProfiles} getConfigProfiles
  * @return {generateEnvs}
  */
-export function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
+export default function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
   /**
    * @typedef {function} generateEnvs
    * @param {Config} config

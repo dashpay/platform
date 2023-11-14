@@ -1,5 +1,5 @@
 import { CronJob } from 'cron';
-import { Certificate } from '../ssl/zerossl/Certificate.js';
+import Certificate from '../ssl/zerossl/Certificate.js';
 
 /**
  *
@@ -11,7 +11,7 @@ import { Certificate } from '../ssl/zerossl/Certificate.js';
  * @param {writeConfigTemplates} writeConfigTemplates
  * @return {scheduleRenewZeroSslCertificate}
  */
-export function scheduleRenewZeroSslCertificateFactory(
+export default function scheduleRenewZeroSslCertificateFactory(
   getCertificate,
   obtainZeroSSLCertificateTask,
   dockerCompose,

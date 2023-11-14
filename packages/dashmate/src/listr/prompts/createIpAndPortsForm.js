@@ -1,10 +1,10 @@
 import { publicIp } from 'public-ip';
-import { validatePort } from './validators/validatePort.js';
-import { validateIPv4 } from './validators/validateIPv4.js';
+import validatePort from './validators/validatePort.js';
+import validateIPv4 from './validators/validateIPv4.js';
 import { PRESET_MAINNET } from '../../constants.js';
-import { wait } from '../../util/wait.js';
+import wait from '../../util/wait.js';
 
-export function createIpAndPortsFormFactory(defaultConfigs) {
+export default function createIpAndPortsFormFactory(defaultConfigs) {
   /**
    * @typedef {function} createIpAndPortsForm
    * @param {string} network

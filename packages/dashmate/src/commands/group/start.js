@@ -1,10 +1,10 @@
 import { Listr } from 'listr2';
 
 import { Flags } from '@oclif/core';
-import { GroupBaseCommand } from '../../oclif/command/GroupBaseCommand.js';
-import { MuteOneLineError } from '../../oclif/errors/MuteOneLineError.js';
+import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
+import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
 
-export class GroupStartCommand extends GroupBaseCommand {
+export default class GroupStartCommand extends GroupBaseCommand {
   static flags = {
     ...GroupBaseCommand.flags,
     'wait-for-readiness': Flags.boolean({ char: 'w', description: 'wait for nodes to be ready', default: false }),

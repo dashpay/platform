@@ -1,8 +1,8 @@
 import { Listr } from 'listr2';
 import { Observable } from 'rxjs';
 import DashCoreLib from '@dashevo/dashcore-lib';
-import { waitForNodesToHaveTheSameHeight } from '../../../../core/waitForNodesToHaveTheSameHeight.js';
-import { waitForNodesToHaveTheSameSporks } from '../../../../core/waitForNodesToHaveTheSameSporks.js';
+import waitForNodesToHaveTheSameHeight from '../../../../core/waitForNodesToHaveTheSameHeight.js';
+import waitForNodesToHaveTheSameSporks from '../../../../core/waitForNodesToHaveTheSameSporks.js';
 
 import { NETWORK_LOCAL, HPMN_COLLATERAL_AMOUNT } from '../../../../constants.js';
 
@@ -22,7 +22,7 @@ const { PrivateKey } = DashCoreLib;
  * @param {ConfigFile} configFile
  * @return {configureCoreTask}
  */
-export function configureCoreTaskFactory(
+export default function configureCoreTaskFactory(
   writeConfigTemplates,
   startCore,
   generateBlocks,

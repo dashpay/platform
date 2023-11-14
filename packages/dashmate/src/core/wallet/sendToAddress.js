@@ -13,7 +13,7 @@ const { Transaction } = DashCoreLib;
  * @param {number} amount Amount in dash
  * @return {Promise<string>}
  */
-export async function sendToAddress(
+export default async function sendToAddress(
   coreService,
   fundSourcePrivateKey,
   fundSourceAddress,

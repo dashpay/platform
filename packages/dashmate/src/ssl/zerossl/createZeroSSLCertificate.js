@@ -1,6 +1,6 @@
 import qs from 'qs';
-import { Certificate } from './Certificate.js';
-import { requestApi } from './requestApi.js';
+import Certificate from './Certificate.js';
+import requestApi from './requestApi.js';
 
 /**
  * Create a ZeroSSL Certificate
@@ -11,7 +11,7 @@ import { requestApi } from './requestApi.js';
  * @param {string} apiKey
  * @return {Promise<Certificate>}
  */
-export async function createZeroSSLCertificate(
+export default async function createZeroSSLCertificate(
   csr,
   externalIp,
   apiKey,

@@ -2,9 +2,9 @@ import { Flags } from '@oclif/core';
 import chalk from 'chalk';
 import { inspect } from 'util';
 import { OUTPUT_FORMATS } from '../../constants.js';
-import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 
-export class ConfigCommand extends ConfigBaseCommand {
+export default class ConfigCommand extends ConfigBaseCommand {
   static description = 'Show default config';
 
   static flags = {

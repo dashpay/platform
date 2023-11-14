@@ -1,4 +1,4 @@
-export class DefaultConfigs {
+export default class DefaultConfigs {
   /**
    * @type {Object<string, function(): Config>}
    */

@@ -1,6 +1,6 @@
-import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 
-export class ConfigSetCommand extends ConfigBaseCommand {
+export default class ConfigSetCommand extends ConfigBaseCommand {
   /**
    * @param args
    * @param flags

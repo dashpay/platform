@@ -5,7 +5,7 @@ import { TEMPLATES_DIR } from '../constants.js';
 /**
  * @return {renderServiceTemplates}
  */
-export function renderServiceTemplatesFactory(renderTemplate) {
+export default function renderServiceTemplatesFactory(renderTemplate) {
   /**
    * Render templates for services
    *

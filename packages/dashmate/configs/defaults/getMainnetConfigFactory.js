@@ -4,7 +4,7 @@ import {
   NETWORK_MAINNET,
 } from '../../src/constants.js';
 
-import { Config } from '../../src/config/Config.js';
+import Config from '../../src/config/Config.js';
 
 const { merge: lodashMerge } = lodash;
 
@@ -13,7 +13,7 @@ const { merge: lodashMerge } = lodash;
  * @param {getBaseConfig} getBaseConfig
  * @returns {getMainnetConfig}
  */
-export function getMainnetConfigFactory(homeDir, getBaseConfig) {
+export default function getMainnetConfigFactory(homeDir, getBaseConfig) {
   /**
    * @typedef {function} getMainnetConfig
    * @returns {Config}

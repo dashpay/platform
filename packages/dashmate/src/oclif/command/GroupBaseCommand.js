@@ -1,12 +1,12 @@
 import { Flags } from '@oclif/core';
 import { asValue } from 'awilix';
-import { BaseCommand } from './BaseCommand.js';
-import { GroupIsNotPresentError } from '../../config/errors/GroupIsNotPresentError.js';
+import BaseCommand from './BaseCommand.js';
+import GroupIsNotPresentError from '../../config/errors/GroupIsNotPresentError.js';
 
 /**
  * @abstract
  */
-export class GroupBaseCommand extends BaseCommand {
+export default class GroupBaseCommand extends BaseCommand {
   static flags = {
     group: Flags.string({
       description: 'group name to use',

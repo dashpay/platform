@@ -6,18 +6,22 @@ import {
   MASTERNODE_COLLATERAL_AMOUNT,
   PRESET_MAINNET,
 } from '../../../../../constants.js';
-import { validateBLSPrivateKeyFactory } from '../../../../prompts/validators/validateBLSPrivateKeyFactory.js';
-import { validateAddress } from '../../../../prompts/validators/validateAddress.js';
-import { generateBlsKeys } from '../../../../../core/generateBlsKeys.js';
-import { validateTxHex } from '../../../../prompts/validators/validateTxHex.js';
-import { validatePositiveInteger } from '../../../../prompts/validators/validatePositiveInteger.js';
-import { deriveTenderdashNodeId } from '../../../../../tenderdash/deriveTenderdashNodeId.js';
+import validateBLSPrivateKeyFactory from '../../../../prompts/validators/validateBLSPrivateKeyFactory.js';
+import validateAddress from '../../../../prompts/validators/validateAddress.js';
+import generateBlsKeys from '../../../../../core/generateBlsKeys.js';
+import validateTxHex from '../../../../prompts/validators/validateTxHex.js';
+import validatePositiveInteger from '../../../../prompts/validators/validatePositiveInteger.js';
+import deriveTenderdashNodeId from '../../../../../tenderdash/deriveTenderdashNodeId.js';
+import formatPercentage from '../../../../prompts/formatters/formatPercentage.js';
+import validatePercentage from '../../../../prompts/validators/validatePercentage.js';
+import createPlatformNodeKeyInput from '../../../../prompts/createPlatformNodeKeyInput.js';
+import getBLSPublicKeyFromPrivateKeyHex from '../../../../../core/getBLSPublicKeyFromPrivateKeyHex.js';
 
 /**
  * @param {createIpAndPortsForm} createIpAndPortsForm
  * @return {registerMasternodeWithCoreWallet}
  */
-export function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
+export default function registerMasternodeWithCoreWalletFactory(createIpAndPortsForm) {
   /**
    * Print prompts to collect masternode registration data with Core
    *

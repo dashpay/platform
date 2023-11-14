@@ -1,12 +1,12 @@
 import { Listr } from 'listr2';
-import { wait } from '../../../util/wait.js';
+import wait from '../../../util/wait.js';
 
 /**
  *
  * @param {createTenderdashRpcClient} createTenderdashRpcClient
  * @return {waitForNodeToBeReadyTask}
  */
-export function waitForNodeToBeReadyTaskFactory(
+export default function waitForNodeToBeReadyTaskFactory(
   createTenderdashRpcClient,
 ) {
   /**

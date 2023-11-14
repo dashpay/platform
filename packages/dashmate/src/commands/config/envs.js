@@ -1,9 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { Flags } from '@oclif/core';
-import { ConfigBaseCommand } from '../../oclif/command/ConfigBaseCommand.js';
+import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 
-export class ConfigEnvsCommand extends ConfigBaseCommand {
+export default class ConfigEnvsCommand extends ConfigBaseCommand {
   static description = `Export config to envs
 
 Export configuration options as Docker Compose envs

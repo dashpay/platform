@@ -1,4 +1,4 @@
-import { requestApi } from './requestApi.js';
+import requestApi from './requestApi.js';
 
 /**
  * Create a ZeroSSL Certificate
@@ -8,7 +8,7 @@ import { requestApi } from './requestApi.js';
  * @param {string} id
  * @return {Promise<Certificate>}
  */
-async function revokeCertificate(
+export default async function revokeCertificate(
   apiKey,
   id,
 ) {

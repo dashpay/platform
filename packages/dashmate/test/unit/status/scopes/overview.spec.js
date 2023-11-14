@@ -1,4 +1,4 @@
-import { getOverviewScopeFactory } from '../../../../src/status/scopes/overview.js';
+import getOverviewScopeFactory from '../../../../src/status/scopes/overview.js';
 import { DockerStatusEnum } from '../../../../src/status/enums/dockerStatus.js';
 import { ServiceStatusEnum } from '../../../../src/status/enums/serviceStatus.js';
 import { MasternodeStateEnum } from '../../../../src/status/enums/masternodeState.js';

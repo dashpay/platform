@@ -1,12 +1,12 @@
 import { asValue } from 'awilix';
 import { Flags } from '@oclif/core';
-import { ConfigIsNotPresentError } from '../../config/errors/ConfigIsNotPresentError.js';
-import { BaseCommand } from './BaseCommand.js';
+import ConfigIsNotPresentError from '../../config/errors/ConfigIsNotPresentError.js';
+import BaseCommand from './BaseCommand.js';
 
 /**
  * @abstract
  */
-export class ConfigBaseCommand extends BaseCommand {
+export default class ConfigBaseCommand extends BaseCommand {
   static flags = {
     config: Flags.string({
       description: 'configuration name to use',

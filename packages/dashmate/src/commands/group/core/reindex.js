@@ -1,9 +1,10 @@
 import { Listr } from 'listr2';
 
 import { Flags } from '@oclif/core';
-import { GroupBaseCommand } from '../../../oclif/command/GroupBaseCommand.js';
+import GroupBaseCommand from '../../../oclif/command/GroupBaseCommand.js';
+import MuteOneLineError from '../../../oclif/errors/MuteOneLineError.js';
 
-export class GroupReindexCommand extends GroupBaseCommand {
+export default class GroupReindexCommand extends GroupBaseCommand {
   static description = 'Reindex group Core data';
 
   static flags = {

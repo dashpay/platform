@@ -1,6 +1,6 @@
-import { AbstractError } from '../../errors/AbstractError.js';
+import AbstractError from '../../errors/AbstractError.js';
 
-export class UnsupportedFormatError extends AbstractError {
+export default class UnsupportedFormatError extends AbstractError {
   /**
    * @param {string} formatName
    */

@@ -1,13 +1,13 @@
 /* eslint-disable quote-props */
 import { Flags } from '@oclif/core';
-import { GroupBaseCommand } from '../../oclif/command/GroupBaseCommand.js';
-import { printArrayOfObjects } from '../../printers/printArrayOfObjects.js';
-import { printObject } from '../../printers/printObject.js';
+import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
+import printArrayOfObjects from '../../printers/printArrayOfObjects.js';
+import printObject from '../../printers/printObject.js';
 import { OUTPUT_FORMATS } from '../../constants.js';
 import * as colors from '../../status/colors.js';
 import { ServiceStatusEnum } from '../../status/enums/serviceStatus.js';
 
-export class GroupStatusCommand extends GroupBaseCommand {
+export default class GroupStatusCommand extends GroupBaseCommand {
   static description = 'Show group status overview';
 
   static flags = {

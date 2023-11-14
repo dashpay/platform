@@ -2,7 +2,7 @@ import lodash from 'lodash';
 import {
   NETWORK_TESTNET,
 } from '../../src/constants.js';
-import { Config } from '../../src/config/Config.js';
+import Config from '../../src/config/Config.js';
 
 const { merge: lodashMerge } = lodash;
 /**
@@ -10,7 +10,7 @@ const { merge: lodashMerge } = lodash;
  * @param {getBaseConfig} getBaseConfig
  * @returns {getTestnetConfig}
  */
-export function getTestnetConfigFactory(homeDir, getBaseConfig) {
+export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
   /**
    * @typedef {function} getTestnetConfig
    * @returns {Config}

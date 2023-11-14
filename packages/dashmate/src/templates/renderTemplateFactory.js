@@ -4,7 +4,7 @@ import dots from 'dot';
 /**
  * @return {renderTemplate}
  */
-export function renderTemplateFactory() {
+export default function renderTemplateFactory() {
   /**
    * Render template for a service
    *

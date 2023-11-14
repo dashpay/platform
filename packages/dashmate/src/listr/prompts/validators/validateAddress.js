@@ -6,7 +6,7 @@ const { Address } = DashCoreLib;
  * @param {string} network
  * @returns {boolean}
  */
-export function validateAddress(value, network) {
+export default function validateAddress(value, network) {
   try {
     Address(value, network);
   } catch (e) {

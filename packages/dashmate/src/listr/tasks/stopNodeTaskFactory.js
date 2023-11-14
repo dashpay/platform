@@ -6,7 +6,7 @@ import { Listr } from 'listr2';
  * @param {getConnectionHost} getConnectionHost
  * @return {stopNodeTask}
  */
-export function stopNodeTaskFactory(
+export default function stopNodeTaskFactory(
   dockerCompose,
   createRpcClient,
   getConnectionHost,

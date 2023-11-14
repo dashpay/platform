@@ -3,7 +3,7 @@
  * @param {boolean} isHelper
  * @return {getConnectionHost}
  */
-export function getConnectionHostFactory(dockerCompose, isHelper) {
+export default function getConnectionHostFactory(dockerCompose, isHelper) {
   /**
    * Get proper service endpoint url
    * @typedef {function} getConnectionHost

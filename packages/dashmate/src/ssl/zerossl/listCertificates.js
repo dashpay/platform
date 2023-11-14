@@ -1,5 +1,5 @@
-import { requestApi } from './requestApi.js';
-import { Certificate } from './Certificate.js';
+import requestApi from './requestApi.js';
+import Certificate from './Certificate.js';
 
 /**
  * List ZeroSSL certificates
@@ -12,7 +12,7 @@ import { Certificate } from './Certificate.js';
  * @return {Promise<Certificate[]>}
  */
 
-export async function listCertificates(apiKey, statuses = [], search = undefined) {
+export default async function listCertificates(apiKey, statuses = [], search = undefined) {
   let url = `https://api.zerossl.com/certificates?access_key=${apiKey}&limit=1000`;
 
   if (statuses.length > 0) {

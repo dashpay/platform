@@ -1,4 +1,4 @@
-export class CoreService {
+export default class CoreService {
   /**
    *
    * @param {Config} config

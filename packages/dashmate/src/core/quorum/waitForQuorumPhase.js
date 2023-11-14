@@ -1,5 +1,5 @@
 import { LLMQ_TYPE_TEST } from '../../constants.js';
-import { wait } from '../../util/wait.js';
+import wait from '../../util/wait.js';
 
 /**
  *
@@ -64,7 +64,7 @@ async function checkDKGSessionPhase(
  * @param {number} [checkInterval]
  * @return {Promise<void>}
  */
-export async function waitForQuorumPhase(
+export default async function waitForQuorumPhase(
   rpcClients,
   quorumHash,
   phase,

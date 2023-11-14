@@ -1,13 +1,13 @@
 import os from 'os';
 import { WritableStream } from 'memory-streams';
-import { isWSL } from '../util/isWSL.js';
+import isWSL from '../util/isWSL.js';
 
 /**
  * @param {Docker} docker
  * @param {dockerPull} dockerPull
  * @return {resolveDockerHostIp}
  */
-export function resolveDockerHostIpFactory(docker, dockerPull) {
+export default function resolveDockerHostIpFactory(docker, dockerPull) {
   /**
    * @typedef {resolveDockerHostIp}
    * @return {Promise<string>}

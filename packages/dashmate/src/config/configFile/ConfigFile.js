@@ -1,9 +1,9 @@
-import { Config } from '../Config.js';
-import { ConfigIsNotPresentError } from '../errors/ConfigIsNotPresentError.js';
-import { GroupIsNotPresentError } from '../errors/GroupIsNotPresentError.js';
-import { ConfigAlreadyPresentError } from '../errors/ConfigAlreadyPresentError.js';
+import Config from '../Config.js';
+import ConfigIsNotPresentError from '../errors/ConfigIsNotPresentError.js';
+import GroupIsNotPresentError from '../errors/GroupIsNotPresentError.js';
+import ConfigAlreadyPresentError from '../errors/ConfigAlreadyPresentError.js';
 
-export class ConfigFile {
+export default class ConfigFile {
   /**
    * @param {Config[]} configs
    * @param {string} configFormatVersion

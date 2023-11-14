@@ -2,7 +2,7 @@
  * @param {Docker} docker
  * @return {dockerPull}
  */
-export function dockerPullFactory(docker) {
+export default function dockerPullFactory(docker) {
   /**
    * @typedef {dockerPull}
    * @param {string} image

@@ -1,6 +1,6 @@
-import { BaseCommand } from '../../oclif/command/BaseCommand.js';
+import BaseCommand from '../../oclif/command/BaseCommand.js';
 
-export class ConfigDefaultCommand extends BaseCommand {
+export default class ConfigDefaultCommand extends BaseCommand {
   static description = `Manage default config
 
 Shows default config name or sets another config as default

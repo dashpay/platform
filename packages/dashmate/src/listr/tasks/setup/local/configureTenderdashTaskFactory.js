@@ -4,7 +4,7 @@ import { getLatestProtocolVersion } from '@dashevo/wasm-dpp';
 /**
  * @return {configureTenderdashTask}
  */
-export function configureTenderdashTaskFactory() {
+export default function configureTenderdashTaskFactory() {
   /**
    * @typedef {configureTenderdashTask}
    * @param {Config[]} configGroup

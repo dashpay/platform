@@ -1,6 +1,6 @@
-import { AbstractError } from '../../errors/AbstractError.js';
+import AbstractError from '../../errors/AbstractError.js';
 
-export class ConfigIsNotPresentError extends AbstractError {
+export default class ConfigIsNotPresentError extends AbstractError {
   /**
    * @param {string} configName
    */

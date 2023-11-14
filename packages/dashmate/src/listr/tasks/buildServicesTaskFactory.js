@@ -6,7 +6,7 @@ import { Listr } from 'listr2';
  * @param {generateEnvs} generateEnvs
  * @return {buildServicesTask}
  */
-export function buildServicesTaskFactory(
+export default function buildServicesTaskFactory(
   dockerCompose,
   generateEnvs,
 ) {

@@ -13,7 +13,7 @@ import { Wallet } from '@dashevo/wallet-lib';
  *   derivedPrivateKeys: HDPrivateKey[],
  * }>}
  */
-export async function generateHDPrivateKeys(network, keyIndexes = [0]) {
+export default async function generateHDPrivateKeys(network, keyIndexes = [0]) {
   const wallet = new Wallet({ network, offlineMode: true });
   const account = await wallet.getAccount();
 

@@ -10,7 +10,7 @@ import { toDash } from '../../util/satoshiConverter.js';
  * @returns {Promise<void>}
  */
 
-export async function generateToAddress(
+export default async function generateToAddress(
   coreService,
   amount,
   address,

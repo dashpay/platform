@@ -1,6 +1,7 @@
 import DashCoreLib from '@dashevo/dashcore-lib';
 import { toDash } from '../../util/satoshiConverter.js';
 import { NETWORK_LOCAL } from '../../constants.js';
+import wait from '../../util/wait.js';
 
 const { PrivateKey } = DashCoreLib;
 /**
@@ -12,7 +13,7 @@ const { PrivateKey } = DashCoreLib;
  * @param {function(balance: number)} [progressCallback]
  * @returns {Promise<void>}
  */
-export async function waitForBalanceToConfirm(
+export default async function waitForBalanceToConfirm(
   coreService,
   network,
   address,

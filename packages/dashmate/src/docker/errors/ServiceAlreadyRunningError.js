@@ -1,6 +1,6 @@
-import { AbstractError } from '../../errors/AbstractError.js';
+import AbstractError from '../../errors/AbstractError.js';
 
-export class ServiceAlreadyRunningError extends AbstractError {
+export default class ServiceAlreadyRunningError extends AbstractError {
   /**
    * @param {string} serviceName
    */
