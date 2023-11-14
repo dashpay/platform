@@ -83,3 +83,5 @@ const generateToAddressFactory = (coreAPI) => {
  *                      description: Address to sends funds to
  */
 /* eslint-enable max-len */
+
+module.exports = generateToAddressFactory
