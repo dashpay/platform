@@ -13,6 +13,9 @@ use rs_dapi_client::transport::TransportRequest;
 
 use crate::{error::Error, platform::document_query::DocumentQuery};
 
+/// Default limit of epoch records returned by the platform.
+pub const DEFAULT_EPOCH_QUERY_LIMIT: u32 = 100;
+
 /// Trait implemented by objects that can be used as queries.
 ///
 /// [Query] trait is used to specify criteria for fetching data from the platform.
@@ -178,7 +181,7 @@ impl Query<GetEpochsInfoRequest> for LimitQuery<EpochIndex> {
                 proto::get_epochs_info_request::GetEpochsInfoRequestV0 {
                     prove,
                     start_epoch: Some(self.query.into()),
-                    count: self.limit.unwrap_or(100),
+                    count: self.limit.unwrap_or(DEFAULT_EPOCH_QUERY_LIMIT),
                     ascending: true,
                 },
             )),

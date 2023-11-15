@@ -25,7 +25,7 @@ pub use {
     document_query::DocumentQuery,
     fetch::Fetch,
     fetch_many::FetchMany,
-    query::{LimitQuery, Query},
+    query::{LimitQuery, Query, DEFAULT_EPOCH_QUERY_LIMIT},
 };
 
 pub use rs_dapi_client as dapi;
