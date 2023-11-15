@@ -83,7 +83,8 @@ jobs:
     uses: ./.github/workflows/tests-rs-package.yml
     with:
       package: ${{ matrix.rs-package }}
-      lint-runner: ubuntu-22.04
+      # Run drive and drive-abci linter on self-hosted
+      lint-runner: ${{ contains(fromJSON('["drive-abci", "drive"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' || '"ubuntu-22.04"' }}
       # Run drive tests on self-hosted 4x
       test-runner: ${{ contains(fromJSON('["drive-abci"]'), matrix.rs-package) && '[ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]' || '[ "self-hosted", "linux", "arm64", "ubuntu-platform" ]' }}
       check-each-feature: ${{ contains(fromJSON('["rs-sdk","rs-dapi-client","dapi-grpc"]'), matrix.rs-package) }}
