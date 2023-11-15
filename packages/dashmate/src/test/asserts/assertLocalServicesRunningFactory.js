@@ -1,4 +1,4 @@
-import * as SERVICES from '../constants/services.js';
+import SERVICES from '../constants/services.js';
 
 /**
  * @param {assertServiceRunning} assertServiceRunning
