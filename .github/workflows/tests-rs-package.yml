@@ -187,8 +187,8 @@ jobs:
           SCCACHE_REGION: ${{ vars.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ steps.arch.outputs.arch }}/linux-gnu
 
-  verify_features:
-    name: Verify features
+  check_each_feature:
+    name: Check each feature
     runs-on: ${{ fromJSON(inputs.test-runner) }}
     outputs:
       features: ${{ steps.list.outputs.features }}
@@ -212,8 +212,14 @@ jobs:
       - name: Install yq
         run: |
           mkdir -p $HOME/bin
-          wget --compression=auto -q  -O $HOME/bin/yq \
-            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+
+          if [ "$(uname -m)" = "x86_64" ] ; then
+            wget --compression=auto -q  -O $HOME/bin/yq \
+              https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64;
+          else 
+            wget --compression=auto -q  -O $HOME/bin/yq \
+              https://github.com/mikefarah/yq/releases/latest/download/yq_linux_arm64;
+          fi;
           chmod +x $HOME/bin/yq
 
       - name: List features
@@ -223,7 +229,7 @@ jobs:
           cargo_toml="$(grep -rl --include=Cargo.toml 'name = "${{ inputs.package }}"' .)"
           echo features=$($HOME/bin/yq -oy eval '.features | keys | .[]' ${cargo_toml} | tr '\n' ' ') >> $GITHUB_ENV
 
-      - name: Verify each feature in ${{ inputs.package }}
+      - name: Check each feature in ${{ inputs.package }}
         env:
           RUSTC_WRAPPER: sccache
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
