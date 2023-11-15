@@ -41,6 +41,10 @@ jobs:
         id: arch
         run: echo "arch=$(uname -m)" >> $GITHUB_OUTPUT
 
+      - name: Find crate ${{ inputs.package }} directory
+        id: find_crate_dir
+        run: echo "CRATE_DIR=$(dirname $(grep -rl --include=Cargo.toml 'name = "${{ inputs.package }}"' .))" >> $GITHUB_ENV
+
       - uses: clechasseur/rs-clippy-check@v3
         with:
           args: --package ${{ inputs.package }} --all-features --locked -- --no-deps
@@ -51,7 +55,9 @@ jobs:
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ steps.arch.outputs.arch }}/linux-gnu
 
       - name: Find unused dependencies
-        uses: bnjbvr/cargo-machete@main
+        uses: lklimek/cargo-machete@feat/workdir
+        with:
+          args: ${{ env.CRATE_DIR }}
 
   formatting:
     name: Formatting
