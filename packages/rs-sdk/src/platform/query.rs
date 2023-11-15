@@ -135,16 +135,18 @@ impl<'a> Query<DocumentQuery> for DriveQuery<'a> {
 /// ## Example
 ///
 /// ```rust
-/// use dash_platform_sdk::{platform::{Query, LimitQuery, Identifier, FetchMany, Identity}};
+/// use rs_sdk::{Sdk, platform::{Query, LimitQuery, Identifier, FetchMany, Identity}};
+/// use drive_proof_verifier::types::ExtendedEpochInfos;
+/// use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 ///
 /// # const SOME_IDENTIFIER : [u8; 32] = [0; 32];
 /// let mut sdk = Sdk::new_mock();
 /// let query = LimitQuery {
-///    query: Identifier::new(SOME_IDENTIFIER),
+///    query: 1,
 ///    limit: Some(10),
 ///    offset: Some(5),
 /// };
-/// let identity = Identity::fetch_many(&mut sdk, query);
+/// let epoch = ExtendedEpochInfo::fetch_many(&mut sdk, query);
 /// ```
 #[derive(Debug, Clone)]
 pub struct LimitQuery<Q> {
