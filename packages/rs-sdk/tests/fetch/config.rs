@@ -130,7 +130,8 @@ impl Config {
     /// * `offline-testing` is set - use mock implementation and
     /// load existing test vectors from disk
     pub async fn setup_api(&self) -> rs_sdk::Sdk {
-        #[cfg(feature = "network-testing")]
+        // offline testing takes precedence over network testing
+        #[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
         let sdk = {
             // Dump all traffic to disk
             let builder = rs_sdk::SdkBuilder::new(self.address_list()).with_core(
