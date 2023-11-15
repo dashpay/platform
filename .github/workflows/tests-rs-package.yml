@@ -228,7 +228,7 @@ jobs:
         run: |
           set -ex
           cargo_toml="$(grep -rl --include=Cargo.toml 'name = "${{ inputs.package }}"' .)"
-          echo "features=$($HOME/bin/yq -oy eval '.features | keys | .[]' ${cargo_toml} | tr '\n' ' ')" >> $GITHUB_ENV
+          echo "features=$($HOME/bin/yq -oy eval '.features | keys | .[]' ${cargo_toml} | tr '\n' ' ')" >> $GITHUB_OUTPUT
 
       - name: Check each feature in ${{ inputs.package }}
         env:
