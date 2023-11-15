@@ -1,4 +1,4 @@
-#[cfg(feature = "platform_integration_tests")]
+#[cfg(not(feature = "offline-testing"))]
 mod tests {
     use dapi_grpc::platform::v0::{
         self as platform_proto, get_identity_response, GetIdentityResponse, ResponseMetadata,

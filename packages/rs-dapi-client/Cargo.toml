@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["mocks"]
+default = ["mocks", "offline-testing"]
 mocks = ["dep:serde_json", "dep:sha2", "dep:hex"]
 # dump requests and responses to file
 dump = ["mocks", "dep:serde_json", "dep:sha2", "dep:chrono", "dep:hex"]
-platform_integration_tests = []
+# skip tests that require connection to the platform; enabled by default
+offline-testing = []
 
 
 [dependencies]
