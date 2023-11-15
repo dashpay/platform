@@ -127,6 +127,15 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
+    ["@aminya/node-gyp-build", [\
+      ["npm:4.5.0-aminya.4", {\
+        "packageLocation": "./.yarn/cache/@aminya-node-gyp-build-npm-4.5.0-aminya.4-966989134b-62ba5df2e4.zip/node_modules/@aminya/node-gyp-build/",\
+        "packageDependencies": [\
+          ["@aminya/node-gyp-build", "npm:4.5.0-aminya.4"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
     ["@ampproject/remapping", [\
       ["npm:2.2.1", {\
         "packageLocation": "./.yarn/cache/@ampproject-remapping-npm-2.2.1-3da3d624be-e15fecbf3b.zip/node_modules/@ampproject/remapping/",\
@@ -2731,6 +2740,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["@grpc/grpc-js", "npm:1.4.4"],\
+          ["@pshenmic/zeromq", "npm:6.0.0-beta.18"],\
           ["ajv", "npm:8.8.1"],\
           ["bs58", "npm:4.0.1"],\
           ["cbor", "npm:8.1.0"],\
@@ -2754,8 +2764,7 @@ const RAW_RUNTIME_STATE =
           ["sinon", "npm:17.0.1"],\
           ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["swagger-jsdoc", "npm:3.7.0"],\
-          ["ws", "virtual:7469c013e9c5baa67d67122340123f2260ba4f66d6748855fb7f2ab67ea3fe52b2c8821a105003266d54faf99a9564056fb1b532d9ae8b6985087ab5f8394bf0#npm:7.5.5"],\
-          ["zeromq", "npm:5.3.1"]\
+          ["ws", "virtual:7469c013e9c5baa67d67122340123f2260ba4f66d6748855fb7f2ab67ea3fe52b2c8821a105003266d54faf99a9564056fb1b532d9ae8b6985087ab5f8394bf0#npm:7.5.5"]\
         ],\
         "linkType": "SOFT"\
       }]\
@@ -4358,6 +4367,21 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/@protobufjs-utf8-npm-1.1.0-02c590807c-131e289c57.zip/node_modules/@protobufjs/utf8/",\
         "packageDependencies": [\
           ["@protobufjs/utf8", "npm:1.1.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["@pshenmic/zeromq", [\
+      ["npm:6.0.0-beta.18", {\
+        "packageLocation": "./.yarn/unplugged/@pshenmic-zeromq-npm-6.0.0-beta.18-6a4969f95f/node_modules/@pshenmic/zeromq/",\
+        "packageDependencies": [\
+          ["@pshenmic/zeromq", "npm:6.0.0-beta.18"],\
+          ["@aminya/node-gyp-build", "npm:4.5.0-aminya.4"],\
+          ["cross-env", "npm:7.0.3"],\
+          ["node-addon-api", "npm:5.1.0"],\
+          ["node-gyp", "npm:8.4.0"],\
+          ["shelljs", "npm:0.8.5"],\
+          ["shx", "npm:0.3.4"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -8512,6 +8536,16 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["cron", "npm:2.1.0"],\
           ["luxon", "npm:1.28.1"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["cross-env", [\
+      ["npm:7.0.3", {\
+        "packageLocation": "./.yarn/cache/cross-env-npm-7.0.3-96d81820f4-e99911f0d3.zip/node_modules/cross-env/",\
+        "packageDependencies": [\
+          ["cross-env", "npm:7.0.3"],\
+          ["cross-spawn", "npm:7.0.3"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -14780,6 +14814,16 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
+    ["node-addon-api", [\
+      ["npm:5.1.0", {\
+        "packageLocation": "./.yarn/unplugged/node-addon-api-npm-5.1.0-b50d00f739/node_modules/node-addon-api/",\
+        "packageDependencies": [\
+          ["node-addon-api", "npm:5.1.0"],\
+          ["node-gyp", "npm:8.4.0"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
     ["node-fetch", [\
       ["npm:2.6.7", {\
         "packageLocation": "./.yarn/cache/node-fetch-npm-2.6.7-777aa2a6df-4bc9245383.zip/node_modules/node-fetch/",\
@@ -14897,13 +14941,6 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/node-gyp-build-npm-4.3.0-87bdf5216f-673bd8f126.zip/node_modules/node-gyp-build/",\
         "packageDependencies": [\
           ["node-gyp-build", "npm:4.3.0"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["npm:4.6.1", {\
-        "packageLocation": "./.yarn/cache/node-gyp-build-npm-4.6.1-31ee3c90ee-79b9483774.zip/node_modules/node-gyp-build/",\
-        "packageDependencies": [\
-          ["node-gyp-build", "npm:4.6.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -17482,6 +17519,17 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/should-util-npm-1.0.1-f3701a5e03-c3be15e0fd.zip/node_modules/should-util/",\
         "packageDependencies": [\
           ["should-util", "npm:1.0.1"]\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
+    ["shx", [\
+      ["npm:0.3.4", {\
+        "packageLocation": "./.yarn/cache/shx-npm-0.3.4-49f9c5924a-5271b60f7e.zip/node_modules/shx/",\
+        "packageDependencies": [\
+          ["shx", "npm:0.3.4"],\
+          ["minimist", "npm:1.2.6"],\
+          ["shelljs", "npm:0.8.5"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -20820,18 +20868,6 @@ const RAW_RUNTIME_STATE =
           ["lodash.get", "npm:4.4.2"],\
           ["lodash.isequal", "npm:4.5.0"],\
           ["validator", "npm:13.7.0"]\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
-    ["zeromq", [\
-      ["npm:5.3.1", {\
-        "packageLocation": "./.yarn/unplugged/zeromq-npm-5.3.1-352eae853d/node_modules/zeromq/",\
-        "packageDependencies": [\
-          ["zeromq", "npm:5.3.1"],\
-          ["nan", "npm:2.17.0"],\
-          ["node-gyp", "npm:8.4.0"],\
-          ["node-gyp-build", "npm:4.6.1"]\
         ],\
         "linkType": "HARD"\
       }]\

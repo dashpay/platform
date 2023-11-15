@@ -1,4 +1,4 @@
-const zeromq = require('zeromq');
+const zeromq = require('@pshenmic/zeromq/v5-compat');
 const { EventEmitter } = require('events');
 const { ZMQ_TOPICS } = require('./constants');
 
