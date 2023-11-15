@@ -13,6 +13,10 @@ on:
         description: Runner for linting. Must be JSON valid string.
         type: string
         default: '"ubuntu-22.04"'
+      check-features:
+        description: If true, try to build each individual feature for this crate
+        type: boolean
+        default: false
 
 jobs:
   lint:
@@ -189,11 +193,6 @@ jobs:
     outputs:
       features: ${{ steps.list.outputs.features }}
     timeout-minutes: 30
-    # Not all crates pass features test atm, so we whitelist the ones that do
-    if: >
-      inputs.package == 'rs-sdk' ||
-      inputs.package == 'dapi-grpc' ||
-      inputs.package == 'rs-dapi-client'
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
