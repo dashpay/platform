@@ -43,10 +43,16 @@ drive-abci:
   - packages/rs-drive-abci/**
   - *drive
 
+dapi-grpc: &dapi_grpc
+  - .github/workflows/tests*
+  - packages/rs-platform-version/**
+  - packages/rs-dapi-grpc-macros/**
+  - packages/dapi-grpc/**
+
 rs-dapi-client: &dapi_client
   - .github/workflows/tests*
   - packages/rs-dapi-client/**
-  - packages/dapi-grpc/**
+  - *dapi_grpc
 
 rs-sdk:
   - .github/workflows/tests*

@@ -160,15 +160,17 @@ jobs:
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
           SCCACHE_REGION: ${{ vars.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ steps.arch.outputs.arch }}/linux-gnu
-          
+
   verify_features:
-    name: Verify features in ${{ inputs.package }}
+    name: Verify features
     runs-on: ${{ fromJSON(inputs.test-runner) }}
     outputs:
       features: ${{ steps.list.outputs.features }}
     timeout-minutes: 30
+    # Not all crates pass features test atm, so we whitelist the ones that do
     if: >
-      inputs.package == 'rs-sdk' || 
+      inputs.package == 'rs-sdk' ||
+      inputs.package == 'dapi-grpc' ||
       inputs.package == 'rs-dapi-client'
     steps:
       - name: Check out repo
