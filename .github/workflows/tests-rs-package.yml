@@ -240,8 +240,19 @@ jobs:
           echo Verify all features disabled
           set -ex
           features="${{ steps.list.outputs.features }}"
+          fails=""
           cargo check --no-default-features --package "${{ inputs.package }}" --locked
           for feature in $features ;  do
             echo " ============== Verify feature $feature =============="
-            cargo check --no-default-features --package "${{ inputs.package }}"  --features="${feature}" --locked
+            cargo check \
+              --no-default-features \
+              --package "${{ inputs.package }}" \
+              --features="${feature}" \
+              --locked || fails="${fails} ${feature}"
           done
+
+          if [ -n "$fails" ] ; then
+            echo "Failed features: $fails"
+            exit 1
+          fi
+          echo "All features verified"
