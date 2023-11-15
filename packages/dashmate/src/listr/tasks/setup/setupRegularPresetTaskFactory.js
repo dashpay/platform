@@ -4,7 +4,6 @@ import chalk from 'chalk';
 
 import {
   NODE_TYPE_MASTERNODE,
-  NODE_TYPE_HPMN,
   NODE_TYPE_FULLNODE,
   PRESET_MAINNET,
 } from '../../../constants.js';
@@ -103,7 +102,7 @@ export default function setupRegularPresetTaskFactory(
         enabled: (ctx) => ctx.nodeType === NODE_TYPE_MASTERNODE,
         task: async (ctx, task) => {
           let header;
-          if (ctx.isHP === NODE_TYPE_HPMN) {
+          if (ctx.isHP) {
             header = `  If your HP masternode is already registered, we will import your masternode
   operator and platform node keys to configure an HP masternode. Please make
   sure your IP address has not changed, otherwise you will need to create a

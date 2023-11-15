@@ -26,7 +26,6 @@ export const PRESETS = {
 
 export const NODE_TYPE_MASTERNODE = 'masternode';
 export const NODE_TYPE_FULLNODE = 'fullnode';
-export const NODE_TYPE_HPMN = 'hpmn';
 
 export const LLMQ_TYPE_TEST = 'llmq_test';
 
