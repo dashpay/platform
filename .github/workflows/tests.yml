@@ -101,19 +101,6 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  rs-features:
-    name: Rust features
-    needs:
-      - changes
-    secrets: inherit
-    strategy:
-      fail-fast: false
-      matrix:
-        rs-package: ${{ fromJson(needs.changes.outputs.rs-packages) }}
-    uses: ./.github/workflows/rs-features.yml
-    with:
-      package: ${{ matrix.rs-package }}
-
   js-packages:
     name: JS packages
     needs:
