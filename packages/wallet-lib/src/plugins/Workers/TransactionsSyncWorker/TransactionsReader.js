@@ -42,6 +42,7 @@ class TransactionsReader extends EventEmitter {
    * @param {Function} [createHistoricalSyncStream]
    * @param {Function} [createContinuousSyncStream]
    */
+  // eslint-disable-next-line default-param-last
   constructor(options = {}, createHistoricalSyncStream, createContinuousSyncStream) {
     super();
     this.network = options.network;
