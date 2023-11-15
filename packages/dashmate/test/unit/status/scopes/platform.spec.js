@@ -1,4 +1,4 @@
-import * as providers from '../../../../src/status/providers';
+import providers from '../../../../src/status/providers.js';
 import determineStatus from '../../../../src/status/determineStatus.js';
 import getConfigMock from '../../../../src/test/mock/getConfigMock.js';
 import getPlatformScopeFactory from '../../../../src/status/scopes/platform.js';

@@ -1,4 +1,4 @@
-import * as errorDescriptions from './errors/errorDescriptions.js';
+import errorDescriptions from './errors/errorDescriptions.js';
 
 /**
  * Request the ZeroSSL API

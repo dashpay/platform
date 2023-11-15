@@ -1,6 +1,6 @@
 import { Flags } from '@oclif/core';
 import { OUTPUT_FORMATS } from '../../constants.js';
-import * as colors from '../../status/colors.js';
+import colors from '../../status/colors.js';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 import { MasternodeStateEnum } from '../../status/enums/masternodeState.js';
 import { ServiceStatusEnum } from '../../status/enums/serviceStatus.js';

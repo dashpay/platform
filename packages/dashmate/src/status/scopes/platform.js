@@ -1,4 +1,4 @@
-import * as providers from '../providers.js';
+import providers from '../providers.js';
 import { DockerStatusEnum } from '../enums/dockerStatus.js';
 import { ServiceStatusEnum } from '../enums/serviceStatus.js';
 import determineStatus from '../determineStatus.js';

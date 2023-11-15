@@ -1,5 +1,5 @@
 /* eslint-disable camelcase */
-import * as providers from '../providers.js';
+import providers from '../providers.js';
 import { ServiceStatusEnum } from '../enums/serviceStatus.js';
 import { DockerStatusEnum } from '../enums/dockerStatus.js';
 import determineStatus from '../determineStatus.js';

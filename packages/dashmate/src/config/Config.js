@@ -2,7 +2,7 @@ import Ajv from 'ajv';
 import lodash from 'lodash';
 
 import addFormats from 'ajv-formats';
-import * as configJsonSchema from './configJsonSchema.js';
+import configJsonSchema from './configJsonSchema.js';
 
 import InvalidOptionPathError from './errors/InvalidOptionPathError.js';
 import OptionIsNotSetError from './errors/OptionIsNotSetError.js';

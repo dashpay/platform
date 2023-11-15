@@ -3,7 +3,7 @@ import { Flags } from '@oclif/core';
 import { OUTPUT_FORMATS } from '../../constants.js';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 import printObject from '../../printers/printObject.js';
-import * as colors from '../../status/colors.js';
+import colors from '../../status/colors.js';
 
 export default class CoreStatusCommand extends ConfigBaseCommand {
   static description = 'Show Core status details';

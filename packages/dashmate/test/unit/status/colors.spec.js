@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import * as colors from '../../../src/status/colors';
+import colors from '../../../src/status/colors.js';
 import { DockerStatusEnum } from '../../../src/status/enums/dockerStatus.js';
 import { ServiceStatusEnum } from '../../../src/status/enums/serviceStatus.js';
 

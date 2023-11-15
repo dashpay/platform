@@ -779,7 +779,7 @@ export default {
     },
     network: {
       type: 'string',
-      enum: NETWORKS,
+      enum: Object.values(NETWORKS),
     },
     environment: {
       type: 'string',

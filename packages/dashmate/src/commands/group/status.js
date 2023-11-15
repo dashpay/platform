@@ -4,7 +4,7 @@ import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
 import printArrayOfObjects from '../../printers/printArrayOfObjects.js';
 import printObject from '../../printers/printObject.js';
 import { OUTPUT_FORMATS } from '../../constants.js';
-import * as colors from '../../status/colors.js';
+import colors from '../../status/colors.js';
 import { ServiceStatusEnum } from '../../status/enums/serviceStatus.js';
 
 export default class GroupStatusCommand extends GroupBaseCommand {
