@@ -67,10 +67,9 @@ describe.skip('validateChainAssetLockProofStructureFactory', () => {
       stateRepositoryMock,
     );
 
-    validateChainAssetLockProofStructure = (
-      proof, context,
-    ) => validator.validate(
-      rawProof, context,
+    validateChainAssetLockProofStructure = (proof, context) => validator.validate(
+      rawProof,
+      context,
     );
   });
 
@@ -363,9 +362,7 @@ describe.skip('validateChainAssetLockProofStructureFactory', () => {
         executionContext,
       );
 
-      await expectValidationError(
-        result, InvalidAssetLockProofTransactionHeightError,
-      );
+      await expectValidationError(result, InvalidAssetLockProofTransactionHeightError);
 
       const [error] = result.getErrors();
 

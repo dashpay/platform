@@ -75,7 +75,10 @@ describe.skip('validateStateTransitionIdentitySignatureFactory', () => {
     stateRepositoryMock.fetchIdentity.resolves(identity);
 
     validateStateTransitionIdentitySignature = (st) => validate(
-      stateRepositoryMock, st, executionContext, blsMock,
+      stateRepositoryMock,
+      st,
+      executionContext,
+      blsMock,
     );
   });
 

@@ -19,8 +19,10 @@ describe.skip('DocumentCreateTransition', () => {
     const dataContractJs = documentTransitionJs.dataContract;
     const dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
 
-    documentTransition = new DocumentCreateTransition(documentTransitionJs.toObject(),
-      dataContract);
+    documentTransition = new DocumentCreateTransition(
+      documentTransitionJs.toObject(),
+      dataContract,
+    );
   });
 
   describe('toJSON', () => {
