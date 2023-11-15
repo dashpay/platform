@@ -21,6 +21,7 @@ class BlockHeadersReader extends EventEmitter {
    * @param createHistoricalSyncStream
    * @param createContinuousSyncStream
    */
+  // eslint-disable-next-line default-param-last
   constructor(options = {}, createHistoricalSyncStream, createContinuousSyncStream) {
     super();
     this.createHistoricalSyncStream = createHistoricalSyncStream;
@@ -31,14 +32,12 @@ class BlockHeadersReader extends EventEmitter {
 
     /**
      * Holds references to the historical streams
-     *
      * @type {Stream[]}
      */
     this.historicalStreams = [];
 
     /**
      * Holds reference to the continuous sync stream
-     *
      * @type {Stream}
      */
     this.continuousSyncStream = null;
@@ -46,7 +45,6 @@ class BlockHeadersReader extends EventEmitter {
 
   /**
    * Reads historical block heights using multiple streams
-   *
    * @param {number} fromBlockHeight
    * @param {number} toBlockHeight
    * @returns {Promise<void>}
@@ -92,7 +90,6 @@ class BlockHeadersReader extends EventEmitter {
 
   /**
    * Subscribes to continuously arriving block headers
-   *
    * @param {number} fromBlockHeight
    * @returns {Promise<ReconnectableStream>}
    */
@@ -131,7 +128,6 @@ class BlockHeadersReader extends EventEmitter {
 
         /**
          * Kills stream in case of deliberate rejection from the outside
-         *
          * @param e
          */
         const rejectHeaders = async (e) => {
@@ -187,9 +183,8 @@ class BlockHeadersReader extends EventEmitter {
   /**
    * A HOF that returns a function to subscribe to historical block headers and chain locks
    * and handles retry logic
-   *
    * @private
-   * @param {number} [maxRetries=0] - maximum amount of retries
+   * @param {number} [maxRetries] - maximum amount of retries
    * @returns {function(*, *): Promise<Stream>}
    */
   createSubscribeToHistoricalBatch(maxRetries = 0) {
@@ -197,7 +192,6 @@ class BlockHeadersReader extends EventEmitter {
 
     /**
      * Subscribes to the stream of historical data and handles retry logic
-     *
      * @param {number} fromBlockHeight
      * @param {number} count
      * @returns {Promise<Stream>}
@@ -249,7 +243,6 @@ class BlockHeadersReader extends EventEmitter {
 
           /**
            * Kills stream in case of deliberate rejection from the outside
-           *
            * @param e
            */
           const rejectHeaders = (e) => {

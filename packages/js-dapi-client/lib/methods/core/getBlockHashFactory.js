@@ -5,7 +5,6 @@
 function getBlockHashFactory(jsonRpcTransport) {
   /**
    * Returns block hash for the given height
-   *
    * @typedef {getBlockHash}
    * @param {number} height
    * @param {DAPIClientOptions} [options]

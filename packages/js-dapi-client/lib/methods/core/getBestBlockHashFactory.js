@@ -6,7 +6,6 @@
 function getBestBlockHashFactory(jsonRpcTransport) {
   /**
    * Returns block hash of chaintip
-   *
    * @typedef {getBestBlockHash}
    * @param {DAPIClientOptions} [options]
    * @returns {Promise<string>}

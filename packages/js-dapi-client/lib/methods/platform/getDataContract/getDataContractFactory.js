@@ -15,7 +15,6 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 function getDataContractFactory(grpcTransport) {
   /**
    * Fetch Data Contract by id
-   *
    * @typedef {getDataContract}
    * @param {Buffer} contractId
    * @param {DAPIClientOptions & {prove: boolean}} [options]

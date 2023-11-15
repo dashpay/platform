@@ -15,7 +15,6 @@ const InvalidResponseError = require('../../platform/response/errors/InvalidResp
 function getTransactionFactory(grpcTransport) {
   /**
    * Get Transaction by ID
-   *
    * @typedef {getTransaction}
    * @param {string} id
    * @param {DAPIClientOptions} [options]
