@@ -84,4 +84,4 @@ const generateToAddressFactory = (coreAPI) => {
  */
 /* eslint-enable max-len */
 
-module.exports = generateToAddressFactory
+module.exports = generateToAddressFactory;

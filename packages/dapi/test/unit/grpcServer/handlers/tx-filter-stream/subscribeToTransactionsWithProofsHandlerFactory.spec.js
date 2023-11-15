@@ -195,9 +195,7 @@ describe('subscribeToTransactionsWithProofsHandlerFactory', () => {
       },
       transactions: [
         {
-          toBuffer: () => Buffer.from(
-            'edefad1c70ee6736a0a0c2f9be7f22cfcf77ae2c120704a98cdc9aebdab7ffc5', 'hex',
-          ),
+          toBuffer: () => Buffer.from('edefad1c70ee6736a0a0c2f9be7f22cfcf77ae2c120704a98cdc9aebdab7ffc5', 'hex'),
         },
       ],
     });
