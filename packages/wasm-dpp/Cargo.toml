@@ -54,3 +54,5 @@ async-trait = "0.1.59"
 [profile.release]
 lto = true
 opt-level = 's'
+[package.metadata.cargo-machete]
+ignored = ["wasm-bindgen-futures"]

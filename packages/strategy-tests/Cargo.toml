@@ -33,9 +33,7 @@ simple-signer = { path = "../simple-signer" }
 platform-version = { path = "../rs-platform-version" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 
-
 [dev-dependencies]
-base64 = "0.20.0"
 platform-version = { path = "../rs-platform-version", features = [
     "mock-versions",
 ] }

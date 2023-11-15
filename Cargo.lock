@@ -3985,7 +3985,6 @@ dependencies = [
 name = "strategy-tests"
 version = "0.25.13"
 dependencies = [
- "base64 0.20.0",
  "bincode 2.0.0-rc.3",
  "dpp",
  "drive",
