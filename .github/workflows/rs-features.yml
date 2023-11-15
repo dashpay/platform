@@ -30,6 +30,9 @@ jobs:
     outputs:
       features: ${{ steps.list.outputs.features }}
     timeout-minutes: 30
+    if: >
+      inputs.package == 'rs-sdk' || 
+      inputs.package == 'rs-dapi-client'
     steps:
       - name: Check out repo
         uses: actions/checkout@v3

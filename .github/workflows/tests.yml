@@ -111,10 +111,6 @@ jobs:
       matrix:
         rs-package: ${{ fromJson(needs.changes.outputs.rs-packages) }}
     uses: ./.github/workflows/rs-features.yml
-    if: >
-      contains(fromJson(needs.changes.outputs.rs-packages), 'rs-sdk') ||
-      contains(fromJson(needs.changes.outputs.rs-packages), 'rs-dapi-client') ||
-      contains(fromJson(needs.changes.outputs.rs-packages), 'rs-drive-proof-verifier')
     with:
       package: ${{ matrix.rs-package }}
 
