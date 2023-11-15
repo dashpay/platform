@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import generateKeyPair from '../ssl/generateKeyPair.js';
 import generateCsr from '../ssl/zerossl/generateCsr.js';
-import createCertificate from '../ssl/selfSigned/createSelfSignedCertificate';
+import createCertificate from '../ssl/selfSigned/createSelfSignedCertificate.js';
 
 // TODO: Refactor to reuse the logic together with obtainSelfSignedCertificateTask
 export default async function createSelfSignedCertificate(ip) {
