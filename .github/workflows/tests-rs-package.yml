@@ -13,7 +13,7 @@ on:
         description: Runner for linting. Must be JSON valid string.
         type: string
         default: '"ubuntu-22.04"'
-      check-features:
+      check-each-feature:
         description: If true, try to build each individual feature for this crate
         type: boolean
         default: false
@@ -193,6 +193,7 @@ jobs:
     outputs:
       features: ${{ steps.list.outputs.features }}
     timeout-minutes: 30
+    if: ${{ inputs.check-each-feature }}
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -227,7 +228,7 @@ jobs:
         run: |
           set -ex
           cargo_toml="$(grep -rl --include=Cargo.toml 'name = "${{ inputs.package }}"' .)"
-          echo features=$($HOME/bin/yq -oy eval '.features | keys | .[]' ${cargo_toml} | tr '\n' ' ') >> $GITHUB_ENV
+          echo "features=$($HOME/bin/yq -oy eval '.features | keys | .[]' ${cargo_toml} | tr '\n' ' ')" >> $GITHUB_ENV
 
       - name: Check each feature in ${{ inputs.package }}
         env:
@@ -238,6 +239,7 @@ jobs:
         run: |
           echo Verify all features disabled
           cargo check --no-default-features --package "${{ inputs.package }}" --locked
+          features=${{ steps.list.outputs.features }}
           for feature in $features ;  do
             echo Verify feature $feature
             cargo check --no-default-features --package "${{ inputs.package }}"  --features=$feature  --locked
