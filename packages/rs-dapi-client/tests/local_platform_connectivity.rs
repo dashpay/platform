@@ -1,8 +1,7 @@
 #[cfg(feature = "platform_integration_tests")]
 mod tests {
     use dapi_grpc::platform::v0::{
-        self as platform_proto, get_identity_response, GetIdentityRequest, GetIdentityResponse,
-        ResponseMetadata,
+        self as platform_proto, get_identity_response, GetIdentityResponse, ResponseMetadata,
     };
     use rs_dapi_client::{AddressList, DapiClient, DapiRequest, RequestSettings};
 
@@ -18,22 +17,30 @@ mod tests {
 
         let mut client = DapiClient::new(address_list, RequestSettings::default());
         let request = platform_proto::GetIdentityRequest {
-            id: OWNER_ID_BYTES.to_vec(),
-            prove: false,
+            version: Some(platform_proto::get_identity_request::Version::V0(
+                platform_proto::get_identity_request::GetIdentityRequestV0 {
+                    id: OWNER_ID_BYTES.to_vec(),
+                    prove: false,
+                },
+            )),
         };
 
         if let GetIdentityResponse {
-            result: Some(get_identity_response::Result::Identity(bytes)),
-            metadata: Some(ResponseMetadata {
-                protocol_version, ..
-            }),
-            ..
+            version:
+                Some(get_identity_response::Version::V0(get_identity_response::GetIdentityResponseV0 {
+                    result:
+                        Some(get_identity_response::get_identity_response_v0::Result::Identity(bytes)),
+                    metadata:
+                        Some(ResponseMetadata {
+                            protocol_version, ..
+                        }),
+                })),
         } = request
             .execute(&mut client, RequestSettings::default())
             .await
             .expect("unable to perform dapi request")
         {
-            assert!(bytes.len() > 0);
+            assert!(!bytes.is_empty());
             assert_eq!(protocol_version, 1);
         } else {
             panic!("no identity was received");
