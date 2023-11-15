@@ -25,9 +25,8 @@ export async function createIdentityTopUpTransition(
 
   const { dpp } = platform;
 
-  const identityTopUpTransition = dpp.identity.createIdentityTopUpTransition(
-    identityId, assetLockProof,
-  );
+  const identityTopUpTransition = dpp.identity
+    .createIdentityTopUpTransition(identityId, assetLockProof);
 
   await identityTopUpTransition
     .signByPrivateKey(assetLockPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);

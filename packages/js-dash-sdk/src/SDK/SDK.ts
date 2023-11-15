@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-exports */
 import { default as _DAPIClient } from '@dashevo/dapi-client';
 import {
   Wallet as _Wallet,

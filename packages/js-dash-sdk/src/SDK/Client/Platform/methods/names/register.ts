@@ -17,7 +17,8 @@ const { hash } = require('@dashevo/wasm-dpp/lib/utils/hash');
  *
  * @returns registered domain document
  */
-export async function register(this: Platform,
+export async function register(
+  this: Platform,
   name: string,
   records: {
     dashUniqueIdentityId?: Identifier | string,
@@ -26,7 +27,8 @@ export async function register(this: Platform,
   identity: {
     getId(): Identifier;
     getPublicKeyById(number: number):any;
-  }): Promise<any> {
+  },
+): Promise<any> {
   await this.initialize();
 
   if (records.dashUniqueIdentityId) {

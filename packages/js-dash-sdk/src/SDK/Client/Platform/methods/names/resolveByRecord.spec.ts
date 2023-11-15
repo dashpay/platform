@@ -22,9 +22,7 @@ describe('Platform', () => {
       it('should resolve domain by it\'s record', async () => {
         platformMock.documents.get.resolves([parentDomainDocument]);
 
-        const receivedDocuments = await resolveByRecord.call(
-          platformMock, 'recordName', 'recordValue',
-        );
+        const receivedDocuments = await resolveByRecord.call(platformMock, 'recordName', 'recordValue');
 
         expect(platformMock.documents.get.callCount).to.equal(1);
         expect(platformMock.documents.get.getCall(0).args).to.deep.equal([
@@ -40,9 +38,7 @@ describe('Platform', () => {
       it('should return null if domain was not found', async () => {
         platformMock.documents.get.resolves([]);
 
-        const receivedDocuments = await resolveByRecord.call(
-          platformMock, 'recordName', 'recordValue',
-        );
+        const receivedDocuments = await resolveByRecord.call(platformMock, 'recordName', 'recordValue');
 
         expect(platformMock.documents.get.callCount).to.equal(1);
         expect(platformMock.documents.get.getCall(0).args).to.deep.equal([
