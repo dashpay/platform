@@ -1868,13 +1868,13 @@ mod tests {
     }
 
     mod version_upgrade_state {
-        use dapi_grpc::platform::v0::get_version_upgrade_state_request::{
-            GetVersionUpgradeStateRequestV0, Version,
+        use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_request::{
+            GetProtocolVersionUpgradeStateRequestV0, Version,
         };
-        use dapi_grpc::platform::v0::get_version_upgrade_state_response::get_version_upgrade_state_response_v0;
+        use dapi_grpc::platform::v0::get_protocol_version_upgrade_state_response::get_protocol_version_upgrade_state_response_v0;
         use dapi_grpc::platform::v0::{
-            get_version_upgrade_state_response, GetVersionUpgradeStateRequest,
-            GetVersionUpgradeStateResponse,
+            get_protocol_version_upgrade_state_response, GetProtocolVersionUpgradeStateRequest,
+            GetProtocolVersionUpgradeStateResponse,
         };
         use drive::drive::grove_operations::BatchInsertApplyType;
         use drive::drive::object_size_info::PathKeyElementInfo;
@@ -1896,8 +1896,8 @@ mod tests {
         fn test_query_empty_upgrade_state() {
             let (platform, version) = super::setup_platform();
 
-            let request = GetVersionUpgradeStateRequest {
-                version: Some(Version::V0(GetVersionUpgradeStateRequestV0 {
+            let request = GetProtocolVersionUpgradeStateRequest {
+                version: Some(Version::V0(GetProtocolVersionUpgradeStateRequestV0 {
                     prove: false,
                 })),
             }
@@ -1906,13 +1906,14 @@ mod tests {
             let validation_result = platform
                 .query(PATH, &request, version)
                 .expect("expected query to succeed");
-            let response =
-                GetVersionUpgradeStateResponse::decode(validation_result.data.unwrap().as_slice())
-                    .unwrap();
+            let response = GetProtocolVersionUpgradeStateResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .unwrap();
 
             let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
-                get_version_upgrade_state_response::Version::V0(inner),
+                get_protocol_version_upgrade_state_response::Version::V0(inner),
                 inner
             )
             .result
@@ -1920,7 +1921,7 @@ mod tests {
 
             let versions = extract_variant_or_panic!(
                 result,
-                get_version_upgrade_state_response_v0::Result::Versions(inner),
+                get_protocol_version_upgrade_state_response_v0::Result::Versions(inner),
                 inner
             );
 
@@ -2006,8 +2007,8 @@ mod tests {
 
             drop(cache);
 
-            let request = GetVersionUpgradeStateRequest {
-                version: Some(Version::V0(GetVersionUpgradeStateRequestV0 {
+            let request = GetProtocolVersionUpgradeStateRequest {
+                version: Some(Version::V0(GetProtocolVersionUpgradeStateRequestV0 {
                     prove: false,
                 })),
             }
@@ -2016,13 +2017,14 @@ mod tests {
             let validation_result = platform
                 .query(PATH, &request, version)
                 .expect("expected query to succeed");
-            let response =
-                GetVersionUpgradeStateResponse::decode(validation_result.data.unwrap().as_slice())
-                    .unwrap();
+            let response = GetProtocolVersionUpgradeStateResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .unwrap();
 
             let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
-                get_version_upgrade_state_response::Version::V0(inner),
+                get_protocol_version_upgrade_state_response::Version::V0(inner),
                 inner
             )
             .result
@@ -2030,7 +2032,7 @@ mod tests {
 
             let versions = extract_variant_or_panic!(
                 result,
-                get_version_upgrade_state_response_v0::Result::Versions(inner),
+                get_protocol_version_upgrade_state_response_v0::Result::Versions(inner),
                 inner
             );
 
@@ -2041,21 +2043,24 @@ mod tests {
         fn test_prove_empty_upgrade_state() {
             let (platform, version) = super::setup_platform();
 
-            let request = GetVersionUpgradeStateRequest {
-                version: Some(Version::V0(GetVersionUpgradeStateRequestV0 { prove: true })),
+            let request = GetProtocolVersionUpgradeStateRequest {
+                version: Some(Version::V0(GetProtocolVersionUpgradeStateRequestV0 {
+                    prove: true,
+                })),
             }
             .encode_to_vec();
 
             let validation_result = platform
                 .query(PATH, &request, version)
                 .expect("expected query to succeed");
-            let response =
-                GetVersionUpgradeStateResponse::decode(validation_result.data.unwrap().as_slice())
-                    .unwrap();
+            let response = GetProtocolVersionUpgradeStateResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .unwrap();
 
             let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
-                get_version_upgrade_state_response::Version::V0(inner),
+                get_protocol_version_upgrade_state_response::Version::V0(inner),
                 inner
             )
             .result
@@ -2063,7 +2068,7 @@ mod tests {
 
             let proof = extract_variant_or_panic!(
                 result,
-                get_version_upgrade_state_response_v0::Result::Proof(inner),
+                get_protocol_version_upgrade_state_response_v0::Result::Proof(inner),
                 inner
             );
 
@@ -2158,21 +2163,24 @@ mod tests {
 
             drop(cache);
 
-            let request = GetVersionUpgradeStateRequest {
-                version: Some(Version::V0(GetVersionUpgradeStateRequestV0 { prove: true })),
+            let request = GetProtocolVersionUpgradeStateRequest {
+                version: Some(Version::V0(GetProtocolVersionUpgradeStateRequestV0 {
+                    prove: true,
+                })),
             }
             .encode_to_vec();
 
             let validation_result = platform
                 .query(PATH, &request, version)
                 .expect("expected query to succeed");
-            let response =
-                GetVersionUpgradeStateResponse::decode(validation_result.data.unwrap().as_slice())
-                    .unwrap();
+            let response = GetProtocolVersionUpgradeStateResponse::decode(
+                validation_result.data.unwrap().as_slice(),
+            )
+            .unwrap();
 
             let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
-                get_version_upgrade_state_response::Version::V0(inner),
+                get_protocol_version_upgrade_state_response::Version::V0(inner),
                 inner
             )
             .result
@@ -2180,7 +2188,7 @@ mod tests {
 
             let proof = extract_variant_or_panic!(
                 result,
-                get_version_upgrade_state_response_v0::Result::Proof(inner),
+                get_protocol_version_upgrade_state_response_v0::Result::Proof(inner),
                 inner
             );
 
@@ -2221,13 +2229,14 @@ mod tests {
     }
 
     mod version_upgrade_vote_status {
-        use dapi_grpc::platform::v0::get_version_upgrade_vote_status_request::Version;
+        use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::Version;
 
-        use dapi_grpc::platform::v0::get_version_upgrade_vote_status_request::GetVersionUpgradeVoteStatusRequestV0;
-        use dapi_grpc::platform::v0::get_version_upgrade_vote_status_response::get_version_upgrade_vote_status_response_v0;
+        use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::GetProtocolVersionUpgradeVoteStatusRequestV0;
+        use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_response::get_protocol_version_upgrade_vote_status_response_v0;
         use dapi_grpc::platform::v0::{
-            get_version_upgrade_vote_status_response, GetVersionUpgradeVoteStatusRequest,
-            GetVersionUpgradeVoteStatusResponse,
+            get_protocol_version_upgrade_vote_status_response,
+            GetProtocolVersionUpgradeVoteStatusRequest,
+            GetProtocolVersionUpgradeVoteStatusResponse,
         };
         use drive::drive::grove_operations::BatchInsertApplyType;
         use drive::drive::object_size_info::PathKeyElementInfo;
@@ -2253,8 +2262,8 @@ mod tests {
 
             let validator_pro_tx_hash: [u8; 32] = rand.gen();
 
-            let request = GetVersionUpgradeVoteStatusRequest {
-                version: Some(Version::V0(GetVersionUpgradeVoteStatusRequestV0 {
+            let request = GetProtocolVersionUpgradeVoteStatusRequest {
+                version: Some(Version::V0(GetProtocolVersionUpgradeVoteStatusRequestV0 {
                     start_pro_tx_hash: validator_pro_tx_hash.to_vec(),
                     count: 5,
                     prove: false,
@@ -2265,14 +2274,14 @@ mod tests {
             let validation_result = platform
                 .query(PATH, &request, version)
                 .expect("expected query to succeed");
-            let response = GetVersionUpgradeVoteStatusResponse::decode(
+            let response = GetProtocolVersionUpgradeVoteStatusResponse::decode(
                 validation_result.data.unwrap().as_slice(),
             )
             .unwrap();
 
             let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
-                get_version_upgrade_vote_status_response::Version::V0(inner),
+                get_protocol_version_upgrade_vote_status_response::Version::V0(inner),
                 inner
             )
             .result
@@ -2280,7 +2289,7 @@ mod tests {
 
             let version_signals = extract_variant_or_panic!(
                 result,
-                get_version_upgrade_vote_status_response::get_version_upgrade_vote_status_response_v0::Result::Versions(inner),
+                get_protocol_version_upgrade_vote_status_response::get_protocol_version_upgrade_vote_status_response_v0::Result::Versions(inner),
                 inner
             );
 
@@ -2366,8 +2375,8 @@ mod tests {
 
             drop(cache);
 
-            let request = GetVersionUpgradeVoteStatusRequest {
-                version: Some(Version::V0(GetVersionUpgradeVoteStatusRequestV0 {
+            let request = GetProtocolVersionUpgradeVoteStatusRequest {
+                version: Some(Version::V0(GetProtocolVersionUpgradeVoteStatusRequestV0 {
                     start_pro_tx_hash: validator_pro_tx_hash.to_vec(),
                     count: 5,
                     prove: false,
@@ -2378,14 +2387,14 @@ mod tests {
             let validation_result = platform
                 .query(PATH, &request, version)
                 .expect("expected query to succeed");
-            let response = GetVersionUpgradeVoteStatusResponse::decode(
+            let response = GetProtocolVersionUpgradeVoteStatusResponse::decode(
                 validation_result.data.unwrap().as_slice(),
             )
             .unwrap();
 
             let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
-                get_version_upgrade_vote_status_response::Version::V0(inner),
+                get_protocol_version_upgrade_vote_status_response::Version::V0(inner),
                 inner
             )
             .result
@@ -2393,7 +2402,7 @@ mod tests {
 
             let version_signals = extract_variant_or_panic!(
                 result,
-                get_version_upgrade_vote_status_response::get_version_upgrade_vote_status_response_v0::Result::Versions(inner),
+                get_protocol_version_upgrade_vote_status_response::get_protocol_version_upgrade_vote_status_response_v0::Result::Versions(inner),
                 inner
             );
 
@@ -2408,8 +2417,8 @@ mod tests {
 
             let validator_pro_tx_hash: [u8; 32] = rand.gen();
 
-            let request = GetVersionUpgradeVoteStatusRequest {
-                version: Some(Version::V0(GetVersionUpgradeVoteStatusRequestV0 {
+            let request = GetProtocolVersionUpgradeVoteStatusRequest {
+                version: Some(Version::V0(GetProtocolVersionUpgradeVoteStatusRequestV0 {
                     start_pro_tx_hash: validator_pro_tx_hash.to_vec(),
                     count: 5,
                     prove: true,
@@ -2420,14 +2429,14 @@ mod tests {
             let validation_result = platform
                 .query(PATH, &request, version)
                 .expect("expected query to succeed");
-            let response = GetVersionUpgradeVoteStatusResponse::decode(
+            let response = GetProtocolVersionUpgradeVoteStatusResponse::decode(
                 validation_result.data.unwrap().as_slice(),
             )
             .unwrap();
 
             let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
-                get_version_upgrade_vote_status_response::Version::V0(inner),
+                get_protocol_version_upgrade_vote_status_response::Version::V0(inner),
                 inner
             )
             .result
@@ -2435,7 +2444,7 @@ mod tests {
 
             let proof = extract_variant_or_panic!(
                 result,
-                get_version_upgrade_vote_status_response_v0::Result::Proof(inner),
+                get_protocol_version_upgrade_vote_status_response_v0::Result::Proof(inner),
                 inner
             );
 
@@ -2534,8 +2543,8 @@ mod tests {
 
             drop(cache);
 
-            let request = GetVersionUpgradeVoteStatusRequest {
-                version: Some(Version::V0(GetVersionUpgradeVoteStatusRequestV0 {
+            let request = GetProtocolVersionUpgradeVoteStatusRequest {
+                version: Some(Version::V0(GetProtocolVersionUpgradeVoteStatusRequestV0 {
                     start_pro_tx_hash: validator_pro_tx_hash.to_vec(),
                     count: 5,
                     prove: true,
@@ -2546,14 +2555,14 @@ mod tests {
             let validation_result = platform
                 .query(PATH, &request, version)
                 .expect("expected query to succeed");
-            let response = GetVersionUpgradeVoteStatusResponse::decode(
+            let response = GetProtocolVersionUpgradeVoteStatusResponse::decode(
                 validation_result.data.unwrap().as_slice(),
             )
             .unwrap();
 
             let result = extract_single_variant_or_panic!(
                 response.version.expect("expected a versioned response"),
-                get_version_upgrade_vote_status_response::Version::V0(inner),
+                get_protocol_version_upgrade_vote_status_response::Version::V0(inner),
                 inner
             )
             .result
@@ -2561,7 +2570,7 @@ mod tests {
 
             let proof = extract_variant_or_panic!(
                 result,
-                get_version_upgrade_vote_status_response_v0::Result::Proof(inner),
+                get_protocol_version_upgrade_vote_status_response_v0::Result::Proof(inner),
                 inner
             );
 

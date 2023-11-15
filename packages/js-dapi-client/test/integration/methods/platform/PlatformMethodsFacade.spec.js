@@ -5,8 +5,8 @@ const {
     GetDocumentsResponse,
     GetIdentityResponse,
     GetEpochsInfoResponse,
-    GetVersionUpgradeVoteStatusResponse,
-    GetVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusResponse,
+    GetProtocolVersionUpgradeStateResponse,
     BroadcastStateTransitionResponse,
     WaitForStateTransitionResultResponse,
   },
@@ -24,8 +24,10 @@ const { GetIdentityResponseV0 } = GetIdentityResponse;
 const { GetDocumentsResponseV0 } = GetDocumentsResponse;
 const { GetDataContractResponseV0 } = GetDataContractResponse;
 const { GetEpochsInfoResponseV0 } = GetEpochsInfoResponse;
-const { GetVersionUpgradeVoteStatusResponseV0 } = GetVersionUpgradeVoteStatusResponse;
-const { GetVersionUpgradeStateResponseV0 } = GetVersionUpgradeStateResponse;
+const {
+  GetProtocolVersionUpgradeVoteStatusResponseV0,
+} = GetProtocolVersionUpgradeVoteStatusResponse;
+const { GetProtocolVersionUpgradeStateResponseV0 } = GetProtocolVersionUpgradeStateResponse;
 
 describe('PlatformMethodsFacade', () => {
   let grpcTransportMock;
@@ -151,17 +153,17 @@ describe('PlatformMethodsFacade', () => {
     });
   });
 
-  describe('#getVersionUpgradeVoteStatus', () => {
+  describe('#getProtocolVersionUpgradeVoteStatus', () => {
     it('should get version upgrade vote status', async () => {
       const startProTxHash = Buffer.alloc(32).fill('a').toString('hex');
       const proTxHash = Buffer.alloc(32).fill('b').toString('hex');
 
-      const { VersionSignal, VersionSignals } = GetVersionUpgradeVoteStatusResponseV0;
+      const { VersionSignal, VersionSignals } = GetProtocolVersionUpgradeVoteStatusResponseV0;
 
-      const response = new GetVersionUpgradeVoteStatusResponse();
+      const response = new GetProtocolVersionUpgradeVoteStatusResponse();
 
       response.setV0(
-        new GetVersionUpgradeVoteStatusResponseV0()
+        new GetProtocolVersionUpgradeVoteStatusResponseV0()
           .setVersions(new VersionSignals()
             .setVersionSignalsList([new VersionSignal()
               .setProTxHash(proTxHash)
@@ -171,20 +173,20 @@ describe('PlatformMethodsFacade', () => {
 
       grpcTransportMock.request.resolves(response);
 
-      await platformMethods.getVersionUpgradeVoteStatus(startProTxHash, 1, {});
+      await platformMethods.getProtocolVersionUpgradeVoteStatus(startProTxHash, 1, {});
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });
   });
 
-  describe('#getVersionUpgradeState', () => {
+  describe('#getProtocolVersionUpgradeState', () => {
     it('should get version upgrade state', async () => {
-      const { VersionEntry, Versions } = GetVersionUpgradeStateResponseV0;
+      const { VersionEntry, Versions } = GetProtocolVersionUpgradeStateResponseV0;
 
-      const response = new GetVersionUpgradeStateResponse();
+      const response = new GetProtocolVersionUpgradeStateResponse();
 
       response.setV0(
-        new GetVersionUpgradeStateResponseV0()
+        new GetProtocolVersionUpgradeStateResponseV0()
           .setVersions(new Versions()
             .setVersionsList([new VersionEntry()
               .setVersionNumber(1)
@@ -194,7 +196,7 @@ describe('PlatformMethodsFacade', () => {
 
       grpcTransportMock.request.resolves(response);
 
-      await platformMethods.getVersionUpgradeState({});
+      await platformMethods.getProtocolVersionUpgradeState({});
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });

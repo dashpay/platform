@@ -4,9 +4,8 @@ const { PACKAGE_ROOT_DIR } = require('../../constants');
 function getConfigFileDataV0250() {
   return {
     configFormatVersion: '0.25.0',
-    defaultConfigName: 'testnet',
+    defaultConfigName: null,
     defaultGroupName: null,
-    group: null,
     configs: {
       base: {
         description: 'base config for use as template',
@@ -532,13 +531,13 @@ function getConfigFileDataV0250() {
             image: 'dashpay/dashd:20.0.0-beta.2',
           },
           p2p: {
-            port: 19998,
+            port: 19999,
             seeds: [],
           },
           rpc: {
             port: 19998,
-            user: 'PPRKbOin',
-            password: 'xH2wOCwuh01k',
+            user: 'dashrpc',
+            password: 'rpcpassword',
             allowIps: [
               '127.0.0.1',
               '172.16.0.0/12',
@@ -552,7 +551,7 @@ function getConfigFileDataV0250() {
           masternode: {
             enable: true,
             operator: {
-              privateKey: '0584397e7d64ba6412eb842b35bc49bdb17974a23b7d7e97486044047d548c0c',
+              privateKey: null,
             },
           },
           miner: {
@@ -591,8 +590,8 @@ function getConfigFileDataV0250() {
                 enabled: true,
               },
               ssl: {
-                enabled: true,
-                provider: 'self-signed',
+                enabled: false,
+                provider: 'zerossl',
                 providerConfigs: {
                   zerossl: {
                     apiKey: null,
@@ -643,12 +642,12 @@ function getConfigFileDataV0250() {
               epochTime: 788400,
             },
             tenderdash: {
-              mode: 'validator',
+              mode: 'full',
               docker: {
                 image: 'dashpay/tenderdash:0.13.2',
               },
               p2p: {
-                port: 25565,
+                port: 36656,
                 persistentPeers: [],
                 seeds: [
                   {
@@ -684,8 +683,8 @@ function getConfigFileDataV0250() {
                 path: null,
               },
               node: {
-                id: '2a38c597f7f98c8137b62a2f9abdeb8a12bfae94',
-                key: 'ZTrWrL7FtKQWq0jAgMRIPg4gNnv6APLDbXe59yjGhPRzoOL/ZHZM8JXDqtwdVxOguR7muy+hOq4+7ymY/7A5+Q==',
+                id: null,
+                key: null,
               },
               genesis: {
                 consensus_params: {
@@ -780,7 +779,7 @@ function getConfigFileDataV0250() {
             },
           },
         },
-        externalIp: '127.0.0.1',
+        externalIp: null,
         network: 'testnet',
         environment: 'production',
       },
@@ -811,8 +810,8 @@ function getConfigFileDataV0250() {
           },
           rpc: {
             port: 9998,
-            user: 'yMwYU2Mo',
-            password: 'ZiEdhwN7U9Ky',
+            user: 'dashrpc',
+            password: 'rpcpassword',
             allowIps: [
               '127.0.0.1',
               '172.16.0.0/12',
@@ -826,7 +825,7 @@ function getConfigFileDataV0250() {
           masternode: {
             enable: true,
             operator: {
-              privateKey: '0584397e7d64ba6412eb842b35bc49bdb17974a23b7d7e97486044047d548c0c',
+              privateKey: null,
             },
           },
           miner: {
@@ -917,7 +916,7 @@ function getConfigFileDataV0250() {
               epochTime: 788400,
             },
             tenderdash: {
-              mode: 'validator',
+              mode: 'full',
               docker: {
                 image: 'dashpay/tenderdash:0.13.2',
               },
@@ -1031,7 +1030,7 @@ function getConfigFileDataV0250() {
             },
           },
         },
-        externalIp: '127.0.0.1',
+        externalIp: null,
         network: 'mainnet',
         environment: 'production',
       },

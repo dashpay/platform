@@ -24,13 +24,13 @@ const {
     GetDocumentsRequest,
     GetIdentitiesRequest,
     GetIdentitiesByPublicKeyHashesRequest,
-    GetIdentityByPublicKeyHashesRequest,
+    GetIdentityByPublicKeyHashRequest,
     WaitForStateTransitionResultRequest,
     GetConsensusParamsRequest,
     GetProofsRequest,
     GetEpochsInfoRequest,
-    GetVersionUpgradeVoteStatusRequest,
-    GetVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeStateRequest,
     pbjs: {
       BroadcastStateTransitionRequest: PBJSBroadcastStateTransitionRequest,
       BroadcastStateTransitionResponse: PBJSBroadcastStateTransitionResponse,
@@ -50,8 +50,8 @@ const {
       GetDocumentsResponse: PBJSGetDocumentsResponse,
       GetIdentitiesByPublicKeyHashesResponse: PBJSGetIdentitiesByPublicKeyHashesResponse,
       GetIdentitiesByPublicKeyHashesRequest: PBJSGetIdentitiesByPublicKeyHashesRequest,
-      GetIdentityByPublicKeyHashesResponse: PBJSGetIdentityByPublicKeyHashesResponse,
-      GetIdentityByPublicKeyHashesRequest: PBJSGetIdentityByPublicKeyHashesRequest,
+      GetIdentityByPublicKeyHashResponse: PBJSGetIdentityByPublicKeyHashResponse,
+      GetIdentityByPublicKeyHashRequest: PBJSGetIdentityByPublicKeyHashRequest,
       WaitForStateTransitionResultRequest: PBJSWaitForStateTransitionResultRequest,
       WaitForStateTransitionResultResponse: PBJSWaitForStateTransitionResultResponse,
       GetConsensusParamsRequest: PBJSGetConsensusParamsRequest,
@@ -62,10 +62,10 @@ const {
       GetProofsResponse: PBJSGetProofsResponse,
       GetEpochsInfoRequest: PBJSGetEpochsInfoRequest,
       GetEpochsInfoResponse: PBJSGetEpochsInfoResponse,
-      GetVersionUpgradeVoteStatusRequest: PBJSGetVersionUpgradeVoteStatusRequest,
-      GetVersionUpgradeVoteStatusResponse: PBJSGetVersionUpgradeVoteStatusResponse,
-      GetVersionUpgradeStateRequest: PBJSGetVersionUpgradeStateRequest,
-      GetVersionUpgradeStateResponse: PBJSGetVersionUpgradeStateResponse,
+      GetProtocolVersionUpgradeVoteStatusRequest: PBJSGetProtocolVersionUpgradeVoteStatusRequest,
+      GetProtocolVersionUpgradeVoteStatusResponse: PBJSGetProtocolVersionUpgradeVoteStatusResponse,
+      GetProtocolVersionUpgradeStateRequest: PBJSGetProtocolVersionUpgradeStateRequest,
+      GetProtocolVersionUpgradeStateResponse: PBJSGetProtocolVersionUpgradeStateResponse,
     },
   },
 } = require('@dashevo/dapi-grpc');
@@ -104,8 +104,8 @@ const getDataContractsHandlerFactory = require(
 const getDataContractHistoryHandlerFactory = require(
   './getDataContractHistoryHandlerFactory',
 );
-const getIdentityByPublicKeyHashesHandlerFactory = require(
-  './getIdentityByPublicKeyHashesHandlerFactory',
+const getIdentityByPublicKeyHashHandlerFactory = require(
+  './getIdentityByPublicKeyHashHandlerFactory',
 );
 const getIdentitiesByPublicKeyHashesHandlerFactory = require(
   './getIdentitiesByPublicKeyHashesHandlerFactory',
@@ -122,11 +122,13 @@ const getProofsHandlerFactory = require(
 const getEpochsInfoHandlerFactory = require(
   './getEpochsInfoHandlerFactory',
 );
-const getVersionUpgradeVoteStatusHandlerFactory = require(
-  './getVersionUpgradeVoteStatusHandlerFactory',
+
+const getProtocolVersionUpgradeVoteStatusHandlerFactory = require(
+  './getProtocolVersionUpgradeVoteStatusHandlerFactory',
 );
-const getVersionUpgradeStateHandlerFactory = require(
-  './getVersionUpgradeStateHandlerFactory',
+
+const getProtocolVersionUpgradeStateHandlerFactory = require(
+  './getProtocolVersionUpgradeStateHandlerFactory',
 );
 
 const fetchProofForStateTransitionFactory = require('../../../externalApis/drive/fetchProofForStateTransitionFactory');
@@ -313,20 +315,20 @@ function platformHandlersFactory(
     wrapInErrorHandler(getDataContractHistoryHandler),
   );
 
-  // getIdentityByPublicKeyHashes
-  const getIdentityByPublicKeyHashesHandler = getIdentityByPublicKeyHashesHandlerFactory(
+  // getIdentityByPublicKeyHash
+  const getIdentityByPublicKeyHashHandler = getIdentityByPublicKeyHashHandlerFactory(
     driveClient,
   );
 
-  const wrappedGetIdentityByPublicKeyHashes = jsonToProtobufHandlerWrapper(
+  const wrappedGetIdentityByPublicKeyHash = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
-      GetIdentityByPublicKeyHashesRequest,
-      PBJSGetIdentityByPublicKeyHashesRequest,
+      GetIdentityByPublicKeyHashRequest,
+      PBJSGetIdentityByPublicKeyHashRequest,
     ),
     protobufToJsonFactory(
-      PBJSGetIdentityByPublicKeyHashesResponse,
+      PBJSGetIdentityByPublicKeyHashResponse,
     ),
-    wrapInErrorHandler(getIdentityByPublicKeyHashesHandler),
+    wrapInErrorHandler(getIdentityByPublicKeyHashHandler),
   );
 
   // getIdentitiesByPublicKeyHashes
@@ -423,36 +425,37 @@ function platformHandlersFactory(
     wrapInErrorHandler(getEpochsInfoHandler),
   );
 
-  // getVersionUpgradeVoteStatus
-  const getVersionUpgradeVoteStatusHandler = getVersionUpgradeVoteStatusHandlerFactory(
+  // getProtocolVersionUpgradeVoteStatus
+  // eslint-disable-next-line max-len
+  const getProtocolVersionUpgradeVoteStatusHandler = getProtocolVersionUpgradeVoteStatusHandlerFactory(
     driveClient,
   );
 
-  const wrappedGetVersionUpgradeVoteStatus = jsonToProtobufHandlerWrapper(
+  const wrappedGetProtocolVersionUpgradeVoteStatus = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
-      GetVersionUpgradeVoteStatusRequest,
-      PBJSGetVersionUpgradeVoteStatusRequest,
+      GetProtocolVersionUpgradeVoteStatusRequest,
+      PBJSGetProtocolVersionUpgradeVoteStatusRequest,
     ),
     protobufToJsonFactory(
-      PBJSGetVersionUpgradeVoteStatusResponse,
+      PBJSGetProtocolVersionUpgradeVoteStatusResponse,
     ),
-    wrapInErrorHandler(getVersionUpgradeVoteStatusHandler),
+    wrapInErrorHandler(getProtocolVersionUpgradeVoteStatusHandler),
   );
 
-  // getVersionUpgradeState
-  const getVersionUpgradeStateHandler = getVersionUpgradeStateHandlerFactory(
+  // getProtocolVersionUpgradeState
+  const getProtocolVersionUpgradeStateHandler = getProtocolVersionUpgradeStateHandlerFactory(
     driveClient,
   );
 
-  const wrappedGetVersionUpgradeState = jsonToProtobufHandlerWrapper(
+  const wrappedGetProtocolVersionUpgradeState = jsonToProtobufHandlerWrapper(
     jsonToProtobufFactory(
-      GetVersionUpgradeStateRequest,
-      PBJSGetVersionUpgradeStateRequest,
+      GetProtocolVersionUpgradeStateRequest,
+      PBJSGetProtocolVersionUpgradeStateRequest,
     ),
     protobufToJsonFactory(
-      PBJSGetVersionUpgradeStateResponse,
+      PBJSGetProtocolVersionUpgradeStateResponse,
     ),
-    wrapInErrorHandler(getVersionUpgradeStateHandler),
+    wrapInErrorHandler(getProtocolVersionUpgradeStateHandler),
   );
 
   return {
@@ -466,14 +469,14 @@ function platformHandlersFactory(
     getDataContract: wrappedGetDataContract,
     getDataContracts: wrappedGetDataContracts,
     getDataContractHistory: wrappedGetDataContractHistory,
-    getIdentityByPublicKeyHashes: wrappedGetIdentityByPublicKeyHashes,
+    getIdentityByPublicKeyHash: wrappedGetIdentityByPublicKeyHash,
     getIdentitiesByPublicKeyHashes: wrappedGetIdentitiesByPublicKeyHashes,
     waitForStateTransitionResult: wrappedWaitForStateTransitionResult,
     getConsensusParams: wrappedGetConsensusParams,
     getProofs: wrappedGetProofs,
     getEpochsInfo: wrappedGetEpochsInfo,
-    getVersionUpgradeVoteStatus: wrappedGetVersionUpgradeVoteStatus,
-    getVersionUpgradeState: wrappedGetVersionUpgradeState,
+    getProtocolVersionUpgradeVoteStatus: wrappedGetProtocolVersionUpgradeVoteStatus,
+    getProtocolVersionUpgradeState: wrappedGetProtocolVersionUpgradeState,
   };
 }
 

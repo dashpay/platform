@@ -77,14 +77,14 @@ CF_EXTERN_C_BEGIN
 @class GetProofsRequest_GetProofsRequestV0_DocumentRequest;
 @class GetProofsRequest_GetProofsRequestV0_IdentityRequest;
 @class GetProofsResponse_GetProofsResponseV0;
-@class GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0;
-@class GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0;
-@class GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry;
-@class GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions;
-@class GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0;
-@class GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0;
-@class GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal;
-@class GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals;
+@class GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0;
+@class GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0;
+@class GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry;
+@class GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions;
+@class GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0;
+@class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0;
+@class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal;
+@class GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals;
 @class KeyRequestType;
 @class Proof;
 @class ResponseMetadata;
@@ -1999,85 +1999,85 @@ GPB_FINAL @interface GetConsensusParamsResponse_GetConsensusParamsResponseV0 : G
 
 @end
 
-#pragma mark - GetVersionUpgradeStateRequest
+#pragma mark - GetProtocolVersionUpgradeStateRequest
 
-typedef GPB_ENUM(GetVersionUpgradeStateRequest_FieldNumber) {
-  GetVersionUpgradeStateRequest_FieldNumber_V0 = 1,
+typedef GPB_ENUM(GetProtocolVersionUpgradeStateRequest_FieldNumber) {
+  GetProtocolVersionUpgradeStateRequest_FieldNumber_V0 = 1,
 };
 
-typedef GPB_ENUM(GetVersionUpgradeStateRequest_Version_OneOfCase) {
-  GetVersionUpgradeStateRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetVersionUpgradeStateRequest_Version_OneOfCase_V0 = 1,
+typedef GPB_ENUM(GetProtocolVersionUpgradeStateRequest_Version_OneOfCase) {
+  GetProtocolVersionUpgradeStateRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetProtocolVersionUpgradeStateRequest_Version_OneOfCase_V0 = 1,
 };
 
-GPB_FINAL @interface GetVersionUpgradeStateRequest : GPBMessage
+GPB_FINAL @interface GetProtocolVersionUpgradeStateRequest : GPBMessage
 
-@property(nonatomic, readonly) GetVersionUpgradeStateRequest_Version_OneOfCase versionOneOfCase;
+@property(nonatomic, readonly) GetProtocolVersionUpgradeStateRequest_Version_OneOfCase versionOneOfCase;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0 *v0;
+@property(nonatomic, readwrite, strong, null_resettable) GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0 *v0;
 
 @end
 
 /**
  * Clears whatever value was set for the oneof 'version'.
  **/
-void GetVersionUpgradeStateRequest_ClearVersionOneOfCase(GetVersionUpgradeStateRequest *message);
+void GetProtocolVersionUpgradeStateRequest_ClearVersionOneOfCase(GetProtocolVersionUpgradeStateRequest *message);
 
-#pragma mark - GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0
+#pragma mark - GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0
 
-typedef GPB_ENUM(GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0_FieldNumber) {
-  GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0_FieldNumber_Prove = 1,
+typedef GPB_ENUM(GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0_FieldNumber) {
+  GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0_FieldNumber_Prove = 1,
 };
 
-GPB_FINAL @interface GetVersionUpgradeStateRequest_GetVersionUpgradeStateRequestV0 : GPBMessage
+GPB_FINAL @interface GetProtocolVersionUpgradeStateRequest_GetProtocolVersionUpgradeStateRequestV0 : GPBMessage
 
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
 
-#pragma mark - GetVersionUpgradeStateResponse
+#pragma mark - GetProtocolVersionUpgradeStateResponse
 
-typedef GPB_ENUM(GetVersionUpgradeStateResponse_FieldNumber) {
-  GetVersionUpgradeStateResponse_FieldNumber_V0 = 1,
+typedef GPB_ENUM(GetProtocolVersionUpgradeStateResponse_FieldNumber) {
+  GetProtocolVersionUpgradeStateResponse_FieldNumber_V0 = 1,
 };
 
-typedef GPB_ENUM(GetVersionUpgradeStateResponse_Version_OneOfCase) {
-  GetVersionUpgradeStateResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetVersionUpgradeStateResponse_Version_OneOfCase_V0 = 1,
+typedef GPB_ENUM(GetProtocolVersionUpgradeStateResponse_Version_OneOfCase) {
+  GetProtocolVersionUpgradeStateResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetProtocolVersionUpgradeStateResponse_Version_OneOfCase_V0 = 1,
 };
 
-GPB_FINAL @interface GetVersionUpgradeStateResponse : GPBMessage
+GPB_FINAL @interface GetProtocolVersionUpgradeStateResponse : GPBMessage
 
-@property(nonatomic, readonly) GetVersionUpgradeStateResponse_Version_OneOfCase versionOneOfCase;
+@property(nonatomic, readonly) GetProtocolVersionUpgradeStateResponse_Version_OneOfCase versionOneOfCase;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0 *v0;
+@property(nonatomic, readwrite, strong, null_resettable) GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0 *v0;
 
 @end
 
 /**
  * Clears whatever value was set for the oneof 'version'.
  **/
-void GetVersionUpgradeStateResponse_ClearVersionOneOfCase(GetVersionUpgradeStateResponse *message);
+void GetProtocolVersionUpgradeStateResponse_ClearVersionOneOfCase(GetProtocolVersionUpgradeStateResponse *message);
 
-#pragma mark - GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0
+#pragma mark - GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0
 
-typedef GPB_ENUM(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_FieldNumber) {
-  GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_FieldNumber_Versions = 1,
-  GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_FieldNumber_Proof = 2,
-  GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_FieldNumber_Metadata = 3,
+typedef GPB_ENUM(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_FieldNumber) {
+  GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_FieldNumber_Versions = 1,
+  GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_FieldNumber_Proof = 2,
+  GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_FieldNumber_Metadata = 3,
 };
 
-typedef GPB_ENUM(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Result_OneOfCase) {
-  GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Result_OneOfCase_Versions = 1,
-  GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Result_OneOfCase_Proof = 2,
+typedef GPB_ENUM(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Result_OneOfCase) {
+  GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Result_OneOfCase_Versions = 1,
+  GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Result_OneOfCase_Proof = 2,
 };
 
-GPB_FINAL @interface GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0 : GPBMessage
+GPB_FINAL @interface GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0 : GPBMessage
 
-@property(nonatomic, readonly) GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Result_OneOfCase resultOneOfCase;
+@property(nonatomic, readonly) GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Result_OneOfCase resultOneOfCase;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions *versions;
+@property(nonatomic, readwrite, strong, null_resettable) GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions *versions;
 
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
@@ -2090,30 +2090,30 @@ GPB_FINAL @interface GetVersionUpgradeStateResponse_GetVersionUpgradeStateRespon
 /**
  * Clears whatever value was set for the oneof 'result'.
  **/
-void GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_ClearResultOneOfCase(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0 *message);
+void GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_ClearResultOneOfCase(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0 *message);
 
-#pragma mark - GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions
+#pragma mark - GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions
 
-typedef GPB_ENUM(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions_FieldNumber) {
-  GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions_FieldNumber_VersionsArray = 1,
+typedef GPB_ENUM(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions_FieldNumber) {
+  GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions_FieldNumber_VersionsArray = 1,
 };
 
-GPB_FINAL @interface GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_Versions : GPBMessage
+GPB_FINAL @interface GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_Versions : GPBMessage
 
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry*> *versionsArray;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry*> *versionsArray;
 /** The number of items in @c versionsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger versionsArray_Count;
 
 @end
 
-#pragma mark - GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry
+#pragma mark - GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry
 
-typedef GPB_ENUM(GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry_FieldNumber) {
-  GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry_FieldNumber_VersionNumber = 1,
-  GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry_FieldNumber_VoteCount = 2,
+typedef GPB_ENUM(GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry_FieldNumber) {
+  GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry_FieldNumber_VersionNumber = 1,
+  GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry_FieldNumber_VoteCount = 2,
 };
 
-GPB_FINAL @interface GetVersionUpgradeStateResponse_GetVersionUpgradeStateResponseV0_VersionEntry : GPBMessage
+GPB_FINAL @interface GetProtocolVersionUpgradeStateResponse_GetProtocolVersionUpgradeStateResponseV0_VersionEntry : GPBMessage
 
 @property(nonatomic, readwrite) uint32_t versionNumber;
 
@@ -2121,39 +2121,39 @@ GPB_FINAL @interface GetVersionUpgradeStateResponse_GetVersionUpgradeStateRespon
 
 @end
 
-#pragma mark - GetVersionUpgradeVoteStatusRequest
+#pragma mark - GetProtocolVersionUpgradeVoteStatusRequest
 
-typedef GPB_ENUM(GetVersionUpgradeVoteStatusRequest_FieldNumber) {
-  GetVersionUpgradeVoteStatusRequest_FieldNumber_V0 = 1,
+typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusRequest_FieldNumber) {
+  GetProtocolVersionUpgradeVoteStatusRequest_FieldNumber_V0 = 1,
 };
 
-typedef GPB_ENUM(GetVersionUpgradeVoteStatusRequest_Version_OneOfCase) {
-  GetVersionUpgradeVoteStatusRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetVersionUpgradeVoteStatusRequest_Version_OneOfCase_V0 = 1,
+typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusRequest_Version_OneOfCase) {
+  GetProtocolVersionUpgradeVoteStatusRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetProtocolVersionUpgradeVoteStatusRequest_Version_OneOfCase_V0 = 1,
 };
 
-GPB_FINAL @interface GetVersionUpgradeVoteStatusRequest : GPBMessage
+GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusRequest : GPBMessage
 
-@property(nonatomic, readonly) GetVersionUpgradeVoteStatusRequest_Version_OneOfCase versionOneOfCase;
+@property(nonatomic, readonly) GetProtocolVersionUpgradeVoteStatusRequest_Version_OneOfCase versionOneOfCase;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0 *v0;
+@property(nonatomic, readwrite, strong, null_resettable) GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0 *v0;
 
 @end
 
 /**
  * Clears whatever value was set for the oneof 'version'.
  **/
-void GetVersionUpgradeVoteStatusRequest_ClearVersionOneOfCase(GetVersionUpgradeVoteStatusRequest *message);
+void GetProtocolVersionUpgradeVoteStatusRequest_ClearVersionOneOfCase(GetProtocolVersionUpgradeVoteStatusRequest *message);
 
-#pragma mark - GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0
+#pragma mark - GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0
 
-typedef GPB_ENUM(GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0_FieldNumber) {
-  GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0_FieldNumber_StartProTxHash = 1,
-  GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0_FieldNumber_Count = 2,
-  GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0_FieldNumber_Prove = 3,
+typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0_FieldNumber) {
+  GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0_FieldNumber_StartProTxHash = 1,
+  GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0_FieldNumber_Count = 2,
+  GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0_FieldNumber_Prove = 3,
 };
 
-GPB_FINAL @interface GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteStatusRequestV0 : GPBMessage
+GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusRequest_GetProtocolVersionUpgradeVoteStatusRequestV0 : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *startProTxHash;
 
@@ -2163,49 +2163,49 @@ GPB_FINAL @interface GetVersionUpgradeVoteStatusRequest_GetVersionUpgradeVoteSta
 
 @end
 
-#pragma mark - GetVersionUpgradeVoteStatusResponse
+#pragma mark - GetProtocolVersionUpgradeVoteStatusResponse
 
-typedef GPB_ENUM(GetVersionUpgradeVoteStatusResponse_FieldNumber) {
-  GetVersionUpgradeVoteStatusResponse_FieldNumber_V0 = 1,
+typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusResponse_FieldNumber) {
+  GetProtocolVersionUpgradeVoteStatusResponse_FieldNumber_V0 = 1,
 };
 
-typedef GPB_ENUM(GetVersionUpgradeVoteStatusResponse_Version_OneOfCase) {
-  GetVersionUpgradeVoteStatusResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetVersionUpgradeVoteStatusResponse_Version_OneOfCase_V0 = 1,
+typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusResponse_Version_OneOfCase) {
+  GetProtocolVersionUpgradeVoteStatusResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetProtocolVersionUpgradeVoteStatusResponse_Version_OneOfCase_V0 = 1,
 };
 
-GPB_FINAL @interface GetVersionUpgradeVoteStatusResponse : GPBMessage
+GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusResponse : GPBMessage
 
-@property(nonatomic, readonly) GetVersionUpgradeVoteStatusResponse_Version_OneOfCase versionOneOfCase;
+@property(nonatomic, readonly) GetProtocolVersionUpgradeVoteStatusResponse_Version_OneOfCase versionOneOfCase;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0 *v0;
+@property(nonatomic, readwrite, strong, null_resettable) GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0 *v0;
 
 @end
 
 /**
  * Clears whatever value was set for the oneof 'version'.
  **/
-void GetVersionUpgradeVoteStatusResponse_ClearVersionOneOfCase(GetVersionUpgradeVoteStatusResponse *message);
+void GetProtocolVersionUpgradeVoteStatusResponse_ClearVersionOneOfCase(GetProtocolVersionUpgradeVoteStatusResponse *message);
 
-#pragma mark - GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0
+#pragma mark - GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0
 
-typedef GPB_ENUM(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_FieldNumber) {
-  GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_FieldNumber_Versions = 1,
-  GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_FieldNumber_Proof = 2,
-  GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_FieldNumber_Metadata = 3,
+typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_FieldNumber) {
+  GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_FieldNumber_Versions = 1,
+  GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_FieldNumber_Proof = 2,
+  GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_FieldNumber_Metadata = 3,
 };
 
-typedef GPB_ENUM(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_Result_OneOfCase) {
-  GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_Result_OneOfCase_Versions = 1,
-  GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_Result_OneOfCase_Proof = 2,
+typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_Result_OneOfCase) {
+  GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_Result_OneOfCase_Versions = 1,
+  GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_Result_OneOfCase_Proof = 2,
 };
 
-GPB_FINAL @interface GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0 : GPBMessage
+GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0 : GPBMessage
 
-@property(nonatomic, readonly) GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_Result_OneOfCase resultOneOfCase;
+@property(nonatomic, readonly) GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_Result_OneOfCase resultOneOfCase;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals *versions;
+@property(nonatomic, readwrite, strong, null_resettable) GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals *versions;
 
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
@@ -2218,30 +2218,30 @@ GPB_FINAL @interface GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteSt
 /**
  * Clears whatever value was set for the oneof 'result'.
  **/
-void GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_ClearResultOneOfCase(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0 *message);
+void GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_ClearResultOneOfCase(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0 *message);
 
-#pragma mark - GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals
+#pragma mark - GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals
 
-typedef GPB_ENUM(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals_FieldNumber) {
-  GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals_FieldNumber_VersionSignalsArray = 1,
+typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals_FieldNumber) {
+  GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals_FieldNumber_VersionSignalsArray = 1,
 };
 
-GPB_FINAL @interface GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignals : GPBMessage
+GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignals : GPBMessage
 
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal*> *versionSignalsArray;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal*> *versionSignalsArray;
 /** The number of items in @c versionSignalsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger versionSignalsArray_Count;
 
 @end
 
-#pragma mark - GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal
+#pragma mark - GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal
 
-typedef GPB_ENUM(GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal_FieldNumber) {
-  GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal_FieldNumber_ProTxHash = 1,
-  GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal_FieldNumber_Version = 2,
+typedef GPB_ENUM(GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal_FieldNumber) {
+  GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal_FieldNumber_ProTxHash = 1,
+  GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal_FieldNumber_Version = 2,
 };
 
-GPB_FINAL @interface GetVersionUpgradeVoteStatusResponse_GetVersionUpgradeVoteStatusResponseV0_VersionSignal : GPBMessage
+GPB_FINAL @interface GetProtocolVersionUpgradeVoteStatusResponse_GetProtocolVersionUpgradeVoteStatusResponseV0_VersionSignal : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *proTxHash;
 

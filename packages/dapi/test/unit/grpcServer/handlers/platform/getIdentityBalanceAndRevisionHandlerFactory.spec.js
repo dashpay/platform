@@ -13,6 +13,14 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
+const {
+  GetIdentityBalanceAndRevisionResponseV0,
+} = GetIdentityBalanceAndRevisionResponse;
+
+const {
+  BalanceAndRevision,
+} = GetIdentityBalanceAndRevisionResponseV0;
+
 /* eslint-disable import/no-extraneous-dependencies */
 const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
@@ -20,99 +28,82 @@ const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
 const getIdentityBalanceAndRevisionHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getIdentityBalanceAndRevisionHandlerFactory');
 
-describe('getIdentityBalanceHandlerFactory', () => {
+describe('getIdentityBalanceAndRevisionHandlerFactory', () => {
   let call;
   let getIdentityBalanceAndRevisionHandler;
-  let driveClientMock;
+  let fetchIdentityBalanceAndRevisionMock;
   let request;
   let id;
-  let proofFixture;
-  let proofMock;
-  let response;
-  let proofResponse;
 
   beforeEach(async function beforeEach() {
     id = await generateRandomIdentifierAsync();
+
     request = {
       getId: this.sinon.stub().returns(id),
       getProve: this.sinon.stub().returns(true),
     };
 
-    call = new GrpcCallMock(this.sinon, request);
-
-    proofFixture = {
-      merkleProof: Buffer.alloc(1, 1),
-    };
-
-    proofMock = new Proof();
-    proofMock.setGrovedbProof(proofFixture.merkleProof);
-
-    const revisionAndBalance = new GetIdentityBalanceAndRevisionResponse.BalanceAndRevision();
-    revisionAndBalance.setRevision({
-      toArray: () => [],
-      getValue: () => 0,
-    });
-    revisionAndBalance.setBalance({
-      toArray: () => [],
-      getValue: () => 0,
+    call = new GrpcCallMock(this.sinon, {
+      getV0: () => request,
     });
 
-    response = new GetIdentityBalanceAndRevisionResponse();
-    response.setBalanceAndRevision(revisionAndBalance);
+    fetchIdentityBalanceAndRevisionMock = this.sinon.stub();
 
-    proofResponse = new GetIdentityBalanceAndRevisionResponse();
-    proofResponse.setProof(proofMock);
-
-    driveClientMock = {
-      fetchIdentityBalanceAndRevision: this.sinon.stub().resolves(response.serializeBinary()),
-    };
-
-    getIdentityBalanceAndRevisionHandler = getIdentityBalanceAndRevisionHandlerFactory(
-      driveClientMock,
-    );
+    getIdentityBalanceAndRevisionHandler = getIdentityBalanceAndRevisionHandlerFactory({
+      fetchIdentityBalanceAndRevision: fetchIdentityBalanceAndRevisionMock,
+    });
   });
 
   it('should return identity balance and revision', async () => {
+    const revisionAndBalance = new BalanceAndRevision();
+
+    revisionAndBalance.setRevision(1);
+    revisionAndBalance.setBalance(15);
+
+    const response = new GetIdentityBalanceAndRevisionResponse()
+      .setV0(
+        new GetIdentityBalanceAndRevisionResponseV0().setBalanceAndRevision(revisionAndBalance),
+      );
+
+    fetchIdentityBalanceAndRevisionMock.resolves(response.serializeBinary());
+
     const result = await getIdentityBalanceAndRevisionHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentityBalanceAndRevisionResponse);
 
-    const identityRevisionAndBalance = result.getBalanceAndRevision();
+    const identityRevisionAndBalance = result.getV0().getBalanceAndRevision();
 
-    expect(identityRevisionAndBalance.getRevision().getValue()).to.deep.equal(0);
-    expect(identityRevisionAndBalance.getBalance().getValue()).to.deep.equal(0);
+    expect(identityRevisionAndBalance.getRevision()).to.equals(1);
+    expect(identityRevisionAndBalance.getBalance()).to.equals(15);
 
-    const proof = result.getProof();
-
-    expect(proof).to.be.undefined();
+    expect(fetchIdentityBalanceAndRevisionMock).to.be.calledOnceWith(call.request);
   });
 
-  it('should return proof', async function it() {
-    driveClientMock = {
-      fetchIdentityBalanceAndRevision: this.sinon.stub().resolves(
-        proofResponse.serializeBinary(),
-      ),
+  it('should return proof', async () => {
+    const proofFixture = {
+      merkleProof: Buffer.alloc(1, 1),
     };
 
-    getIdentityBalanceAndRevisionHandler = getIdentityBalanceAndRevisionHandlerFactory(
-      driveClientMock,
-    );
+    const proofMock = new Proof();
+    proofMock.setGrovedbProof(proofFixture.merkleProof);
+
+    const response = new GetIdentityBalanceAndRevisionResponse()
+      .setV0(new GetIdentityBalanceAndRevisionResponseV0().setProof(proofMock));
+
+    fetchIdentityBalanceAndRevisionMock.resolves(response.serializeBinary());
 
     const result = await getIdentityBalanceAndRevisionHandler(call);
 
     expect(result).to.be.an.instanceOf(GetIdentityBalanceAndRevisionResponse);
 
-    const identityRevisionAndBalance = result.getBalanceAndRevision();
-    expect(identityRevisionAndBalance).to.be.undefined();
-
-    const proof = result.getProof();
+    const proof = result.getV0().getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
     const merkleProof = proof.getGrovedbProof();
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    expect(driveClientMock.fetchIdentityBalanceAndRevision).to.be.calledOnceWith(call.request);
+    expect(fetchIdentityBalanceAndRevisionMock).to.be.calledOnceWith(call.request);
   });
 
   it('should throw InvalidArgumentGrpcError error if ids are not specified', async () => {
@@ -125,7 +116,7 @@ describe('getIdentityBalanceHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('identity id is not specified');
-      expect(driveClientMock.fetchIdentityBalanceAndRevision).to.be.not.called();
+      expect(fetchIdentityBalanceAndRevisionMock).to.be.not.called();
     }
   });
 
@@ -133,7 +124,7 @@ describe('getIdentityBalanceHandlerFactory', () => {
     const message = 'Some error';
     const abciResponseError = new Error(message);
 
-    driveClientMock.fetchIdentityBalanceAndRevision.throws(abciResponseError);
+    fetchIdentityBalanceAndRevisionMock.throws(abciResponseError);
 
     try {
       await getIdentityBalanceAndRevisionHandler(call);

@@ -28,7 +28,7 @@ function getIdentityBalanceHandlerFactory(driveClient) {
   async function getIdentityBalanceHandler(call) {
     const { request } = call;
 
-    if (!request.getId()) {
+    if (!request.getV0().getId()) {
       throw new InvalidArgumentGrpcError('identity id is not specified');
     }
 

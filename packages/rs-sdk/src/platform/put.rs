@@ -1,6 +1,4 @@
-use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
-
-use crate::platform::transition::{broadcast_identity, TransitionContext};
+use crate::platform::transition::TransitionContext;
 use crate::{Error, Sdk};
 
 use super::transition::TxId;
@@ -42,7 +40,7 @@ pub trait Put {
     /// - [`Err(Error)`](Error) when an error occurs
     async fn put<C: TransitionContext>(&self, sdk: &Sdk, context: &C) -> Result<TxId, Error>;
 
-    ///     Put (create or update) object on the Platform, without waiting for confirmation.
+    /// Put (create or update) object on the Platform, without waiting for confirmation.
     ///
     /// An asynchronous method provided by the Put trait that puts data on Dash Platform.
     /// It locks funds that will be used to pay for the operation, creates a state transition,

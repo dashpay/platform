@@ -1,6 +1,6 @@
 [package]
 name = "drive-abci"
-version = "0.25.0"
+version = "0.25.13"
 authors = [
     "Samuel Westrich <sam@dash.org>",
     "Ivan Shumkov <ivan@shumkov.ru>",
@@ -48,8 +48,6 @@ clap = { version = "4.1.8", optional = true, features = ["derive"] }
 envy = { version = "0.4.2" }
 dotenvy = { version = "0.15.7", optional = true }
 dapi-grpc = { path = "../dapi-grpc" }
-platform-serialization = { path = "../rs-platform-serialization" }
-platform-serialization-derive = { path = "../rs-platform-serialization-derive" }
 tracing-subscriber = { version = "0.3.16", default-features = false, features = [
     "env-filter",
     "ansi",
@@ -61,8 +59,6 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
 ], optional = false }
 atty = { version = "0.2.14", optional = false }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "0.13.1" }
-# tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }
-anyhow = { version = "1.0.70" }
 lazy_static = "1.4.0"
 itertools = { version = "0.10.5" }
 file-rotate = { version = "0.7.3" }
@@ -81,7 +77,6 @@ tokio = { version = "1", features = [
 ] }
 tokio-util = { version = "0.7.8" }
 derive_more = "0.99.17"
-paste = "1.0.14"
 
 [dev-dependencies]
 base64 = "0.20.0"

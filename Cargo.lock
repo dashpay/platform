@@ -786,16 +786,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "console_error_panic_hook"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
-dependencies = [
- "cfg-if",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "const-oid"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -987,7 +977,7 @@ dependencies = [
 
 [[package]]
 name = "dapi-grpc"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
  "dapi-grpc-macros",
  "platform-version",
@@ -1057,6 +1047,7 @@ dependencies = [
  "dapi-grpc",
  "dapi-grpc-macros",
  "dashcore-rpc",
+ "data-contracts",
  "derive_more",
  "dotenvy",
  "dpp",
@@ -1141,16 +1132,15 @@ dependencies = [
 
 [[package]]
 name = "dashpay-contract"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
- "lazy_static",
  "platform-value",
  "serde_json",
 ]
 
 [[package]]
 name = "data-contracts"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
  "dashpay-contract",
  "dpns-contract",
@@ -1241,7 +1231,7 @@ checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
 
 [[package]]
 name = "dpns-contract"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -1249,7 +1239,7 @@ dependencies = [
 
 [[package]]
 name = "dpp"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1267,7 +1257,6 @@ dependencies = [
  "ed25519-dalek",
  "enum-map",
  "env_logger 0.9.3",
- "futures",
  "getrandom",
  "hex",
  "integer-encoding 4.0.0",
@@ -1277,13 +1266,11 @@ dependencies = [
  "jsonschema",
  "lazy_static",
  "log",
- "mockall",
  "nohash-hasher",
  "num_enum",
  "platform-serialization",
  "platform-serialization-derive",
  "platform-value",
- "platform-value-convertible",
  "platform-version",
  "platform-versioning",
  "pretty_assertions",
@@ -1292,8 +1279,6 @@ dependencies = [
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
- "serde-big-array",
- "serde_cbor",
  "serde_json",
  "serde_repr",
  "sha2",
@@ -1304,11 +1289,10 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
  "anyhow",
  "base64 0.21.5",
- "bincode 2.0.0-rc.3",
  "bs58 0.5.0",
  "byteorder",
  "chrono",
@@ -1326,14 +1310,10 @@ dependencies = [
  "integer-encoding 4.0.0",
  "intmap",
  "itertools 0.10.5",
- "lazy_static",
- "mockall",
  "moka",
  "nohash-hasher",
  "platform-version",
  "rand",
- "rust_decimal",
- "rust_decimal_macros",
  "serde",
  "serde_json",
  "sqlparser",
@@ -1344,9 +1324,8 @@ dependencies = [
 
 [[package]]
 name = "drive-abci"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
- "anyhow",
  "atty",
  "base64 0.20.0",
  "bincode 2.0.0-rc.3",
@@ -1372,9 +1351,6 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "mockall",
- "paste",
- "platform-serialization",
- "platform-serialization-derive",
  "platform-version",
  "prost",
  "rand",
@@ -1408,8 +1384,6 @@ dependencies = [
  "dpp",
  "drive",
  "hex",
- "lazy_static",
- "serde",
  "serde_json",
  "tenderdash-abci",
  "thiserror",
@@ -1602,7 +1576,7 @@ checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 
 [[package]]
 name = "feature-flags-contract"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -2471,7 +2445,7 @@ dependencies = [
 
 [[package]]
 name = "masternode-reward-shares-contract"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
  "platform-value",
  "serde_json",
@@ -2955,16 +2929,15 @@ checksum = "26072860ba924cbfa98ea39c8c19b4dd6a4a25423dbdf219c1eca91aa0cf6964"
 
 [[package]]
 name = "platform-serialization"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "platform-version",
- "serde",
 ]
 
 [[package]]
 name = "platform-serialization-derive"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2974,7 +2947,7 @@ dependencies = [
 
 [[package]]
 name = "platform-value"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
  "base64 0.13.1",
  "bincode 2.0.0-rc.3",
@@ -2987,7 +2960,6 @@ dependencies = [
  "rand",
  "regex",
  "serde",
- "serde_bytes",
  "serde_json",
  "thiserror",
  "treediff 4.0.2",
@@ -2995,24 +2967,22 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
- "proc-macro2",
  "quote",
  "syn 2.0.39",
 ]
 
 [[package]]
 name = "platform-version"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
- "bincode 2.0.0-rc.3",
  "thiserror",
 ]
 
 [[package]]
 name = "platform-versioning"
-version = "0.1.0"
+version = "0.25.13"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3498,7 +3468,6 @@ dependencies = [
  "hex",
  "http",
  "rand",
- "serde_json",
  "sha2",
  "thiserror",
  "tokio",
@@ -3757,15 +3726,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde-big-array"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3323f09a748af288c3dc2474ea6803ee81f118321775bffa3ac8f7e65c5e90e7"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "serde-wasm-bindgen"
 version = "0.5.0"
 source = "git+https://github.com/QuantumExplorer/serde-wasm-bindgen?branch=feat/not_human_readable#121d1f7fbf62cb97f74b91626a1b23851098cc82"
@@ -3932,7 +3892,7 @@ checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
 
 [[package]]
 name = "simple-signer"
-version = "0.1.0"
+version = "0.25.13"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
@@ -4023,57 +3983,17 @@ dependencies = [
 
 [[package]]
 name = "strategy-tests"
-version = "0.25.0-dev.30"
+version = "0.25.13"
 dependencies = [
- "anyhow",
- "atty",
- "base64 0.20.0",
  "bincode 2.0.0-rc.3",
- "bs58 0.4.0",
- "bytes",
- "chrono",
- "ciborium",
- "clap 4.4.7",
- "dapi-grpc",
- "dashcore-rpc",
- "delegate",
- "derive_more",
- "dotenvy",
  "dpp",
  "drive",
- "envy",
- "file-rotate",
  "hex",
- "indexmap 1.9.3",
- "itertools 0.10.5",
- "lazy_static",
- "metrics",
- "metrics-exporter-prometheus",
- "mockall",
- "platform-serialization",
  "platform-serialization-derive",
  "platform-version",
- "prost",
  "rand",
- "regex",
- "reopen",
  "rocksdb",
- "rust_decimal",
- "rust_decimal_macros",
- "serde",
- "serde_json",
- "serde_with 2.3.3",
- "sha2",
  "simple-signer",
- "tempfile",
- "tenderdash-abci",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "ureq",
- "url",
 ]
 
 [[package]]
@@ -4889,11 +4809,10 @@ checksum = "ed9d5b4305409d1fc9482fee2d7f9bcbf24b3972bf59817ef757e23982242a93"
 
 [[package]]
 name = "wasm-dpp"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
  "anyhow",
  "async-trait",
- "console_error_panic_hook",
  "dpp",
  "hex",
  "itertools 0.10.5",
@@ -5066,7 +4985,7 @@ dependencies = [
 
 [[package]]
 name = "withdrawals-contract"
-version = "0.25.0"
+version = "0.25.13"
 dependencies = [
  "num_enum",
  "platform-value",

@@ -24,10 +24,10 @@ const {
     GetIdentityResponse,
     GetProofsRequest,
     GetProofsResponse,
-    GetVersionUpgradeStateRequest,
-    GetVersionUpgradeStateResponse,
-    GetVersionUpgradeVoteStatusRequest,
-    GetVersionUpgradeVoteStatusResponse,
+    GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest,
+    GetProtocolVersionUpgradeVoteStatusResponse,
     Proof,
     ResponseMetadata,
   },
@@ -378,19 +378,23 @@ describe('DriveClient', () => {
     it('should call \'fetchEpochsInfo\' RPC with the given parameters', async () => {
       const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
-      const { GetVersionUpgradeVoteStatusRequestV0 } = GetVersionUpgradeVoteStatusRequest;
-      const request = new GetVersionUpgradeVoteStatusRequest();
+      const {
+        GetProtocolVersionUpgradeVoteStatusRequestV0,
+      } = GetProtocolVersionUpgradeVoteStatusRequest;
+      const request = new GetProtocolVersionUpgradeVoteStatusRequest();
       request.setV0(
-        new GetVersionUpgradeVoteStatusRequestV0()
+        new GetProtocolVersionUpgradeVoteStatusRequestV0()
           .setStartProTxHash(Buffer.alloc(32))
           .setCount(1),
       );
 
-      const { GetVersionUpgradeVoteStatusResponseV0 } = GetVersionUpgradeVoteStatusResponse;
-      const response = new GetVersionUpgradeVoteStatusResponse();
-      const { VersionSignal, VersionSignals } = GetVersionUpgradeVoteStatusResponseV0;
+      const {
+        GetProtocolVersionUpgradeVoteStatusResponseV0,
+      } = GetProtocolVersionUpgradeVoteStatusResponse;
+      const response = new GetProtocolVersionUpgradeVoteStatusResponse();
+      const { VersionSignal, VersionSignals } = GetProtocolVersionUpgradeVoteStatusResponseV0;
       response.setV0(
-        new GetVersionUpgradeVoteStatusResponseV0()
+        new GetProtocolVersionUpgradeVoteStatusResponseV0()
           .setVersions(
             new VersionSignals()
               .setVersionSignalsList([
@@ -428,15 +432,15 @@ describe('DriveClient', () => {
     it('should call \'fetchEpochsInfo\' RPC with the given parameters', async () => {
       const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
-      const { GetVersionUpgradeStateRequestV0 } = GetVersionUpgradeStateRequest;
-      const request = new GetVersionUpgradeStateRequest();
-      request.setV0(new GetVersionUpgradeStateRequestV0());
+      const { GetProtocolVersionUpgradeStateRequestV0 } = GetProtocolVersionUpgradeStateRequest;
+      const request = new GetProtocolVersionUpgradeStateRequest();
+      request.setV0(new GetProtocolVersionUpgradeStateRequestV0());
 
-      const { GetVersionUpgradeStateResponseV0 } = GetVersionUpgradeStateResponse;
-      const response = new GetVersionUpgradeStateResponse();
-      const { Versions, VersionEntry } = GetVersionUpgradeStateResponseV0;
+      const { GetProtocolVersionUpgradeStateResponseV0 } = GetProtocolVersionUpgradeStateResponse;
+      const response = new GetProtocolVersionUpgradeStateResponse();
+      const { Versions, VersionEntry } = GetProtocolVersionUpgradeStateResponseV0;
       response.setV0(
-        new GetVersionUpgradeStateResponseV0()
+        new GetProtocolVersionUpgradeStateResponseV0()
           .setVersions(
             new Versions()
               .setVersionsList([

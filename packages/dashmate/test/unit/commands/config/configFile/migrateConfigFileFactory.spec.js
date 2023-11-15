@@ -3,7 +3,7 @@ const getConfigFileDataV0250 = require('../../../../../src/test/fixtures/getConf
 const packageJson = require('../../../../../package.json');
 const HomeDir = require('../../../../../src/config/HomeDir');
 
-describe.skip('migrateConfigFileFactory', () => {
+describe('migrateConfigFileFactory', () => {
   let mockConfigFileData;
   let container;
   let createConfigFile;
@@ -20,7 +20,7 @@ describe.skip('migrateConfigFileFactory', () => {
     mockConfigFileData = getConfigFileDataV0250();
   });
 
-  it('should migrate', async () => {
+  it('should migrate v0.25.0 config file to the latest one', async () => {
     const currentConfigFile = createConfigFile();
     const currentConfigFileData = currentConfigFile.toObject();
 
@@ -30,8 +30,11 @@ describe.skip('migrateConfigFileFactory', () => {
       packageJson.version,
     );
 
-    for (const [name, config] of Object.entries(currentConfigFileData.configs)) {
-      expect(config).to.be.deep.equal(migratedConfigFileData.configs[name]);
+    for (const [name, defaultConfig] of Object.entries(currentConfigFileData.configs)) {
+      expect(defaultConfig).to.be.deep.equal(
+        migratedConfigFileData.configs[name],
+        `Migrated and default ${name} config do not match`,
+      );
     }
 
     delete currentConfigFileData.configs;

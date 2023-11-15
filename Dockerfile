@@ -31,7 +31,6 @@
 
 ARG ALPINE_VERSION=3.18
 
-# Set RUSTC_WRAPPER to `sccache` to enable sccache caching
 ARG RUSTC_WRAPPER
 
 #
@@ -68,8 +67,8 @@ SHELL ["/bin/bash", "-c"]
 ARG TARGETARCH
 
 # Rust version the same as in /README.md
-RUN rustup install 1.73 && \
-    rustup target add wasm32-unknown-unknown --toolchain 1.73
+RUN rustup install stable && \
+    rustup target add wasm32-unknown-unknown --toolchain stable
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
@@ -97,35 +96,56 @@ ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
 
-ARG RUSTC_WRAPPER
-
 FROM deps-base AS deps-sccache
+
+ARG SCCHACHE_VERSION=0.7.1
 
 # Install sccache for caching
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
     curl -Ls \
-        https://github.com/mozilla/sccache/releases/download/v0.4.1/sccache-v0.4.1-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
+        https://github.com/mozilla/sccache/releases/download/v$SCCHACHE_VERSION/sccache-v$SCCHACHE_VERSION-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
         tar -C /tmp -xz && \
         mv /tmp/sccache-*/sccache /usr/bin/
 
 #
 # Configure sccache
 #
+ARG RUSTC_WRAPPER
+ENV RUSTC_WRAPPER=${RUSTC_WRAPPER}
+
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
+ENV SCCACHE_GHA_ENABLED=${SCCACHE_GHA_ENABLED}
+
 ARG ACTIONS_CACHE_URL
+ENV ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}
+
 ARG ACTIONS_RUNTIME_TOKEN
+ENV ACTIONS_RUNTIME_TOKEN=${ACTIONS_RUNTIME_TOKEN}
+
 # Alternative solution is to use memcache
 ARG SCCACHE_MEMCACHED
+ENV SCCACHE_MEMCACHED=${SCCACHE_MEMCACHED}
+
+# S3 storage
+ARG SCCACHE_BUCKET
+ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
+
+ARG SCCACHE_REGION
+ENV SCCACHE_REGION=${SCCACHE_REGION}
 
 # Disable incremental buildings, not supported by sccache
 ARG CARGO_INCREMENTAL=false
+ENV CARGO_INCREMENTAL=${CARGO_INCREMENTAL}
 
 #
 # DEPS: FULL DEPENCIES LIST
 #
 # This is separate from `deps` to use sccache for caching
 FROM deps-${RUSTC_WRAPPER:-base} AS deps
+
+ARG SCCACHE_S3_KEY_PREFIX
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
 
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
@@ -163,6 +183,9 @@ RUN yarn config set enableInlineBuilds true
 # This will prebuild majority of dependencies
 FROM sources AS build-drive-abci
 
+ARG SCCACHE_S3_KEY_PREFIX
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/${TARGETARCH}/linux-musl
+
 RUN mkdir /artifacts
 
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
@@ -181,6 +204,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
 #
 FROM sources AS build-js
+
+ARG SCCACHE_S3_KEY_PREFIX
+ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_KEY_PREFIX}/wasm/wasm32
 
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \

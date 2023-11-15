@@ -2,7 +2,7 @@ use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdent
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
-use dapi_grpc::platform::v0::WaitForStateTransitionResultRequest;
+
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;

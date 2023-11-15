@@ -20,6 +20,7 @@ class Config {
    */
   constructor(name, options = {}) {
     this.name = name;
+    this.changed = false;
 
     this.setOptions(options);
   }
@@ -103,6 +104,8 @@ class Config {
 
     this.options = clonedOptions;
 
+    this.changed = true;
+
     return this;
   }
 
@@ -139,6 +142,8 @@ class Config {
 
     this.options = clonedOptions;
 
+    this.changed = true;
+
     return this;
   }
 
@@ -150,6 +155,29 @@ class Config {
    */
   isEqual(config) {
     return lodashIsEqual(this.getOptions(), config.getOptions());
+  }
+
+  /**
+   * Is config changed
+   *
+   * @return {boolean}
+   */
+  isChanged() {
+    return this.changed;
+  }
+
+  /**
+   * Mark config as changed
+   */
+  markAsChanged() {
+    this.changed = true;
+  }
+
+  /**
+   * Mark config as saved
+   */
+  markAsSaved() {
+    this.changed = false;
   }
 }
 

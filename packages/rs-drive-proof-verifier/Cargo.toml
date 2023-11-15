@@ -23,9 +23,7 @@ dpp = { path = "../rs-dpp" }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci" }
 # tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci" }
 tracing = { version = "0.1.37" }
-serde = { version = "1.0.171", default-features = false }
 serde_json = { version = "1.0.103", features = [
     "preserve_order",
 ], optional = true }
-lazy_static = { version = "1.4.0" }
 hex = { version = "0.4.3" }

@@ -31,8 +31,8 @@ service Platform {
       returns (WaitForStateTransitionResultResponse);
   rpc getConsensusParams(GetConsensusParamsRequest)
       returns (GetConsensusParamsResponse);
-  rpc getVersionUpgradeState(GetVersionUpgradeStateRequest) returns (GetVersionUpgradeStateResponse);
-  rpc getVersionUpgradeVoteStatus(GetVersionUpgradeVoteStatusRequest) returns (GetVersionUpgradeVoteStatusResponse);
+  rpc getProtocolVersionUpgradeState(GetProtocolVersionUpgradeStateRequest) returns (GetProtocolVersionUpgradeStateResponse);
+  rpc getProtocolVersionUpgradeVoteStatus(GetProtocolVersionUpgradeVoteStatusRequest) returns (GetProtocolVersionUpgradeVoteStatusResponse);
   rpc getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse);
 }
 
@@ -462,18 +462,18 @@ message GetConsensusParamsResponse {
 }
 
 
-message GetVersionUpgradeStateRequest {
-  message GetVersionUpgradeStateRequestV0 {
+message GetProtocolVersionUpgradeStateRequest {
+  message GetProtocolVersionUpgradeStateRequestV0 {
     bool prove = 1;
   }
 
   oneof version {
-    GetVersionUpgradeStateRequestV0 v0 = 1;
+    GetProtocolVersionUpgradeStateRequestV0 v0 = 1;
   }
 }
 
-message GetVersionUpgradeStateResponse {
-  message GetVersionUpgradeStateResponseV0 {
+message GetProtocolVersionUpgradeStateResponse {
+  message GetProtocolVersionUpgradeStateResponseV0 {
     message Versions {
       repeated VersionEntry versions = 1;
     }
@@ -491,24 +491,24 @@ message GetVersionUpgradeStateResponse {
   }
 
   oneof version {
-    GetVersionUpgradeStateResponseV0 v0 = 1;
+    GetProtocolVersionUpgradeStateResponseV0 v0 = 1;
   }
 }
 
-message GetVersionUpgradeVoteStatusRequest {
-  message GetVersionUpgradeVoteStatusRequestV0 {
+message GetProtocolVersionUpgradeVoteStatusRequest {
+  message GetProtocolVersionUpgradeVoteStatusRequestV0 {
     bytes start_pro_tx_hash = 1;
     uint32 count = 2;
     bool prove = 3;
   }
 
   oneof version {
-    GetVersionUpgradeVoteStatusRequestV0 v0 = 1;
+    GetProtocolVersionUpgradeVoteStatusRequestV0 v0 = 1;
   }
 }
 
-message GetVersionUpgradeVoteStatusResponse {
-  message GetVersionUpgradeVoteStatusResponseV0 {
+message GetProtocolVersionUpgradeVoteStatusResponse {
+  message GetProtocolVersionUpgradeVoteStatusResponseV0 {
     message VersionSignals {
       repeated VersionSignal version_signals = 1;
     }
@@ -526,7 +526,7 @@ message GetVersionUpgradeVoteStatusResponse {
   }
 
   oneof version {
-    GetVersionUpgradeVoteStatusResponseV0 v0 = 1;
+    GetProtocolVersionUpgradeVoteStatusResponseV0 v0 = 1;
   }
 }
 
