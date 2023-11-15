@@ -11,17 +11,20 @@ const {
 use(dirtyChai);
 use(sinonChai);
 
-before(loadWasmDpp);
-beforeEach(function beforeEach() {
-  if (!this.sinon) {
-    this.sinon = sinon.createSandbox();
-  } else {
-    this.sinon.restore();
-  }
-});
+exports.mochaHooks = {
+  beforeAll: loadWasmDpp,
 
-afterEach(function afterEach() {
-  this.sinon.restore();
-});
+  beforeEach() {
+    if (!this.sinon) {
+      this.sinon = sinon.createSandbox();
+    } else {
+      this.sinon.restore();
+    }
+  },
+
+  afterEach() {
+    this.sinon.restore();
+  },
+};
 
 global.expect = expect;

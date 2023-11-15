@@ -7,6 +7,8 @@ const createClientWithFundedWallet = require('../../../lib/test/createClientWith
 const parseStoreTreeProof = require('../../../lib/parseStoreTreeProof');
 const hashFunction = require('../../../lib/proofHashFunction');
 
+// TODO: Fix test to be running in Browser
+
 describe.skip('Platform', () => {
   describe('waitForStateTransitionResult', () => {
     let client;

@@ -52,6 +52,12 @@ impl AsRef<[u8]> for Identifier {
     }
 }
 
+impl From<Identifier> for [u8; 32] {
+    fn from(id: Identifier) -> Self {
+        id.into_buffer()
+    }
+}
+
 impl Serialize for IdentifierBytes32 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

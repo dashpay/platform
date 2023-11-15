@@ -10286,6 +10286,20 @@ $root.org = (function() {
                              */
                             GetProofsResponseV0.prototype.metadata = null;
 
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetProofsResponseV0 result.
+                             * @member {"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetProofsResponse.GetProofsResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetProofsResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
                             /**
                              * Creates a new GetProofsResponseV0 instance using the specified properties.
                              * @function create
@@ -10389,10 +10403,14 @@ $root.org = (function() {
                             GetProofsResponseV0.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
+                                var properties = {};
                                 if (message.proof != null && message.hasOwnProperty("proof")) {
-                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
-                                    if (error)
-                                        return "proof." + error;
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
                                 }
                                 if (message.metadata != null && message.hasOwnProperty("metadata")) {
                                     var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
@@ -10440,12 +10458,13 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.defaults) {
-                                    object.proof = null;
+                                if (options.defaults)
                                     object.metadata = null;
-                                }
-                                if (message.proof != null && message.hasOwnProperty("proof"))
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
                                     object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
                                 if (message.metadata != null && message.hasOwnProperty("metadata"))
                                     object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
                                 return object;

@@ -38,7 +38,9 @@ describe('DPNS', () => {
   });
 
   after(async () => {
-    await client.disconnect();
+    if (client) {
+      await client.disconnect();
+    }
   });
 
   describe('Data contract', () => {
@@ -69,7 +71,9 @@ describe('DPNS', () => {
     });
 
     after(async () => {
-      await ownerClient.disconnect();
+      if (ownerClient) {
+        await ownerClient.disconnect();
+      }
     });
 
     // generate a random one which will be used in tests above
@@ -143,7 +147,9 @@ describe('DPNS', () => {
     });
 
     after(async () => {
-      await client.disconnect();
+      if (client) {
+        await client.disconnect();
+      }
     });
 
     // TODO(rs-drive-abci): test randomly returns StateTransition already in chain error,

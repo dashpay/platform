@@ -37,7 +37,7 @@ use crate::drive::object_size_info::DriveKeyInfo;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::RootTree;
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 
 #[cfg(feature = "full")]
@@ -122,6 +122,7 @@ pub fn identity_contract_info_group_path_vec(
 }
 
 /// The group is either a contract id or on a family of contracts owned by the same identity
+#[cfg(any(feature = "full", feature = "verify"))]
 pub fn identity_contract_info_group_path_key_purpose_vec(
     identity_id: &[u8; 32],
     group_id: &[u8],

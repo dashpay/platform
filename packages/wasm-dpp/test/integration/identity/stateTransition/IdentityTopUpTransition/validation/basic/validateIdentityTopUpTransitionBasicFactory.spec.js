@@ -33,7 +33,7 @@ describe.skip('validateIdentityTopUpTransitionBasicFactory', () => {
   });
 
   beforeEach(async function beforeEach() {
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.verifyInstantLock.resolves(true);
     stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves(false);
 

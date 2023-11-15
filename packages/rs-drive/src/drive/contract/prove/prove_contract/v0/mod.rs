@@ -31,7 +31,8 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        let contract_query = Self::fetch_contract_query(contract_id);
+        let contract_query = Self::fetch_contract_query(contract_id, true);
+        tracing::trace!(?contract_query, "proving contract");
         let contract_proof = self.grove_get_proved_path_query(
             &contract_query,
             false,
@@ -43,14 +44,17 @@ impl Drive {
             contract_proof.as_slice(),
             Some(false),
             false,
+            false,
             contract_id,
             platform_version,
         );
         match result {
             Ok(_) => Ok(contract_proof),
-            Err(Error::GroveDB(grovedb::Error::WrongElementType(_))) => {
-                // In this case we are trying to prove a historical type contract we would have a tree instead
-                let contract_query = Self::fetch_contract_with_history_latest_query(contract_id);
+            Err(Error::GroveDB(grovedb::Error::WrongElementType(s))) if s == "expected an item" => {
+                // In this case we are trying to prove a historical type contract
+                let contract_query =
+                    Self::fetch_contract_with_history_latest_query(contract_id, true);
+                tracing::trace!(?contract_query, "proving historical contract");
                 let historical_contract_proof = self.grove_get_proved_path_query(
                     &contract_query,
                     false,
@@ -61,6 +65,7 @@ impl Drive {
                 if let Ok(Some(_)) = Drive::verify_contract(
                     historical_contract_proof.as_slice(),
                     Some(true),
+                    false,
                     false,
                     contract_id,
                     platform_version,

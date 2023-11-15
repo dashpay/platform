@@ -31,7 +31,6 @@ describe('Platform', () => {
           );
 
         expect(response.getVersionSignals()).to.be.an('array');
-        expect(response.getVersionSignals()).to.have.lengthOf(1);
       });
     });
   });

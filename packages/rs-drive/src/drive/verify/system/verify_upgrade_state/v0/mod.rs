@@ -42,16 +42,22 @@ impl Drive {
             .into_iter()
             .map(|(_, key, element)| {
                 let version = ProtocolVersion::decode_var(key.as_slice())
-                    .ok_or(ProofError::CorruptedProof("protocol version not decodable"))?
+                    .ok_or(ProofError::CorruptedProof(
+                        "protocol version not decodable".to_string(),
+                    ))?
                     .0;
                 let element = element.ok_or(ProofError::CorruptedProof(
-                    "expected a count for each version, got none",
+                    "expected a count for each version, got none".to_string(),
                 ))?;
                 let count_bytes = element.as_item_bytes().map_err(|_| {
-                    ProofError::CorruptedProof("expected an item for the element of a version")
+                    ProofError::CorruptedProof(
+                        "expected an item for the element of a version".to_string(),
+                    )
                 })?;
                 let count = u64::decode_var(count_bytes)
-                    .ok_or(ProofError::CorruptedProof("version count not decodable"))?
+                    .ok_or(ProofError::CorruptedProof(
+                        "version count not decodable".to_string(),
+                    ))?
                     .0;
                 Ok((version, count))
             })

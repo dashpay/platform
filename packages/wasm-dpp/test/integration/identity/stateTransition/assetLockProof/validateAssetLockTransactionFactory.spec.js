@@ -41,7 +41,7 @@ describe.skip('validateAssetLockTransactionFactory', () => {
 
     executionContext = new StateTransitionExecutionContext();
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
 
     stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves(false);
 
@@ -156,9 +156,9 @@ describe.skip('validateAssetLockTransactionFactory', () => {
     expect(result.getData()).to.be.undefined();
     expect(stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed)
       .to.be.calledOnceWithExactly(
-        this.sinonSandbox.match((val) => Buffer.from(val)
+        this.sinon.match((val) => Buffer.from(val)
           .equals(transaction.getOutPointBuffer(outputIndex))),
-        this.sinonSandbox.match.instanceOf(StateTransitionExecutionContext),
+        this.sinon.match.instanceOf(StateTransitionExecutionContext),
       );
   });
 
@@ -178,9 +178,9 @@ describe.skip('validateAssetLockTransactionFactory', () => {
 
     expect(stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed)
       .to.be.calledOnceWithExactly(
-        this.sinonSandbox.match((val) => Buffer.from(val)
+        this.sinon.match((val) => Buffer.from(val)
           .equals(initialTransaction.getOutPointBuffer(outputIndex))),
-        this.sinonSandbox.match.instanceOf(StateTransitionExecutionContext),
+        this.sinon.match.instanceOf(StateTransitionExecutionContext),
       );
 
     const { transaction, publicKeyHash } = result.getData();

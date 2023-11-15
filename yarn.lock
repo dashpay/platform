@@ -1341,7 +1341,7 @@ __metadata:
     eslint-plugin-import: ^2.24.2
     lodash: ^4.17.21
     mathjs: ^10.4.3
-    mocha: ^9.1.2
+    mocha: ^10.2.0
   languageName: unknown
   linkType: soft
 
@@ -1385,12 +1385,12 @@ __metadata:
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
-    karma-firefox-launcher: ^2.1.1
+    karma-firefox-launcher: ^2.1.2
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
     lodash: ^4.17.21
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     node-fetch: ^2.6.7
     node-inspect-extracted: ^1.0.8
     nyc: ^15.1.0
@@ -1427,7 +1427,7 @@ __metadata:
     eslint-plugin-import: ^2.24.2
     google-protobuf: ^3.12.2
     long: ^5.2.0
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     mocha-sinon: ^2.1.2
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
@@ -1463,7 +1463,7 @@ __metadata:
     jayson: ^3.3.4
     lodash: ^4.17.21
     lru-cache: ^5.1.1
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     mocha-sinon: ^2.1.2
     nyc: ^15.1.0
     semver: ^7.5.3
@@ -1495,7 +1495,7 @@ __metadata:
     eslint-plugin-import: ^2.24.2
     levelup: ^4.4.0
     memdown: ^5.1.0
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     should: ^13.2.3
     sinon: ^11.1.2
     wasm-x11-hash: ~0.0.2
@@ -1562,7 +1562,7 @@ __metadata:
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
   languageName: unknown
@@ -1600,7 +1600,7 @@ __metadata:
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
   languageName: unknown
@@ -1616,7 +1616,7 @@ __metadata:
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
   languageName: unknown
@@ -1638,7 +1638,7 @@ __metadata:
     eslint-plugin-import: ^2.24.2
     lodash: ^4.17.21
     long: ^5.2.0
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     mocha-sinon: ^2.1.2
     nyc: ^15.1.0
     semver: ^7.5.3
@@ -1657,7 +1657,7 @@ __metadata:
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
   languageName: unknown
@@ -1719,18 +1719,19 @@ __metadata:
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
     events: ^3.3.0
+    glob: ^10.3.4
     https-browserify: ^1.0.0
     js-merkle: ^0.1.5
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
-    karma-firefox-launcher: ^2.1.1
+    karma-firefox-launcher: ^2.1.2
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-sourcemap-loader: ^0.3.7
     karma-webpack: ^5.0.0
     localforage: ^1.10.0
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     net: ^1.0.2
     nodeforage: ^1.1.2
     os-browserify: ^0.3.0
@@ -1757,6 +1758,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/platform@workspace:."
   dependencies:
+    "@iarna/toml": ^2.2.5
     add-stream: ^1.0.0
     conventional-changelog: ^3.1.24
     conventional-changelog-dash: "github:dashevo/conventional-changelog-dash"
@@ -1819,12 +1821,13 @@ __metadata:
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
+    karma-firefox-launcher: ^2.1.2
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-sourcemap-loader: ^0.3.7
     karma-webpack: ^5.0.0
     lodash: ^4.17.21
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     node-inspect-extracted: ^1.0.8
     nyc: ^15.1.0
     os-browserify: ^0.3.0
@@ -1881,13 +1884,13 @@ __metadata:
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
-    karma-firefox-launcher: ^2.1.1
+    karma-firefox-launcher: ^2.1.2
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
     lodash: ^4.17.21
     long: ^5.2.0
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     path-browserify: ^1.0.1
     process: ^0.11.10
     sinon: ^11.1.2
@@ -1916,7 +1919,7 @@ __metadata:
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
     eslint-plugin-import: ^2.24.2
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
   languageName: unknown
@@ -2042,6 +2045,13 @@ __metadata:
   version: 3.0.2
   resolution: "@hutson/parse-repository-url@npm:3.0.2"
   checksum: 39992c5f183c5ca3d761d6ed9dfabcb79b5f3750bf1b7f3532e1dc439ca370138bbd426ee250fdaba460bc948e6761fbefd484b8f4f36885d71ded96138340d1
+  languageName: node
+  linkType: hard
+
+"@iarna/toml@npm:^2.2.5":
+  version: 2.2.5
+  resolution: "@iarna/toml@npm:2.2.5"
+  checksum: b63b2b2c4fd67969a6291543ada0303d45593801ee744b60f5390f183c03d9192bc67a217abb24be945158f1935f02840d9ffff40c0142aa171b5d3b6b6a3ea5
   languageName: node
   linkType: hard
 
@@ -6037,10 +6047,11 @@ __metadata:
     karma: ^6.4.1
     karma-chai: ^0.1.0
     karma-chrome-launcher: ^3.1.0
+    karma-firefox-launcher: ^2.1.2
     karma-mocha: ^2.0.1
     karma-mocha-reporter: ^2.2.5
     karma-webpack: ^5.0.0
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     net: ^1.0.2
     node-inspect-extracted: ^1.0.8
     nodemon: ^2.0.20
@@ -6056,7 +6067,7 @@ __metadata:
     terser-webpack-plugin: ^5.3.1
     tls: ^0.0.1
     ts-loader: ^8.0.2
-    ts-mocha: ^9.0.2
+    ts-mocha: ^10.0.0
     ts-mock-imports: ^1.3.0
     ts-node: ^10.4.0
     tsd: ^0.28.1
@@ -6114,7 +6125,7 @@ __metadata:
     listr2: 5.0.7
     lodash: ^4.17.21
     memory-streams: ^0.1.3
-    mocha: ^9.1.2
+    mocha: ^10.2.0
     mocha-sinon: ^2.1.2
     node-forge: ^1.3.1
     node-graceful: ^3.0.1
@@ -6170,7 +6181,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"debug@npm:4, debug@npm:^4.0.1, debug@npm:^4.1.0, debug@npm:^4.1.1, debug@npm:^4.3.1, debug@npm:^4.3.2, debug@npm:^4.3.3, debug@npm:^4.3.4, debug@npm:~4.3.1, debug@npm:~4.3.2":
+"debug@npm:4, debug@npm:4.3.4, debug@npm:^4.0.1, debug@npm:^4.1.0, debug@npm:^4.1.1, debug@npm:^4.3.1, debug@npm:^4.3.2, debug@npm:^4.3.3, debug@npm:^4.3.4, debug@npm:~4.3.1, debug@npm:~4.3.2":
   version: 4.3.4
   resolution: "debug@npm:4.3.4"
   dependencies:
@@ -9668,7 +9679,7 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"karma-firefox-launcher@npm:^2.1.1":
+"karma-firefox-launcher@npm:^2.1.2":
   version: 2.1.2
   resolution: "karma-firefox-launcher@npm:2.1.2"
   dependencies:
@@ -10592,6 +10603,15 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"minimatch@npm:5.0.1":
+  version: 5.0.1
+  resolution: "minimatch@npm:5.0.1"
+  dependencies:
+    brace-expansion: ^2.0.1
+  checksum: b34b98463da4754bc526b244d680c69d4d6089451ebe512edaf6dd9eeed0279399cfa3edb19233513b8f830bf4bfcad911dddcdf125e75074100d52f724774f0
+  languageName: node
+  linkType: hard
+
 "minimatch@npm:^3.0.4, minimatch@npm:^3.1.2":
   version: 3.1.2
   resolution: "minimatch@npm:3.1.2"
@@ -10803,6 +10823,38 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
+"mocha@npm:^10.2.0":
+  version: 10.2.0
+  resolution: "mocha@npm:10.2.0"
+  dependencies:
+    ansi-colors: 4.1.1
+    browser-stdout: 1.3.1
+    chokidar: 3.5.3
+    debug: 4.3.4
+    diff: 5.0.0
+    escape-string-regexp: 4.0.0
+    find-up: 5.0.0
+    glob: 7.2.0
+    he: 1.2.0
+    js-yaml: 4.1.0
+    log-symbols: 4.1.0
+    minimatch: 5.0.1
+    ms: 2.1.3
+    nanoid: 3.3.3
+    serialize-javascript: 6.0.0
+    strip-json-comments: 3.1.1
+    supports-color: 8.1.1
+    workerpool: 6.2.1
+    yargs: 16.2.0
+    yargs-parser: 20.2.4
+    yargs-unparser: 2.0.0
+  bin:
+    _mocha: bin/_mocha
+    mocha: bin/mocha.js
+  checksum: 406c45eab122ffd6ea2003c2f108b2bc35ba036225eee78e0c784b6fa2c7f34e2b13f1dbacef55a4fdf523255d76e4f22d1b5aacda2394bd11666febec17c719
+  languageName: node
+  linkType: hard
+
 "mocha@npm:^9.1.2":
   version: 9.2.2
   resolution: "mocha@npm:9.2.2"
@@ -10940,6 +10992,15 @@ fsevents@~2.3.2:
   bin:
     nanoid: bin/nanoid.cjs
   checksum: 4ef0969e1bbe866fc223eb32276cbccb0961900bfe79104fa5abe34361979dead8d0e061410a5c03bc3d47455685adf32c09d6f27790f4a6898fb51f7df7ec86
+  languageName: node
+  linkType: hard
+
+"nanoid@npm:3.3.3":
+  version: 3.3.3
+  resolution: "nanoid@npm:3.3.3"
+  bin:
+    nanoid: bin/nanoid.cjs
+  checksum: ada019402a07464a694553c61d2dca8a4353645a7d92f2830f0d487fedff403678a0bee5323a46522752b2eab95a0bc3da98b6cccaa7c0c55cd9975130e6d6f0
   languageName: node
   linkType: hard
 
@@ -14325,20 +14386,20 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"ts-mocha@npm:^9.0.2":
-  version: 9.0.2
-  resolution: "ts-mocha@npm:9.0.2"
+"ts-mocha@npm:^10.0.0":
+  version: 10.0.0
+  resolution: "ts-mocha@npm:10.0.0"
   dependencies:
     ts-node: 7.0.1
     tsconfig-paths: ^3.5.0
   peerDependencies:
-    mocha: ^3.X.X || ^4.X.X || ^5.X.X || ^6.X.X || ^7.X.X || ^8.X.X || ^9.X.X
+    mocha: ^3.X.X || ^4.X.X || ^5.X.X || ^6.X.X || ^7.X.X || ^8.X.X || ^9.X.X || ^10.X.X
   dependenciesMeta:
     tsconfig-paths:
       optional: true
   bin:
     ts-mocha: bin/ts-mocha
-  checksum: 142a7fc2b7be156e2933b31ec0577d092789d4c55e5be0e42c038b92644983e970fdc3fd7b2fb12b007288e2be749d5897c064ecf7c48cb021f38401f5a95a67
+  checksum: b11f2a8ceecf195b0db724da429159982fef12e4357088fe900289223587217e8c126ead7929679edd58bf19ad96c5da5911535d26f535386632e18fbff10c40
   languageName: node
   linkType: hard
 
@@ -15250,6 +15311,13 @@ typescript@^3.9.5:
   version: 6.2.0
   resolution: "workerpool@npm:6.2.0"
   checksum: 3493b4f0ef979a23d2c1583d7ef85f62fc9463cc02f82829d3e7e663b517f8ae9707da0249b382e46ac58986deb0ca2232ee1081713741211bda9254b429c9bb
+  languageName: node
+  linkType: hard
+
+"workerpool@npm:6.2.1":
+  version: 6.2.1
+  resolution: "workerpool@npm:6.2.1"
+  checksum: c2c6eebbc5225f10f758d599a5c016fa04798bcc44e4c1dffb34050cd361d7be2e97891aa44419e7afe647b1f767b1dc0b85a5e046c409d890163f655028b09d
   languageName: node
   linkType: hard
 

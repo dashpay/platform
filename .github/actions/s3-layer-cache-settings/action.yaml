@@ -12,7 +12,7 @@ inputs:
     required: true
   head_ref:
     description: 'Head ref for an additional manifest to hit all builds for this head'
-    default: ${{ github.head_ref }}
+    default: ${{ github.ref }}
   region:
     description: S3 region
     default: eu-west-1

@@ -73,11 +73,5 @@ module.exports = (config) => {
       karmaFirefoxLauncher,
       karmaWebpack,
     ],
-    customLaunchers: {
-      FirefoxHeadless: {
-        base: 'Firefox',
-        flags: ['-headless'],
-      },
-    },
   });
 };

@@ -81,7 +81,7 @@ describe.skip('validateDocumentsBatchTransitionBasicFactory', () => {
 
     rawStateTransition = stateTransition.toObject();
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock = createStateRepositoryMock(this.sinon);
     stateRepositoryMock.fetchDataContract.resolves(dataContract.clone());
 
     protocolVersionValidator = new ProtocolVersionValidator();
