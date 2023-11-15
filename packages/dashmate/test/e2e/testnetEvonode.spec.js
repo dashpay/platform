@@ -7,7 +7,7 @@ import createDIContainer from '../../src/createDIContainer.js';
 import generateTenderdashNodeKey from '../../src/tenderdash/generateTenderdashNodeKey.js';
 import createRpcClient from '../../src/core/createRpcClient.js';
 import waitForCoreDataFactory from '../../src/test/waitForCoreDataFactory.js';
-import createSelfSignedCertificate from "../../src/test/createSelfSignedCertificate.js";
+import createSelfSignedCertificate from '../../src/test/createSelfSignedCertificate.js';
 
 describe('Testnet Evonode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
