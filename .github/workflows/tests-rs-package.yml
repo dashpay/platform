@@ -239,8 +239,8 @@ jobs:
         run: |
           echo Verify all features disabled
           set -ex
+          features="${{ steps.list.outputs.features }}"
           cargo check --no-default-features --package "${{ inputs.package }}" --locked
-          features=${{ steps.list.outputs.features }}
           for feature in $features ;  do
             echo " ============== Verify feature $feature =============="
             cargo check --no-default-features --package "${{ inputs.package }}"  --features="${feature}" --locked
