@@ -4,10 +4,10 @@ import { NODE_TYPE_NAMES, getNodeTypeByName } from '../../src/listr/tasks/setup/
 import { SSL_PROVIDERS } from '../../src/constants.js';
 import HomeDir from '../../src/config/HomeDir.js';
 import createDIContainer from '../../src/createDIContainer.js';
-import createSelfSignedCertificate from '../../src/ssl/selfSigned/createSelfSignedCertificate.js';
 import generateTenderdashNodeKey from '../../src/tenderdash/generateTenderdashNodeKey.js';
 import createRpcClient from '../../src/core/createRpcClient.js';
 import waitForCoreDataFactory from '../../src/test/waitForCoreDataFactory.js';
+import createSelfSignedCertificate from "../../src/test/createSelfSignedCertificate.js";
 
 describe('Testnet Evonode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
