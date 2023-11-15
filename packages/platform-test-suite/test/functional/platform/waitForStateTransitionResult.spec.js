@@ -73,9 +73,7 @@ describe.skip('Platform', () => {
 
       const { rootHash: identityLeafRoot } = executeProof(identitiesProofBuffer);
 
-      const identityProof = MerkleProof.fromBuffer(
-        rootTreeProof, blake3,
-      );
+      const identityProof = MerkleProof.fromBuffer(rootTreeProof, blake3);
       Buffer
         .from(
           identityProof.calculateRoot([1], [identityLeafRoot], 6),
