@@ -50,6 +50,9 @@ jobs:
           SCCACHE_REGION: ${{ vars.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ steps.arch.outputs.arch }}/linux-gnu
 
+      - name: Find unused dependencies
+        uses: bnjbvr/cargo-machete@main
+
   formatting:
     name: Formatting
     runs-on: ubuntu-22.04
