@@ -11,6 +11,7 @@ use(dirtyChai);
 
 process.env.NODE_ENV = 'test';
 
+// eslint-disable-next-line import/prefer-default-export
 export const mochaHooks = {
   beforeAll: WasmDPP.default,
   beforeEach() {
