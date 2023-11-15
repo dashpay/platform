@@ -30,25 +30,7 @@ pub fn generate() -> Result<(), std::io::Error> {
         PathBuf::from("protos/platform/v0/platform.proto"),
         PathBuf::from("src/platform/proto"),
     );
-    // Derive features for versioned messages
-    //
-    // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 13] = [
-        "GetDataContractHistoryRequest",
-        "GetDataContractRequest",
-        "GetDataContractsRequest",
-        "GetDocumentsRequest",
-        "GetIdentitiesByPublicKeyHashesRequest",
-        "GetIdentitiesRequest",
-        "GetIdentityBalanceAndRevisionRequest",
-        "GetIdentityBalanceRequest",
-        "GetIdentityByPublicKeyHashRequest",
-        "GetIdentityKeysRequest",
-        "GetIdentityRequest",
-        "GetProofsRequest",
-        "WaitForStateTransitionResultRequest",
-    ];
-
+    
     //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
     const VERSIONED_RESPONSES: [&str; 13] = [
         "GetDataContractHistoryResponse",
