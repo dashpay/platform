@@ -1,4 +1,4 @@
-import jayson from 'jayson';
+import jayson from 'jayson/promise/index.js';
 
 /**
  * Create Tenderdash RPC client

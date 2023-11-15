@@ -305,7 +305,9 @@ class PlatformPromiseClient {
    * @returns {Promise<!GetIdentitiesByPublicKeyHashesResponse>}
    */
   getIdentitiesByPublicKeyHashes(
-    getIdentitiesByPublicKeyHashesRequest, metadata = {}, options = {},
+    getIdentitiesByPublicKeyHashesRequest,
+    metadata = {},
+    options = {},
   ) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
@@ -337,9 +339,7 @@ class PlatformPromiseClient {
    * @param {CallOptions} [options={}]
    * @returns {Promise<!WaitForStateTransitionResultResponse>}
    */
-  waitForStateTransitionResult(
-    waitForStateTransitionResultRequest, metadata = {}, options = {},
-  ) {
+  waitForStateTransitionResult(waitForStateTransitionResultRequest, metadata = {}, options = {}) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
@@ -370,9 +370,7 @@ class PlatformPromiseClient {
    * @param {CallOptions} [options={}]
    * @returns {Promise<!GetConsensusParamsResponse>}
    */
-  getConsensusParams(
-    getConsensusParamsRequest, metadata = {}, options = {},
-  ) {
+  getConsensusParams(getConsensusParamsRequest, metadata = {}, options = {}) {
     if (!isObject(metadata)) {
       throw new Error('metadata must be an object');
     }
