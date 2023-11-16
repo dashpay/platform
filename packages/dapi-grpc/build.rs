@@ -30,6 +30,7 @@ pub fn generate() -> Result<(), std::io::Error> {
         PathBuf::from("protos/platform/v0/platform.proto"),
         PathBuf::from("src/platform/proto"),
     );
+
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
