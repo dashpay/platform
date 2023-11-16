@@ -13,3 +13,6 @@ yarn run dashmate setup local --verbose \
                           --debug-logs \
                           --miner-interval="${MINING_INTERVAL_IN_SECONDS}s" \
                           --node-count=${MASTERNODES_COUNT} | tee "${ROOT_PATH}"/logs/setup.log || exit 1
+
+# enable insight
+yarn dashmate config set core.insight.enabled true --config local_seed
