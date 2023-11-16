@@ -129,6 +129,10 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetIdentityKeysRequest>(filename)
                         .await?
                 }
+                "GetProtocolVersionUpgradeStateRequest" => {
+                    self.load_expectation::<proto::GetProtocolVersionUpgradeStateRequest>(filename)
+                        .await?
+                }
                 _ => {
                     return Err(Error::Config(format!(
                         "unknown request type {} in {}",
