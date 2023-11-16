@@ -8,6 +8,7 @@ mod common;
 mod config;
 mod data_contract;
 mod document;
+mod epoch;
 mod identity;
 mod mock_fetch;
 mod mock_fetch_many;

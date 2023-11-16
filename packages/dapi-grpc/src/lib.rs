@@ -16,7 +16,7 @@ pub mod platform {
     pub use tenderdash_proto as proto;
 
     mod versioning;
-    pub use versioning::VersionedGrpcResponse;
+    pub use versioning::{VersionedGrpcMessage, VersionedGrpcResponse};
 }
 
 #[cfg(feature = "serde")]
