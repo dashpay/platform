@@ -77,3 +77,11 @@ pub enum Error {
     #[error("invalid version of message")]
     InvalidVersion(#[from] dpp::version::PlatformVersionError),
 }
+
+impl From<drive::error::Error> for Error {
+    fn from(error: drive::error::Error) -> Self {
+        Self::DriveError {
+            error: error.to_string(),
+        }
+    }
+}

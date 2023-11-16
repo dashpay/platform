@@ -1,20 +1,14 @@
 use std::collections::BTreeMap;
 use std::num::TryFromIntError;
-use std::sync::Arc;
 
 use crate::{types::*, Error, QuorumInfoProvider};
-use dapi_grpc::platform::v0::get_data_contract_request::GetDataContractRequestV0;
-use dapi_grpc::platform::v0::get_data_contracts_request::GetDataContractsRequestV0;
-use dapi_grpc::platform::v0::get_identity_balance_and_revision_request::GetIdentityBalanceAndRevisionRequestV0;
-use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
-use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
-use dapi_grpc::platform::v0::get_identity_keys_request::GetIdentityKeysRequestV0;
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
 use dapi_grpc::platform::v0::{
     get_data_contract_history_request, get_data_contract_request, get_data_contracts_request,
     get_epochs_info_request, get_identity_balance_and_revision_request,
     get_identity_balance_request, get_identity_by_public_key_hash_request,
-    get_identity_keys_request, get_identity_request,
+    get_identity_keys_request, get_identity_request, GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateResponse,
 };
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
@@ -351,7 +345,7 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
                                         error: format!("missing requested key type: {}", *kind),
                                     }),
                                 };
-                                
+
                                 match kt  {
                                     Err(e) => Err(e),
                                     Ok(d) => Ok((*level as u8, d))
@@ -731,6 +725,39 @@ fn try_u32_to_u16(i: u32) -> Result<u16, Error> {
         .map_err(|e: TryFromIntError| Error::RequestDecodeError {
             error: e.to_string(),
         })
+}
+
+impl FromProof<GetProtocolVersionUpgradeStateRequest> for ProtocolVersionUpgrades {
+    type Request = GetProtocolVersionUpgradeStateRequest;
+    type Response = GetProtocolVersionUpgradeStateResponse;
+
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn QuorumInfoProvider,
+    ) -> Result<Option<Self>, Error>
+    where
+        Self: Sized + 'a,
+    {
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (root_hash, object) =
+            Drive::verify_upgrade_state(&proof.grovedb_proof, platform_version)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        if object.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(
+            object.into_iter().map(|(k, v)| (k, Some(v))).collect(),
+        ))
+    }
 }
 
 // #[cfg_attr(feature = "mocks", mockall::automock)]

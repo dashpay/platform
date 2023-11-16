@@ -5,7 +5,8 @@ use std::fmt::Debug;
 
 use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
-    AllKeys, GetEpochsInfoRequest, GetIdentityKeysRequest, KeyRequestType,
+    AllKeys, GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
+    KeyRequestType,
 };
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
 use drive::query::DriveQuery;
@@ -194,5 +195,15 @@ impl Query<GetEpochsInfoRequest> for LimitQuery<EpochIndex> {
 impl Query<GetEpochsInfoRequest> for EpochIndex {
     fn query(self, prove: bool) -> Result<GetEpochsInfoRequest, Error> {
         LimitQuery::from(self).query(prove)
+    }
+}
+
+impl Query<GetProtocolVersionUpgradeStateRequest> for () {
+    fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeStateRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(proto::get_protocol_version_upgrade_state_request::GetProtocolVersionUpgradeStateRequestV0 {prove}.into())
     }
 }
