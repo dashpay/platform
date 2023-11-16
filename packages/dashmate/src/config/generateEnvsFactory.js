@@ -48,6 +48,14 @@ function generateEnvsFactory(configFile, homeDir, getConfigProfiles) {
       }
     }
 
+    if (config.get('core.insight.enabled')) {
+      let insightComposeFile = 'docker-compose.insight_api.yml';
+      if (config.get('core.insight.ui.enabled')) {
+        insightComposeFile = 'docker-compose.insight_ui.yml';
+      }
+      dockerComposeFiles.push(insightComposeFile);
+    }
+
     // we need this for compatibility with old configs
     const projectIdWithPrefix = configFile.getProjectId() ? `_${configFile.getProjectId()}` : '';
 
