@@ -21,25 +21,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Get arch
-      shell: bash
-      id: arch
-      run: |
-        arch="$(uname -m)"
-        echo "arch=${arch}" >> $GITHUB_OUTPUT
-
-        case "$arch" in
-          x86_64)
-            echo "protoc_arch=x86_64" >> $GITHUB_OUTPUT
-            ;;
-          aarch64)
-            echo "protoc_arch=aarch_64" >> $GITHUB_OUTPUT
-            ;;
-          *)
-            echo "Unsupported architecture: $arch"
-            exit 1
-            ;;
-        esac
     # TODO: Move to AMI and build every day
     - uses: dtolnay/rust-toolchain@master
       name: Install Rust toolchain
@@ -48,13 +29,32 @@ runs:
         target: ${{ inputs.target }}
         components: ${{ inputs.components }}
 
+    - name: Get protoc arch
+      shell: bash
+      id: protoc_arch
+      run: |
+        arch="${{ runner.arch }}"
+
+        case "$arch" in
+          X64)
+            echo "arch=x86_64" >> $GITHUB_OUTPUT
+            ;;
+          ARM64)
+            echo "arch=aarch_64" >> $GITHUB_OUTPUT
+            ;;
+          *)
+            echo "Unsupported architecture: $arch"
+            exit 1
+            ;;
+        esac
+
     # TODO: Move to AMI and build every day
     - name: Install protoc
       id: deps-protoc
       shell: bash
       run: |
         curl -Lo /tmp/protoc.zip \
-          "https://github.com/protocolbuffers/protobuf/releases/download/v22.0/protoc-22.0-linux-${{ steps.arch.outputs.protoc_arch }}.zip"
+          "https://github.com/protocolbuffers/protobuf/releases/download/v22.0/protoc-22.0-linux-${{ steps.protoc_arch.outputs.arch }}.zip"
         unzip /tmp/protoc.zip -d ${HOME}/.local
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
