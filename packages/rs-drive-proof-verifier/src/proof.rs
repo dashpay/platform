@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::num::TryFromIntError;
+use std::sync::Arc;
 
 use crate::{types::*, Error, QuorumInfoProvider};
 use dapi_grpc::platform::v0::get_data_contract_request::GetDataContractRequestV0;
@@ -10,16 +12,19 @@ use dapi_grpc::platform::v0::get_identity_keys_request::GetIdentityKeysRequestV0
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
 use dapi_grpc::platform::v0::{
     get_data_contract_history_request, get_data_contract_request, get_data_contracts_request,
-    get_identity_balance_and_revision_request, get_identity_balance_request,
-    get_identity_by_public_key_hash_request, get_identity_keys_request, get_identity_request,
+    get_epochs_info_request, get_identity_balance_and_revision_request,
+    get_identity_balance_request, get_identity_by_public_key_hash_request,
+    get_identity_keys_request, get_identity_request,
 };
 use dapi_grpc::platform::{
     v0::{self as platform, key_request_type, KeyRequestType as GrpcKeyType},
     VersionedGrpcResponse,
 };
+use dpp::block::epoch::EpochIndex;
+use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::{DataContract, Identifier, Identity};
-use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
+use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
@@ -346,7 +351,7 @@ fn parse_key_request_type(request: &Option<GrpcKeyType>) -> Result<KeyRequestTyp
                                         error: format!("missing requested key type: {}", *kind),
                                     }),
                                 };
-
+                                
                                 match kt  {
                                     Err(e) => Err(e),
                                     Ok(d) => Ok((*level as u8, d))
@@ -421,7 +426,7 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
 
         provider: &'a dyn QuorumInfoProvider,
     ) -> Result<Option<Self>, Error>
@@ -621,6 +626,111 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
 
         Ok(maybe_history)
     }
+}
+
+impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfo {
+    type Request = platform::GetEpochsInfoRequest;
+    type Response = platform::GetEpochsInfoResponse;
+
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn QuorumInfoProvider,
+    ) -> Result<Option<Self>, Error>
+    where
+        Self: Sized + 'a,
+    {
+        let epochs =
+            ExtendedEpochInfos::maybe_from_proof(request, response, platform_version, provider)?;
+
+        if let Some(mut e) = epochs {
+            if e.len() != 1 {
+                return Err(Error::RequestDecodeError {
+                    error: format!("expected 1 epoch, got {}", e.len()),
+                });
+            }
+            let epoch = e.pop_first().and_then(|v| v.1);
+            Ok(epoch)
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
+    type Request = platform::GetEpochsInfoRequest;
+    type Response = platform::GetEpochsInfoResponse;
+
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn QuorumInfoProvider,
+    ) -> Result<Option<Self>, Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (start_epoch, count, ascending) = match request.version.ok_or(Error::EmptyVersion)? {
+            get_epochs_info_request::Version::V0(v0) => (v0.start_epoch, v0.count, v0.ascending),
+        };
+
+        let current_epoch: EpochIndex = try_u32_to_u16(mtd.epoch)?;
+        let start_epoch: Option<EpochIndex> = if let Some(epoch) = start_epoch {
+            Some(try_u32_to_u16(epoch)?)
+        } else {
+            None
+        };
+        let count = try_u32_to_u16(count)?;
+
+        let (root_hash, epoch_info) = Drive::verify_epoch_infos(
+            &proof.grovedb_proof,
+            current_epoch,
+            start_epoch,
+            count,
+            ascending,
+            platform_version,
+        )
+        .map_err(|e| Error::DriveError {
+            error: e.to_string(),
+        })?;
+
+        let epoch_info = epoch_info
+            .into_iter()
+            .map(|v| {
+                #[allow(clippy::infallible_destructuring_match)]
+                let info = match &v {
+                    ExtendedEpochInfo::V0(i) => i,
+                };
+
+                (info.index, Some(v))
+            })
+            .collect::<BTreeMap<EpochIndex, Option<ExtendedEpochInfo>>>();
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        let maybe_epoch_info = if epoch_info.count_some() > 0 {
+            Some(epoch_info)
+        } else {
+            None
+        };
+
+        Ok(maybe_epoch_info)
+    }
+}
+
+fn try_u32_to_u16(i: u32) -> Result<u16, Error> {
+    i.try_into()
+        .map_err(|e: TryFromIntError| Error::RequestDecodeError {
+            error: e.to_string(),
+        })
 }
 
 // #[cfg_attr(feature = "mocks", mockall::automock)]
