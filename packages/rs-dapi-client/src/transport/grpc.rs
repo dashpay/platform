@@ -181,6 +181,14 @@ impl_transport_request_grpc!(
     get_identity_keys
 );
 
+impl_transport_request_grpc!(
+    platform_proto::GetEpochsInfoRequest,
+    platform_proto::GetEpochsInfoResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_epochs_info
+);
+
 // Link to each core gRPC request what client and method to use:
 /*
 TODO: Implement serde on Core gRPC requests and responses

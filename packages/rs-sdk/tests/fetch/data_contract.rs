@@ -9,9 +9,9 @@ async fn test_data_contract_read_not_found() {
     let id = Identifier::from_bytes(&DATA_CONTRACT_ID_BYTES).expect("parse identity id");
 
     let cfg = Config::new();
-    let mut api = cfg.setup_api().await;
+    let mut sdk = cfg.setup_api().await;
 
-    let result = DataContract::fetch(&mut api, id).await;
+    let result = DataContract::fetch(&mut sdk, id).await;
 
     assert!(matches!(result, Ok(None)), "result: {:?}", result);
 }
@@ -23,9 +23,9 @@ async fn test_data_contract_read() {
     let cfg = Config::new();
     let id = cfg.existing_data_contract_id;
 
-    let mut api = cfg.setup_api().await;
+    let mut sdk = cfg.setup_api().await;
 
-    let result = DataContract::fetch(&mut api, id).await;
+    let result = DataContract::fetch(&mut sdk, id).await;
 
     assert!(matches!(result, Ok(Some(_))), "result: {:?}", result);
     assert_eq!(result.unwrap().unwrap().id(), id);

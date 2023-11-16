@@ -72,7 +72,7 @@ impl<T: TransportRequest> DumpData<T> {
         T: serde::Serialize,
         T::Response: serde::Serialize,
     {
-        let encoded = serde_json::to_vec_pretty(self).map_err(|e| {
+        let encoded = serde_json::to_vec(self).map_err(|e| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("unable to serialize json: {}", e),

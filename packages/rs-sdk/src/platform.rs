@@ -21,6 +21,11 @@ pub use drive::{
     },
     query::DriveQuery,
 };
-pub use {document_query::DocumentQuery, fetch::Fetch, fetch_many::FetchMany, query::Query};
+pub use {
+    document_query::DocumentQuery,
+    fetch::Fetch,
+    fetch_many::FetchMany,
+    query::{LimitQuery, Query, DEFAULT_EPOCH_QUERY_LIMIT},
+};
 
 pub use rs_dapi_client as dapi;

@@ -14,6 +14,8 @@ You can also inspect tests in `tests/` folder for more detailed examples.
 
 This section provides instructions on how to test the RS-SDK for Dash Platform. The tests can be run in two modes: **offline** (without connectivity to the Dash Platform) and **network** (with connectivity to the Dash Platform). **Offline** mode is the default one.
 
+If both **network** and **offline** testing is enabled, **offline testing** takes precedence.
+
 ## Network Testing
 
 Network testing requires connectivity to the Dash Platform and Dash Core.
