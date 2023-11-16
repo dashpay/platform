@@ -16,11 +16,30 @@ inputs:
   cache:
     description: Enable Rust cache
     required: false
-    default: 'true'
+    default: "true"
 
 runs:
   using: composite
   steps:
+    - name: Get arch
+      shell: bash
+      id: arch
+      run: |
+        arch="$(uname -m)"
+        echo "arch=${arch}" >> $GITHUB_OUTPUT
+
+        case "$arch" in
+          x86_64)
+            echo "protoc_arch=x86_64" >> $GITHUB_OUTPUT
+            ;;
+          aarch64)
+            echo "protoc_arch=aarch_64" >> $GITHUB_OUTPUT
+            ;;
+          *)
+            echo "Unsupported architecture: $arch"
+            exit 1
+            ;;
+        esac
     # TODO: Move to AMI and build every day
     - uses: dtolnay/rust-toolchain@master
       name: Install Rust toolchain
@@ -35,7 +54,7 @@ runs:
       shell: bash
       run: |
         curl -Lo /tmp/protoc.zip \
-          https://github.com/protocolbuffers/protobuf/releases/download/v22.0/protoc-22.0-linux-aarch_64.zip
+          "https://github.com/protocolbuffers/protobuf/releases/download/v22.0/protoc-22.0-linux-${{ steps.arch.outputs.protoc_arch }}.zip"
         unzip /tmp/protoc.zip -d ${HOME}/.local
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"

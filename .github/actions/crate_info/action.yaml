@@ -1,0 +1,48 @@
+name: "Crate Info"
+description: "Get crate information. Requires repo to be checked out."
+inputs:
+  package:
+    description: "Package name"
+    required: true
+outputs:
+  cargo_manifest_dir:
+    description: "The directory of the Cargo.toml file"
+    value: ${{ steps.crate_info.outputs.cargo_manifest_dir }}
+  cargo_toml:
+    description: "The path to the Cargo.toml file"
+    value: ${{ steps.crate_info.outputs.cargo_toml }}
+  features:
+    description: "The features of the crate"
+    value: ${{ steps.crate_info.outputs.features }}
+runs:
+  using: "composite"
+
+  steps:
+    - name: Install yq
+      id: yq
+      shell: bash
+      run: |
+        set -ex
+        mkdir -p $HOME/bin
+
+        if [ "$(uname -m)" = "x86_64" ] ; then
+          wget --compression=auto -q  -O $HOME/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64;
+        else 
+          wget --compression=auto -q  -O $HOME/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_arm64;
+        fi;
+        chmod +x $HOME/bin/yq
+
+    - name: Get crate ${{ inputs.package }} info
+      id: crate_info
+      shell: bash
+      run: |
+        set -ex
+        cargo_toml=$(find . -name Cargo.toml -exec \
+            bash -c "$HOME/bin/yq -e  eval '.package.name == \"${{ inputs.package }}\"' {} >  /dev/null 2> /dev/null  && echo {}" \; )
+        cargo_manifest_dir=$(dirname "${cargo_toml}")
+
+        echo "cargo_manifest_dir=${cargo_manifest_dir}" >> $GITHUB_OUTPUT
+        echo "cargo_toml=${cargo_toml}" >> $GITHUB_OUTPUT
+        echo "features=$($HOME/bin/yq -oy eval '.features | keys | .[]' ${cargo_toml} | tr '\n' ' ')" >> $GITHUB_OUTPUT

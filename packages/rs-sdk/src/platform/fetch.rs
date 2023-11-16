@@ -11,6 +11,7 @@
 use crate::mock::{MockRequest, MockResponse};
 use crate::{error::Error, platform::query::Query, Sdk};
 use dapi_grpc::platform::v0::{self as platform_proto};
+use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::{document::Document, prelude::Identity};
 use drive_proof_verifier::FromProof;
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
@@ -106,4 +107,9 @@ impl Fetch for drive_proof_verifier::types::IdentityBalance {
 #[async_trait::async_trait]
 impl Fetch for drive_proof_verifier::types::IdentityBalanceAndRevision {
     type Request = platform_proto::GetIdentityBalanceAndRevisionRequest;
+}
+
+#[async_trait::async_trait]
+impl Fetch for ExtendedEpochInfo {
+    type Request = platform_proto::GetEpochsInfoRequest;
 }

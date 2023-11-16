@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 
 use dpp::{
+    block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
     document::Document,
     identity::KeyID,
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
@@ -35,3 +36,6 @@ pub type IdentityPublicKeys = BTreeMap<KeyID, Option<IdentityPublicKey>>;
 
 /// Collection of documents.
 pub type Documents = BTreeMap<Identifier, Option<Document>>;
+
+/// Collection of epoch information
+pub type ExtendedEpochInfos = BTreeMap<EpochIndex, Option<ExtendedEpochInfo>>;

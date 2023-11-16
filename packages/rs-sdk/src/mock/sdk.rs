@@ -103,11 +103,20 @@ impl MockDashPlatformSdk {
 
             match request_type {
                 "DocumentQuery" => self.load_expectation::<DocumentQuery>(filename).await?,
+                "GetEpochsInfoRequest" => {
+                    self.load_expectation::<proto::GetEpochsInfoRequest>(filename)
+                        .await?
+                }
                 "GetDataContractRequest" => {
                     self.load_expectation::<proto::GetDataContractRequest>(filename)
                         .await?
                 }
                 "IdentityRequest" => self.load_expectation::<IdentityRequest>(filename).await?,
+                "GetIdentityRequest" => {
+                    self.load_expectation::<proto::GetIdentityRequest>(filename)
+                        .await?
+                }
+
                 "GetIdentityBalanceRequest" => {
                     self.load_expectation::<proto::GetIdentityBalanceRequest>(filename)
                         .await?

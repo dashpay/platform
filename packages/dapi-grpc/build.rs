@@ -30,6 +30,7 @@ pub fn generate() -> Result<(), std::io::Error> {
         PathBuf::from("protos/platform/v0/platform.proto"),
         PathBuf::from("src/platform/proto"),
     );
+
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
@@ -50,7 +51,7 @@ pub fn generate() -> Result<(), std::io::Error> {
     ];
 
     //  "GetConsensusParamsResponse" is excluded as this message does not support proofs
-    const VERSIONED_RESPONSES: [&str; 13] = [
+    const VERSIONED_RESPONSES: [&str; 14] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
@@ -64,13 +65,25 @@ pub fn generate() -> Result<(), std::io::Error> {
         "GetIdentityResponse",
         "GetProofsResponse",
         "WaitForStateTransitionResultResponse",
+        "GetEpochsInfoResponse",
     ];
 
+    // Derive VersionedGrpcMessage on requests
+    for msg in VERSIONED_REQUESTS {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dapi_grpc_macros::VersionedGrpcMessage)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+
+    // Derive VersionedGrpcMessage and VersionedGrpcResponse on responses
     for msg in VERSIONED_RESPONSES {
         platform = platform
             .message_attribute(
                 msg,
-                r#"#[derive(::dapi_grpc_macros::VersionedGrpcResponse)]"#,
+                r#"#[derive(::dapi_grpc_macros::VersionedGrpcMessage,::dapi_grpc_macros::VersionedGrpcResponse)]"#,
             )
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
     }
