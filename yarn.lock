@@ -1711,7 +1711,7 @@ __metadata:
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
     "@grpc/grpc-js": "npm:^1.3.7"
-    "@pshenmic/zeromq": "npm:6.0.0-beta.20"
+    "@pshenmic/zeromq": "npm:6.0.0-beta.21"
     ajv: "npm:^8.6.0"
     bs58: "npm:^4.0.1"
     cbor: "npm:^8.0.0"
@@ -3078,9 +3078,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@pshenmic/zeromq@npm:6.0.0-beta.20":
-  version: 6.0.0-beta.20
-  resolution: "@pshenmic/zeromq@npm:6.0.0-beta.20"
+"@pshenmic/zeromq@npm:6.0.0-beta.21":
+  version: 6.0.0-beta.21
+  resolution: "@pshenmic/zeromq@npm:6.0.0-beta.21"
   dependencies:
     "@aminya/node-gyp-build": "npm:4.5.0-aminya.4"
     cross-env: "npm:^7.0.3"
@@ -3088,7 +3088,7 @@ __metadata:
     node-gyp: "npm:latest"
     shelljs: "npm:^0.8.5"
     shx: "npm:^0.3.4"
-  checksum: cde48e012527b28f26f401c0e01f7c4dcdf97875198530c3aca44f30f478bde9d5d671deef4b6d3bd17c0895925bde4badfb727e27f41d658056996fcb03f314
+  checksum: 79d05c3e7655a44afa0474a39550b681778ce02ed59153b6f47195b55419d274028b2ebde46d61d29a1f657ce3cf2801ef6de310a3b630c04e0d4c01461ab48d
   languageName: node
   linkType: hard
 
