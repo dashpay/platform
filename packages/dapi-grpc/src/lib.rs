@@ -1,14 +1,14 @@
 pub use prost::Message;
 
+#[cfg(feature = "core")]
 pub mod core {
-    #[cfg(feature = "core_v0")]
     pub mod v0 {
         include!("core/proto/org.dash.platform.dapi.v0.rs");
     }
 }
 
+#[cfg(feature = "platform")]
 pub mod platform {
-    #[cfg(feature = "platform_v0")]
     pub mod v0 {
         include!("platform/proto/org.dash.platform.dapi.v0.rs");
     }

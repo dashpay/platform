@@ -68,7 +68,7 @@ mocks = [
 # This feature is enabled by default to allow testing without connecting to the Dash Platform as
 # part of CI/CD workflows.
 #
-# `offline-testing` and `network-testing` are mutually exclusive.
+# If both `offline-testing` and `network-testing` are enabled, "offline-testing" will take precedence.
 offline-testing = ["mocks"]
 
 # Run integration tests using a live Dash Platform network.
@@ -76,7 +76,7 @@ offline-testing = ["mocks"]
 # Requires configuration of Dash Platform connectivity. 
 # See [README.md] for more details.
 #
-# `offline-testing` and `network-testing` are mutually exclusive.
+# If both `offline-testing` and `network-testing` are enabled, "offline-testing" will take precedence.
 network-testing = ["mocks"]
 
 # Generate test vectors for offline tests.
