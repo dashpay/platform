@@ -77,8 +77,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    outputs:
-      features: ${{ steps.crate_info.outputs.features }}
     timeout-minutes: 15
     steps:
       - name: Check out repo
@@ -201,7 +199,7 @@ jobs:
   check_each_feature:
     name: Check each feature
     runs-on: ${{ fromJSON(inputs.test-runner) }}
-    timeout-minutes: 30
+    timeout-minutes: 10
     if: ${{ inputs.check-each-feature }}
     steps:
       - name: Check out repo

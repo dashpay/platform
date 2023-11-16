@@ -1,5 +1,5 @@
 name: "Crate Info"
-description: "Get crate information"
+description: "Get crate information. Requires repo to be checked out."
 inputs:
   package:
     description: "Package name"
@@ -22,6 +22,7 @@ runs:
       id: yq
       shell: bash
       run: |
+        set -ex
         mkdir -p $HOME/bin
 
         if [ "$(uname -m)" = "x86_64" ] ; then
@@ -37,12 +38,10 @@ runs:
       id: crate_info
       shell: bash
       run: |
-        cargo_manifest_dir=$(dirname \
-          $(find . -name Cargo.toml -exec \
-            sh -c "yq -e  eval '.package.name == \"${{ inputs.package }}\"' {} >  /dev/null 2> /dev/null  && echo {}" \; \
-          )  \
-        )
-        cargo_toml="${cargo_manifest_dir}/Cargo.toml"
+        set -ex
+        cargo_toml=$(find . -name Cargo.toml -exec \
+            sh -c "yq -e  eval '.package.name == \"${{ inputs.package }}\"' {} >  /dev/null 2> /dev/null  && echo {}" \; )
+        cargo_manifest_dir=$(dirname "${cargo_toml}")
 
         echo "cargo_manifest_dir=${cargo_manifest_dir}" >> $GITHUB_OUTPUT
         echo "cargo_toml=${cargo_toml}" >> $GITHUB_OUTPUT
