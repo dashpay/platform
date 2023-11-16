@@ -104,11 +104,11 @@ impl Config {
     ///
     /// Other fields are ignored.
     pub fn is_empty(&self) -> bool {
-        !self.core_user.is_empty()
-            && !self.core_password.is_empty()
-            && !self.platform_host.is_empty()
-            && self.platform_port > 0
-            && self.core_port > 0
+        self.core_user.is_empty()
+            || self.core_password.is_empty()
+            || self.platform_host.is_empty()
+            || self.platform_port == 0
+            || self.core_port == 0
     }
 
     #[allow(unused)]
