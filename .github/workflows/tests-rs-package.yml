@@ -77,6 +77,8 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    outputs:
+      features: ${{ steps.crate_info.outputs.features }}
     timeout-minutes: 15
     steps:
       - name: Check out repo
@@ -93,9 +95,32 @@ jobs:
         with:
           components: clippy
 
-      - name: Find crate ${{ inputs.package }} directory
+      - name: Install yq
+        run: |
+          mkdir -p $HOME/bin
+
+          if [ "$(uname -m)" = "x86_64" ] ; then
+            wget --compression=auto -q  -O $HOME/bin/yq \
+              https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64;
+          else 
+            wget --compression=auto -q  -O $HOME/bin/yq \
+              https://github.com/mikefarah/yq/releases/latest/download/yq_linux_arm64;
+          fi;
+          chmod +x $HOME/bin/yq
+
+      - name: Get crate ${{ inputs.package }} info
         id: crate_info
-        run: echo "cargo_manifest_dir='$(dirname $(grep -rl --include=Cargo.toml 'name = "${{ inputs.package }}"' .))'" >> $GITHUB_OUTPUT
+        run: |
+          cargo_manifest_dir=$(dirname \
+            $(find . -name Cargo.toml -exec \
+              sh -c "yq -e  eval '.package.name == \"${{ inputs.package }}\"' {} >  /dev/null 2> /dev/null  && echo {}" \; \
+            )  \
+          )
+          cargo_toml="${cargo_manifest_dir}/Cargo.toml"
+
+          echo "cargo_manifest_dir=${cargo_manifest_dir}" >> $GITHUB_OUTPUT
+          echo "cargo_toml=${cargo_toml}" >> $GITHUB_OUTPUT
+          echo "features=$($HOME/bin/yq -oy eval '.features | keys | .[]' ${cargo_toml} | tr '\n' ' ')" >> $GITHUB_OUTPUT
 
       - name: Find unused dependencies
         uses: lklimek/cargo-machete@feat/workdir
@@ -190,8 +215,8 @@ jobs:
   check_each_feature:
     name: Check each feature
     runs-on: ${{ fromJSON(inputs.test-runner) }}
-    outputs:
-      features: ${{ steps.list.outputs.features }}
+    needs:
+      - unused_deps
     timeout-minutes: 30
     if: ${{ inputs.check-each-feature }}
     steps:
@@ -210,26 +235,6 @@ jobs:
         id: arch
         run: echo "arch=$(uname -m)" >> $GITHUB_OUTPUT
 
-      - name: Install yq
-        run: |
-          mkdir -p $HOME/bin
-
-          if [ "$(uname -m)" = "x86_64" ] ; then
-            wget --compression=auto -q  -O $HOME/bin/yq \
-              https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64;
-          else 
-            wget --compression=auto -q  -O $HOME/bin/yq \
-              https://github.com/mikefarah/yq/releases/latest/download/yq_linux_arm64;
-          fi;
-          chmod +x $HOME/bin/yq
-
-      - name: List features
-        id: list
-        run: |
-          set -ex
-          cargo_toml="$(grep -rl --include=Cargo.toml 'name = "${{ inputs.package }}"' .)"
-          echo "features=$($HOME/bin/yq -oy eval '.features | keys | .[]' ${cargo_toml} | tr '\n' ' ')" >> $GITHUB_OUTPUT
-
       - name: Check each feature in ${{ inputs.package }}
         env:
           RUSTC_WRAPPER: sccache
@@ -239,7 +244,7 @@ jobs:
         run: |
           echo Verify all features disabled
           set -ex
-          features="${{ steps.list.outputs.features }}"
+          features="${{ needs.unused_deps.outputs.features }}"
           fails=""
           cargo check --no-default-features --package "${{ inputs.package }}" --locked
           for feature in $features ;  do
