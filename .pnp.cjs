@@ -2740,7 +2740,7 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["@grpc/grpc-js", "npm:1.4.4"],\
-          ["@pshenmic/zeromq", "npm:6.0.0-beta.18"],\
+          ["@pshenmic/zeromq", "npm:6.0.0-beta.19"],\
           ["ajv", "npm:8.8.1"],\
           ["bs58", "npm:4.0.1"],\
           ["cbor", "npm:8.1.0"],\
@@ -4372,10 +4372,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["@pshenmic/zeromq", [\
-      ["npm:6.0.0-beta.18", {\
-        "packageLocation": "./.yarn/unplugged/@pshenmic-zeromq-npm-6.0.0-beta.18-6a4969f95f/node_modules/@pshenmic/zeromq/",\
+      ["npm:6.0.0-beta.19", {\
+        "packageLocation": "./.yarn/unplugged/@pshenmic-zeromq-npm-6.0.0-beta.19-5b632b0c61/node_modules/@pshenmic/zeromq/",\
         "packageDependencies": [\
-          ["@pshenmic/zeromq", "npm:6.0.0-beta.18"],\
+          ["@pshenmic/zeromq", "npm:6.0.0-beta.19"],\
           ["@aminya/node-gyp-build", "npm:4.5.0-aminya.4"],\
           ["cross-env", "npm:7.0.3"],\
           ["node-addon-api", "npm:5.1.0"],\
