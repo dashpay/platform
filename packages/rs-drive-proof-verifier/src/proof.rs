@@ -62,14 +62,15 @@ pub trait FromProof<Req> {
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
     /// For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P>(
         request: I,
         response: O,
         platform_version: &PlatformVersion,
-        provider: &'a dyn ContextProvider,
+        provider: P,
     ) -> Result<Option<Self>, Error>
     where
-        Self: Sized + 'a;
+        Self: Sized + 'a,
+        P: ContextProvider;
 
     /// Retrieve the requested object from the proof.
     ///
@@ -89,11 +90,11 @@ pub trait FromProof<Req> {
     /// * `Ok(object)` when the requested object was found in the proof.
     /// * `Err(Error::DocumentMissingInProof)` when the requested object was not found in the proof.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
-    fn from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P: ContextProvider>(
         request: I,
         response: O,
         platform_version: &PlatformVersion,
-        provider: &'a dyn ContextProvider,
+        provider: P,
     ) -> Result<Self, Error>
     where
         Self: Sized + 'a,
@@ -107,14 +108,15 @@ impl FromProof<platform::GetIdentityRequest> for Identity {
     type Request = platform::GetIdentityRequest;
     type Response = platform::GetIdentityResponse;
 
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P>(
         request: I,
         response: O,
         platform_version: &PlatformVersion,
-        provider: &'a dyn ContextProvider,
+        provider: P,
     ) -> Result<Option<Self>, Error>
     where
         Identity: Sized + 'a,
+        P: ContextProvider,
     {
         let request: platform::GetIdentityRequest = request.into();
         let response: Self::Response = response.into();
@@ -154,15 +156,15 @@ impl FromProof<platform::GetIdentityByPublicKeyHashRequest> for Identity {
     type Request = platform::GetIdentityByPublicKeyHashRequest;
     type Response = platform::GetIdentityByPublicKeyHashResponse;
 
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P>(
         request: I,
         response: O,
         platform_version: &PlatformVersion,
-
-        provider: &'a dyn ContextProvider,
+        provider: P,
     ) -> Result<Option<Self>, Error>
     where
         Identity: 'a,
+        P: ContextProvider,
     {
         let request = request.into();
         let response = response.into();
@@ -203,15 +205,16 @@ impl FromProof<platform::GetIdentityKeysRequest> for IdentityPublicKeys {
     type Request = platform::GetIdentityKeysRequest;
     type Response = platform::GetIdentityKeysResponse;
 
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P>(
         request: I,
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn ContextProvider,
+        provider: P,
     ) -> Result<Option<Self>, Error>
     where
         IdentityPublicKeys: 'a,
+        P: ContextProvider,
     {
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
@@ -369,15 +372,16 @@ impl FromProof<platform::GetIdentityBalanceRequest> for IdentityBalance {
     type Request = platform::GetIdentityBalanceRequest;
     type Response = platform::GetIdentityBalanceResponse;
 
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P>(
         request: I,
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn ContextProvider,
+        provider: P,
     ) -> Result<Option<Self>, Error>
     where
         IdentityBalance: 'a,
+        P: ContextProvider,
     {
         let request: Self::Request = request.into();
         let response: Self::Response = response.into();
@@ -415,12 +419,12 @@ impl FromProof<platform::GetIdentityBalanceAndRevisionRequest> for IdentityBalan
     type Request = platform::GetIdentityBalanceAndRevisionRequest;
     type Response = platform::GetIdentityBalanceAndRevisionResponse;
 
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P: ContextProvider>(
         request: I,
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn ContextProvider,
+        provider: P,
     ) -> Result<Option<Self>, Error>
     where
         IdentityBalanceAndRevision: 'a,
@@ -462,12 +466,12 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
     type Request = platform::GetDataContractRequest;
     type Response = platform::GetDataContractResponse;
 
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P: ContextProvider>(
         request: I,
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn ContextProvider,
+        provider: P,
     ) -> Result<Option<Self>, Error>
     where
         DataContract: 'a,
@@ -511,12 +515,12 @@ impl FromProof<platform::GetDataContractsRequest> for DataContracts {
     type Request = platform::GetDataContractsRequest;
     type Response = platform::GetDataContractsResponse;
 
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P: ContextProvider>(
         request: I,
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn ContextProvider,
+        provider: P,
     ) -> Result<Option<Self>, Error>
     where
         DataContracts: 'a,
@@ -571,12 +575,12 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
     type Request = platform::GetDataContractHistoryRequest;
     type Response = platform::GetDataContractHistoryResponse;
 
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P: ContextProvider>(
         request: I,
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn ContextProvider,
+        provider: P,
     ) -> Result<Option<Self>, Error>
     where
         Self: Sized + 'a,
@@ -624,11 +628,11 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
     type Request = platform::BroadcastStateTransitionRequest;
     type Response = platform::WaitForStateTransitionResultResponse;
 
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P: ContextProvider>(
         request: I,
         response: O,
         platform_version: &PlatformVersion,
-        provider: &'a dyn ContextProvider,
+        provider: P,
     ) -> Result<Option<Self>, Error>
     where
         Self: Sized + 'a,
@@ -678,12 +682,12 @@ where
     type Request = Q;
     type Response = platform::GetDocumentsResponse;
 
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P: ContextProvider>(
         request: I,
         response: O,
         platform_version: &PlatformVersion,
 
-        provider: &'a dyn ContextProvider,
+        provider: P,
     ) -> Result<Option<Self>, Error>
     where
         Self: 'a,

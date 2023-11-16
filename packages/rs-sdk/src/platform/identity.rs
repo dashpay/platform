@@ -11,6 +11,7 @@ use dapi_grpc::platform::v0::{
     GetIdentityByPublicKeyHashRequest, GetIdentityRequest,
 };
 use dpp::prelude::Identity;
+use drive_proof_verifier::ContextProvider;
 
 use crate::delegate_enum;
 use crate::{

@@ -73,11 +73,11 @@ macro_rules! delegate_from_proof_variant {
             type Request = $request;
             type Response = $response;
 
-            fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+            fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P: ContextProvider>(
                 request: I,
                 response: O,
                 version: &dpp::version::PlatformVersion,
-                provider: &'a dyn drive_proof_verifier::ContextProvider,
+                provider: P,
             ) -> Result<Option<Self>, drive_proof_verifier::Error>
             where
                 Self: Sized + 'a,

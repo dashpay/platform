@@ -19,7 +19,7 @@ use dpp::{
     prelude::{DataContract, Identifier},
 };
 use drive::query::{DriveQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
-use drive_proof_verifier::{types::Documents, FromProof};
+use drive_proof_verifier::{types::Documents, ContextProvider, FromProof};
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportClient, TransportRequest,
 };
@@ -143,11 +143,11 @@ impl TransportRequest for DocumentQuery {
 impl FromProof<DocumentQuery> for Document {
     type Request = DocumentQuery;
     type Response = platform_proto::GetDocumentsResponse;
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P: ContextProvider>(
         request: I,
         response: O,
         version: &dpp::version::PlatformVersion,
-        provider: &'a dyn drive_proof_verifier::ContextProvider,
+        provider: P,
     ) -> Result<Option<Self>, drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
@@ -174,11 +174,11 @@ impl FromProof<DocumentQuery> for Document {
 impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
     type Request = DocumentQuery;
     type Response = platform_proto::GetDocumentsResponse;
-    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+    fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>, P: ContextProvider>(
         request: I,
         response: O,
         version: &dpp::version::PlatformVersion,
-        provider: &'a dyn drive_proof_verifier::ContextProvider,
+        provider: P,
     ) -> Result<Option<Self>, drive_proof_verifier::Error>
     where
         Self: Sized + 'a,
