@@ -40,7 +40,7 @@ runs:
       run: |
         set -ex
         cargo_toml=$(find . -name Cargo.toml -exec \
-            sh -c "yq -e  eval '.package.name == \"${{ inputs.package }}\"' {} >  /dev/null 2> /dev/null  && echo {}" \; )
+            bash -c "$HOME/bin/yq -e  eval '.package.name == \"${{ inputs.package }}\"' {} >  /dev/null 2> /dev/null  && echo {}" \; )
         cargo_manifest_dir=$(dirname "${cargo_toml}")
 
         echo "cargo_manifest_dir=${cargo_manifest_dir}" >> $GITHUB_OUTPUT
