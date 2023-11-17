@@ -2,7 +2,7 @@
 name = "platform-value-convertible"
 authors = ["Samuel Westrich <sam@dash.org>"]
 description = "Convertion to and from platform values"
-version = "0.25.16-pr.1562.9"
+version = "0.25.16-pr.1562.10"
 edition = "2021"
 rust-version = "1.73"
 license = "MIT"
