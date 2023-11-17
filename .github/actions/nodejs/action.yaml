@@ -17,16 +17,16 @@ runs:
       shell: bash
       run: npm config set audit false
 
-    - name: Cache NPM build artifacts (S3 bucket cache)
-      uses: strophy/actions-cache@opendal-update
-      with:
-        bucket: multi-runner-cache-x1xibo9c
-        root: actions-cache
-        path: |
-          .yarn/unplugged
-        key: ${{ runner.os }}/yarn/unplugged/${{ hashFiles('yarn.lock') }}
-        restore-keys: |
-          ${{ runner.os }}/yarn/unplugged/
+#    - name: Cache NPM build artifacts (S3 bucket cache)
+#      uses: strophy/actions-cache@opendal-update
+#      with:
+#        bucket: multi-runner-cache-x1xibo9c
+#        root: actions-cache
+#        path: |
+#          .yarn/unplugged
+#        key: ${{ runner.os }}/yarn/unplugged/${{ hashFiles('yarn.lock') }}
+#        restore-keys: |
+#          ${{ runner.os }}/yarn/unplugged/
 
     - name: Install dependencies
       shell: bash
