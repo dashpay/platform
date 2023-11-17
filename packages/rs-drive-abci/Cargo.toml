@@ -1,6 +1,6 @@
 [package]
 name = "drive-abci"
-version = "0.25.16-pr.1562.8"
+version = "0.25.16-pr.1562.9"
 authors = [
     "Samuel Westrich <sam@dash.org>",
     "Ivan Shumkov <ivan@shumkov.ru>",
