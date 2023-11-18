@@ -6,7 +6,6 @@ const {
 } = require('@dashevo/dpns-contract/lib/systemIds');
 
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
-const hashFunction = require('../../../lib/proofHashFunction');
 const testProofStructure = require('../../../lib/test/testProofStructure');
 // const parseStoreTreeProof = require('../../../lib/parseStoreTreeProof');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
@@ -33,9 +32,6 @@ describe('Platform', () => {
     let contractId;
 
     before(async () => {
-      await hashFunction.init();
-      blake3 = hashFunction.hashFunction;
-
       dashClient = await createClientWithFundedWallet(500000);
 
       await dashClient.platform.initialize();
@@ -406,20 +402,20 @@ describe('Platform', () => {
             identity.getPublicKeyById(0).getData()], { prove: true }),
         ]);
 
-        const identityProof = MerkleProof.fromBuffer(
-          identityResponse.proof.rootTreeProof,
-          blake3,
-        );
-        const contractsProof = MerkleProof.fromBuffer(
-          contractsResponse.proof.rootTreeProof,
-          blake3,
-        );
-        const documentsProof = MerkleProof.fromBuffer(
-          documentsResponse.proof.rootTreeProof,
-          blake3,
-        );
-        const identitiesByPublicKeyHashesProof = MerkleProof
-          .fromBuffer(identitiesByPublicKeyHashesResponse.proof.rootTreeProof, blake3);
+        // const identityProof = MerkleProof.fromBuffer(
+        //   identityResponse.proof.rootTreeProof,
+        //   blake3,
+        // );
+        // const contractsProof = MerkleProof.fromBuffer(
+        //   contractsResponse.proof.rootTreeProof,
+        //   blake3,
+        // );
+        // const documentsProof = MerkleProof.fromBuffer(
+        //   documentsResponse.proof.rootTreeProof,
+        //   blake3,
+        // );
+        // const identitiesByPublicKeyHashesProof = MerkleProof
+        //   .fromBuffer(identitiesByPublicKeyHashesResponse.proof.rootTreeProof, blake3);
 
         const { rootHash: identityLeaf } = executeProof(
           identityResponse.proof.storeTreeProofs.getIdentitiesProof(),
