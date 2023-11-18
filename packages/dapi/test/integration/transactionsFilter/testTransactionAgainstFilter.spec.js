@@ -1,3 +1,5 @@
+const { mocha: { startDashCore } } = require('@dashevo/dp-services-ctl');
+
 const {
   Transaction,
   PrivateKey,
@@ -11,8 +13,6 @@ const testTransactionAgainstFilter = require('../../../lib/transactionsFilter/te
 
 describe('testTransactionAgainstFilter', () => {
   let coreApi;
-
-  const startDashCore = () => throw new Error('Not implemented')
 
   startDashCore().then((core) => {
     coreApi = core.getApi();
