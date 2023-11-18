@@ -1,4 +1,4 @@
-### [0.25.13](https://github.com/dashpay/platform/compare/v0.25.12...v0.25.13) (2023-11-05)
+### [0.25.16-pr.1574.1](https://github.com/dashpay/platform/compare/v0.25.12...v0.25.16-pr.1574.1) (2023-11-05)
 
 
 ### Bug Fixes
