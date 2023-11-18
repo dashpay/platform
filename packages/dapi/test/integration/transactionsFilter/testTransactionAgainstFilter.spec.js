@@ -12,7 +12,7 @@ const testTransactionAgainstFilter = require('../../../lib/transactionsFilter/te
 describe('testTransactionAgainstFilter', () => {
   let coreApi;
 
-  const startDashCore = () => Promise.reject(new Error('Not implemented'));
+  const startDashCore = () => throw new Error('Not implemented')
 
   startDashCore().then((core) => {
     coreApi = core.getApi();
