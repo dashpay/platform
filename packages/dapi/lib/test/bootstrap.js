@@ -7,8 +7,6 @@ const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 
-const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/DashCoreOptions');
-
 use(sinonChai);
 use(chaiAsPromised);
 use(dirtyChai);
@@ -19,36 +17,6 @@ const dotenvConfig = dotenvSafe.config({
   path: path.resolve(__dirname, '..', '..', '.env'),
 });
 dotenvExpand(dotenvConfig);
-
-const rootPath = process.cwd();
-
-const dapiContainerOptions = {
-  volumes: [
-    `${rootPath}/lib:/platform/packages/dapi/lib`,
-    `${rootPath}/scripts:/platform/packages/dapi/scripts`,
-  ],
-};
-
-const dapiOptions = {
-  cacheNodeModules: true,
-  localAppPath: rootPath,
-  container: dapiContainerOptions,
-};
-
-if (process.env.SERVICE_IMAGE_DAPI) {
-  dapiOptions.container = {
-    image: process.env.SERVICE_IMAGE_DAPI,
-    ...dapiContainerOptions,
-  };
-}
-
-if (process.env.SERVICE_IMAGE_CORE) {
-  DashCoreOptions.setDefaultCustomOptions({
-    container: {
-      image: process.env.SERVICE_IMAGE_CORE,
-    },
-  });
-}
 
 exports.mochaHooks = {
   beforeEach() {

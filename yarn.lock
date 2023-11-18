@@ -1707,7 +1707,6 @@ __metadata:
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.21.0"
     "@dashevo/dashd-rpc": "npm:^18.2.0"
-    "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
     "@grpc/grpc-js": "npm:^1.3.7"
@@ -1806,16 +1805,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashd-rpc@npm:^2.3.0":
-  version: 2.4.2
-  resolution: "@dashevo/dashd-rpc@npm:2.4.2"
-  dependencies:
-    async: "npm:^3.2.0"
-    bluebird: "npm:^3.7.2"
-  checksum: 199f06015d587a64b383855298030388fa4c4dee08a735a39b09fa4b06e2da19eddc556a5f42bec31d8ce0066d707a80848bb56ef2d1c6457fddf5f02de2425d
-  languageName: node
-  linkType: hard
-
 "@dashevo/dashpay-contract@workspace:*, @dashevo/dashpay-contract@workspace:packages/dashpay-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/dashpay-contract@workspace:packages/dashpay-contract"
@@ -1838,19 +1827,6 @@ __metadata:
   dependencies:
     yaml: "npm:^2.2.2"
   checksum: 7ffd5742217eb01f77e4bbc630c8d4ab2da669d201a2ab62129eca85567b28dc401450bf4f92c36a1279489932a1695289cfe614af1e0cb9c49f5e76163b7498
-  languageName: node
-  linkType: hard
-
-"@dashevo/dp-services-ctl@github:dashevo/js-dp-services-ctl#v0.19-dev":
-  version: 0.19.0-dev.1
-  resolution: "@dashevo/dp-services-ctl@https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"
-  dependencies:
-    "@dashevo/dashd-rpc": "npm:^2.3.0"
-    dockerode: "npm:^3.2.1"
-    jayson: "npm:^2.1.0"
-    lodash: "npm:^4.17.19"
-    mongodb: "npm:^3.3.4"
-  checksum: 1f92b50ad16af8c4b0c52f598cbae62d5038b341b1d8075e6c2b389a45c7ebc3093a56ceb45d6e2fd963a8e1f2cbfaad3b6ed97c8f3c217c96e1bb24b33b7e5d
   languageName: node
   linkType: hard
 
@@ -3510,13 +3486,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:^10.3.5":
-  version: 10.17.60
-  resolution: "@types/node@npm:10.17.60"
-  checksum: f9161493b3284b1d41d5d594c2768625acdd9e33f992f71ccde47861916e662e2ae438d2cc5f1b285053391a31b52a7564ecedc22d485610d236bfad9c7e6a1c
-  languageName: node
-  linkType: hard
-
 "@types/node@npm:^12.12.47, @types/node@npm:^12.12.54":
   version: 12.20.37
   resolution: "@types/node@npm:12.20.37"
@@ -4157,7 +4126,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"JSONStream@npm:^1.0.4, JSONStream@npm:^1.3.1, JSONStream@npm:^1.3.5":
+"JSONStream@npm:^1.0.4, JSONStream@npm:^1.3.5":
   version: 1.3.5
   resolution: "JSONStream@npm:1.3.5"
   dependencies:
@@ -4731,7 +4700,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"async@npm:^3.1.0, async@npm:^3.2.0, async@npm:^3.2.3, async@npm:^3.2.4":
+"async@npm:^3.1.0, async@npm:^3.2.3, async@npm:^3.2.4":
   version: 3.2.4
   resolution: "async@npm:3.2.4"
   checksum: bebb5dc2258c45b83fa1d3be179ae0eb468e1646a62d443c8d60a45e84041b28fccebe1e2d1f234bfc3dcad44e73dcdbf4ba63d98327c9f6556e3dbd47c2ae8b
@@ -4944,16 +4913,6 @@ __metadata:
   version: 0.0.2
   resolution: "binascii@npm:0.0.2"
   checksum: d27d4e7942994eb03152fe1ae828cd68cfe69e3a9aadcf7b1d5433761839ee0009c8139305c596d010236c912d65c1889d062784b2514869c61995410ae4ca9a
-  languageName: node
-  linkType: hard
-
-"bl@npm:^2.2.1":
-  version: 2.2.1
-  resolution: "bl@npm:2.2.1"
-  dependencies:
-    readable-stream: "npm:^2.3.5"
-    safe-buffer: "npm:^5.1.1"
-  checksum: 6320002f204720a53ce73147f8b46372adb91666371cc8167756120fce1658ffcbb228a5ca6ac61a8c6db6599d11deda133d90f8965497c79e709c34993b6adf
   languageName: node
   linkType: hard
 
@@ -5171,13 +5130,6 @@ __metadata:
   dependencies:
     base-x: "npm:^3.0.2"
   checksum: b3c5365bb9e0c561e1a82f1a2d809a1a692059fae016be233a6127ad2f50a6b986467c3a50669ce4c18929dcccb297c5909314dd347a25a68c21b68eb3e95ac2
-  languageName: node
-  linkType: hard
-
-"bson@npm:^1.1.4":
-  version: 1.1.6
-  resolution: "bson@npm:1.1.6"
-  checksum: db94d70b2de9ff62e84f7682180cc361ccd4146d51226115d150c390501a062e942921db9f0d77ad43da0ff512859542a73e9d118f1831080e0fdaa90840863c
   languageName: node
   linkType: hard
 
@@ -5953,7 +5905,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"commander@npm:^2.12.2, commander@npm:^2.20.0, commander@npm:^2.20.3, commander@npm:^2.7.1":
+"commander@npm:^2.20.0, commander@npm:^2.20.3, commander@npm:^2.7.1":
   version: 2.20.3
   resolution: "commander@npm:2.20.3"
   checksum: 90c5b6898610cd075984c58c4f88418a4fb44af08c1b1415e9854c03171bec31b336b7f3e4cefe33de994b3f12b03c5e2d638da4316df83593b9e82554e7e95b
@@ -6821,13 +6773,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"denque@npm:^1.4.1":
-  version: 1.5.1
-  resolution: "denque@npm:1.5.1"
-  checksum: dbde01a987d95205f7563c67411e0964073a6b38e4cf2ff190cf91f71e2ce3f51c40bacd31f2a5497e0ff82366bcfd8231d3659cb03f987279130058d512aa29
-  languageName: node
-  linkType: hard
-
 "depd@npm:^1.1.2, depd@npm:~1.1.2":
   version: 1.1.2
   resolution: "depd@npm:1.1.2"
@@ -6970,7 +6915,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"dockerode@npm:^3.2.1, dockerode@npm:^3.3.5":
+"dockerode@npm:^3.3.5":
   version: 3.3.5
   resolution: "dockerode@npm:3.3.5"
   dependencies:
@@ -9917,24 +9862,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"jayson@npm:^2.1.0":
-  version: 2.1.2
-  resolution: "jayson@npm:2.1.2"
-  dependencies:
-    "@types/node": "npm:^10.3.5"
-    JSONStream: "npm:^1.3.1"
-    commander: "npm:^2.12.2"
-    es6-promisify: "npm:^5.0.0"
-    eyes: "npm:^0.1.8"
-    json-stringify-safe: "npm:^5.0.1"
-    lodash: "npm:^4.17.11"
-    uuid: "npm:^3.2.1"
-  bin:
-    jayson: ./bin/jayson.js
-  checksum: 4497c0de1cc622c506ebbd937ccf5f4f9b86895aa1dcdad19ff09bbf99deacbbbd511884236cf47e01d02e963845960e0a8df090297d0b7226d712134fb98147
-  languageName: node
-  linkType: hard
-
 "jayson@npm:^4.1.0":
   version: 4.1.0
   resolution: "jayson@npm:4.1.0"
@@ -10625,7 +10552,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lodash@npm:^4.17.10, lodash@npm:^4.17.11, lodash@npm:^4.17.15, lodash@npm:^4.17.19, lodash@npm:^4.17.20, lodash@npm:^4.17.21":
+"lodash@npm:^4.17.10, lodash@npm:^4.17.11, lodash@npm:^4.17.15, lodash@npm:^4.17.20, lodash@npm:^4.17.21":
   version: 4.17.21
   resolution: "lodash@npm:4.17.21"
   checksum: c08619c038846ea6ac754abd6dd29d2568aa705feb69339e836dfa8d8b09abbb2f859371e86863eda41848221f9af43714491467b5b0299122431e202bb0c532
@@ -11009,13 +10936,6 @@ __metadata:
     ltgt: "npm:~2.2.0"
     safe-buffer: "npm:~5.2.0"
   checksum: 0b356646d8f8ba69860fdbfd747907c9c859a38a31ce5cb3d46010ed3736d54a54d1a7d37dde24b970dcdef7e6e56d68ebd06e8424923f28377797fcf825a174
-  languageName: node
-  linkType: hard
-
-"memory-pager@npm:^1.0.2":
-  version: 1.5.0
-  resolution: "memory-pager@npm:1.5.0"
-  checksum: ffe3461b6aa4e400138d1d9c59890b1cbeae3256592a0dfae49577f4bec93952de65f31f682f0b15451d2a7cf018be775ed1e1411705e45514b14fb70883a66b
   languageName: node
   linkType: hard
 
@@ -11498,36 +11418,6 @@ __metadata:
   version: 1.0.1
   resolution: "modify-values@npm:1.0.1"
   checksum: 16fa93f7ddb2540a8e82c99738ae4ed0e8e8cae57c96e13a0db9d68dfad074fd2eec542929b62ebbb18b357bbb3e4680b92d3a4099baa7aeb32360cb1c8f0247
-  languageName: node
-  linkType: hard
-
-"mongodb@npm:^3.3.4":
-  version: 3.7.3
-  resolution: "mongodb@npm:3.7.3"
-  dependencies:
-    bl: "npm:^2.2.1"
-    bson: "npm:^1.1.4"
-    denque: "npm:^1.4.1"
-    optional-require: "npm:^1.1.8"
-    safe-buffer: "npm:^5.1.2"
-    saslprep: "npm:^1.0.0"
-  dependenciesMeta:
-    saslprep:
-      optional: true
-  peerDependenciesMeta:
-    aws4:
-      optional: true
-    bson-ext:
-      optional: true
-    kerberos:
-      optional: true
-    mongodb-client-encryption:
-      optional: true
-    mongodb-extjson:
-      optional: true
-    snappy:
-      optional: true
-  checksum: 0e385efb4b6c6935e22b5abef18bf9fcf69e7b606dfaab89510e13949e4f5698eb5e2843dc81308f8b788745c9523f07731d0a583c01e625f02ad389a2ec3788
   languageName: node
   linkType: hard
 
@@ -12286,15 +12176,6 @@ __metadata:
   version: 1.3.5
   resolution: "openapi-types@npm:1.3.5"
   checksum: 3e3487392ec038844318b97d1061555fb31ac01d011088d1b31253365eb91dd85cddc0ebf6a72e0ac7389bfbb7777052bdd2eadf3a7cf72940ac878f4c877eb9
-  languageName: node
-  linkType: hard
-
-"optional-require@npm:^1.1.8":
-  version: 1.1.8
-  resolution: "optional-require@npm:1.1.8"
-  dependencies:
-    require-at: "npm:^1.0.6"
-  checksum: 656ecba9c2aa0ca0ec25bf7cba987e0cdda91c49caae361e6c5839fe02dc8bc467d3d77694b1fe47923a3815cd10a6e292b838a1251cb4abba951fc371fb162a
   languageName: node
   linkType: hard
 
@@ -13525,13 +13406,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"require-at@npm:^1.0.6":
-  version: 1.0.6
-  resolution: "require-at@npm:1.0.6"
-  checksum: 7753a6ebad99855ef015d5533a787c65e883c94c23371368eebf6f1c7e2a078811013b204823152cbab206a00e825e8e5ca09416fd835a489fa30bf064fbe6d9
-  languageName: node
-  linkType: hard
-
 "require-directory@npm:^2.1.1":
   version: 2.1.1
   resolution: "require-directory@npm:2.1.1"
@@ -13821,15 +13695,6 @@ __metadata:
   version: 2.1.2
   resolution: "safer-buffer@npm:2.1.2"
   checksum: 7eaf7a0cf37cc27b42fb3ef6a9b1df6e93a1c6d98c6c6702b02fe262d5fcbd89db63320793b99b21cb5348097d0a53de81bd5f4e8b86e20cc9412e3f1cfb4e83
-  languageName: node
-  linkType: hard
-
-"saslprep@npm:^1.0.0":
-  version: 1.0.3
-  resolution: "saslprep@npm:1.0.3"
-  dependencies:
-    sparse-bitfield: "npm:^3.0.3"
-  checksum: d6cae5f0adc960f355b7a78c25616c2aea31e7eeb6322eb2d553f09f1db249594651c1e5d54910e9a47b1dc6131beda82db13ffafbceea92f2a673d69c839982
   languageName: node
   linkType: hard
 
@@ -14374,15 +14239,6 @@ __metadata:
   version: 0.7.4
   resolution: "source-map@npm:0.7.4"
   checksum: a0f7c9b797eda93139842fd28648e868a9a03ea0ad0d9fa6602a0c1f17b7fb6a7dcca00c144476cccaeaae5042e99a285723b1a201e844ad67221bf5d428f1dc
-  languageName: node
-  linkType: hard
-
-"sparse-bitfield@npm:^3.0.3":
-  version: 3.0.3
-  resolution: "sparse-bitfield@npm:3.0.3"
-  dependencies:
-    memory-pager: "npm:^1.0.2"
-  checksum: 174da88dbbcc783d5dbd26921931cc83830280b8055fb05333786ebe6fc015b9601b24972b3d55920dd2d9f5fb120576fbfa2469b08e5222c9cadf3f05210aab
   languageName: node
   linkType: hard
 
@@ -15834,7 +15690,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"uuid@npm:^3.2.1, uuid@npm:^3.3.2":
+"uuid@npm:^3.3.2":
   version: 3.4.0
   resolution: "uuid@npm:3.4.0"
   bin:
