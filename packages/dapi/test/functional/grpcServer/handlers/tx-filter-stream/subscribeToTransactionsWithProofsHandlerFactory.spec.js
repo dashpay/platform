@@ -1,8 +1,4 @@
 const {
-  startDapi,
-} = require('@dashevo/dp-services-ctl');
-
-const {
   Address,
   PrivateKey,
   Transaction,
@@ -32,6 +28,8 @@ describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main()
   let merkleBlockStrings;
 
   beforeEach(async () => {
+    const startDapi = () => throw new Error('Not implemented');
+
     historicalTransactions = [];
 
     bloomFilter = BloomFilter.create(1, 0.00001);
