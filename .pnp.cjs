@@ -3067,7 +3067,6 @@ const RAW_RUNTIME_STATE =
           ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
           ["assert", "npm:2.0.0"],\
           ["assert-browserify", "npm:2.0.0"],\
-          ["blake3", "npm:2.1.7"],\
           ["browserify-zlib", "npm:0.2.0"],\
           ["buffer", "npm:6.0.3"],\
           ["bufferutil", "npm:4.0.6"],\
@@ -6857,15 +6856,6 @@ const RAW_RUNTIME_STATE =
           ["buffer", "npm:5.7.1"],\
           ["inherits", "npm:2.0.4"],\
           ["readable-stream", "npm:3.6.0"]\
-        ],\
-        "linkType": "HARD"\
-      }]\
-    ]],\
-    ["blake3", [\
-      ["npm:2.1.7", {\
-        "packageLocation": "./.yarn/unplugged/blake3-npm-2.1.7-7bf40c44b4/node_modules/blake3/",\
-        "packageDependencies": [\
-          ["blake3", "npm:2.1.7"]\
         ],\
         "linkType": "HARD"\
       }]\

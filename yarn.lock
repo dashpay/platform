@@ -1917,7 +1917,6 @@ __metadata:
     "@dashevo/wasm-dpp": "workspace:*"
     assert: "npm:^2.0.0"
     assert-browserify: "npm:^2.0.0"
-    blake3: "npm:^2.1.4"
     browserify-zlib: "npm:^0.2.0"
     buffer: "npm:^6.0.3"
     bufferutil: "npm:^4.0.6"
@@ -4924,13 +4923,6 @@ __metadata:
     inherits: "npm:^2.0.4"
     readable-stream: "npm:^3.4.0"
   checksum: b7904e66ed0bdfc813c06ea6c3e35eafecb104369dbf5356d0f416af90c1546de3b74e5b63506f0629acf5e16a6f87c3798f16233dcff086e9129383aa02ab55
-  languageName: node
-  linkType: hard
-
-"blake3@npm:^2.1.4":
-  version: 2.1.7
-  resolution: "blake3@npm:2.1.7"
-  checksum: 94bc83e6c4e0ded3e26ef816501d3e270c78457a3247a6179fbb2c22cfd4f817ab10844bdf7a8bb12da396b0ad81ff3305a98508269a1e9eb86f3792d89f0761
   languageName: node
   linkType: hard
 
