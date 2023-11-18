@@ -402,20 +402,20 @@ describe('Platform', () => {
             identity.getPublicKeyById(0).getData()], { prove: true }),
         ]);
 
-        // const identityProof = MerkleProof.fromBuffer(
-        //   identityResponse.proof.rootTreeProof,
-        //   blake3,
-        // );
-        // const contractsProof = MerkleProof.fromBuffer(
-        //   contractsResponse.proof.rootTreeProof,
-        //   blake3,
-        // );
-        // const documentsProof = MerkleProof.fromBuffer(
-        //   documentsResponse.proof.rootTreeProof,
-        //   blake3,
-        // );
-        // const identitiesByPublicKeyHashesProof = MerkleProof
-        //   .fromBuffer(identitiesByPublicKeyHashesResponse.proof.rootTreeProof, blake3);
+        const identityProof = MerkleProof.fromBuffer(
+          identityResponse.proof.rootTreeProof,
+          'fake_blake3',
+        );
+        const contractsProof = MerkleProof.fromBuffer(
+          contractsResponse.proof.rootTreeProof,
+          'fake_blake3',
+        );
+        const documentsProof = MerkleProof.fromBuffer(
+          documentsResponse.proof.rootTreeProof,
+          'fake_blake3',
+        );
+        const identitiesByPublicKeyHashesProof = MerkleProof
+          .fromBuffer(identitiesByPublicKeyHashesResponse.proof.rootTreeProof, 'fake_blake3');
 
         const { rootHash: identityLeaf } = executeProof(
           identityResponse.proof.storeTreeProofs.getIdentitiesProof(),
