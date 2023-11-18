@@ -42,7 +42,6 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "document-json-conversion",
 ] }
 itertools = { version = "0.10.5" }
-console_error_panic_hook = { version = "0.1.7" }
 log = { version = "0.4.6" }
 wasm-logger = { version = "0.2.0" }
 num_enum = "0.5.7"
@@ -55,3 +54,5 @@ anyhow = "1.0.70"
 [profile.release]
 lto = true
 opt-level = 's'
+[package.metadata.cargo-machete]
+ignored = ["wasm-bindgen-futures"]

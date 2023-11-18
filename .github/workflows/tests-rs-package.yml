@@ -13,6 +13,10 @@ on:
         description: Runner for linting. Must be JSON valid string.
         type: string
         default: '"ubuntu-22.04"'
+      check-each-feature:
+        description: If true, try to build each individual feature for this crate
+        type: boolean
+        default: false
 
 jobs:
   lint:
@@ -66,6 +70,46 @@ jobs:
 
       - name: Check formatting
         run: exit `cargo fmt --check --package=${{ inputs.package }} | wc -l`
+
+  unused_deps:
+    name: Unused dependencies
+    runs-on: ubuntu-22.04
+    permissions:
+      id-token: write
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+
+      - name: Get arch
+        id: arch
+        run: echo "arch=$(uname -m)" >> $GITHUB_OUTPUT
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+
+      - name: Get crate ${{ inputs.package }} info
+        id: crate_info
+        uses: ./.github/actions/crate_info
+        with:
+          package: ${{ inputs.package }}
+
+      - name: Find unused dependencies
+        uses: lklimek/cargo-machete@feat/workdir
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
+          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ steps.arch.outputs.arch }}/linux-gnu
+        with:
+          args: ${{ steps.crate_info.outputs.cargo_manifest_dir }}
 
   detect_structure_changes:
     name: Detect immutable structure changes
@@ -151,3 +195,57 @@ jobs:
           SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
           SCCACHE_REGION: ${{ vars.AWS_REGION }}
           SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ steps.arch.outputs.arch }}/linux-gnu
+
+  check_each_feature:
+    name: Check each feature
+    runs-on: ${{ fromJSON(inputs.test-runner) }}
+    timeout-minutes: 10
+    if: ${{ inputs.check-each-feature }}
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+
+      - name: Get arch
+        id: arch
+        run: echo "arch=$(uname -m)" >> $GITHUB_OUTPUT
+
+      - name: Get crate ${{ inputs.package }} info
+        id: crate_info
+        uses: ./.github/actions/crate_info
+        with:
+          package: ${{ inputs.package }}
+
+      - name: Check each feature in ${{ inputs.package }}
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
+          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ steps.arch.outputs.arch }}/linux-gnu
+        run: |
+          echo Verify all features disabled
+          set -ex
+          features="${{ steps.crate_info.outputs.features }}"
+          fails=""
+          cargo check --no-default-features --package "${{ inputs.package }}" --locked
+          for feature in $features ;  do
+            echo " ============== Verify feature $feature =============="
+            cargo check \
+              --no-default-features \
+              --package "${{ inputs.package }}" \
+              --features="${feature}" \
+              --locked || fails="${fails} ${feature}"
+          done
+
+          if [ -n "$fails" ] ; then
+            echo "Failed features: $fails"
+            exit 1
+          fi
+          echo "All features verified"

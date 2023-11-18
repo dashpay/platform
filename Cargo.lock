@@ -770,16 +770,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "console_error_panic_hook"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
-dependencies = [
- "cfg-if",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "const-oid"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1093,7 +1083,6 @@ dependencies = [
 name = "dashpay-contract"
 version = "0.25.16-pr.1562.13"
 dependencies = [
- "lazy_static",
  "platform-value",
  "serde_json",
 ]
@@ -1217,7 +1206,6 @@ dependencies = [
  "ed25519-dalek",
  "enum-map",
  "env_logger 0.9.3",
- "futures",
  "getrandom",
  "hex",
  "integer-encoding 4.0.0",
@@ -1227,13 +1215,11 @@ dependencies = [
  "jsonschema",
  "lazy_static",
  "log",
- "mockall",
  "nohash-hasher",
  "num_enum",
  "platform-serialization",
  "platform-serialization-derive",
  "platform-value",
- "platform-value-convertible",
  "platform-version",
  "platform-versioning",
  "pretty_assertions",
@@ -1242,8 +1228,6 @@ dependencies = [
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
- "serde-big-array",
- "serde_cbor",
  "serde_json",
  "serde_repr",
  "sha2",
@@ -1258,7 +1242,6 @@ version = "0.25.16-pr.1562.13"
 dependencies = [
  "anyhow",
  "base64 0.21.5",
- "bincode 2.0.0-rc.3",
  "bs58 0.5.0",
  "byteorder",
  "chrono",
@@ -1276,14 +1259,10 @@ dependencies = [
  "integer-encoding 4.0.0",
  "intmap",
  "itertools 0.10.5",
- "lazy_static",
- "mockall",
  "moka",
  "nohash-hasher",
  "platform-version",
  "rand",
- "rust_decimal",
- "rust_decimal_macros",
  "serde",
  "serde_json",
  "sqlparser",
@@ -1296,7 +1275,6 @@ dependencies = [
 name = "drive-abci"
 version = "0.25.16-pr.1562.13"
 dependencies = [
- "anyhow",
  "atty",
  "base64 0.20.0",
  "bincode 2.0.0-rc.3",
@@ -1322,9 +1300,6 @@ dependencies = [
  "metrics",
  "metrics-exporter-prometheus",
  "mockall",
- "paste",
- "platform-serialization",
- "platform-serialization-derive",
  "platform-version",
  "prost 0.11.9",
  "rand",
@@ -1359,7 +1334,6 @@ dependencies = [
  "drive",
  "hex",
  "lazy_static",
- "serde",
  "serde_json",
  "tenderdash-abci",
  "thiserror",
@@ -2890,7 +2864,6 @@ version = "0.25.16-pr.1562.13"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "platform-version",
- "serde",
 ]
 
 [[package]]
@@ -2918,7 +2891,6 @@ dependencies = [
  "rand",
  "regex",
  "serde",
- "serde_bytes",
  "serde_json",
  "thiserror",
  "treediff 4.0.2",
@@ -2928,7 +2900,6 @@ dependencies = [
 name = "platform-value-convertible"
 version = "0.25.16-pr.1562.13"
 dependencies = [
- "proc-macro2",
  "quote",
  "syn 2.0.38",
 ]
@@ -2937,7 +2908,6 @@ dependencies = [
 name = "platform-version"
 version = "0.25.16-pr.1562.13"
 dependencies = [
- "bincode 2.0.0-rc.3",
  "thiserror",
 ]
 
@@ -3784,15 +3754,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde-big-array"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3323f09a748af288c3dc2474ea6803ee81f118321775bffa3ac8f7e65c5e90e7"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "serde-wasm-bindgen"
 version = "0.5.0"
 source = "git+https://github.com/QuantumExplorer/serde-wasm-bindgen?branch=feat/not_human_readable#121d1f7fbf62cb97f74b91626a1b23851098cc82"
@@ -4052,55 +4013,15 @@ dependencies = [
 name = "strategy-tests"
 version = "0.25.16-pr.1562.13"
 dependencies = [
- "anyhow",
- "atty",
- "base64 0.20.0",
  "bincode 2.0.0-rc.3",
- "bs58 0.4.0",
- "bytes",
- "chrono",
- "ciborium",
- "clap 4.4.7",
- "dapi-grpc",
- "dashcore-rpc",
- "delegate",
- "derive_more",
- "dotenvy",
  "dpp",
  "drive",
- "envy",
- "file-rotate",
  "hex",
- "indexmap 1.9.3",
- "itertools 0.10.5",
- "lazy_static",
- "metrics",
- "metrics-exporter-prometheus",
- "mockall",
- "platform-serialization",
  "platform-serialization-derive",
  "platform-version",
- "prost 0.11.9",
  "rand",
- "regex",
- "reopen",
  "rocksdb",
- "rust_decimal",
- "rust_decimal_macros",
- "serde",
- "serde_json",
- "serde_with 2.3.3",
- "sha2",
  "simple-signer",
- "tempfile",
- "tenderdash-abci",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "ureq",
- "url",
 ]
 
 [[package]]
@@ -4921,7 +4842,6 @@ version = "0.25.16-pr.1562.13"
 dependencies = [
  "anyhow",
  "async-trait",
- "console_error_panic_hook",
  "dpp",
  "hex",
  "itertools 0.10.5",
