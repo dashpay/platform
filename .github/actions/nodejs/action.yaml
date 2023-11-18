@@ -30,4 +30,4 @@ runs:
 
     - name: Install dependencies
       shell: bash
-      run: NPM_CONFIG_LOGLEVEL=verbose DEBUG=* yarn install --inline-builds --immutable --immtable-cache
+      run: NPM_CONFIG_LOGLEVEL=verbose DEBUG=* yarn install --inline-builds --immutable --immutable-cache
