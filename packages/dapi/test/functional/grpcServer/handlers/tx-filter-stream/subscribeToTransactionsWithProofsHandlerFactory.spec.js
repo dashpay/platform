@@ -28,7 +28,7 @@ describe.skip('subscribeToTransactionsWithProofsHandlerFactory', function main()
   let merkleBlockStrings;
 
   beforeEach(async () => {
-    const startDapi = () => throw new Error('Not implemented');
+    const startDapi = () => Promise.reject(new Error('Not implemented'));
 
     historicalTransactions = [];
 
