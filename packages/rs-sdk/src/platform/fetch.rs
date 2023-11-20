@@ -84,32 +84,26 @@ where
     }
 }
 
-#[async_trait::async_trait]
 impl Fetch for Identity {
     type Request = IdentityRequest;
 }
 
-#[async_trait::async_trait]
 impl Fetch for dpp::prelude::DataContract {
     type Request = platform_proto::GetDataContractRequest;
 }
 
-#[async_trait::async_trait]
 impl Fetch for Document {
     type Request = DocumentQuery;
 }
 
-#[async_trait::async_trait]
 impl Fetch for drive_proof_verifier::types::IdentityBalance {
     type Request = platform_proto::GetIdentityBalanceRequest;
 }
 
-#[async_trait::async_trait]
 impl Fetch for drive_proof_verifier::types::IdentityBalanceAndRevision {
     type Request = platform_proto::GetIdentityBalanceAndRevisionRequest;
 }
 
-#[async_trait::async_trait]
 impl Fetch for ExtendedEpochInfo {
     type Request = platform_proto::GetEpochsInfoRequest;
 }

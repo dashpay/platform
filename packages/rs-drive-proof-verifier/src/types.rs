@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 use dpp::{
     block::{epoch::EpochIndex, extended_epoch_info::ExtendedEpochInfo},
+    dashcore::ProTxHash,
     document::Document,
     identity::KeyID,
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
@@ -73,3 +74,6 @@ pub type ProtocolVersionVoteCount = u64;
 /// * [`ProtocolVersion`] - key determining protocol version
 /// * [`ProtocolVersionVoteCount`] - value, number of votes for the protocol version upgrade
 pub type ProtocolVersionUpgrades = RetrievedObjects<ProtocolVersion, ProtocolVersionVoteCount>;
+
+/// Information about protocol version voted by each node.
+pub type ProtocolVersionVotes = RetrievedObjects<ProTxHash, ProtocolVersion>;

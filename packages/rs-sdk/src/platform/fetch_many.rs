@@ -13,8 +13,9 @@ use crate::{
 };
 use dapi_grpc::platform::v0::{
     GetDocumentsResponse, GetEpochsInfoRequest, GetIdentityKeysRequest,
-    GetProtocolVersionUpgradeStateRequest,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeVoteStatusRequest,
 };
+use dashcore_rpc::dashcore::ProTxHash;
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::document::Document;
@@ -123,16 +124,34 @@ impl FetchMany<Identifier> for Document {
         Ok(documents)
     }
 }
-#[async_trait::async_trait]
+
+/// Retrieve public keys for a given identity.
+///
+/// Returns [IdentityPublicKeys](drive_proof_verifier::types::IdentityPublicKeys) indexed by
+/// [KeyID](dpp::identity::KeyID).
 impl FetchMany<KeyID> for IdentityPublicKey {
     type Request = GetIdentityKeysRequest;
 }
 
-#[async_trait::async_trait]
+/// Retrieve epochs.
+///
+/// Returns [ExtendedEpochInfos](drive_proof_verifier::types::ExtendedEpochInfos).
 impl FetchMany<EpochIndex> for ExtendedEpochInfo {
     type Request = GetEpochsInfoRequest;
 }
 
+/// Fetch information about number of votes for each protocol version upgrade.
+///
+/// Returns [ProtocolVersionUpgrades](drive_proof_verifier::types::ProtocolVersionUpgrades)
+/// indexed by [ProtocolVersion](dpp::util::deserializer::ProtocolVersion).
 impl FetchMany<ProtocolVersion> for ProtocolVersionVoteCount {
     type Request = GetProtocolVersionUpgradeStateRequest;
+}
+
+/// Fetch information about protocol version upgrade voted by each node.
+///
+/// Returns [ProtocolVersionVotes](drive_proof_verifier::types::ProtocolVersionVotes)
+/// indexed by [ProTxHash](dashcore_rpc::dashcore::ProTxHash).
+impl FetchMany<ProTxHash> for ProtocolVersion {
+    type Request = GetProtocolVersionUpgradeVoteStatusRequest;
 }

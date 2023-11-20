@@ -6,8 +6,9 @@ use std::fmt::Debug;
 use dapi_grpc::platform::v0::{
     self as proto, get_identity_keys_request, get_identity_keys_request::GetIdentityKeysRequestV0,
     AllKeys, GetEpochsInfoRequest, GetIdentityKeysRequest, GetProtocolVersionUpgradeStateRequest,
-    KeyRequestType,
+    GetProtocolVersionUpgradeVoteStatusRequest, KeyRequestType,
 };
+use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
 use drive::query::DriveQuery;
 use rs_dapi_client::transport::TransportRequest;
@@ -16,7 +17,8 @@ use crate::{error::Error, platform::document_query::DocumentQuery};
 
 /// Default limit of epoch records returned by the platform.
 pub const DEFAULT_EPOCH_QUERY_LIMIT: u32 = 100;
-
+/// Default limit of epoch records returned by the platform.
+pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 /// Trait implemented by objects that can be used as queries.
 ///
 /// [Query] trait is used to specify criteria for fetching data from the platform.
@@ -159,6 +161,7 @@ pub struct LimitQuery<Q> {
     /// up to `offset+limit`.
     pub offset: Option<u32>,
 }
+
 impl<Q> From<Q> for LimitQuery<Q> {
     fn from(query: Q) -> Self {
         Self {
@@ -205,5 +208,25 @@ impl Query<GetProtocolVersionUpgradeStateRequest> for () {
         }
 
         Ok(proto::get_protocol_version_upgrade_state_request::GetProtocolVersionUpgradeStateRequestV0 {prove}.into())
+    }
+}
+
+impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<ProTxHash> {
+    fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(proto::get_protocol_version_upgrade_vote_status_request::GetProtocolVersionUpgradeVoteStatusRequestV0 {
+            prove,
+            start_pro_tx_hash: self.query.to_byte_array().to_vec(),
+            count: self.limit.unwrap_or(DEFAULT_NODES_VOTING_LIMIT),
+        }
+        .into())
+    }
+}
+impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for ProTxHash {
+    fn query(self, prove: bool) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
+        LimitQuery::from(self).query(prove)
     }
 }
