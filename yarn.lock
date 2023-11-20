@@ -1997,7 +1997,7 @@ __metadata:
     add-stream: "npm:^1.0.0"
     conventional-changelog: "npm:^3.1.24"
     conventional-changelog-dash: "github:dashevo/conventional-changelog-dash"
-    node-gyp: "npm:^9.3.1"
+    node-gyp: "npm:^10.0.1"
     semver: "npm:^7.5.3"
     tempfile: "npm:^3.0.0"
     ultra-runner: "npm:^3.10.5"
