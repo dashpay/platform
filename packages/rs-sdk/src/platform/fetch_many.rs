@@ -21,7 +21,7 @@ use dpp::document::Document;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::util::deserializer::ProtocolVersion;
-use drive_proof_verifier::types::{Collection, ProtocolVersionVoteCount};
+use drive_proof_verifier::types::{ProtocolVersionVoteCount, RetrievedObjects};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::{transport::TransportRequest, DapiRequest, RequestSettings};
 use std::collections::BTreeMap;
@@ -77,7 +77,7 @@ where
     async fn fetch_many<Q: Query<<Self as FetchMany<K>>::Request>>(
         sdk: &mut Sdk,
         query: Q,
-    ) -> Result<Collection<K, Self>, Error> {
+    ) -> Result<RetrievedObjects<K, Self>, Error> {
         let request = query.query(sdk.prove())?;
 
         let response = request

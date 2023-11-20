@@ -15,15 +15,21 @@ use dpp::{
     util::deserializer::ProtocolVersion,
 };
 
-/// Collection of objects returned by the [FetchMany](crate::platform::FetchMany) operation.
+/// A data structure that holds a set of objects of a generic type `O`, indexed by a key of type `K`.
 ///
-/// Collection of objects of type `O`, indexed by key `K`.
+/// This type is typically returned by functions that operate on multiple objects, such as fetching multiple objects
+/// from a server using [`FetchMany`](rs_sdk::platform::FetchMany) or parsing a proof that contains multiple objects
+/// using [`FromProof`](crate::FromProof).
 ///
-/// Object is an option, representing:
+/// Each key in the `RetrievedObjects` corresponds to an object of generic type `O`.
+/// If an object is found for a given key, the value is `Some(object)`.
+/// If no object is found for a given key, the value is `None`.
 ///
-/// * `Some(O)` - object is found
-/// * `None` - object is not found, and the platform provided proof of non-existence
-pub type Collection<K, O> = BTreeMap<K, Option<O>>;
+/// # Generic Type Parameters
+///
+/// * `K`: The type of the keys in the map.
+/// * `O`: The type of the objects in the map.
+pub type RetrievedObjects<K, O> = BTreeMap<K, Option<O>>;
 
 /// History of a data contract.
 ///
@@ -33,7 +39,7 @@ pub type DataContractHistory = BTreeMap<u64, DataContract>;
 ///
 /// Mapping between data contract IDs and data contracts.
 /// If data contract is not found, it is represented as `None`.
-pub type DataContracts = Collection<[u8; 32], DataContract>;
+pub type DataContracts = RetrievedObjects<[u8; 32], DataContract>;
 
 /// Identity balance.
 pub type IdentityBalance = u64;
@@ -43,13 +49,13 @@ pub type IdentityBalanceAndRevision = (u64, Revision);
 /// Public keys belonging to some identity.
 ///
 /// Map of [key IDs](KeyID) to the [public key](IdentityPublicKey).
-pub type IdentityPublicKeys = Collection<KeyID, IdentityPublicKey>;
+pub type IdentityPublicKeys = RetrievedObjects<KeyID, IdentityPublicKey>;
 
 /// Collection of documents.
-pub type Documents = Collection<Identifier, Document>;
+pub type Documents = RetrievedObjects<Identifier, Document>;
 
 /// Collection of epoch information
-pub type ExtendedEpochInfos = Collection<EpochIndex, ExtendedEpochInfo>;
+pub type ExtendedEpochInfos = RetrievedObjects<EpochIndex, ExtendedEpochInfo>;
 
 /// Number of votes for a protocol version upgrade.
 ///
@@ -66,4 +72,4 @@ pub type ProtocolVersionVoteCount = u64;
 ///
 /// * [`ProtocolVersion`] - key determining protocol version
 /// * [`ProtocolVersionVoteCount`] - value, number of votes for the protocol version upgrade
-pub type ProtocolVersionUpgrades = Collection<ProtocolVersion, ProtocolVersionVoteCount>;
+pub type ProtocolVersionUpgrades = RetrievedObjects<ProtocolVersion, ProtocolVersionVoteCount>;
