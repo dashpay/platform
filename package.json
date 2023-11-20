@@ -33,7 +33,7 @@
     "release": "yarn exec ./scripts/release/release.sh",
     "bench": "yarn workspace @dashevo/bench-suite bench"
   },
-  "packageManager": "yarn@4.0.1",
+  "packageManager": "yarn@4.0.2",
   "ultra": {
     "concurrent": [
       "clean"
@@ -90,6 +90,6 @@
     "node-gyp": "10.0.1"
   },
   "dependencies": {
-    "node-gyp": "^9.3.1"
+    "node-gyp": "^10.0.1"
   }
 }

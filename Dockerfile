@@ -36,7 +36,7 @@ ARG RUSTC_WRAPPER
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
 #
-FROM rust:alpine${ALPINE_VERSION} as deps-base
+FROM node:20-alpine${ALPINE_VERSION} as deps-base
 
 #
 # Install some dependencies
@@ -52,8 +52,6 @@ RUN apk add --no-cache \
         libc-dev \
         linux-headers \
         llvm-static llvm-dev  \
-        nodejs \
-        npm \
         openssl-dev \
         perl \
         python3 \
@@ -62,13 +60,21 @@ RUN apk add --no-cache \
         xz \
         zeromq-dev
 
-SHELL ["/bin/bash", "-c"]
+# Configure Node.js
+
+RUN npm config set --global audit false
+
+# Install latest Rust toolbox
 
 ARG TARGETARCH
 
-# Rust version the same as in /README.md
-RUN rustup install stable && \
-    rustup target add wasm32-unknown-unknown --toolchain stable
+# TODO: It doesn't sharing PATH between stages, so we need "source $HOME/.cargo/env" everywhere
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- \
+    --profile minimal \
+    -y \
+    # Rust version the same as in /README.md
+    --default-toolchain stable \
+    --target wasm32-unknown-unknown
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
@@ -79,15 +85,8 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
     rm /tmp/protoc.zip && \
     ln -s /opt/protoc/bin/protoc /usr/bin/
 
-# Configure Node.js
-RUN npm config set audit false && \
-    npm install -g npm@9.6.6 && \
-    npm install -g corepack@latest && \
-    corepack enable
-
 # Switch to clang
 RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
-
 
 # Select whether we want dev or release
 ARG CARGO_BUILD_PROFILE=dev
@@ -155,6 +154,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    source $HOME/.cargo/env && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     RUSTFLAGS="-C target-feature=-crt-static" \
     CARGO_TARGET_DIR="/platform/target" \
@@ -169,13 +169,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
 #
 FROM deps as sources
 
-
 WORKDIR /platform
 
 COPY . .
-
-# print the JS build output
-RUN yarn config set enableInlineBuilds true
 
 #
 # STAGE: BUILD RS-DRIVE-ABCI
@@ -192,6 +188,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_${TARGETARCH},target=/platform/target \
+    source $HOME/.cargo/env && \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
@@ -213,8 +210,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=target_wasm,target=/platform/target \
     --mount=type=cache,sharing=shared,id=unplugged_${TARGETARCH},target=/tmp/unplugged \
+    source $HOME/.cargo/env && \
     cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn install && \
+    yarn install --inline-builds && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
