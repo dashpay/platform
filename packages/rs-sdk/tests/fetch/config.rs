@@ -89,7 +89,7 @@ impl Config {
 
         if config.is_empty() {
             tracing::warn!(path, ?config, "some config fields are empty");
-            #[cfg(feature = "network-testing")]
+            #[cfg(not(feature = "offline-testing"))]
             panic!("invalid configuration")
         }
 
