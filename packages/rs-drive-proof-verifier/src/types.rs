@@ -76,4 +76,7 @@ pub type ProtocolVersionVoteCount = u64;
 pub type ProtocolVersionUpgrades = RetrievedObjects<ProtocolVersion, ProtocolVersionVoteCount>;
 
 /// Information about protocol version voted by each node.
+///
+/// Information about protocol version voted by each node, returned by [ProtocolVersion::fetch_many()].
+/// Indexed by [ProTxHash] of nodes.
 pub type ProtocolVersionVotes = RetrievedObjects<ProTxHash, ProtocolVersion>;
