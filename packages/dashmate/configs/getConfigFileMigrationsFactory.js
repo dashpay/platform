@@ -314,6 +314,14 @@ function getConfigFileMigrationsFactory(homeDir, defaultConfigs) {
 
         return configFile;
       },
+      '0.25.16': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.core.insight = base.get('core.insight');
+          });
+
+        return configFile;
+      },
     };
   }
 

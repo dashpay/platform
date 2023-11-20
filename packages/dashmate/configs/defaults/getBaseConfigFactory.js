@@ -64,6 +64,19 @@ function getBaseConfigFactory(homeDir) {
         },
       },
       core: {
+        insight: {
+          enabled: false,
+          ui: {
+            enabled: false,
+            docker: {
+              image: 'dashpay/insight:latest',
+            },
+          },
+          docker: {
+            image: 'dashpay/insight-api:latest',
+          },
+          port: 3001,
+        },
         docker: {
           image: 'dashpay/dashd:20.0.0-rc.2',
           commandArgs: [],

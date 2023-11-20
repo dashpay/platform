@@ -2,6 +2,11 @@
  * @return {getConfigProfiles}
  */
 function getConfigProfilesFactory() {
+  /**
+   * @typedef {function} getConfigProfiles
+   * @param {Config} config
+   * @returns {string[]}
+   */
   function getConfigProfiles(config) {
     const profiles = [];
 
