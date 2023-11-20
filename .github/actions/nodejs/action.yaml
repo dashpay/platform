@@ -24,9 +24,9 @@ runs:
         root: actions-cache
         path: |
           .yarn/unplugged
-        key: ${{ runner.os }}/yarn/unplugged/${{ hashFiles('yarn.lock') }}
+        key: ${{ runner.os }}/yarn/unplugged/${{ runner.arch }}/${{ hashFiles('yarn.lock') }}
         restore-keys: |
-          ${{ runner.os }}/yarn/unplugged/
+          ${{ runner.os }}/yarn/unplugged/${{ runner.arch }}/
 
     - name: Install dependencies
       shell: bash
