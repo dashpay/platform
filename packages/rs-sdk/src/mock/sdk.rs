@@ -133,6 +133,12 @@ impl MockDashPlatformSdk {
                     self.load_expectation::<proto::GetProtocolVersionUpgradeStateRequest>(filename)
                         .await?
                 }
+                "GetProtocolVersionUpgradeVoteStatusRequest" => {
+                    self.load_expectation::<proto::GetProtocolVersionUpgradeVoteStatusRequest>(
+                        filename,
+                    )
+                    .await?
+                }
                 _ => {
                     return Err(Error::Config(format!(
                         "unknown request type {} in {}",

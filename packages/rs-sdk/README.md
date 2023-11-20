@@ -83,5 +83,6 @@ in `packages/rs-dapi-client/src/transport/grpc.rs`.
 8. [ ] Implement `FetchMany\<Request\>` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-sdk/src/platform/fetch_many.rs`.
 9. [ ] Add `mod ...;` clause to `packages/rs-sdk/tests/fetch/main.rs`
 10. [ ] Implement unit tests in `packages/rs-sdk/tests/fetch/*object*.rs`
-11. [ ] Start local devnet with `yarn reset ; yarn setup && yarn start`
-12. [ ] Generate test vectors with script `packages/rs-sdk/scripts/generate_test_vectors.sh`
+11. [ ] Add name of request type to match clause in `packages/rs-sdk/src/mock/sdk.rs` : `load_expectations()`
+12. [ ] Start local devnet with `yarn reset ; yarn setup && yarn start`
+13. [ ] Generate test vectors with script `packages/rs-sdk/scripts/generate_test_vectors.sh`
