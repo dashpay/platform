@@ -12,13 +12,13 @@ inputs:
     required: true
   head_ref:
     description: 'Head ref for an additional manifest to hit all builds for this head'
-    default: ${{ github.head_ref }}
+    default: ${{ github.ref }}
   region:
     description: S3 region
     default: eu-west-1
   bucket:
     description: S3 bucket name
-    default: multi-runner-linux-x64-platform-cache-ui535z23
+    default: multi-runner-cache-x1xibo9c
   prefix:
     description: S3 key prefix
     default: 'cache-layers/'

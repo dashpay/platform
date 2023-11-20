@@ -46,7 +46,7 @@ describe('DocumentBatchTransition', () => {
 
     const protocolValidator = new ProtocolVersionValidator();
     const documentValidator = new DocumentValidator(protocolValidator);
-    const stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    const stateRepositoryMock = createStateRepositoryMock(this.sinon);
 
     documentFactory = new DocumentFactory(1, documentValidator, stateRepositoryMock);
 

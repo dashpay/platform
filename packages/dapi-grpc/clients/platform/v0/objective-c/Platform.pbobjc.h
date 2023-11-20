@@ -1034,17 +1034,27 @@ typedef GPB_ENUM(GetProofsResponse_GetProofsResponseV0_FieldNumber) {
   GetProofsResponse_GetProofsResponseV0_FieldNumber_Metadata = 2,
 };
 
+typedef GPB_ENUM(GetProofsResponse_GetProofsResponseV0_Result_OneOfCase) {
+  GetProofsResponse_GetProofsResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetProofsResponse_GetProofsResponseV0_Result_OneOfCase_Proof = 1,
+};
+
 GPB_FINAL @interface GetProofsResponse_GetProofsResponseV0 : GPBMessage
 
+@property(nonatomic, readonly) GetProofsResponse_GetProofsResponseV0_Result_OneOfCase resultOneOfCase;
+
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
-/** Test to see if @c proof has been set. */
-@property(nonatomic, readwrite) BOOL hasProof;
 
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
 
 @end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetProofsResponse_GetProofsResponseV0_ClearResultOneOfCase(GetProofsResponse_GetProofsResponseV0 *message);
 
 #pragma mark - GetDataContractRequest
 

@@ -1,0 +1,75 @@
+on:
+  workflow_call:
+
+jobs:
+  build-js:
+    name: Build JS
+    runs-on: [ "self-hosted", "linux", "arm64", "ubuntu-platform-4x" ]
+    steps:
+      - name: Configure AWS credentials and bucket region
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # TODO: Use upload artifacts action instead
+      - name: Cache build artifacts
+        uses: strophy/actions-cache@opendal-update
+        id: cache
+        with:
+          bucket: multi-runner-cache-x1xibo9c
+          root: actions-cache
+          path: build-js-artifacts-${{ github.sha }}.tar
+          key: build-js-artifacts/${{ github.sha }}
+
+      - name: Check out repo
+        uses: actions/checkout@v4
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        with:
+          fetch-depth: 0
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Node.JS
+        uses: ./.github/actions/nodejs
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        with:
+          target: wasm32-unknown-unknown
+
+      - name: Build JS packages
+        run: yarn build
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_BUCKET: multi-runner-cache-x1xibo9c
+          SCCACHE_REGION: ${{ vars.AWS_REGION }}
+          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/wasm/wasm32
+
+      - name: Ignore only already cached artifacts
+        run: |
+          find . -name '.gitignore' -exec rm -f {} +
+          echo ".yarn" >> .gitignore
+          echo "target" >> .gitignore
+          echo "node_modules" >> .gitignore
+          echo ".nyc_output" >> .gitignore
+          echo ".idea" >> .gitignore
+          echo ".ultra.cache.json" >> .gitignore
+          echo "db/*" >> .gitignore
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+
+      - name: Get modified files
+        id: diff
+        run: git ls-files --others --exclude-standard >> artifacts_list.txt
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}
+
+      - name: Create an archive of built files
+        run: xargs -a artifacts_list.txt tar cvf build-js-artifacts-${{ github.sha }}.tar
+        if: ${{ steps.cache.outputs.cache-hit != 'true' }}

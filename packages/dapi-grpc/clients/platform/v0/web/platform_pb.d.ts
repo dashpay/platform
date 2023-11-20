@@ -1231,6 +1231,7 @@ export namespace GetProofsResponse {
     getMetadata(): ResponseMetadata | undefined;
     setMetadata(value?: ResponseMetadata): void;
 
+    getResultCase(): GetProofsResponseV0.ResultCase;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): GetProofsResponseV0.AsObject;
     static toObject(includeInstance: boolean, msg: GetProofsResponseV0): GetProofsResponseV0.AsObject;
@@ -1245,6 +1246,11 @@ export namespace GetProofsResponse {
     export type AsObject = {
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      PROOF = 1,
     }
   }
 
